@@ -280,6 +280,7 @@ export function Sidebar() {
   const [editingLibraryLon, setEditingLibraryLon] = useState(0);
   const [editingLibraryGroundM, setEditingLibraryGroundM] = useState(0);
   const [editingLibraryAntennaM, setEditingLibraryAntennaM] = useState(2);
+  const [editingLibraryStatus, setEditingLibraryStatus] = useState("");
   const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
   const [newLibraryName, setNewLibraryName] = useState("");
   const [newLibraryLat, setNewLibraryLat] = useState(60.0);
@@ -515,6 +516,7 @@ export function Sidebar() {
     setEditingLibraryLon(entry.position.lon);
     setEditingLibraryGroundM(entry.groundElevationM);
     setEditingLibraryAntennaM(entry.antennaHeightM);
+    setEditingLibraryStatus("");
   };
   const saveLibraryEdit = () => {
     if (!editingLibraryId) return;
@@ -536,6 +538,29 @@ export function Sidebar() {
     );
     setNewLibraryName("");
     setShowAddLibraryForm(false);
+  };
+  const fetchGroundFromLoadedTerrain = (lat: number, lon: number): number | null => {
+    const elevation = Number(sampleSrtmElevation(srtmTiles, lat, lon));
+    if (!Number.isFinite(elevation)) return null;
+    return Math.round(elevation);
+  };
+  const fetchNewLibraryGroundFromTerrain = () => {
+    const elevation = fetchGroundFromLoadedTerrain(newLibraryLat, newLibraryLon);
+    if (elevation === null) {
+      setLibrarySearchStatus("No loaded terrain value at these coordinates. Fetch terrain data for this area first.");
+      return;
+    }
+    setNewLibraryGroundM(elevation);
+    setLibrarySearchStatus(`Ground elevation set from loaded terrain: ${elevation} m`);
+  };
+  const fetchEditingLibraryGroundFromTerrain = () => {
+    const elevation = fetchGroundFromLoadedTerrain(editingLibraryLat, editingLibraryLon);
+    if (elevation === null) {
+      setEditingLibraryStatus("No loaded terrain value at these coordinates. Fetch terrain data for this area first.");
+      return;
+    }
+    setEditingLibraryGroundM(elevation);
+    setEditingLibraryStatus(`Ground elevation set from loaded terrain: ${elevation} m`);
   };
   const runLibrarySearch = async () => {
     setLibrarySearchStatus("Searching...");
@@ -1536,11 +1561,16 @@ export function Sidebar() {
                 </label>
                 <label className="field-grid">
                   <span>Ground elev (m)</span>
-                  <input
-                    onChange={(event) => setNewLibraryGroundM(parseNumber(event.target.value))}
-                    type="number"
-                    value={newLibraryGroundM}
-                  />
+                  <div className="field-inline">
+                    <input
+                      onChange={(event) => setNewLibraryGroundM(parseNumber(event.target.value))}
+                      type="number"
+                      value={newLibraryGroundM}
+                    />
+                    <button className="inline-action field-inline-btn" onClick={fetchNewLibraryGroundFromTerrain} type="button">
+                      Fetch
+                    </button>
+                  </div>
                 </label>
                 <label className="field-grid">
                   <span>Antenna (m)</span>
@@ -1723,11 +1753,20 @@ export function Sidebar() {
                     </label>
                     <label className="field-grid">
                       <span>Ground elev (m)</span>
-                      <input
-                        onChange={(event) => setEditingLibraryGroundM(parseNumber(event.target.value))}
-                        type="number"
-                        value={editingLibraryGroundM}
-                      />
+                      <div className="field-inline">
+                        <input
+                          onChange={(event) => setEditingLibraryGroundM(parseNumber(event.target.value))}
+                          type="number"
+                          value={editingLibraryGroundM}
+                        />
+                        <button
+                          className="inline-action field-inline-btn"
+                          onClick={fetchEditingLibraryGroundFromTerrain}
+                          type="button"
+                        >
+                          Fetch
+                        </button>
+                      </div>
                     </label>
                     <label className="field-grid">
                       <span>Antenna (m)</span>
@@ -1737,6 +1776,7 @@ export function Sidebar() {
                         value={editingLibraryAntennaM}
                       />
                     </label>
+                    {editingLibraryStatus ? <p className="field-help">{editingLibraryStatus}</p> : null}
                   </div>
                   <div className="library-editor-map">
                     <Map

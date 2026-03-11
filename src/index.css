@@ -256,6 +256,22 @@ input {
   font-family: "IBM Plex Mono", monospace;
 }
 
+.field-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.field-inline input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.field-inline-btn {
+  padding: 6px 8px;
+  min-height: 32px;
+}
+
 .upload-button {
   border: 1px dashed var(--border);
   border-radius: 10px;
