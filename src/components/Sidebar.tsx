@@ -60,6 +60,7 @@ export function Sidebar() {
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
+  const clearTerrainCache = useAppStore((state) => state.clearTerrainCache);
   const getSelectedAnalysis = useAppStore((state) => state.getSelectedAnalysis);
   const getSelectedLink = useAppStore((state) => state.getSelectedLink);
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
@@ -389,6 +390,9 @@ export function Sidebar() {
         </label>
         <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
           {t(locale, "syncSiteElevations")}
+        </button>
+        <button className="inline-action" onClick={() => void clearTerrainCache()} type="button">
+          Clear ve2dbe Cache
         </button>
         {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
         {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}

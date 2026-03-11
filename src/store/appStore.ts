@@ -6,6 +6,7 @@ import { analyzeLink, buildProfile } from "../lib/propagation";
 import { DEMO_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import {
+  clearVe2dbeCache,
   loadVe2dbeTilesForArea,
   recommendVe2dbeDatasetForArea,
   type TerrainDataset,
@@ -67,6 +68,7 @@ type AppState = {
   recommendTerrainDatasetForCurrentArea: () => Promise<void>;
   fetchTerrainForCurrentArea: () => Promise<void>;
   recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
+  clearTerrainCache: () => Promise<void>;
   syncSiteElevationsOnline: () => Promise<void>;
   recomputeCoverage: () => void;
   getSelectedLink: () => Link;
@@ -284,7 +286,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ terrainFetchStatus: `Fetching ${terrainDataset.toUpperCase()} tiles from ve2dbe...` });
 
     try {
-      const tiles = await loadVe2dbeTilesForArea(
+      const result = await loadVe2dbeTilesForArea(
         bounds.minLat,
         bounds.maxLat,
         bounds.minLon,
@@ -294,10 +296,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => {
         const dedup = new Map<string, SrtmTile>();
         for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
-        for (const tile of tiles) dedup.set(tile.key, tile);
+        for (const tile of result.tiles) dedup.set(tile.key, tile);
+        const statusParts = [
+          `Loaded ${result.tiles.length} tile(s)`,
+          result.fetchedArchives.length ? `${result.fetchedArchives.length} fetched` : "",
+          result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
+          result.failedArchives.length ? `${result.failedArchives.length} failed` : "",
+        ].filter(Boolean);
         return {
           srtmTiles: Array.from(dedup.values()),
-          terrainFetchStatus: `Loaded ${tiles.length} tile(s) from ve2dbe ${terrainDataset}.`,
+          terrainFetchStatus: `${statusParts.join(", ")} from ve2dbe ${terrainDataset}.${result.failedArchives.length ? ` Missing: ${result.failedArchives.slice(0, 4).join(", ")}${result.failedArchives.length > 4 ? "..." : ""}` : ""}`,
         };
       });
       get().recomputeCoverage();
@@ -309,6 +317,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   recommendAndFetchTerrainForCurrentArea: async () => {
     await get().recommendTerrainDatasetForCurrentArea();
     await get().fetchTerrainForCurrentArea();
+  },
+  clearTerrainCache: async () => {
+    await clearVe2dbeCache();
+    set((state) => ({
+      srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
+      terrainFetchStatus: "ve2dbe cache cleared.",
+    }));
+    get().recomputeCoverage();
   },
   syncSiteElevationsOnline: async () => {
     const sites = get().sites;

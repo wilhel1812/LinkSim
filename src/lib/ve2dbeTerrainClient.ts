@@ -9,6 +9,12 @@ type TerrainRecommendation = {
   availableTiles: number;
   byDataset: Record<TerrainDataset, { availableTiles: number; completeness: number }>;
 };
+type Ve2dbeLoadResult = {
+  tiles: SrtmTile[];
+  failedArchives: string[];
+  fetchedArchives: string[];
+  cacheHits: string[];
+};
 
 const DATASET_TO_MODE: Record<TerrainDataset, string> = {
   srtm3: "0",
@@ -17,6 +23,9 @@ const DATASET_TO_MODE: Record<TerrainDataset, string> = {
 };
 
 const CACHE_NAME = "radio-mobile-web-ve2dbe-srtm-v1";
+const META_KEY = "radio-mobile-web-ve2dbe-cache-meta-v1";
+const FETCH_TIMEOUT_MS = 12000;
+const MAX_RETRIES = 3;
 
 const tileKey = (lat: number, lon: number): string => {
   const ns = lat >= 0 ? "N" : "S";
@@ -81,18 +90,71 @@ export const fetchAvailableVe2dbeTilePaths = async (
   return Array.from(links).sort();
 };
 
-const getCachedOrFetchArchive = async (archivePath: string): Promise<ArrayBuffer> => {
+type CacheMetaRecord = {
+  dataset: TerrainDataset;
+  archivePath: string;
+  fetchedAt: string;
+  sourceUrl: string;
+};
+
+const getCacheMeta = (): Record<string, CacheMetaRecord> => {
+  try {
+    const raw = localStorage.getItem(META_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, CacheMetaRecord>;
+  } catch {
+    return {};
+  }
+};
+
+const setCacheMeta = (meta: Record<string, CacheMetaRecord>) => {
+  localStorage.setItem(META_KEY, JSON.stringify(meta));
+};
+
+const fetchWithRetry = async (url: string, retries = MAX_RETRIES): Promise<Response> => {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response;
+    } catch (error) {
+      clearTimeout(timeout);
+      lastError = error;
+      if (attempt < retries) {
+        const backoffMs = 450 * 2 ** (attempt - 1);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+};
+
+const getCachedOrFetchArchive = async (
+  archivePath: string,
+  dataset: TerrainDataset,
+): Promise<{ buffer: ArrayBuffer; fromCache: boolean }> => {
   const cache = await caches.open(CACHE_NAME);
   const proxiedUrl = `/ve2dbe/geodata/${archivePath}`;
   const cached = await cache.match(proxiedUrl);
-  if (cached) return cached.arrayBuffer();
-
-  const response = await fetch(proxiedUrl);
-  if (!response.ok) {
-    throw new Error(`ve2dbe archive fetch failed (${response.status}) for ${archivePath}`);
+  if (cached) {
+    return { buffer: await cached.arrayBuffer(), fromCache: true };
   }
+
+  const response = await fetchWithRetry(proxiedUrl);
   await cache.put(proxiedUrl, response.clone());
-  return response.arrayBuffer();
+  const meta = getCacheMeta();
+  meta[archivePath] = {
+    dataset,
+    archivePath,
+    fetchedAt: new Date().toISOString(),
+    sourceUrl: `https://www.ve2dbe.com/geodata/${archivePath}`,
+  };
+  setCacheMeta(meta);
+  return { buffer: await response.arrayBuffer(), fromCache: false };
 };
 
 export const loadVe2dbeTilesForArea = async (
@@ -101,21 +163,47 @@ export const loadVe2dbeTilesForArea = async (
   minLon: number,
   maxLon: number,
   dataset: TerrainDataset,
-): Promise<SrtmTile[]> => {
+): Promise<Ve2dbeLoadResult> => {
   const archives = await fetchAvailableVe2dbeTilePaths(minLat, maxLat, minLon, maxLon, dataset);
-  const tiles = await Promise.all(
+  const fetchedArchives: string[] = [];
+  const cacheHits: string[] = [];
+  const failedArchives: string[] = [];
+  const results = await Promise.all(
     archives.map(async (archivePath) => {
-      const archive = await getCachedOrFetchArchive(archivePath);
-      return {
-        ...parseSrtmZip(archivePath, archive),
-        sourceKind: "auto-fetch" as const,
-        sourceId: `ve2dbe-${dataset}`,
-        sourceLabel: `ve2dbe ${dataset}`,
-        sourceDetail: archivePath,
-      };
+      try {
+        const { buffer, fromCache } = await getCachedOrFetchArchive(archivePath, dataset);
+        if (fromCache) {
+          cacheHits.push(archivePath);
+        } else {
+          fetchedArchives.push(archivePath);
+        }
+        return {
+          ok: true as const,
+          tile: {
+            ...parseSrtmZip(archivePath, buffer),
+            sourceKind: "auto-fetch" as const,
+            sourceId: `ve2dbe-${dataset}`,
+            sourceLabel: `ve2dbe ${dataset}`,
+            sourceDetail: archivePath,
+          },
+        };
+      } catch {
+        failedArchives.push(archivePath);
+        return { ok: false as const };
+      }
     }),
   );
-  return tiles;
+  return {
+    tiles: results.filter((result) => result.ok).map((result) => result.tile),
+    failedArchives,
+    fetchedArchives,
+    cacheHits,
+  };
+};
+
+export const clearVe2dbeCache = async (): Promise<void> => {
+  await caches.delete(CACHE_NAME);
+  localStorage.removeItem(META_KEY);
 };
 
 export const recommendVe2dbeDatasetForArea = async (
@@ -166,4 +254,4 @@ export const recommendVe2dbeDatasetForArea = async (
   };
 };
 
-export type { TerrainDataset, TerrainRecommendation };
+export type { TerrainDataset, TerrainRecommendation, Ve2dbeLoadResult };
