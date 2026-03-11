@@ -662,6 +662,9 @@ export function Sidebar() {
 
   const createNewLink = () => {
     if (!newLinkFromId || !newLinkToId || newLinkFromId === newLinkToId) return;
+    if (!sites.some((site) => site.id === newLinkFromId) || !sites.some((site) => site.id === newLinkToId)) {
+      return;
+    }
     createLink(newLinkFromId, newLinkToId, newLinkName);
     setNewLinkName("");
   };

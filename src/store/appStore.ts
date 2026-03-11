@@ -581,12 +581,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   createLink: (fromSiteId, toSiteId, name) => {
     if (fromSiteId === toSiteId) return;
     const state = get();
+    const fromSite = state.sites.find((site) => site.id === fromSiteId);
+    const toSite = state.sites.find((site) => site.id === toSiteId);
+    if (!fromSite || !toSite) return;
     const base = state.links[0];
     const selectedNetwork = state.networks.find((network) => network.id === state.selectedNetworkId);
     const inheritedFrequencyMHz = selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 869.618;
-    const fromSite = state.sites.find((site) => site.id === fromSiteId);
-    const toSite = state.sites.find((site) => site.id === toSiteId);
-    const autoName = fromSite && toSite ? `${fromSite.name} -> ${toSite.name}` : `Link ${state.links.length + 1}`;
+    const autoName = `${fromSite.name} -> ${toSite.name}`;
     const id = makeId("lnk");
     const link: Link = {
       id,

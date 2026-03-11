@@ -798,21 +798,24 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const lineFeatures = useMemo(
     () => ({
       type: "FeatureCollection" as const,
-      features: links.map((link) => {
-        const from = sites.find((site) => site.id === link.fromSiteId)!;
-        const to = sites.find((site) => site.id === link.toSiteId)!;
-        return {
-          type: "Feature" as const,
-          properties: { id: link.id, selected: link.id === selectedLinkId ? 1 : 0 },
-          geometry: {
-            type: "LineString" as const,
-            coordinates: [
-              [from.position.lon, from.position.lat],
-              [to.position.lon, to.position.lat],
-            ],
-          },
-        };
-      }),
+      features: links
+        .map((link) => {
+          const from = sites.find((site) => site.id === link.fromSiteId);
+          const to = sites.find((site) => site.id === link.toSiteId);
+          if (!from || !to) return null;
+          return {
+            type: "Feature" as const,
+            properties: { id: link.id, selected: link.id === selectedLinkId ? 1 : 0 },
+            geometry: {
+              type: "LineString" as const,
+              coordinates: [
+                [from.position.lon, from.position.lat],
+                [to.position.lon, to.position.lat],
+              ],
+            },
+          };
+        })
+        .filter((feature): feature is NonNullable<typeof feature> => feature !== null),
     }),
     [links, selectedLinkId, sites],
   );
