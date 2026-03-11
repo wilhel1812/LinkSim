@@ -99,9 +99,15 @@ export const buildCoverage = (
   systems: RadioSystem[],
   model: PropagationModel,
   terrainSampler?: (coordinates: Coordinates) => number | null,
+  options?: {
+    sampleMultiplier?: number;
+    onProgress?: (progress: number) => void;
+  },
 ): CoverageSample[] => {
   if (!network.memberships.length || sites.length === 0) return [];
   const effectiveFrequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
+  const sampleMultiplier = Math.max(1, options?.sampleMultiplier ?? 1);
+  const onProgress = options?.onProgress;
 
   const center = midpoint(sites);
   const networkSites = network.memberships
@@ -111,15 +117,17 @@ export const buildCoverage = (
   const samples: { lat: number; lon: number }[] = [];
 
   if (mode === "Polar") {
-    for (const p of polarOffsets(24, 10, 36)) {
+    const rings = Math.max(6, Math.round(10 * sampleMultiplier));
+    const spokes = Math.max(18, Math.round(36 * sampleMultiplier));
+    for (const p of polarOffsets(24, rings, spokes)) {
       samples.push(move(center.lat, center.lon, p.dk, p.az));
     }
   } else if (mode === "Route") {
     const from = networkSites[0] ?? sites[0];
     const to = networkSites[1] ?? sites[sites.length - 1] ?? from;
-
-    for (let i = 0; i < 120; i += 1) {
-      const t = i / 119;
+    const routePoints = Math.max(80, Math.round(120 * sampleMultiplier));
+    for (let i = 0; i < routePoints; i += 1) {
+      const t = routePoints <= 1 ? 0 : i / (routePoints - 1);
       samples.push({
         lat: interpolate(from.position.lat, to.position.lat, t),
         lon: interpolate(from.position.lon, to.position.lon, t),
@@ -127,7 +135,7 @@ export const buildCoverage = (
     }
   } else {
     const baseGridSize = mode === "Cartesian" ? 42 : 24;
-    const targetSamples = baseGridSize * baseGridSize;
+    const targetSamples = Math.max(64, Math.round(baseGridSize * baseGridSize * sampleMultiplier * sampleMultiplier));
     const bounds = simulationAreaBoundsForSites(sites);
     if (!bounds) return [];
 
@@ -150,7 +158,12 @@ export const buildCoverage = (
     }
   }
 
-  return samples.map((sample) => {
+  onProgress?.(0.1);
+  const total = Math.max(1, samples.length);
+  const notifyEvery = Math.max(1, Math.floor(total / 40));
+  const results: CoverageSample[] = [];
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = samples[i];
     const rxLevels = network.memberships
       .map((m) => {
         const site = sites.find((s) => s.id === m.siteId);
@@ -174,6 +187,10 @@ export const buildCoverage = (
         : rxLevels.reduce((sum, x) => sum + x, 0) / rxLevels.length
       : -140;
 
-    return { ...sample, valueDbm };
-  });
+    results.push({ ...sample, valueDbm });
+    if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
+      onProgress?.(0.1 + ((i + 1) / total) * 0.9);
+    }
+  }
+  return results;
 };

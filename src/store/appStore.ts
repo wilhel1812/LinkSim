@@ -65,6 +65,10 @@ type AppState = {
   networks: Network[];
   srtmTiles: SrtmTile[];
   coverageSamples: CoverageSample[];
+  isSimulationRecomputing: boolean;
+  simulationProgress: number;
+  simulationRunToken: string;
+  coverageResolutionMode: "auto" | "high";
   selectedLinkId: string;
   profileCursorIndex: number;
   selectedSiteId: string;
@@ -92,6 +96,7 @@ type AppState = {
   setSelectedSiteId: (id: string) => void;
   setSelectedNetworkId: (id: string) => void;
   setSelectedCoverageMode: (mode: CoverageMode) => void;
+  setCoverageResolutionMode: (mode: "auto" | "high") => void;
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
   setEnvironmentLossDb: (value: number) => void;
@@ -155,6 +160,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   networks: defaultScenario.networks,
   srtmTiles: [],
   coverageSamples: [],
+  isSimulationRecomputing: false,
+  simulationProgress: 0,
+  simulationRunToken: "",
+  coverageResolutionMode: "auto",
   selectedLinkId: defaultScenario.defaultLinkId,
   profileCursorIndex: 0,
   selectedSiteId: defaultScenario.defaultSiteId,
@@ -213,6 +222,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setSelectedCoverageMode: (mode) => {
     set({ selectedCoverageMode: mode });
+    get().recomputeCoverage();
+  },
+  setCoverageResolutionMode: (mode) => {
+    set({ coverageResolutionMode: mode });
     get().recomputeCoverage();
   },
   setSelectedFrequencyPresetId: (id) => set({ selectedFrequencyPresetId: id }),
@@ -628,22 +641,70 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
   recomputeCoverage: () => {
-    const { selectedCoverageMode, networks, selectedNetworkId, sites, systems, propagationModel, srtmTiles } = get();
-    const network = networks.find((n) => n.id === selectedNetworkId);
-    if (!network) {
-      set({ coverageSamples: [] });
-      return;
-    }
+    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    set({
+      simulationRunToken: runId,
+      isSimulationRecomputing: true,
+      simulationProgress: 3,
+    });
 
-    const coverageSamples = buildCoverage(
-      selectedCoverageMode,
-      network,
-      sites,
-      systems,
-      propagationModel,
-      ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-    );
-    set({ coverageSamples });
+    window.setTimeout(() => {
+      const state = get();
+      if (state.simulationRunToken !== runId) return;
+
+      const {
+        selectedCoverageMode,
+        networks,
+        selectedNetworkId,
+        sites,
+        systems,
+        propagationModel,
+        srtmTiles,
+        coverageResolutionMode,
+      } = state;
+      const network = networks.find((n) => n.id === selectedNetworkId);
+      if (!network) {
+        set({
+          coverageSamples: [],
+          isSimulationRecomputing: false,
+          simulationProgress: 100,
+        });
+        window.setTimeout(() => {
+          if (get().simulationRunToken === runId) {
+            set({ simulationProgress: 0, simulationRunToken: "" });
+          }
+        }, 200);
+        return;
+      }
+
+      set({ simulationProgress: 8 });
+      const coverageSamples = buildCoverage(
+        selectedCoverageMode,
+        network,
+        sites,
+        systems,
+        propagationModel,
+        ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+        {
+          sampleMultiplier: coverageResolutionMode === "high" ? 3 : 1,
+          onProgress: (progress) => {
+            if (get().simulationRunToken !== runId) return;
+            set({ simulationProgress: Math.round(8 + progress * 84) });
+          },
+        },
+      );
+      if (get().simulationRunToken !== runId) return;
+      set({
+        coverageSamples,
+        isSimulationRecomputing: false,
+        simulationProgress: 100,
+      });
+      window.setTimeout(() => {
+        if (get().simulationRunToken === runId) {
+          set({ simulationProgress: 0, simulationRunToken: "" });
+        }
+      }, 240);
+    }, 0);
   },
   getSelectedLink: () => {
     const { links, selectedLinkId } = get();

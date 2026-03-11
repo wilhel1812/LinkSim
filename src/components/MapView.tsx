@@ -37,34 +37,6 @@ const profileLineLayer: LayerProps = {
   },
 };
 
-const bestSiteLayer: LayerProps = {
-  id: "coverage-points",
-  type: "circle",
-  paint: {
-    "circle-radius": 5,
-    "circle-color": [
-      "interpolate",
-      ["linear"],
-      ["get", "worstRxDbm"],
-      -125,
-      "#4f0f15",
-      -110,
-      "#a52f33",
-      -95,
-      "#e66b28",
-      -82,
-      "#eecf42",
-      -70,
-      "#4ad37b",
-      -60,
-      "#2bc0ff",
-    ],
-    "circle-opacity": 0.56,
-    "circle-stroke-width": 0.4,
-    "circle-stroke-color": "#111",
-  },
-};
-
 const coverageRasterLayer: LayerProps = {
   id: "coverage-overlay-layer",
   type: "raster",
@@ -112,7 +84,7 @@ type TerrainBounds = {
   minLon: number;
   maxLon: number;
 };
-type CoverageVizMode = "points" | "heatmap" | "contours" | "passfail";
+type CoverageVizMode = "heatmap" | "contours" | "passfail";
 type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
 type BandStepMode = "auto" | 3 | 5 | 8 | 10;
 
@@ -218,6 +190,30 @@ const interpolateCoverageDbm = (samples: CoverageSampleLite[], lat: number, lon:
   return valueSum / weightSum;
 };
 
+const computeOverlayDimensions = (
+  bounds: TerrainBounds,
+  quality: "auto" | "high",
+): { width: number; height: number } => {
+  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+  const latSpanKm = Math.max(0.5, Math.abs(bounds.maxLat - bounds.minLat) * 111.32);
+  const lonSpanKm =
+    Math.max(0.5, Math.abs(bounds.maxLon - bounds.minLon) * 111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)));
+  const aspect = lonSpanKm / latSpanKm;
+  const shortSidePx = quality === "high" ? 880 : 320;
+  const maxSidePx = quality === "high" ? 1400 : 540;
+  let width = shortSidePx;
+  let height = shortSidePx;
+  if (aspect >= 1) {
+    width = Math.round(shortSidePx * Math.min(2.6, aspect));
+  } else {
+    height = Math.round(shortSidePx * Math.min(2.6, 1 / Math.max(0.01, aspect)));
+  }
+  return {
+    width: clamp(width, 220, maxSidePx),
+    height: clamp(height, 220, maxSidePx),
+  };
+};
+
 const computeSourceCentricRxDbm = (
   lat: number,
   lon: number,
@@ -259,25 +255,27 @@ const computeSourceCentricRxDbm = (
 const buildCoverageOverlay = (
   bounds: TerrainBounds,
   samples: CoverageSampleLite[],
-  mode: Exclude<CoverageVizMode, "points">,
+  mode: CoverageVizMode,
   bandStepDb: number,
   rxTargetDbm: number,
   environmentLossDb: number,
+  dimensions: { width: number; height: number },
 ): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
   if (!samples.length) return null;
-  const size = 280;
+  const width = dimensions.width;
+  const height = dimensions.height;
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  const image = ctx.createImageData(size, size);
+  const image = ctx.createImageData(width, height);
 
-  for (let y = 0; y < size; y += 1) {
-    const tY = y / (size - 1);
+  for (let y = 0; y < height; y += 1) {
+    const tY = y / Math.max(1, height - 1);
     const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < size; x += 1) {
-      const tX = x / (size - 1);
+    for (let x = 0; x < width; x += 1) {
+      const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
       const valueDbm = interpolateCoverageDbm(samples, lat, lon);
       if (valueDbm === null) continue;
@@ -297,7 +295,7 @@ const buildCoverageOverlay = (
         [r, g, b] = pass ? [39, 215, 147] : [225, 80, 95];
         a = 168;
       }
-      const px = (y * size + x) * 4;
+      const px = (y * width + x) * 4;
       image.data[px] = r;
       image.data[px + 1] = g;
       image.data[px + 2] = b;
@@ -325,20 +323,22 @@ const buildSourcePassFailOverlay = (
   rxTargetDbm: number,
   environmentLossDb: number,
   terrainSampler: (lat: number, lon: number) => number | null,
+  dimensions: { width: number; height: number },
 ): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
-  const size = 280;
+  const width = dimensions.width;
+  const height = dimensions.height;
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  const image = ctx.createImageData(size, size);
+  const image = ctx.createImageData(width, height);
 
-  for (let y = 0; y < size; y += 1) {
-    const tY = y / (size - 1);
+  for (let y = 0; y < height; y += 1) {
+    const tY = y / Math.max(1, height - 1);
     const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < size; x += 1) {
-      const tX = x / (size - 1);
+    for (let x = 0; x < width; x += 1) {
+      const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
       const rxDbm = computeSourceCentricRxDbm(
         lat,
@@ -350,7 +350,7 @@ const buildSourcePassFailOverlay = (
         terrainSampler,
       );
       const pass = rxDbm - environmentLossDb >= rxTargetDbm;
-      const px = (y * size + x) * 4;
+      const px = (y * width + x) * 4;
       image.data[px] = pass ? 39 : 225;
       image.data[px + 1] = pass ? 215 : 80;
       image.data[px + 2] = pass ? 147 : 95;
@@ -373,22 +373,24 @@ const buildSourcePassFailOverlay = (
 const buildTerrainShadeOverlay = (
   bounds: TerrainBounds,
   sampler: (lat: number, lon: number) => number | null,
+  dimensions: { width: number; height: number },
 ): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
-  const size = 220;
-  const elevations = new Float32Array(size * size);
-  const valid = new Uint8Array(size * size);
+  const width = dimensions.width;
+  const height = dimensions.height;
+  const elevations = new Float32Array(width * height);
+  const valid = new Uint8Array(width * height);
 
   let minElevation = Number.POSITIVE_INFINITY;
   let maxElevation = Number.NEGATIVE_INFINITY;
 
-  for (let y = 0; y < size; y += 1) {
-    const tY = y / (size - 1);
+  for (let y = 0; y < height; y += 1) {
+    const tY = y / Math.max(1, height - 1);
     const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < size; x += 1) {
-      const tX = x / (size - 1);
+    for (let x = 0; x < width; x += 1) {
+      const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
       const elevation = sampler(lat, lon);
-      const i = y * size + x;
+      const i = y * width + x;
       if (elevation === null) continue;
       elevations[i] = elevation;
       valid[i] = 1;
@@ -400,11 +402,11 @@ const buildTerrainShadeOverlay = (
   if (!Number.isFinite(minElevation) || !Number.isFinite(maxElevation)) return null;
 
   for (let pass = 0; pass < 3; pass += 1) {
-    for (let y = 1; y < size - 1; y += 1) {
-      for (let x = 1; x < size - 1; x += 1) {
-        const i = y * size + x;
+    for (let y = 1; y < height - 1; y += 1) {
+      for (let x = 1; x < width - 1; x += 1) {
+        const i = y * width + x;
         if (valid[i]) continue;
-        const neighbors = [i - 1, i + 1, i - size, i + size];
+        const neighbors = [i - 1, i + 1, i - width, i + width];
         let sum = 0;
         let count = 0;
         for (const n of neighbors) {
@@ -427,20 +429,20 @@ const buildTerrainShadeOverlay = (
   const centerLat = (bounds.minLat + bounds.maxLat) / 2;
   const metersPerLon =
     ((bounds.maxLon - bounds.minLon) * 111_320 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180))) /
-    (size - 1);
-  const metersPerLat = ((bounds.maxLat - bounds.minLat) * 111_320) / (size - 1);
+    Math.max(1, width - 1);
+  const metersPerLat = ((bounds.maxLat - bounds.minLat) * 111_320) / Math.max(1, height - 1);
 
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  const image = ctx.createImageData(size, size);
+  const image = ctx.createImageData(width, height);
   const range = Math.max(1, maxElevation - minElevation);
 
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const i = y * size + x;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = y * width + x;
       const px = i * 4;
       if (!valid[i]) {
         image.data[px + 3] = 0;
@@ -448,13 +450,13 @@ const buildTerrainShadeOverlay = (
       }
 
       const x0 = Math.max(0, x - 1);
-      const x1 = Math.min(size - 1, x + 1);
+      const x1 = Math.min(width - 1, x + 1);
       const y0 = Math.max(0, y - 1);
-      const y1 = Math.min(size - 1, y + 1);
-      const left = elevations[y * size + x0];
-      const right = elevations[y * size + x1];
-      const top = elevations[y0 * size + x];
-      const bottom = elevations[y1 * size + x];
+      const y1 = Math.min(height - 1, y + 1);
+      const left = elevations[y * width + x0];
+      const right = elevations[y * width + x1];
+      const top = elevations[y0 * width + x];
+      const bottom = elevations[y1 * width + x];
 
       const dzdx = (right - left) / Math.max(1, (x1 - x0) * metersPerLon);
       const dzdy = (bottom - top) / Math.max(1, (y1 - y0) * metersPerLat);
@@ -567,6 +569,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const hasOnlineElevationSync = useAppStore((state) => state.hasOnlineElevationSync);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
+  const coverageResolutionMode = useAppStore((state) => state.coverageResolutionMode);
+  const setCoverageResolutionMode = useAppStore((state) => state.setCoverageResolutionMode);
+  const isSimulationRecomputing = useAppStore((state) => state.isSimulationRecomputing);
+  const simulationProgress = useAppStore((state) => state.simulationProgress);
   const theme = useSystemTheme();
   const selectedProfile = getSelectedProfile();
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
@@ -658,29 +664,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
   const cursorPoint = selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))];
 
-  const coverageFeatures = useMemo(
-    () => ({
-      type: "FeatureCollection" as const,
-      features: boundedCoverageSamples.map((candidate, index) => ({
-        type: "Feature" as const,
-        properties: {
-          id: `cand-${index}`,
-          worstRxDbm: candidate.valueDbm,
-          avgRxDbm: candidate.valueDbm,
-          adjustedRxDbm: candidate.valueDbm - environmentLossDb,
-          pass: candidate.valueDbm - environmentLossDb >= rxSensitivityTargetDbm ? 1 : 0,
-        },
-        geometry: {
-          type: "Point" as const,
-          coordinates: [candidate.lon, candidate.lat],
-        },
-      })),
-    }),
-    [boundedCoverageSamples, environmentLossDb, rxSensitivityTargetDbm],
-  );
+  const overlayDimensions = useMemo(() => {
+    const bounds = analysisBounds ?? computeCoverageBounds(boundedCoverageSamples);
+    if (!bounds) return { width: 320, height: 320 };
+    return computeOverlayDimensions(bounds, coverageResolutionMode);
+  }, [analysisBounds, boundedCoverageSamples, coverageResolutionMode]);
+
   const coverageOverlay = useMemo(
     () => {
-      if (coverageVizMode === "points") return null;
       const bounds = analysisBounds ?? computeCoverageBounds(boundedCoverageSamples);
       if (!bounds) return null;
       const effectiveBandStepDb =
@@ -701,6 +692,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           rxSensitivityTargetDbm,
           environmentLossDb,
           (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+          overlayDimensions,
         );
       }
       return buildCoverageOverlay(
@@ -710,6 +702,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         effectiveBandStepDb,
         rxSensitivityTargetDbm,
         environmentLossDb,
+        overlayDimensions,
       );
     },
     [
@@ -725,6 +718,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       propagationModel,
       srtmTiles,
       analysisBounds,
+      overlayDimensions,
     ],
   );
   const currentBandStepDb = useMemo(() => {
@@ -736,8 +730,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const simulationTerrainOverlay = useMemo(() => {
     if (!hasSimulationTerrain || !analysisBounds) return null;
     const bounds = analysisBounds;
-    return buildTerrainShadeOverlay(bounds, (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon));
-  }, [hasSimulationTerrain, analysisBounds, srtmTiles]);
+    return buildTerrainShadeOverlay(bounds, (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon), overlayDimensions);
+  }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
 
@@ -806,14 +800,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           Fit
         </button>
         <button
-          className={`map-control-btn ${coverageVizMode === "points" ? "is-selected" : ""}`}
-          onClick={() => setCoverageVizMode("points")}
-          title="Coverage as sampled points"
-          type="button"
-        >
-          Points
-        </button>
-        <button
           className={`map-control-btn ${coverageVizMode === "heatmap" ? "is-selected" : ""}`}
           onClick={() => setCoverageVizMode("heatmap")}
           title="Coverage as continuous heatmap"
@@ -844,6 +830,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           Step {bandStepMode === "auto" ? `Auto(${currentBandStepDb})` : `${bandStepMode}dB`}
         </button>
         <button
+          className={`map-control-btn ${coverageResolutionMode === "high" ? "is-selected" : ""}`}
+          onClick={() => setCoverageResolutionMode(coverageResolutionMode === "high" ? "auto" : "high")}
+          title="Toggle high resolution rendering"
+          type="button"
+        >
+          {coverageResolutionMode === "high" ? "HQ On" : "Render HQ"}
+        </button>
+        <button
           className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
           onClick={() => setCoverageVizMode("passfail")}
           title="Coverage pass/fail against RX target"
@@ -858,6 +852,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           -
         </button>
       </div>
+      {isSimulationRecomputing ? (
+        <div className="map-progress" aria-live="polite" aria-label="Simulation recalculation progress">
+          <div className="map-progress-label">Recalculating simulation... {simulationProgress}%</div>
+          <div className="map-progress-track">
+            <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
+          </div>
+        </div>
+      ) : null}
       {!hasSimulationTerrain ? <div className="map-control-note">No SRTM loaded: simulation uses site elevations only.</div> : null}
       <aside className="map-sim-summary" aria-live="polite">
         <h3>Simulation Sources</h3>
@@ -885,6 +887,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         )}
         <p>
           Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + scenario values" : "Scenario values"}
+        </p>
+        <p>
+          Resolution: {coverageResolutionMode === "high" ? "High quality" : "Auto"} ({overlayDimensions.width}x
+          {overlayDimensions.height})
         </p>
         <p>
           Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
@@ -933,10 +939,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             <Layer {...coverageRasterLayer} />
           </Source>
         ) : null}
-
-        <Source data={coverageFeatures} id="best-site" type="geojson">
-          {coverageVizMode === "points" ? <Layer {...bestSiteLayer} /> : null}
-        </Source>
 
         <Source data={lineFeatures} id="links" type="geojson">
           <Layer {...mapLineLayer} />
