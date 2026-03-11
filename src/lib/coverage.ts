@@ -175,7 +175,9 @@ export const buildCoverage = (
     const minSpanKm = mode === "Cartesian" ? 24 : 18;
     const marginKmPerSide = mode === "Cartesian" ? 4 : 3;
     const targetSamples = baseGridSize * baseGridSize;
-    const grid = computeAspectAwareGrid(networkSites, center, minSpanKm, marginKmPerSide, targetSamples);
+    // Extent should follow the actual scenario geometry (all sites), while signal values
+    // are still computed from active network memberships below.
+    const grid = computeAspectAwareGrid(sites, center, minSpanKm, marginKmPerSide, targetSamples);
     const halfLat = (grid.latSpanKm / 2) / 111.32;
     const halfLon = (grid.lonSpanKm / 2) / (111.32 * Math.max(0.1, Math.cos((grid.centerLat * Math.PI) / 180)));
 
