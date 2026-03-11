@@ -25,13 +25,14 @@ import {
   type MeshmapNode,
 } from "../lib/meshtasticMqtt";
 import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
+import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { analyzeLink } from "../lib/propagation";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
-import type { CoverageMode, PropagationModel } from "../types/radio";
+import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 
 const metric = (label: string, value: string) => (
   <div className="metric-row" key={label}>
@@ -56,6 +57,16 @@ const styleByTheme = {
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
 };
+
+const RADIO_CLIMATE_OPTIONS: RadioClimate[] = [
+  "Equatorial",
+  "Continental Subtropical",
+  "Maritime Subtropical",
+  "Desert",
+  "Continental Temperate",
+  "Maritime Temperate (Land)",
+  "Maritime Temperate (Sea)",
+];
 
 const meshmapNodesLayer: LayerProps = {
   id: "meshmap-nodes-layer",
@@ -131,6 +142,9 @@ export function Sidebar() {
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
+  const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
+  const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
+  const propagationEnvironmentReason = useAppStore((state) => state.propagationEnvironmentReason);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const scenarioOptions = useAppStore((state) => state.scenarioOptions);
   const locale = useAppStore((state) => state.locale);
@@ -144,6 +158,9 @@ export function Sidebar() {
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
   const setRxSensitivityTargetDbm = useAppStore((state) => state.setRxSensitivityTargetDbm);
   const setEnvironmentLossDb = useAppStore((state) => state.setEnvironmentLossDb);
+  const setAutoPropagationEnvironment = useAppStore((state) => state.setAutoPropagationEnvironment);
+  const setPropagationEnvironment = useAppStore((state) => state.setPropagationEnvironment);
+  const applyClimateDefaults = useAppStore((state) => state.applyClimateDefaults);
   const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const applyFrequencyPresetToSelectedNetwork = useAppStore(
@@ -203,6 +220,16 @@ export function Sidebar() {
     selectedNetwork.bandwidthKhz,
     selectedNetwork.spreadFactor,
   );
+  const effectivePropagationEnvironment = useMemo(() => {
+    if (!autoPropagationEnvironment || !fromSite || !toSite) return propagationEnvironment;
+    return deriveDynamicPropagationEnvironment({
+      from: fromSite.position,
+      to: toSite.position,
+      fromGroundM: fromSite.groundElevationM,
+      toGroundM: toSite.groundElevationM,
+      terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+    }).environment;
+  }, [autoPropagationEnvironment, fromSite, toSite, propagationEnvironment, srtmTiles]);
 
   const runWhatIf = (
     txPowerDeltaDbm = 0,
@@ -220,6 +247,7 @@ export function Sidebar() {
       { ...destinationSite, antennaHeightM: destinationSite.antennaHeightM + antennaDeltaM },
       model,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+      { environment: effectivePropagationEnvironment },
     );
     return alt.rxLevelDbm - environmentLossDb;
   };
@@ -408,6 +436,9 @@ export function Sidebar() {
       selectedSiteId,
       rxSensitivityTargetDbm,
       environmentLossDb,
+      autoPropagationEnvironment,
+      propagationEnvironment: effectivePropagationEnvironment,
+      propagationEnvironmentReason,
       hasOnlineElevationSync: useAppStore.getState().hasOnlineElevationSync,
       terrainTileCount: srtmTiles.length,
       terrainSources,
@@ -772,6 +803,107 @@ export function Sidebar() {
             </button>
           ))}
         </div>
+        <details className="compact-details">
+          <summary>ITM Environment</summary>
+          <p className="field-help">
+            These parameters feed terrain-aware path loss. Auto mode derives defaults from current terrain/profile and
+            you can override manually.
+          </p>
+          <label className="field-grid">
+            <span>Auto environment defaults</span>
+            <select
+              className="locale-select"
+              onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
+              value={autoPropagationEnvironment ? "auto" : "manual"}
+            >
+              <option value="auto">Auto (recommended)</option>
+              <option value="manual">Manual override</option>
+            </select>
+          </label>
+          <p className="field-help">{propagationEnvironmentReason}</p>
+          <label className="field-grid">
+            <span>Radio Climate</span>
+            <select
+              className="locale-select"
+              disabled={autoPropagationEnvironment}
+              onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
+              value={effectivePropagationEnvironment.radioClimate}
+            >
+              {RADIO_CLIMATE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-grid">
+            <span>Polarization</span>
+            <select
+              className="locale-select"
+              disabled={autoPropagationEnvironment}
+              onChange={(event) =>
+                setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
+              }
+              value={effectivePropagationEnvironment.polarization}
+            >
+              <option value="Vertical">Vertical</option>
+              <option value="Horizontal">Horizontal</option>
+            </select>
+          </label>
+          <label className="field-grid">
+            <span>Clutter Height (m)</span>
+            <input
+              disabled={autoPropagationEnvironment}
+              min={0}
+              onChange={(event) =>
+                setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
+              }
+              type="number"
+              value={effectivePropagationEnvironment.clutterHeightM}
+            />
+          </label>
+          <label className="field-grid">
+            <span>Ground Dielectric (V/m)</span>
+            <input
+              disabled={autoPropagationEnvironment}
+              min={1}
+              onChange={(event) =>
+                setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
+              }
+              step="0.1"
+              type="number"
+              value={effectivePropagationEnvironment.groundDielectric}
+            />
+          </label>
+          <label className="field-grid">
+            <span>Ground Conductivity (S/m)</span>
+            <input
+              disabled={autoPropagationEnvironment}
+              min={0}
+              onChange={(event) =>
+                setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
+              }
+              step="0.001"
+              type="number"
+              value={effectivePropagationEnvironment.groundConductivity}
+            />
+          </label>
+          <label className="field-grid">
+            <span>Atmospheric Bending (N-units)</span>
+            <input
+              disabled={autoPropagationEnvironment}
+              min={250}
+              onChange={(event) =>
+                setPropagationEnvironment({
+                  atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
+                })
+              }
+              step="1"
+              type="number"
+              value={effectivePropagationEnvironment.atmosphericBendingNUnits}
+            />
+          </label>
+        </details>
       </section>
 
       <section className="panel-section">

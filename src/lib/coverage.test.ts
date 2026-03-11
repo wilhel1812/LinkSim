@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCoverage } from "./coverage";
+import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import type { Network, RadioSystem, Site } from "../types/radio";
 
 const sites: Site[] = [
@@ -46,19 +47,19 @@ const network: Network = {
 
 describe("buildCoverage", () => {
   it("creates non-empty coverage in BestSite mode", () => {
-    const result = buildCoverage("BestSite", network, sites, systems, "FSPL");
+    const result = buildCoverage("BestSite", network, sites, systems, "FSPL", defaultPropagationEnvironment());
     expect(result.length).toBeGreaterThan(100);
     expect(Number.isFinite(result[0].valueDbm)).toBe(true);
   });
 
   it("creates route samples in Route mode", () => {
-    const result = buildCoverage("Route", network, sites, systems, "FSPL");
+    const result = buildCoverage("Route", network, sites, systems, "FSPL", defaultPropagationEnvironment());
     expect(result).toHaveLength(120);
   });
 
   it("changes computed values when propagation model changes", () => {
-    const fspl = buildCoverage("Polar", network, sites, systems, "FSPL");
-    const twoRay = buildCoverage("Polar", network, sites, systems, "TwoRay");
+    const fspl = buildCoverage("Polar", network, sites, systems, "FSPL", defaultPropagationEnvironment());
+    const twoRay = buildCoverage("Polar", network, sites, systems, "TwoRay", defaultPropagationEnvironment());
     const maxDiff = fspl.reduce((max, sample, index) => {
       const diff = Math.abs(sample.valueDbm - twoRay[index].valueDbm);
       return Math.max(max, diff);
@@ -68,7 +69,7 @@ describe("buildCoverage", () => {
   });
 
   it("supports ITM mode generation", () => {
-    const itm = buildCoverage("BestSite", network, sites, systems, "ITM");
+    const itm = buildCoverage("BestSite", network, sites, systems, "ITM", defaultPropagationEnvironment());
     expect(itm.length).toBeGreaterThan(100);
     expect(Number.isFinite(itm[0].valueDbm)).toBe(true);
   });

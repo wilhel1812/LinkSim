@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { buildCoverage } from "../lib/coverage";
 import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
+import {
+  defaultPropagationEnvironment,
+  deriveDynamicPropagationEnvironment,
+  withClimateDefaults,
+} from "../lib/propagationEnvironment";
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { DEMO_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
@@ -20,6 +25,7 @@ import type {
   LinkAnalysis,
   MapViewport,
   Network,
+  PropagationEnvironment,
   ProfilePoint,
   PropagationModel,
   RadioSystem,
@@ -63,6 +69,8 @@ type SimulationPreset = {
     selectedFrequencyPresetId: string;
     rxSensitivityTargetDbm: number;
     environmentLossDb: number;
+    propagationEnvironment: PropagationEnvironment;
+    autoPropagationEnvironment: boolean;
     terrainDataset: TerrainDataset;
     mapViewport: MapViewport;
   };
@@ -94,6 +102,9 @@ type AppState = {
   selectedFrequencyPresetId: string;
   rxSensitivityTargetDbm: number;
   environmentLossDb: number;
+  propagationEnvironment: PropagationEnvironment;
+  autoPropagationEnvironment: boolean;
+  propagationEnvironmentReason: string;
   terrainDataset: TerrainDataset;
   terrainFetchStatus: string;
   terrainRecommendation: string;
@@ -113,6 +124,9 @@ type AppState = {
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
   setEnvironmentLossDb: (value: number) => void;
+  setAutoPropagationEnvironment: (value: boolean) => void;
+  setPropagationEnvironment: (patch: Partial<PropagationEnvironment>) => void;
+  applyClimateDefaults: (climate: PropagationEnvironment["radioClimate"]) => void;
   setTerrainDataset: (dataset: TerrainDataset) => void;
   addSiteByCoordinates: (name: string, lat: number, lon: number) => void;
   deleteSite: (siteId: string) => void;
@@ -241,6 +255,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
   environmentLossDb: 0,
+  propagationEnvironment: defaultPropagationEnvironment(),
+  autoPropagationEnvironment: true,
+  propagationEnvironmentReason: "Auto defaults active.",
   terrainDataset: "srtm1",
   terrainFetchStatus: "",
   terrainRecommendation: "",
@@ -267,6 +284,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationModel: "ITM",
       rxSensitivityTargetDbm: -120,
       environmentLossDb: 0,
+      propagationEnvironment: defaultPropagationEnvironment(),
+      autoPropagationEnvironment: true,
+      propagationEnvironmentReason: "Auto defaults active.",
       terrainFetchStatus: "",
       terrainRecommendation: "",
       hasOnlineElevationSync: false,
@@ -296,6 +316,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedFrequencyPresetId: (id) => set({ selectedFrequencyPresetId: id }),
   setRxSensitivityTargetDbm: (value) => set({ rxSensitivityTargetDbm: value }),
   setEnvironmentLossDb: (value) => set({ environmentLossDb: Math.max(0, value) }),
+  setAutoPropagationEnvironment: (value) => {
+    set({ autoPropagationEnvironment: value });
+    get().recomputeCoverage();
+  },
+  setPropagationEnvironment: (patch) => {
+    set((state) => ({
+      propagationEnvironment: {
+        ...state.propagationEnvironment,
+        ...patch,
+      },
+      autoPropagationEnvironment: false,
+      propagationEnvironmentReason: "Manual override active.",
+    }));
+    get().recomputeCoverage();
+  },
+  applyClimateDefaults: (climate) => {
+    set((state) => ({
+      propagationEnvironment: withClimateDefaults(state.propagationEnvironment, climate),
+      autoPropagationEnvironment: false,
+      propagationEnvironmentReason: "Manual climate defaults applied.",
+    }));
+    get().recomputeCoverage();
+  },
   setTerrainDataset: (dataset) => set({ terrainDataset: dataset }),
   addSiteByCoordinates: (name, lat, lon) => {
     const label = name.trim() || `Site ${get().sites.length + 1}`;
@@ -505,6 +548,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
       environmentLossDb: state.environmentLossDb,
+      propagationEnvironment: state.propagationEnvironment,
+      autoPropagationEnvironment: state.autoPropagationEnvironment,
       terrainDataset: state.terrainDataset,
       mapViewport: state.mapViewport,
     };
@@ -539,6 +584,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedFrequencyPresetId: snap.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: snap.rxSensitivityTargetDbm,
       environmentLossDb: snap.environmentLossDb,
+      propagationEnvironment: snap.propagationEnvironment ?? defaultPropagationEnvironment(),
+      autoPropagationEnvironment: snap.autoPropagationEnvironment ?? true,
+      propagationEnvironmentReason: (snap.autoPropagationEnvironment ?? true)
+        ? "Auto defaults active."
+        : "Manual override active.",
       terrainDataset: snap.terrainDataset,
       mapViewport: snap.mapViewport,
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
@@ -814,6 +864,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         propagationModel,
         srtmTiles,
         coverageResolutionMode,
+        links,
+        selectedLinkId,
+        autoPropagationEnvironment,
+        propagationEnvironment,
       } = state;
       const network = networks.find((n) => n.id === selectedNetworkId);
       if (!network) {
@@ -835,6 +889,27 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
+      const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
+      const fromSite = selectedLink ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null : null;
+      const toSite = selectedLink ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null : null;
+      const autoDerived =
+        autoPropagationEnvironment && fromSite && toSite
+          ? deriveDynamicPropagationEnvironment({
+              from: fromSite.position,
+              to: toSite.position,
+              fromGroundM: fromSite.groundElevationM,
+              toGroundM: toSite.groundElevationM,
+              terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+            })
+          : null;
+      const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
+      if (autoDerived) {
+        set({
+          propagationEnvironment: autoDerived.environment,
+          propagationEnvironmentReason: autoDerived.reason,
+        });
+      }
+
       set({ simulationProgress: 8 });
       const coverageSamples = buildCoverage(
         selectedCoverageMode,
@@ -842,6 +917,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sites,
         systems,
         propagationModel,
+        effectiveEnvironment,
         ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
         {
           sampleMultiplier: coverageResolutionMode === "high" ? 4 : 1,
@@ -906,8 +982,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { fromSite, toSite };
   },
   getSelectedAnalysis: () => {
-    const { getSelectedLink, getSelectedNetwork, getSelectedSites, propagationModel, srtmTiles, coverageResolutionMode } =
-      get();
+    const {
+      getSelectedLink,
+      getSelectedNetwork,
+      getSelectedSites,
+      propagationModel,
+      srtmTiles,
+      coverageResolutionMode,
+      autoPropagationEnvironment,
+      propagationEnvironment,
+    } = get();
     const link = getSelectedLink();
     const selectedNetwork = getSelectedNetwork();
     const effectiveLink = {
@@ -915,13 +999,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
     };
     const { fromSite, toSite } = getSelectedSites();
+    const autoDerived = autoPropagationEnvironment
+      ? deriveDynamicPropagationEnvironment({
+          from: fromSite.position,
+          to: toSite.position,
+          fromGroundM: fromSite.groundElevationM,
+          toGroundM: toSite.groundElevationM,
+          terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+        })
+      : null;
     return analyzeLink(
       effectiveLink,
       fromSite,
       toSite,
       propagationModel,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-      { terrainSamples: coverageResolutionMode === "high" ? 80 : 32 },
+      {
+        terrainSamples: coverageResolutionMode === "high" ? 80 : 32,
+        environment: autoDerived?.environment ?? propagationEnvironment,
+      },
     );
   },
   getSelectedProfile: () => {

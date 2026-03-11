@@ -7,6 +7,7 @@ import type {
   CoverageMode,
   CoverageSample,
   Network,
+  PropagationEnvironment,
   PropagationModel,
   RadioSystem,
   Site,
@@ -20,6 +21,10 @@ const midpoint = (sites: Site[]): { lat: number; lon: number } => ({
 });
 
 const interpolate = (a: number, b: number, t: number): number => a + (b - a) * t;
+const nUnitsToKFactor = (nUnits: number): number => {
+  const n = Math.max(250, Math.min(400, nUnits));
+  return Math.max(1, Math.min(2, 1 + (n - 250) / 153));
+};
 
 const evalRx = (
   sampleLat: number,
@@ -29,6 +34,7 @@ const evalRx = (
   frequencyMHz: number,
   model: PropagationModel,
   terrainSamples: number,
+  environment: PropagationEnvironment,
   terrainSampler?: (coordinates: Coordinates) => number | null,
 ): number => {
   const distanceKm = Math.max(
@@ -41,6 +47,7 @@ const evalRx = (
     frequencyMHz,
     txSystem.antennaHeightM,
     rxSite.antennaHeightM,
+    environment,
   );
   const txGround = terrainSampler ? terrainSampler({ lat: sampleLat, lon: sampleLon }) : null;
   const terrainLoss =
@@ -53,6 +60,9 @@ const evalRx = (
           frequencyMHz,
           terrainSampler,
           samples: terrainSamples,
+          kFactor: nUnitsToKFactor(environment.atmosphericBendingNUnits),
+          clutterHeightM: environment.clutterHeightM,
+          polarization: environment.polarization,
         })
       : 0;
 
@@ -99,6 +109,7 @@ export const buildCoverage = (
   sites: Site[],
   systems: RadioSystem[],
   model: PropagationModel,
+  environment: PropagationEnvironment,
   terrainSampler?: (coordinates: Coordinates) => number | null,
   options?: {
     sampleMultiplier?: number;
@@ -180,6 +191,7 @@ export const buildCoverage = (
           effectiveFrequencyMHz,
           model,
           terrainSamples,
+          environment,
           terrainSampler,
         );
       })

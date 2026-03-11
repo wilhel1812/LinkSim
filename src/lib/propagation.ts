@@ -6,6 +6,7 @@ import type {
   Coordinates,
   Link,
   LinkAnalysis,
+  PropagationEnvironment,
   ProfilePoint,
   PropagationModel,
   Site,
@@ -14,6 +15,10 @@ import type {
 const EARTH_RADIUS_M = 6_371_000;
 
 type TerrainSampler = (coordinates: Coordinates) => number | null;
+const nUnitsToKFactor = (nUnits: number): number => {
+  const n = Math.max(250, Math.min(400, nUnits));
+  return Math.max(1, Math.min(2, 1 + (n - 250) / 153));
+};
 
 const firstFresnelRadiusM = (
   distanceKm: number,
@@ -95,7 +100,7 @@ export const analyzeLink = (
   toSite: Site,
   model: PropagationModel,
   terrainSampler?: TerrainSampler,
-  options?: { terrainSamples?: number },
+  options?: { terrainSamples?: number; environment?: PropagationEnvironment },
 ): LinkAnalysis => {
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, toSite.position));
   const fromAntennaAbsM = fromSite.groundElevationM + fromSite.antennaHeightM;
@@ -107,6 +112,7 @@ export const analyzeLink = (
     link.frequencyMHz,
     fromSite.antennaHeightM,
     toSite.antennaHeightM,
+    options?.environment,
   );
 
   let terrainPenaltyDb = 0;
@@ -117,9 +123,12 @@ export const analyzeLink = (
       fromAntennaAbsM: fromAntennaAbsM,
       toAntennaAbsM: toAntennaAbsM,
       frequencyMHz: link.frequencyMHz,
-      terrainSampler,
-      samples: Math.max(24, Math.round(options?.terrainSamples ?? 32)),
-    });
+        terrainSampler,
+        samples: Math.max(24, Math.round(options?.terrainSamples ?? 32)),
+        kFactor: nUnitsToKFactor(options?.environment?.atmosphericBendingNUnits ?? 301),
+        clutterHeightM: options?.environment?.clutterHeightM ?? 0,
+        polarization: options?.environment?.polarization ?? "Vertical",
+      });
   }
 
   const pathLossDb = basePathLossDb + terrainPenaltyDb;
@@ -164,6 +173,7 @@ export const computeBestSiteGrid = (
   spanKm: number,
   gridSize: number,
   model: PropagationModel,
+  environment?: PropagationEnvironment,
 ): BestSiteCandidate[] => {
   const halfSpanDegLat = spanKm / 111.32;
   const halfSpanDegLon = spanKm / (111.32 * Math.cos((center.lat * Math.PI) / 180));
@@ -189,6 +199,7 @@ export const computeBestSiteGrid = (
           frequencyMHz,
           2,
           site.antennaHeightM,
+          environment,
         );
         const eirp = txPowerDbm + txGainDbi - cableLossDb;
         return eirp + rxGainDbi - pathLoss;

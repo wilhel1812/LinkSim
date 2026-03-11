@@ -25,6 +25,24 @@ export type Link = {
 
 export type PropagationModel = "FSPL" | "TwoRay" | "ITM";
 export type CoverageMode = "BestSite" | "Polar" | "Cartesian" | "Route";
+export type Polarization = "Vertical" | "Horizontal";
+export type RadioClimate =
+  | "Equatorial"
+  | "Continental Subtropical"
+  | "Maritime Subtropical"
+  | "Desert"
+  | "Continental Temperate"
+  | "Maritime Temperate (Land)"
+  | "Maritime Temperate (Sea)";
+
+export type PropagationEnvironment = {
+  radioClimate: RadioClimate;
+  polarization: Polarization;
+  clutterHeightM: number;
+  groundDielectric: number;
+  groundConductivity: number;
+  atmosphericBendingNUnits: number;
+};
 
 export type MapViewport = {
   center: Coordinates;

@@ -1,5 +1,5 @@
 import { haversineDistanceKm, interpolateCoordinate } from "./geo";
-import type { Coordinates } from "../types/radio";
+import type { Coordinates, Polarization } from "../types/radio";
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
@@ -42,6 +42,8 @@ type TerrainLossInput = {
   terrainSampler: TerrainSampler;
   samples?: number;
   kFactor?: number;
+  clutterHeightM?: number;
+  polarization?: Polarization;
 };
 
 export const estimateTerrainExcessLossDb = ({
@@ -53,6 +55,8 @@ export const estimateTerrainExcessLossDb = ({
   terrainSampler,
   samples = 24,
   kFactor = 4 / 3,
+  clutterHeightM = 0,
+  polarization = "Vertical",
 }: TerrainLossInput): number => {
   const sampleCount = Math.max(16, Math.round(samples));
   const distanceKm = Math.max(0.001, haversineDistanceKm(from, to));
@@ -98,7 +102,8 @@ export const estimateTerrainExcessLossDb = ({
       const t = d1 / segmentDistanceM;
       const losM = startHeightM + (endHeightM - startHeightM) * t;
       const bulgeM = earthBulgeM(segmentDistanceM, d1, kFactor);
-      const obstacleM = terrainAt(i) + bulgeM;
+      const clutterBoost = Math.max(0, clutterHeightM) * 0.55;
+      const obstacleM = terrainAt(i) + bulgeM + clutterBoost;
       const clearanceM = obstacleM - losM;
       const fresnelM = Math.max(0.5, Math.sqrt((wavelengthM * d1 * d2) / segmentDistanceM));
       const v = clearanceM / fresnelM;
@@ -111,7 +116,7 @@ export const estimateTerrainExcessLossDb = ({
     }
 
     if (maxIndex < 0 || maxV <= -0.78) return 0;
-    const directLoss = knifeEdgeLossDb(maxV);
+    const directLoss = knifeEdgeLossDb(maxV) + (polarization === "Horizontal" ? 0.5 : 0);
     if (maxClearanceM <= 0) {
       // Fresnel intrusion without geometric LOS blockage: keep this mild and non-recursive.
       return directLoss * 0.32;
@@ -125,11 +130,12 @@ export const estimateTerrainExcessLossDb = ({
   const diffractionLoss = segmentLoss(0, trace.length - 1, fromAntennaAbsM, toAntennaAbsM, 0);
   // Residual clutter penalty for irregular terrain that is not directly blocking Fresnel.
   const roughnessLoss = clamp((terrainStd - 20) * 0.12, 0, 8);
+  const clutterLoss = clamp(clutterHeightM * 0.22, 0, 12);
 
   const baselineFresnelM = firstFresnelRadiusM(distanceKm, frequencyMHz, 0.5);
   if (!Number.isFinite(diffractionLoss) || !Number.isFinite(baselineFresnelM)) {
     return 0;
   }
 
-  return clamp(diffractionLoss + roughnessLoss, 0, 80);
+  return clamp(diffractionLoss + roughnessLoss + clutterLoss, 0, 90);
 };
