@@ -670,6 +670,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showSimulationSummary, setShowSimulationSummary] = useState(true);
+  const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [interactionViewState, setInteractionViewState] = useState<{
     longitude: number;
     latitude: number;
@@ -876,8 +877,18 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
   const onSiteClick = (siteId: string) => {
     setSelectedSiteId(siteId);
-    if (!endpointPickTarget) return;
+    if (!endpointPickTarget || !selectedLink) return;
+    setEndpointPickError(null);
+    if (endpointPickTarget === "from" && siteId === selectedLink.toSiteId) {
+      setEndpointPickError("From and To must be different sites.");
+      return;
+    }
+    if (endpointPickTarget === "to" && siteId === selectedLink.fromSiteId) {
+      setEndpointPickError("From and To must be different sites.");
+      return;
+    }
     updateLink(selectedLinkId, endpointPickTarget === "from" ? { fromSiteId: siteId } : { toSiteId: siteId });
+    setEndpointPickError(null);
     setEndpointPickTarget(null);
   };
 
@@ -975,6 +986,9 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         </div>
       ) : null}
       {!hasSimulationTerrain ? <div className="map-control-note">No SRTM loaded: simulation uses site elevations only.</div> : null}
+      {endpointPickTarget && endpointPickError ? (
+        <div className="map-control-note map-control-note-secondary">{endpointPickError}</div>
+      ) : null}
       <aside className="map-sim-summary" aria-live="polite">
         <div className="map-sim-summary-header">
           <h3>Simulation Sources</h3>

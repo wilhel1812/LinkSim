@@ -488,6 +488,10 @@ input {
   max-width: 260px;
 }
 
+.map-control-note-secondary {
+  top: 140px;
+}
+
 .map-progress {
   position: absolute;
   top: 56px;
