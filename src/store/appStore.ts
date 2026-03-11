@@ -227,6 +227,73 @@ const dedupeLibraryEntries = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =
 const normalizeSiteLibrary = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =>
   dedupeLibraryEntries(entries.filter((entry) => !isBuiltinSiteLibraryEntry(entry)));
 
+const ensureMinimumTopology = (
+  inputSites: Site[],
+  inputLinks: Link[],
+  inputSystems: RadioSystem[],
+  inputNetworks: Network[],
+): {
+  sites: Site[];
+  links: Link[];
+  systems: RadioSystem[];
+  networks: Network[];
+} => {
+  const sites = inputSites.length > 0 ? inputSites : defaultScenario.sites;
+  const systems = inputSystems.length > 0 ? inputSystems : defaultScenario.systems;
+  const siteIds = new Set(sites.map((site) => site.id));
+  const systemIds = new Set(systems.map((system) => system.id));
+
+  const validLinks = inputLinks.filter((link) => siteIds.has(link.fromSiteId) && siteIds.has(link.toSiteId));
+  const links =
+    validLinks.length > 0
+      ? validLinks
+      : sites.length >= 2
+        ? [
+            {
+              id: "link-1",
+              fromSiteId: sites[0].id,
+              toSiteId: sites[1].id,
+              frequencyMHz: 869.618,
+              txPowerDbm: 22,
+              txGainDbi: 2,
+              rxGainDbi: 2,
+              cableLossDb: 1,
+              name: `${sites[0].name} -> ${sites[1].name}`,
+            },
+          ]
+        : defaultScenario.links;
+
+  const validNetworks = inputNetworks
+    .map((network) => ({
+      ...network,
+      memberships: network.memberships.filter(
+        (member) => siteIds.has(member.siteId) && systemIds.has(member.systemId),
+      ),
+    }))
+    .filter((network) => network.memberships.length > 0);
+
+  const networks =
+    validNetworks.length > 0
+      ? validNetworks
+      : [
+          {
+            id: "network-1",
+            name: "Recovered Network",
+            frequencyMHz: 869.618,
+            bandwidthKhz: 62,
+            spreadFactor: 8,
+            codingRate: 5,
+            frequencyOverrideMHz: 869.618,
+            memberships: sites.map((site) => ({
+              siteId: site.id,
+              systemId: systems[0].id,
+            })),
+          },
+        ];
+
+  return { sites, links, systems, networks };
+};
+
 const persistedSiteLibrary = readStorage<SiteLibraryEntry[]>(SITE_LIBRARY_KEY, []);
 const initialSiteLibrary = normalizeSiteLibrary(persistedSiteLibrary);
 if (JSON.stringify(initialSiteLibrary) !== JSON.stringify(persistedSiteLibrary)) {
@@ -611,26 +678,58 @@ export const useAppStore = create<AppState>((set, get) => ({
     const preset = get().simulationPresets.find((candidate) => candidate.id === presetId);
     if (!preset) return;
     const snap = preset.snapshot;
+    const recovered = ensureMinimumTopology(
+      Array.isArray(snap.sites) ? snap.sites : [],
+      Array.isArray(snap.links) ? snap.links : [],
+      Array.isArray(snap.systems) ? snap.systems : [],
+      Array.isArray(snap.networks) ? snap.networks : [],
+    );
+    const selectedSiteId = recovered.sites.some((site) => site.id === snap.selectedSiteId)
+      ? snap.selectedSiteId
+      : recovered.sites[0].id;
+    const selectedLinkId = recovered.links.some((link) => link.id === snap.selectedLinkId)
+      ? snap.selectedLinkId
+      : recovered.links[0].id;
+    const selectedNetworkId = recovered.networks.some((network) => network.id === snap.selectedNetworkId)
+      ? snap.selectedNetworkId
+      : recovered.networks[0].id;
     set({
-      sites: snap.sites,
-      links: snap.links,
-      systems: snap.systems,
-      networks: snap.networks,
-      selectedSiteId: snap.selectedSiteId,
-      selectedLinkId: snap.selectedLinkId,
-      selectedNetworkId: snap.selectedNetworkId,
-      selectedCoverageMode: snap.selectedCoverageMode,
-      propagationModel: snap.propagationModel,
-      selectedFrequencyPresetId: snap.selectedFrequencyPresetId,
-      rxSensitivityTargetDbm: snap.rxSensitivityTargetDbm,
-      environmentLossDb: snap.environmentLossDb,
+      sites: recovered.sites,
+      links: recovered.links,
+      systems: recovered.systems,
+      networks: recovered.networks,
+      selectedSiteId,
+      selectedLinkId,
+      selectedNetworkId,
+      selectedCoverageMode:
+        snap.selectedCoverageMode === "BestSite" ||
+        snap.selectedCoverageMode === "Polar" ||
+        snap.selectedCoverageMode === "Cartesian" ||
+        snap.selectedCoverageMode === "Route"
+          ? snap.selectedCoverageMode
+          : "BestSite",
+      propagationModel:
+        snap.propagationModel === "FSPL" || snap.propagationModel === "TwoRay" || snap.propagationModel === "ITM"
+          ? snap.propagationModel
+          : "ITM",
+      selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
+      rxSensitivityTargetDbm:
+        typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
+      environmentLossDb: typeof snap.environmentLossDb === "number" ? snap.environmentLossDb : 0,
       propagationEnvironment: snap.propagationEnvironment ?? defaultPropagationEnvironment(),
       autoPropagationEnvironment: snap.autoPropagationEnvironment ?? true,
       propagationEnvironmentReason: (snap.autoPropagationEnvironment ?? true)
         ? "Auto defaults active."
         : "Manual override active.",
-      terrainDataset: snap.terrainDataset,
-      mapViewport: snap.mapViewport,
+      terrainDataset: snap.terrainDataset === "srtm3" || snap.terrainDataset === "srtm1" ? snap.terrainDataset : "srtm1",
+      mapViewport:
+        snap.mapViewport &&
+        typeof snap.mapViewport.zoom === "number" &&
+        snap.mapViewport.center &&
+        typeof snap.mapViewport.center.lat === "number" &&
+        typeof snap.mapViewport.center.lon === "number"
+          ? snap.mapViewport
+          : defaultScenario.viewport,
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
     });
     get().recomputeCoverage();
@@ -1007,28 +1106,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   getSelectedLink: () => {
     const { links, selectedLinkId } = get();
     const link = links.find((candidate) => candidate.id === selectedLinkId);
-    if (!link) throw new Error(`Selected link ${selectedLinkId} not found`);
-    return link;
+    return link ?? links[0] ?? defaultScenario.links[0];
   },
   getSelectedSite: () => {
     const { sites, selectedSiteId } = get();
     const site = sites.find((candidate) => candidate.id === selectedSiteId);
-    if (!site) throw new Error(`Selected site ${selectedSiteId} not found`);
-    return site;
+    return site ?? sites[0] ?? defaultScenario.sites[0];
   },
   getSelectedNetwork: () => {
     const { networks, selectedNetworkId } = get();
     const network = networks.find((candidate) => candidate.id === selectedNetworkId);
-    if (!network) throw new Error(`Selected network ${selectedNetworkId} not found`);
-    return network;
+    return network ?? networks[0] ?? defaultScenario.networks[0];
   },
   getSelectedSites: () => {
     const { sites, getSelectedLink } = get();
     const link = getSelectedLink();
     const fromSite = sites.find((s) => s.id === link.fromSiteId);
     const toSite = sites.find((s) => s.id === link.toSiteId);
-    if (!fromSite || !toSite) throw new Error(`Sites for link ${link.id} not found`);
-    return { fromSite, toSite };
+    return {
+      fromSite: fromSite ?? sites[0] ?? defaultScenario.sites[0],
+      toSite: toSite ?? sites[Math.min(1, Math.max(0, sites.length - 1))] ?? defaultScenario.sites[1],
+    };
   },
   getSelectedAnalysis: () => {
     const {
