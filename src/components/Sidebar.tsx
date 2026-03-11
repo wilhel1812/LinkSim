@@ -893,21 +893,6 @@ export function Sidebar() {
           <h2>{t(locale, "terrainData")}</h2>
           <InfoTip text="Terrain data is used directly in path profile and obstruction/loss calculations." />
         </div>
-        {terrainIsStaleForCurrentArea ? (
-          <div className="terrain-alert" role="status">
-            <p>
-              Terrain data is out of date for this simulation area. Missing {missingTerrainTileKeys.length} of{" "}
-              {requiredTerrainTileKeys.length} required tile(s).
-            </p>
-            <button
-              className="inline-action"
-              onClick={() => void recommendAndFetchTerrainForCurrentArea()}
-              type="button"
-            >
-              Fetch Terrain For Current Area
-            </button>
-          </div>
-        ) : null}
         <p>{srtmTiles.length} SRTM tile(s) loaded</p>
         <button
           className="inline-action"

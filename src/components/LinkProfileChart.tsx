@@ -3,6 +3,7 @@ import { scaleLinear } from "d3-scale";
 import type { MouseEvent } from "react";
 import { useMemo } from "react";
 import { t } from "../i18n/locales";
+import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 
 const W = 840;
@@ -32,6 +33,10 @@ export function LinkProfileChart() {
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const setProfileCursorIndex = useAppStore((state) => state.setProfileCursorIndex);
+  const srtmTiles = useAppStore((state) => state.srtmTiles);
+  const recommendAndFetchTerrainForCurrentArea = useAppStore(
+    (state) => state.recommendAndFetchTerrainForCurrentArea,
+  );
   const profileRevision = useAppStore(
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}`,
@@ -40,6 +45,33 @@ export function LinkProfileChart() {
   const selectedLink = links.find((link) => link.id === selectedLinkId);
   const fromSiteName = sites.find((site) => site.id === selectedLink?.fromSiteId)?.name ?? "From";
   const toSiteName = sites.find((site) => site.id === selectedLink?.toSiteId)?.name ?? "To";
+  const terrainBounds = (() => {
+    if (!sites.length) return null;
+    const lats = sites.map((site) => site.position.lat);
+    const lons = sites.map((site) => site.position.lon);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const latPad = 0.15;
+    const lonPad = 0.15;
+    const latSpan = Math.min(5, maxLat - minLat + latPad * 2);
+    const lonSpan = Math.min(5, maxLon - minLon + lonPad * 2);
+    const latCenter = (minLat + maxLat) / 2;
+    const lonCenter = (minLon + maxLon) / 2;
+    return {
+      minLat: latCenter - latSpan / 2,
+      maxLat: latCenter + latSpan / 2,
+      minLon: lonCenter - lonSpan / 2,
+      maxLon: lonCenter + lonSpan / 2,
+    };
+  })();
+  const requiredTerrainTileKeys = terrainBounds
+    ? tilesForBounds(terrainBounds.minLat, terrainBounds.maxLat, terrainBounds.minLon, terrainBounds.maxLon)
+    : [];
+  const loadedTileKeys = new Set(srtmTiles.map((tile) => tile.key));
+  const missingTerrainTileKeys = requiredTerrainTileKeys.filter((key) => !loadedTileKeys.has(key));
+  const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
 
   const geometry = useMemo(() => {
     if (profile.length < 2) {
@@ -127,6 +159,21 @@ export function LinkProfileChart() {
         <h2>{t(locale, "pathProfile")}</h2>
         <p>{t(locale, "profileSubtitle")}</p>
       </header>
+      {terrainIsStaleForCurrentArea ? (
+        <div className="terrain-alert" role="status">
+          <p>
+            Terrain data is out of date for this simulation area. Missing {missingTerrainTileKeys.length} of{" "}
+            {requiredTerrainTileKeys.length} required tile(s).
+          </p>
+          <button
+            className="inline-action"
+            onClick={() => void recommendAndFetchTerrainForCurrentArea()}
+            type="button"
+          >
+            Refresh Terrain Data
+          </button>
+        </div>
+      ) : null}
       <div className="chart-endpoints" aria-live="polite">
         <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
         <span className="chart-endpoint-sep" aria-hidden>
