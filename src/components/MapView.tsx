@@ -41,9 +41,9 @@ const coverageRasterLayer: LayerProps = {
   id: "coverage-overlay-layer",
   type: "raster",
   paint: {
-    "raster-opacity": 0.7,
-    "raster-contrast": 0.06,
-    "raster-saturation": 0.04,
+    "raster-opacity": 0.58,
+    "raster-contrast": 0.03,
+    "raster-saturation": -0.04,
   },
 };
 
@@ -127,12 +127,14 @@ const computeCoverageBounds = (samples: CoverageSampleLite[]): TerrainBounds | n
 
 const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
   const stops: Array<{ v: number; c: [number, number, number] }> = [
-    { v: -125, c: [79, 15, 21] },
-    { v: -110, c: [165, 47, 51] },
-    { v: -95, c: [230, 107, 40] },
-    { v: -82, c: [238, 207, 66] },
-    { v: -70, c: [74, 211, 123] },
-    { v: -60, c: [43, 192, 255] },
+    { v: -125, c: [94, 46, 41] },
+    { v: -112, c: [140, 69, 48] },
+    { v: -101, c: [184, 95, 46] },
+    { v: -92, c: [214, 134, 56] },
+    { v: -84, c: [199, 167, 76] },
+    { v: -76, c: [143, 174, 84] },
+    { v: -68, c: [87, 156, 110] },
+    { v: -60, c: [73, 133, 168] },
   ];
   if (valueDbm <= stops[0].v) return stops[0].c;
   if (valueDbm >= stops[stops.length - 1].v) return stops[stops.length - 1].c;
@@ -292,8 +294,8 @@ const buildCoverageOverlay = (
       } else {
         const adjusted = valueDbm - environmentLossDb;
         const pass = adjusted >= rxTargetDbm;
-        [r, g, b] = pass ? [39, 215, 147] : [225, 80, 95];
-        a = 168;
+        [r, g, b] = pass ? [88, 167, 108] : [193, 94, 84];
+        a = 162;
       }
       const px = (y * width + x) * 4;
       image.data[px] = r;
@@ -351,10 +353,10 @@ const buildSourcePassFailOverlay = (
       );
       const pass = rxDbm - environmentLossDb >= rxTargetDbm;
       const px = (y * width + x) * 4;
-      image.data[px] = pass ? 39 : 225;
-      image.data[px + 1] = pass ? 215 : 80;
-      image.data[px + 2] = pass ? 147 : 95;
-      image.data[px + 3] = 168;
+      image.data[px] = pass ? 88 : 193;
+      image.data[px + 1] = pass ? 167 : 94;
+      image.data[px + 2] = pass ? 108 : 84;
+      image.data[px + 3] = 162;
     }
   }
 
