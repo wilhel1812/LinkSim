@@ -19,6 +19,8 @@ const midpoint = (sites: Site[]): { lat: number; lon: number } => ({
 });
 
 const interpolate = (a: number, b: number, t: number): number => a + (b - a) * t;
+const clamp = (value: number, min: number, max: number): number =>
+  Math.max(min, Math.min(max, value));
 
 const evalRx = (
   sampleLat: number,
@@ -91,6 +93,50 @@ const move = (lat: number, lon: number, distanceKm: number, azimuthDeg: number):
   return { lat: (phi2 * 180) / Math.PI, lon: (lambda2 * 180) / Math.PI };
 };
 
+const computeAspectAwareGrid = (
+  networkSites: Site[],
+  fallbackCenter: { lat: number; lon: number },
+  minSpanKm: number,
+  marginKmPerSide: number,
+  targetSamples: number,
+): { centerLat: number; centerLon: number; latSpanKm: number; lonSpanKm: number; rows: number; cols: number } => {
+  const sites = networkSites.length ? networkSites : [];
+  if (!sites.length) {
+    const side = Math.max(6, Math.round(Math.sqrt(targetSamples)));
+    return {
+      centerLat: fallbackCenter.lat,
+      centerLon: fallbackCenter.lon,
+      latSpanKm: minSpanKm,
+      lonSpanKm: minSpanKm,
+      rows: side,
+      cols: side,
+    };
+  }
+
+  const lats = sites.map((site) => site.position.lat);
+  const lons = sites.map((site) => site.position.lon);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons);
+  const maxLon = Math.max(...lons);
+
+  const centerLat = (minLat + maxLat) / 2;
+  const centerLon = (minLon + maxLon) / 2;
+
+  const latSpanKmRaw = Math.max(0, (maxLat - minLat) * 111.32);
+  const lonScale = Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  const lonSpanKmRaw = Math.max(0, (maxLon - minLon) * 111.32 * lonScale);
+
+  const latSpanKm = Math.max(minSpanKm, latSpanKmRaw + marginKmPerSide * 2);
+  const lonSpanKm = Math.max(minSpanKm, lonSpanKmRaw + marginKmPerSide * 2);
+
+  const aspect = clamp(latSpanKm / Math.max(0.001, lonSpanKm), 0.2, 5);
+  const cols = Math.max(6, Math.round(Math.sqrt(targetSamples / aspect)));
+  const rows = Math.max(6, Math.round(targetSamples / cols));
+
+  return { centerLat, centerLon, latSpanKm, lonSpanKm, rows, cols };
+};
+
 export const buildCoverage = (
   mode: CoverageMode,
   network: Network,
@@ -125,17 +171,20 @@ export const buildCoverage = (
       });
     }
   } else {
-    const gridSize = mode === "Cartesian" ? 42 : 24;
-    const spanKm = mode === "Cartesian" ? 24 : 18;
-    const halfLat = spanKm / 111.32;
-    const halfLon = spanKm / (111.32 * Math.cos((center.lat * Math.PI) / 180));
+    const baseGridSize = mode === "Cartesian" ? 42 : 24;
+    const minSpanKm = mode === "Cartesian" ? 24 : 18;
+    const marginKmPerSide = mode === "Cartesian" ? 4 : 3;
+    const targetSamples = baseGridSize * baseGridSize;
+    const grid = computeAspectAwareGrid(networkSites, center, minSpanKm, marginKmPerSide, targetSamples);
+    const halfLat = (grid.latSpanKm / 2) / 111.32;
+    const halfLon = (grid.lonSpanKm / 2) / (111.32 * Math.max(0.1, Math.cos((grid.centerLat * Math.PI) / 180)));
 
-    for (let y = 0; y < gridSize; y += 1) {
-      const ty = y / (gridSize - 1);
-      const lat = center.lat - halfLat + ty * halfLat * 2;
-      for (let x = 0; x < gridSize; x += 1) {
-        const tx = x / (gridSize - 1);
-        const lon = center.lon - halfLon + tx * halfLon * 2;
+    for (let y = 0; y < grid.rows; y += 1) {
+      const ty = grid.rows <= 1 ? 0 : y / (grid.rows - 1);
+      const lat = grid.centerLat - halfLat + ty * halfLat * 2;
+      for (let x = 0; x < grid.cols; x += 1) {
+        const tx = grid.cols <= 1 ? 0 : x / (grid.cols - 1);
+        const lon = grid.centerLon - halfLon + tx * halfLon * 2;
         samples.push({ lat, lon });
       }
     }
