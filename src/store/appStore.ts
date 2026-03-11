@@ -26,6 +26,37 @@ import type {
   SrtmTile,
 } from "../types/radio";
 
+type SiteLibraryEntry = {
+  id: string;
+  name: string;
+  position: { lat: number; lon: number };
+  groundElevationM: number;
+  antennaHeightM: number;
+  createdAt: string;
+};
+
+type SimulationPreset = {
+  id: string;
+  name: string;
+  updatedAt: string;
+  snapshot: {
+    sites: Site[];
+    links: Link[];
+    systems: RadioSystem[];
+    networks: Network[];
+    selectedSiteId: string;
+    selectedLinkId: string;
+    selectedNetworkId: string;
+    selectedCoverageMode: CoverageMode;
+    propagationModel: PropagationModel;
+    selectedFrequencyPresetId: string;
+    rxSensitivityTargetDbm: number;
+    environmentLossDb: number;
+    terrainDataset: TerrainDataset;
+    mapViewport: MapViewport;
+  };
+};
+
 type AppState = {
   sites: Site[];
   links: Link[];
@@ -49,6 +80,8 @@ type AppState = {
   terrainFetchStatus: string;
   terrainRecommendation: string;
   hasOnlineElevationSync: boolean;
+  siteLibrary: SiteLibraryEntry[];
+  simulationPresets: SimulationPreset[];
   endpointPickTarget: "from" | "to" | null;
   scenarioOptions: { id: string; name: string }[];
   setLocale: (locale: LocaleCode) => void;
@@ -62,6 +95,13 @@ type AppState = {
   setRxSensitivityTargetDbm: (value: number) => void;
   setEnvironmentLossDb: (value: number) => void;
   setTerrainDataset: (dataset: TerrainDataset) => void;
+  addSiteByCoordinates: (name: string, lat: number, lon: number) => void;
+  saveSelectedSiteToLibrary: () => void;
+  insertSiteFromLibrary: (entryId: string) => void;
+  deleteSiteLibraryEntry: (entryId: string) => void;
+  saveCurrentSimulationPreset: (name: string) => void;
+  loadSimulationPreset: (presetId: string) => void;
+  deleteSimulationPreset: (presetId: string) => void;
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
   setPropagationModel: (model: PropagationModel) => void;
@@ -104,6 +144,26 @@ const areaBoundsForSites = (sites: Site[]) => {
   };
 };
 
+const SITE_LIBRARY_KEY = "rmw-site-library-v1";
+const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
+
+const readStorage = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeStorage = (key: string, value: unknown) => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
+
+const makeId = (prefix: string): string =>
+  `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 export const useAppStore = create<AppState>((set, get) => ({
   sites: defaultScenario.sites,
   links: defaultScenario.links,
@@ -127,6 +187,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   terrainFetchStatus: "",
   terrainRecommendation: "",
   hasOnlineElevationSync: false,
+  siteLibrary: readStorage<SiteLibraryEntry[]>(SITE_LIBRARY_KEY, []),
+  simulationPresets: readStorage<SimulationPreset[]>(SIM_PRESETS_KEY, []),
   endpointPickTarget: null,
   scenarioOptions: DEMO_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   setLocale: (locale) => set({ locale }),
@@ -169,6 +231,126 @@ export const useAppStore = create<AppState>((set, get) => ({
   setRxSensitivityTargetDbm: (value) => set({ rxSensitivityTargetDbm: value }),
   setEnvironmentLossDb: (value) => set({ environmentLossDb: Math.max(0, value) }),
   setTerrainDataset: (dataset) => set({ terrainDataset: dataset }),
+  addSiteByCoordinates: (name, lat, lon) => {
+    const label = name.trim() || `Site ${get().sites.length + 1}`;
+    const id = makeId("site");
+    const newSite: Site = {
+      id,
+      name: label,
+      position: { lat, lon },
+      groundElevationM: 0,
+      antennaHeightM: 2,
+    };
+    set((state) => ({
+      sites: [...state.sites, newSite],
+      selectedSiteId: id,
+    }));
+    get().recomputeCoverage();
+  },
+  saveSelectedSiteToLibrary: () => {
+    const site = get().getSelectedSite();
+    const entry: SiteLibraryEntry = {
+      id: makeId("libsite"),
+      name: site.name,
+      position: site.position,
+      groundElevationM: site.groundElevationM,
+      antennaHeightM: site.antennaHeightM,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => {
+      const next = [entry, ...state.siteLibrary];
+      writeStorage(SITE_LIBRARY_KEY, next);
+      return { siteLibrary: next };
+    });
+  },
+  insertSiteFromLibrary: (entryId) => {
+    const entry = get().siteLibrary.find((candidate) => candidate.id === entryId);
+    if (!entry) return;
+    const siteId = makeId("site");
+    const newSite: Site = {
+      id: siteId,
+      name: entry.name,
+      position: entry.position,
+      groundElevationM: entry.groundElevationM,
+      antennaHeightM: entry.antennaHeightM,
+    };
+    set((state) => ({
+      sites: [...state.sites, newSite],
+      selectedSiteId: siteId,
+    }));
+    get().recomputeCoverage();
+  },
+  deleteSiteLibraryEntry: (entryId) => {
+    set((state) => {
+      const next = state.siteLibrary.filter((entry) => entry.id !== entryId);
+      writeStorage(SITE_LIBRARY_KEY, next);
+      return { siteLibrary: next };
+    });
+  },
+  saveCurrentSimulationPreset: (name) => {
+    const presetName = name.trim();
+    if (!presetName) return;
+    const state = get();
+    const snapshot: SimulationPreset["snapshot"] = {
+      sites: state.sites,
+      links: state.links,
+      systems: state.systems,
+      networks: state.networks,
+      selectedSiteId: state.selectedSiteId,
+      selectedLinkId: state.selectedLinkId,
+      selectedNetworkId: state.selectedNetworkId,
+      selectedCoverageMode: state.selectedCoverageMode,
+      propagationModel: state.propagationModel,
+      selectedFrequencyPresetId: state.selectedFrequencyPresetId,
+      rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
+      environmentLossDb: state.environmentLossDb,
+      terrainDataset: state.terrainDataset,
+      mapViewport: state.mapViewport,
+    };
+
+    set((current) => {
+      const existing = current.simulationPresets.find((preset) => preset.name === presetName);
+      const nextPreset: SimulationPreset = {
+        id: existing?.id ?? makeId("sim"),
+        name: presetName,
+        updatedAt: new Date().toISOString(),
+        snapshot,
+      };
+      const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
+    });
+  },
+  loadSimulationPreset: (presetId) => {
+    const preset = get().simulationPresets.find((candidate) => candidate.id === presetId);
+    if (!preset) return;
+    const snap = preset.snapshot;
+    set({
+      sites: snap.sites,
+      links: snap.links,
+      systems: snap.systems,
+      networks: snap.networks,
+      selectedSiteId: snap.selectedSiteId,
+      selectedLinkId: snap.selectedLinkId,
+      selectedNetworkId: snap.selectedNetworkId,
+      selectedCoverageMode: snap.selectedCoverageMode,
+      propagationModel: snap.propagationModel,
+      selectedFrequencyPresetId: snap.selectedFrequencyPresetId,
+      rxSensitivityTargetDbm: snap.rxSensitivityTargetDbm,
+      environmentLossDb: snap.environmentLossDb,
+      terrainDataset: snap.terrainDataset,
+      mapViewport: snap.mapViewport,
+      terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
+    });
+    get().recomputeCoverage();
+  },
+  deleteSimulationPreset: (presetId) => {
+    set((state) => {
+      const next = state.simulationPresets.filter((preset) => preset.id !== presetId);
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
+    });
+  },
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
   applyFrequencyPresetToSelectedNetwork: () => {
     const { selectedFrequencyPresetId, selectedNetworkId } = get();

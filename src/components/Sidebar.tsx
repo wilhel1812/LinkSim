@@ -1,7 +1,9 @@
 import type { ChangeEvent } from "react";
+import { useState } from "react";
 import clsx from "clsx";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
+import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
 import { analyzeLink } from "../lib/propagation";
@@ -56,6 +58,8 @@ export function Sidebar() {
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
+  const siteLibrary = useAppStore((state) => state.siteLibrary);
+  const simulationPresets = useAppStore((state) => state.simulationPresets);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
@@ -90,6 +94,13 @@ export function Sidebar() {
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
   const setTerrainDataset = useAppStore((state) => state.setTerrainDataset);
+  const addSiteByCoordinates = useAppStore((state) => state.addSiteByCoordinates);
+  const saveSelectedSiteToLibrary = useAppStore((state) => state.saveSelectedSiteToLibrary);
+  const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
+  const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
+  const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
+  const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
+  const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const recommendTerrainDatasetForCurrentArea = useAppStore(
     (state) => state.recommendTerrainDatasetForCurrentArea,
   );
@@ -146,8 +157,20 @@ export function Sidebar() {
     { label: "Freq +10%", rxDbm: runWhatIf(0, 1.1, 0) },
   ].map((row) => ({
     ...row,
-      marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
+    marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
   }));
+  const [newSiteName, setNewSiteName] = useState("");
+  const [newSiteLat, setNewSiteLat] = useState(sourceSite?.position.lat ?? 60.0);
+  const [newSiteLon, setNewSiteLon] = useState(sourceSite?.position.lon ?? 10.0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
+  const [searchStatus, setSearchStatus] = useState("");
+  const [newPresetName, setNewPresetName] = useState("");
+  const [selectedPresetId, setSelectedPresetId] = useState(simulationPresets[0]?.id ?? "");
+  const effectiveSelectedPresetId =
+    selectedPresetId && simulationPresets.some((preset) => preset.id === selectedPresetId)
+      ? selectedPresetId
+      : simulationPresets[0]?.id ?? "";
 
   const applyRfPreset = (presetId: string) => {
     const preset = findMeshtasticPreset(presetId);
@@ -219,6 +242,24 @@ export function Sidebar() {
     downloadJson(`radio-mobile-web-manifest-${stamp}.json`, manifest);
   };
 
+  const addSiteNow = () => {
+    if (!Number.isFinite(newSiteLat) || !Number.isFinite(newSiteLon)) return;
+    addSiteByCoordinates(newSiteName, newSiteLat, newSiteLon);
+    setNewSiteName("");
+  };
+
+  const runSearch = async () => {
+    setSearchStatus("Searching...");
+    try {
+      const results = await searchLocations(searchQuery);
+      setSearchResults(results);
+      setSearchStatus(results.length ? `Found ${results.length} result(s)` : "No results");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSearchStatus(`Search failed: ${message}`);
+    }
+  };
+
   return (
     <aside className="sidebar-panel">
       <header>
@@ -242,7 +283,7 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Scenario</h2>
+        <h2>Templates</h2>
         <select
           className="locale-select"
           onChange={(event) => selectScenario(event.target.value)}
@@ -254,6 +295,153 @@ export function Sidebar() {
             </option>
           ))}
         </select>
+      </section>
+
+      <section className="panel-section">
+        <h2>Site Builder</h2>
+        <label className="field-grid">
+          <span>Name</span>
+          <input
+            onChange={(event) => setNewSiteName(event.target.value)}
+            type="text"
+            value={newSiteName}
+          />
+        </label>
+        <label className="field-grid">
+          <span>Lat</span>
+          <input
+            onChange={(event) => setNewSiteLat(parseNumber(event.target.value))}
+            step="0.000001"
+            type="number"
+            value={newSiteLat}
+          />
+        </label>
+        <label className="field-grid">
+          <span>Lon</span>
+          <input
+            onChange={(event) => setNewSiteLon(parseNumber(event.target.value))}
+            step="0.000001"
+            type="number"
+            value={newSiteLon}
+          />
+        </label>
+        <button className="inline-action" onClick={addSiteNow} type="button">
+          Add Site
+        </button>
+        <button className="inline-action" onClick={() => saveSelectedSiteToLibrary()} type="button">
+          Save Selected Site To Library
+        </button>
+        <label className="field-grid">
+          <span>Map Search</span>
+          <input
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Address or place"
+            type="text"
+            value={searchQuery}
+          />
+        </label>
+        <button className="inline-action" onClick={() => void runSearch()} type="button">
+          Search
+        </button>
+        {searchStatus ? <p className="field-help">{searchStatus}</p> : null}
+        {searchResults.length ? (
+          <div className="asset-list">
+            {searchResults.map((result) => (
+              <button
+                className="inline-action"
+                key={result.id}
+                onClick={() => {
+                  setNewSiteName(result.label.split(",")[0] ?? "New Site");
+                  setNewSiteLat(result.lat);
+                  setNewSiteLon(result.lon);
+                  addSiteByCoordinates(result.label.split(",")[0] ?? "New Site", result.lat, result.lon);
+                }}
+                type="button"
+              >
+                Add: {result.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {siteLibrary.length ? (
+          <div className="asset-list">
+            {siteLibrary.map((entry) => (
+              <div className="library-row" key={entry.id}>
+                <span className="library-row-label">
+                  {entry.name} ({entry.position.lat.toFixed(4)}, {entry.position.lon.toFixed(4)})
+                </span>
+                <div className="library-row-actions">
+                  <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                    Insert
+                  </button>
+                  <button
+                    className="inline-action"
+                    onClick={() => deleteSiteLibraryEntry(entry.id)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="panel-section">
+        <h2>Simulation Presets</h2>
+        <label className="field-grid">
+          <span>Preset name</span>
+          <input
+            onChange={(event) => setNewPresetName(event.target.value)}
+            placeholder="My simulation"
+            type="text"
+            value={newPresetName}
+          />
+        </label>
+        <button
+          className="inline-action"
+          onClick={() => {
+            saveCurrentSimulationPreset(newPresetName);
+            setNewPresetName("");
+          }}
+          type="button"
+        >
+          Save Current Simulation
+        </button>
+        <label className="field-grid">
+          <span>Saved presets</span>
+          <select
+            className="locale-select"
+            onChange={(event) => setSelectedPresetId(event.target.value)}
+            value={effectiveSelectedPresetId}
+          >
+            <option value="">Select preset...</option>
+            {simulationPresets.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.name} ({new Date(preset.updatedAt).toLocaleString()})
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="chip-group">
+          <button
+            className="inline-action"
+            disabled={!effectiveSelectedPresetId}
+            onClick={() => effectiveSelectedPresetId && loadSimulationPreset(effectiveSelectedPresetId)}
+            type="button"
+          >
+            Load Preset
+          </button>
+          <button
+            className="inline-action"
+            disabled={!effectiveSelectedPresetId}
+            onClick={() => effectiveSelectedPresetId && deleteSimulationPreset(effectiveSelectedPresetId)}
+            type="button"
+          >
+            Delete Preset
+          </button>
+        </div>
       </section>
 
       <section className="panel-section">

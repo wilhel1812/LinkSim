@@ -637,6 +637,26 @@ input {
   text-decoration: underline;
 }
 
+.library-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.library-row-label {
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.library-row-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .margin-status {
   border: 1px solid var(--border);
   border-radius: 8px;
