@@ -623,14 +623,14 @@ export function Sidebar() {
       <section className="panel-section">
         <h2>{t(locale, "networkCoverageWorkspace")}</h2>
         <p className="field-help">
-          Choose sites and a From/To path, then tune channel settings for coverage and link analysis.
+          Choose simulation sites and a From/To path, then tune channel settings for coverage and link analysis.
         </p>
       </section>
 
       <section className="panel-section">
         <div className="section-heading">
-          <h2>Simulations</h2>
-          <InfoTip text="Built-in scenarios are fixed. Saved simulations are your editable library snapshots of full setup/state." />
+          <h2>Simulation Library</h2>
+          <InfoTip text="Built-in simulations are fixed. Saved simulations are your editable full-simulation states." />
         </div>
         <p className="field-help">
           Active: <strong>{activeSimulationLabel}</strong>
@@ -641,14 +641,14 @@ export function Sidebar() {
             onClick={() => setShowSimulationLibraryManager(true)}
             type="button"
           >
-            Open Simulation Library ({simulationPresets.length})
+            Open Simulation Library
           </button>
           <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-            Quick Save Snapshot
+            Save Current Simulation
           </button>
         </div>
         <label className="field-grid">
-          <span>Snapshot name</span>
+          <span>Simulation name</span>
           <input
             onChange={(event) => setNewPresetName(event.target.value)}
             placeholder="My simulation"
@@ -659,7 +659,7 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Setup Status</h2>
+        <h2>Simulation Status</h2>
         <div className="asset-list">
           <p className="field-help">{hasTwoSites ? `Sites: ${sites.length} configured` : "Sites: add at least 2"}</p>
           <p className="field-help">
@@ -683,12 +683,12 @@ export function Sidebar() {
       <section className="panel-section">
         <div className="section-heading">
           <h2>Sites</h2>
-          <InfoTip text="Site add/edit is managed in Site Library Manager. Here you only include or remove sites in this simulation." />
+          <InfoTip text="Site add/edit is managed in Site Library. Here you only include or remove sites in this simulation." />
         </div>
-        <p className="field-help">Use Site Library Manager to add/edit sites, then add selected sites to this project.</p>
+        <p className="field-help">Use Site Library to add/edit sites, then add selected sites to this simulation.</p>
         <div className="chip-group">
           <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
-            Open Site Library Manager ({siteLibrary.length})
+            Open Site Library
           </button>
           {siteLibrary.length ? (
             <button className="inline-action" onClick={() => insertSiteFromLibrary(siteLibrary[0].id)} type="button">
@@ -721,7 +721,10 @@ export function Sidebar() {
             Active channel profile: <strong>{selectedNetwork.name}</strong>
           </p>
         )}
-        <p className="field-help">Coverage mode controls map sampling strategy.</p>
+        <div className="section-heading">
+          <p className="field-help">Coverage mode controls map sampling strategy.</p>
+          <InfoTip text="BestSite: computes strongest coverage from any site at each sample point. Polar: radial sampling around the selected From site. Cartesian: regular grid sampling over the current simulation area. Route: samples along the selected path corridor." />
+        </div>
         <div className="chip-group">
           {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
             <button
@@ -1003,25 +1006,23 @@ export function Sidebar() {
           onClick={() => deleteSite(selectedSite.id)}
           type="button"
         >
-          Remove Selected From Project
+          Remove Selected From Simulation
         </button>
       </section>
 
       <section className="panel-section">
-        <div className="section-heading">
-          <h2>{t(locale, "terrainData")}</h2>
-          <InfoTip text="Terrain data is used directly in path profile and obstruction/loss calculations." />
-        </div>
-        <p>{srtmTiles.length} SRTM tile(s) loaded</p>
-        <button
-          className="inline-action"
-          onClick={() => void recommendAndFetchTerrainForCurrentArea()}
-          type="button"
-        >
-          Auto Fetch Terrain Data
-        </button>
         <details className="compact-details">
-          <summary>Advanced Terrain Options</summary>
+          <summary>Terrain Data (Manual Controls)</summary>
+          <p className="field-help">
+            {srtmTiles.length} SRTM tile(s) loaded. Terrain is used in profile and obstruction/loss calculations.
+          </p>
+          <button
+            className="inline-action"
+            onClick={() => void recommendAndFetchTerrainForCurrentArea()}
+            type="button"
+          >
+            Auto Fetch Terrain Data
+          </button>
           <label className="field-grid">
             <span>ve2dbe source</span>
             <select
@@ -1110,13 +1111,16 @@ export function Sidebar() {
             value={environmentLossDb}
           />
         </label>
-        <button
-          className="inline-action"
-          onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
-          type="button"
-        >
-          Use LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
-        </button>
+        <div className="section-heading">
+          <button
+            className="inline-action"
+            onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
+            type="button"
+          >
+            Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
+          </button>
+          <InfoTip text="Sets RX target to a computed LoRa sensitivity estimate based on current bandwidth and spread factor (noise-floor + noise-figure + SF SNR limit)." />
+        </div>
         <div className={clsx("margin-status", linkMarginDb >= 0 ? "is-pass" : "is-fail")}>
           Link margin: {linkMarginDb >= 0 ? "+" : ""}
           {linkMarginDb.toFixed(1)} dB ({linkMarginDb >= 0 ? "PASS" : "FAIL"})
@@ -1167,20 +1171,20 @@ export function Sidebar() {
 
       {showSimulationLibraryManager ? (
         <div
-          aria-label="Simulation Library Manager"
+          aria-label="Simulation Library"
           aria-modal="true"
           className="library-manager-overlay"
           role="dialog"
         >
           <div className="library-manager-card">
             <div className="library-manager-header">
-              <h2>Simulation Library Manager</h2>
+              <h2>Simulation Library</h2>
               <button className="inline-action" onClick={() => setShowSimulationLibraryManager(false)} type="button">
                 Close
               </button>
             </div>
             <p className="field-help">
-              Manage built-in presets and saved simulation snapshots here. Site/node editing still happens in the main
+              Manage built-in presets and saved simulations here. Site/node editing still happens in the main
               workspace.
             </p>
             <label className="field-grid">
@@ -1193,7 +1197,7 @@ export function Sidebar() {
               />
             </label>
             <label className="field-grid">
-              <span>Save current as</span>
+              <span>Save current simulation as</span>
               <input
                 onChange={(event) => setNewPresetName(event.target.value)}
                 placeholder="My simulation"
@@ -1203,7 +1207,7 @@ export function Sidebar() {
             </label>
             <div className="chip-group">
               <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-                Add Current Snapshot
+                Save Current Simulation
               </button>
             </div>
             <div className="library-editor">
@@ -1298,16 +1302,16 @@ export function Sidebar() {
         </div>
       ) : null}
       {showSiteLibraryManager ? (
-        <div aria-label="Site Library Manager" aria-modal="true" className="library-manager-overlay" role="dialog">
+        <div aria-label="Site Library" aria-modal="true" className="library-manager-overlay" role="dialog">
           <div className="library-manager-card">
             <div className="library-manager-header">
-              <h2>Site Library Manager</h2>
+              <h2>Site Library</h2>
               <button className="inline-action" onClick={() => setShowSiteLibraryManager(false)} type="button">
                 Close
               </button>
             </div>
             <p className="field-help">
-              Built for large libraries. Select one or more entries to add into this simulation project.
+              Built for large libraries. Select one or more entries to add into this simulation.
             </p>
             <label className="field-grid">
               <span>Search</span>
@@ -1345,7 +1349,7 @@ export function Sidebar() {
                 }}
                 type="button"
               >
-                Add Selected To Project ({selectedLibraryCount})
+                Add Selected To Simulation ({selectedLibraryCount})
               </button>
               <button
                 className="inline-action"
