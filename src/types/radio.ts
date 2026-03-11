@@ -13,6 +13,7 @@ export type Site = {
 
 export type Link = {
   id: string;
+  name?: string;
   fromSiteId: string;
   toSiteId: string;
   frequencyMHz: number;

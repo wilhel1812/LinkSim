@@ -98,6 +98,9 @@ export function Sidebar() {
   const saveSelectedSiteToLibrary = useAppStore((state) => state.saveSelectedSiteToLibrary);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
+  const deleteSite = useAppStore((state) => state.deleteSite);
+  const createLink = useAppStore((state) => state.createLink);
+  const deleteLink = useAppStore((state) => state.deleteLink);
   const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
@@ -118,6 +121,7 @@ export function Sidebar() {
   const selectedLink = getSelectedLink();
   const selectedSite = getSelectedSite();
   const selectedNetwork = getSelectedNetwork();
+  const effectiveNetworkFrequencyMHz = selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz;
   const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const toSite = sites.find((site) => site.id === selectedLink.toSiteId);
   const fromSiteChoices = sites.filter((site) => site.id !== selectedLink.toSiteId);
@@ -139,7 +143,11 @@ export function Sidebar() {
   ): number | null => {
     if (!sourceSite || !destinationSite) return null;
     const alt = analyzeLink(
-      { ...selectedLink, txPowerDbm: selectedLink.txPowerDbm + txPowerDeltaDbm, frequencyMHz: selectedLink.frequencyMHz * freqScale },
+      {
+        ...selectedLink,
+        txPowerDbm: selectedLink.txPowerDbm + txPowerDeltaDbm,
+        frequencyMHz: effectiveNetworkFrequencyMHz * freqScale,
+      },
       { ...sourceSite, antennaHeightM: sourceSite.antennaHeightM + antennaDeltaM },
       { ...destinationSite, antennaHeightM: destinationSite.antennaHeightM + antennaDeltaM },
       model,
@@ -166,11 +174,25 @@ export function Sidebar() {
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
   const [searchStatus, setSearchStatus] = useState("");
   const [newPresetName, setNewPresetName] = useState("");
-  const [selectedPresetId, setSelectedPresetId] = useState(simulationPresets[0]?.id ?? "");
-  const effectiveSelectedPresetId =
-    selectedPresetId && simulationPresets.some((preset) => preset.id === selectedPresetId)
-      ? selectedPresetId
-      : simulationPresets[0]?.id ?? "";
+  const [newLinkName, setNewLinkName] = useState("");
+  const [newLinkFromId, setNewLinkFromId] = useState(sites[0]?.id ?? "");
+  const [newLinkToId, setNewLinkToId] = useState(sites[1]?.id ?? "");
+  const simulationOptions = [
+    ...scenarioOptions.map((scenario) => ({
+      id: `builtin:${scenario.id}`,
+      name: `${scenario.name} (built-in)`,
+    })),
+    ...simulationPresets.map((preset) => ({
+      id: `saved:${preset.id}`,
+      name: `${preset.name} (saved)`,
+    })),
+  ];
+  const [selectedSimulationRef, setSelectedSimulationRef] = useState<string>(
+    `builtin:${selectedScenarioId}`,
+  );
+  const effectiveSelectedPresetId = selectedSimulationRef.startsWith("saved:")
+    ? selectedSimulationRef.replace("saved:", "")
+    : simulationPresets[0]?.id ?? "";
 
   const applyRfPreset = (presetId: string) => {
     const preset = findMeshtasticPreset(presetId);
@@ -260,6 +282,23 @@ export function Sidebar() {
     }
   };
 
+  const loadSimulationRef = (ref: string) => {
+    setSelectedSimulationRef(ref);
+    if (ref.startsWith("builtin:")) {
+      selectScenario(ref.replace("builtin:", ""));
+      return;
+    }
+    if (ref.startsWith("saved:")) {
+      loadSimulationPreset(ref.replace("saved:", ""));
+    }
+  };
+
+  const createNewLink = () => {
+    if (!newLinkFromId || !newLinkToId || newLinkFromId === newLinkToId) return;
+    createLink(newLinkFromId, newLinkToId, newLinkName);
+    setNewLinkName("");
+  };
+
   return (
     <aside className="sidebar-panel">
       <header>
@@ -283,18 +322,47 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Templates</h2>
+        <h2>Simulations</h2>
         <select
           className="locale-select"
-          onChange={(event) => selectScenario(event.target.value)}
-          value={selectedScenarioId}
+          onChange={(event) => loadSimulationRef(event.target.value)}
+          value={selectedSimulationRef}
         >
-          {scenarioOptions.map((scenario) => (
-            <option key={scenario.id} value={scenario.id}>
-              {scenario.name}
+          {simulationOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
             </option>
           ))}
         </select>
+        <label className="field-grid">
+          <span>Save as</span>
+          <input
+            onChange={(event) => setNewPresetName(event.target.value)}
+            placeholder="My simulation"
+            type="text"
+            value={newPresetName}
+          />
+        </label>
+        <div className="chip-group">
+          <button
+            className="inline-action"
+            onClick={() => {
+              saveCurrentSimulationPreset(newPresetName);
+              setNewPresetName("");
+            }}
+            type="button"
+          >
+            Save Simulation
+          </button>
+          <button
+            className="inline-action"
+            disabled={!effectiveSelectedPresetId}
+            onClick={() => effectiveSelectedPresetId && deleteSimulationPreset(effectiveSelectedPresetId)}
+            type="button"
+          >
+            Delete Saved
+          </button>
+        </div>
       </section>
 
       <section className="panel-section">
@@ -365,6 +433,7 @@ export function Sidebar() {
         ) : null}
         {siteLibrary.length ? (
           <div className="asset-list">
+            <p className="field-help">Site Library</p>
             {siteLibrary.map((entry) => (
               <div className="library-row" key={entry.id}>
                 <span className="library-row-label">
@@ -389,62 +458,6 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Simulation Presets</h2>
-        <label className="field-grid">
-          <span>Preset name</span>
-          <input
-            onChange={(event) => setNewPresetName(event.target.value)}
-            placeholder="My simulation"
-            type="text"
-            value={newPresetName}
-          />
-        </label>
-        <button
-          className="inline-action"
-          onClick={() => {
-            saveCurrentSimulationPreset(newPresetName);
-            setNewPresetName("");
-          }}
-          type="button"
-        >
-          Save Current Simulation
-        </button>
-        <label className="field-grid">
-          <span>Saved presets</span>
-          <select
-            className="locale-select"
-            onChange={(event) => setSelectedPresetId(event.target.value)}
-            value={effectiveSelectedPresetId}
-          >
-            <option value="">Select preset...</option>
-            {simulationPresets.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.name} ({new Date(preset.updatedAt).toLocaleString()})
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="chip-group">
-          <button
-            className="inline-action"
-            disabled={!effectiveSelectedPresetId}
-            onClick={() => effectiveSelectedPresetId && loadSimulationPreset(effectiveSelectedPresetId)}
-            type="button"
-          >
-            Load Preset
-          </button>
-          <button
-            className="inline-action"
-            disabled={!effectiveSelectedPresetId}
-            onClick={() => effectiveSelectedPresetId && deleteSimulationPreset(effectiveSelectedPresetId)}
-            type="button"
-          >
-            Delete Preset
-          </button>
-        </div>
-      </section>
-
-      <section className="panel-section">
         <h2>{t(locale, "model")}</h2>
         <div className="chip-group">
           {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
@@ -461,18 +474,27 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Network</h2>
-        <select
-          className="locale-select"
-          onChange={(event) => setSelectedNetworkId(event.target.value)}
-          value={selectedNetworkId}
-        >
-          {networks.map((network) => (
-            <option key={network.id} value={network.id}>
-              {network.name} ({network.frequencyMHz} MHz)
-            </option>
-          ))}
-        </select>
+        <h2>Channel / Coverage</h2>
+        {networks.length > 1 ? (
+          <select
+            className="locale-select"
+            onChange={(event) => setSelectedNetworkId(event.target.value)}
+            value={selectedNetworkId}
+          >
+            {networks.map((network) => (
+              <option key={network.id} value={network.id}>
+                {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="field-help">
+            Active channel profile: <strong>{selectedNetwork.name}</strong>
+          </p>
+        )}
+        <p className="field-help">
+          Network is the active channel profile used for coverage + link calculations.
+        </p>
         <div className="chip-group">
           {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
             <button
@@ -514,10 +536,73 @@ export function Sidebar() {
               onClick={() => setSelectedLinkId(link.id)}
               type="button"
             >
-              <span className="link-title">{link.id.toUpperCase()}</span>
-              <span className="link-subtitle">{link.frequencyMHz} MHz</span>
+              <span className="link-title">{(link.name || link.id).toUpperCase()}</span>
+              <span className="link-subtitle">{effectiveNetworkFrequencyMHz.toFixed(3)} MHz (from channel)</span>
             </button>
           ))}
+        </div>
+        <label className="field-grid">
+          <span>New link name</span>
+          <input
+            onChange={(event) => setNewLinkName(event.target.value)}
+            placeholder="Backhaul A"
+            type="text"
+            value={newLinkName}
+          />
+        </label>
+        <label className="field-grid">
+          <span>New from</span>
+          <select
+            className="locale-select"
+            onChange={(event) => {
+              setNewLinkFromId(event.target.value);
+              if (event.target.value === newLinkToId) {
+                const fallback = sites.find((site) => site.id !== event.target.value)?.id ?? "";
+                setNewLinkToId(fallback);
+              }
+            }}
+            value={newLinkFromId}
+          >
+            {sites.map((site) => (
+              <option key={`new-from-${site.id}`} value={site.id}>
+                {site.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-grid">
+          <span>New to</span>
+          <select
+            className="locale-select"
+            onChange={(event) => setNewLinkToId(event.target.value)}
+            value={newLinkToId}
+          >
+            {sites
+              .filter((site) => site.id !== newLinkFromId)
+              .map((site) => (
+                <option key={`new-to-${site.id}`} value={site.id}>
+                  {site.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <div className="chip-group">
+          <button
+            className="inline-action"
+            disabled={!newLinkFromId || !newLinkToId || newLinkFromId === newLinkToId}
+            onClick={createNewLink}
+            type="button"
+          >
+            Create Link
+          </button>
+          <button
+            className="inline-action"
+            disabled={links.length <= 1}
+            onClick={() => deleteLink(selectedLink.id)}
+            type="button"
+          >
+            Delete Selected Link
+          </button>
         </div>
 
         <div className="endpoint-summary" aria-live="polite">
@@ -579,17 +664,16 @@ export function Sidebar() {
           </select>
         </label>
         {!canEditEndpoints ? <p className="field-help">Add at least two sites to define a link path.</p> : null}
-
         <label className="field-grid">
-          <span>Frequency (MHz)</span>
+          <span>Link name</span>
           <input
-            onChange={(event) =>
-              updateLink(selectedLink.id, { frequencyMHz: parseNumber(event.target.value) })
-            }
-            type="number"
-            value={selectedLink.frequencyMHz}
+            onChange={(event) => updateLink(selectedLink.id, { name: event.target.value })}
+            type="text"
+            value={selectedLink.name ?? ""}
           />
         </label>
+
+        <p className="field-help">Frequency is controlled in Channel / Coverage and shared by all links.</p>
 
         <label className="field-grid">
           <span>Tx power (dBm)</span>
@@ -664,6 +748,14 @@ export function Sidebar() {
             </button>
           ))}
         </div>
+        <button
+          className="inline-action"
+          disabled={sites.length <= 1}
+          onClick={() => deleteSite(selectedSite.id)}
+          type="button"
+        >
+          Delete Selected Site
+        </button>
 
         <label className="field-grid">
           <span>Latitude</span>

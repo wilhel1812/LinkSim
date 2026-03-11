@@ -96,6 +96,9 @@ type AppState = {
   setEnvironmentLossDb: (value: number) => void;
   setTerrainDataset: (dataset: TerrainDataset) => void;
   addSiteByCoordinates: (name: string, lat: number, lon: number) => void;
+  deleteSite: (siteId: string) => void;
+  createLink: (fromSiteId: string, toSiteId: string, name?: string) => void;
+  deleteLink: (linkId: string) => void;
   saveSelectedSiteToLibrary: () => void;
   insertSiteFromLibrary: (entryId: string) => void;
   deleteSiteLibraryEntry: (entryId: string) => void;
@@ -245,6 +248,85 @@ export const useAppStore = create<AppState>((set, get) => ({
       sites: [...state.sites, newSite],
       selectedSiteId: id,
     }));
+    get().recomputeCoverage();
+  },
+  deleteSite: (siteId) => {
+    set((state) => {
+      const remainingSites = state.sites.filter((site) => site.id !== siteId);
+      if (!remainingSites.length) return state;
+
+      let remainingLinks = state.links.filter(
+        (link) => link.fromSiteId !== siteId && link.toSiteId !== siteId,
+      );
+      if (!remainingLinks.length && remainingSites.length >= 2) {
+        const base = state.links[0];
+        const selectedNetwork = state.networks.find((network) => network.id === state.selectedNetworkId);
+        const inheritedFrequencyMHz =
+          selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? base?.frequencyMHz ?? 869.618;
+        remainingLinks = [
+          {
+            id: makeId("lnk"),
+            name: "Auto Link",
+            fromSiteId: remainingSites[0].id,
+            toSiteId: remainingSites[1].id,
+            frequencyMHz: inheritedFrequencyMHz,
+            txPowerDbm: base?.txPowerDbm ?? 22,
+            txGainDbi: base?.txGainDbi ?? 2,
+            rxGainDbi: base?.rxGainDbi ?? 2,
+            cableLossDb: base?.cableLossDb ?? 1,
+          },
+        ];
+      }
+      const safeLinkId = remainingLinks[0]?.id ?? "";
+      const safeSiteId =
+        state.selectedSiteId === siteId ? remainingSites[0].id : state.selectedSiteId;
+
+      return {
+        sites: remainingSites,
+        links: remainingLinks,
+        selectedSiteId: safeSiteId,
+        selectedLinkId: safeLinkId,
+        networks: state.networks.map((network) => ({
+          ...network,
+          memberships: network.memberships.filter((member) => member.siteId !== siteId),
+        })),
+      };
+    });
+    get().recomputeCoverage();
+  },
+  createLink: (fromSiteId, toSiteId, name) => {
+    if (fromSiteId === toSiteId) return;
+    const base = get().links[0];
+    const selectedNetwork = get().networks.find((network) => network.id === get().selectedNetworkId);
+    const inheritedFrequencyMHz = selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 869.618;
+    const id = makeId("lnk");
+    const link: Link = {
+      id,
+      name: name?.trim() || `Link ${get().links.length + 1}`,
+      fromSiteId,
+      toSiteId,
+      frequencyMHz: inheritedFrequencyMHz,
+      txPowerDbm: base?.txPowerDbm ?? 22,
+      txGainDbi: base?.txGainDbi ?? 2,
+      rxGainDbi: base?.rxGainDbi ?? 2,
+      cableLossDb: base?.cableLossDb ?? 1,
+    };
+    set((state) => ({
+      links: [...state.links, link],
+      selectedLinkId: id,
+    }));
+    get().recomputeCoverage();
+  },
+  deleteLink: (linkId) => {
+    set((state) => {
+      const remaining = state.links.filter((link) => link.id !== linkId);
+      if (!remaining.length) return state;
+      return {
+        links: remaining,
+        selectedLinkId:
+          state.selectedLinkId === linkId ? remaining[0].id : state.selectedLinkId,
+      };
+    });
     get().recomputeCoverage();
   },
   saveSelectedSiteToLibrary: () => {
@@ -577,11 +659,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { fromSite, toSite };
   },
   getSelectedAnalysis: () => {
-    const { getSelectedLink, getSelectedSites, propagationModel, srtmTiles } = get();
+    const { getSelectedLink, getSelectedNetwork, getSelectedSites, propagationModel, srtmTiles } = get();
     const link = getSelectedLink();
+    const selectedNetwork = getSelectedNetwork();
+    const effectiveLink = {
+      ...link,
+      frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
+    };
     const { fromSite, toSite } = getSelectedSites();
     return analyzeLink(
-      link,
+      effectiveLink,
       fromSite,
       toSite,
       propagationModel,
@@ -589,12 +676,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
   },
   getSelectedProfile: () => {
-    const { getSelectedLink, getSelectedSites, srtmTiles } = get();
+    const { getSelectedLink, getSelectedNetwork, getSelectedSites, srtmTiles } = get();
     const link = getSelectedLink();
+    const selectedNetwork = getSelectedNetwork();
+    const effectiveLink = {
+      ...link,
+      frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
+    };
     const { fromSite, toSite } = getSelectedSites();
 
     return buildProfile(
-      link,
+      effectiveLink,
       fromSite,
       toSite,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
