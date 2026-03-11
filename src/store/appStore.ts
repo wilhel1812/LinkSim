@@ -69,6 +69,9 @@ type AppState = {
   simulationProgress: number;
   simulationRunToken: string;
   coverageResolutionMode: "auto" | "high";
+  isTerrainFetching: boolean;
+  isTerrainRecommending: boolean;
+  isElevationSyncing: boolean;
   selectedLinkId: string;
   profileCursorIndex: number;
   selectedSiteId: string;
@@ -164,6 +167,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   simulationProgress: 0,
   simulationRunToken: "",
   coverageResolutionMode: "auto",
+  isTerrainFetching: false,
+  isTerrainRecommending: false,
+  isElevationSyncing: false,
   selectedLinkId: defaultScenario.defaultLinkId,
   profileCursorIndex: 0,
   selectedSiteId: defaultScenario.defaultSiteId,
@@ -505,27 +511,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     })),
   ingestSrtmFiles: async (files) => {
-    const list = Array.from(files);
-    const parsed = await Promise.all(
-      list.map(async (file) => {
-        const tile = await parseSrtmTile(file);
-        return {
-          ...tile,
-          sourceKind: "manual-upload" as const,
-          sourceId: "manual-upload",
-          sourceLabel: "Manual upload",
-          sourceDetail: file.name,
-        };
-      }),
-    );
+    set({ isTerrainFetching: true });
+    try {
+      const list = Array.from(files);
+      const parsed = await Promise.all(
+        list.map(async (file) => {
+          const tile = await parseSrtmTile(file);
+          return {
+            ...tile,
+            sourceKind: "manual-upload" as const,
+            sourceId: "manual-upload",
+            sourceLabel: "Manual upload",
+            sourceDetail: file.name,
+          };
+        }),
+      );
 
-    set((state) => {
-      const dedup = new Map<string, SrtmTile>();
-      for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
-      for (const tile of parsed) dedup.set(tile.key, tile);
-      return { srtmTiles: Array.from(dedup.values()) };
-    });
-    get().recomputeCoverage();
+      set((state) => {
+        const dedup = new Map<string, SrtmTile>();
+        for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
+        for (const tile of parsed) dedup.set(tile.key, tile);
+        return { srtmTiles: Array.from(dedup.values()), isTerrainFetching: false };
+      });
+      get().recomputeCoverage();
+    } finally {
+      set({ isTerrainFetching: false });
+    }
   },
   recommendTerrainDatasetForCurrentArea: async () => {
     const { sites } = get();
@@ -534,7 +545,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bounds = simulationAreaBoundsForSites(sites);
     if (!bounds) return;
 
-    set({ terrainRecommendation: "Evaluating ve2dbe coverage..." });
+    set({ terrainRecommendation: "Evaluating ve2dbe coverage...", isTerrainRecommending: true });
     try {
       const recommendation = await recommendVe2dbeDatasetForArea(
         bounds.minLat,
@@ -550,10 +561,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         terrainDataset: recommendation.dataset,
         terrainRecommendation: `Recommended: ${recommendation.dataset.toUpperCase()} (${Math.round(recommendation.completeness * 100)}%, ${recommendation.availableTiles}/${recommendation.expectedTiles}). ${perDataset}`,
+        isTerrainRecommending: false,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      set({ terrainRecommendation: `Recommendation failed: ${message}` });
+      set({ terrainRecommendation: `Recommendation failed: ${message}`, isTerrainRecommending: false });
     }
   },
   fetchTerrainForCurrentArea: async () => {
@@ -563,7 +575,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bounds = simulationAreaBoundsForSites(sites);
     if (!bounds) return;
 
-    set({ terrainFetchStatus: `Fetching ${terrainDataset.toUpperCase()} tiles from ve2dbe...` });
+    set({
+      terrainFetchStatus: `Fetching ${terrainDataset.toUpperCase()} tiles from ve2dbe...`,
+      isTerrainFetching: true,
+    });
 
     try {
       const result = await loadVe2dbeTilesForArea(
@@ -585,13 +600,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         ].filter(Boolean);
         return {
           srtmTiles: Array.from(dedup.values()),
+          isTerrainFetching: false,
           terrainFetchStatus: `${statusParts.join(", ")} from ve2dbe ${terrainDataset}.${result.failedArchives.length ? ` Missing: ${result.failedArchives.slice(0, 4).join(", ")}${result.failedArchives.length > 4 ? "..." : ""}` : ""}`,
         };
       });
       get().recomputeCoverage();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      set({ terrainFetchStatus: `Terrain fetch failed: ${message}` });
+      set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false });
     }
   },
   recommendAndFetchTerrainForCurrentArea: async () => {
@@ -599,9 +615,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().fetchTerrainForCurrentArea();
   },
   clearTerrainCache: async () => {
+    set({ isTerrainFetching: true });
     await clearVe2dbeCache();
     set((state) => ({
       srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
+      isTerrainFetching: false,
       terrainFetchStatus: "ve2dbe cache cleared.",
     }));
     get().recomputeCoverage();
@@ -612,6 +630,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!Number.isFinite(site.position.lat) || !Number.isFinite(site.position.lon)) return;
     if (site.groundElevationM > 0) return;
 
+    set({ isElevationSyncing: true });
     try {
       const [elevation] = await fetchElevations([site.position]);
       if (!Number.isFinite(elevation)) return;
@@ -624,21 +643,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().recomputeCoverage();
     } catch {
       // Keep manual/default elevation when online sync fails.
+    } finally {
+      set({ isElevationSyncing: false });
     }
   },
   syncSiteElevationsOnline: async () => {
     const sites = get().sites;
-    const elevations = await fetchElevations(sites.map((site) => site.position));
+    set({ isElevationSyncing: true });
+    try {
+      const elevations = await fetchElevations(sites.map((site) => site.position));
 
-    set((state) => ({
-      sites: state.sites.map((site, index) => ({
-        ...site,
-        groundElevationM: Number.isFinite(elevations[index])
-          ? Math.round(elevations[index])
-          : site.groundElevationM,
-      })),
-      hasOnlineElevationSync: true,
-    }));
+      set((state) => ({
+        sites: state.sites.map((site, index) => ({
+          ...site,
+          groundElevationM: Number.isFinite(elevations[index])
+            ? Math.round(elevations[index])
+            : site.groundElevationM,
+        })),
+        hasOnlineElevationSync: true,
+      }));
+    } finally {
+      set({ isElevationSyncing: false });
+    }
   },
   recomputeCoverage: () => {
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

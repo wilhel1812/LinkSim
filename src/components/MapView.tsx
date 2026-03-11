@@ -573,6 +573,9 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const setCoverageResolutionMode = useAppStore((state) => state.setCoverageResolutionMode);
   const isSimulationRecomputing = useAppStore((state) => state.isSimulationRecomputing);
   const simulationProgress = useAppStore((state) => state.simulationProgress);
+  const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
+  const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
+  const isElevationSyncing = useAppStore((state) => state.isElevationSyncing);
   const theme = useSystemTheme();
   const selectedProfile = getSelectedProfile();
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
@@ -625,6 +628,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         sample.lon <= analysisBounds.maxLon,
     );
   }, [coverageSamples, analysisBounds]);
+  const samplesForOverlay = useMemo(
+    () => (boundedCoverageSamples.length >= 6 ? boundedCoverageSamples : coverageSamples),
+    [boundedCoverageSamples, coverageSamples],
+  );
 
   const lineFeatures = useMemo(
     () => ({
@@ -671,17 +678,17 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const cursorPoint = selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))];
 
   const overlayDimensions = useMemo(() => {
-    const bounds = analysisBounds ?? computeCoverageBounds(boundedCoverageSamples);
+    const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
     if (!bounds) return { width: 320, height: 320 };
     return computeOverlayDimensions(bounds, coverageResolutionMode);
-  }, [analysisBounds, boundedCoverageSamples, coverageResolutionMode]);
+  }, [analysisBounds, samplesForOverlay, coverageResolutionMode]);
 
   const coverageOverlay = useMemo(
     () => {
-      const bounds = analysisBounds ?? computeCoverageBounds(boundedCoverageSamples);
+      const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
       if (!bounds) return null;
       const effectiveBandStepDb =
-        bandStepMode === "auto" ? autoBandStepDb(boundedCoverageSamples, bounds) : bandStepMode;
+        bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
       if (coverageVizMode === "passfail") {
         if (!selectedLink || !selectedFromSite) return null;
         const effectiveLink: Link = {
@@ -703,7 +710,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       }
       return buildCoverageOverlay(
         bounds,
-        boundedCoverageSamples,
+        samplesForOverlay,
         coverageVizMode,
         effectiveBandStepDb,
         rxSensitivityTargetDbm,
@@ -712,7 +719,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       );
     },
     [
-      boundedCoverageSamples,
+      samplesForOverlay,
       coverageVizMode,
       bandStepMode,
       rxSensitivityTargetDbm,
@@ -728,10 +735,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     ],
   );
   const currentBandStepDb = useMemo(() => {
-    const bounds = analysisBounds ?? computeCoverageBounds(boundedCoverageSamples);
+    const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
     if (!bounds) return 5;
-    return bandStepMode === "auto" ? autoBandStepDb(boundedCoverageSamples, bounds) : bandStepMode;
-  }, [analysisBounds, boundedCoverageSamples, bandStepMode]);
+    return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
+  }, [analysisBounds, samplesForOverlay, bandStepMode]);
 
   const simulationTerrainOverlay = useMemo(() => {
     if (!hasSimulationTerrain || !analysisBounds) return null;
@@ -740,6 +747,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
+  const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
+  const backgroundBusyLabel = isTerrainFetching
+    ? "Fetching terrain data..."
+    : isTerrainRecommending
+      ? "Checking terrain dataset coverage..."
+      : isElevationSyncing
+        ? "Syncing site elevations..."
+        : "";
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -867,11 +882,17 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           -
         </button>
       </div>
-      {isSimulationRecomputing ? (
+      {isSimulationRecomputing || isBackgroundBusy ? (
         <div className="map-progress" aria-live="polite" aria-label="Simulation recalculation progress">
-          <div className="map-progress-label">Recalculating simulation... {simulationProgress}%</div>
+          <div className="map-progress-label">
+            {isSimulationRecomputing ? `Recalculating simulation... ${simulationProgress}%` : backgroundBusyLabel}
+          </div>
           <div className="map-progress-track">
-            <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
+            {isSimulationRecomputing ? (
+              <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
+            ) : (
+              <div className="map-progress-fill map-progress-fill-indeterminate" />
+            )}
           </div>
         </div>
       ) : null}

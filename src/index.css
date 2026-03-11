@@ -524,6 +524,20 @@ input {
   transition: width 0.16s ease-out;
 }
 
+.map-progress-fill-indeterminate {
+  width: 45%;
+  animation: map-progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes map-progress-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
 .map-sim-summary {
   position: absolute;
   left: 12px;
