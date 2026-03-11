@@ -168,6 +168,7 @@ export function Sidebar() {
   const addSiteLibraryEntry = useAppStore((state) => state.addSiteLibraryEntry);
   const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
+  const renameSimulationPreset = useAppStore((state) => state.renameSimulationPreset);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const recommendTerrainDatasetForCurrentArea = useAppStore(
     (state) => state.recommendTerrainDatasetForCurrentArea,
@@ -233,6 +234,10 @@ export function Sidebar() {
     marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
   }));
   const [newPresetName, setNewPresetName] = useState("");
+  const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
+  const [simulationLibraryQuery, setSimulationLibraryQuery] = useState("");
+  const [editingSimulationId, setEditingSimulationId] = useState<string | null>(null);
+  const [editingSimulationName, setEditingSimulationName] = useState("");
   const [newLinkName, setNewLinkName] = useState("");
   const [newLinkFromId, setNewLinkFromId] = useState(sites[0]?.id ?? "");
   const [newLinkToId, setNewLinkToId] = useState(sites[1]?.id ?? "");
@@ -280,9 +285,6 @@ export function Sidebar() {
   const [selectedSimulationRef, setSelectedSimulationRef] = useState<string>(
     `builtin:${selectedScenarioId}`,
   );
-  const effectiveSelectedPresetId = selectedSimulationRef.startsWith("saved:")
-    ? selectedSimulationRef.replace("saved:", "")
-    : simulationPresets[0]?.id ?? "";
   const hasTwoSites = sites.length >= 2;
   const hasPathEndpoints = Boolean(fromSite && toSite && fromSite.id !== toSite.id);
   const hasTerrain = srtmTiles.length > 0;
@@ -301,6 +303,14 @@ export function Sidebar() {
       return hay.includes(q);
     });
   }, [siteLibrary, siteLibraryQuery]);
+  const filteredSimulationPresets = useMemo(() => {
+    const q = simulationLibraryQuery.trim().toLowerCase();
+    if (!q) return simulationPresets;
+    return simulationPresets.filter((preset) => {
+      const hay = `${preset.name} ${preset.updatedAt}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [simulationPresets, simulationLibraryQuery]);
   const meshmapNodesInView = useMemo(() => {
     const lonSpan = Math.max(0.12, 360 / Math.pow(2, meshmapView.zoom) * 2.2);
     const latSpan = Math.max(0.12, 170 / Math.pow(2, meshmapView.zoom) * 1.8);
@@ -422,6 +432,20 @@ export function Sidebar() {
     if (!newLinkFromId || !newLinkToId || newLinkFromId === newLinkToId) return;
     createLink(newLinkFromId, newLinkToId, newLinkName);
     setNewLinkName("");
+  };
+  const saveSimulationAsNew = () => {
+    saveCurrentSimulationPreset(newPresetName);
+    setNewPresetName("");
+  };
+  const startSimulationRename = (presetId: string, name: string) => {
+    setEditingSimulationId(presetId);
+    setEditingSimulationName(name);
+  };
+  const saveSimulationRename = () => {
+    if (!editingSimulationId) return;
+    renameSimulationPreset(editingSimulationId, editingSimulationName);
+    setEditingSimulationId(null);
+    setEditingSimulationName("");
   };
   const displayLinkName = (linkId: string, linkName?: string) => {
     const trimmedName = linkName?.trim();
@@ -601,7 +625,7 @@ export function Sidebar() {
       <section className="panel-section">
         <div className="section-heading">
           <h2>Simulations</h2>
-          <InfoTip text="Load a built-in scenario or a saved simulation snapshot. Save updates under a new name to quickly resume later." />
+          <InfoTip text="Built-in scenarios are fixed. Saved simulations are your editable library snapshots of full setup/state." />
         </div>
         <select
           className="locale-select"
@@ -614,8 +638,20 @@ export function Sidebar() {
             </option>
           ))}
         </select>
+        <div className="chip-group">
+          <button
+            className="inline-action"
+            onClick={() => setShowSimulationLibraryManager(true)}
+            type="button"
+          >
+            Open Simulation Library ({simulationPresets.length})
+          </button>
+          <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+            Quick Save Snapshot
+          </button>
+        </div>
         <label className="field-grid">
-          <span>Save as</span>
+          <span>Snapshot name</span>
           <input
             onChange={(event) => setNewPresetName(event.target.value)}
             placeholder="My simulation"
@@ -623,26 +659,6 @@ export function Sidebar() {
             value={newPresetName}
           />
         </label>
-        <div className="chip-group">
-          <button
-            className="inline-action"
-            onClick={() => {
-              saveCurrentSimulationPreset(newPresetName);
-              setNewPresetName("");
-            }}
-            type="button"
-          >
-            Save Simulation
-          </button>
-          <button
-            className="inline-action"
-            disabled={!effectiveSelectedPresetId}
-            onClick={() => effectiveSelectedPresetId && deleteSimulationPreset(effectiveSelectedPresetId)}
-            type="button"
-          >
-            Delete Saved
-          </button>
-        </div>
       </section>
 
       <section className="panel-section">
@@ -1152,6 +1168,112 @@ export function Sidebar() {
         </details>
       </section>
 
+      {showSimulationLibraryManager ? (
+        <div
+          aria-label="Simulation Library Manager"
+          aria-modal="true"
+          className="library-manager-overlay"
+          role="dialog"
+        >
+          <div className="library-manager-card">
+            <div className="library-manager-header">
+              <h2>Simulation Library Manager</h2>
+              <button className="inline-action" onClick={() => setShowSimulationLibraryManager(false)} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              Manage saved simulation snapshots only. Site/node editing still happens in the main workspace.
+            </p>
+            <label className="field-grid">
+              <span>Search</span>
+              <input
+                onChange={(event) => setSimulationLibraryQuery(event.target.value)}
+                placeholder="Filter saved simulations"
+                type="text"
+                value={simulationLibraryQuery}
+              />
+            </label>
+            <label className="field-grid">
+              <span>Save current as</span>
+              <input
+                onChange={(event) => setNewPresetName(event.target.value)}
+                placeholder="My simulation"
+                type="text"
+                value={newPresetName}
+              />
+            </label>
+            <div className="chip-group">
+              <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+                Add Current Snapshot
+              </button>
+            </div>
+            <div className="library-manager-list">
+              {filteredSimulationPresets.map((preset) => (
+                <div className="library-manager-row simulation-manager-row" key={preset.id}>
+                  <span className="library-row-label">
+                    <strong>{preset.name}</strong>
+                    {" · "}
+                    Updated {new Date(preset.updatedAt).toLocaleString()}
+                  </span>
+                  <div className="library-row-actions">
+                    <button
+                      className="inline-action"
+                      onClick={() => {
+                        loadSimulationPreset(preset.id);
+                        setSelectedSimulationRef(`saved:${preset.id}`);
+                      }}
+                      type="button"
+                    >
+                      Load
+                    </button>
+                    <button
+                      className="inline-action"
+                      onClick={() => startSimulationRename(preset.id, preset.name)}
+                      type="button"
+                    >
+                      Edit Name
+                    </button>
+                    <button className="inline-action" onClick={() => deleteSimulationPreset(preset.id)} type="button">
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!filteredSimulationPresets.length ? <p className="field-help">No matching saved simulations.</p> : null}
+            </div>
+            {editingSimulationId ? (
+              <div className="library-editor">
+                <h3>Edit Simulation Name</h3>
+                <label className="field-grid">
+                  <span>Name</span>
+                  <input
+                    onChange={(event) => setEditingSimulationName(event.target.value)}
+                    placeholder="Simulation name"
+                    type="text"
+                    value={editingSimulationName}
+                  />
+                </label>
+                <div className="chip-group">
+                  <button className="inline-action" onClick={saveSimulationRename} type="button">
+                    Save
+                  </button>
+                  <button
+                    className="inline-action"
+                    onClick={() => {
+                      setEditingSimulationId(null);
+                      setEditingSimulationName("");
+                    }}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       {showSiteLibraryManager ? (
         <div aria-label="Site Library Manager" aria-modal="true" className="library-manager-overlay" role="dialog">
           <div className="library-manager-card">

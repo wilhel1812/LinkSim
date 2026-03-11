@@ -136,6 +136,7 @@ type AppState = {
   deleteSiteLibraryEntries: (entryIds: string[]) => void;
   saveCurrentSimulationPreset: (name: string) => void;
   loadSimulationPreset: (presetId: string) => void;
+  renameSimulationPreset: (presetId: string, name: string) => void;
   deleteSimulationPreset: (presetId: string) => void;
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
@@ -543,6 +544,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
     });
     get().recomputeCoverage();
+  },
+  renameSimulationPreset: (presetId, name) => {
+    const nextName = name.trim();
+    if (!nextName) return;
+    set((state) => {
+      const next = state.simulationPresets.map((preset) =>
+        preset.id === presetId
+          ? {
+              ...preset,
+              name: nextName,
+              updatedAt: new Date().toISOString(),
+            }
+          : preset,
+      );
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
+    });
   },
   deleteSimulationPreset: (presetId) => {
     set((state) => {
