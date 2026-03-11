@@ -61,96 +61,13 @@ const bestSiteLayer: LayerProps = {
   },
 };
 
-const coverageHeatmapLayer: LayerProps = {
-  id: "coverage-heatmap",
-  type: "heatmap",
+const coverageRasterLayer: LayerProps = {
+  id: "coverage-overlay-layer",
+  type: "raster",
   paint: {
-    "heatmap-weight": [
-      "interpolate",
-      ["linear"],
-      ["get", "worstRxDbm"],
-      -125,
-      0.05,
-      -110,
-      0.2,
-      -95,
-      0.5,
-      -82,
-      0.75,
-      -70,
-      0.95,
-      -60,
-      1,
-    ],
-    "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 6, 0.55, 12, 1.1, 16, 1.35],
-    "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 6, 14, 10, 22, 14, 34],
-    "heatmap-opacity": 0.7,
-    "heatmap-color": [
-      "interpolate",
-      ["linear"],
-      ["heatmap-density"],
-      0,
-      "rgba(20,20,30,0)",
-      0.15,
-      "#4f0f15",
-      0.32,
-      "#a52f33",
-      0.48,
-      "#e66b28",
-      0.66,
-      "#eecf42",
-      0.82,
-      "#4ad37b",
-      1,
-      "#2bc0ff",
-    ],
-  },
-};
-
-const coverageContourLayer: LayerProps = {
-  id: "coverage-contours",
-  type: "circle",
-  paint: {
-    "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 4.5, 12, 7, 16, 9],
-    "circle-color": [
-      "step",
-      ["get", "worstRxDbm"],
-      "#6e1c24",
-      -110,
-      "#9d2e35",
-      -100,
-      "#cf5a2b",
-      -95,
-      "#e7a33f",
-      -90,
-      "#e7d24d",
-      -85,
-      "#8fd05a",
-      -80,
-      "#4bbd73",
-      -75,
-      "#2bc0ff",
-    ],
-    "circle-opacity": 0.62,
-    "circle-stroke-width": 0.35,
-    "circle-stroke-color": "#0d1117",
-  },
-};
-
-const coveragePassFailLayer: LayerProps = {
-  id: "coverage-passfail",
-  type: "circle",
-  paint: {
-    "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 4.5, 12, 7, 16, 9],
-    "circle-color": [
-      "case",
-      ["==", ["get", "pass"], 1],
-      "#27d793",
-      "#e1505f",
-    ],
-    "circle-opacity": 0.55,
-    "circle-stroke-width": 0.4,
-    "circle-stroke-color": "#101522",
+    "raster-opacity": 0.7,
+    "raster-contrast": 0.06,
+    "raster-saturation": 0.04,
   },
 };
 
@@ -191,6 +108,8 @@ type TerrainBounds = {
   minLon: number;
   maxLon: number;
 };
+type CoverageVizMode = "points" | "heatmap" | "contours" | "passfail";
+type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
 
 const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[]): TerrainBounds => {
   const lats = sites.map((site) => site.position.lat);
@@ -208,6 +127,125 @@ const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[
     maxLat: maxLat + latPadding,
     minLon: minLon - lonPadding,
     maxLon: maxLon + lonPadding,
+  };
+};
+
+const computeCoverageBounds = (samples: CoverageSampleLite[]): TerrainBounds | null => {
+  if (!samples.length) return null;
+  const lats = samples.map((sample) => sample.lat);
+  const lons = samples.map((sample) => sample.lon);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons);
+  const maxLon = Math.max(...lons);
+  const latPad = Math.max(0.008, (maxLat - minLat) * 0.06);
+  const lonPad = Math.max(0.008, (maxLon - minLon) * 0.06);
+  return {
+    minLat: minLat - latPad,
+    maxLat: maxLat + latPad,
+    minLon: minLon - lonPad,
+    maxLon: maxLon + lonPad,
+  };
+};
+
+const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
+  const stops: Array<{ v: number; c: [number, number, number] }> = [
+    { v: -125, c: [79, 15, 21] },
+    { v: -110, c: [165, 47, 51] },
+    { v: -95, c: [230, 107, 40] },
+    { v: -82, c: [238, 207, 66] },
+    { v: -70, c: [74, 211, 123] },
+    { v: -60, c: [43, 192, 255] },
+  ];
+  if (valueDbm <= stops[0].v) return stops[0].c;
+  if (valueDbm >= stops[stops.length - 1].v) return stops[stops.length - 1].c;
+  for (let i = 0; i < stops.length - 1; i += 1) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (valueDbm < a.v || valueDbm > b.v) continue;
+    const t = (valueDbm - a.v) / (b.v - a.v);
+    return [
+      Math.round(a.c[0] + (b.c[0] - a.c[0]) * t),
+      Math.round(a.c[1] + (b.c[1] - a.c[1]) * t),
+      Math.round(a.c[2] + (b.c[2] - a.c[2]) * t),
+    ];
+  }
+  return [255, 255, 255];
+};
+
+const interpolateCoverageDbm = (samples: CoverageSampleLite[], lat: number, lon: number): number | null => {
+  if (!samples.length) return null;
+  let weightSum = 0;
+  let valueSum = 0;
+  for (const sample of samples) {
+    const dLat = sample.lat - lat;
+    const dLon = sample.lon - lon;
+    const d2 = dLat * dLat + dLon * dLon;
+    if (d2 < 1e-12) return sample.valueDbm;
+    const weight = 1 / d2;
+    weightSum += weight;
+    valueSum += sample.valueDbm * weight;
+  }
+  if (weightSum <= 0) return null;
+  return valueSum / weightSum;
+};
+
+const buildCoverageOverlay = (
+  samples: CoverageSampleLite[],
+  mode: Exclude<CoverageVizMode, "points">,
+  rxTargetDbm: number,
+  environmentLossDb: number,
+): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
+  const bounds = computeCoverageBounds(samples);
+  if (!bounds) return null;
+  const size = 280;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const image = ctx.createImageData(size, size);
+
+  for (let y = 0; y < size; y += 1) {
+    const tY = y / (size - 1);
+    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
+    for (let x = 0; x < size; x += 1) {
+      const tX = x / (size - 1);
+      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      const valueDbm = interpolateCoverageDbm(samples, lat, lon);
+      if (valueDbm === null) continue;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 180;
+      if (mode === "heatmap") {
+        [r, g, b] = coverageColorForDbm(valueDbm);
+      } else if (mode === "contours") {
+        const banded = Math.round(valueDbm / 5) * 5;
+        [r, g, b] = coverageColorForDbm(banded);
+        a = 170;
+      } else {
+        const adjusted = valueDbm - environmentLossDb;
+        const pass = adjusted >= rxTargetDbm;
+        [r, g, b] = pass ? [39, 215, 147] : [225, 80, 95];
+        a = 168;
+      }
+      const px = (y * size + x) * 4;
+      image.data[px] = r;
+      image.data[px + 1] = g;
+      image.data[px + 2] = b;
+      image.data[px + 3] = a;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  return {
+    url: canvas.toDataURL("image/png"),
+    coordinates: [
+      [bounds.minLon, bounds.maxLat],
+      [bounds.maxLon, bounds.maxLat],
+      [bounds.maxLon, bounds.minLat],
+      [bounds.minLon, bounds.minLat],
+    ],
   };
 };
 
@@ -359,7 +397,6 @@ const computeFitViewport = (
 };
 
 export function MapView() {
-  type CoverageVizMode = "points" | "heatmap" | "contours" | "passfail";
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -464,6 +501,18 @@ export function MapView() {
       })),
     }),
     [coverageSamples, environmentLossDb, rxSensitivityTargetDbm],
+  );
+  const coverageOverlay = useMemo(
+    () =>
+      coverageVizMode === "points"
+        ? null
+        : buildCoverageOverlay(
+            coverageSamples,
+            coverageVizMode,
+            rxSensitivityTargetDbm,
+            environmentLossDb,
+          ),
+    [coverageSamples, coverageVizMode, rxSensitivityTargetDbm, environmentLossDb],
   );
 
   const simulationTerrainOverlay = useMemo(() => {
@@ -650,11 +699,19 @@ export function MapView() {
           <Layer {...profileLineLayer} />
         </Source>
 
+        {coverageOverlay ? (
+          <Source
+            coordinates={coverageOverlay.coordinates}
+            id="coverage-overlay-source"
+            type="image"
+            url={coverageOverlay.url}
+          >
+            <Layer {...coverageRasterLayer} />
+          </Source>
+        ) : null}
+
         <Source data={coverageFeatures} id="best-site" type="geojson">
           {coverageVizMode === "points" ? <Layer {...bestSiteLayer} /> : null}
-          {coverageVizMode === "heatmap" ? <Layer {...coverageHeatmapLayer} /> : null}
-          {coverageVizMode === "contours" ? <Layer {...coverageContourLayer} /> : null}
-          {coverageVizMode === "passfail" ? <Layer {...coveragePassFailLayer} /> : null}
         </Source>
 
         <Source data={lineFeatures} id="links" type="geojson">
