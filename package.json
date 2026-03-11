@@ -9,7 +9,12 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke:pw": "node scripts/scripts_pw_check.mjs",
+    "smoke:scenario": "node scripts/scripts_smoke_scenario.mjs",
+    "smoke:profile": "node scripts/scripts_smoke_profile_only.mjs",
+    "smoke:fit-profile": "node scripts/scripts_smoke_fit_profile.mjs",
+    "smoke:itm": "node scripts/scripts_smoke_itm.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
