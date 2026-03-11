@@ -848,6 +848,63 @@ input {
   gap: 8px;
 }
 
+.library-manager-overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 54%, transparent);
+  display: grid;
+  place-items: center;
+  z-index: 40;
+  padding: 18px;
+}
+
+.library-manager-card {
+  width: min(1120px, 96vw);
+  max-height: min(86vh, 980px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.library-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.library-manager-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.library-manager-list {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  max-height: min(56vh, 620px);
+  overflow: auto;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.library-manager-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+}
+
 .margin-status {
   border: 1px solid var(--border);
   border-radius: 8px;

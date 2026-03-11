@@ -109,7 +109,9 @@ type AppState = {
   createLink: (fromSiteId: string, toSiteId: string, name?: string) => void;
   deleteLink: (linkId: string) => void;
   insertSiteFromLibrary: (entryId: string) => void;
+  insertSitesFromLibrary: (entryIds: string[]) => void;
   deleteSiteLibraryEntry: (entryId: string) => void;
+  deleteSiteLibraryEntries: (entryIds: string[]) => void;
   saveCurrentSimulationPreset: (name: string) => void;
   loadSimulationPreset: (presetId: string) => void;
   deleteSimulationPreset: (presetId: string) => void;
@@ -386,26 +388,43 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCoverage();
   },
   insertSiteFromLibrary: (entryId) => {
-    const entry = get().siteLibrary.find((candidate) => candidate.id === entryId);
-    if (!entry) return;
-    const siteId = makeId("site");
-    const newSite: Site = {
-      id: siteId,
-      name: entry.name,
-      position: entry.position,
-      groundElevationM: entry.groundElevationM,
-      antennaHeightM: entry.antennaHeightM,
-    };
+    get().insertSitesFromLibrary([entryId]);
+  },
+  insertSitesFromLibrary: (entryIds) => {
+    const requested = new Set(entryIds);
+    if (!requested.size) return;
+    const entries = get().siteLibrary.filter((candidate) => requested.has(candidate.id));
+    if (!entries.length) return;
+    const createdSiteIds: string[] = [];
+    const addedSites: Site[] = entries.map((entry) => {
+      const siteId = makeId("site");
+      createdSiteIds.push(siteId);
+      return {
+        id: siteId,
+        name: entry.name,
+        position: entry.position,
+        groundElevationM: entry.groundElevationM,
+        antennaHeightM: entry.antennaHeightM,
+      };
+    });
+
     set((state) => ({
-      sites: [...state.sites, newSite],
-      selectedSiteId: siteId,
+      sites: [...state.sites, ...addedSites],
+      selectedSiteId: createdSiteIds[createdSiteIds.length - 1] ?? state.selectedSiteId,
     }));
     get().recomputeCoverage();
-    void get().syncSiteElevationOnline(siteId);
+    for (const siteId of createdSiteIds) {
+      void get().syncSiteElevationOnline(siteId);
+    }
   },
   deleteSiteLibraryEntry: (entryId) => {
+    get().deleteSiteLibraryEntries([entryId]);
+  },
+  deleteSiteLibraryEntries: (entryIds) => {
+    const requested = new Set(entryIds);
+    if (!requested.size) return;
     set((state) => {
-      const next = state.siteLibrary.filter((entry) => entry.id !== entryId);
+      const next = state.siteLibrary.filter((entry) => !requested.has(entry.id));
       writeStorage(SITE_LIBRARY_KEY, next);
       return { siteLibrary: next };
     });

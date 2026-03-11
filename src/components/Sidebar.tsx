@@ -1,5 +1,5 @@
 import type { ChangeEvent } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { useSystemTheme } from "../hooks/useSystemTheme";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
@@ -107,7 +107,9 @@ export function Sidebar() {
   const setTerrainDataset = useAppStore((state) => state.setTerrainDataset);
   const addSiteByCoordinates = useAppStore((state) => state.addSiteByCoordinates);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
+  const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
+  const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
   const deleteSite = useAppStore((state) => state.deleteSite);
   const createLink = useAppStore((state) => state.createLink);
   const deleteLink = useAppStore((state) => state.deleteLink);
@@ -188,6 +190,9 @@ export function Sidebar() {
   const [newLinkFromId, setNewLinkFromId] = useState(sites[0]?.id ?? "");
   const [newLinkToId, setNewLinkToId] = useState(sites[1]?.id ?? "");
   const [showAddSiteForm, setShowAddSiteForm] = useState(false);
+  const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
+  const [siteLibraryQuery, setSiteLibraryQuery] = useState("");
+  const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
   const simulationOptions = [
     ...scenarioOptions.map((scenario) => ({
       id: `builtin:${scenario.id}`,
@@ -214,6 +219,14 @@ export function Sidebar() {
   const loadedTileKeys = new Set(srtmTiles.map((tile) => tile.key));
   const missingTerrainTileKeys = requiredTerrainTileKeys.filter((key) => !loadedTileKeys.has(key));
   const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
+  const filteredSiteLibrary = useMemo(() => {
+    const q = siteLibraryQuery.trim().toLowerCase();
+    if (!q) return siteLibrary;
+    return siteLibrary.filter((entry) => {
+      const hay = `${entry.name} ${entry.position.lat.toFixed(5)} ${entry.position.lon.toFixed(5)}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [siteLibrary, siteLibraryQuery]);
 
   const applyRfPreset = (presetId: string) => {
     const preset = findMeshtasticPreset(presetId);
@@ -328,6 +341,18 @@ export function Sidebar() {
     const to = sites.find((site) => site.id === link.toSiteId)?.name ?? "Unknown";
     return `${from} -> ${to}`;
   };
+  const toggleLibrarySelection = (entryId: string) => {
+    setSelectedLibraryIds((current) => {
+      const next = new Set(current);
+      if (next.has(entryId)) {
+        next.delete(entryId);
+      } else {
+        next.add(entryId);
+      }
+      return next;
+    });
+  };
+  const selectedLibraryCount = selectedLibraryIds.size;
 
   return (
     <aside className="sidebar-panel">
@@ -489,34 +514,17 @@ export function Sidebar() {
           </>
         ) : null}
         <p className="field-help">Manually added sites are saved to the shared library automatically.</p>
-        <details className="compact-details">
-          <summary>Site Library</summary>
+        <div className="chip-group">
+          <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
+            Open Site Library Manager ({siteLibrary.length})
+          </button>
           {siteLibrary.length ? (
-            <div className="asset-list">
-              {siteLibrary.map((entry) => (
-                <div className="library-row" key={entry.id}>
-                  <span className="library-row-label">
-                    {entry.name} ({entry.position.lat.toFixed(4)}, {entry.position.lon.toFixed(4)})
-                  </span>
-                  <div className="library-row-actions">
-                    <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
-                      Insert
-                    </button>
-                    <button
-                      className="inline-action"
-                      onClick={() => deleteSiteLibraryEntry(entry.id)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="field-help">No saved library sites yet.</p>
-          )}
-        </details>
+            <button className="inline-action" onClick={() => insertSiteFromLibrary(siteLibrary[0].id)} type="button">
+              Insert Newest
+            </button>
+          ) : null}
+        </div>
+        {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
       </section>
 
       <section className="panel-section">
@@ -1037,6 +1045,88 @@ export function Sidebar() {
           </div>
         </details>
       </section>
+
+      {showSiteLibraryManager ? (
+        <div aria-label="Site Library Manager" aria-modal="true" className="library-manager-overlay" role="dialog">
+          <div className="library-manager-card">
+            <div className="library-manager-header">
+              <h2>Site Library Manager</h2>
+              <button className="inline-action" onClick={() => setShowSiteLibraryManager(false)} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              Built for large libraries. Select one or more entries to add into this simulation project.
+            </p>
+            <label className="field-grid">
+              <span>Search</span>
+              <input
+                onChange={(event) => setSiteLibraryQuery(event.target.value)}
+                placeholder="Filter by name or coordinates"
+                type="text"
+                value={siteLibraryQuery}
+              />
+            </label>
+            <div className="chip-group">
+              <button
+                className="inline-action"
+                onClick={() => setSelectedLibraryIds(new Set(filteredSiteLibrary.map((entry) => entry.id)))}
+                type="button"
+              >
+                Select Filtered ({filteredSiteLibrary.length})
+              </button>
+              <button className="inline-action" onClick={() => setSelectedLibraryIds(new Set())} type="button">
+                Clear Selection
+              </button>
+              <button
+                className="inline-action"
+                disabled={!selectedLibraryCount}
+                onClick={() => {
+                  insertSitesFromLibrary(Array.from(selectedLibraryIds));
+                  setSelectedLibraryIds(new Set());
+                }}
+                type="button"
+              >
+                Add Selected To Project ({selectedLibraryCount})
+              </button>
+              <button
+                className="inline-action"
+                disabled={!selectedLibraryCount}
+                onClick={() => {
+                  deleteSiteLibraryEntries(Array.from(selectedLibraryIds));
+                  setSelectedLibraryIds(new Set());
+                }}
+                type="button"
+              >
+                Delete Selected ({selectedLibraryCount})
+              </button>
+            </div>
+            <div className="library-manager-list">
+              {filteredSiteLibrary.map((entry) => (
+                <label className="library-manager-row" key={entry.id}>
+                  <input
+                    checked={selectedLibraryIds.has(entry.id)}
+                    onChange={() => toggleLibrarySelection(entry.id)}
+                    type="checkbox"
+                  />
+                  <span className="library-row-label">
+                    {entry.name} ({entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)})
+                  </span>
+                  <div className="library-row-actions">
+                    <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                      Add
+                    </button>
+                    <button className="inline-action" onClick={() => deleteSiteLibraryEntry(entry.id)} type="button">
+                      Delete
+                    </button>
+                  </div>
+                </label>
+              ))}
+              {!filteredSiteLibrary.length ? <p className="field-help">No matching sites.</p> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
         <p>
