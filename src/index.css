@@ -129,6 +129,54 @@ input {
   font-size: 0.96rem;
 }
 
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.info-tip {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 65%, transparent);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: help;
+}
+
+.info-tip-box {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 240px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  color: var(--text);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 130ms ease, transform 130ms ease;
+}
+
+.info-tip:hover .info-tip-box,
+.info-tip:focus-visible .info-tip-box {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .chip-group {
   display: flex;
   flex-wrap: wrap;

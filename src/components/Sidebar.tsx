@@ -24,6 +24,13 @@ const parseNumber = (value: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const InfoTip = ({ text }: { text: string }) => (
+  <button aria-label={text} className="info-tip" type="button">
+    i
+    <span className="info-tip-box">{text}</span>
+  </button>
+);
+
 const clampSNR = (spreadFactor: number): number => {
   const map: Record<number, number> = {
     7: -7.5,
@@ -320,8 +327,10 @@ export function Sidebar() {
       </header>
 
       <section className="panel-section">
-        <h2>Simulations</h2>
-        <p className="field-help">Load a built-in scenario or a saved simulation snapshot.</p>
+        <div className="section-heading">
+          <h2>Simulations</h2>
+          <InfoTip text="Load a built-in scenario or a saved simulation snapshot. Save updates under a new name to quickly resume later." />
+        </div>
         <select
           className="locale-select"
           onChange={(event) => loadSimulationRef(event.target.value)}
@@ -378,8 +387,10 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Sites</h2>
-        <p className="field-help">Manage existing nodes below. Add flow is hidden until needed.</p>
+        <div className="section-heading">
+          <h2>Sites</h2>
+          <InfoTip text="Manage current nodes here. Use Add New Site when you need to create a node by coordinates or map search." />
+        </div>
         <button
           className="inline-action"
           onClick={() => setShowAddSiteForm((current) => !current)}
@@ -486,8 +497,10 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Channel / Coverage</h2>
-        <p className="field-help">All links inherit this channel profile (frequency, BW, SF, CR).</p>
+        <div className="section-heading">
+          <h2>Channel / Coverage</h2>
+          <InfoTip text="This is the shared channel profile. Frequency, bandwidth, spreading factor, and coding rate apply to all links." />
+        </div>
         {networks.length > 1 ? (
           <select
             className="locale-select"
@@ -505,7 +518,7 @@ export function Sidebar() {
             Active channel profile: <strong>{selectedNetwork.name}</strong>
           </p>
         )}
-        <p className="field-help">Coverage mode controls how map heat/coverage is sampled.</p>
+        <p className="field-help">Coverage mode controls map sampling strategy.</p>
         <div className="chip-group">
           {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
             <button
@@ -535,7 +548,7 @@ export function Sidebar() {
         <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
           Apply Frequency Plan
         </button>
-        <p className="field-help">Advanced: pick propagation model used by link and coverage math.</p>
+        <p className="field-help">Propagation model (advanced)</p>
         <div className="chip-group">
           {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
             <button
@@ -551,8 +564,10 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Path (From / To)</h2>
-        <p className="field-help">Select the two nodes you want to analyze and tune per-link RF hardware values.</p>
+        <div className="section-heading">
+          <h2>Path (From / To)</h2>
+          <InfoTip text="Choose the two nodes for link analysis. Link radio values below are per-path hardware settings." />
+        </div>
         <div className="link-list">
           {links.map((link) => (
             <button
@@ -840,8 +855,10 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>{t(locale, "terrainData")}</h2>
-        <p className="field-help">Terrain affects obstruction and profile calculations used in simulation.</p>
+        <div className="section-heading">
+          <h2>{t(locale, "terrainData")}</h2>
+          <InfoTip text="Terrain data is used directly in path profile and obstruction/loss calculations." />
+        </div>
         <p>{srtmTiles.length} SRTM tile(s) loaded</p>
         <button
           className="inline-action"
@@ -898,7 +915,10 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>{t(locale, "rfSummary")}</h2>
+        <div className="section-heading">
+          <h2>{t(locale, "rfSummary")}</h2>
+          <InfoTip text="Computed link budget summary for the selected path and current channel/model settings." />
+        </div>
         <div className="metrics">
           {metric("Network", `${selectedNetwork.name} (${selectedCoverageMode})`)}
           {metric(
