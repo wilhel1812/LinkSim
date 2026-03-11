@@ -88,7 +88,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     networks: [
       {
         id: "net-oslo",
-        name: "Oslo Local Net",
+        name: "Scenario Channel",
         frequencyMHz: 869.618,
         bandwidthKhz: 62,
         spreadFactor: 8,
@@ -163,7 +163,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     networks: [
       {
         id: "net-hv-vf",
-        name: "Mountain Ridge Net",
+        name: "Scenario Channel",
         frequencyMHz: 869.618,
         bandwidthKhz: 62,
         spreadFactor: 8,
@@ -238,7 +238,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     networks: [
       {
         id: "net-regional",
-        name: "Regional Ring",
+        name: "Scenario Channel",
         frequencyMHz: 869.618,
         bandwidthKhz: 62,
         spreadFactor: 8,
