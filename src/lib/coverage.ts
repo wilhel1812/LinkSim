@@ -117,14 +117,27 @@ export const buildCoverage = (
     onProgress?: (progress: number) => void;
   },
 ): CoverageSample[] => {
-  if (!network.memberships.length || sites.length === 0) return [];
+  if (sites.length === 0 || systems.length === 0) return [];
   const effectiveFrequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
   const sampleMultiplier = Math.max(1, options?.sampleMultiplier ?? 1);
   const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
   const onProgress = options?.onProgress;
+  const fallbackSystemId = systems[0]?.id ?? "";
+  const effectiveMemberships =
+    network.memberships
+      .filter(
+        (member) =>
+          sites.some((site) => site.id === member.siteId) &&
+          systems.some((system) => system.id === member.systemId),
+      )
+      .map((member) => ({ siteId: member.siteId, systemId: member.systemId })) || [];
+  const membershipsToUse =
+    effectiveMemberships.length > 0
+      ? effectiveMemberships
+      : sites.map((site) => ({ siteId: site.id, systemId: fallbackSystemId }));
 
   const center = midpoint(sites);
-  const networkSites = network.memberships
+  const networkSites = membershipsToUse
     .map((m) => sites.find((s) => s.id === m.siteId))
     .filter((s): s is Site => Boolean(s));
 
@@ -178,7 +191,7 @@ export const buildCoverage = (
   const results: CoverageSample[] = [];
   for (let i = 0; i < samples.length; i += 1) {
     const sample = samples[i];
-    const rxLevels = network.memberships
+    const rxLevels = membershipsToUse
       .map((m) => {
         const site = sites.find((s) => s.id === m.siteId);
         const system = systems.find((sys) => sys.id === m.systemId);
