@@ -69,6 +69,24 @@ const meshmapNodesLayer: LayerProps = {
   },
 };
 
+const meshmapLabelsLayer: LayerProps = {
+  id: "meshmap-labels-layer",
+  type: "symbol",
+  layout: {
+    "text-field": ["get", "label"],
+    "text-font": ["Open Sans Regular"],
+    "text-size": ["interpolate", ["linear"], ["zoom"], 5, 9, 9, 10, 12, 12],
+    "text-offset": [0, 1.2],
+    "text-anchor": "top",
+    "text-allow-overlap": false,
+  },
+  paint: {
+    "text-color": "#e7f1ff",
+    "text-halo-color": "rgba(10, 26, 36, 0.95)",
+    "text-halo-width": 1.3,
+  },
+};
+
 const clampSNR = (spreadFactor: number): number => {
   const map: Record<number, number> = {
     7: -7.5,
@@ -304,6 +322,7 @@ export function Sidebar() {
           nodeId: node.nodeId,
           longName: node.longName ?? "",
           shortName: node.shortName ?? "",
+          label: node.longName ?? node.nodeId,
           hwModel: node.hwModel ?? "",
           lastSeenUnix: node.lastSeenUnix ?? 0,
         },
@@ -528,7 +547,7 @@ export function Sidebar() {
   };
   const addSelectedMeshmapNodeToLibrary = async () => {
     if (!selectedMeshmapNode) return;
-    const fallbackName = selectedMeshmapNode.shortName ?? selectedMeshmapNode.longName ?? selectedMeshmapNode.nodeId;
+    const fallbackName = selectedMeshmapNode.longName ?? selectedMeshmapNode.shortName ?? selectedMeshmapNode.nodeId;
     setMeshmapStatus(`Resolving elevation for ${fallbackName}...`);
     let groundM = selectedMeshmapNode.altitudeM ?? 0;
     try {
@@ -1315,6 +1334,7 @@ export function Sidebar() {
                         >
                           <Source data={meshmapNodesGeoJson} id="meshmap-nodes" type="geojson">
                             <Layer {...meshmapNodesLayer} />
+                            <Layer {...meshmapLabelsLayer} />
                           </Source>
                         </Map>
                       </div>
@@ -1324,12 +1344,12 @@ export function Sidebar() {
                       {selectedMeshmapNode ? (
                         <div className="meshmap-selected-card">
                           <p>
-                            <strong>{selectedMeshmapNode.shortName ?? selectedMeshmapNode.longName ?? selectedMeshmapNode.nodeId}</strong>{" "}
+                            <strong>{selectedMeshmapNode.longName ?? selectedMeshmapNode.shortName ?? selectedMeshmapNode.nodeId}</strong>{" "}
                             ({selectedMeshmapNode.lat.toFixed(5)}, {selectedMeshmapNode.lon.toFixed(5)})
                           </p>
                           <p className="field-help">
-                            Node ID: {selectedMeshmapNode.nodeId}
-                            {selectedMeshmapNode.hwModel ? ` | ${selectedMeshmapNode.hwModel}` : ""}
+                            Short: {selectedMeshmapNode.shortName ?? "n/a"} | Node ID: {selectedMeshmapNode.nodeId}
+                            {selectedMeshmapNode.hwModel ? ` | HW: ${selectedMeshmapNode.hwModel}` : ""}
                             {selectedMeshmapNode.lastSeenUnix
                               ? ` | Last seen ${new Date(selectedMeshmapNode.lastSeenUnix * 1000).toLocaleString()}`
                               : ""}
