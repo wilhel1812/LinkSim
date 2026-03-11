@@ -4,6 +4,7 @@ import clsx from "clsx";
 import Map, { Marker, type MarkerDragEvent } from "react-map-gl/maplibre";
 import { useSystemTheme } from "../hooks/useSystemTheme";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
+import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
@@ -207,6 +208,7 @@ export function Sidebar() {
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const [librarySearchStatus, setLibrarySearchStatus] = useState("");
   const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
+  const [librarySearchPickBusyId, setLibrarySearchPickBusyId] = useState<string | null>(null);
   const simulationOptions = [
     ...scenarioOptions.map((scenario) => ({
       id: `builtin:${scenario.id}`,
@@ -387,6 +389,27 @@ export function Sidebar() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setLibrarySearchStatus(`Search failed: ${message}`);
+    }
+  };
+  const selectLibrarySearchResult = async (result: GeocodeResult) => {
+    setLibrarySearchPickBusyId(result.id);
+    setLibrarySearchStatus("Resolving elevation for selected result...");
+    setNewLibraryName(result.label.split(",")[0] ?? "New Site");
+    setNewLibraryLat(result.lat);
+    setNewLibraryLon(result.lon);
+    try {
+      const [elevation] = await fetchElevations([{ lat: result.lat, lon: result.lon }]);
+      if (Number.isFinite(elevation)) {
+        setNewLibraryGroundM(Math.round(elevation));
+        setLibrarySearchStatus(`Selected: ${result.label} (elevation ${Math.round(elevation)} m)`);
+      } else {
+        setLibrarySearchStatus(`Selected: ${result.label} (elevation unavailable)`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLibrarySearchStatus(`Selected coordinates, elevation lookup failed: ${message}`);
+    } finally {
+      setLibrarySearchPickBusyId(null);
     }
   };
 
@@ -1083,15 +1106,12 @@ export function Sidebar() {
                     {librarySearchResults.map((result) => (
                       <button
                         className="inline-action"
+                        disabled={librarySearchPickBusyId !== null}
                         key={result.id}
-                        onClick={() => {
-                          setNewLibraryName(result.label.split(",")[0] ?? "New Site");
-                          setNewLibraryLat(result.lat);
-                          setNewLibraryLon(result.lon);
-                        }}
+                        onClick={() => void selectLibrarySearchResult(result)}
                         type="button"
                       >
-                        Use: {result.label}
+                        {librarySearchPickBusyId === result.id ? "Loading..." : `Use: ${result.label}`}
                       </button>
                     ))}
                   </div>
