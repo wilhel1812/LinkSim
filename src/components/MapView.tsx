@@ -114,6 +114,7 @@ type TerrainBounds = {
 };
 type CoverageVizMode = "points" | "heatmap" | "contours" | "passfail";
 type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
+type BandStepMode = "auto" | 3 | 5 | 8 | 10;
 
 const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[]): TerrainBounds => {
   const lats = sites.map((site) => site.position.lat);
@@ -177,6 +178,29 @@ const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
   return [255, 255, 255];
 };
 
+const autoBandStepDb = (samples: CoverageSampleLite[], bounds: TerrainBounds): 3 | 5 | 8 | 10 => {
+  if (samples.length < 2) return 5;
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const sample of samples) {
+    min = Math.min(min, sample.valueDbm);
+    max = Math.max(max, sample.valueDbm);
+  }
+  const dynamicRange = Math.max(0, max - min);
+  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+  const latSpanKm = Math.abs(bounds.maxLat - bounds.minLat) * 111.32;
+  const lonSpanKm =
+    Math.abs(bounds.maxLon - bounds.minLon) *
+    111.32 *
+    Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  const diagonalKm = Math.hypot(latSpanKm, lonSpanKm);
+
+  if (diagonalKm > 90 || dynamicRange > 45) return 10;
+  if (diagonalKm > 45 || dynamicRange > 30) return 8;
+  if (diagonalKm > 20 || dynamicRange > 18) return 5;
+  return 3;
+};
+
 const interpolateCoverageDbm = (samples: CoverageSampleLite[], lat: number, lon: number): number | null => {
   if (!samples.length) return null;
   let weightSum = 0;
@@ -236,6 +260,7 @@ const buildCoverageOverlay = (
   bounds: TerrainBounds,
   samples: CoverageSampleLite[],
   mode: Exclude<CoverageVizMode, "points">,
+  bandStepDb: number,
   rxTargetDbm: number,
   environmentLossDb: number,
 ): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
@@ -263,7 +288,7 @@ const buildCoverageOverlay = (
       if (mode === "heatmap") {
         [r, g, b] = coverageColorForDbm(valueDbm);
       } else if (mode === "contours") {
-        const banded = Math.round(valueDbm / 5) * 5;
+        const banded = Math.round(valueDbm / Math.max(1, bandStepDb)) * Math.max(1, bandStepDb);
         [r, g, b] = coverageColorForDbm(banded);
         a = 170;
       } else {
@@ -545,6 +570,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const theme = useSystemTheme();
   const selectedProfile = getSelectedProfile();
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
+  const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const recentlyDraggedSiteId = useRef<string | null>(null);
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
@@ -657,6 +683,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       if (coverageVizMode === "points") return null;
       const bounds = analysisBounds ?? computeCoverageBounds(boundedCoverageSamples);
       if (!bounds) return null;
+      const effectiveBandStepDb =
+        bandStepMode === "auto" ? autoBandStepDb(boundedCoverageSamples, bounds) : bandStepMode;
       if (coverageVizMode === "passfail") {
         if (!selectedLink || !selectedFromSite) return null;
         const effectiveLink: Link = {
@@ -679,6 +707,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         bounds,
         boundedCoverageSamples,
         coverageVizMode,
+        effectiveBandStepDb,
         rxSensitivityTargetDbm,
         environmentLossDb,
       );
@@ -686,6 +715,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     [
       boundedCoverageSamples,
       coverageVizMode,
+      bandStepMode,
       rxSensitivityTargetDbm,
       environmentLossDb,
       selectedLink,
@@ -697,6 +727,11 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       analysisBounds,
     ],
   );
+  const currentBandStepDb = useMemo(() => {
+    const bounds = analysisBounds ?? computeCoverageBounds(boundedCoverageSamples);
+    if (!bounds) return 5;
+    return bandStepMode === "auto" ? autoBandStepDb(boundedCoverageSamples, bounds) : bandStepMode;
+  }, [analysisBounds, boundedCoverageSamples, bandStepMode]);
 
   const simulationTerrainOverlay = useMemo(() => {
     if (!hasSimulationTerrain || !analysisBounds) return null;
@@ -795,6 +830,20 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           Bands
         </button>
         <button
+          className="map-control-btn"
+          onClick={() =>
+            setBandStepMode((current) => {
+              const order: BandStepMode[] = ["auto", 3, 5, 8, 10];
+              const idx = order.indexOf(current);
+              return order[(idx + 1) % order.length];
+            })
+          }
+          title="Band step size: Auto / 3 / 5 / 8 / 10 dB"
+          type="button"
+        >
+          Step {bandStepMode === "auto" ? `Auto(${currentBandStepDb})` : `${bandStepMode}dB`}
+        </button>
+        <button
           className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
           onClick={() => setCoverageVizMode("passfail")}
           title="Coverage pass/fail against RX target"
@@ -840,6 +889,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         <p>
           Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
         </p>
+        {coverageVizMode === "contours" ? <p>Band step: {currentBandStepDb} dB ({bandStepMode})</p> : null}
         {coverageVizMode === "passfail" ? (
           <p>Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter)</p>
         ) : null}
