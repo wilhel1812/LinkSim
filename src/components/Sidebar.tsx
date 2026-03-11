@@ -272,16 +272,6 @@ export function Sidebar() {
     latitude: sourceSite?.position.lat ?? 59.9,
     zoom: 7.5,
   }));
-  const simulationOptions = [
-    ...scenarioOptions.map((scenario) => ({
-      id: `builtin:${scenario.id}`,
-      name: `${scenario.name} (built-in)`,
-    })),
-    ...simulationPresets.map((preset) => ({
-      id: `saved:${preset.id}`,
-      name: `${preset.name} (saved)`,
-    })),
-  ];
   const [selectedSimulationRef, setSelectedSimulationRef] = useState<string>(
     `builtin:${selectedScenarioId}`,
   );
@@ -311,6 +301,21 @@ export function Sidebar() {
       return hay.includes(q);
     });
   }, [simulationPresets, simulationLibraryQuery]);
+  const filteredBuiltinScenarios = useMemo(() => {
+    const q = simulationLibraryQuery.trim().toLowerCase();
+    if (!q) return scenarioOptions;
+    return scenarioOptions.filter((scenario) => scenario.name.toLowerCase().includes(q));
+  }, [scenarioOptions, simulationLibraryQuery]);
+  const activeSimulationLabel = useMemo(() => {
+    if (selectedSimulationRef.startsWith("saved:")) {
+      const presetId = selectedSimulationRef.replace("saved:", "");
+      const preset = simulationPresets.find((candidate) => candidate.id === presetId);
+      return preset ? `${preset.name} (saved)` : "Saved simulation";
+    }
+    const scenarioId = selectedSimulationRef.replace("builtin:", "");
+    const scenario = scenarioOptions.find((candidate) => candidate.id === scenarioId);
+    return scenario ? `${scenario.name} (built-in)` : "Built-in simulation";
+  }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
   const meshmapNodesInView = useMemo(() => {
     const lonSpan = Math.max(0.12, 360 / Math.pow(2, meshmapView.zoom) * 2.2);
     const latSpan = Math.max(0.12, 170 / Math.pow(2, meshmapView.zoom) * 1.8);
@@ -627,17 +632,9 @@ export function Sidebar() {
           <h2>Simulations</h2>
           <InfoTip text="Built-in scenarios are fixed. Saved simulations are your editable library snapshots of full setup/state." />
         </div>
-        <select
-          className="locale-select"
-          onChange={(event) => loadSimulationRef(event.target.value)}
-          value={selectedSimulationRef}
-        >
-          {simulationOptions.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.name}
-            </option>
-          ))}
-        </select>
+        <p className="field-help">
+          Active: <strong>{activeSimulationLabel}</strong>
+        </p>
         <div className="chip-group">
           <button
             className="inline-action"
@@ -1183,13 +1180,14 @@ export function Sidebar() {
               </button>
             </div>
             <p className="field-help">
-              Manage saved simulation snapshots only. Site/node editing still happens in the main workspace.
+              Manage built-in presets and saved simulation snapshots here. Site/node editing still happens in the main
+              workspace.
             </p>
             <label className="field-grid">
               <span>Search</span>
               <input
                 onChange={(event) => setSimulationLibraryQuery(event.target.value)}
-                placeholder="Filter saved simulations"
+                placeholder="Filter built-in + saved simulations"
                 type="text"
                 value={simulationLibraryQuery}
               />
@@ -1208,6 +1206,30 @@ export function Sidebar() {
                 Add Current Snapshot
               </button>
             </div>
+            <div className="library-editor">
+              <h3>Built-in Presets</h3>
+              <div className="library-manager-list">
+                {filteredBuiltinScenarios.map((scenario) => (
+                  <div className="library-manager-row simulation-manager-row" key={scenario.id}>
+                    <span className="library-row-label">
+                      <strong>{scenario.name}</strong> {" · "}Built-in preset
+                    </span>
+                    <div className="library-row-actions">
+                      <button
+                        className="inline-action"
+                        onClick={() => loadSimulationRef(`builtin:${scenario.id}`)}
+                        type="button"
+                      >
+                        Load
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {!filteredBuiltinScenarios.length ? <p className="field-help">No matching built-in presets.</p> : null}
+              </div>
+            </div>
+            <div className="library-editor">
+              <h3>Saved Simulations</h3>
             <div className="library-manager-list">
               {filteredSimulationPresets.map((preset) => (
                 <div className="library-manager-row simulation-manager-row" key={preset.id}>
@@ -1241,6 +1263,7 @@ export function Sidebar() {
                 </div>
               ))}
               {!filteredSimulationPresets.length ? <p className="field-help">No matching saved simulations.</p> : null}
+            </div>
             </div>
             {editingSimulationId ? (
               <div className="library-editor">
