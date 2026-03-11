@@ -108,6 +108,7 @@ export function Sidebar() {
   const addSiteByCoordinates = useAppStore((state) => state.addSiteByCoordinates);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
+  const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
   const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
   const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
   const deleteSite = useAppStore((state) => state.deleteSite);
@@ -193,6 +194,12 @@ export function Sidebar() {
   const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
   const [siteLibraryQuery, setSiteLibraryQuery] = useState("");
   const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
+  const [editingLibraryId, setEditingLibraryId] = useState<string | null>(null);
+  const [editingLibraryName, setEditingLibraryName] = useState("");
+  const [editingLibraryLat, setEditingLibraryLat] = useState(0);
+  const [editingLibraryLon, setEditingLibraryLon] = useState(0);
+  const [editingLibraryGroundM, setEditingLibraryGroundM] = useState(0);
+  const [editingLibraryAntennaM, setEditingLibraryAntennaM] = useState(2);
   const simulationOptions = [
     ...scenarioOptions.map((scenario) => ({
       id: `builtin:${scenario.id}`,
@@ -353,6 +360,26 @@ export function Sidebar() {
     });
   };
   const selectedLibraryCount = selectedLibraryIds.size;
+  const startLibraryEdit = (entryId: string) => {
+    const entry = siteLibrary.find((candidate) => candidate.id === entryId);
+    if (!entry) return;
+    setEditingLibraryId(entry.id);
+    setEditingLibraryName(entry.name);
+    setEditingLibraryLat(entry.position.lat);
+    setEditingLibraryLon(entry.position.lon);
+    setEditingLibraryGroundM(entry.groundElevationM);
+    setEditingLibraryAntennaM(entry.antennaHeightM);
+  };
+  const saveLibraryEdit = () => {
+    if (!editingLibraryId) return;
+    updateSiteLibraryEntry(editingLibraryId, {
+      name: editingLibraryName.trim() || "Unnamed Site",
+      position: { lat: editingLibraryLat, lon: editingLibraryLon },
+      groundElevationM: editingLibraryGroundM,
+      antennaHeightM: editingLibraryAntennaM,
+    });
+    setEditingLibraryId(null);
+  };
 
   return (
     <aside className="sidebar-panel">
@@ -1103,7 +1130,7 @@ export function Sidebar() {
             </div>
             <div className="library-manager-list">
               {filteredSiteLibrary.map((entry) => (
-                <label className="library-manager-row" key={entry.id}>
+                <div className="library-manager-row" key={entry.id}>
                   <input
                     checked={selectedLibraryIds.has(entry.id)}
                     onChange={() => toggleLibrarySelection(entry.id)}
@@ -1116,14 +1143,72 @@ export function Sidebar() {
                     <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
                       Add
                     </button>
+                    <button className="inline-action" onClick={() => startLibraryEdit(entry.id)} type="button">
+                      Edit
+                    </button>
                     <button className="inline-action" onClick={() => deleteSiteLibraryEntry(entry.id)} type="button">
                       Delete
                     </button>
                   </div>
-                </label>
+                </div>
               ))}
               {!filteredSiteLibrary.length ? <p className="field-help">No matching sites.</p> : null}
             </div>
+            {editingLibraryId ? (
+              <div className="library-editor">
+                <h3>Edit Library Site</h3>
+                <label className="field-grid">
+                  <span>Name</span>
+                  <input
+                    onChange={(event) => setEditingLibraryName(event.target.value)}
+                    type="text"
+                    value={editingLibraryName}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Latitude</span>
+                  <input
+                    onChange={(event) => setEditingLibraryLat(parseNumber(event.target.value))}
+                    step="0.000001"
+                    type="number"
+                    value={editingLibraryLat}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Longitude</span>
+                  <input
+                    onChange={(event) => setEditingLibraryLon(parseNumber(event.target.value))}
+                    step="0.000001"
+                    type="number"
+                    value={editingLibraryLon}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground elev (m)</span>
+                  <input
+                    onChange={(event) => setEditingLibraryGroundM(parseNumber(event.target.value))}
+                    type="number"
+                    value={editingLibraryGroundM}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Antenna (m)</span>
+                  <input
+                    onChange={(event) => setEditingLibraryAntennaM(parseNumber(event.target.value))}
+                    type="number"
+                    value={editingLibraryAntennaM}
+                  />
+                </label>
+                <div className="chip-group">
+                  <button className="inline-action" onClick={saveLibraryEdit} type="button">
+                    Save
+                  </button>
+                  <button className="inline-action" onClick={() => setEditingLibraryId(null)} type="button">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

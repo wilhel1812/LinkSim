@@ -110,6 +110,10 @@ type AppState = {
   deleteLink: (linkId: string) => void;
   insertSiteFromLibrary: (entryId: string) => void;
   insertSitesFromLibrary: (entryIds: string[]) => void;
+  updateSiteLibraryEntry: (
+    entryId: string,
+    patch: Partial<Pick<SiteLibraryEntry, "name" | "position" | "groundElevationM" | "antennaHeightM">>,
+  ) => void;
   deleteSiteLibraryEntry: (entryId: string) => void;
   deleteSiteLibraryEntries: (entryIds: string[]) => void;
   saveCurrentSimulationPreset: (name: string) => void;
@@ -416,6 +420,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const siteId of createdSiteIds) {
       void get().syncSiteElevationOnline(siteId);
     }
+  },
+  updateSiteLibraryEntry: (entryId, patch) => {
+    set((state) => {
+      const next = dedupeLibraryEntries(
+        state.siteLibrary.map((entry) => {
+          if (entry.id !== entryId) return entry;
+          return {
+            ...entry,
+            ...patch,
+            position: {
+              ...entry.position,
+              ...(patch.position ?? {}),
+            },
+          };
+        }),
+      );
+      writeStorage(SITE_LIBRARY_KEY, next);
+      return { siteLibrary: next };
+    });
   },
   deleteSiteLibraryEntry: (entryId) => {
     get().deleteSiteLibraryEntries([entryId]);
