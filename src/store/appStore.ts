@@ -117,6 +117,7 @@ type AppState = {
   recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
   clearTerrainCache: () => Promise<void>;
   syncSiteElevationsOnline: () => Promise<void>;
+  syncSiteElevationOnline: (siteId: string) => Promise<void>;
   recomputeCoverage: () => void;
   getSelectedLink: () => Link;
   getSelectedSite: () => Site;
@@ -221,7 +222,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setSelectedLinkId: (id) => set({ selectedLinkId: id, profileCursorIndex: 0 }),
   setProfileCursorIndex: (index) => set({ profileCursorIndex: Math.max(0, Math.floor(index)) }),
-  setSelectedSiteId: (id) => set({ selectedSiteId: id }),
+  setSelectedSiteId: (id) => {
+    set({ selectedSiteId: id });
+    void get().syncSiteElevationOnline(id);
+  },
   setSelectedNetworkId: (id) => {
     set({ selectedNetworkId: id });
     get().recomputeCoverage();
@@ -249,6 +253,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSiteId: id,
     }));
     get().recomputeCoverage();
+    void get().syncSiteElevationOnline(id);
   },
   deleteSite: (siteId) => {
     set((state) => {
@@ -365,6 +370,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSiteId: siteId,
     }));
     get().recomputeCoverage();
+    void get().syncSiteElevationOnline(siteId);
   },
   deleteSiteLibraryEntry: (entryId) => {
     set((state) => {
@@ -603,6 +609,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: "ve2dbe cache cleared.",
     }));
     get().recomputeCoverage();
+  },
+  syncSiteElevationOnline: async (siteId) => {
+    const site = get().sites.find((candidate) => candidate.id === siteId);
+    if (!site) return;
+    if (!Number.isFinite(site.position.lat) || !Number.isFinite(site.position.lon)) return;
+    if (site.groundElevationM > 0) return;
+
+    try {
+      const [elevation] = await fetchElevations([site.position]);
+      if (!Number.isFinite(elevation)) return;
+      set((state) => ({
+        sites: state.sites.map((candidate) =>
+          candidate.id === siteId ? { ...candidate, groundElevationM: Math.round(elevation) } : candidate,
+        ),
+        hasOnlineElevationSync: true,
+      }));
+      get().recomputeCoverage();
+    } catch {
+      // Keep manual/default elevation when online sync fails.
+    }
   },
   syncSiteElevationsOnline: async () => {
     const sites = get().sites;
