@@ -188,6 +188,8 @@ export function Sidebar() {
   const selectedSite = getSelectedSite();
   const selectedNetwork = getSelectedNetwork();
   const effectiveNetworkFrequencyMHz = selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz;
+  const selectedFrequencyPreset = FREQUENCY_PRESETS.find((preset) => preset.id === selectedFrequencyPresetId);
+  const isLoraEstimateRelevant = (selectedFrequencyPreset?.source ?? "Meshtastic") !== "RadioMobile";
   const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const toSite = sites.find((site) => site.id === selectedLink.toSiteId);
   const fromSiteChoices = sites.filter((site) => site.id !== selectedLink.toSiteId);
@@ -1111,16 +1113,23 @@ export function Sidebar() {
             value={environmentLossDb}
           />
         </label>
-        <div className="section-heading">
-          <button
-            className="inline-action"
-            onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
-            type="button"
-          >
-            Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
-          </button>
-          <InfoTip text="Sets RX target to a computed LoRa sensitivity estimate based on current bandwidth and spread factor (noise-floor + noise-figure + SF SNR limit)." />
-        </div>
+        {isLoraEstimateRelevant ? (
+          <div className="section-heading">
+            <button
+              className="inline-action"
+              onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
+              type="button"
+            >
+              Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
+            </button>
+            <InfoTip text="Sets RX target to a LoRa sensitivity estimate from current BW and SF (noise floor + NF + SF SNR limit). This is a helper target, not a measured receiver spec." />
+          </div>
+        ) : (
+          <p className="field-help">
+            LoRa RX estimate helper is hidden for Radio Mobile presets. Switch to a Meshtastic/Local frequency plan
+            to use it.
+          </p>
+        )}
         <div className={clsx("margin-status", linkMarginDb >= 0 ? "is-pass" : "is-fail")}>
           Link margin: {linkMarginDb >= 0 ? "+" : ""}
           {linkMarginDb.toFixed(1)} dB ({linkMarginDb >= 0 ? "PASS" : "FAIL"})
