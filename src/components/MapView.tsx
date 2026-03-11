@@ -577,6 +577,11 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const selectedProfile = getSelectedProfile();
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
+  const [interactionViewState, setInteractionViewState] = useState<{
+    longitude: number;
+    latitude: number;
+    zoom: number;
+  } | null>(null);
   const recentlyDraggedSiteId = useRef<string | null>(null);
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
@@ -734,8 +739,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
+  const activeViewState = interactionViewState ?? {
+    longitude: viewport.center.lon,
+    latitude: viewport.center.lat,
+    zoom: viewport.zoom,
+  };
 
   const onMoveEnd = (event: ViewStateChangeEvent) => {
+    setInteractionViewState(null);
     updateMapViewport({
       center: { lat: event.viewState.latitude, lon: event.viewState.longitude },
       zoom: event.viewState.zoom,
@@ -743,11 +754,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   };
 
   const zoomBy = (delta: number) => {
-    updateMapViewport({ zoom: clamp(viewport.zoom + delta, 2, 17) });
+    const nextZoom = clamp(activeViewState.zoom + delta, 2, 17);
+    setInteractionViewState(null);
+    updateMapViewport({ zoom: nextZoom });
   };
 
   const fitToNodes = () => {
     const next = computeFitViewport(sites);
+    setInteractionViewState(null);
     updateMapViewport({
       center: { lat: next.lat, lon: next.lon },
       zoom: next.zoom,
@@ -901,17 +915,24 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         ) : null}
       </aside>
       <Map
-        longitude={viewport.center.lon}
-        latitude={viewport.center.lat}
-        zoom={viewport.zoom}
+        longitude={activeViewState.longitude}
+        latitude={activeViewState.latitude}
+        zoom={activeViewState.zoom}
         initialViewState={{
-          longitude: viewport.center.lon,
-          latitude: viewport.center.lat,
-          zoom: viewport.zoom,
+          longitude: activeViewState.longitude,
+          latitude: activeViewState.latitude,
+          zoom: activeViewState.zoom,
         }}
         mapStyle={styleByTheme[theme]}
         interactiveLayerIds={["link-lines"]}
         onClick={onMapClick}
+        onMove={(event) =>
+          setInteractionViewState({
+            longitude: event.viewState.longitude,
+            latitude: event.viewState.latitude,
+            zoom: event.viewState.zoom,
+          })
+        }
         onMoveEnd={onMoveEnd}
       >
         {simulationTerrainOverlay ? (
