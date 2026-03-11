@@ -74,6 +74,10 @@ input {
   animation: fade-in 260ms ease;
 }
 
+.app-shell.is-map-expanded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -97,6 +101,37 @@ input {
   gap: 16px;
   max-height: calc(100vh - 36px);
   overflow: auto;
+}
+
+.sidebar-grow {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.sidebar-footer {
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+}
+
+.sidebar-footer p {
+  margin: 0 0 4px;
+  color: var(--muted);
+}
+
+.sidebar-footer p:last-child {
+  margin-bottom: 0;
+}
+
+.sidebar-footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.sidebar-footer a:hover {
+  text-decoration: underline;
 }
 
 .sidebar-panel > header {
@@ -364,8 +399,12 @@ input {
 
 .workspace-panel {
   display: grid;
-  grid-template-rows: auto minmax(360px, 1fr) 280px auto;
+  grid-template-rows: minmax(420px, 1fr) 280px;
   gap: 18px;
+}
+
+.workspace-panel.is-map-expanded {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .workspace-header {
@@ -677,7 +716,11 @@ input {
   }
 
   .workspace-panel {
-    grid-template-rows: auto 360px 240px;
+    grid-template-rows: 360px 240px;
+  }
+
+  .workspace-panel.is-map-expanded {
+    grid-template-rows: minmax(0, 1fr);
   }
 }
 

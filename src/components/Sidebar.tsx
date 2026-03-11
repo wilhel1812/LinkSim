@@ -1,6 +1,7 @@
 import type { ChangeEvent } from "react";
 import { useState } from "react";
 import clsx from "clsx";
+import { useSystemTheme } from "../hooks/useSystemTheme";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
@@ -8,7 +9,7 @@ import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
 import { analyzeLink } from "../lib/propagation";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
+import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel } from "../types/radio";
@@ -63,6 +64,7 @@ const downloadJson = (fileName: string, payload: unknown) => {
 };
 
 export function Sidebar() {
+  const theme = useSystemTheme();
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -353,6 +355,12 @@ export function Sidebar() {
         <h1>{t(locale, "appTitle")}</h1>
         <p>{t(locale, "workspaceSubtitle")}</p>
       </header>
+      <section className="panel-section">
+        <h2>{t(locale, "networkCoverageWorkspace")}</h2>
+        <p className="field-help">
+          Choose sites and a From/To path, then tune channel settings for coverage and link analysis.
+        </p>
+      </section>
 
       <section className="panel-section">
         <div className="section-heading">
@@ -1048,6 +1056,17 @@ export function Sidebar() {
           </div>
         </details>
       </section>
+      <div className="sidebar-grow" />
+      <footer className="sidebar-footer">
+        <p>
+          Inspired by{" "}
+          <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
+            {PRIMARY_ATTRIBUTION.projectName}
+          </a>{" "}
+          by {PRIMARY_ATTRIBUTION.authorName}. {PRIMARY_ATTRIBUTION.disclaimer}
+        </p>
+        <p>Basemap style: {theme === "dark" ? "Carto Dark Matter" : "Carto Positron"} (attribution applies).</p>
+      </footer>
     </aside>
   );
 }

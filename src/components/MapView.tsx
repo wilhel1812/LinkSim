@@ -492,7 +492,12 @@ const computeFitViewport = (
   return { lat: centerLat, lon: centerLon, zoom };
 };
 
-export function MapView() {
+type MapViewProps = {
+  isMapExpanded: boolean;
+  onToggleMapExpanded: () => void;
+};
+
+export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -716,6 +721,9 @@ export function MapView() {
   return (
     <div className="map-panel">
       <div className="map-controls">
+        <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
+          {isMapExpanded ? "Show UI" : "Expand"}
+        </button>
         <button className="map-control-btn" onClick={fitToNodes} type="button">
           Fit
         </button>
