@@ -9,6 +9,7 @@ import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticPr
 import { analyzeLink } from "../lib/propagation";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
+import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel } from "../types/radio";
 
@@ -204,6 +205,33 @@ export function Sidebar() {
   const hasTwoSites = sites.length >= 2;
   const hasPathEndpoints = Boolean(fromSite && toSite && fromSite.id !== toSite.id);
   const hasTerrain = srtmTiles.length > 0;
+  const terrainBounds = (() => {
+    if (!sites.length) return null;
+    const lats = sites.map((site) => site.position.lat);
+    const lons = sites.map((site) => site.position.lon);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const latPad = 0.15;
+    const lonPad = 0.15;
+    const latSpan = Math.min(5, maxLat - minLat + latPad * 2);
+    const lonSpan = Math.min(5, maxLon - minLon + lonPad * 2);
+    const latCenter = (minLat + maxLat) / 2;
+    const lonCenter = (minLon + maxLon) / 2;
+    return {
+      minLat: latCenter - latSpan / 2,
+      maxLat: latCenter + latSpan / 2,
+      minLon: lonCenter - lonSpan / 2,
+      maxLon: lonCenter + lonSpan / 2,
+    };
+  })();
+  const requiredTerrainTileKeys = terrainBounds
+    ? tilesForBounds(terrainBounds.minLat, terrainBounds.maxLat, terrainBounds.minLon, terrainBounds.maxLon)
+    : [];
+  const loadedTileKeys = new Set(srtmTiles.map((tile) => tile.key));
+  const missingTerrainTileKeys = requiredTerrainTileKeys.filter((key) => !loadedTileKeys.has(key));
+  const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
 
   const applyRfPreset = (presetId: string) => {
     const preset = findMeshtasticPreset(presetId);
@@ -382,7 +410,13 @@ export function Sidebar() {
               ? `Path: ${fromSite?.name ?? "?"} → ${toSite?.name ?? "?"}`
               : "Path: choose different From/To nodes"}
           </p>
-          <p className="field-help">{hasTerrain ? `Terrain: ${srtmTiles.length} tile(s) loaded` : "Terrain: not loaded yet"}</p>
+          <p className="field-help">
+            {terrainIsStaleForCurrentArea
+              ? `Terrain: out of date (${missingTerrainTileKeys.length}/${requiredTerrainTileKeys.length} tiles missing for current area)`
+              : hasTerrain
+                ? `Terrain: up to date (${srtmTiles.length} tile(s) loaded)`
+                : "Terrain: not loaded yet"}
+          </p>
         </div>
       </section>
 
@@ -859,6 +893,21 @@ export function Sidebar() {
           <h2>{t(locale, "terrainData")}</h2>
           <InfoTip text="Terrain data is used directly in path profile and obstruction/loss calculations." />
         </div>
+        {terrainIsStaleForCurrentArea ? (
+          <div className="terrain-alert" role="status">
+            <p>
+              Terrain data is out of date for this simulation area. Missing {missingTerrainTileKeys.length} of{" "}
+              {requiredTerrainTileKeys.length} required tile(s).
+            </p>
+            <button
+              className="inline-action"
+              onClick={() => void recommendAndFetchTerrainForCurrentArea()}
+              type="button"
+            >
+              Fetch Terrain For Current Area
+            </button>
+          </div>
+        ) : null}
         <p>{srtmTiles.length} SRTM tile(s) loaded</p>
         <button
           className="inline-action"

@@ -754,6 +754,21 @@ input {
   background: color-mix(in srgb, #ff6b6b 16%, transparent);
 }
 
+.terrain-alert {
+  border: 1px solid color-mix(in srgb, #ffb703 55%, var(--border));
+  background: color-mix(in srgb, #ffb703 16%, transparent);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.terrain-alert p {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.79rem;
+}
+
 .whatif-table {
   border: 1px solid var(--border);
   border-radius: 8px;
