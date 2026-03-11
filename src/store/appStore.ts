@@ -108,7 +108,6 @@ type AppState = {
   deleteSite: (siteId: string) => void;
   createLink: (fromSiteId: string, toSiteId: string, name?: string) => void;
   deleteLink: (linkId: string) => void;
-  saveSelectedSiteToLibrary: () => void;
   insertSiteFromLibrary: (entryId: string) => void;
   deleteSiteLibraryEntry: (entryId: string) => void;
   saveCurrentSimulationPreset: (name: string) => void;
@@ -156,6 +155,41 @@ const writeStorage = (key: string, value: unknown) => {
 const makeId = (prefix: string): string =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+const builtinSiteFingerprint = new Set(
+  DEMO_SCENARIOS.flatMap((scenario) =>
+    scenario.sites.map(
+      (site) =>
+        `${site.name.toLowerCase()}|${site.position.lat.toFixed(6)}|${site.position.lon.toFixed(6)}`,
+    ),
+  ),
+);
+
+const isBuiltinSiteLibraryEntry = (entry: SiteLibraryEntry): boolean =>
+  builtinSiteFingerprint.has(
+    `${entry.name.toLowerCase()}|${entry.position.lat.toFixed(6)}|${entry.position.lon.toFixed(6)}`,
+  );
+
+const dedupeLibraryEntries = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] => {
+  const seen = new Set<string>();
+  const out: SiteLibraryEntry[] = [];
+  for (const entry of entries) {
+    const key = `${entry.name.toLowerCase()}|${entry.position.lat.toFixed(6)}|${entry.position.lon.toFixed(6)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entry);
+  }
+  return out;
+};
+
+const normalizeSiteLibrary = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =>
+  dedupeLibraryEntries(entries.filter((entry) => !isBuiltinSiteLibraryEntry(entry)));
+
+const persistedSiteLibrary = readStorage<SiteLibraryEntry[]>(SITE_LIBRARY_KEY, []);
+const initialSiteLibrary = normalizeSiteLibrary(persistedSiteLibrary);
+if (JSON.stringify(initialSiteLibrary) !== JSON.stringify(persistedSiteLibrary)) {
+  writeStorage(SITE_LIBRARY_KEY, initialSiteLibrary);
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   sites: defaultScenario.sites,
   links: defaultScenario.links,
@@ -186,7 +220,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   terrainFetchStatus: "",
   terrainRecommendation: "",
   hasOnlineElevationSync: false,
-  siteLibrary: readStorage<SiteLibraryEntry[]>(SITE_LIBRARY_KEY, []),
+  siteLibrary: initialSiteLibrary,
   simulationPresets: readStorage<SimulationPreset[]>(SIM_PRESETS_KEY, []),
   endpointPickTarget: null,
   scenarioOptions: DEMO_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
@@ -248,10 +282,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       groundElevationM: 0,
       antennaHeightM: 2,
     };
-    set((state) => ({
-      sites: [...state.sites, newSite],
-      selectedSiteId: id,
-    }));
+    set((state) => {
+      const entry: SiteLibraryEntry = {
+        id: makeId("libsite"),
+        name: label,
+        position: { lat, lon },
+        groundElevationM: 0,
+        antennaHeightM: 2,
+        createdAt: new Date().toISOString(),
+      };
+      const nextLibrary = normalizeSiteLibrary([entry, ...state.siteLibrary]);
+      writeStorage(SITE_LIBRARY_KEY, nextLibrary);
+      return {
+        sites: [...state.sites, newSite],
+        selectedSiteId: id,
+        siteLibrary: nextLibrary,
+      };
+    });
     get().recomputeCoverage();
     void get().syncSiteElevationOnline(id);
   },
@@ -337,22 +384,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
     get().recomputeCoverage();
-  },
-  saveSelectedSiteToLibrary: () => {
-    const site = get().getSelectedSite();
-    const entry: SiteLibraryEntry = {
-      id: makeId("libsite"),
-      name: site.name,
-      position: site.position,
-      groundElevationM: site.groundElevationM,
-      antennaHeightM: site.antennaHeightM,
-      createdAt: new Date().toISOString(),
-    };
-    set((state) => {
-      const next = [entry, ...state.siteLibrary];
-      writeStorage(SITE_LIBRARY_KEY, next);
-      return { siteLibrary: next };
-    });
   },
   insertSiteFromLibrary: (entryId) => {
     const entry = get().siteLibrary.find((candidate) => candidate.id === entryId);

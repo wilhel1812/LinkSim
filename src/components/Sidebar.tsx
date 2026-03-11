@@ -106,7 +106,6 @@ export function Sidebar() {
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
   const setTerrainDataset = useAppStore((state) => state.setTerrainDataset);
   const addSiteByCoordinates = useAppStore((state) => state.addSiteByCoordinates);
-  const saveSelectedSiteToLibrary = useAppStore((state) => state.saveSelectedSiteToLibrary);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
   const deleteSite = useAppStore((state) => state.deleteSite);
@@ -489,9 +488,7 @@ export function Sidebar() {
             ) : null}
           </>
         ) : null}
-        <button className="inline-action" onClick={() => saveSelectedSiteToLibrary()} type="button">
-          Save Selected To Library
-        </button>
+        <p className="field-help">Manually added sites are saved to the shared library automatically.</p>
         <details className="compact-details">
           <summary>Site Library</summary>
           {siteLibrary.length ? (
