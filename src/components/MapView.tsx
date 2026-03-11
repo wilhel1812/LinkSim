@@ -8,9 +8,13 @@ import Map, {
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
+import { haversineDistanceKm } from "../lib/geo";
+import { getPathLossByModel } from "../lib/rfModels";
 import { sampleSrtmElevation } from "../lib/srtm";
+import { estimateTerrainExcessLossDb } from "../lib/terrainLoss";
 import { useSystemTheme } from "../hooks/useSystemTheme";
 import { useAppStore } from "../store/appStore";
+import type { Link, Site } from "../types/radio";
 
 const mapLineLayer: LayerProps = {
   id: "link-lines",
@@ -190,6 +194,44 @@ const interpolateCoverageDbm = (samples: CoverageSampleLite[], lat: number, lon:
   return valueSum / weightSum;
 };
 
+const computeSourceCentricRxDbm = (
+  lat: number,
+  lon: number,
+  fromSite: Site,
+  effectiveLink: Link,
+  receiverAntennaHeightM: number,
+  propagationModel: "FSPL" | "TwoRay" | "ITM",
+  terrainSampler: (lat: number, lon: number) => number | null,
+): number => {
+  const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, { lat, lon }));
+  const baseLoss = getPathLossByModel(
+    propagationModel,
+    distanceKm,
+    effectiveLink.frequencyMHz,
+    fromSite.antennaHeightM,
+    receiverAntennaHeightM,
+  );
+
+  let terrainPenaltyDb = 0;
+  if (propagationModel === "ITM") {
+    const rxGround = terrainSampler(lat, lon);
+    if (rxGround !== null) {
+      terrainPenaltyDb = estimateTerrainExcessLossDb({
+        from: fromSite.position,
+        to: { lat, lon },
+        fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
+        toAntennaAbsM: rxGround + receiverAntennaHeightM,
+        frequencyMHz: effectiveLink.frequencyMHz,
+        terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
+        samples: 24,
+      });
+    }
+  }
+
+  const eirpDbm = effectiveLink.txPowerDbm + effectiveLink.txGainDbi - effectiveLink.cableLossDb;
+  return eirpDbm + effectiveLink.rxGainDbi - (baseLoss + terrainPenaltyDb);
+};
+
 const buildCoverageOverlay = (
   samples: CoverageSampleLite[],
   mode: Exclude<CoverageVizMode, "points">,
@@ -237,6 +279,60 @@ const buildCoverageOverlay = (
       image.data[px + 3] = a;
     }
   }
+  ctx.putImageData(image, 0, 0);
+  return {
+    url: canvas.toDataURL("image/png"),
+    coordinates: [
+      [bounds.minLon, bounds.maxLat],
+      [bounds.maxLon, bounds.maxLat],
+      [bounds.maxLon, bounds.minLat],
+      [bounds.minLon, bounds.minLat],
+    ],
+  };
+};
+
+const buildSourcePassFailOverlay = (
+  bounds: TerrainBounds,
+  fromSite: Site,
+  effectiveLink: Link,
+  receiverAntennaHeightM: number,
+  propagationModel: "FSPL" | "TwoRay" | "ITM",
+  rxTargetDbm: number,
+  environmentLossDb: number,
+  terrainSampler: (lat: number, lon: number) => number | null,
+): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
+  const size = 280;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const image = ctx.createImageData(size, size);
+
+  for (let y = 0; y < size; y += 1) {
+    const tY = y / (size - 1);
+    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
+    for (let x = 0; x < size; x += 1) {
+      const tX = x / (size - 1);
+      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      const rxDbm = computeSourceCentricRxDbm(
+        lat,
+        lon,
+        fromSite,
+        effectiveLink,
+        receiverAntennaHeightM,
+        propagationModel,
+        terrainSampler,
+      );
+      const pass = rxDbm - environmentLossDb >= rxTargetDbm;
+      const px = (y * size + x) * 4;
+      image.data[px] = pass ? 39 : 225;
+      image.data[px + 1] = pass ? 215 : 80;
+      image.data[px + 2] = pass ? 147 : 95;
+      image.data[px + 3] = 168;
+    }
+  }
+
   ctx.putImageData(image, 0, 0);
   return {
     url: canvas.toDataURL("image/png"),
@@ -428,6 +524,13 @@ export function MapView() {
   const recentlyDraggedSiteId = useRef<string | null>(null);
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
+  const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
+  const selectedFromSite = selectedLink
+    ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null
+    : null;
+  const selectedToSite = selectedLink
+    ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null
+    : null;
   const terrainSourceSummary = useMemo<Array<{ label: string; count: number }>>(() => {
     const breakdown = new globalThis.Map<string, { label: string; count: number }>();
     for (const tile of srtmTiles) {
@@ -503,16 +606,48 @@ export function MapView() {
     [coverageSamples, environmentLossDb, rxSensitivityTargetDbm],
   );
   const coverageOverlay = useMemo(
-    () =>
-      coverageVizMode === "points"
-        ? null
-        : buildCoverageOverlay(
-            coverageSamples,
-            coverageVizMode,
-            rxSensitivityTargetDbm,
-            environmentLossDb,
-          ),
-    [coverageSamples, coverageVizMode, rxSensitivityTargetDbm, environmentLossDb],
+    () => {
+      if (coverageVizMode === "points") return null;
+      const bounds = computeCoverageBounds(coverageSamples) ?? (sites.length ? computeTerrainBounds(sites) : null);
+      if (!bounds) return null;
+      if (coverageVizMode === "passfail") {
+        if (!selectedLink || !selectedFromSite) return null;
+        const effectiveLink: Link = {
+          ...selectedLink,
+          frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
+        };
+        const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? 2;
+        return buildSourcePassFailOverlay(
+          bounds,
+          selectedFromSite,
+          effectiveLink,
+          receiverAntennaHeightM,
+          propagationModel,
+          rxSensitivityTargetDbm,
+          environmentLossDb,
+          (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+        );
+      }
+      return buildCoverageOverlay(
+        coverageSamples,
+        coverageVizMode,
+        rxSensitivityTargetDbm,
+        environmentLossDb,
+      );
+    },
+    [
+      coverageSamples,
+      coverageVizMode,
+      rxSensitivityTargetDbm,
+      environmentLossDb,
+      selectedLink,
+      selectedFromSite,
+      selectedToSite,
+      selectedNetwork,
+      propagationModel,
+      srtmTiles,
+      sites,
+    ],
   );
 
   const simulationTerrainOverlay = useMemo(() => {
@@ -669,6 +804,9 @@ export function MapView() {
         <p>
           Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
         </p>
+        {coverageVizMode === "passfail" ? (
+          <p>Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter)</p>
+        ) : null}
       </aside>
       <Map
         longitude={viewport.center.lon}
