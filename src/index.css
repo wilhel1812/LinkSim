@@ -919,6 +919,23 @@ input {
   font-size: 0.92rem;
 }
 
+.library-editor-map {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  height: 240px;
+}
+
+.library-editor-map .maplibregl-map {
+  width: 100%;
+  height: 100%;
+}
+
+.library-edit-pin {
+  font-size: 0.68rem;
+  padding: 4px 8px;
+}
+
 .margin-status {
   border: 1px solid var(--border);
   border-radius: 8px;

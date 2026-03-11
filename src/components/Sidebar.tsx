@@ -1,6 +1,7 @@
 import type { ChangeEvent } from "react";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
+import Map, { Marker, type MarkerDragEvent } from "react-map-gl/maplibre";
 import { useSystemTheme } from "../hooks/useSystemTheme";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
@@ -32,6 +33,11 @@ const InfoTip = ({ text }: { text: string }) => (
     <span className="info-tip-box">{text}</span>
   </button>
 );
+
+const styleByTheme = {
+  light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+  dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+};
 
 const clampSNR = (spreadFactor: number): number => {
   const map: Record<number, number> = {
@@ -1125,6 +1131,38 @@ export function Sidebar() {
                     value={editingLibraryAntennaM}
                   />
                 </label>
+                <div className="library-editor-map">
+                  <Map
+                    initialViewState={{
+                      longitude: editingLibraryLon,
+                      latitude: editingLibraryLat,
+                      zoom: 12,
+                    }}
+                    latitude={editingLibraryLat}
+                    longitude={editingLibraryLon}
+                    mapStyle={styleByTheme[theme]}
+                    onClick={(event) => {
+                      setEditingLibraryLat(event.lngLat.lat);
+                      setEditingLibraryLon(event.lngLat.lng);
+                    }}
+                    zoom={12}
+                  >
+                    <Marker
+                      anchor="bottom"
+                      draggable
+                      latitude={editingLibraryLat}
+                      longitude={editingLibraryLon}
+                      onDragEnd={(event: MarkerDragEvent) => {
+                        setEditingLibraryLat(event.lngLat.lat);
+                        setEditingLibraryLon(event.lngLat.lng);
+                      }}
+                    >
+                      <div className="site-pin library-edit-pin">
+                        <span>{editingLibraryName.trim() || "Site"}</span>
+                      </div>
+                    </Marker>
+                  </Map>
+                </div>
                 <div className="chip-group">
                   <button className="inline-action" onClick={saveLibraryEdit} type="button">
                     Save
