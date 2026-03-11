@@ -4,7 +4,6 @@ import clsx from "clsx";
 import { useSystemTheme } from "../hooks/useSystemTheme";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
-import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
 import { analyzeLink } from "../lib/propagation";
@@ -97,7 +96,6 @@ export function Sidebar() {
     (state) => state.applyFrequencyPresetToSelectedNetwork,
   );
   const setPropagationModel = useAppStore((state) => state.setPropagationModel);
-  const updateSite = useAppStore((state) => state.updateSite);
   const updateLink = useAppStore((state) => state.updateLink);
   const ingestSrtmFiles = useAppStore((state) => state.ingestSrtmFiles);
   const syncSiteElevationsOnline = useAppStore((state) => state.syncSiteElevationsOnline);
@@ -105,7 +103,6 @@ export function Sidebar() {
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
   const setTerrainDataset = useAppStore((state) => state.setTerrainDataset);
-  const addSiteByCoordinates = useAppStore((state) => state.addSiteByCoordinates);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
@@ -181,17 +178,10 @@ export function Sidebar() {
     ...row,
     marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
   }));
-  const [newSiteName, setNewSiteName] = useState("");
-  const [newSiteLat, setNewSiteLat] = useState(sourceSite?.position.lat ?? 60.0);
-  const [newSiteLon, setNewSiteLon] = useState(sourceSite?.position.lon ?? 10.0);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
-  const [searchStatus, setSearchStatus] = useState("");
   const [newPresetName, setNewPresetName] = useState("");
   const [newLinkName, setNewLinkName] = useState("");
   const [newLinkFromId, setNewLinkFromId] = useState(sites[0]?.id ?? "");
   const [newLinkToId, setNewLinkToId] = useState(sites[1]?.id ?? "");
-  const [showAddSiteForm, setShowAddSiteForm] = useState(false);
   const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
   const [siteLibraryQuery, setSiteLibraryQuery] = useState("");
   const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
@@ -244,15 +234,13 @@ export function Sidebar() {
 
   const applyRfPreset = (presetId: string) => {
     const preset = findMeshtasticPreset(presetId);
-    if (!preset || !sourceSite || !destinationSite) return;
+    if (!preset) return;
     updateLink(selectedLink.id, {
       txPowerDbm: preset.txPowerDbm,
       txGainDbi: preset.txGainDbi,
       rxGainDbi: preset.rxGainDbi,
       cableLossDb: preset.cableLossDb,
     });
-    updateSite(sourceSite.id, { antennaHeightM: preset.antennaHeightM });
-    updateSite(destinationSite.id, { antennaHeightM: preset.antennaHeightM });
     setEnvironmentLossDb(preset.environmentLossDb);
   };
 
@@ -310,24 +298,6 @@ export function Sidebar() {
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     downloadJson(`radio-mobile-web-manifest-${stamp}.json`, manifest);
-  };
-
-  const addSiteNow = () => {
-    if (!Number.isFinite(newSiteLat) || !Number.isFinite(newSiteLon)) return;
-    addSiteByCoordinates(newSiteName, newSiteLat, newSiteLon);
-    setNewSiteName("");
-  };
-
-  const runSearch = async () => {
-    setSearchStatus("Searching...");
-    try {
-      const results = await searchLocations(searchQuery);
-      setSearchResults(results);
-      setSearchStatus(results.length ? `Found ${results.length} result(s)` : "No results");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setSearchStatus(`Search failed: ${message}`);
-    }
   };
 
   const loadSimulationRef = (ref: string) => {
@@ -484,81 +454,9 @@ export function Sidebar() {
       <section className="panel-section">
         <div className="section-heading">
           <h2>Sites</h2>
-          <InfoTip text="Manage current nodes here. Use Add New Site when you need to create a node by coordinates or map search." />
+          <InfoTip text="Site add/edit is managed in Site Library Manager. Here you only include or remove sites in this simulation." />
         </div>
-        <button
-          className="inline-action"
-          onClick={() => setShowAddSiteForm((current) => !current)}
-          type="button"
-        >
-          {showAddSiteForm ? "Hide Add New Site" : "Add New Site"}
-        </button>
-        {showAddSiteForm ? (
-          <>
-            <label className="field-grid">
-              <span>Name</span>
-              <input
-                onChange={(event) => setNewSiteName(event.target.value)}
-                type="text"
-                value={newSiteName}
-              />
-            </label>
-            <label className="field-grid">
-              <span>Lat</span>
-              <input
-                onChange={(event) => setNewSiteLat(parseNumber(event.target.value))}
-                step="0.000001"
-                type="number"
-                value={newSiteLat}
-              />
-            </label>
-            <label className="field-grid">
-              <span>Lon</span>
-              <input
-                onChange={(event) => setNewSiteLon(parseNumber(event.target.value))}
-                step="0.000001"
-                type="number"
-                value={newSiteLon}
-              />
-            </label>
-            <button className="inline-action" onClick={addSiteNow} type="button">
-              Add Site
-            </button>
-            <label className="field-grid">
-              <span>Map Search</span>
-              <input
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Address or place"
-                type="text"
-                value={searchQuery}
-              />
-            </label>
-            <button className="inline-action" onClick={() => void runSearch()} type="button">
-              Search
-            </button>
-            {searchStatus ? <p className="field-help">{searchStatus}</p> : null}
-            {searchResults.length ? (
-              <div className="asset-list">
-                {searchResults.map((result) => (
-                  <button
-                    className="inline-action"
-                    key={result.id}
-                    onClick={() => {
-                      setNewSiteName(result.label.split(",")[0] ?? "New Site");
-                      setNewSiteLat(result.lat);
-                      setNewSiteLon(result.lon);
-                      addSiteByCoordinates(result.label.split(",")[0] ?? "New Site", result.lat, result.lon);
-                    }}
-                    type="button"
-                  >
-                    Add: {result.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </>
-        ) : null}
-        <p className="field-help">Manually added sites are saved to the shared library automatically.</p>
+        <p className="field-help">Use Site Library Manager to add/edit sites, then add selected sites to this project.</p>
         <div className="chip-group">
           <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
             Open Site Library Manager ({siteLibrary.length})
@@ -876,61 +774,8 @@ export function Sidebar() {
           onClick={() => deleteSite(selectedSite.id)}
           type="button"
         >
-          Delete Selected Site
+          Remove Selected From Project
         </button>
-
-        <details className="compact-details">
-          <summary>Edit Selected Site</summary>
-          <label className="field-grid">
-            <span>Latitude</span>
-            <input
-              onChange={(event) =>
-                updateSite(selectedSite.id, {
-                  position: { ...selectedSite.position, lat: parseNumber(event.target.value) },
-                })
-              }
-              step="0.0001"
-              type="number"
-              value={selectedSite.position.lat}
-            />
-          </label>
-
-          <label className="field-grid">
-            <span>Longitude</span>
-            <input
-              onChange={(event) =>
-                updateSite(selectedSite.id, {
-                  position: { ...selectedSite.position, lon: parseNumber(event.target.value) },
-                })
-              }
-              step="0.0001"
-              type="number"
-              value={selectedSite.position.lon}
-            />
-          </label>
-
-          <label className="field-grid">
-            <span>Ground elev (m)</span>
-            <input
-              onChange={(event) =>
-                updateSite(selectedSite.id, { groundElevationM: parseNumber(event.target.value) })
-              }
-              type="number"
-              value={selectedSite.groundElevationM}
-            />
-          </label>
-
-          <label className="field-grid">
-            <span>Antenna (m)</span>
-            <input
-              onChange={(event) =>
-                updateSite(selectedSite.id, { antennaHeightM: parseNumber(event.target.value) })
-              }
-              type="number"
-              value={selectedSite.antennaHeightM}
-            />
-          </label>
-        </details>
       </section>
 
       <section className="panel-section">

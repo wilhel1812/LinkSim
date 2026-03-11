@@ -1,10 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Map, {
   Layer,
   Marker,
   Source,
   type MapLayerMouseEvent,
-  type MarkerDragEvent,
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
@@ -648,7 +647,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
   const updateLink = useAppStore((state) => state.updateLink);
-  const updateSite = useAppStore((state) => state.updateSite);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const coverageSamples = useAppStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -677,7 +675,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     latitude: number;
     zoom: number;
   } | null>(null);
-  const recentlyDraggedSiteId = useRef<string | null>(null);
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
@@ -878,22 +875,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   };
 
   const onSiteClick = (siteId: string) => {
-    if (recentlyDraggedSiteId.current === siteId) {
-      recentlyDraggedSiteId.current = null;
-      return;
-    }
-
     setSelectedSiteId(siteId);
     if (!endpointPickTarget) return;
     updateLink(selectedLinkId, endpointPickTarget === "from" ? { fromSiteId: siteId } : { toSiteId: siteId });
     setEndpointPickTarget(null);
-  };
-
-  const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
-    recentlyDraggedSiteId.current = siteId;
-    updateSite(siteId, {
-      position: { lat: event.lngLat.lat, lon: event.lngLat.lng },
-    });
   };
 
   const onMapClick = (event: MapLayerMouseEvent) => {
@@ -1103,11 +1088,9 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         {sites.map((site) => (
           <Marker
             anchor="bottom"
-            draggable
             key={site.id}
             latitude={site.position.lat}
             longitude={site.position.lon}
-            onDragEnd={(event) => onSiteDragEnd(site.id, event)}
           >
             <div
               className={`site-pin ${site.id === selectedSiteId ? "is-selected" : ""}`}
