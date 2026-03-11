@@ -577,6 +577,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const selectedProfile = getSelectedProfile();
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
+  const [showSimulationSummary, setShowSimulationSummary] = useState(true);
   const [interactionViewState, setInteractionViewState] = useState<{
     longitude: number;
     latitude: number;
@@ -876,42 +877,55 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       ) : null}
       {!hasSimulationTerrain ? <div className="map-control-note">No SRTM loaded: simulation uses site elevations only.</div> : null}
       <aside className="map-sim-summary" aria-live="polite">
-        <h3>Simulation Sources</h3>
-        <p>
-          Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
-        </p>
-        <p>
-          Network: {selectedNetwork?.name ?? "n/a"} @{" "}
-          {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
-        </p>
-        <p>
-          Terrain dataset: {terrainDataset.toUpperCase()} ({selectedDatasetTileCount} matching tile
-          {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
-        </p>
-        {terrainSourceSummary.length ? (
-          <ul className="map-sim-sources">
-            {terrainSourceSummary.map((entry) => (
-              <li key={entry.label}>
-                {entry.label}: {entry.count}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>Terrain source: scenario/manual site elevations only</p>
-        )}
-        <p>
-          Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + scenario values" : "Scenario values"}
-        </p>
-        <p>
-          Resolution: {coverageResolutionMode === "high" ? "High quality" : "Auto"} ({overlayDimensions.width}x
-          {overlayDimensions.height})
-        </p>
-        <p>
-          Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
-        </p>
-        {coverageVizMode === "contours" ? <p>Band step: {currentBandStepDb} dB ({bandStepMode})</p> : null}
-        {coverageVizMode === "passfail" ? (
-          <p>Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter)</p>
+        <div className="map-sim-summary-header">
+          <h3>Simulation Sources</h3>
+          <button
+            className="map-control-btn map-summary-toggle"
+            onClick={() => setShowSimulationSummary((current) => !current)}
+            type="button"
+          >
+            {showSimulationSummary ? "Hide" : "Show"}
+          </button>
+        </div>
+        {showSimulationSummary ? (
+          <>
+            <p>
+              Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
+            </p>
+            <p>
+              Network: {selectedNetwork?.name ?? "n/a"} @{" "}
+              {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
+            </p>
+            <p>
+              Terrain dataset: {terrainDataset.toUpperCase()} ({selectedDatasetTileCount} matching tile
+              {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
+            </p>
+            {terrainSourceSummary.length ? (
+              <ul className="map-sim-sources">
+                {terrainSourceSummary.map((entry) => (
+                  <li key={entry.label}>
+                    {entry.label}: {entry.count}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>Terrain source: scenario/manual site elevations only</p>
+            )}
+            <p>
+              Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + scenario values" : "Scenario values"}
+            </p>
+            <p>
+              Resolution: {coverageResolutionMode === "high" ? "High quality" : "Auto"} ({overlayDimensions.width}x
+              {overlayDimensions.height})
+            </p>
+            <p>
+              Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
+            </p>
+            {coverageVizMode === "contours" ? <p>Band step: {currentBandStepDb} dB ({bandStepMode})</p> : null}
+            {coverageVizMode === "passfail" ? (
+              <p>Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter)</p>
+            ) : null}
+          </>
         ) : null}
       </aside>
       <Map

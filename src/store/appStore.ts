@@ -642,6 +642,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   recomputeCoverage: () => {
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const startedAt = Date.now();
     set({
       simulationRunToken: runId,
       isSimulationRecomputing: true,
@@ -664,16 +665,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       } = state;
       const network = networks.find((n) => n.id === selectedNetworkId);
       if (!network) {
-        set({
-          coverageSamples: [],
-          isSimulationRecomputing: false,
-          simulationProgress: 100,
-        });
-        window.setTimeout(() => {
-          if (get().simulationRunToken === runId) {
-            set({ simulationProgress: 0, simulationRunToken: "" });
-          }
-        }, 200);
+        const finalize = () => {
+          if (get().simulationRunToken !== runId) return;
+          set({
+            coverageSamples: [],
+            isSimulationRecomputing: false,
+            simulationProgress: 100,
+          });
+          window.setTimeout(() => {
+            if (get().simulationRunToken === runId) {
+              set({ simulationProgress: 0, simulationRunToken: "" });
+            }
+          }, 260);
+        };
+        const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
+        window.setTimeout(finalize, waitMs);
         return;
       }
 
@@ -694,16 +700,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       );
       if (get().simulationRunToken !== runId) return;
-      set({
-        coverageSamples,
-        isSimulationRecomputing: false,
-        simulationProgress: 100,
-      });
-      window.setTimeout(() => {
-        if (get().simulationRunToken === runId) {
-          set({ simulationProgress: 0, simulationRunToken: "" });
-        }
-      }, 240);
+      const finalize = () => {
+        if (get().simulationRunToken !== runId) return;
+        set({
+          coverageSamples,
+          isSimulationRecomputing: false,
+          simulationProgress: 100,
+        });
+        window.setTimeout(() => {
+          if (get().simulationRunToken === runId) {
+            set({ simulationProgress: 0, simulationRunToken: "" });
+          }
+        }, 320);
+      };
+      const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
+      window.setTimeout(finalize, waitMs);
     }, 0);
   },
   getSelectedLink: () => {

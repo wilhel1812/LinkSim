@@ -543,6 +543,25 @@ input {
   font-size: 0.82rem;
 }
 
+.map-sim-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.map-sim-summary-header h3 {
+  margin: 0;
+}
+
+.map-summary-toggle {
+  min-width: 54px;
+  height: 28px;
+  font-size: 0.72rem;
+  padding: 0 8px;
+}
+
 .map-sim-summary p {
   margin: 0 0 4px;
   color: var(--text);
