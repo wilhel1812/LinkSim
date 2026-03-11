@@ -1207,14 +1207,11 @@ export function Sidebar() {
                         latitude: editingLibraryLat,
                         zoom: 12,
                       }}
-                      latitude={editingLibraryLat}
-                      longitude={editingLibraryLon}
                       mapStyle={styleByTheme[theme]}
                       onClick={(event) => {
                         setEditingLibraryLat(event.lngLat.lat);
                         setEditingLibraryLon(event.lngLat.lng);
                       }}
-                      zoom={12}
                     >
                       <Marker
                         anchor="bottom"
