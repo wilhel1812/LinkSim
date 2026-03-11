@@ -544,7 +544,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const theme = useSystemTheme();
   const selectedProfile = getSelectedProfile();
-  const [showTerrain, setShowTerrain] = useState(true);
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const recentlyDraggedSiteId = useRef<string | null>(null);
   const hasSimulationTerrain = srtmTiles.length > 0;
@@ -761,21 +760,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           Fit
         </button>
         <button
-          className={`map-control-btn ${showTerrain ? "is-selected" : ""}`}
-          disabled={!hasSimulationTerrain}
-          onClick={() => setShowTerrain((value) => !value)}
-          title={
-            hasSimulationTerrain
-              ? showTerrain
-                ? "Hide simulation terrain overlay"
-                : "Show simulation terrain overlay"
-              : "Load SRTM tiles to visualize simulation terrain"
-          }
-          type="button"
-        >
-          {showTerrain ? "SimTerrain On" : "SimTerrain Off"}
-        </button>
-        <button
           className={`map-control-btn ${coverageVizMode === "points" ? "is-selected" : ""}`}
           onClick={() => setCoverageVizMode("points")}
           title="Coverage as sampled points"
@@ -863,7 +847,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         onClick={onMapClick}
         onMoveEnd={onMoveEnd}
       >
-        {showTerrain && simulationTerrainOverlay ? (
+        {simulationTerrainOverlay ? (
           <Source
             coordinates={simulationTerrainOverlay.coordinates}
             id="terrain-overlay-source"
