@@ -47,14 +47,10 @@ const coverageRasterLayer: LayerProps = {
   },
 };
 
-const terrainLayer: LayerProps = {
-  id: "terrain-overlay-layer",
-  type: "raster",
-  paint: {
-    "raster-opacity": 0.72,
-    "raster-contrast": 0.2,
-    "raster-saturation": -0.1,
-  },
+const terrainRasterPaint = {
+  "raster-opacity": 0.62,
+  "raster-contrast": 0.16,
+  "raster-saturation": -0.06,
 };
 
 const styleByTheme = {
@@ -992,7 +988,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             type="image"
             url={simulationTerrainOverlay.url}
           >
-            <Layer {...terrainLayer} />
+            <Layer
+              id="terrain-overlay-layer"
+              type="raster"
+              paint={{
+                ...terrainRasterPaint,
+                "raster-opacity": coverageOverlay ? 0.34 : 0.62,
+              }}
+            />
           </Source>
         ) : null}
 
