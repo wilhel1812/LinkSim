@@ -28,6 +28,7 @@ const evalRx = (
   txSystem: RadioSystem,
   frequencyMHz: number,
   model: PropagationModel,
+  terrainSamples: number,
   terrainSampler?: (coordinates: Coordinates) => number | null,
 ): number => {
   const distanceKm = Math.max(
@@ -51,7 +52,7 @@ const evalRx = (
           toAntennaAbsM: rxSite.groundElevationM + rxSite.antennaHeightM,
           frequencyMHz,
           terrainSampler,
-          samples: 20,
+          samples: terrainSamples,
         })
       : 0;
 
@@ -101,12 +102,14 @@ export const buildCoverage = (
   terrainSampler?: (coordinates: Coordinates) => number | null,
   options?: {
     sampleMultiplier?: number;
+    terrainSamples?: number;
     onProgress?: (progress: number) => void;
   },
 ): CoverageSample[] => {
   if (!network.memberships.length || sites.length === 0) return [];
   const effectiveFrequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
   const sampleMultiplier = Math.max(1, options?.sampleMultiplier ?? 1);
+  const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
   const onProgress = options?.onProgress;
 
   const center = midpoint(sites);
@@ -176,6 +179,7 @@ export const buildCoverage = (
           system,
           effectiveFrequencyMHz,
           model,
+          terrainSamples,
           terrainSampler,
         );
       })

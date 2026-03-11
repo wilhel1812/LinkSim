@@ -719,6 +719,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
         {
           sampleMultiplier: coverageResolutionMode === "high" ? 4 : 1,
+          terrainSamples: coverageResolutionMode === "high" ? 72 : 20,
           onProgress: (progress) => {
             if (get().simulationRunToken !== runId) return;
             set({ simulationProgress: Math.round(8 + progress * 84) });
@@ -770,7 +771,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { fromSite, toSite };
   },
   getSelectedAnalysis: () => {
-    const { getSelectedLink, getSelectedNetwork, getSelectedSites, propagationModel, srtmTiles } = get();
+    const { getSelectedLink, getSelectedNetwork, getSelectedSites, propagationModel, srtmTiles, coverageResolutionMode } =
+      get();
     const link = getSelectedLink();
     const selectedNetwork = getSelectedNetwork();
     const effectiveLink = {
@@ -784,10 +786,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       toSite,
       propagationModel,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+      { terrainSamples: coverageResolutionMode === "high" ? 80 : 32 },
     );
   },
   getSelectedProfile: () => {
-    const { getSelectedLink, getSelectedNetwork, getSelectedSites, srtmTiles } = get();
+    const { getSelectedLink, getSelectedNetwork, getSelectedSites, srtmTiles, coverageResolutionMode } = get();
     const link = getSelectedLink();
     const selectedNetwork = getSelectedNetwork();
     const effectiveLink = {
@@ -801,7 +804,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       fromSite,
       toSite,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-      120,
+      coverageResolutionMode === "high" ? 320 : 120,
     );
   },
 }));

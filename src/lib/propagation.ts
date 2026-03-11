@@ -95,6 +95,7 @@ export const analyzeLink = (
   toSite: Site,
   model: PropagationModel,
   terrainSampler?: TerrainSampler,
+  options?: { terrainSamples?: number },
 ): LinkAnalysis => {
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, toSite.position));
   const fromAntennaAbsM = fromSite.groundElevationM + fromSite.antennaHeightM;
@@ -117,7 +118,7 @@ export const analyzeLink = (
       toAntennaAbsM: toAntennaAbsM,
       frequencyMHz: link.frequencyMHz,
       terrainSampler,
-      samples: 32,
+      samples: Math.max(24, Math.round(options?.terrainSamples ?? 32)),
     });
   }
 

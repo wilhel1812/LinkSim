@@ -307,6 +307,7 @@ const computeSourceCentricRxDbm = (
   receiverAntennaHeightM: number,
   propagationModel: "FSPL" | "TwoRay" | "ITM",
   terrainSampler: (lat: number, lon: number) => number | null,
+  terrainSamples: number,
 ): number => {
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, { lat, lon }));
   const baseLoss = getPathLossByModel(
@@ -328,7 +329,7 @@ const computeSourceCentricRxDbm = (
         toAntennaAbsM: rxGround + receiverAntennaHeightM,
         frequencyMHz: effectiveLink.frequencyMHz,
         terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
-        samples: 24,
+        samples: terrainSamples,
       });
     }
   }
@@ -412,6 +413,7 @@ const buildSourcePassFailOverlay = (
   environmentLossDb: number,
   terrainSampler: (lat: number, lon: number) => number | null,
   dimensions: { width: number; height: number },
+  terrainSamples: number,
 ): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
   const width = dimensions.width;
   const height = dimensions.height;
@@ -436,6 +438,7 @@ const buildSourcePassFailOverlay = (
         receiverAntennaHeightM,
         propagationModel,
         terrainSampler,
+        terrainSamples,
       );
       const pass = rxDbm - environmentLossDb >= rxTargetDbm;
       const px = (y * width + x) * 4;
@@ -794,6 +797,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           environmentLossDb,
           (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
           overlayDimensions,
+          coverageResolutionMode === "high" ? 80 : 24,
         );
       }
       return buildCoverageOverlay(
@@ -820,6 +824,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       srtmTiles,
       analysisBounds,
       overlayDimensions,
+      coverageResolutionMode,
     ],
   );
   const currentBandStepDb = useMemo(() => {
