@@ -1182,6 +1182,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             coverageSamples: [],
             isSimulationRecomputing: false,
             simulationProgress: 100,
+            coverageResolutionMode: "auto",
           });
           window.setTimeout(() => {
             if (get().simulationRunToken === runId) {
@@ -1240,6 +1241,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           coverageSamples,
           isSimulationRecomputing: false,
           simulationProgress: 100,
+          coverageResolutionMode: "auto",
         });
         window.setTimeout(() => {
           if (get().simulationRunToken === runId) {

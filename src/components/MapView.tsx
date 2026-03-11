@@ -1042,13 +1042,13 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           Step {bandStepMode === "auto" ? `Auto(${currentBandStepDb})` : `${bandStepMode}dB`}
         </button>
         <button
-          className={`map-control-btn ${coverageResolutionMode === "high" ? "is-selected" : ""}`}
+          className="map-control-btn"
           disabled={isSimulationRecomputing}
           onClick={() => runHighQualitySimulation()}
           title="Run one high-quality simulation pass"
           type="button"
         >
-          {coverageResolutionMode === "high" ? "HQ Result" : "Render HQ"}
+          Render HQ
         </button>
         <button
           className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
