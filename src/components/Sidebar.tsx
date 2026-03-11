@@ -114,6 +114,7 @@ export function Sidebar() {
   const deleteSite = useAppStore((state) => state.deleteSite);
   const createLink = useAppStore((state) => state.createLink);
   const deleteLink = useAppStore((state) => state.deleteLink);
+  const addSiteLibraryEntry = useAppStore((state) => state.addSiteLibraryEntry);
   const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
@@ -200,6 +201,12 @@ export function Sidebar() {
   const [editingLibraryLon, setEditingLibraryLon] = useState(0);
   const [editingLibraryGroundM, setEditingLibraryGroundM] = useState(0);
   const [editingLibraryAntennaM, setEditingLibraryAntennaM] = useState(2);
+  const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
+  const [newLibraryName, setNewLibraryName] = useState("");
+  const [newLibraryLat, setNewLibraryLat] = useState(60.0);
+  const [newLibraryLon, setNewLibraryLon] = useState(10.0);
+  const [newLibraryGroundM, setNewLibraryGroundM] = useState(0);
+  const [newLibraryAntennaM, setNewLibraryAntennaM] = useState(2);
   const simulationOptions = [
     ...scenarioOptions.map((scenario) => ({
       id: `builtin:${scenario.id}`,
@@ -379,6 +386,17 @@ export function Sidebar() {
       antennaHeightM: editingLibraryAntennaM,
     });
     setEditingLibraryId(null);
+  };
+  const addLibraryEntryNow = () => {
+    addSiteLibraryEntry(
+      newLibraryName,
+      newLibraryLat,
+      newLibraryLon,
+      newLibraryGroundM,
+      newLibraryAntennaM,
+    );
+    setNewLibraryName("");
+    setShowAddLibraryForm(false);
   };
 
   return (
@@ -1097,6 +1115,13 @@ export function Sidebar() {
             <div className="chip-group">
               <button
                 className="inline-action"
+                onClick={() => setShowAddLibraryForm((current) => !current)}
+                type="button"
+              >
+                {showAddLibraryForm ? "Hide Add" : "Add Library Site"}
+              </button>
+              <button
+                className="inline-action"
                 onClick={() => setSelectedLibraryIds(new Set(filteredSiteLibrary.map((entry) => entry.id)))}
                 type="button"
               >
@@ -1128,6 +1153,62 @@ export function Sidebar() {
                 Delete Selected ({selectedLibraryCount})
               </button>
             </div>
+            {showAddLibraryForm ? (
+              <div className="library-editor">
+                <h3>Add Library Site</h3>
+                <label className="field-grid">
+                  <span>Name</span>
+                  <input
+                    onChange={(event) => setNewLibraryName(event.target.value)}
+                    placeholder="My site"
+                    type="text"
+                    value={newLibraryName}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Latitude</span>
+                  <input
+                    onChange={(event) => setNewLibraryLat(parseNumber(event.target.value))}
+                    step="0.000001"
+                    type="number"
+                    value={newLibraryLat}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Longitude</span>
+                  <input
+                    onChange={(event) => setNewLibraryLon(parseNumber(event.target.value))}
+                    step="0.000001"
+                    type="number"
+                    value={newLibraryLon}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground elev (m)</span>
+                  <input
+                    onChange={(event) => setNewLibraryGroundM(parseNumber(event.target.value))}
+                    type="number"
+                    value={newLibraryGroundM}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Antenna (m)</span>
+                  <input
+                    onChange={(event) => setNewLibraryAntennaM(parseNumber(event.target.value))}
+                    type="number"
+                    value={newLibraryAntennaM}
+                  />
+                </label>
+                <div className="chip-group">
+                  <button className="inline-action" onClick={addLibraryEntryNow} type="button">
+                    Add To Library
+                  </button>
+                  <button className="inline-action" onClick={() => setShowAddLibraryForm(false)} type="button">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="library-manager-list">
               {filteredSiteLibrary.map((entry) => (
                 <div className="library-manager-row" key={entry.id}>

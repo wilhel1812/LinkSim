@@ -108,6 +108,13 @@ type AppState = {
   deleteSite: (siteId: string) => void;
   createLink: (fromSiteId: string, toSiteId: string, name?: string) => void;
   deleteLink: (linkId: string) => void;
+  addSiteLibraryEntry: (
+    name: string,
+    lat: number,
+    lon: number,
+    groundElevationM?: number,
+    antennaHeightM?: number,
+  ) => void;
   insertSiteFromLibrary: (entryId: string) => void;
   insertSitesFromLibrary: (entryIds: string[]) => void;
   updateSiteLibraryEntry: (
@@ -378,6 +385,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedLinkId: id,
     }));
     get().recomputeCoverage();
+  },
+  addSiteLibraryEntry: (name, lat, lon, groundElevationM = 0, antennaHeightM = 2) => {
+    const label = name.trim() || `Library Site ${get().siteLibrary.length + 1}`;
+    const entry: SiteLibraryEntry = {
+      id: makeId("libsite"),
+      name: label,
+      position: { lat, lon },
+      groundElevationM,
+      antennaHeightM,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => {
+      const next = normalizeSiteLibrary([entry, ...state.siteLibrary]);
+      writeStorage(SITE_LIBRARY_KEY, next);
+      return { siteLibrary: next };
+    });
   },
   deleteLink: (linkId) => {
     set((state) => {
