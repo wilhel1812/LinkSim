@@ -3,7 +3,7 @@ import clsx from "clsx";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
-import { BUNDLED_SRTM1_TILES } from "../lib/terrainCatalog";
+import { REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel } from "../types/radio";
 
@@ -49,7 +49,6 @@ export function Sidebar() {
   const updateLink = useAppStore((state) => state.updateLink);
   const ingestSrtmFiles = useAppStore((state) => state.ingestSrtmFiles);
   const syncSiteElevationsOnline = useAppStore((state) => state.syncSiteElevationsOnline);
-  const loadBundledSrtmTiles = useAppStore((state) => state.loadBundledSrtmTiles);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
@@ -374,9 +373,6 @@ export function Sidebar() {
         >
           Recommend Best Dataset
         </button>
-        <button className="inline-action" onClick={() => void loadBundledSrtmTiles()} type="button">
-          Load Bundled SRTM1
-        </button>
         <label className="upload-button">
           {t(locale, "loadHgt")}
           <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
@@ -387,11 +383,12 @@ export function Sidebar() {
         {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
         {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
         <div className="asset-list">
-          {BUNDLED_SRTM1_TILES.map((tile) => (
-            <a href={tile.sourceUrl} key={tile.key} rel="noreferrer" target="_blank">
-              Source: {tile.key}.hgt.zip (ve2dbe srtm1)
-            </a>
-          ))}
+          <a href={REMOTE_SRTM_ENDPOINTS[terrainDataset]} rel="noreferrer" target="_blank">
+            Open selected ve2dbe dataset source
+          </a>
+          <a href="https://www.ve2dbe.com/geodata/" rel="noreferrer" target="_blank">
+            ve2dbe geodata selector
+          </a>
         </div>
       </section>
 
@@ -399,7 +396,7 @@ export function Sidebar() {
         <h2>{t(locale, "legacyAssets")}</h2>
         <div className="asset-list">
           {LEGACY_ASSETS.map((asset) => (
-            <a href={`/legacy-assets/${asset.file}`} key={asset.file} rel="noreferrer" target="_blank">
+            <a href={asset.url} key={asset.url} rel="noreferrer" target="_blank">
               {asset.label}
             </a>
           ))}

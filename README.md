@@ -1,40 +1,33 @@
 # Radio Mobile Web (WIP)
 
-Web rewrite of Radio Mobile concepts with terrain-aware link/profile/coverage workflows.
+Independent web reimplementation inspired by Radio Mobile workflows.
 
-## Terrain Data Sources (ve2dbe)
+- Not affiliated with VE2DBE.
+- No original Radio Mobile binaries/assets are redistributed in this repository.
+- Terrain archives are fetched from official sources at runtime and cached locally.
 
-Primary source: [https://www.ve2dbe.com/geodata/](https://www.ve2dbe.com/geodata/)
+## Data Flow
 
-Implemented source flow:
-
-1. Query area using `geodata/gettile.asp` (`mode` for `srtm1/srtm3/srtmthird`).
-2. Parse returned archive links (for example `srtm1/N59E010.hgt.zip`).
-3. Download archives.
+1. Area selection (from current scenario/site extent).
+2. Query `https://www.ve2dbe.com/geodata/gettile.asp` for available tiles.
+3. Download selected `.hgt.zip` archives from ve2dbe geodata endpoints.
 4. Cache archives in browser Cache Storage.
-5. Parse `.hgt` from `.zip` and load into simulation terrain store.
+5. Parse and use loaded SRTM tiles in propagation/profile/terrain overlay.
 
-## Bundled Terrain (No User Download Needed)
+## Runtime Proxy
 
-Bundled from ve2dbe `srtm1` for built-in scenarios:
-
-- `N59E010.hgt.zip`
-- `N59E011.hgt.zip`
-- `N60E009.hgt.zip`
-
-Location: `public/srtm1/`
-
-These are auto-loaded at app start and also available via the Terrain panel button.
-
-## Dev/Preview Proxy
-
-The browser cannot directly POST/fetch `ve2dbe` endpoints due CORS.
-This project proxies ve2dbe through Vite:
+Vite proxy is used for browser CORS compatibility in dev/preview:
 
 - `/ve2dbe/geodata/gettile.asp`
 - `/ve2dbe/geodata/<dataset>/<tile>.hgt.zip`
 
-Configured in `vite.config.ts` for both `server.proxy` and `preview.proxy`.
+See `vite.config.ts`.
+
+## Legal/Attribution
+
+- Credits: [CREDITS.md](./CREDITS.md)
+- Third-party/data notices: [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+- Project license: [LICENSE](./LICENSE)
 
 ## Running
 
@@ -42,8 +35,3 @@ Configured in `vite.config.ts` for both `server.proxy` and `preview.proxy`.
 npm install
 npm run dev
 ```
-
-## Notes
-
-- The map `SimTerrain` overlay visualizes elevations sampled from the same SRTM tiles used in propagation calculations.
-- `.hgt` and `.hgt.zip` uploads are both supported in the Terrain panel.

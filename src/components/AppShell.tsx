@@ -1,17 +1,28 @@
 import { useEffect } from "react";
 import { t } from "../i18n/locales";
+import { useSystemTheme } from "../hooks/useSystemTheme";
 import { useAppStore } from "../store/appStore";
+import { PRIMARY_ATTRIBUTION } from "../lib/terrainCatalog";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { Sidebar } from "./Sidebar";
 
 export function AppShell() {
   const locale = useAppStore((state) => state.locale);
-  const loadBundledSrtmTiles = useAppStore((state) => state.loadBundledSrtmTiles);
+  const srtmTilesCount = useAppStore((state) => state.srtmTiles.length);
+  const recommendTerrainDatasetForCurrentArea = useAppStore(
+    (state) => state.recommendTerrainDatasetForCurrentArea,
+  );
+  const fetchTerrainForCurrentArea = useAppStore((state) => state.fetchTerrainForCurrentArea);
+  const theme = useSystemTheme();
 
   useEffect(() => {
-    void loadBundledSrtmTiles();
-  }, [loadBundledSrtmTiles]);
+    if (srtmTilesCount > 0) return;
+    void (async () => {
+      await recommendTerrainDatasetForCurrentArea();
+      await fetchTerrainForCurrentArea();
+    })();
+  }, [fetchTerrainForCurrentArea, recommendTerrainDatasetForCurrentArea, srtmTilesCount]);
 
   return (
     <main className="app-shell">
@@ -25,6 +36,18 @@ export function AppShell() {
         </header>
         <MapView />
         <LinkProfileChart />
+        <footer className="workspace-attribution">
+          <p>
+            Inspired by{" "}
+            <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
+              {PRIMARY_ATTRIBUTION.projectName}
+            </a>{" "}
+            by {PRIMARY_ATTRIBUTION.authorName}. {PRIMARY_ATTRIBUTION.disclaimer}
+          </p>
+          <p>
+            Basemap style: {theme === "dark" ? "Carto Dark Matter" : "Carto Positron"} (attribution applies).
+          </p>
+        </footer>
       </section>
     </main>
   );

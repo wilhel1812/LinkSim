@@ -4,8 +4,7 @@ import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { DEMO_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
-import { BUNDLED_SRTM1_TILES } from "../lib/terrainCatalog";
-import { parseSrtmTile, parseSrtmZip, sampleSrtmElevation } from "../lib/srtm";
+import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import {
   loadVe2dbeTilesForArea,
   recommendVe2dbeDatasetForArea,
@@ -65,7 +64,6 @@ type AppState = {
   updateLink: (id: string, patch: Partial<Link>) => void;
   updateMapViewport: (patch: Partial<MapViewport>) => void;
   ingestSrtmFiles: (files: FileList | File[]) => Promise<void>;
-  loadBundledSrtmTiles: () => Promise<void>;
   recommendTerrainDatasetForCurrentArea: () => Promise<void>;
   fetchTerrainForCurrentArea: () => Promise<void>;
   syncSiteElevationsOnline: () => Promise<void>;
@@ -223,36 +221,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       const dedup = new Map<string, SrtmTile>();
       for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
       for (const tile of parsed) dedup.set(tile.key, tile);
-      return { srtmTiles: Array.from(dedup.values()) };
-    });
-    get().recomputeCoverage();
-  },
-  loadBundledSrtmTiles: async () => {
-    const existing = new Set(get().srtmTiles.map((tile) => tile.key));
-    const missing = BUNDLED_SRTM1_TILES.filter((tile) => !existing.has(tile.key));
-    if (!missing.length) return;
-
-    const loaded = await Promise.all(
-      missing.map(async (tile) => {
-        const response = await fetch(tile.archivePath, { cache: "force-cache" });
-        if (!response.ok) {
-          throw new Error(`Failed to load bundled SRTM tile: ${tile.archivePath}`);
-        }
-        const archive = await response.arrayBuffer();
-        return {
-          ...parseSrtmZip(tile.archivePath, archive),
-          sourceKind: "bundled" as const,
-          sourceId: "ve2dbe-srtm1-bundled",
-          sourceLabel: "ve2dbe srtm1 (bundled)",
-          sourceDetail: tile.archivePath,
-        };
-      }),
-    );
-
-    set((state) => {
-      const dedup = new Map<string, SrtmTile>();
-      for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
-      for (const tile of loaded) dedup.set(tile.key, tile);
       return { srtmTiles: Array.from(dedup.values()) };
     });
     get().recomputeCoverage();
