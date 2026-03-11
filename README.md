@@ -35,3 +35,21 @@ See `vite.config.ts`.
 npm install
 npm run dev
 ```
+
+## Running with Docker Compose
+
+Production-like runtime (nginx + static assets + reverse proxy):
+
+```bash
+docker compose up --build web
+```
+
+App is available at `http://localhost:8080`.
+
+Development runtime (Vite dev server with live reload):
+
+```bash
+docker compose up --build dev
+```
+
+App is available at `http://localhost:5173`.
