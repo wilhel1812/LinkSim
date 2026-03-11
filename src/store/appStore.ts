@@ -149,7 +149,8 @@ type AppState = {
   ) => void;
   deleteSiteLibraryEntry: (entryId: string) => void;
   deleteSiteLibraryEntries: (entryIds: string[]) => void;
-  saveCurrentSimulationPreset: (name: string) => void;
+  saveCurrentSimulationPreset: (name: string) => string | null;
+  overwriteSimulationPreset: (presetId: string) => void;
   loadSimulationPreset: (presetId: string) => void;
   renameSimulationPreset: (presetId: string, name: string) => void;
   deleteSimulationPreset: (presetId: string) => void;
@@ -537,7 +538,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   saveCurrentSimulationPreset: (name) => {
     const presetName = name.trim();
-    if (!presetName) return;
+    if (!presetName) return null;
     const state = get();
     const snapshot: SimulationPreset["snapshot"] = {
       sites: state.sites,
@@ -563,6 +564,41 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextPreset: SimulationPreset = {
         id: existing?.id ?? makeId("sim"),
         name: presetName,
+        updatedAt: new Date().toISOString(),
+        snapshot,
+      };
+      const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
+    });
+    return get().simulationPresets[0]?.id ?? null;
+  },
+  overwriteSimulationPreset: (presetId) => {
+    const state = get();
+    const existing = state.simulationPresets.find((preset) => preset.id === presetId);
+    if (!existing) return;
+    const snapshot: SimulationPreset["snapshot"] = {
+      sites: state.sites,
+      links: state.links,
+      systems: state.systems,
+      networks: state.networks,
+      selectedSiteId: state.selectedSiteId,
+      selectedLinkId: state.selectedLinkId,
+      selectedNetworkId: state.selectedNetworkId,
+      selectedCoverageMode: state.selectedCoverageMode,
+      propagationModel: state.propagationModel,
+      selectedFrequencyPresetId: state.selectedFrequencyPresetId,
+      rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
+      environmentLossDb: state.environmentLossDb,
+      propagationEnvironment: state.propagationEnvironment,
+      autoPropagationEnvironment: state.autoPropagationEnvironment,
+      terrainDataset: state.terrainDataset,
+      mapViewport: state.mapViewport,
+    };
+    set((current) => {
+      const nextPreset: SimulationPreset = {
+        id: existing.id,
+        name: existing.name,
         updatedAt: new Date().toISOString(),
         snapshot,
       };

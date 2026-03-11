@@ -127,6 +127,7 @@ const downloadJson = (fileName: string, payload: unknown) => {
   anchor.click();
   URL.revokeObjectURL(url);
 };
+const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 
 export function Sidebar() {
   const theme = useSystemTheme();
@@ -186,6 +187,7 @@ export function Sidebar() {
   const deleteLink = useAppStore((state) => state.deleteLink);
   const addSiteLibraryEntry = useAppStore((state) => state.addSiteLibraryEntry);
   const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
+  const overwriteSimulationPreset = useAppStore((state) => state.overwriteSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const renameSimulationPreset = useAppStore((state) => state.renameSimulationPreset);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
@@ -266,6 +268,7 @@ export function Sidebar() {
     marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
   }));
   const [newPresetName, setNewPresetName] = useState("");
+  const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
   const [simulationLibraryQuery, setSimulationLibraryQuery] = useState("");
   const [editingSimulationId, setEditingSimulationId] = useState<string | null>(null);
@@ -305,9 +308,16 @@ export function Sidebar() {
     latitude: sourceSite?.position.lat ?? 59.9,
     zoom: 7.5,
   }));
-  const [selectedSimulationRef, setSelectedSimulationRef] = useState<string>(
-    `builtin:${selectedScenarioId}`,
-  );
+  const [selectedSimulationRef, setSelectedSimulationRef] = useState<string>(() => {
+    const fallback = `builtin:${selectedScenarioId}`;
+    try {
+      const stored = localStorage.getItem(LAST_SIMULATION_REF_KEY);
+      return stored && stored.trim() ? stored : fallback;
+    } catch {
+      return fallback;
+    }
+  });
+  const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
   const hasTwoSites = sites.length >= 2;
   const hasPathEndpoints = Boolean(fromSite && toSite && fromSite.id !== toSite.id);
   const hasTerrain = srtmTiles.length > 0;
@@ -349,6 +359,21 @@ export function Sidebar() {
     const scenario = scenarioOptions.find((candidate) => candidate.id === scenarioId);
     return scenario ? `${scenario.name} (built-in)` : "Built-in simulation";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
+  useEffect(() => {
+    if (selectedSimulationRef.startsWith("saved:")) {
+      const presetId = selectedSimulationRef.replace("saved:", "");
+      const exists = simulationPresets.some((preset) => preset.id === presetId);
+      if (!exists) {
+        const fallback = `builtin:${selectedScenarioId}`;
+        setSelectedSimulationRef(fallback);
+        try {
+          localStorage.setItem(LAST_SIMULATION_REF_KEY, fallback);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }, [selectedSimulationRef, simulationPresets, selectedScenarioId]);
   const meshmapNodesInView = useMemo(() => {
     const lonSpan = Math.max(0.12, 360 / Math.pow(2, meshmapView.zoom) * 2.2);
     const latSpan = Math.max(0.12, 170 / Math.pow(2, meshmapView.zoom) * 1.8);
@@ -483,6 +508,12 @@ export function Sidebar() {
 
   const loadSimulationRef = (ref: string) => {
     setSelectedSimulationRef(ref);
+    try {
+      localStorage.setItem(LAST_SIMULATION_REF_KEY, ref);
+    } catch {
+      // ignore
+    }
+    setSimulationSaveStatus("");
     if (ref.startsWith("builtin:")) {
       selectScenario(ref.replace("builtin:", ""));
       return;
@@ -491,6 +522,18 @@ export function Sidebar() {
       loadSimulationPreset(ref.replace("saved:", ""));
     }
   };
+  useEffect(() => {
+    if (startupSimulationApplied) return;
+    const defaultRef = `builtin:${selectedScenarioId}`;
+    if (selectedSimulationRef !== defaultRef) {
+      if (selectedSimulationRef.startsWith("builtin:")) {
+        selectScenario(selectedSimulationRef.replace("builtin:", ""));
+      } else if (selectedSimulationRef.startsWith("saved:")) {
+        loadSimulationPreset(selectedSimulationRef.replace("saved:", ""));
+      }
+    }
+    setStartupSimulationApplied(true);
+  }, [startupSimulationApplied, selectedSimulationRef, selectedScenarioId, selectScenario, loadSimulationPreset]);
 
   const createNewLink = () => {
     if (!newLinkFromId || !newLinkToId || newLinkFromId === newLinkToId) return;
@@ -498,7 +541,28 @@ export function Sidebar() {
     setNewLinkName("");
   };
   const saveSimulationAsNew = () => {
-    saveCurrentSimulationPreset(newPresetName);
+    const trimmed = newPresetName.trim();
+    if (!trimmed) {
+      if (selectedSimulationRef.startsWith("saved:")) {
+        const presetId = selectedSimulationRef.replace("saved:", "");
+        overwriteSimulationPreset(presetId);
+        setSimulationSaveStatus("Saved changes to current simulation.");
+        return;
+      }
+      setSimulationSaveStatus("Enter a simulation name to save a new simulation.");
+      return;
+    }
+    const savedId = saveCurrentSimulationPreset(trimmed);
+    if (savedId) {
+      const ref = `saved:${savedId}`;
+      setSelectedSimulationRef(ref);
+      try {
+        localStorage.setItem(LAST_SIMULATION_REF_KEY, ref);
+      } catch {
+        // ignore
+      }
+      setSimulationSaveStatus(`Saved simulation: ${trimmed}`);
+    }
     setNewPresetName("");
   };
   const startSimulationRename = (presetId: string, name: string) => {
@@ -730,6 +794,7 @@ export function Sidebar() {
             Save Current Simulation
           </button>
         </div>
+        {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
         <label className="field-grid">
           <span>Simulation name</span>
           <input
@@ -1401,6 +1466,7 @@ export function Sidebar() {
                 Save Current Simulation
               </button>
             </div>
+            {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
             <div className="library-editor">
               <h3>Built-in Presets</h3>
               <div className="library-manager-list">
