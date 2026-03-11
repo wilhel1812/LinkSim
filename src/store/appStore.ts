@@ -675,7 +675,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       simulationProgress: 3,
     });
 
-    window.setTimeout(() => {
+    const runComputation = () => {
       const state = get();
       if (state.simulationRunToken !== runId) return;
 
@@ -742,7 +742,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
       window.setTimeout(finalize, waitMs);
-    }, 0);
+    };
+
+    // Let the browser paint the progress bar before starting heavy recomputation work.
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(runComputation);
+      });
+    } else {
+      window.setTimeout(runComputation, 0);
+    }
   },
   getSelectedLink: () => {
     const { links, selectedLinkId } = get();
