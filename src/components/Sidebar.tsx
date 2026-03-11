@@ -1272,14 +1272,14 @@ export function Sidebar() {
                 <details className="compact-details">
                   <summary>Browse Meshtastic MQTT Nodes</summary>
                   <p className="field-help">
-                    Source feed can be switched later to your own relay endpoint; this avoids hard coupling to one
-                    provider.
+                    Default source uses a same-origin proxy route (`/meshmap/nodes.json`) to avoid browser CORS
+                    blocking. You can switch to your own relay endpoint later.
                   </p>
                   <label className="field-grid">
                     <span>Source URL</span>
                     <input
                       onChange={(event) => setMeshmapSourceUrl(event.target.value)}
-                      placeholder="https://meshmap.net/nodes.json"
+                      placeholder="/meshmap/nodes.json"
                       type="text"
                       value={meshmapSourceUrl}
                     />

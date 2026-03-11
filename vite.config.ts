@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      "/meshmap": {
+        target: "https://meshmap.net",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/meshmap/, ""),
+      },
       "/ve2dbe": {
         target: "https://www.ve2dbe.com",
         changeOrigin: true,
@@ -15,6 +20,11 @@ export default defineConfig({
   },
   preview: {
     proxy: {
+      "/meshmap": {
+        target: "https://meshmap.net",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/meshmap/, ""),
+      },
       "/ve2dbe": {
         target: "https://www.ve2dbe.com",
         changeOrigin: true,

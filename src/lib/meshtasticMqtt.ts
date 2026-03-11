@@ -45,7 +45,7 @@ export type MeshmapFetchResult = {
   cacheAgeMs?: number;
 };
 
-const DEFAULT_MESHMAP_FEED_URL = "https://meshmap.net/nodes.json";
+const DEFAULT_MESHMAP_FEED_URL = "/meshmap/nodes.json";
 const MESHMAP_CACHE_KEY = "rmw-meshmap-cache-v1";
 const MESHMAP_SOURCE_URL_KEY = "rmw-meshmap-source-url-v1";
 
@@ -194,15 +194,34 @@ export const fetchMeshmapNodes = async (options: MeshmapFetchOptions = {}): Prom
       fromCache: false,
     };
   } catch (error) {
+    if (sourceUrl !== DEFAULT_MESHMAP_FEED_URL) {
+      try {
+        const fallback = await fetch(DEFAULT_MESHMAP_FEED_URL, { cache: "no-store" });
+        if (fallback.ok) {
+          const payload = (await fallback.json()) as unknown;
+          const nodes = parseMeshmapLikeFeed(payload);
+          if (nodes.length) {
+            writeCache(DEFAULT_MESHMAP_FEED_URL, nodes);
+            return {
+              nodes,
+              sourceUrl: DEFAULT_MESHMAP_FEED_URL,
+              fromCache: false,
+            };
+          }
+        }
+      } catch {
+        // Continue to cache fallback / throw.
+      }
+    }
     if (
       cached &&
-      cached.sourceUrl === sourceUrl &&
+      (cached.sourceUrl === sourceUrl || cached.sourceUrl === DEFAULT_MESHMAP_FEED_URL) &&
       Date.now() - cached.savedAt <= cacheTtlMs &&
       cached.nodes.length
     ) {
       return {
         nodes: cached.nodes,
-        sourceUrl,
+        sourceUrl: cached.sourceUrl,
         fromCache: true,
         cacheAgeMs: Date.now() - cached.savedAt,
       };
