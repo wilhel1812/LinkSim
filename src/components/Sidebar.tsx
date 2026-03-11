@@ -301,6 +301,15 @@ export function Sidebar() {
     createLink(newLinkFromId, newLinkToId, newLinkName);
     setNewLinkName("");
   };
+  const displayLinkName = (linkId: string, linkName?: string) => {
+    const trimmedName = linkName?.trim();
+    if (trimmedName) return trimmedName;
+    const link = links.find((candidate) => candidate.id === linkId);
+    if (!link) return linkId;
+    const from = sites.find((site) => site.id === link.fromSiteId)?.name ?? "Unknown";
+    const to = sites.find((site) => site.id === link.toSiteId)?.name ?? "Unknown";
+    return `${from} -> ${to}`;
+  };
 
   return (
     <aside className="sidebar-panel">
@@ -551,7 +560,7 @@ export function Sidebar() {
               onClick={() => setSelectedLinkId(link.id)}
               type="button"
             >
-              <span className="link-title">{(link.name || link.id).toUpperCase()}</span>
+              <span className="link-title">{displayLinkName(link.id, link.name)}</span>
               <span className="link-subtitle">{effectiveNetworkFrequencyMHz.toFixed(3)} MHz (from channel)</span>
             </button>
           ))}
@@ -683,6 +692,7 @@ export function Sidebar() {
           <span>Link name</span>
           <input
             onChange={(event) => updateLink(selectedLink.id, { name: event.target.value })}
+            placeholder={`${fromSite?.name ?? "From"} -> ${toSite?.name ?? "To"}`}
             type="text"
             value={selectedLink.name ?? ""}
           />
