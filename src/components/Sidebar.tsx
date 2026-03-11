@@ -5,6 +5,7 @@ import Map, { Marker, type MarkerDragEvent } from "react-map-gl/maplibre";
 import { useSystemTheme } from "../hooks/useSystemTheme";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
+import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
 import { analyzeLink } from "../lib/propagation";
@@ -203,6 +204,9 @@ export function Sidebar() {
   const [newLibraryLon, setNewLibraryLon] = useState(10.0);
   const [newLibraryGroundM, setNewLibraryGroundM] = useState(0);
   const [newLibraryAntennaM, setNewLibraryAntennaM] = useState(2);
+  const [librarySearchQuery, setLibrarySearchQuery] = useState("");
+  const [librarySearchStatus, setLibrarySearchStatus] = useState("");
+  const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
   const simulationOptions = [
     ...scenarioOptions.map((scenario) => ({
       id: `builtin:${scenario.id}`,
@@ -373,6 +377,17 @@ export function Sidebar() {
     );
     setNewLibraryName("");
     setShowAddLibraryForm(false);
+  };
+  const runLibrarySearch = async () => {
+    setLibrarySearchStatus("Searching...");
+    try {
+      const results = await searchLocations(librarySearchQuery);
+      setLibrarySearchResults(results);
+      setLibrarySearchStatus(results.length ? `Found ${results.length} result(s)` : "No results");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLibrarySearchStatus(`Search failed: ${message}`);
+    }
   };
 
   return (
@@ -1050,6 +1065,37 @@ export function Sidebar() {
                     value={newLibraryAntennaM}
                   />
                 </label>
+                <label className="field-grid">
+                  <span>Map Search</span>
+                  <input
+                    onChange={(event) => setLibrarySearchQuery(event.target.value)}
+                    placeholder="Address or place"
+                    type="text"
+                    value={librarySearchQuery}
+                  />
+                </label>
+                <button className="inline-action" onClick={() => void runLibrarySearch()} type="button">
+                  Search
+                </button>
+                {librarySearchStatus ? <p className="field-help">{librarySearchStatus}</p> : null}
+                {librarySearchResults.length ? (
+                  <div className="asset-list">
+                    {librarySearchResults.map((result) => (
+                      <button
+                        className="inline-action"
+                        key={result.id}
+                        onClick={() => {
+                          setNewLibraryName(result.label.split(",")[0] ?? "New Site");
+                          setNewLibraryLat(result.lat);
+                          setNewLibraryLon(result.lon);
+                        }}
+                        type="button"
+                      >
+                        Use: {result.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="chip-group">
                   <button className="inline-action" onClick={addLibraryEntryNow} type="button">
                     Add To Library
