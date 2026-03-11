@@ -27,7 +27,7 @@ export function AppShell() {
         <header className="workspace-header">
           <h2>{t(locale, "networkCoverageWorkspace")}</h2>
           <p>
-            Best-site overlay colors encode worst-case received level across all configured sites.
+            Choose sites and a From/To path in the sidebar, then tune channel settings for coverage and link analysis.
           </p>
         </header>
         <MapView />

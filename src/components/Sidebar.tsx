@@ -193,6 +193,9 @@ export function Sidebar() {
   const effectiveSelectedPresetId = selectedSimulationRef.startsWith("saved:")
     ? selectedSimulationRef.replace("saved:", "")
     : simulationPresets[0]?.id ?? "";
+  const hasTwoSites = sites.length >= 2;
+  const hasPathEndpoints = Boolean(fromSite && toSite && fromSite.id !== toSite.id);
+  const hasTerrain = srtmTiles.length > 0;
 
   const applyRfPreset = (presetId: string) => {
     const preset = findMeshtasticPreset(presetId);
@@ -323,6 +326,7 @@ export function Sidebar() {
 
       <section className="panel-section">
         <h2>Simulations</h2>
+        <p className="field-help">Load a built-in scenario or a saved simulation snapshot.</p>
         <select
           className="locale-select"
           onChange={(event) => loadSimulationRef(event.target.value)}
@@ -366,7 +370,21 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Site Builder</h2>
+        <h2>Setup Status</h2>
+        <div className="asset-list">
+          <p className="field-help">{hasTwoSites ? `Sites: ${sites.length} configured` : "Sites: add at least 2"}</p>
+          <p className="field-help">
+            {hasPathEndpoints
+              ? `Path: ${fromSite?.name ?? "?"} → ${toSite?.name ?? "?"}`
+              : "Path: choose different From/To nodes"}
+          </p>
+          <p className="field-help">{hasTerrain ? `Terrain: ${srtmTiles.length} tile(s) loaded` : "Terrain: not loaded yet"}</p>
+        </div>
+      </section>
+
+      <section className="panel-section">
+        <h2>Sites</h2>
+        <p className="field-help">Add nodes by coordinates or search, then tune selected node parameters.</p>
         <label className="field-grid">
           <span>Name</span>
           <input
@@ -397,7 +415,7 @@ export function Sidebar() {
           Add Site
         </button>
         <button className="inline-action" onClick={() => saveSelectedSiteToLibrary()} type="button">
-          Save Selected Site To Library
+          Save Selected To Library
         </button>
         <label className="field-grid">
           <span>Map Search</span>
@@ -458,23 +476,8 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>{t(locale, "model")}</h2>
-        <div className="chip-group">
-          {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
-            <button
-              className={clsx("chip-button", model === candidate && "is-selected")}
-              key={candidate}
-              onClick={() => onModelChange(candidate)}
-              type="button"
-            >
-              {candidate}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel-section">
         <h2>Channel / Coverage</h2>
+        <p className="field-help">All links inherit this channel profile (frequency, BW, SF, CR).</p>
         {networks.length > 1 ? (
           <select
             className="locale-select"
@@ -492,9 +495,7 @@ export function Sidebar() {
             Active channel profile: <strong>{selectedNetwork.name}</strong>
           </p>
         )}
-        <p className="field-help">
-          Network is the active channel profile used for coverage + link calculations.
-        </p>
+        <p className="field-help">Coverage mode controls how map heat/coverage is sampled.</p>
         <div className="chip-group">
           {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
             <button
@@ -524,10 +525,24 @@ export function Sidebar() {
         <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
           Apply Frequency Plan
         </button>
+        <p className="field-help">Advanced: pick propagation model used by link and coverage math.</p>
+        <div className="chip-group">
+          {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
+            <button
+              className={clsx("chip-button", model === candidate && "is-selected")}
+              key={candidate}
+              onClick={() => onModelChange(candidate)}
+              type="button"
+            >
+              {candidate}
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="panel-section">
-        <h2>{t(locale, "links")}</h2>
+        <h2>Path (From / To)</h2>
+        <p className="field-help">Select the two nodes you want to analyze and tune per-link RF hardware values.</p>
         <div className="link-list">
           {links.map((link) => (
             <button
@@ -735,7 +750,7 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>{t(locale, "sites")}</h2>
+        <h2>Selected Site</h2>
         <div className="chip-group">
           {sites.map((site) => (
             <button
@@ -810,6 +825,7 @@ export function Sidebar() {
 
       <section className="panel-section">
         <h2>{t(locale, "terrainData")}</h2>
+        <p className="field-help">Terrain affects obstruction and profile calculations used in simulation.</p>
         <p>{srtmTiles.length} SRTM tile(s) loaded</p>
         <label className="field-grid">
           <span>ve2dbe source</span>
@@ -863,7 +879,7 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>{t(locale, "legacyAssets")}</h2>
+        <h2>References</h2>
         <div className="asset-list">
           {LEGACY_ASSETS.map((asset) => (
             <a href={asset.url} key={asset.url} rel="noreferrer" target="_blank">
