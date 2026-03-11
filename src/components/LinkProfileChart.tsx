@@ -3,6 +3,7 @@ import { scaleLinear } from "d3-scale";
 import type { MouseEvent } from "react";
 import { useMemo } from "react";
 import { t } from "../i18n/locales";
+import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 
@@ -45,27 +46,7 @@ export function LinkProfileChart() {
   const selectedLink = links.find((link) => link.id === selectedLinkId);
   const fromSiteName = sites.find((site) => site.id === selectedLink?.fromSiteId)?.name ?? "From";
   const toSiteName = sites.find((site) => site.id === selectedLink?.toSiteId)?.name ?? "To";
-  const terrainBounds = (() => {
-    if (!sites.length) return null;
-    const lats = sites.map((site) => site.position.lat);
-    const lons = sites.map((site) => site.position.lon);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
-    const latPad = 0.15;
-    const lonPad = 0.15;
-    const latSpan = Math.min(5, maxLat - minLat + latPad * 2);
-    const lonSpan = Math.min(5, maxLon - minLon + lonPad * 2);
-    const latCenter = (minLat + maxLat) / 2;
-    const lonCenter = (minLon + maxLon) / 2;
-    return {
-      minLat: latCenter - latSpan / 2,
-      maxLat: latCenter + latSpan / 2,
-      minLon: lonCenter - lonSpan / 2,
-      maxLon: lonCenter + lonSpan / 2,
-    };
-  })();
+  const terrainBounds = simulationAreaBoundsForSites(sites);
   const requiredTerrainTileKeys = terrainBounds
     ? tilesForBounds(terrainBounds.minLat, terrainBounds.maxLat, terrainBounds.minLon, terrainBounds.maxLon)
     : [];
@@ -162,7 +143,7 @@ export function LinkProfileChart() {
       {terrainIsStaleForCurrentArea ? (
         <div className="terrain-alert" role="status">
           <p>
-            Terrain data is out of date for this simulation area. Missing {missingTerrainTileKeys.length} of{" "}
+            Terrain data is out of date for the current analysis area. Missing {missingTerrainTileKeys.length} of{" "}
             {requiredTerrainTileKeys.length} required tile(s).
           </p>
           <button

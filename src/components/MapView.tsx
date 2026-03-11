@@ -545,6 +545,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     }
     return Array.from(breakdown.values()).sort((a, b) => b.count - a.count);
   }, [srtmTiles]);
+  const selectedDatasetTileCount = useMemo(
+    () => srtmTiles.filter((tile) => tile.sourceId === `ve2dbe-${terrainDataset}`).length,
+    [srtmTiles, terrainDataset],
+  );
 
   const lineFeatures = useMemo(
     () => ({
@@ -792,8 +796,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
         </p>
         <p>
-          Terrain dataset: {terrainDataset.toUpperCase()} ({srtmTiles.length} tile
-          {srtmTiles.length === 1 ? "" : "s"})
+          Terrain dataset: {terrainDataset.toUpperCase()} ({selectedDatasetTileCount} matching tile
+          {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
         </p>
         {terrainSourceSummary.length ? (
           <ul className="map-sim-sources">

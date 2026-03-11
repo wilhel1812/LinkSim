@@ -8,6 +8,7 @@ import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
 import { analyzeLink } from "../lib/propagation";
+import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
@@ -207,27 +208,7 @@ export function Sidebar() {
   const hasTwoSites = sites.length >= 2;
   const hasPathEndpoints = Boolean(fromSite && toSite && fromSite.id !== toSite.id);
   const hasTerrain = srtmTiles.length > 0;
-  const terrainBounds = (() => {
-    if (!sites.length) return null;
-    const lats = sites.map((site) => site.position.lat);
-    const lons = sites.map((site) => site.position.lon);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
-    const latPad = 0.15;
-    const lonPad = 0.15;
-    const latSpan = Math.min(5, maxLat - minLat + latPad * 2);
-    const lonSpan = Math.min(5, maxLon - minLon + lonPad * 2);
-    const latCenter = (minLat + maxLat) / 2;
-    const lonCenter = (minLon + maxLon) / 2;
-    return {
-      minLat: latCenter - latSpan / 2,
-      maxLat: latCenter + latSpan / 2,
-      minLon: lonCenter - lonSpan / 2,
-      maxLon: lonCenter + lonSpan / 2,
-    };
-  })();
+  const terrainBounds = simulationAreaBoundsForSites(sites);
   const requiredTerrainTileKeys = terrainBounds
     ? tilesForBounds(terrainBounds.minLat, terrainBounds.maxLat, terrainBounds.minLon, terrainBounds.maxLon)
     : [];
@@ -425,6 +406,9 @@ export function Sidebar() {
                 ? `Terrain: up to date (${srtmTiles.length} tile(s) loaded)`
                 : "Terrain: not loaded yet"}
           </p>
+          {terrainBounds?.isCapped ? (
+            <p className="field-help">Area window capped to 5° span for performance.</p>
+          ) : null}
         </div>
       </section>
 
@@ -592,7 +576,7 @@ export function Sidebar() {
         </button>
         <div className="section-heading">
           <p className="field-help">Propagation model (advanced)</p>
-          <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: irregular terrain model approximation with terrain diffraction penalty from loaded elevation data; best choice for mountain/hilly links." />
+          <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: direct + ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: terrain-aware approximation using elevation diffraction penalty in this tool; generally the most realistic option here for hilly/mountain links." />
         </div>
         <div className="chip-group">
           {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (

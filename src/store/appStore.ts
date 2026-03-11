@@ -4,6 +4,7 @@ import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { DEMO_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
+import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import {
   clearVe2dbeCache,
@@ -125,27 +126,6 @@ type AppState = {
   getSelectedSites: () => { fromSite: Site; toSite: Site };
   getSelectedAnalysis: () => LinkAnalysis;
   getSelectedProfile: () => ProfilePoint[];
-};
-
-const areaBoundsForSites = (sites: Site[]) => {
-  const lats = sites.map((site) => site.position.lat);
-  const lons = sites.map((site) => site.position.lon);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLon = Math.min(...lons);
-  const maxLon = Math.max(...lons);
-  const latPad = 0.15;
-  const lonPad = 0.15;
-  const latSpan = Math.min(5, maxLat - minLat + latPad * 2);
-  const lonSpan = Math.min(5, maxLon - minLon + lonPad * 2);
-  const latCenter = (minLat + maxLat) / 2;
-  const lonCenter = (minLon + maxLon) / 2;
-  return {
-    minLat: latCenter - latSpan / 2,
-    maxLat: latCenter + latSpan / 2,
-    minLon: lonCenter - lonSpan / 2,
-    maxLon: lonCenter + lonSpan / 2,
-  };
 };
 
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
@@ -538,7 +518,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { sites } = get();
     if (!sites.length) return;
 
-    const bounds = areaBoundsForSites(sites);
+    const bounds = simulationAreaBoundsForSites(sites);
+    if (!bounds) return;
 
     set({ terrainRecommendation: "Evaluating ve2dbe coverage..." });
     try {
@@ -566,7 +547,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { sites, terrainDataset } = get();
     if (!sites.length) return;
 
-    const bounds = areaBoundsForSites(sites);
+    const bounds = simulationAreaBoundsForSites(sites);
+    if (!bounds) return;
 
     set({ terrainFetchStatus: `Fetching ${terrainDataset.toUpperCase()} tiles from ve2dbe...` });
 
