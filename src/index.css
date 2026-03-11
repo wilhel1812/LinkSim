@@ -861,7 +861,7 @@ input {
 .library-manager-card {
   width: min(1120px, 96vw);
   max-height: min(86vh, 980px);
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
@@ -919,11 +919,24 @@ input {
   font-size: 0.92rem;
 }
 
+.library-editor-split {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(340px, 1.35fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.library-editor-form {
+  display: grid;
+  gap: 8px;
+}
+
 .library-editor-map {
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
-  height: 240px;
+  min-height: 320px;
+  height: 100%;
 }
 
 .library-editor-map .maplibregl-map {
@@ -934,6 +947,16 @@ input {
 .library-edit-pin {
   font-size: 0.68rem;
   padding: 4px 8px;
+}
+
+@media (max-width: 1000px) {
+  .library-editor-split {
+    grid-template-columns: 1fr;
+  }
+
+  .library-editor-map {
+    min-height: 260px;
+  }
 }
 
 .margin-status {

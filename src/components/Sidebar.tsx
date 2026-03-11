@@ -1155,79 +1155,83 @@ export function Sidebar() {
             {editingLibraryId ? (
               <div className="library-editor">
                 <h3>Edit Library Site</h3>
-                <label className="field-grid">
-                  <span>Name</span>
-                  <input
-                    onChange={(event) => setEditingLibraryName(event.target.value)}
-                    type="text"
-                    value={editingLibraryName}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Latitude</span>
-                  <input
-                    onChange={(event) => setEditingLibraryLat(parseNumber(event.target.value))}
-                    step="0.000001"
-                    type="number"
-                    value={editingLibraryLat}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Longitude</span>
-                  <input
-                    onChange={(event) => setEditingLibraryLon(parseNumber(event.target.value))}
-                    step="0.000001"
-                    type="number"
-                    value={editingLibraryLon}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Ground elev (m)</span>
-                  <input
-                    onChange={(event) => setEditingLibraryGroundM(parseNumber(event.target.value))}
-                    type="number"
-                    value={editingLibraryGroundM}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Antenna (m)</span>
-                  <input
-                    onChange={(event) => setEditingLibraryAntennaM(parseNumber(event.target.value))}
-                    type="number"
-                    value={editingLibraryAntennaM}
-                  />
-                </label>
-                <div className="library-editor-map">
-                  <Map
-                    initialViewState={{
-                      longitude: editingLibraryLon,
-                      latitude: editingLibraryLat,
-                      zoom: 12,
-                    }}
-                    latitude={editingLibraryLat}
-                    longitude={editingLibraryLon}
-                    mapStyle={styleByTheme[theme]}
-                    onClick={(event) => {
-                      setEditingLibraryLat(event.lngLat.lat);
-                      setEditingLibraryLon(event.lngLat.lng);
-                    }}
-                    zoom={12}
-                  >
-                    <Marker
-                      anchor="bottom"
-                      draggable
+                <div className="library-editor-split">
+                  <div className="library-editor-form">
+                    <label className="field-grid">
+                      <span>Name</span>
+                      <input
+                        onChange={(event) => setEditingLibraryName(event.target.value)}
+                        type="text"
+                        value={editingLibraryName}
+                      />
+                    </label>
+                    <label className="field-grid">
+                      <span>Latitude</span>
+                      <input
+                        onChange={(event) => setEditingLibraryLat(parseNumber(event.target.value))}
+                        step="0.000001"
+                        type="number"
+                        value={editingLibraryLat}
+                      />
+                    </label>
+                    <label className="field-grid">
+                      <span>Longitude</span>
+                      <input
+                        onChange={(event) => setEditingLibraryLon(parseNumber(event.target.value))}
+                        step="0.000001"
+                        type="number"
+                        value={editingLibraryLon}
+                      />
+                    </label>
+                    <label className="field-grid">
+                      <span>Ground elev (m)</span>
+                      <input
+                        onChange={(event) => setEditingLibraryGroundM(parseNumber(event.target.value))}
+                        type="number"
+                        value={editingLibraryGroundM}
+                      />
+                    </label>
+                    <label className="field-grid">
+                      <span>Antenna (m)</span>
+                      <input
+                        onChange={(event) => setEditingLibraryAntennaM(parseNumber(event.target.value))}
+                        type="number"
+                        value={editingLibraryAntennaM}
+                      />
+                    </label>
+                  </div>
+                  <div className="library-editor-map">
+                    <Map
+                      initialViewState={{
+                        longitude: editingLibraryLon,
+                        latitude: editingLibraryLat,
+                        zoom: 12,
+                      }}
                       latitude={editingLibraryLat}
                       longitude={editingLibraryLon}
-                      onDragEnd={(event: MarkerDragEvent) => {
+                      mapStyle={styleByTheme[theme]}
+                      onClick={(event) => {
                         setEditingLibraryLat(event.lngLat.lat);
                         setEditingLibraryLon(event.lngLat.lng);
                       }}
+                      zoom={12}
                     >
-                      <div className="site-pin library-edit-pin">
-                        <span>{editingLibraryName.trim() || "Site"}</span>
-                      </div>
-                    </Marker>
-                  </Map>
+                      <Marker
+                        anchor="bottom"
+                        draggable
+                        latitude={editingLibraryLat}
+                        longitude={editingLibraryLon}
+                        onDragEnd={(event: MarkerDragEvent) => {
+                          setEditingLibraryLat(event.lngLat.lat);
+                          setEditingLibraryLon(event.lngLat.lng);
+                        }}
+                      >
+                        <div className="site-pin library-edit-pin">
+                          <span>{editingLibraryName.trim() || "Site"}</span>
+                        </div>
+                      </Marker>
+                    </Map>
+                  </div>
                 </div>
                 <div className="chip-group">
                   <button className="inline-action" onClick={saveLibraryEdit} type="button">
