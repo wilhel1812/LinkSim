@@ -718,7 +718,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         propagationModel,
         ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
         {
-          sampleMultiplier: coverageResolutionMode === "high" ? 3 : 1,
+          sampleMultiplier: coverageResolutionMode === "high" ? 4 : 1,
           onProgress: (progress) => {
             if (get().simulationRunToken !== runId) return;
             set({ simulationProgress: Math.round(8 + progress * 84) });

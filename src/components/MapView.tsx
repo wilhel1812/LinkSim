@@ -201,6 +201,80 @@ const interpolateCoverageDbm = (samples: CoverageSampleLite[], lat: number, lon:
   return valueSum / weightSum;
 };
 
+const binarySearchFloor = (values: number[], target: number): number => {
+  let lo = 0;
+  let hi = values.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const value = values[mid];
+    if (value <= target) {
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return clamp(hi, 0, values.length - 1);
+};
+
+const makeGridInterpolator = (
+  samples: CoverageSampleLite[],
+): ((lat: number, lon: number) => number | null) | null => {
+  if (samples.length < 4) return null;
+  const latSet = new Set<number>();
+  const lonSet = new Set<number>();
+  for (const sample of samples) {
+    latSet.add(sample.lat);
+    lonSet.add(sample.lon);
+  }
+  const lats = Array.from(latSet).sort((a, b) => a - b);
+  const lons = Array.from(lonSet).sort((a, b) => a - b);
+  if (lats.length < 2 || lons.length < 2) return null;
+  if (lats.length * lons.length !== samples.length) return null;
+
+  const latIndex = new globalThis.Map<number, number>();
+  const lonIndex = new globalThis.Map<number, number>();
+  lats.forEach((value, index) => latIndex.set(value, index));
+  lons.forEach((value, index) => lonIndex.set(value, index));
+
+  const values = new Float64Array(lats.length * lons.length);
+  const seen = new Uint8Array(lats.length * lons.length);
+  for (const sample of samples) {
+    const yi = latIndex.get(sample.lat);
+    const xi = lonIndex.get(sample.lon);
+    if (yi === undefined || xi === undefined) return null;
+    const idx = yi * lons.length + xi;
+    values[idx] = sample.valueDbm;
+    seen[idx] = 1;
+  }
+  for (const mark of seen) {
+    if (mark !== 1) return null;
+  }
+
+  return (lat, lon) => {
+    const latClamped = clamp(lat, lats[0], lats[lats.length - 1]);
+    const lonClamped = clamp(lon, lons[0], lons[lons.length - 1]);
+    const y0 = binarySearchFloor(lats, latClamped);
+    const x0 = binarySearchFloor(lons, lonClamped);
+    const y1 = Math.min(y0 + 1, lats.length - 1);
+    const x1 = Math.min(x0 + 1, lons.length - 1);
+
+    const lat0 = lats[y0];
+    const lat1 = lats[y1];
+    const lon0 = lons[x0];
+    const lon1 = lons[x1];
+    const ty = lat1 === lat0 ? 0 : (latClamped - lat0) / (lat1 - lat0);
+    const tx = lon1 === lon0 ? 0 : (lonClamped - lon0) / (lon1 - lon0);
+
+    const q00 = values[y0 * lons.length + x0];
+    const q10 = values[y0 * lons.length + x1];
+    const q01 = values[y1 * lons.length + x0];
+    const q11 = values[y1 * lons.length + x1];
+    const a = q00 + (q10 - q00) * tx;
+    const b = q01 + (q11 - q01) * tx;
+    return a + (b - a) * ty;
+  };
+};
+
 const computeOverlayDimensions = (
   bounds: TerrainBounds,
   quality: "auto" | "high",
@@ -273,6 +347,7 @@ const buildCoverageOverlay = (
   dimensions: { width: number; height: number },
 ): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
   if (!samples.length) return null;
+  const gridInterpolator = makeGridInterpolator(samples);
   const width = dimensions.width;
   const height = dimensions.height;
   const canvas = document.createElement("canvas");
@@ -288,7 +363,9 @@ const buildCoverageOverlay = (
     for (let x = 0; x < width; x += 1) {
       const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      const valueDbm = interpolateCoverageDbm(samples, lat, lon);
+      const valueDbm = gridInterpolator
+        ? gridInterpolator(lat, lon)
+        : interpolateCoverageDbm(samples, lat, lon);
       if (valueDbm === null) continue;
       let r = 0;
       let g = 0;
