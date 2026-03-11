@@ -492,6 +492,26 @@ const computeFitViewport = (
   return { lat: centerLat, lon: centerLon, zoom };
 };
 
+const computeLinkAnalysisBounds = (
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+  marginKmPerSide = 4,
+): TerrainBounds => {
+  const minLat = Math.min(from.lat, to.lat);
+  const maxLat = Math.max(from.lat, to.lat);
+  const minLon = Math.min(from.lon, to.lon);
+  const maxLon = Math.max(from.lon, to.lon);
+  const centerLat = (minLat + maxLat) / 2;
+  const latPadDeg = marginKmPerSide / 111.32;
+  const lonPadDeg = marginKmPerSide / (111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)));
+  return {
+    minLat: minLat - latPadDeg,
+    maxLat: maxLat + latPadDeg,
+    minLon: minLon - lonPadDeg,
+    maxLon: maxLon + lonPadDeg,
+  };
+};
+
 type MapViewProps = {
   isMapExpanded: boolean;
   onToggleMapExpanded: () => void;
@@ -536,6 +556,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const selectedToSite = selectedLink
     ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null
     : null;
+  const analysisBounds = useMemo(
+    () =>
+      selectedFromSite && selectedToSite
+        ? computeLinkAnalysisBounds(selectedFromSite.position, selectedToSite.position, 4)
+        : sites.length
+          ? computeTerrainBounds(sites)
+          : null,
+    [selectedFromSite, selectedToSite, sites],
+  );
   const terrainSourceSummary = useMemo<Array<{ label: string; count: number }>>(() => {
     const breakdown = new globalThis.Map<string, { label: string; count: number }>();
     for (const tile of srtmTiles) {
@@ -617,7 +646,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const coverageOverlay = useMemo(
     () => {
       if (coverageVizMode === "points") return null;
-      const bounds = computeCoverageBounds(coverageSamples) ?? (sites.length ? computeTerrainBounds(sites) : null);
+      const bounds = analysisBounds ?? computeCoverageBounds(coverageSamples);
       if (!bounds) return null;
       if (coverageVizMode === "passfail") {
         if (!selectedLink || !selectedFromSite) return null;
@@ -655,15 +684,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       selectedNetwork,
       propagationModel,
       srtmTiles,
-      sites,
+      analysisBounds,
     ],
   );
 
   const simulationTerrainOverlay = useMemo(() => {
-    if (!hasSimulationTerrain || sites.length === 0) return null;
-    const bounds = computeTerrainBounds(sites);
+    if (!hasSimulationTerrain || !analysisBounds) return null;
+    const bounds = analysisBounds;
     return buildTerrainShadeOverlay(bounds, (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon));
-  }, [hasSimulationTerrain, sites, srtmTiles]);
+  }, [hasSimulationTerrain, analysisBounds, srtmTiles]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
 
