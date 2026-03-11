@@ -389,6 +389,10 @@ input {
   font-size: 0.76rem;
 }
 
+.warning-text {
+  color: color-mix(in srgb, #ffb703 72%, var(--text));
+}
+
 .compact-details {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: 10px;

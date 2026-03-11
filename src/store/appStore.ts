@@ -154,6 +154,15 @@ type AppState = {
   loadSimulationPreset: (presetId: string) => void;
   renameSimulationPreset: (presetId: string, name: string) => void;
   deleteSimulationPreset: (presetId: string) => void;
+  importLibraryData: (
+    bundle: { siteLibrary?: SiteLibraryEntry[]; simulationPresets?: SimulationPreset[] },
+    mode: "merge" | "replace",
+  ) => { siteCount: number; simulationCount: number };
+  restoreLibrariesFromSnapshots: () => {
+    restored: boolean;
+    siteCount: number;
+    simulationCount: number;
+  };
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
   requestSiteLibraryDraftAt: (lat: number, lon: number) => void;
   clearPendingSiteLibraryDraft: () => void;
@@ -180,6 +189,15 @@ type AppState = {
 
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
+const STORAGE_SNAPSHOT_LIMIT = 24;
+
+type StoredSnapshot<T> = {
+  savedAtIso: string;
+  value: T;
+};
+
+const snapshotKeyFor = (key: string): string => `${key}-snapshots-v1`;
+const isSnapshotTrackedKey = (key: string): boolean => key === SITE_LIBRARY_KEY || key === SIM_PRESETS_KEY;
 
 const readStorage = <T,>(key: string, fallback: T): T => {
   try {
@@ -191,8 +209,48 @@ const readStorage = <T,>(key: string, fallback: T): T => {
   }
 };
 
-const writeStorage = (key: string, value: unknown) => {
+const readStorageRawState = <T,>(key: string): { status: "ok" | "missing" | "invalid"; value: T | null } => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return { status: "missing", value: null };
+    return { status: "ok", value: JSON.parse(raw) as T };
+  } catch {
+    return { status: "invalid", value: null };
+  }
+};
+
+const readSnapshotHistory = <T,>(key: string): StoredSnapshot<T>[] => {
+  const parsed = readStorage<StoredSnapshot<T>[]>(snapshotKeyFor(key), []);
+  return Array.isArray(parsed) ? parsed : [];
+};
+
+const getLatestSnapshotValue = <T,>(key: string): T | null => {
+  const history = readSnapshotHistory<T>(key);
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const item = history[i];
+    if (item && typeof item === "object" && "value" in item) {
+      return item.value;
+    }
+  }
+  return null;
+};
+
+const appendSnapshot = (key: string, value: unknown) => {
+  if (!isSnapshotTrackedKey(key)) return;
+  const history = readSnapshotHistory<unknown>(key);
+  const next: StoredSnapshot<unknown>[] = [
+    ...history,
+    {
+      savedAtIso: new Date().toISOString(),
+      value,
+    },
+  ].slice(-STORAGE_SNAPSHOT_LIMIT);
+  localStorage.setItem(snapshotKeyFor(key), JSON.stringify(next));
+};
+
+const writeStorage = (key: string, value: unknown, options?: { snapshot?: boolean }) => {
   localStorage.setItem(key, JSON.stringify(value));
+  if (options?.snapshot !== false) appendSnapshot(key, value);
 };
 
 const makeId = (prefix: string): string =>
@@ -226,6 +284,19 @@ const dedupeLibraryEntries = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =
 
 const normalizeSiteLibrary = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =>
   dedupeLibraryEntries(entries.filter((entry) => !isBuiltinSiteLibraryEntry(entry)));
+
+const normalizeSimulationPresets = (presets: SimulationPreset[]): SimulationPreset[] =>
+  presets.filter(
+    (preset) =>
+      Boolean(
+        preset &&
+          typeof preset.id === "string" &&
+          preset.id &&
+          typeof preset.name === "string" &&
+          preset.name &&
+          preset.snapshot,
+      ),
+  );
 
 const ensureMinimumTopology = (
   inputSites: Site[],
@@ -294,10 +365,32 @@ const ensureMinimumTopology = (
   return { sites, links, systems, networks };
 };
 
-const persistedSiteLibrary = readStorage<SiteLibraryEntry[]>(SITE_LIBRARY_KEY, []);
-const initialSiteLibrary = normalizeSiteLibrary(persistedSiteLibrary);
-if (JSON.stringify(initialSiteLibrary) !== JSON.stringify(persistedSiteLibrary)) {
+const siteLibraryRawState = readStorageRawState<SiteLibraryEntry[]>(SITE_LIBRARY_KEY);
+const recoveredSiteLibraryRaw =
+  siteLibraryRawState.status === "ok"
+    ? siteLibraryRawState.value ?? []
+    : ((getLatestSnapshotValue<SiteLibraryEntry[]>(SITE_LIBRARY_KEY) ?? []) as SiteLibraryEntry[]);
+const initialSiteLibrary = normalizeSiteLibrary(Array.isArray(recoveredSiteLibraryRaw) ? recoveredSiteLibraryRaw : []);
+if (
+  siteLibraryRawState.status !== "ok" ||
+  JSON.stringify(initialSiteLibrary) !== JSON.stringify(recoveredSiteLibraryRaw)
+) {
   writeStorage(SITE_LIBRARY_KEY, initialSiteLibrary);
+}
+
+const simulationPresetsRawState = readStorageRawState<SimulationPreset[]>(SIM_PRESETS_KEY);
+const recoveredSimulationPresetsRaw =
+  simulationPresetsRawState.status === "ok"
+    ? simulationPresetsRawState.value ?? []
+    : ((getLatestSnapshotValue<SimulationPreset[]>(SIM_PRESETS_KEY) ?? []) as SimulationPreset[]);
+const initialSimulationPresets = normalizeSimulationPresets(
+  Array.isArray(recoveredSimulationPresetsRaw) ? recoveredSimulationPresetsRaw : [],
+);
+if (
+  simulationPresetsRawState.status !== "ok" ||
+  JSON.stringify(initialSimulationPresets) !== JSON.stringify(recoveredSimulationPresetsRaw)
+) {
+  writeStorage(SIM_PRESETS_KEY, initialSimulationPresets);
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -334,7 +427,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   terrainRecommendation: "",
   hasOnlineElevationSync: false,
   siteLibrary: initialSiteLibrary,
-  simulationPresets: readStorage<SimulationPreset[]>(SIM_PRESETS_KEY, []),
+  simulationPresets: initialSimulationPresets,
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
   scenarioOptions: DEMO_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
@@ -757,6 +850,70 @@ export const useAppStore = create<AppState>((set, get) => ({
       writeStorage(SIM_PRESETS_KEY, next);
       return { simulationPresets: next };
     });
+  },
+  importLibraryData: (bundle, mode) => {
+    const incomingSites = normalizeSiteLibrary(Array.isArray(bundle.siteLibrary) ? bundle.siteLibrary : []);
+    const incomingPresets = normalizeSimulationPresets(
+      Array.isArray(bundle.simulationPresets) ? bundle.simulationPresets : [],
+    );
+    const current = get();
+    const siteCountBefore = current.siteLibrary.length;
+    const simCountBefore = current.simulationPresets.length;
+
+    const nextSiteLibrary =
+      mode === "replace"
+        ? incomingSites
+        : normalizeSiteLibrary([...current.siteLibrary, ...incomingSites]);
+
+    const nextSimulationPresets =
+      mode === "replace"
+        ? incomingPresets
+        : (() => {
+            const byId = new Map<string, SimulationPreset>();
+            for (const preset of current.simulationPresets) byId.set(preset.id, preset);
+            for (const preset of incomingPresets) byId.set(preset.id, preset);
+            return normalizeSimulationPresets(Array.from(byId.values())).sort((a, b) =>
+              a.updatedAt < b.updatedAt ? 1 : -1,
+            );
+          })();
+
+    writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
+    writeStorage(SIM_PRESETS_KEY, nextSimulationPresets);
+    set({
+      siteLibrary: nextSiteLibrary,
+      simulationPresets: nextSimulationPresets,
+    });
+    return {
+      siteCount: nextSiteLibrary.length - siteCountBefore,
+      simulationCount: nextSimulationPresets.length - simCountBefore,
+    };
+  },
+  restoreLibrariesFromSnapshots: () => {
+    const siteSnapshot = getLatestSnapshotValue<SiteLibraryEntry[]>(SITE_LIBRARY_KEY);
+    const simulationSnapshot = getLatestSnapshotValue<SimulationPreset[]>(SIM_PRESETS_KEY);
+    const nextSiteLibrary = normalizeSiteLibrary(Array.isArray(siteSnapshot) ? siteSnapshot : []);
+    const nextSimulationPresets = normalizeSimulationPresets(
+      Array.isArray(simulationSnapshot) ? simulationSnapshot : [],
+    );
+    const restored = nextSiteLibrary.length > 0 || nextSimulationPresets.length > 0;
+    if (!restored) {
+      return {
+        restored: false,
+        siteCount: 0,
+        simulationCount: 0,
+      };
+    }
+    writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
+    writeStorage(SIM_PRESETS_KEY, nextSimulationPresets);
+    set({
+      siteLibrary: nextSiteLibrary,
+      simulationPresets: nextSimulationPresets,
+    });
+    return {
+      restored: true,
+      siteCount: nextSiteLibrary.length,
+      simulationCount: nextSimulationPresets.length,
+    };
   },
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
   requestSiteLibraryDraftAt: (lat, lon) =>

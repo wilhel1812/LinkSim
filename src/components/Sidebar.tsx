@@ -128,6 +128,28 @@ const downloadJson = (fileName: string, payload: unknown) => {
   URL.revokeObjectURL(url);
 };
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
+const SITE_LIBRARY_KEY = "rmw-site-library-v1";
+const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
+const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
+
+type LibraryBackupPayload = {
+  schemaVersion: 1;
+  exportedAtIso: string;
+  origin: string;
+  siteLibrary?: unknown[];
+  simulationPresets?: unknown[];
+};
+
+const getSnapshotCount = (key: string): number => {
+  try {
+    const raw = localStorage.getItem(`${key}-snapshots-v1`);
+    if (!raw) return 0;
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+};
 
 export function Sidebar() {
   const theme = useSystemTheme();
@@ -191,6 +213,8 @@ export function Sidebar() {
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const renameSimulationPreset = useAppStore((state) => state.renameSimulationPreset);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
+  const importLibraryData = useAppStore((state) => state.importLibraryData);
+  const restoreLibrariesFromSnapshots = useAppStore((state) => state.restoreLibrariesFromSnapshots);
   const recommendTerrainDatasetForCurrentArea = useAppStore(
     (state) => state.recommendTerrainDatasetForCurrentArea,
   );
@@ -318,6 +342,13 @@ export function Sidebar() {
     }
   });
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
+  const [storageImportMode, setStorageImportMode] = useState<"merge" | "replace">("merge");
+  const [storageStatus, setStorageStatus] = useState("");
+  const [storageOriginWarning, setStorageOriginWarning] = useState("");
+  const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
+    siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
+    simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
+  }));
   const hasTwoSites = sites.length >= 2;
   const hasPathEndpoints = Boolean(fromSite && toSite && fromSite.id !== toSite.id);
   const hasTerrain = srtmTiles.length > 0;
@@ -328,6 +359,7 @@ export function Sidebar() {
   const loadedTileKeys = new Set(srtmTiles.map((tile) => tile.key));
   const missingTerrainTileKeys = requiredTerrainTileKeys.filter((key) => !loadedTileKeys.has(key));
   const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
+  const hasLocalLibraryData = siteLibrary.length > 0 || simulationPresets.length > 0;
   const filteredSiteLibrary = useMemo(() => {
     const q = siteLibraryQuery.trim().toLowerCase();
     if (!q) return siteLibrary;
@@ -534,6 +566,99 @@ export function Sidebar() {
     }
     setStartupSimulationApplied(true);
   }, [startupSimulationApplied, selectedSimulationRef, selectedScenarioId, selectScenario, loadSimulationPreset]);
+
+  useEffect(() => {
+    const origin = window.location.origin;
+    const host = window.location.hostname;
+    setStorageOriginWarning(
+      host === "127.0.0.1"
+        ? "You are on 127.0.0.1. Browser storage is origin-scoped; localhost and 127.0.0.1 do not share data."
+        : "",
+    );
+    try {
+      const booted = localStorage.getItem(STORAGE_BOOT_KEY);
+      if (!booted) {
+        localStorage.setItem(STORAGE_BOOT_KEY, JSON.stringify({ firstSeenIso: new Date().toISOString(), origin }));
+        if (!hasLocalLibraryData) {
+          setStorageStatus(
+            "No local library data found yet in this browser origin. Export backups regularly to avoid surprises.",
+          );
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [hasLocalLibraryData]);
+
+  useEffect(() => {
+    refreshSnapshotInfo();
+  }, [siteLibrary, simulationPresets]);
+
+  const refreshSnapshotInfo = () => {
+    setStorageSnapshotInfo({
+      siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
+      simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
+    });
+  };
+
+  const exportLocalLibraries = () => {
+    const payload: LibraryBackupPayload = {
+      schemaVersion: 1,
+      exportedAtIso: new Date().toISOString(),
+      origin: window.location.origin,
+      siteLibrary,
+      simulationPresets,
+    };
+    const stamp = payload.exportedAtIso.replace(/[:.]/g, "-");
+    downloadJson(`radio-mobile-web-backup-${stamp}.json`, payload);
+    setStorageStatus(
+      `Exported backup (${siteLibrary.length} site(s), ${simulationPresets.length} simulation(s)) for ${payload.origin}.`,
+    );
+  };
+
+  const importLocalLibraries = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setStorageStatus("Importing backup...");
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as LibraryBackupPayload | Record<string, unknown>;
+      const siteItems = Array.isArray((parsed as LibraryBackupPayload).siteLibrary)
+        ? ((parsed as LibraryBackupPayload).siteLibrary as unknown[])
+        : [];
+      const simulationItems = Array.isArray((parsed as LibraryBackupPayload).simulationPresets)
+        ? ((parsed as LibraryBackupPayload).simulationPresets as unknown[])
+        : [];
+      const result = importLibraryData(
+        {
+          siteLibrary: siteItems as Parameters<typeof importLibraryData>[0]["siteLibrary"],
+          simulationPresets: simulationItems as Parameters<typeof importLibraryData>[0]["simulationPresets"],
+        },
+        storageImportMode,
+      );
+      refreshSnapshotInfo();
+      setStorageStatus(
+        `Import complete (${storageImportMode}): ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStorageStatus(`Import failed: ${message}`);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const restoreLocalLibraries = () => {
+    const result = restoreLibrariesFromSnapshots();
+    refreshSnapshotInfo();
+    if (!result.restored) {
+      setStorageStatus("No snapshots available to restore.");
+      return;
+    }
+    setStorageStatus(
+      `Restored from snapshots: ${result.siteCount} site(s), ${result.simulationCount} simulation(s).`,
+    );
+  };
 
   const createNewLink = () => {
     if (!newLinkFromId || !newLinkToId || newLinkFromId === newLinkToId) return;
@@ -1400,6 +1525,39 @@ export function Sidebar() {
       <section className="panel-section">
         <details className="compact-details">
           <summary>More</summary>
+          <div className="section-heading">
+            <p className="field-help">Local Data Safety</p>
+            <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly, and use Restore Snapshot if data looks missing after refresh." />
+          </div>
+          {storageOriginWarning ? <p className="field-help warning-text">{storageOriginWarning}</p> : null}
+          <p className="field-help">
+            Snapshot history: {storageSnapshotInfo.siteSnapshots} site snapshot(s),{" "}
+            {storageSnapshotInfo.simulationSnapshots} simulation snapshot(s).
+          </p>
+          <div className="chip-group">
+            <button className="inline-action" onClick={exportLocalLibraries} type="button">
+              Export Library Backup
+            </button>
+            <button className="inline-action" onClick={restoreLocalLibraries} type="button">
+              Restore Latest Snapshot
+            </button>
+          </div>
+          <label className="field-grid">
+            <span>Import mode</span>
+            <select
+              className="locale-select"
+              onChange={(event) => setStorageImportMode(event.target.value as "merge" | "replace")}
+              value={storageImportMode}
+            >
+              <option value="merge">Merge with current data</option>
+              <option value="replace">Replace current data</option>
+            </select>
+          </label>
+          <label className="upload-button">
+            Import Library Backup
+            <input accept=".json,application/json" onChange={(event) => void importLocalLibraries(event)} type="file" />
+          </label>
+          {storageStatus ? <p className="field-help">{storageStatus}</p> : null}
           <label className="field-grid">
             <span>Language</span>
             <select
