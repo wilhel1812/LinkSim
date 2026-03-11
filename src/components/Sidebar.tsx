@@ -582,7 +582,10 @@ export function Sidebar() {
         <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
           Apply Frequency Plan
         </button>
-        <p className="field-help">Propagation model (advanced)</p>
+        <div className="section-heading">
+          <p className="field-help">Propagation model (advanced)</p>
+          <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: irregular terrain model approximation with terrain diffraction penalty from loaded elevation data; best choice for mountain/hilly links." />
+        </div>
         <div className="chip-group">
           {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
             <button
