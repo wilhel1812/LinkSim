@@ -10,19 +10,15 @@ import { Sidebar } from "./Sidebar";
 export function AppShell() {
   const locale = useAppStore((state) => state.locale);
   const srtmTilesCount = useAppStore((state) => state.srtmTiles.length);
-  const recommendTerrainDatasetForCurrentArea = useAppStore(
-    (state) => state.recommendTerrainDatasetForCurrentArea,
+  const recommendAndFetchTerrainForCurrentArea = useAppStore(
+    (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
-  const fetchTerrainForCurrentArea = useAppStore((state) => state.fetchTerrainForCurrentArea);
   const theme = useSystemTheme();
 
   useEffect(() => {
     if (srtmTilesCount > 0) return;
-    void (async () => {
-      await recommendTerrainDatasetForCurrentArea();
-      await fetchTerrainForCurrentArea();
-    })();
-  }, [fetchTerrainForCurrentArea, recommendTerrainDatasetForCurrentArea, srtmTilesCount]);
+    void recommendAndFetchTerrainForCurrentArea();
+  }, [recommendAndFetchTerrainForCurrentArea, srtmTilesCount]);
 
   return (
     <main className="app-shell">

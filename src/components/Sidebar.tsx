@@ -57,6 +57,9 @@ export function Sidebar() {
     (state) => state.recommendTerrainDatasetForCurrentArea,
   );
   const fetchTerrainForCurrentArea = useAppStore((state) => state.fetchTerrainForCurrentArea);
+  const recommendAndFetchTerrainForCurrentArea = useAppStore(
+    (state) => state.recommendAndFetchTerrainForCurrentArea,
+  );
   const getSelectedAnalysis = useAppStore((state) => state.getSelectedAnalysis);
   const getSelectedLink = useAppStore((state) => state.getSelectedLink);
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
@@ -372,6 +375,13 @@ export function Sidebar() {
           type="button"
         >
           Recommend Best Dataset
+        </button>
+        <button
+          className="inline-action"
+          onClick={() => void recommendAndFetchTerrainForCurrentArea()}
+          type="button"
+        >
+          Recommend + Fetch
         </button>
         <label className="upload-button">
           {t(locale, "loadHgt")}

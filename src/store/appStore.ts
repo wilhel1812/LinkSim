@@ -66,6 +66,7 @@ type AppState = {
   ingestSrtmFiles: (files: FileList | File[]) => Promise<void>;
   recommendTerrainDatasetForCurrentArea: () => Promise<void>;
   fetchTerrainForCurrentArea: () => Promise<void>;
+  recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
   syncSiteElevationsOnline: () => Promise<void>;
   recomputeCoverage: () => void;
   getSelectedLink: () => Link;
@@ -74,6 +75,27 @@ type AppState = {
   getSelectedSites: () => { fromSite: Site; toSite: Site };
   getSelectedAnalysis: () => LinkAnalysis;
   getSelectedProfile: () => ProfilePoint[];
+};
+
+const areaBoundsForSites = (sites: Site[]) => {
+  const lats = sites.map((site) => site.position.lat);
+  const lons = sites.map((site) => site.position.lon);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons);
+  const maxLon = Math.max(...lons);
+  const latPad = 0.15;
+  const lonPad = 0.15;
+  const latSpan = Math.min(5, maxLat - minLat + latPad * 2);
+  const lonSpan = Math.min(5, maxLon - minLon + lonPad * 2);
+  const latCenter = (minLat + maxLat) / 2;
+  const lonCenter = (minLon + maxLon) / 2;
+  return {
+    minLat: latCenter - latSpan / 2,
+    maxLat: latCenter + latSpan / 2,
+    minLon: lonCenter - lonSpan / 2,
+    maxLon: lonCenter + lonSpan / 2,
+  };
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -229,29 +251,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { sites } = get();
     if (!sites.length) return;
 
-    const lats = sites.map((site) => site.position.lat);
-    const lons = sites.map((site) => site.position.lon);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
-    const latPad = 0.15;
-    const lonPad = 0.15;
-    const latSpan = Math.min(5, maxLat - minLat + latPad * 2);
-    const lonSpan = Math.min(5, maxLon - minLon + lonPad * 2);
-    const latCenter = (minLat + maxLat) / 2;
-    const lonCenter = (minLon + maxLon) / 2;
-    const reqMinLat = latCenter - latSpan / 2;
-    const reqMaxLat = latCenter + latSpan / 2;
-    const reqMinLon = lonCenter - lonSpan / 2;
-    const reqMaxLon = lonCenter + lonSpan / 2;
+    const bounds = areaBoundsForSites(sites);
 
     set({ terrainRecommendation: "Evaluating ve2dbe coverage..." });
     try {
-      const recommendation = await recommendVe2dbeDatasetForArea(reqMinLat, reqMaxLat, reqMinLon, reqMaxLon);
+      const recommendation = await recommendVe2dbeDatasetForArea(
+        bounds.minLat,
+        bounds.maxLat,
+        bounds.minLon,
+        bounds.maxLon,
+      );
+      const perDataset = [
+        `SRTM Third: ${Math.round(recommendation.byDataset.srtmthird.completeness * 100)}% (${recommendation.byDataset.srtmthird.availableTiles}/${recommendation.expectedTiles})`,
+        `SRTM1: ${Math.round(recommendation.byDataset.srtm1.completeness * 100)}% (${recommendation.byDataset.srtm1.availableTiles}/${recommendation.expectedTiles})`,
+        `SRTM3: ${Math.round(recommendation.byDataset.srtm3.completeness * 100)}% (${recommendation.byDataset.srtm3.availableTiles}/${recommendation.expectedTiles})`,
+      ].join(" | ");
       set({
         terrainDataset: recommendation.dataset,
-        terrainRecommendation: `Recommended: ${recommendation.dataset.toUpperCase()} (${Math.round(recommendation.completeness * 100)}% coverage, ${recommendation.availableTiles}/${recommendation.expectedTiles} tiles).`,
+        terrainRecommendation: `Recommended: ${recommendation.dataset.toUpperCase()} (${Math.round(recommendation.completeness * 100)}%, ${recommendation.availableTiles}/${recommendation.expectedTiles}). ${perDataset}`,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -262,27 +279,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { sites, terrainDataset } = get();
     if (!sites.length) return;
 
-    const lats = sites.map((site) => site.position.lat);
-    const lons = sites.map((site) => site.position.lon);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
-    const latPad = 0.15;
-    const lonPad = 0.15;
-    const latSpan = Math.min(5, maxLat - minLat + latPad * 2);
-    const lonSpan = Math.min(5, maxLon - minLon + lonPad * 2);
-    const latCenter = (minLat + maxLat) / 2;
-    const lonCenter = (minLon + maxLon) / 2;
-    const reqMinLat = latCenter - latSpan / 2;
-    const reqMaxLat = latCenter + latSpan / 2;
-    const reqMinLon = lonCenter - lonSpan / 2;
-    const reqMaxLon = lonCenter + lonSpan / 2;
+    const bounds = areaBoundsForSites(sites);
 
     set({ terrainFetchStatus: `Fetching ${terrainDataset.toUpperCase()} tiles from ve2dbe...` });
 
     try {
-      const tiles = await loadVe2dbeTilesForArea(reqMinLat, reqMaxLat, reqMinLon, reqMaxLon, terrainDataset);
+      const tiles = await loadVe2dbeTilesForArea(
+        bounds.minLat,
+        bounds.maxLat,
+        bounds.minLon,
+        bounds.maxLon,
+        terrainDataset,
+      );
       set((state) => {
         const dedup = new Map<string, SrtmTile>();
         for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
@@ -297,6 +305,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const message = error instanceof Error ? error.message : String(error);
       set({ terrainFetchStatus: `Terrain fetch failed: ${message}` });
     }
+  },
+  recommendAndFetchTerrainForCurrentArea: async () => {
+    await get().recommendTerrainDatasetForCurrentArea();
+    await get().fetchTerrainForCurrentArea();
   },
   syncSiteElevationsOnline: async () => {
     const sites = get().sites;
