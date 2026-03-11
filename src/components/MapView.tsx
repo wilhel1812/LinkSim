@@ -648,6 +648,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
   const updateLink = useAppStore((state) => state.updateLink);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
+  const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
   const coverageSamples = useAppStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
@@ -893,11 +894,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   };
 
   const onMapClick = (event: MapLayerMouseEvent) => {
+    if (endpointPickTarget) return;
     const feature = event.features?.[0];
     const id =
       feature?.layer.id === "link-lines" && feature.properties ? String(feature.properties.id ?? "") : "";
-    if (!id) return;
-    setSelectedLinkId(id);
+    if (id) {
+      setSelectedLinkId(id);
+      return;
+    }
+    requestSiteLibraryDraftAt(event.lngLat.lat, event.lngLat.lng);
   };
 
   if (!webglAvailable) {

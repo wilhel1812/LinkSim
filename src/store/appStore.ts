@@ -112,6 +112,7 @@ type AppState = {
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
   endpointPickTarget: "from" | "to" | null;
+  pendingSiteLibraryDraft: { lat: number; lon: number; token: string } | null;
   scenarioOptions: { id: string; name: string }[];
   setLocale: (locale: LocaleCode) => void;
   selectScenario: (id: string) => void;
@@ -153,6 +154,8 @@ type AppState = {
   renameSimulationPreset: (presetId: string, name: string) => void;
   deleteSimulationPreset: (presetId: string) => void;
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
+  requestSiteLibraryDraftAt: (lat: number, lon: number) => void;
+  clearPendingSiteLibraryDraft: () => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
   setPropagationModel: (model: PropagationModel) => void;
   updateSite: (id: string, patch: Partial<Site>) => void;
@@ -265,6 +268,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   siteLibrary: initialSiteLibrary,
   simulationPresets: readStorage<SimulationPreset[]>(SIM_PRESETS_KEY, []),
   endpointPickTarget: null,
+  pendingSiteLibraryDraft: null,
   scenarioOptions: DEMO_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   setLocale: (locale) => set({ locale }),
   selectScenario: (id) => {
@@ -620,6 +624,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
+  requestSiteLibraryDraftAt: (lat, lon) =>
+    set({
+      pendingSiteLibraryDraft: {
+        lat,
+        lon,
+        token: makeId("draft"),
+      },
+    }),
+  clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
   applyFrequencyPresetToSelectedNetwork: () => {
     const { selectedFrequencyPresetId, selectedNetworkId } = get();
     const preset = findPresetById(selectedFrequencyPresetId);

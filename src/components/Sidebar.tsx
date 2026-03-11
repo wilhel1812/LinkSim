@@ -1,5 +1,5 @@
 import type { ChangeEvent } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import Map, {
   Layer,
@@ -162,7 +162,9 @@ export function Sidebar() {
   const setPropagationEnvironment = useAppStore((state) => state.setPropagationEnvironment);
   const applyClimateDefaults = useAppStore((state) => state.applyClimateDefaults);
   const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
+  const pendingSiteLibraryDraft = useAppStore((state) => state.pendingSiteLibraryDraft);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
+  const clearPendingSiteLibraryDraft = useAppStore((state) => state.clearPendingSiteLibraryDraft);
   const applyFrequencyPresetToSelectedNetwork = useAppStore(
     (state) => state.applyFrequencyPresetToSelectedNetwork,
   );
@@ -384,6 +386,29 @@ export function Sidebar() {
     meshmapSelectedNodeId === null
       ? null
       : meshmapNodes.find((node) => node.nodeId === meshmapSelectedNodeId) ?? null;
+
+  useEffect(() => {
+    if (!pendingSiteLibraryDraft) return;
+    setShowSiteLibraryManager(true);
+    setShowAddLibraryForm(true);
+    setNewLibraryName("");
+    setNewLibraryLat(pendingSiteLibraryDraft.lat);
+    setNewLibraryLon(pendingSiteLibraryDraft.lon);
+    const terrainElev = Number(
+      sampleSrtmElevation(srtmTiles, pendingSiteLibraryDraft.lat, pendingSiteLibraryDraft.lon),
+    );
+    if (Number.isFinite(terrainElev)) {
+      setNewLibraryGroundM(Math.round(terrainElev));
+      setLibrarySearchStatus(
+        `Draft from map click at ${pendingSiteLibraryDraft.lat.toFixed(5)}, ${pendingSiteLibraryDraft.lon.toFixed(5)} (terrain ${Math.round(terrainElev)} m)`,
+      );
+    } else {
+      setLibrarySearchStatus(
+        `Draft from map click at ${pendingSiteLibraryDraft.lat.toFixed(5)}, ${pendingSiteLibraryDraft.lon.toFixed(5)}.`,
+      );
+    }
+    clearPendingSiteLibraryDraft();
+  }, [pendingSiteLibraryDraft, srtmTiles, clearPendingSiteLibraryDraft]);
 
   const applyRfPreset = (presetId: string) => {
     const preset = findMeshtasticPreset(presetId);
