@@ -177,6 +177,7 @@ export function Sidebar() {
   const [newLinkName, setNewLinkName] = useState("");
   const [newLinkFromId, setNewLinkFromId] = useState(sites[0]?.id ?? "");
   const [newLinkToId, setNewLinkToId] = useState(sites[1]?.id ?? "");
+  const [showAddSiteForm, setShowAddSiteForm] = useState(false);
   const simulationOptions = [
     ...scenarioOptions.map((scenario) => ({
       id: `builtin:${scenario.id}`,
@@ -319,21 +320,6 @@ export function Sidebar() {
       </header>
 
       <section className="panel-section">
-        <h2>Language</h2>
-        <select
-          className="locale-select"
-          onChange={(event) => setLocale(event.target.value as (typeof SUPPORTED_LOCALES)[number])}
-          value={locale}
-        >
-          {SUPPORTED_LOCALES.map((code) => (
-            <option key={code} value={code}>
-              {LOCALE_LABELS[code]}
-            </option>
-          ))}
-        </select>
-      </section>
-
-      <section className="panel-section">
         <h2>Simulations</h2>
         <p className="field-help">Load a built-in scenario or a saved simulation snapshot.</p>
         <select
@@ -393,95 +379,110 @@ export function Sidebar() {
 
       <section className="panel-section">
         <h2>Sites</h2>
-        <p className="field-help">Add nodes by coordinates or search, then tune selected node parameters.</p>
-        <label className="field-grid">
-          <span>Name</span>
-          <input
-            onChange={(event) => setNewSiteName(event.target.value)}
-            type="text"
-            value={newSiteName}
-          />
-        </label>
-        <label className="field-grid">
-          <span>Lat</span>
-          <input
-            onChange={(event) => setNewSiteLat(parseNumber(event.target.value))}
-            step="0.000001"
-            type="number"
-            value={newSiteLat}
-          />
-        </label>
-        <label className="field-grid">
-          <span>Lon</span>
-          <input
-            onChange={(event) => setNewSiteLon(parseNumber(event.target.value))}
-            step="0.000001"
-            type="number"
-            value={newSiteLon}
-          />
-        </label>
-        <button className="inline-action" onClick={addSiteNow} type="button">
-          Add Site
+        <p className="field-help">Manage existing nodes below. Add flow is hidden until needed.</p>
+        <button
+          className="inline-action"
+          onClick={() => setShowAddSiteForm((current) => !current)}
+          type="button"
+        >
+          {showAddSiteForm ? "Hide Add New Site" : "Add New Site"}
         </button>
+        {showAddSiteForm ? (
+          <>
+            <label className="field-grid">
+              <span>Name</span>
+              <input
+                onChange={(event) => setNewSiteName(event.target.value)}
+                type="text"
+                value={newSiteName}
+              />
+            </label>
+            <label className="field-grid">
+              <span>Lat</span>
+              <input
+                onChange={(event) => setNewSiteLat(parseNumber(event.target.value))}
+                step="0.000001"
+                type="number"
+                value={newSiteLat}
+              />
+            </label>
+            <label className="field-grid">
+              <span>Lon</span>
+              <input
+                onChange={(event) => setNewSiteLon(parseNumber(event.target.value))}
+                step="0.000001"
+                type="number"
+                value={newSiteLon}
+              />
+            </label>
+            <button className="inline-action" onClick={addSiteNow} type="button">
+              Add Site
+            </button>
+            <label className="field-grid">
+              <span>Map Search</span>
+              <input
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Address or place"
+                type="text"
+                value={searchQuery}
+              />
+            </label>
+            <button className="inline-action" onClick={() => void runSearch()} type="button">
+              Search
+            </button>
+            {searchStatus ? <p className="field-help">{searchStatus}</p> : null}
+            {searchResults.length ? (
+              <div className="asset-list">
+                {searchResults.map((result) => (
+                  <button
+                    className="inline-action"
+                    key={result.id}
+                    onClick={() => {
+                      setNewSiteName(result.label.split(",")[0] ?? "New Site");
+                      setNewSiteLat(result.lat);
+                      setNewSiteLon(result.lon);
+                      addSiteByCoordinates(result.label.split(",")[0] ?? "New Site", result.lat, result.lon);
+                    }}
+                    type="button"
+                  >
+                    Add: {result.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
         <button className="inline-action" onClick={() => saveSelectedSiteToLibrary()} type="button">
           Save Selected To Library
         </button>
-        <label className="field-grid">
-          <span>Map Search</span>
-          <input
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Address or place"
-            type="text"
-            value={searchQuery}
-          />
-        </label>
-        <button className="inline-action" onClick={() => void runSearch()} type="button">
-          Search
-        </button>
-        {searchStatus ? <p className="field-help">{searchStatus}</p> : null}
-        {searchResults.length ? (
-          <div className="asset-list">
-            {searchResults.map((result) => (
-              <button
-                className="inline-action"
-                key={result.id}
-                onClick={() => {
-                  setNewSiteName(result.label.split(",")[0] ?? "New Site");
-                  setNewSiteLat(result.lat);
-                  setNewSiteLon(result.lon);
-                  addSiteByCoordinates(result.label.split(",")[0] ?? "New Site", result.lat, result.lon);
-                }}
-                type="button"
-              >
-                Add: {result.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {siteLibrary.length ? (
-          <div className="asset-list">
-            <p className="field-help">Site Library</p>
-            {siteLibrary.map((entry) => (
-              <div className="library-row" key={entry.id}>
-                <span className="library-row-label">
-                  {entry.name} ({entry.position.lat.toFixed(4)}, {entry.position.lon.toFixed(4)})
-                </span>
-                <div className="library-row-actions">
-                  <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
-                    Insert
-                  </button>
-                  <button
-                    className="inline-action"
-                    onClick={() => deleteSiteLibraryEntry(entry.id)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
+        <details className="compact-details">
+          <summary>Site Library</summary>
+          {siteLibrary.length ? (
+            <div className="asset-list">
+              {siteLibrary.map((entry) => (
+                <div className="library-row" key={entry.id}>
+                  <span className="library-row-label">
+                    {entry.name} ({entry.position.lat.toFixed(4)}, {entry.position.lon.toFixed(4)})
+                  </span>
+                  <div className="library-row-actions">
+                    <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                      Insert
+                    </button>
+                    <button
+                      className="inline-action"
+                      onClick={() => deleteSiteLibraryEntry(entry.id)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
+              ))}
+            </div>
+          ) : (
+            <p className="field-help">No saved library sites yet.</p>
+          )}
+        </details>
       </section>
 
       <section className="panel-section">
@@ -699,64 +700,66 @@ export function Sidebar() {
         </label>
 
         <p className="field-help">Frequency is controlled in Channel / Coverage and shared by all links.</p>
-
-        <label className="field-grid">
-          <span>Tx power (dBm)</span>
-          <input
-            onChange={(event) =>
-              updateLink(selectedLink.id, { txPowerDbm: parseNumber(event.target.value) })
-            }
-            type="number"
-            value={selectedLink.txPowerDbm}
-          />
-        </label>
-        <label className="field-grid">
-          <span>Tx gain (dBi)</span>
-          <input
-            onChange={(event) =>
-              updateLink(selectedLink.id, { txGainDbi: parseNumber(event.target.value) })
-            }
-            type="number"
-            value={selectedLink.txGainDbi}
-          />
-        </label>
-        <label className="field-grid">
-          <span>Rx gain (dBi)</span>
-          <input
-            onChange={(event) =>
-              updateLink(selectedLink.id, { rxGainDbi: parseNumber(event.target.value) })
-            }
-            type="number"
-            value={selectedLink.rxGainDbi}
-          />
-        </label>
-        <label className="field-grid">
-          <span>Cable loss (dB)</span>
-          <input
-            onChange={(event) =>
-              updateLink(selectedLink.id, { cableLossDb: parseNumber(event.target.value) })
-            }
-            type="number"
-            value={selectedLink.cableLossDb}
-          />
-        </label>
-        <label className="field-grid">
-          <span>RF preset</span>
-          <select
-            className="locale-select"
-            onChange={(event) => applyRfPreset(event.target.value)}
-            value=""
-          >
-            <option value="" disabled>
-              Apply preset...
-            </option>
-            {MESHTASTIC_RF_PRESETS.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.label}
+        <details className="compact-details">
+          <summary>Advanced Link Radio</summary>
+          <label className="field-grid">
+            <span>Tx power (dBm)</span>
+            <input
+              onChange={(event) =>
+                updateLink(selectedLink.id, { txPowerDbm: parseNumber(event.target.value) })
+              }
+              type="number"
+              value={selectedLink.txPowerDbm}
+            />
+          </label>
+          <label className="field-grid">
+            <span>Tx gain (dBi)</span>
+            <input
+              onChange={(event) =>
+                updateLink(selectedLink.id, { txGainDbi: parseNumber(event.target.value) })
+              }
+              type="number"
+              value={selectedLink.txGainDbi}
+            />
+          </label>
+          <label className="field-grid">
+            <span>Rx gain (dBi)</span>
+            <input
+              onChange={(event) =>
+                updateLink(selectedLink.id, { rxGainDbi: parseNumber(event.target.value) })
+              }
+              type="number"
+              value={selectedLink.rxGainDbi}
+            />
+          </label>
+          <label className="field-grid">
+            <span>Cable loss (dB)</span>
+            <input
+              onChange={(event) =>
+                updateLink(selectedLink.id, { cableLossDb: parseNumber(event.target.value) })
+              }
+              type="number"
+              value={selectedLink.cableLossDb}
+            />
+          </label>
+          <label className="field-grid">
+            <span>RF preset</span>
+            <select
+              className="locale-select"
+              onChange={(event) => applyRfPreset(event.target.value)}
+              value=""
+            >
+              <option value="" disabled>
+                Apply preset...
               </option>
-            ))}
-          </select>
-        </label>
+              {MESHTASTIC_RF_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </details>
       </section>
 
       <section className="panel-section">
@@ -782,121 +785,116 @@ export function Sidebar() {
           Delete Selected Site
         </button>
 
-        <label className="field-grid">
-          <span>Latitude</span>
-          <input
-            onChange={(event) =>
-              updateSite(selectedSite.id, {
-                position: { ...selectedSite.position, lat: parseNumber(event.target.value) },
-              })
-            }
-            step="0.0001"
-            type="number"
-            value={selectedSite.position.lat}
-          />
-        </label>
+        <details className="compact-details">
+          <summary>Edit Selected Site</summary>
+          <label className="field-grid">
+            <span>Latitude</span>
+            <input
+              onChange={(event) =>
+                updateSite(selectedSite.id, {
+                  position: { ...selectedSite.position, lat: parseNumber(event.target.value) },
+                })
+              }
+              step="0.0001"
+              type="number"
+              value={selectedSite.position.lat}
+            />
+          </label>
 
-        <label className="field-grid">
-          <span>Longitude</span>
-          <input
-            onChange={(event) =>
-              updateSite(selectedSite.id, {
-                position: { ...selectedSite.position, lon: parseNumber(event.target.value) },
-              })
-            }
-            step="0.0001"
-            type="number"
-            value={selectedSite.position.lon}
-          />
-        </label>
+          <label className="field-grid">
+            <span>Longitude</span>
+            <input
+              onChange={(event) =>
+                updateSite(selectedSite.id, {
+                  position: { ...selectedSite.position, lon: parseNumber(event.target.value) },
+                })
+              }
+              step="0.0001"
+              type="number"
+              value={selectedSite.position.lon}
+            />
+          </label>
 
-        <label className="field-grid">
-          <span>Ground elev (m)</span>
-          <input
-            onChange={(event) =>
-              updateSite(selectedSite.id, { groundElevationM: parseNumber(event.target.value) })
-            }
-            type="number"
-            value={selectedSite.groundElevationM}
-          />
-        </label>
+          <label className="field-grid">
+            <span>Ground elev (m)</span>
+            <input
+              onChange={(event) =>
+                updateSite(selectedSite.id, { groundElevationM: parseNumber(event.target.value) })
+              }
+              type="number"
+              value={selectedSite.groundElevationM}
+            />
+          </label>
 
-        <label className="field-grid">
-          <span>Antenna (m)</span>
-          <input
-            onChange={(event) =>
-              updateSite(selectedSite.id, { antennaHeightM: parseNumber(event.target.value) })
-            }
-            type="number"
-            value={selectedSite.antennaHeightM}
-          />
-        </label>
+          <label className="field-grid">
+            <span>Antenna (m)</span>
+            <input
+              onChange={(event) =>
+                updateSite(selectedSite.id, { antennaHeightM: parseNumber(event.target.value) })
+              }
+              type="number"
+              value={selectedSite.antennaHeightM}
+            />
+          </label>
+        </details>
       </section>
 
       <section className="panel-section">
         <h2>{t(locale, "terrainData")}</h2>
         <p className="field-help">Terrain affects obstruction and profile calculations used in simulation.</p>
         <p>{srtmTiles.length} SRTM tile(s) loaded</p>
-        <label className="field-grid">
-          <span>ve2dbe source</span>
-          <select
-            className="locale-select"
-            onChange={(event) => setTerrainDataset(event.target.value as "srtm1" | "srtm3" | "srtmthird")}
-            value={terrainDataset}
-          >
-            <option value="srtm1">SRTM1</option>
-            <option value="srtm3">SRTM3</option>
-            <option value="srtmthird">SRTM Third</option>
-          </select>
-        </label>
-        <button className="inline-action" onClick={() => void fetchTerrainForCurrentArea()} type="button">
-          Auto Fetch Current Area
-        </button>
-        <button
-          className="inline-action"
-          onClick={() => void recommendTerrainDatasetForCurrentArea()}
-          type="button"
-        >
-          Recommend Best Dataset
-        </button>
         <button
           className="inline-action"
           onClick={() => void recommendAndFetchTerrainForCurrentArea()}
           type="button"
         >
-          Recommend + Fetch
+          Auto Fetch Terrain Data
         </button>
-        <label className="upload-button">
-          {t(locale, "loadHgt")}
-          <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
-        </label>
-        <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
-          {t(locale, "syncSiteElevations")}
-        </button>
-        <button className="inline-action" onClick={() => void clearTerrainCache()} type="button">
-          Clear ve2dbe Cache
-        </button>
-        {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
-        {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
-        <div className="asset-list">
-          <a href={REMOTE_SRTM_ENDPOINTS[terrainDataset]} rel="noreferrer" target="_blank">
-            Open selected ve2dbe dataset source
-          </a>
-          <a href="https://www.ve2dbe.com/geodata/" rel="noreferrer" target="_blank">
-            ve2dbe geodata selector
-          </a>
-        </div>
-      </section>
-
-      <section className="panel-section">
-        <h2>References</h2>
-        <div className="asset-list">
-          {LEGACY_ASSETS.map((asset) => (
-            <a href={asset.url} key={asset.url} rel="noreferrer" target="_blank">
-              {asset.label}
+        <details className="compact-details">
+          <summary>Advanced Terrain Options</summary>
+          <label className="field-grid">
+            <span>ve2dbe source</span>
+            <select
+              className="locale-select"
+              onChange={(event) => setTerrainDataset(event.target.value as "srtm1" | "srtm3" | "srtmthird")}
+              value={terrainDataset}
+            >
+              <option value="srtm1">SRTM1</option>
+              <option value="srtm3">SRTM3</option>
+              <option value="srtmthird">SRTM Third</option>
+            </select>
+          </label>
+          <button className="inline-action" onClick={() => void fetchTerrainForCurrentArea()} type="button">
+            Fetch Current Area (Current Source)
+          </button>
+          <button
+            className="inline-action"
+            onClick={() => void recommendTerrainDatasetForCurrentArea()}
+            type="button"
+          >
+            Recommend Source Only
+          </button>
+          <label className="upload-button">
+            {t(locale, "loadHgt")}
+            <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
+          </label>
+          <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
+            {t(locale, "syncSiteElevations")}
+          </button>
+          <button className="inline-action" onClick={() => void clearTerrainCache()} type="button">
+            Clear ve2dbe Cache
+          </button>
+          {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
+          {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
+          <div className="asset-list">
+            <a href={REMOTE_SRTM_ENDPOINTS[terrainDataset]} rel="noreferrer" target="_blank">
+              Open selected ve2dbe dataset source
             </a>
-          ))}
-        </div>
+            <a href="https://www.ve2dbe.com/geodata/" rel="noreferrer" target="_blank">
+              ve2dbe geodata selector
+            </a>
+          </div>
+        </details>
       </section>
 
       <section className="panel-section">
@@ -964,6 +962,34 @@ export function Sidebar() {
         <button className="inline-action" onClick={exportManifest} type="button">
           Export Simulation Manifest
         </button>
+      </section>
+
+      <section className="panel-section">
+        <details className="compact-details">
+          <summary>More</summary>
+          <label className="field-grid">
+            <span>Language</span>
+            <select
+              className="locale-select"
+              onChange={(event) => setLocale(event.target.value as (typeof SUPPORTED_LOCALES)[number])}
+              value={locale}
+            >
+              {SUPPORTED_LOCALES.map((code) => (
+                <option key={code} value={code}>
+                  {LOCALE_LABELS[code]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="field-help">References and external resources:</p>
+          <div className="asset-list">
+            {LEGACY_ASSETS.map((asset) => (
+              <a href={asset.url} key={asset.url} rel="noreferrer" target="_blank">
+                {asset.label}
+              </a>
+            ))}
+          </div>
+        </details>
       </section>
     </aside>
   );

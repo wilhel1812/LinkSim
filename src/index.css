@@ -261,6 +261,37 @@ input {
   font-size: 0.76rem;
 }
 
+.compact-details {
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  padding: 8px 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.compact-details > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.compact-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.compact-details > summary::before {
+  content: "▸";
+  margin-right: 8px;
+  color: var(--accent);
+}
+
+.compact-details[open] > summary::before {
+  content: "▾";
+}
+
 .metrics {
   display: flex;
   flex-direction: column;
