@@ -34,6 +34,16 @@ type SiteLibraryEntry = {
   groundElevationM: number;
   antennaHeightM: number;
   createdAt: string;
+  sourceMeta?: {
+    provider: string;
+    sourceType: string;
+    nodeId?: string;
+    shortName?: string;
+    longName?: string;
+    hwModel?: string;
+    lastSeenUnix?: number;
+    raw?: Record<string, unknown>;
+  };
 };
 
 type SimulationPreset = {
@@ -114,6 +124,7 @@ type AppState = {
     lon: number,
     groundElevationM?: number,
     antennaHeightM?: number,
+    sourceMeta?: SiteLibraryEntry["sourceMeta"],
   ) => void;
   insertSiteFromLibrary: (entryId: string) => void;
   insertSitesFromLibrary: (entryIds: string[]) => void;
@@ -386,7 +397,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     get().recomputeCoverage();
   },
-  addSiteLibraryEntry: (name, lat, lon, groundElevationM = 0, antennaHeightM = 2) => {
+  addSiteLibraryEntry: (name, lat, lon, groundElevationM = 0, antennaHeightM = 2, sourceMeta) => {
     const label = name.trim() || `Library Site ${get().siteLibrary.length + 1}`;
     const entry: SiteLibraryEntry = {
       id: makeId("libsite"),
@@ -395,6 +406,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       groundElevationM,
       antennaHeightM,
       createdAt: new Date().toISOString(),
+      sourceMeta,
     };
     set((state) => {
       const next = normalizeSiteLibrary([entry, ...state.siteLibrary]);

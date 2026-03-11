@@ -1,13 +1,29 @@
 import type { ChangeEvent } from "react";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import Map, { Marker, type MarkerDragEvent } from "react-map-gl/maplibre";
+import Map, {
+  Layer,
+  Marker,
+  Source,
+  type LayerProps,
+  type MapLayerMouseEvent,
+  type MarkerDragEvent,
+  type ViewStateChangeEvent,
+} from "react-map-gl/maplibre";
 import { useSystemTheme } from "../hooks/useSystemTheme";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
+import {
+  fetchMeshmapNodes,
+  getCachedMeshmapSnapshotInfo,
+  getDefaultMeshmapFeedUrl,
+  readPreferredMeshmapSourceUrl,
+  savePreferredMeshmapSourceUrl,
+  type MeshmapNode,
+} from "../lib/meshtasticMqtt";
 import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
 import { analyzeLink } from "../lib/propagation";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
@@ -39,6 +55,18 @@ const InfoTip = ({ text }: { text: string }) => (
 const styleByTheme = {
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+};
+
+const meshmapNodesLayer: LayerProps = {
+  id: "meshmap-nodes-layer",
+  type: "circle",
+  paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2, 8, 4, 12, 6],
+    "circle-color": "#2bc0ff",
+    "circle-opacity": 0.82,
+    "circle-stroke-width": 1,
+    "circle-stroke-color": "#0a1a24",
+  },
 };
 
 const clampSNR = (spreadFactor: number): number => {
@@ -209,6 +237,18 @@ export function Sidebar() {
   const [librarySearchStatus, setLibrarySearchStatus] = useState("");
   const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
   const [librarySearchPickBusyId, setLibrarySearchPickBusyId] = useState<string | null>(null);
+  const [showMeshtasticBrowser, setShowMeshtasticBrowser] = useState(false);
+  const [meshmapNodes, setMeshmapNodes] = useState<MeshmapNode[]>([]);
+  const [meshmapSourceUrl, setMeshmapSourceUrl] = useState(readPreferredMeshmapSourceUrl);
+  const [meshmapCachedSummary, setMeshmapCachedSummary] = useState(() => getCachedMeshmapSnapshotInfo());
+  const [meshmapStatus, setMeshmapStatus] = useState("");
+  const [meshmapLoading, setMeshmapLoading] = useState(false);
+  const [meshmapSelectedNodeId, setMeshmapSelectedNodeId] = useState<string | null>(null);
+  const [meshmapView, setMeshmapView] = useState(() => ({
+    longitude: sourceSite?.position.lon ?? 10.75,
+    latitude: sourceSite?.position.lat ?? 59.9,
+    zoom: 7.5,
+  }));
   const simulationOptions = [
     ...scenarioOptions.map((scenario) => ({
       id: `builtin:${scenario.id}`,
@@ -243,6 +283,42 @@ export function Sidebar() {
       return hay.includes(q);
     });
   }, [siteLibrary, siteLibraryQuery]);
+  const meshmapNodesInView = useMemo(() => {
+    const lonSpan = Math.max(0.12, 360 / Math.pow(2, meshmapView.zoom) * 2.2);
+    const latSpan = Math.max(0.12, 170 / Math.pow(2, meshmapView.zoom) * 1.8);
+    const minLon = meshmapView.longitude - lonSpan / 2;
+    const maxLon = meshmapView.longitude + lonSpan / 2;
+    const minLat = meshmapView.latitude - latSpan / 2;
+    const maxLat = meshmapView.latitude + latSpan / 2;
+    const inView = meshmapNodes.filter(
+      (node) => node.lon >= minLon && node.lon <= maxLon && node.lat >= minLat && node.lat <= maxLat,
+    );
+    return inView.slice(0, 4500);
+  }, [meshmapNodes, meshmapView]);
+  const meshmapNodesGeoJson = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: meshmapNodesInView.map((node) => ({
+        type: "Feature" as const,
+        properties: {
+          nodeId: node.nodeId,
+          longName: node.longName ?? "",
+          shortName: node.shortName ?? "",
+          hwModel: node.hwModel ?? "",
+          lastSeenUnix: node.lastSeenUnix ?? 0,
+        },
+        geometry: {
+          type: "Point" as const,
+          coordinates: [node.lon, node.lat],
+        },
+      })),
+    }),
+    [meshmapNodesInView],
+  );
+  const selectedMeshmapNode =
+    meshmapSelectedNodeId === null
+      ? null
+      : meshmapNodes.find((node) => node.nodeId === meshmapSelectedNodeId) ?? null;
 
   const applyRfPreset = (presetId: string) => {
     const preset = findMeshtasticPreset(presetId);
@@ -411,6 +487,83 @@ export function Sidebar() {
     } finally {
       setLibrarySearchPickBusyId(null);
     }
+  };
+  const loadMeshmapFeed = async () => {
+    const sourceUrl = meshmapSourceUrl.trim() || getDefaultMeshmapFeedUrl();
+    setMeshmapLoading(true);
+    setMeshmapStatus(`Loading Meshtastic feed from ${sourceUrl} ...`);
+    setMeshmapSelectedNodeId(null);
+    try {
+      savePreferredMeshmapSourceUrl(sourceUrl);
+      const result = await fetchMeshmapNodes({ sourceUrl });
+      setMeshmapNodes(result.nodes);
+      setMeshmapCachedSummary(getCachedMeshmapSnapshotInfo());
+      if (result.fromCache) {
+        const ageMin = Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000));
+        setMeshmapStatus(
+          `Loaded ${result.nodes.length.toLocaleString()} node(s) from cached snapshot (${ageMin} min old).`,
+        );
+      } else {
+        setMeshmapStatus(`Loaded ${result.nodes.length.toLocaleString()} node(s) from live feed.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMeshmapStatus(`Meshtastic load failed: ${message}`);
+    } finally {
+      setMeshmapLoading(false);
+    }
+  };
+  const onMeshmapMove = (event: ViewStateChangeEvent) => {
+    setMeshmapView({
+      longitude: event.viewState.longitude,
+      latitude: event.viewState.latitude,
+      zoom: event.viewState.zoom,
+    });
+  };
+  const onMeshmapClick = (event: MapLayerMouseEvent) => {
+    const nodeId = event.features?.[0]?.properties?.nodeId;
+    if (typeof nodeId === "string" && nodeId.trim()) {
+      setMeshmapSelectedNodeId(nodeId);
+    }
+  };
+  const addSelectedMeshmapNodeToLibrary = async () => {
+    if (!selectedMeshmapNode) return;
+    const fallbackName = selectedMeshmapNode.shortName ?? selectedMeshmapNode.longName ?? selectedMeshmapNode.nodeId;
+    setMeshmapStatus(`Resolving elevation for ${fallbackName}...`);
+    let groundM = selectedMeshmapNode.altitudeM ?? 0;
+    try {
+      const [elevation] = await fetchElevations([
+        { lat: selectedMeshmapNode.lat, lon: selectedMeshmapNode.lon },
+      ]);
+      if (Number.isFinite(elevation)) {
+        groundM = Math.round(elevation);
+      }
+    } catch {
+      // Keep fallback altitude.
+    }
+    addSiteLibraryEntry(
+      fallbackName,
+      selectedMeshmapNode.lat,
+      selectedMeshmapNode.lon,
+      groundM,
+      2,
+      {
+        provider: "Meshtastic MQTT",
+        sourceType: "mqtt-feed",
+        nodeId: selectedMeshmapNode.nodeId,
+        shortName: selectedMeshmapNode.shortName,
+        longName: selectedMeshmapNode.longName,
+        hwModel: selectedMeshmapNode.hwModel,
+        lastSeenUnix: selectedMeshmapNode.lastSeenUnix,
+        raw: {
+          sourceUrl: meshmapSourceUrl.trim() || getDefaultMeshmapFeedUrl(),
+          seenByTopics: selectedMeshmapNode.seenByTopics,
+          role: selectedMeshmapNode.role,
+          precisionBits: selectedMeshmapNode.precisionBits,
+        },
+      },
+    );
+    setMeshmapStatus(`Added ${fallbackName} to site library.`);
   };
 
   return (
@@ -1116,6 +1269,81 @@ export function Sidebar() {
                     ))}
                   </div>
                 ) : null}
+                <details className="compact-details">
+                  <summary>Browse Meshtastic MQTT Nodes</summary>
+                  <p className="field-help">
+                    Source feed can be switched later to your own relay endpoint; this avoids hard coupling to one
+                    provider.
+                  </p>
+                  <label className="field-grid">
+                    <span>Source URL</span>
+                    <input
+                      onChange={(event) => setMeshmapSourceUrl(event.target.value)}
+                      placeholder="https://meshmap.net/nodes.json"
+                      type="text"
+                      value={meshmapSourceUrl}
+                    />
+                  </label>
+                  <div className="chip-group">
+                    <button className="inline-action" disabled={meshmapLoading} onClick={() => void loadMeshmapFeed()} type="button">
+                      {meshmapLoading ? "Loading..." : "Load Feed"}
+                    </button>
+                    <button
+                      className="inline-action"
+                      onClick={() => setShowMeshtasticBrowser((current) => !current)}
+                      type="button"
+                    >
+                      {showMeshtasticBrowser ? "Hide Browser" : "Show Browser"}
+                    </button>
+                  </div>
+                  {meshmapCachedSummary ? (
+                    <p className="field-help">
+                      Cached snapshot: {meshmapCachedSummary.nodeCount.toLocaleString()} node(s) from{" "}
+                      {new Date(meshmapCachedSummary.savedAt).toLocaleString()} ({meshmapCachedSummary.sourceUrl})
+                    </p>
+                  ) : null}
+                  {meshmapStatus ? <p className="field-help">{meshmapStatus}</p> : null}
+                  {showMeshtasticBrowser ? (
+                    <div className="meshmap-browser">
+                      <div className="meshmap-browser-map">
+                        <Map
+                          initialViewState={meshmapView}
+                          interactiveLayerIds={["meshmap-nodes-layer"]}
+                          mapStyle={styleByTheme[theme]}
+                          onClick={onMeshmapClick}
+                          onMove={onMeshmapMove}
+                        >
+                          <Source data={meshmapNodesGeoJson} id="meshmap-nodes" type="geojson">
+                            <Layer {...meshmapNodesLayer} />
+                          </Source>
+                        </Map>
+                      </div>
+                      <p className="field-help">
+                        Nodes loaded: {meshmapNodes.length.toLocaleString()} total, {meshmapNodesInView.length.toLocaleString()} in view.
+                      </p>
+                      {selectedMeshmapNode ? (
+                        <div className="meshmap-selected-card">
+                          <p>
+                            <strong>{selectedMeshmapNode.shortName ?? selectedMeshmapNode.longName ?? selectedMeshmapNode.nodeId}</strong>{" "}
+                            ({selectedMeshmapNode.lat.toFixed(5)}, {selectedMeshmapNode.lon.toFixed(5)})
+                          </p>
+                          <p className="field-help">
+                            Node ID: {selectedMeshmapNode.nodeId}
+                            {selectedMeshmapNode.hwModel ? ` | ${selectedMeshmapNode.hwModel}` : ""}
+                            {selectedMeshmapNode.lastSeenUnix
+                              ? ` | Last seen ${new Date(selectedMeshmapNode.lastSeenUnix * 1000).toLocaleString()}`
+                              : ""}
+                          </p>
+                          <button className="inline-action" onClick={() => void addSelectedMeshmapNodeToLibrary()} type="button">
+                            Add Selected MQTT Node To Library
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="field-help">Click a blue node in the map to select it.</p>
+                      )}
+                    </div>
+                  ) : null}
+                </details>
                 <div className="chip-group">
                   <button className="inline-action" onClick={addLibraryEntryNow} type="button">
                     Add To Library

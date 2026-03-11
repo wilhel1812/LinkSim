@@ -949,6 +949,40 @@ input {
   padding: 4px 8px;
 }
 
+.meshmap-browser {
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.meshmap-browser-map {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  min-height: 320px;
+}
+
+.meshmap-browser-map .maplibregl-map {
+  width: 100%;
+  height: 100%;
+}
+
+.meshmap-selected-card {
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-soft) 52%, transparent);
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.meshmap-selected-card p {
+  margin: 0;
+}
+
 @media (max-width: 1000px) {
   .library-editor-split {
     grid-template-columns: 1fr;
@@ -956,6 +990,10 @@ input {
 
   .library-editor-map {
     min-height: 260px;
+  }
+
+  .meshmap-browser-map {
+    min-height: 240px;
   }
 }
 
