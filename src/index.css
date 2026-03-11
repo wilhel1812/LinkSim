@@ -636,3 +636,40 @@ input {
 .asset-list a:hover {
   text-decoration: underline;
 }
+
+.margin-status {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.margin-status.is-pass {
+  border-color: color-mix(in srgb, #2fdb9f 55%, var(--border));
+  background: color-mix(in srgb, #2fdb9f 18%, transparent);
+}
+
+.margin-status.is-fail {
+  border-color: color-mix(in srgb, #ff6b6b 55%, var(--border));
+  background: color-mix(in srgb, #ff6b6b 16%, transparent);
+}
+
+.whatif-table {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.whatif-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 0.76rem;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.whatif-row:nth-child(even) {
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}

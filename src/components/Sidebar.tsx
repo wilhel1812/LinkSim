@@ -3,6 +3,8 @@ import clsx from "clsx";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
+import { analyzeLink } from "../lib/propagation";
+import { sampleSrtmElevation } from "../lib/srtm";
 import { REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel } from "../types/radio";
@@ -17,6 +19,26 @@ const metric = (label: string, value: string) => (
 const parseNumber = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const clampSNR = (spreadFactor: number): number => {
+  const map: Record<number, number> = {
+    7: -7.5,
+    8: -10,
+    9: -12.5,
+    10: -15,
+    11: -17.5,
+    12: -20,
+  };
+  return map[spreadFactor] ?? -10;
+};
+
+const estimateLoRaSensitivityDbm = (bandwidthKhz: number, spreadFactor: number): number => {
+  const bandwidthHz = Math.max(1_000, bandwidthKhz * 1_000);
+  const noiseFloor = -174 + 10 * Math.log10(bandwidthHz);
+  const noiseFigure = 6;
+  const snrLimit = clampSNR(spreadFactor);
+  return noiseFloor + noiseFigure + snrLimit;
 };
 
 const downloadJson = (fileName: string, payload: unknown) => {
@@ -38,6 +60,7 @@ export function Sidebar() {
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
+  const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const scenarioOptions = useAppStore((state) => state.scenarioOptions);
   const locale = useAppStore((state) => state.locale);
@@ -49,6 +72,7 @@ export function Sidebar() {
   const setSelectedNetworkId = useAppStore((state) => state.setSelectedNetworkId);
   const setSelectedCoverageMode = useAppStore((state) => state.setSelectedCoverageMode);
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
+  const setRxSensitivityTargetDbm = useAppStore((state) => state.setRxSensitivityTargetDbm);
   const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const applyFrequencyPresetToSelectedNetwork = useAppStore(
@@ -85,6 +109,41 @@ export function Sidebar() {
   const fromSiteChoices = sites.filter((site) => site.id !== selectedLink.toSiteId);
   const toSiteChoices = sites.filter((site) => site.id !== selectedLink.fromSiteId);
   const canEditEndpoints = sites.length >= 2;
+  const sourceSite = sites.find((site) => site.id === selectedLink.fromSiteId);
+  const destinationSite = sites.find((site) => site.id === selectedLink.toSiteId);
+  const linkMarginDb = analysis.rxLevelDbm - rxSensitivityTargetDbm;
+  const loraSensitivitySuggestionDbm = estimateLoRaSensitivityDbm(
+    selectedNetwork.bandwidthKhz,
+    selectedNetwork.spreadFactor,
+  );
+
+  const runWhatIf = (
+    txPowerDeltaDbm = 0,
+    freqScale = 1,
+    antennaDeltaM = 0,
+  ): number | null => {
+    if (!sourceSite || !destinationSite) return null;
+    const alt = analyzeLink(
+      { ...selectedLink, txPowerDbm: selectedLink.txPowerDbm + txPowerDeltaDbm, frequencyMHz: selectedLink.frequencyMHz * freqScale },
+      { ...sourceSite, antennaHeightM: sourceSite.antennaHeightM + antennaDeltaM },
+      { ...destinationSite, antennaHeightM: destinationSite.antennaHeightM + antennaDeltaM },
+      model,
+      ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+    );
+    return alt.rxLevelDbm;
+  };
+
+  const whatIfRows = [
+    { label: "Current", rxDbm: analysis.rxLevelDbm },
+    { label: "+3 dB TX", rxDbm: runWhatIf(3, 1, 0) },
+    { label: "+6 dB TX", rxDbm: runWhatIf(6, 1, 0) },
+    { label: "+10 m antennas", rxDbm: runWhatIf(0, 1, 10) },
+    { label: "Freq -10%", rxDbm: runWhatIf(0, 0.9, 0) },
+    { label: "Freq +10%", rxDbm: runWhatIf(0, 1.1, 0) },
+  ].map((row) => ({
+    ...row,
+    marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
+  }));
 
   const onModelChange = (next: PropagationModel) => {
     setPropagationModel(next);
@@ -107,7 +166,7 @@ export function Sidebar() {
       return acc;
     }, {});
 
-    const manifest = {
+      const manifest = {
       exportedAt: new Date().toISOString(),
       scenarioId: selectedScenarioId,
       locale,
@@ -124,10 +183,16 @@ export function Sidebar() {
       selectedLinkId,
       selectedNetworkId,
       selectedSiteId,
+      rxSensitivityTargetDbm,
       hasOnlineElevationSync: useAppStore.getState().hasOnlineElevationSync,
       terrainTileCount: srtmTiles.length,
       terrainSources,
       selectedAnalysis: analysis,
+      linkBudget: {
+        targetSensitivityDbm: rxSensitivityTargetDbm,
+        marginDb: linkMarginDb,
+        whatIfRows,
+      },
     };
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -482,6 +547,36 @@ export function Sidebar() {
             "Fresnel clearance",
             `${analysis.estimatedFresnelClearancePercent.toFixed(0)}%`,
           )}
+        </div>
+        <label className="field-grid">
+          <span>RX target (dBm)</span>
+          <input
+            onChange={(event) => setRxSensitivityTargetDbm(parseNumber(event.target.value))}
+            type="number"
+            value={rxSensitivityTargetDbm}
+          />
+        </label>
+        <button
+          className="inline-action"
+          onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
+          type="button"
+        >
+          Use LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
+        </button>
+        <div className={clsx("margin-status", linkMarginDb >= 0 ? "is-pass" : "is-fail")}>
+          Link margin: {linkMarginDb >= 0 ? "+" : ""}
+          {linkMarginDb.toFixed(1)} dB ({linkMarginDb >= 0 ? "PASS" : "FAIL"})
+        </div>
+        <div className="whatif-table">
+          {whatIfRows.map((row) => (
+            <div className="whatif-row" key={row.label}>
+              <span>{row.label}</span>
+              <span>{row.rxDbm === null ? "n/a" : `${row.rxDbm.toFixed(1)} dBm`}</span>
+              <span>
+                {row.marginDb === null ? "n/a" : `${row.marginDb >= 0 ? "+" : ""}${row.marginDb.toFixed(1)} dB`}
+              </span>
+            </div>
+          ))}
         </div>
         <button className="inline-action" onClick={exportManifest} type="button">
           Export Simulation Manifest
