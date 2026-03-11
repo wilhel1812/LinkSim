@@ -233,13 +233,13 @@ const computeSourceCentricRxDbm = (
 };
 
 const buildCoverageOverlay = (
+  bounds: TerrainBounds,
   samples: CoverageSampleLite[],
   mode: Exclude<CoverageVizMode, "points">,
   rxTargetDbm: number,
   environmentLossDb: number,
 ): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
-  const bounds = computeCoverageBounds(samples);
-  if (!bounds) return null;
+  if (!samples.length) return null;
   const size = 280;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -577,6 +577,16 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     () => srtmTiles.filter((tile) => tile.sourceId === `ve2dbe-${terrainDataset}`).length,
     [srtmTiles, terrainDataset],
   );
+  const boundedCoverageSamples = useMemo(() => {
+    if (!analysisBounds) return coverageSamples;
+    return coverageSamples.filter(
+      (sample) =>
+        sample.lat >= analysisBounds.minLat &&
+        sample.lat <= analysisBounds.maxLat &&
+        sample.lon >= analysisBounds.minLon &&
+        sample.lon <= analysisBounds.maxLon,
+    );
+  }, [coverageSamples, analysisBounds]);
 
   const lineFeatures = useMemo(
     () => ({
@@ -625,7 +635,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const coverageFeatures = useMemo(
     () => ({
       type: "FeatureCollection" as const,
-      features: coverageSamples.map((candidate, index) => ({
+      features: boundedCoverageSamples.map((candidate, index) => ({
         type: "Feature" as const,
         properties: {
           id: `cand-${index}`,
@@ -640,12 +650,12 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         },
       })),
     }),
-    [coverageSamples, environmentLossDb, rxSensitivityTargetDbm],
+    [boundedCoverageSamples, environmentLossDb, rxSensitivityTargetDbm],
   );
   const coverageOverlay = useMemo(
     () => {
       if (coverageVizMode === "points") return null;
-      const bounds = analysisBounds ?? computeCoverageBounds(coverageSamples);
+      const bounds = analysisBounds ?? computeCoverageBounds(boundedCoverageSamples);
       if (!bounds) return null;
       if (coverageVizMode === "passfail") {
         if (!selectedLink || !selectedFromSite) return null;
@@ -666,14 +676,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         );
       }
       return buildCoverageOverlay(
-        coverageSamples,
+        bounds,
+        boundedCoverageSamples,
         coverageVizMode,
         rxSensitivityTargetDbm,
         environmentLossDb,
       );
     },
     [
-      coverageSamples,
+      boundedCoverageSamples,
       coverageVizMode,
       rxSensitivityTargetDbm,
       environmentLossDb,
