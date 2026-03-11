@@ -121,7 +121,7 @@ type AppState = {
   setSelectedSiteId: (id: string) => void;
   setSelectedNetworkId: (id: string) => void;
   setSelectedCoverageMode: (mode: CoverageMode) => void;
-  setCoverageResolutionMode: (mode: "auto" | "high") => void;
+  runHighQualitySimulation: () => void;
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
   setEnvironmentLossDb: (value: number) => void;
@@ -178,7 +178,7 @@ type AppState = {
   clearTerrainCache: () => Promise<void>;
   syncSiteElevationsOnline: () => Promise<void>;
   syncSiteElevationOnline: (siteId: string) => Promise<void>;
-  recomputeCoverage: () => void;
+  recomputeCoverage: (qualityOverride?: "auto" | "high") => void;
   getSelectedLink: () => Link;
   getSelectedSite: () => Site;
   getSelectedNetwork: () => Network;
@@ -474,9 +474,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedCoverageMode: mode });
     get().recomputeCoverage();
   },
-  setCoverageResolutionMode: (mode) => {
-    set({ coverageResolutionMode: mode });
-    get().recomputeCoverage();
+  runHighQualitySimulation: () => {
+    get().recomputeCoverage("high");
   },
   setSelectedFrequencyPresetId: (id) => set({ selectedFrequencyPresetId: id }),
   setRxSensitivityTargetDbm: (value) => set({ rxSensitivityTargetDbm: value }),
@@ -1147,13 +1146,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ isElevationSyncing: false });
     }
   },
-  recomputeCoverage: () => {
+  recomputeCoverage: (qualityOverride = "auto") => {
+    const runQuality = qualityOverride;
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const startedAt = Date.now();
     set({
       simulationRunToken: runId,
       isSimulationRecomputing: true,
       simulationProgress: 3,
+      coverageResolutionMode: runQuality,
     });
 
     const runComputation = () => {
@@ -1168,7 +1169,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         systems,
         propagationModel,
         srtmTiles,
-        coverageResolutionMode,
         links,
         selectedLinkId,
         autoPropagationEnvironment,
@@ -1225,8 +1225,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         effectiveEnvironment,
         ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
         {
-          sampleMultiplier: coverageResolutionMode === "high" ? 4 : 1,
-          terrainSamples: coverageResolutionMode === "high" ? 72 : 20,
+          sampleMultiplier: runQuality === "high" ? 4 : 1,
+          terrainSamples: runQuality === "high" ? 72 : 20,
           onProgress: (progress) => {
             if (get().simulationRunToken !== runId) return;
             set({ simulationProgress: Math.round(8 + progress * 84) });

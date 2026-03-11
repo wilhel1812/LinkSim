@@ -732,7 +732,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const coverageResolutionMode = useAppStore((state) => state.coverageResolutionMode);
-  const setCoverageResolutionMode = useAppStore((state) => state.setCoverageResolutionMode);
+  const runHighQualitySimulation = useAppStore((state) => state.runHighQualitySimulation);
   const isSimulationRecomputing = useAppStore((state) => state.isSimulationRecomputing);
   const simulationProgress = useAppStore((state) => state.simulationProgress);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
@@ -1043,11 +1043,12 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         </button>
         <button
           className={`map-control-btn ${coverageResolutionMode === "high" ? "is-selected" : ""}`}
-          onClick={() => setCoverageResolutionMode(coverageResolutionMode === "high" ? "auto" : "high")}
-          title="Toggle high resolution rendering"
+          disabled={isSimulationRecomputing}
+          onClick={() => runHighQualitySimulation()}
+          title="Run one high-quality simulation pass"
           type="button"
         >
-          {coverageResolutionMode === "high" ? "HQ On" : "Render HQ"}
+          {coverageResolutionMode === "high" ? "HQ Result" : "Render HQ"}
         </button>
         <button
           className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
@@ -1129,7 +1130,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + scenario values" : "Scenario values"}
             </p>
             <p>
-              Resolution: {coverageResolutionMode === "high" ? "High quality" : "Auto"} ({overlayDimensions.width}x
+              Resolution: {coverageResolutionMode === "high" ? "High quality (one-shot)" : "Auto"} ({overlayDimensions.width}x
               {overlayDimensions.height})
             </p>
             <p>
