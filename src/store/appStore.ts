@@ -44,6 +44,7 @@ type AppState = {
   selectedScenarioId: string;
   selectedFrequencyPresetId: string;
   rxSensitivityTargetDbm: number;
+  environmentLossDb: number;
   terrainDataset: TerrainDataset;
   terrainFetchStatus: string;
   terrainRecommendation: string;
@@ -59,6 +60,7 @@ type AppState = {
   setSelectedCoverageMode: (mode: CoverageMode) => void;
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
+  setEnvironmentLossDb: (value: number) => void;
   setTerrainDataset: (dataset: TerrainDataset) => void;
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
@@ -120,6 +122,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedScenarioId: defaultScenario.id,
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
+  environmentLossDb: 0,
   terrainDataset: "srtm1",
   terrainFetchStatus: "",
   terrainRecommendation: "",
@@ -142,6 +145,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedNetworkId: scenario.defaultNetworkId,
       selectedFrequencyPresetId: scenario.defaultFrequencyPresetId,
       rxSensitivityTargetDbm: -120,
+      environmentLossDb: 0,
       terrainFetchStatus: "",
       terrainRecommendation: "",
       hasOnlineElevationSync: false,
@@ -163,6 +167,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setSelectedFrequencyPresetId: (id) => set({ selectedFrequencyPresetId: id }),
   setRxSensitivityTargetDbm: (value) => set({ rxSensitivityTargetDbm: value }),
+  setEnvironmentLossDb: (value) => set({ environmentLossDb: Math.max(0, value) }),
   setTerrainDataset: (dataset) => set({ terrainDataset: dataset }),
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
   applyFrequencyPresetToSelectedNetwork: () => {

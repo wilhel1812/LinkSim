@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
+import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
 import { analyzeLink } from "../lib/propagation";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
@@ -61,6 +62,7 @@ export function Sidebar() {
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
+  const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const scenarioOptions = useAppStore((state) => state.scenarioOptions);
   const locale = useAppStore((state) => state.locale);
@@ -73,6 +75,7 @@ export function Sidebar() {
   const setSelectedCoverageMode = useAppStore((state) => state.setSelectedCoverageMode);
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
   const setRxSensitivityTargetDbm = useAppStore((state) => state.setRxSensitivityTargetDbm);
+  const setEnvironmentLossDb = useAppStore((state) => state.setEnvironmentLossDb);
   const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const applyFrequencyPresetToSelectedNetwork = useAppStore(
@@ -111,7 +114,8 @@ export function Sidebar() {
   const canEditEndpoints = sites.length >= 2;
   const sourceSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const destinationSite = sites.find((site) => site.id === selectedLink.toSiteId);
-  const linkMarginDb = analysis.rxLevelDbm - rxSensitivityTargetDbm;
+  const adjustedRxDbm = analysis.rxLevelDbm - environmentLossDb;
+  const linkMarginDb = adjustedRxDbm - rxSensitivityTargetDbm;
   const loraSensitivitySuggestionDbm = estimateLoRaSensitivityDbm(
     selectedNetwork.bandwidthKhz,
     selectedNetwork.spreadFactor,
@@ -130,11 +134,11 @@ export function Sidebar() {
       model,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
     );
-    return alt.rxLevelDbm;
+    return alt.rxLevelDbm - environmentLossDb;
   };
 
   const whatIfRows = [
-    { label: "Current", rxDbm: analysis.rxLevelDbm },
+    { label: "Current", rxDbm: adjustedRxDbm },
     { label: "+3 dB TX", rxDbm: runWhatIf(3, 1, 0) },
     { label: "+6 dB TX", rxDbm: runWhatIf(6, 1, 0) },
     { label: "+10 m antennas", rxDbm: runWhatIf(0, 1, 10) },
@@ -142,8 +146,22 @@ export function Sidebar() {
     { label: "Freq +10%", rxDbm: runWhatIf(0, 1.1, 0) },
   ].map((row) => ({
     ...row,
-    marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
+      marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
   }));
+
+  const applyRfPreset = (presetId: string) => {
+    const preset = findMeshtasticPreset(presetId);
+    if (!preset || !sourceSite || !destinationSite) return;
+    updateLink(selectedLink.id, {
+      txPowerDbm: preset.txPowerDbm,
+      txGainDbi: preset.txGainDbi,
+      rxGainDbi: preset.rxGainDbi,
+      cableLossDb: preset.cableLossDb,
+    });
+    updateSite(sourceSite.id, { antennaHeightM: preset.antennaHeightM });
+    updateSite(destinationSite.id, { antennaHeightM: preset.antennaHeightM });
+    setEnvironmentLossDb(preset.environmentLossDb);
+  };
 
   const onModelChange = (next: PropagationModel) => {
     setPropagationModel(next);
@@ -184,12 +202,14 @@ export function Sidebar() {
       selectedNetworkId,
       selectedSiteId,
       rxSensitivityTargetDbm,
+      environmentLossDb,
       hasOnlineElevationSync: useAppStore.getState().hasOnlineElevationSync,
       terrainTileCount: srtmTiles.length,
       terrainSources,
       selectedAnalysis: analysis,
       linkBudget: {
         targetSensitivityDbm: rxSensitivityTargetDbm,
+        adjustedRxDbm,
         marginDb: linkMarginDb,
         whatIfRows,
       },
@@ -393,6 +413,53 @@ export function Sidebar() {
             value={selectedLink.txPowerDbm}
           />
         </label>
+        <label className="field-grid">
+          <span>Tx gain (dBi)</span>
+          <input
+            onChange={(event) =>
+              updateLink(selectedLink.id, { txGainDbi: parseNumber(event.target.value) })
+            }
+            type="number"
+            value={selectedLink.txGainDbi}
+          />
+        </label>
+        <label className="field-grid">
+          <span>Rx gain (dBi)</span>
+          <input
+            onChange={(event) =>
+              updateLink(selectedLink.id, { rxGainDbi: parseNumber(event.target.value) })
+            }
+            type="number"
+            value={selectedLink.rxGainDbi}
+          />
+        </label>
+        <label className="field-grid">
+          <span>Cable loss (dB)</span>
+          <input
+            onChange={(event) =>
+              updateLink(selectedLink.id, { cableLossDb: parseNumber(event.target.value) })
+            }
+            type="number"
+            value={selectedLink.cableLossDb}
+          />
+        </label>
+        <label className="field-grid">
+          <span>RF preset</span>
+          <select
+            className="locale-select"
+            onChange={(event) => applyRfPreset(event.target.value)}
+            value=""
+          >
+            <option value="" disabled>
+              Apply preset...
+            </option>
+            {MESHTASTIC_RF_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="panel-section">
@@ -539,7 +606,8 @@ export function Sidebar() {
           {metric("Path loss", `${analysis.pathLossDb.toFixed(1)} dB`)}
           {metric("FSPL", `${analysis.fsplDb.toFixed(1)} dB`)}
           {metric("EIRP", `${analysis.eirpDbm.toFixed(1)} dBm`)}
-          {metric("RX estimate", `${analysis.rxLevelDbm.toFixed(1)} dBm`)}
+          {metric("RX estimate (raw)", `${analysis.rxLevelDbm.toFixed(1)} dBm`)}
+          {metric("RX estimate (calibrated)", `${adjustedRxDbm.toFixed(1)} dBm`)}
           {metric("Earth bulge", `${analysis.midpointEarthBulgeM.toFixed(2)} m`)}
           {metric("F1 radius", `${analysis.firstFresnelRadiusM.toFixed(2)} m`)}
           {metric("Clearance", `${analysis.geometricClearanceM.toFixed(2)} m`)}
@@ -554,6 +622,15 @@ export function Sidebar() {
             onChange={(event) => setRxSensitivityTargetDbm(parseNumber(event.target.value))}
             type="number"
             value={rxSensitivityTargetDbm}
+          />
+        </label>
+        <label className="field-grid">
+          <span>Env loss (dB)</span>
+          <input
+            min={0}
+            onChange={(event) => setEnvironmentLossDb(parseNumber(event.target.value))}
+            type="number"
+            value={environmentLossDb}
           />
         </label>
         <button
