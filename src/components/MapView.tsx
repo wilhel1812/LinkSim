@@ -79,7 +79,7 @@ type TerrainBounds = {
   minLon: number;
   maxLon: number;
 };
-type CoverageVizMode = "heatmap" | "contours" | "passfail" | "relay";
+type CoverageVizMode = "heatmap" | "contours" | "passfail";
 type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
 type BandStepMode = "auto" | 3 | 5 | 8 | 10;
 
@@ -340,8 +340,10 @@ const computeSourceCentricRxDbm = (
 const buildCoverageOverlay = (
   bounds: TerrainBounds,
   samples: CoverageSampleLite[],
-  mode: "heatmap" | "contours",
+  mode: CoverageVizMode,
   bandStepDb: number,
+  rxTargetDbm: number,
+  environmentLossDb: number,
   dimensions: { width: number; height: number },
 ): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
   if (!samples.length) return null;
@@ -375,6 +377,11 @@ const buildCoverageOverlay = (
         const banded = Math.round(valueDbm / Math.max(1, bandStepDb)) * Math.max(1, bandStepDb);
         [r, g, b] = coverageColorAdaptive(banded, samples);
         a = 170;
+      } else {
+        const adjusted = valueDbm - environmentLossDb;
+        const pass = adjusted >= rxTargetDbm;
+        [r, g, b] = pass ? [82, 181, 96] : [205, 87, 79];
+        a = 162;
       }
       const px = (y * width + x) * 4;
       image.data[px] = r;
@@ -438,85 +445,6 @@ const buildSourcePassFailOverlay = (
       image.data[px + 1] = pass ? 181 : 87;
       image.data[px + 2] = pass ? 96 : 79;
       image.data[px + 3] = 162;
-    }
-  }
-
-  ctx.putImageData(image, 0, 0);
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
-  };
-};
-
-const buildRelayCandidateOverlay = (
-  bounds: TerrainBounds,
-  fromSite: Site,
-  toSite: Site,
-  effectiveLink: Link,
-  propagationModel: "FSPL" | "TwoRay" | "ITM",
-  environmentLossDb: number,
-  terrainSampler: (lat: number, lon: number) => number | null,
-  dimensions: { width: number; height: number },
-  terrainSamples: number,
-): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const relayAntennaHeightM = Math.max(2, (fromSite.antennaHeightM + toSite.antennaHeightM) / 2);
-  const fallbackRelayGround = (fromSite.groundElevationM + toSite.groundElevationM) / 2;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-
-      const relayGround = terrainSampler(lat, lon) ?? fallbackRelayGround;
-      const relaySite: Site = {
-        id: "__relay_candidate__",
-        name: "Relay candidate",
-        position: { lat, lon },
-        antennaHeightM: relayAntennaHeightM,
-        groundElevationM: relayGround,
-      };
-      const fromToRelayRx = computeSourceCentricRxDbm(
-        lat,
-        lon,
-        fromSite,
-        effectiveLink,
-        relayAntennaHeightM,
-        propagationModel,
-        terrainSampler,
-        terrainSamples,
-      );
-      const relayToTargetRx = computeSourceCentricRxDbm(
-        toSite.position.lat,
-        toSite.position.lon,
-        relaySite,
-        effectiveLink,
-        toSite.antennaHeightM,
-        propagationModel,
-        terrainSampler,
-        terrainSamples,
-      );
-      const bottleneckDbm = Math.min(fromToRelayRx, relayToTargetRx) - environmentLossDb;
-      const [r, g, b] = coverageColorForDbm(clamp(bottleneckDbm, -125, -62));
-      const px = (y * width + x) * 4;
-      image.data[px] = r;
-      image.data[px + 1] = g;
-      image.data[px + 2] = b;
-      image.data[px + 3] = 172;
     }
   }
 
@@ -851,24 +779,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       if (!bounds) return null;
       const effectiveBandStepDb =
         bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
-      if (coverageVizMode === "relay") {
-        if (!selectedLink || !selectedFromSite || !selectedToSite) return null;
-        const effectiveLink: Link = {
-          ...selectedLink,
-          frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
-        };
-        return buildRelayCandidateOverlay(
-          bounds,
-          selectedFromSite,
-          selectedToSite,
-          effectiveLink,
-          propagationModel,
-          environmentLossDb,
-          (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-          overlayDimensions,
-          coverageResolutionMode === "high" ? 80 : 24,
-        );
-      }
       if (coverageVizMode === "passfail") {
         if (!selectedLink || !selectedFromSite) return null;
         const effectiveLink: Link = {
@@ -892,8 +802,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       return buildCoverageOverlay(
         bounds,
         samplesForOverlay,
-        coverageVizMode === "contours" ? "contours" : "heatmap",
+        coverageVizMode,
         effectiveBandStepDb,
+        rxSensitivityTargetDbm,
+        environmentLossDb,
         overlayDimensions,
       );
     },
@@ -1057,14 +969,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         >
           Pass/Fail
         </button>
-        <button
-          className={`map-control-btn ${coverageVizMode === "relay" ? "is-selected" : ""}`}
-          onClick={() => setCoverageVizMode("relay")}
-          title="Relay candidate quality between selected From/To endpoints"
-          type="button"
-        >
-          Relay
-        </button>
         <button className="map-control-btn" onClick={() => zoomBy(1)} type="button">
           +
         </button>
@@ -1138,12 +1042,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             {coverageVizMode === "contours" ? <p>Band step: {currentBandStepDb} dB ({bandStepMode})</p> : null}
             {coverageVizMode === "passfail" ? (
               <p>Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter)</p>
-            ) : null}
-            {coverageVizMode === "relay" ? (
-              <p>
-                Relay map source: {selectedFromSite?.name ?? "n/a"} to candidate to {selectedToSite?.name ?? "n/a"}{" "}
-                (bottleneck RX dBm)
-              </p>
             ) : null}
           </>
         ) : null}
