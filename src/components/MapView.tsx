@@ -41,9 +41,9 @@ const coverageRasterLayer: LayerProps = {
   id: "coverage-overlay-layer",
   type: "raster",
   paint: {
-    "raster-opacity": 0.58,
-    "raster-contrast": 0.03,
-    "raster-saturation": -0.04,
+    "raster-opacity": 0.68,
+    "raster-contrast": 0.08,
+    "raster-saturation": 0.02,
   },
 };
 
@@ -127,14 +127,14 @@ const computeCoverageBounds = (samples: CoverageSampleLite[]): TerrainBounds | n
 
 const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
   const stops: Array<{ v: number; c: [number, number, number] }> = [
-    { v: -125, c: [94, 46, 41] },
-    { v: -112, c: [140, 69, 48] },
-    { v: -101, c: [184, 95, 46] },
-    { v: -92, c: [214, 134, 56] },
-    { v: -84, c: [199, 167, 76] },
-    { v: -76, c: [143, 174, 84] },
-    { v: -68, c: [87, 156, 110] },
-    { v: -60, c: [73, 133, 168] },
+    { v: -125, c: [105, 42, 45] },
+    { v: -114, c: [156, 63, 49] },
+    { v: -104, c: [201, 92, 45] },
+    { v: -95, c: [226, 127, 45] },
+    { v: -86, c: [218, 175, 55] },
+    { v: -78, c: [164, 193, 68] },
+    { v: -70, c: [95, 178, 95] },
+    { v: -62, c: [64, 150, 178] },
   ];
   if (valueDbm <= stops[0].v) return stops[0].c;
   if (valueDbm >= stops[stops.length - 1].v) return stops[stops.length - 1].c;
@@ -150,6 +150,19 @@ const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
     ];
   }
   return [255, 255, 255];
+};
+
+const coverageColorAdaptive = (valueDbm: number, samples: CoverageSampleLite[]): [number, number, number] => {
+  if (samples.length < 2) return coverageColorForDbm(valueDbm);
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const sample of samples) {
+    min = Math.min(min, sample.valueDbm);
+    max = Math.max(max, sample.valueDbm);
+  }
+  const range = Math.max(6, max - min);
+  const normalized = -125 + ((valueDbm - min) / range) * 63;
+  return coverageColorForDbm(clamp(normalized, -125, -62));
 };
 
 const autoBandStepDb = (samples: CoverageSampleLite[], bounds: TerrainBounds): 3 | 5 | 8 | 10 => {
@@ -286,15 +299,15 @@ const buildCoverageOverlay = (
       let b = 0;
       let a = 180;
       if (mode === "heatmap") {
-        [r, g, b] = coverageColorForDbm(valueDbm);
+        [r, g, b] = coverageColorAdaptive(valueDbm, samples);
       } else if (mode === "contours") {
         const banded = Math.round(valueDbm / Math.max(1, bandStepDb)) * Math.max(1, bandStepDb);
-        [r, g, b] = coverageColorForDbm(banded);
+        [r, g, b] = coverageColorAdaptive(banded, samples);
         a = 170;
       } else {
         const adjusted = valueDbm - environmentLossDb;
         const pass = adjusted >= rxTargetDbm;
-        [r, g, b] = pass ? [88, 167, 108] : [193, 94, 84];
+        [r, g, b] = pass ? [82, 181, 96] : [205, 87, 79];
         a = 162;
       }
       const px = (y * width + x) * 4;
@@ -353,9 +366,9 @@ const buildSourcePassFailOverlay = (
       );
       const pass = rxDbm - environmentLossDb >= rxTargetDbm;
       const px = (y * width + x) * 4;
-      image.data[px] = pass ? 88 : 193;
-      image.data[px + 1] = pass ? 167 : 94;
-      image.data[px + 2] = pass ? 108 : 84;
+      image.data[px] = pass ? 82 : 205;
+      image.data[px + 1] = pass ? 181 : 87;
+      image.data[px + 2] = pass ? 96 : 79;
       image.data[px + 3] = 162;
     }
   }
