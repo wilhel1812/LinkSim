@@ -21,13 +21,22 @@ Vite proxy is used for browser CORS compatibility in dev/preview:
 - `/ve2dbe/geodata/gettile.asp`
 - `/ve2dbe/geodata/<dataset>/<tile>.hgt.zip`
 
-See `vite.config.ts`.
+See `config/vite.config.ts`.
 
 ## Legal/Attribution
 
-- Credits: [CREDITS.md](./CREDITS.md)
-- Third-party/data notices: [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+- Credits: [docs/legal/CREDITS.md](./docs/legal/CREDITS.md)
+- Third-party/data notices: [docs/legal/THIRD_PARTY_NOTICES.md](./docs/legal/THIRD_PARTY_NOTICES.md)
 - Project license: [LICENSE](./LICENSE)
+
+## Project Structure
+
+- `src/`: app source code
+- `public/`: static assets
+- `config/`: TypeScript, Vite, and Vitest configuration
+- `scripts/`: smoke and browser automation scripts
+- `docs/legal/`: credits and third-party notices
+- `nginx/`: production nginx config used by Docker
 
 ## Running
 
@@ -35,3 +44,21 @@ See `vite.config.ts`.
 npm install
 npm run dev
 ```
+
+## Running with Docker Compose
+
+Production-like runtime (nginx + static assets + reverse proxy):
+
+```bash
+docker compose up --build web
+```
+
+App is available at `http://localhost:8080`.
+
+Development runtime (Vite dev server with live reload):
+
+```bash
+docker compose up --build dev
+```
+
+App is available at `http://localhost:5173`.
