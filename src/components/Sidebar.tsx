@@ -19,6 +19,16 @@ const parseNumber = (value: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const downloadJson = (fileName: string, payload: unknown) => {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+};
+
 export function Sidebar() {
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
@@ -88,6 +98,40 @@ export function Sidebar() {
     if (!event.target.files?.length) return;
     await ingestSrtmFiles(event.target.files);
     event.target.value = "";
+  };
+
+  const exportManifest = () => {
+    const terrainSources = srtmTiles.reduce<Record<string, number>>((acc, tile) => {
+      const key = tile.sourceLabel ?? "Unknown";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const manifest = {
+      exportedAt: new Date().toISOString(),
+      scenarioId: selectedScenarioId,
+      locale,
+      propagationModel: model,
+      selectedCoverageMode,
+      selectedFrequencyPresetId,
+      terrainDataset,
+      terrainRecommendation,
+      terrainFetchStatus,
+      sites,
+      links,
+      systems: useAppStore.getState().systems,
+      networks,
+      selectedLinkId,
+      selectedNetworkId,
+      selectedSiteId,
+      hasOnlineElevationSync: useAppStore.getState().hasOnlineElevationSync,
+      terrainTileCount: srtmTiles.length,
+      terrainSources,
+      selectedAnalysis: analysis,
+    };
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadJson(`radio-mobile-web-manifest-${stamp}.json`, manifest);
   };
 
   return (
@@ -439,6 +483,9 @@ export function Sidebar() {
             `${analysis.estimatedFresnelClearancePercent.toFixed(0)}%`,
           )}
         </div>
+        <button className="inline-action" onClick={exportManifest} type="button">
+          Export Simulation Manifest
+        </button>
       </section>
     </aside>
   );
