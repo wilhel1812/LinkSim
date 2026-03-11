@@ -34,7 +34,7 @@ const profileLineLayer: LayerProps = {
 };
 
 const bestSiteLayer: LayerProps = {
-  id: "best-site-grid",
+  id: "coverage-points",
   type: "circle",
   paint: {
     "circle-radius": 5,
@@ -58,6 +58,99 @@ const bestSiteLayer: LayerProps = {
     "circle-opacity": 0.56,
     "circle-stroke-width": 0.4,
     "circle-stroke-color": "#111",
+  },
+};
+
+const coverageHeatmapLayer: LayerProps = {
+  id: "coverage-heatmap",
+  type: "heatmap",
+  paint: {
+    "heatmap-weight": [
+      "interpolate",
+      ["linear"],
+      ["get", "worstRxDbm"],
+      -125,
+      0.05,
+      -110,
+      0.2,
+      -95,
+      0.5,
+      -82,
+      0.75,
+      -70,
+      0.95,
+      -60,
+      1,
+    ],
+    "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 6, 0.55, 12, 1.1, 16, 1.35],
+    "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 6, 14, 10, 22, 14, 34],
+    "heatmap-opacity": 0.7,
+    "heatmap-color": [
+      "interpolate",
+      ["linear"],
+      ["heatmap-density"],
+      0,
+      "rgba(20,20,30,0)",
+      0.15,
+      "#4f0f15",
+      0.32,
+      "#a52f33",
+      0.48,
+      "#e66b28",
+      0.66,
+      "#eecf42",
+      0.82,
+      "#4ad37b",
+      1,
+      "#2bc0ff",
+    ],
+  },
+};
+
+const coverageContourLayer: LayerProps = {
+  id: "coverage-contours",
+  type: "circle",
+  paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 4.5, 12, 7, 16, 9],
+    "circle-color": [
+      "step",
+      ["get", "worstRxDbm"],
+      "#6e1c24",
+      -110,
+      "#9d2e35",
+      -100,
+      "#cf5a2b",
+      -95,
+      "#e7a33f",
+      -90,
+      "#e7d24d",
+      -85,
+      "#8fd05a",
+      -80,
+      "#4bbd73",
+      -75,
+      "#2bc0ff",
+    ],
+    "circle-opacity": 0.62,
+    "circle-stroke-width": 0.35,
+    "circle-stroke-color": "#0d1117",
+  },
+};
+
+const coveragePassFailLayer: LayerProps = {
+  id: "coverage-passfail",
+  type: "circle",
+  paint: {
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 4.5, 12, 7, 16, 9],
+    "circle-color": [
+      "case",
+      ["==", ["get", "pass"], 1],
+      "#27d793",
+      "#e1505f",
+    ],
+    "circle-opacity": 0.55,
+    "circle-stroke-width": 0.4,
+    "circle-stroke-color": "#101522",
   },
 };
 
@@ -266,6 +359,7 @@ const computeFitViewport = (
 };
 
 export function MapView() {
+  type CoverageVizMode = "points" | "heatmap" | "contours" | "passfail";
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -288,9 +382,12 @@ export function MapView() {
   const networks = useAppStore((state) => state.networks);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const hasOnlineElevationSync = useAppStore((state) => state.hasOnlineElevationSync);
+  const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
+  const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const theme = useSystemTheme();
   const selectedProfile = getSelectedProfile();
   const [showTerrain, setShowTerrain] = useState(true);
+  const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const recentlyDraggedSiteId = useRef<string | null>(null);
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
@@ -357,6 +454,8 @@ export function MapView() {
           id: `cand-${index}`,
           worstRxDbm: candidate.valueDbm,
           avgRxDbm: candidate.valueDbm,
+          adjustedRxDbm: candidate.valueDbm - environmentLossDb,
+          pass: candidate.valueDbm - environmentLossDb >= rxSensitivityTargetDbm ? 1 : 0,
         },
         geometry: {
           type: "Point" as const,
@@ -364,7 +463,7 @@ export function MapView() {
         },
       })),
     }),
-    [coverageSamples],
+    [coverageSamples, environmentLossDb, rxSensitivityTargetDbm],
   );
 
   const simulationTerrainOverlay = useMemo(() => {
@@ -451,6 +550,38 @@ export function MapView() {
         >
           {showTerrain ? "SimTerrain On" : "SimTerrain Off"}
         </button>
+        <button
+          className={`map-control-btn ${coverageVizMode === "points" ? "is-selected" : ""}`}
+          onClick={() => setCoverageVizMode("points")}
+          title="Coverage as sampled points"
+          type="button"
+        >
+          Points
+        </button>
+        <button
+          className={`map-control-btn ${coverageVizMode === "heatmap" ? "is-selected" : ""}`}
+          onClick={() => setCoverageVizMode("heatmap")}
+          title="Coverage as continuous heatmap"
+          type="button"
+        >
+          Heat
+        </button>
+        <button
+          className={`map-control-btn ${coverageVizMode === "contours" ? "is-selected" : ""}`}
+          onClick={() => setCoverageVizMode("contours")}
+          title="Coverage as contour-like bands"
+          type="button"
+        >
+          Bands
+        </button>
+        <button
+          className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
+          onClick={() => setCoverageVizMode("passfail")}
+          title="Coverage pass/fail against RX target"
+          type="button"
+        >
+          Pass/Fail
+        </button>
         <button className="map-control-btn" onClick={() => zoomBy(1)} type="button">
           +
         </button>
@@ -461,7 +592,9 @@ export function MapView() {
       {!hasSimulationTerrain ? <div className="map-control-note">No SRTM loaded: simulation uses site elevations only.</div> : null}
       <aside className="map-sim-summary" aria-live="polite">
         <h3>Simulation Sources</h3>
-        <p>Model: {propagationModel} / {selectedCoverageMode}</p>
+        <p>
+          Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
+        </p>
         <p>
           Network: {selectedNetwork?.name ?? "n/a"} @{" "}
           {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
@@ -481,7 +614,12 @@ export function MapView() {
         ) : (
           <p>Terrain source: scenario/manual site elevations only</p>
         )}
-        <p>Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + scenario values" : "Scenario values"}</p>
+        <p>
+          Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + scenario values" : "Scenario values"}
+        </p>
+        <p>
+          Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
+        </p>
       </aside>
       <Map
         longitude={viewport.center.lon}
@@ -513,7 +651,10 @@ export function MapView() {
         </Source>
 
         <Source data={coverageFeatures} id="best-site" type="geojson">
-          <Layer {...bestSiteLayer} />
+          {coverageVizMode === "points" ? <Layer {...bestSiteLayer} /> : null}
+          {coverageVizMode === "heatmap" ? <Layer {...coverageHeatmapLayer} /> : null}
+          {coverageVizMode === "contours" ? <Layer {...coverageContourLayer} /> : null}
+          {coverageVizMode === "passfail" ? <Layer {...coveragePassFailLayer} /> : null}
         </Source>
 
         <Source data={lineFeatures} id="links" type="geojson">
