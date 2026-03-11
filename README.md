@@ -21,7 +21,7 @@ Vite proxy is used for browser CORS compatibility in dev/preview:
 - `/ve2dbe/geodata/gettile.asp`
 - `/ve2dbe/geodata/<dataset>/<tile>.hgt.zip`
 
-See `vite.config.ts`.
+See `config/vite.config.ts`.
 
 ## Legal/Attribution
 
@@ -33,6 +33,7 @@ See `vite.config.ts`.
 
 - `src/`: app source code
 - `public/`: static assets
+- `config/`: TypeScript, Vite, and Vitest configuration
 - `scripts/`: smoke and browser automation scripts
 - `docs/legal/`: credits and third-party notices
 - `nginx/`: production nginx config used by Docker
