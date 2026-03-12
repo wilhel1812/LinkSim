@@ -10,14 +10,18 @@ type ModalOverlayProps = {
 
 let openModalCount = 0;
 const openModalStack: string[] = [];
+let modalLayerSeed = 0;
 
 export function ModalOverlay({ children, onClose, tier = "base", ...rest }: ModalOverlayProps) {
   const modalId = useId();
+  const layer = useMemo(() => {
+    modalLayerSeed += 1;
+    return modalLayerSeed;
+  }, []);
   const zIndex = useMemo(() => {
-    const hash = Array.from(modalId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 400;
     const base = tier === "raised" ? 8000 : 2000;
-    return base + hash;
-  }, [modalId, tier]);
+    return base + layer;
+  }, [layer, tier]);
 
   useEffect(() => {
     openModalCount += 1;
@@ -30,6 +34,7 @@ export function ModalOverlay({ children, onClose, tier = "base", ...rest }: Moda
       if (top !== modalId) return;
       if (!onClose) return;
       event.preventDefault();
+      event.stopPropagation();
       onClose();
     };
     window.addEventListener("keydown", onKeyDown);
