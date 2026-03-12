@@ -5,6 +5,7 @@
 - Validate simulation correctness stability.
 - Keep UI workflow regressions visible.
 - Make cloud deployment checks repeatable.
+- Enforce Red/Green/Refactor discipline on new work.
 
 ## Layers
 
@@ -54,3 +55,10 @@
   - revoked/deleted session handling
   - admin-only moderation routes
 - Add end-to-end scenario for metadata repair and creator/editor attribution.
+
+## CI Quality Gates
+- Workflow: `.github/workflows/ci-quality-gates.yml`
+- Triggered on pull requests to `main` and pushes to non-main branches.
+- Runs:
+  1. `npm run test:ci`
+  2. `npm run build`
