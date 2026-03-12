@@ -12,5 +12,11 @@ binding = "AVATAR_BUCKET"
 bucket_name = "linksim-avatars"
 preview_bucket_name = "linksim-avatars"
 
-# Runtime vars are intentionally managed in Cloudflare Pages environment settings.
-# Do not commit auth-sensitive runtime values in this file.
+[vars]
+# Cloudflare Access settings for JWT validation in Pages Functions.
+# Team domain example: your-team.cloudflareaccess.com
+ACCESS_TEAM_DOMAIN = "skarvassbu.cloudflareaccess.com"
+# Access application AUD tag from Cloudflare Zero Trust application settings.
+ACCESS_AUD = "dcfed08418380b9ad6fa4d26cc6ba5d94274a8920764dbcb0e1917957d1825b2"
+ADMIN_USER_IDS = "f35e2a08-3713-5671-9725-ba82b21f25d4"
+REGISTRATION_MODE = "approval_required"
