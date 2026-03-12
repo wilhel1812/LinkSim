@@ -57,6 +57,31 @@ const styleByTheme = {
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
 };
 
+const fallbackStyle = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: [
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution:
+        '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>',
+    },
+  },
+  layers: [
+    {
+      id: "osm-base",
+      type: "raster",
+      source: "osm",
+      minzoom: 0,
+      maxzoom: 19,
+    },
+  ],
+} as const;
+
 const supportsWebgl = (): boolean => {
   try {
     const canvas = document.createElement("canvas");
@@ -745,6 +770,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(true);
   const [showSimulationSummary, setShowSimulationSummary] = useState(true);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
+  const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
   const [interactionViewState, setInteractionViewState] = useState<{
     longitude: number;
     latitude: number;
@@ -1100,8 +1126,13 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         </div>
       ) : null}
       {!hasSimulationTerrain ? <div className="map-control-note">No SRTM loaded: simulation uses site elevations only.</div> : null}
+      {useFallbackMapStyle ? (
+        <div className="map-control-note map-control-note-secondary">
+          Base map fallback active (OSM raster style).
+        </div>
+      ) : null}
       {endpointPickTarget && endpointPickError ? (
-        <div className="map-control-note map-control-note-secondary">{endpointPickError}</div>
+        <div className="map-control-note map-control-note-tertiary">{endpointPickError}</div>
       ) : null}
       <aside className="map-sim-summary" aria-live="polite">
         <div className="map-sim-summary-header">
@@ -1174,7 +1205,12 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           latitude: activeViewState.latitude,
           zoom: activeViewState.zoom,
         }}
-        mapStyle={styleByTheme[theme]}
+        mapStyle={useFallbackMapStyle ? (fallbackStyle as unknown as string) : styleByTheme[theme]}
+        onError={() => {
+          if (!useFallbackMapStyle) {
+            setUseFallbackMapStyle(true);
+          }
+        }}
         interactiveLayerIds={["link-lines"]}
         onClick={onMapClick}
         onMove={(event) =>

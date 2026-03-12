@@ -569,6 +569,10 @@ input {
   top: 140px;
 }
 
+.map-control-note-tertiary {
+  top: 184px;
+}
+
 .map-progress {
   position: absolute;
   top: 56px;
