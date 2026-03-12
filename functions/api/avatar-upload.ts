@@ -58,7 +58,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const thumb = parseDataUrl(body.thumbDataUrl);
 
     if (original.bytes.byteLength > 5_000_000) throw new Error("Avatar image too large.");
-    if (thumb.bytes.byteLength > 300_000) throw new Error("Avatar thumbnail too large.");
+    if (thumb.bytes.byteLength > 1_000_000) throw new Error("Avatar thumbnail too large.");
 
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", original.bytes));
     const hash = toHex(digest);

@@ -65,7 +65,7 @@ const writeDismissedNotificationIds = (ids: Set<string>) => {
 const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl: string; thumbDataUrl: string }> => {
   const bitmap = await createImageBitmap(file);
   const maxOriginal = 2048;
-  const maxThumb = 72;
+  const maxThumb = 320;
   const originalScale = Math.min(1, maxOriginal / Math.max(bitmap.width, bitmap.height));
   const thumbScale = Math.min(1, maxThumb / Math.max(bitmap.width, bitmap.height));
   const originalWidth = Math.max(1, Math.round(bitmap.width * originalScale));
