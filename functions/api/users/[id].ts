@@ -8,7 +8,7 @@ import {
   setUserApproval,
   updateUserProfile,
 } from "../../_lib/db";
-import { handleOptions, json, withCors } from "../../_lib/http";
+import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
 import type { Env } from "../../_lib/types";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
@@ -50,9 +50,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     }
     return withCors(request, json({ user }));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("pending approval") || message.includes("removed by admin") ? 403 : 500;
-    return withCors(request, json({ error: message }, { status }));
+    return errorResponse(request, error, 500);
   }
 };
 
@@ -114,14 +112,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
     return withCors(request, json({ user }));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status =
-      message.includes("required") || message.includes("valid")
-        ? 400
-        : message.includes("pending approval") || message.includes("removed by admin")
-          ? 403
-          : 500;
-    return withCors(request, json({ error: message }, { status }));
+    return errorResponse(request, error, 500);
   }
 };
 
@@ -145,8 +136,6 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
     await deleteUser(env, targetId, auth.userId);
     return withCors(request, json({ ok: true }));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("pending approval") || message.includes("removed by admin") ? 403 : 500;
-    return withCors(request, json({ error: message }, { status }));
+    return errorResponse(request, error, 500);
   }
 };

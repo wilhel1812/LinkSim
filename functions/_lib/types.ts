@@ -23,6 +23,7 @@ export type Env = {
   DB: D1Database;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
+  AUTH_OBSERVABILITY?: string;
   ALLOW_INSECURE_DEV_AUTH?: string;
   DEV_AUTH_USER_ID?: string;
   ADMIN_USER_IDS?: string;
@@ -32,4 +33,5 @@ export type Env = {
 export type AuthContext = {
   userId: string;
   tokenPayload: Record<string, unknown>;
+  source?: "jwt" | "headers" | "dev";
 };

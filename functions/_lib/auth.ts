@@ -66,6 +66,37 @@ const readHeaderUserName = (request: Request): string => {
   return name.trim();
 };
 
+export const inspectAuthRequest = (request: Request) => {
+  const jwt =
+    request.headers.get("cf-access-jwt-assertion") ??
+    request.headers.get("Cf-Access-Jwt-Assertion") ??
+    "";
+  const email =
+    request.headers.get("cf-access-authenticated-user-email") ??
+    request.headers.get("Cf-Access-Authenticated-User-Email") ??
+    "";
+  const userId =
+    request.headers.get("cf-access-authenticated-user-id") ??
+    request.headers.get("Cf-Access-Authenticated-User-Id") ??
+    "";
+  const userName =
+    request.headers.get("cf-access-authenticated-user-name") ??
+    request.headers.get("Cf-Access-Authenticated-User-Name") ??
+    "";
+  return {
+    hasJwtAssertion: Boolean(jwt.trim()),
+    hasEmailHeader: Boolean(email.trim()),
+    hasUserIdHeader: Boolean(userId.trim()),
+    hasUserNameHeader: Boolean(userName.trim()),
+  };
+};
+
+const emitAuthLog = (env: Env, payload: Record<string, unknown>) => {
+  const enabled = (env.AUTH_OBSERVABILITY ?? "true").trim().toLowerCase();
+  if (enabled === "false" || enabled === "0" || enabled === "off") return;
+  console.info(JSON.stringify({ event: "auth", ...payload }));
+};
+
 const verifyCloudflareAccessJwt = async (
   token: string,
   request: Request,
@@ -111,6 +142,7 @@ const verifyCloudflareAccessJwt = async (
       email: typeof lastPayload.email === "string" && lastPayload.email.trim() ? lastPayload.email : readHeaderEmail(request),
       name: typeof lastPayload.name === "string" && lastPayload.name.trim() ? lastPayload.name : readHeaderUserName(request),
     },
+    source: "jwt",
   };
 };
 
@@ -123,6 +155,7 @@ const verifyByHeadersOnly = (request: Request): AuthContext | null => {
       email: readHeaderEmail(request),
       name: readHeaderUserName(request),
     },
+    source: "headers",
   };
 };
 
@@ -133,10 +166,12 @@ const allowInsecureDevAuth = (env: Env): AuthContext | null => {
   return {
     userId,
     tokenPayload: { devAuth: true },
+    source: "dev",
   };
 };
 
 export const verifyAuth = async (request: Request, env: Env): Promise<AuthContext | null> => {
+  const authSignals = inspectAuthRequest(request);
   try {
     const token =
       request.headers.get("cf-access-jwt-assertion") ??
@@ -145,13 +180,27 @@ export const verifyAuth = async (request: Request, env: Env): Promise<AuthContex
 
     if (token.trim()) {
       const jwtVerified = await verifyCloudflareAccessJwt(token.trim(), request, env);
-      if (jwtVerified) return jwtVerified;
+      if (jwtVerified) {
+        emitAuthLog(env, { result: "ok", source: jwtVerified.source, ...authSignals });
+        return jwtVerified;
+      }
+      emitAuthLog(env, { result: "fail", reason: "jwt_verify_failed", ...authSignals });
     }
 
     const byHeader = verifyByHeadersOnly(request);
-    if (byHeader) return byHeader;
+    if (byHeader) {
+      emitAuthLog(env, { result: "ok", source: byHeader.source, ...authSignals });
+      return byHeader;
+    }
   } catch {
+    emitAuthLog(env, { result: "fail", reason: "auth_exception", ...authSignals });
     // Fail closed to header/dev fallback instead of surfacing auth internals as 500.
   }
-  return allowInsecureDevAuth(env);
+  const dev = allowInsecureDevAuth(env);
+  if (dev) {
+    emitAuthLog(env, { result: "ok", source: dev.source, ...authSignals });
+    return dev;
+  }
+  emitAuthLog(env, { result: "fail", reason: "no_auth_context", ...authSignals });
+  return null;
 };

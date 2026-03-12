@@ -22,6 +22,8 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
 - [ ] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
 - [ ] What does the reject button currently do?
+- [ ] Show profile pictures to other users when you click open the user popover. Also show a small one next to any user name in the UI
+- [ ] User should be able to select if 
 
 ## Active stabilization backlog
 
@@ -33,8 +35,9 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Clarify pending-account UX text and flow end-to-end
 - [ ] Restrict sign-ups and approval transitions with explicit lifecycle states
 - [ ] Add dedicated auth/permission tests for critical flows
+- Progress: baseline tests added for auth source resolution and error mapping; endpoint permission matrix still pending.
 - [ ] Add dedicated identity reconciliation tests + audit logging coverage
-- [ ] Add observability for Cloudflare Access auth header/JWT variants
+- [x] Add observability for Cloudflare Access auth header/JWT variants
 
 ### Data and storage safety
 - [ ] Replace avatar data URLs in D1 with object storage flow (R2) + thumbnails
@@ -54,6 +57,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Clean sidebar information density and progressive disclosure
 - [ ] Unify labels/buttons across libraries and managers
 - [ ] Standardize error messages across endpoints and UI surfaces
+- Progress: backend endpoints now use centralized error normalization and status mapping; UI surface pass still pending.
 
 ### Simulation quality clarity
 - [ ] Improve explanatory info for FSPL / TwoRay / ITM and defaults
@@ -73,10 +77,10 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - Path: add API integration tests for self-role block, pending-user lock, approval/revocation, admin-only mutations, cross-user denial, and delete safeguards.
 - [ ] Identity reconciliation hardening
 - Path: define deterministic merge/link matrix (idp subject, verified email, legacy local email), add immutable audit events for link/merge decisions, and test every branch.
-- [ ] Cloudflare Access auth observability
+- [x] Cloudflare Access auth observability
 - Path: add structured auth logs with reason codes for 401/403, include parsed identity source and header/JWT shape, and expose admin diagnostics endpoint/view.
 
 ## Next batch plan
-1. Pending-account UX clarity pass + wording consistency pass.
-2. Notification center expansion (history, filtering, moderation handoff).
+1. Auth/permission endpoint matrix tests (admin/user/pending/revoked/deleted sessions).
+2. Runtime migration extraction from request path into explicit migration step.
 3. Admin utilities scope draft replacing manual SQL operations.

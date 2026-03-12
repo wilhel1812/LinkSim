@@ -1,6 +1,6 @@
 import { verifyAuth } from "../_lib/auth";
 import { assertUserAccess, ensureUser, fetchUserProfile, listPendingApprovalUsers } from "../_lib/db";
-import { handleOptions, json, withCors } from "../_lib/http";
+import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
@@ -41,8 +41,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       }),
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("pending approval") || message.includes("removed by admin") ? 403 : 500;
-    return withCors(request, json({ error: message }, { status }));
+    return errorResponse(request, error, 500);
   }
 };
