@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchCloudLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
+import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 
 const SYNC_DEBOUNCE_MS = 1200;
@@ -44,7 +45,7 @@ export function AuthSyncPanel() {
   useEffect(() => {
     if (hydrated.current) return;
     void refreshFromCloud().catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Cloud load failed: ${message}`);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,7 +63,7 @@ export function AuthSyncPanel() {
           await pushCloudLibrary(cloudPayload);
           setStatus(`Cloud sync updated at ${new Date().toLocaleTimeString()}.`);
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = getUiErrorMessage(error);
           setStatus(`Cloud save failed: ${message}`);
         }
       })();

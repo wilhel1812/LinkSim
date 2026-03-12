@@ -101,7 +101,7 @@ export function UserAdminPanel() {
   const [managedUser, setManagedUser] = useState<CloudUser | null>(null);
   const [managedNameDraft, setManagedNameDraft] = useState("");
   const [managedEmailDraft, setManagedEmailDraft] = useState("");
-  const [userFilter, setUserFilter] = useState<"all" | "pending" | "approved">("all");
+  const [userFilter, setUserFilter] = useState<"all" | "pending" | "approved" | "revoked">("all");
   const [userSearch, setUserSearch] = useState("");
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(() =>
     typeof window === "undefined" ? new Set() : readDismissedNotificationIds(),
@@ -211,12 +211,21 @@ export function UserAdminPanel() {
   }, [canAdmin]);
 
   const userRows = useMemo(() => users.filter((user) => user.id !== me?.id), [users, me?.id]);
-  const pendingUserCount = useMemo(() => userRows.filter((user) => !user.isApproved).length, [userRows]);
+  const pendingUserCount = useMemo(
+    () => userRows.filter((user) => (user.accountState ?? (user.isApproved ? "approved" : "pending")) === "pending").length,
+    [userRows],
+  );
+  const revokedUserCount = useMemo(
+    () => userRows.filter((user) => (user.accountState ?? (user.isApproved ? "approved" : "pending")) === "revoked").length,
+    [userRows],
+  );
   const filteredUserRows = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
     return userRows.filter((user) => {
-      if (userFilter === "pending" && user.isApproved) return false;
-      if (userFilter === "approved" && !user.isApproved) return false;
+      const state = user.accountState ?? (user.isApproved ? "approved" : "pending");
+      if (userFilter === "pending" && state !== "pending") return false;
+      if (userFilter === "approved" && state !== "approved") return false;
+      if (userFilter === "revoked" && state !== "revoked") return false;
       if (!q) return true;
       return (
         user.username.toLowerCase().includes(q) ||
@@ -595,14 +604,19 @@ export function UserAdminPanel() {
               <div className="user-manager-list">
                 <div className="section-heading">
                   <p className="field-help">Users: open a profile to review and moderate.</p>
-                  <p className="field-help">Pending: {pendingUserCount}</p>
+                  <p className="field-help">Pending: {pendingUserCount} | Revoked: {revokedUserCount}</p>
                 </div>
                 <label className="field-grid user-field-grid">
                   <span>Filter</span>
-                  <select className="locale-select" onChange={(event) => setUserFilter(event.target.value as "all" | "pending" | "approved")} value={userFilter}>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setUserFilter(event.target.value as "all" | "pending" | "approved" | "revoked")}
+                    value={userFilter}
+                  >
                     <option value="all">All users</option>
                     <option value="pending">Pending only</option>
                     <option value="approved">Approved only</option>
+                    <option value="revoked">Revoked only</option>
                   </select>
                 </label>
                 <label className="field-grid user-field-grid">
@@ -616,6 +630,13 @@ export function UserAdminPanel() {
                       <div>
                         <p className="field-help">
                           <strong>{user.username}</strong>
+                        </p>
+                        <p className="field-help">
+                          {user.accountState === "revoked"
+                            ? "Revoked"
+                            : user.isApproved
+                              ? "Approved"
+                              : "Pending"}
                         </p>
                         <p className="field-help">{user.email ?? "-"}</p>
                       </div>
