@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useId, useMemo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 type ModalOverlayProps = {
@@ -8,18 +8,15 @@ type ModalOverlayProps = {
   tier?: "base" | "raised";
 };
 
-let modalIdCounter = 0;
 let openModalCount = 0;
-const openModalStack: number[] = [];
+const openModalStack: string[] = [];
 
 export function ModalOverlay({ children, onClose, tier = "base", ...rest }: ModalOverlayProps) {
-  const modalId = useMemo(() => {
-    modalIdCounter += 1;
-    return modalIdCounter;
-  }, []);
+  const modalId = useId();
   const zIndex = useMemo(() => {
+    const hash = Array.from(modalId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 400;
     const base = tier === "raised" ? 8000 : 2000;
-    return base + modalId * 10;
+    return base + hash;
   }, [modalId, tier]);
 
   useEffect(() => {

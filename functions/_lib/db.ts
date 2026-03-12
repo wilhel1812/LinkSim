@@ -340,6 +340,33 @@ type UserRow = {
   updated_at: string | null;
 };
 
+type IdentityMatchKind = "verified_idp_email" | "legacy_email";
+type IdentityReconcileCandidate = UserRow & { match_kind: IdentityMatchKind };
+
+const matchRank = (kind: IdentityMatchKind): number => (kind === "verified_idp_email" ? 2 : 1);
+
+const normalizeDateSafe = (value: string | null): number => {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+};
+
+export const chooseIdentityReconcileCandidate = (
+  candidates: IdentityReconcileCandidate[],
+): IdentityReconcileCandidate | null => {
+  if (!candidates.length) return null;
+  const sorted = [...candidates].sort((a, b) => {
+    const rankDiff = matchRank(b.match_kind) - matchRank(a.match_kind);
+    if (rankDiff !== 0) return rankDiff;
+    if (a.is_admin !== b.is_admin) return b.is_admin - a.is_admin;
+    if (a.is_approved !== b.is_approved) return b.is_approved - a.is_approved;
+    const createdDiff = normalizeDateSafe(a.created_at) - normalizeDateSafe(b.created_at);
+    if (createdDiff !== 0) return createdDiff;
+    return a.id.localeCompare(b.id);
+  });
+  return sorted[0] ?? null;
+};
+
 const toUserProfile = (row: UserRow) => ({
   id: row.id,
   username: sanitizeName(row.username) ?? "User",
@@ -381,16 +408,30 @@ const reconcileUserIdentityByIdpEmail = async (
   const normalized = sanitizeEmail(idpEmail);
   if (!normalized) return;
 
-  const existing = await env.DB
+  const rows = await env.DB
     .prepare(
-      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at
+      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
+              CASE
+                WHEN lower(idp_email) = lower(?) AND idp_email_verified = 1 THEN 'verified_idp_email'
+                WHEN lower(email) = lower(?) THEN 'legacy_email'
+                ELSE NULL
+              END AS match_kind
        FROM users
-       WHERE lower(idp_email) = lower(?) AND idp_email_verified = 1 AND id <> ?
-       ORDER BY is_admin DESC, is_approved DESC, created_at ASC
-       LIMIT 1`,
+       WHERE id <> ?
+         AND (
+           (lower(idp_email) = lower(?) AND idp_email_verified = 1)
+           OR lower(email) = lower(?)
+         )
+       LIMIT 25`,
     )
-    .bind(normalized, userId)
-    .first<UserRow>();
+    .bind(normalized, normalized, userId, normalized, normalized)
+    .all<IdentityReconcileCandidate>();
+  const existing = chooseIdentityReconcileCandidate(
+    rows.results.filter(
+      (row): row is IdentityReconcileCandidate =>
+        row.match_kind === "verified_idp_email" || row.match_kind === "legacy_email",
+    ),
+  );
   if (!existing) return;
 
   const now = new Date().toISOString();
@@ -452,6 +493,7 @@ const reconcileUserIdentityByIdpEmail = async (
       normalized,
       JSON.stringify({
         mergedFromUserId: existing.id,
+        matchKind: existing.match_kind,
         mergedFromIsAdmin: existing.is_admin === 1,
         mergedFromIsApproved: existing.is_approved === 1,
       }),
@@ -752,6 +794,32 @@ const createResourceChange = async (
        VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .bind(kind, id, action, actorUserId, new Date().toISOString(), note)
+    .run();
+};
+
+const createAdminAuditEvent = async (
+  env: Env,
+  eventType: string,
+  actorUserId: string,
+  details: Record<string, unknown>,
+  targetUserId?: string,
+  sourceUserId?: string,
+) => {
+  await env.DB
+    .prepare(
+      `INSERT INTO user_identity_audit
+       (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      eventType,
+      targetUserId ?? actorUserId,
+      sourceUserId ?? null,
+      actorUserId,
+      null,
+      JSON.stringify(details),
+      new Date().toISOString(),
+    )
     .run();
 };
 
@@ -1072,6 +1140,148 @@ export const backfillResourceMetadata = async (
     sitesUpdated: Number((siteResult.meta as { changes?: number } | undefined)?.changes ?? 0),
     simulationsUpdated: Number((simulationResult.meta as { changes?: number } | undefined)?.changes ?? 0),
   };
+};
+
+export const reassignResourceOwner = async (
+  env: Env,
+  kind: "site" | "simulation",
+  resourceId: string,
+  newOwnerUserId: string,
+  actorUserId: string,
+): Promise<{ ok: boolean; previousOwnerUserId: string; newOwnerUserId: string }> => {
+  await ensureSchema(env);
+  const table = kind === "site" ? "sites" : "simulations";
+  const existing = await env.DB
+    .prepare(`SELECT owner_user_id FROM ${table} WHERE id = ? LIMIT 1`)
+    .bind(resourceId)
+    .first<{ owner_user_id: string }>();
+  if (!existing?.owner_user_id) throw new Error("Resource not found.");
+
+  const targetUser = await readUserRow(env, newOwnerUserId);
+  if (!targetUser) throw new Error("New owner user not found.");
+
+  const now = new Date().toISOString();
+  await env.DB
+    .prepare(
+      `UPDATE ${table}
+       SET owner_user_id = ?, last_edited_by_user_id = ?, last_edited_at = ?, updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(newOwnerUserId, actorUserId, now, now, resourceId)
+    .run();
+
+  await createResourceChange(
+    env,
+    kind,
+    resourceId,
+    "updated",
+    actorUserId,
+    `Ownership reassigned: ${existing.owner_user_id} -> ${newOwnerUserId}`,
+  );
+  await createAdminAuditEvent(
+    env,
+    "admin_reassign_resource_owner",
+    actorUserId,
+    { kind, resourceId, fromOwnerUserId: existing.owner_user_id, toOwnerUserId: newOwnerUserId },
+    newOwnerUserId,
+    existing.owner_user_id,
+  );
+
+  return {
+    ok: true,
+    previousOwnerUserId: existing.owner_user_id,
+    newOwnerUserId,
+  };
+};
+
+export const bulkReassignOwnership = async (
+  env: Env,
+  fromUserId: string,
+  toUserId: string,
+  actorUserId: string,
+): Promise<{ sitesUpdated: number; simulationsUpdated: number }> => {
+  await ensureSchema(env);
+  if (fromUserId === toUserId) throw new Error("Source and target owner must differ.");
+  const targetUser = await readUserRow(env, toUserId);
+  if (!targetUser) throw new Error("Target owner user not found.");
+  const now = new Date().toISOString();
+  const sitesRes = await env.DB
+    .prepare(
+      `UPDATE sites
+       SET owner_user_id = ?, last_edited_by_user_id = ?, last_edited_at = ?, updated_at = ?
+       WHERE owner_user_id = ?`,
+    )
+    .bind(toUserId, actorUserId, now, now, fromUserId)
+    .run();
+  const simulationsRes = await env.DB
+    .prepare(
+      `UPDATE simulations
+       SET owner_user_id = ?, last_edited_by_user_id = ?, last_edited_at = ?, updated_at = ?
+       WHERE owner_user_id = ?`,
+    )
+    .bind(toUserId, actorUserId, now, now, fromUserId)
+    .run();
+
+  const sitesUpdated = Number((sitesRes.meta as { changes?: number } | undefined)?.changes ?? 0);
+  const simulationsUpdated = Number((simulationsRes.meta as { changes?: number } | undefined)?.changes ?? 0);
+
+  await createAdminAuditEvent(
+    env,
+    "admin_bulk_reassign_ownership",
+    actorUserId,
+    { fromUserId, toUserId, sitesUpdated, simulationsUpdated },
+    toUserId,
+    fromUserId,
+  );
+
+  return { sitesUpdated, simulationsUpdated };
+};
+
+export const listAdminAuditEvents = async (
+  env: Env,
+  limit = 120,
+): Promise<
+  Array<{
+    id: number;
+    eventType: string;
+    targetUserId: string;
+    sourceUserId: string | null;
+    actorUserId: string | null;
+    idpEmail: string | null;
+    detailsJson: string | null;
+    createdAt: string;
+  }>
+> => {
+  await ensureSchema(env);
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const rows = await env.DB
+    .prepare(
+      `SELECT id, event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at
+       FROM user_identity_audit
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`,
+    )
+    .bind(safeLimit)
+    .all<{
+      id: number;
+      event_type: string;
+      target_user_id: string;
+      source_user_id: string | null;
+      actor_user_id: string | null;
+      idp_email: string | null;
+      details_json: string | null;
+      created_at: string;
+    }>();
+  return rows.results.map((row) => ({
+    id: row.id,
+    eventType: row.event_type,
+    targetUserId: row.target_user_id,
+    sourceUserId: row.source_user_id,
+    actorUserId: row.actor_user_id,
+    idpEmail: row.idp_email,
+    detailsJson: row.details_json,
+    createdAt: row.created_at,
+  }));
 };
 
 export const fetchResourceChanges = async (

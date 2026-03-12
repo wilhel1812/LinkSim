@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import {
+  bulkReassignOwnership,
+  fetchAdminAuditEvents,
   fetchAuthDiagnostics,
   deleteUser,
   fetchDeletedUsers,
@@ -7,11 +9,13 @@ import {
   fetchSchemaDiagnostics,
   fetchUsers,
   runMetadataRepair,
+  reassignResourceOwner,
   restoreDeletedCloudUser,
   updateMyProfile,
   updateUserAdmin,
   updateUserApproval,
   updateUserProfile,
+  type AdminAuditEvent,
   type CloudUser,
   type DeletedCloudUser,
   type AuthDiagnostics,
@@ -98,6 +102,13 @@ export function UserAdminPanel() {
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState("");
   const [notificationFeed, setNotificationFeed] = useState<NotificationFeed>({ unreadCount: 0, items: [] });
+  const [auditEvents, setAuditEvents] = useState<AdminAuditEvent[]>([]);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [ownershipKind, setOwnershipKind] = useState<"site" | "simulation">("site");
+  const [ownershipResourceId, setOwnershipResourceId] = useState("");
+  const [ownershipNewOwnerId, setOwnershipNewOwnerId] = useState("");
+  const [bulkFromOwnerId, setBulkFromOwnerId] = useState("");
+  const [bulkToOwnerId, setBulkToOwnerId] = useState("");
   const [managedUser, setManagedUser] = useState<CloudUser | null>(null);
   const [managedNameDraft, setManagedNameDraft] = useState("");
   const [managedEmailDraft, setManagedEmailDraft] = useState("");
@@ -112,16 +123,18 @@ export function UserAdminPanel() {
 
   const refreshAdminData = async () => {
     if (!canAdmin) return;
-    const [all, deleted, authDiag, schemaDiag] = await Promise.all([
+    const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
       fetchUsers(),
       fetchDeletedUsers(),
       fetchAuthDiagnostics(),
       fetchSchemaDiagnostics(),
+      fetchAdminAuditEvents(80),
     ]);
     setUsers(all);
     setDeletedUsers(deleted);
     setAuthDiagnostics(authDiag);
     setSchemaDiagnostics(schemaDiag);
+    setAuditEvents(events);
     setManagedUser((current) => {
       if (!current) return null;
       return all.find((user) => user.id === current.id) ?? null;
@@ -145,7 +158,7 @@ export function UserAdminPanel() {
     }
   };
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     if (!canAdmin) return;
     setNotificationBusy(true);
     setNotificationStatus("");
@@ -158,7 +171,18 @@ export function UserAdminPanel() {
     } finally {
       setNotificationBusy(false);
     }
-  };
+  }, [canAdmin]);
+
+  const loadAdminAudit = useCallback(async () => {
+    if (!canAdmin) return;
+    setAuditBusy(true);
+    try {
+      const events = await fetchAdminAuditEvents(80);
+      setAuditEvents(events);
+    } finally {
+      setAuditBusy(false);
+    }
+  }, [canAdmin]);
 
   const load = async () => {
     setBusy(true);
@@ -172,21 +196,24 @@ export function UserAdminPanel() {
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       if (current.isAdmin) {
-        const [all, deleted, authDiag, schemaDiag] = await Promise.all([
+        const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
           fetchDeletedUsers(),
           fetchAuthDiagnostics(),
           fetchSchemaDiagnostics(),
+          fetchAdminAuditEvents(80),
         ]);
         setUsers(all);
         setDeletedUsers(deleted);
         setAuthDiagnostics(authDiag);
         setSchemaDiagnostics(schemaDiag);
+        setAuditEvents(events);
       } else {
         setUsers([]);
         setDeletedUsers([]);
         setAuthDiagnostics(null);
         setSchemaDiagnostics(null);
+        setAuditEvents([]);
       }
     } catch (error) {
       const message = getUiErrorMessage(error);
@@ -208,7 +235,12 @@ export function UserAdminPanel() {
     void loadNotifications();
     const timer = window.setInterval(() => void loadNotifications(), NOTIFICATION_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [canAdmin]);
+  }, [canAdmin, loadNotifications]);
+
+  useEffect(() => {
+    if (!canAdmin) return;
+    void loadAdminAudit();
+  }, [canAdmin, loadAdminAudit]);
 
   const userRows = useMemo(() => users.filter((user) => user.id !== me?.id), [users, me?.id]);
   const pendingUserCount = useMemo(
@@ -370,6 +402,60 @@ export function UserAdminPanel() {
     } catch (error) {
       const message = getUiErrorMessage(error);
       setStatus(`Restore failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runOwnerReassign = async () => {
+    const resourceId = ownershipResourceId.trim();
+    const newOwnerUserId = ownershipNewOwnerId.trim();
+    if (!resourceId || !newOwnerUserId) {
+      setStatus("Ownership reassignment requires resource ID and target owner user ID.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Reassign ${ownershipKind} ${resourceId} to ${newOwnerUserId}? This is logged in admin audit events.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setStatus("");
+    try {
+      const result = await reassignResourceOwner(ownershipKind, resourceId, newOwnerUserId);
+      await refreshAdminData();
+      setStatus(
+        `Ownership reassigned for ${ownershipKind} ${resourceId}: ${result.previousOwnerUserId} -> ${result.newOwnerUserId}.`,
+      );
+    } catch (error) {
+      const message = getUiErrorMessage(error);
+      setStatus(`Ownership reassignment failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runBulkOwnerReassign = async () => {
+    const fromUserId = bulkFromOwnerId.trim();
+    const toUserId = bulkToOwnerId.trim();
+    if (!fromUserId || !toUserId) {
+      setStatus("Bulk ownership reassignment requires source and target owner user IDs.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Bulk reassign all owned sites/simulations from ${fromUserId} to ${toUserId}? This is logged in admin audit events.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setStatus("");
+    try {
+      const result = await bulkReassignOwnership(fromUserId, toUserId);
+      await refreshAdminData();
+      setStatus(
+        `Bulk ownership reassignment done. Sites: ${result.sitesUpdated}, Simulations: ${result.simulationsUpdated}.`,
+      );
+    } catch (error) {
+      const message = getUiErrorMessage(error);
+      setStatus(`Bulk ownership reassignment failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -546,6 +632,100 @@ export function UserAdminPanel() {
                   {authDiagnostics?.auth.signals.hasJwtAssertion ? "yes" : "no"} | Header email:{" "}
                   {authDiagnostics?.auth.signals.hasEmailHeader ? "yes" : "no"}
                 </p>
+              </div>
+            ) : null}
+
+            {canAdmin ? (
+              <div className="user-manager-list">
+                <div className="section-heading">
+                  <p className="field-help">Admin ownership tools</p>
+                  <div className="chip-group">
+                    <button className="inline-action" disabled={busy || auditBusy} onClick={() => void loadAdminAudit()} type="button">
+                      Refresh Audit
+                    </button>
+                  </div>
+                </div>
+                <label className="field-grid user-field-grid">
+                  <span>Resource type</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setOwnershipKind(event.target.value as "site" | "simulation")}
+                    value={ownershipKind}
+                  >
+                    <option value="site">Site</option>
+                    <option value="simulation">Simulation</option>
+                  </select>
+                </label>
+                <label className="field-grid user-field-grid">
+                  <span>Resource ID</span>
+                  <input
+                    onChange={(event) => setOwnershipResourceId(event.target.value)}
+                    placeholder="site-id or simulation-id"
+                    type="text"
+                    value={ownershipResourceId}
+                  />
+                </label>
+                <label className="field-grid user-field-grid">
+                  <span>New owner ID</span>
+                  <input
+                    list="admin-user-ids"
+                    onChange={(event) => setOwnershipNewOwnerId(event.target.value)}
+                    placeholder="target user ID"
+                    type="text"
+                    value={ownershipNewOwnerId}
+                  />
+                </label>
+                <button className="inline-action" disabled={busy} onClick={() => void runOwnerReassign()} type="button">
+                  Reassign Owner
+                </button>
+
+                <label className="field-grid user-field-grid">
+                  <span>Bulk from owner ID</span>
+                  <input
+                    list="admin-user-ids"
+                    onChange={(event) => setBulkFromOwnerId(event.target.value)}
+                    placeholder="source owner user ID"
+                    type="text"
+                    value={bulkFromOwnerId}
+                  />
+                </label>
+                <label className="field-grid user-field-grid">
+                  <span>Bulk to owner ID</span>
+                  <input
+                    list="admin-user-ids"
+                    onChange={(event) => setBulkToOwnerId(event.target.value)}
+                    placeholder="target owner user ID"
+                    type="text"
+                    value={bulkToOwnerId}
+                  />
+                </label>
+                <button className="inline-action" disabled={busy} onClick={() => void runBulkOwnerReassign()} type="button">
+                  Bulk Reassign Ownership
+                </button>
+
+                <p className="field-help">Recent admin audit events</p>
+                {auditBusy ? <p className="field-help">Loading audit events…</p> : null}
+                <div className="notifications-list">
+                  {auditEvents.slice(0, 12).map((event) => (
+                    <div className="library-row" key={event.id}>
+                      <strong>{event.eventType}</strong>
+                      <p className="field-help">
+                        actor: {event.actorUserId ?? "-"} | target: {event.targetUserId}
+                      </p>
+                      <p className="field-help">
+                        source: {event.sourceUserId ?? "-"} | at: {fmtDate(event.createdAt)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {!auditEvents.length ? <p className="field-help">No admin audit events yet.</p> : null}
+                <datalist id="admin-user-ids">
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.username}
+                    </option>
+                  ))}
+                </datalist>
               </div>
             ) : null}
 

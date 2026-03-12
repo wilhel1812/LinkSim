@@ -73,6 +73,28 @@ export type MetadataRepairResult = {
   simulationsUpdated: number;
 };
 
+export type OwnershipReassignResult = {
+  ok: boolean;
+  previousOwnerUserId: string;
+  newOwnerUserId: string;
+};
+
+export type BulkOwnershipReassignResult = {
+  sitesUpdated: number;
+  simulationsUpdated: number;
+};
+
+export type AdminAuditEvent = {
+  id: number;
+  eventType: string;
+  targetUserId: string;
+  sourceUserId: string | null;
+  actorUserId: string | null;
+  idpEmail: string | null;
+  detailsJson: string | null;
+  createdAt: string;
+};
+
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
@@ -194,3 +216,49 @@ export const fetchSchemaDiagnostics = async (): Promise<SchemaDiagnostics> =>
 
 export const runMetadataRepair = async (): Promise<MetadataRepairResult> =>
   apiCall<MetadataRepairResult>("/api/admin-repair-metadata", { method: "POST" });
+
+export const reassignResourceOwner = async (
+  kind: "site" | "simulation",
+  resourceId: string,
+  newOwnerUserId: string,
+): Promise<OwnershipReassignResult> => {
+  const data = await apiCall<{ ok: boolean; action: string; result: OwnershipReassignResult }>(
+    "/api/admin-ownership-tools",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action: "reassign_owner",
+        kind,
+        resourceId,
+        newOwnerUserId,
+      }),
+    },
+  );
+  return data.result;
+};
+
+export const bulkReassignOwnership = async (
+  fromUserId: string,
+  toUserId: string,
+): Promise<BulkOwnershipReassignResult> => {
+  const data = await apiCall<{ ok: boolean; action: string; result: BulkOwnershipReassignResult }>(
+    "/api/admin-ownership-tools",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action: "bulk_reassign",
+        fromUserId,
+        toUserId,
+      }),
+    },
+  );
+  return data.result;
+};
+
+export const fetchAdminAuditEvents = async (limit = 60): Promise<AdminAuditEvent[]> => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const data = await apiCall<{ events: AdminAuditEvent[] }>(`/api/admin-audit-events?${params.toString()}`, {
+    method: "GET",
+  });
+  return Array.isArray(data.events) ? data.events : [];
+};
