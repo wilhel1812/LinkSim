@@ -11,6 +11,32 @@ const remoteJwksFor = (url: string) => {
   return jwks;
 };
 
+const normalizeTeamDomain = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    return url.host.toLowerCase();
+  } catch {
+    return trimmed.replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
+  }
+};
+
+const decodeIssuerFromJwt = (token: string): string => {
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) return "";
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = `${b64}${"=".repeat((4 - (b64.length % 4)) % 4)}`;
+    const decoded = JSON.parse(atob(padded)) as {
+      iss?: unknown;
+    };
+    return typeof decoded.iss === "string" ? decoded.iss.trim() : "";
+  } catch {
+    return "";
+  }
+};
+
 const normalizeUserId = (request: Request): string => {
   const byEmail =
     request.headers.get("cf-access-authenticated-user-email") ??
@@ -29,27 +55,42 @@ const verifyCloudflareAccessJwt = async (
   request: Request,
   env: Env,
 ): Promise<AuthContext | null> => {
-  const teamDomain = (env.ACCESS_TEAM_DOMAIN ?? "").trim();
+  const teamDomain = normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? "");
   const audience = (env.ACCESS_AUD ?? "").trim();
-  if (!teamDomain || !audience) return null;
+  if (!audience) return null;
 
-  const issuer = `https://${teamDomain}`;
-  const jwksUrl = `${issuer}/cdn-cgi/access/certs`;
-  const jwks = remoteJwksFor(jwksUrl);
+  const tokenIssuer = decodeIssuerFromJwt(token);
+  const issuerCandidates = [
+    teamDomain ? `https://${teamDomain}` : "",
+    tokenIssuer,
+  ].filter(Boolean);
 
-  const { payload } = await jwtVerify(token, jwks, {
-    issuer,
-    audience,
-  });
+  let lastPayload: Record<string, unknown> | null = null;
+  for (const issuer of Array.from(new Set(issuerCandidates))) {
+    try {
+      const jwksUrl = `${issuer}/cdn-cgi/access/certs`;
+      const jwks = remoteJwksFor(jwksUrl);
+      const { payload } = await jwtVerify(token, jwks, {
+        issuer,
+        audience,
+      });
+      lastPayload = payload as Record<string, unknown>;
+      break;
+    } catch {
+      // Try next issuer candidate.
+    }
+  }
 
-  const fallback = typeof payload.sub === "string" ? payload.sub : "";
+  if (!lastPayload) return null;
+
+  const fallback = typeof lastPayload.sub === "string" ? lastPayload.sub : "";
   const fromHeader = normalizeUserId(request);
   const userId = fromHeader || fallback;
   if (!userId) return null;
 
   return {
     userId,
-    tokenPayload: payload as Record<string, unknown>,
+    tokenPayload: lastPayload,
   };
 };
 
@@ -70,22 +111,21 @@ const allowInsecureDevAuth = (env: Env): AuthContext | null => {
 };
 
 export const verifyAuth = async (request: Request, env: Env): Promise<AuthContext | null> => {
-  const token =
-    request.headers.get("cf-access-jwt-assertion") ??
-    request.headers.get("Cf-Access-Jwt-Assertion") ??
-    "";
+  try {
+    const token =
+      request.headers.get("cf-access-jwt-assertion") ??
+      request.headers.get("Cf-Access-Jwt-Assertion") ??
+      "";
 
-  if (token.trim()) {
-    try {
+    if (token.trim()) {
       const jwtVerified = await verifyCloudflareAccessJwt(token.trim(), request, env);
       if (jwtVerified) return jwtVerified;
-    } catch {
-      // Fall back to trusted Access identity headers if cert/JWKS verification fails transiently.
     }
+
+    const byHeader = verifyByHeadersOnly(request);
+    if (byHeader) return byHeader;
+  } catch {
+    // Fail closed to header/dev fallback instead of surfacing auth internals as 500.
   }
-
-  const byHeader = verifyByHeadersOnly(request);
-  if (byHeader) return byHeader;
-
   return allowInsecureDevAuth(env);
 };
