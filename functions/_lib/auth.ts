@@ -76,8 +76,12 @@ export const verifyAuth = async (request: Request, env: Env): Promise<AuthContex
     "";
 
   if (token.trim()) {
-    const jwtVerified = await verifyCloudflareAccessJwt(token.trim(), request, env);
-    if (jwtVerified) return jwtVerified;
+    try {
+      const jwtVerified = await verifyCloudflareAccessJwt(token.trim(), request, env);
+      if (jwtVerified) return jwtVerified;
+    } catch {
+      // Fall back to trusted Access identity headers if cert/JWKS verification fails transiently.
+    }
   }
 
   const byHeader = verifyByHeadersOnly(request);

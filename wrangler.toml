@@ -10,9 +10,9 @@ database_id = "d669aac0-37ea-4c68-9b27-ece888e1966a"
 [vars]
 # Cloudflare Access settings for JWT validation in Pages Functions.
 # Team domain example: your-team.cloudflareaccess.com
-ACCESS_TEAM_DOMAIN = "REPLACE_WITH_CLOUDFLARE_ACCESS_TEAM_DOMAIN"
+ACCESS_TEAM_DOMAIN = "skarvassbu.cloudflareaccess.com"
 # Access application AUD tag from Cloudflare Zero Trust application settings.
-ACCESS_AUD = "REPLACE_WITH_CLOUDFLARE_ACCESS_AUD"
+ACCESS_AUD = "dcfed08418380b9ad6fa4d26cc6ba5d94274a8920764dbcb0e1917957d1825b2"
 # Local dev fallback only (do not enable in production):
 # ALLOW_INSECURE_DEV_AUTH = "true"
 # DEV_AUTH_USER_ID = "local-dev-user@example.com"
