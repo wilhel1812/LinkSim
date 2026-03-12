@@ -14,12 +14,11 @@ preview_bucket_name = "linksim-avatars"
 
 [vars]
 # Cloudflare Access settings for JWT validation in Pages Functions.
-# Set real values in Cloudflare Pages environment variables.
 # Team domain example: your-team.cloudflareaccess.com
-ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
+ACCESS_TEAM_DOMAIN = "skarvassbu.cloudflareaccess.com"
 # Access application AUD tag from Cloudflare Zero Trust application settings.
-ACCESS_AUD = "replace-with-access-aud"
-ADMIN_USER_IDS = "replace-with-admin-user-id"
+ACCESS_AUD = "dcfed08418380b9ad6fa4d26cc6ba5d94274a8920764dbcb0e1917957d1825b2"
+ADMIN_USER_IDS = "f35e2a08-3713-5671-9725-ba82b21f25d4"
 REGISTRATION_MODE = "approval_required"
 # Optional: per-IP request cap for /api/geocode (default 20/minute).
 # GEOCODE_RATE_LIMIT_PER_MINUTE = "20"

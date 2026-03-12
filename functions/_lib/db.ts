@@ -1251,7 +1251,7 @@ export const fetchLibraryForUser = async (
 ): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] }> => {
   await ensureSchema(env);
   const me = await fetchUserProfile(env, userId);
-  const canModerateAll = Boolean(me?.isAdmin || me?.isModerator);
+  const canReadAllResources = Boolean(me?.isAdmin);
   const siteRows = await env.DB
     .prepare(
       `SELECT s.payload_json, s.owner_user_id, s.visibility, r.role,
@@ -1276,7 +1276,7 @@ export const fetchLibraryForUser = async (
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
        WHERE ? = 1 OR s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
     )
-    .bind(userId, canModerateAll ? 1 : 0, userId)
+    .bind(userId, canReadAllResources ? 1 : 0, userId)
     .all<LibraryRow>();
 
   const simulationRows = await env.DB
@@ -1303,7 +1303,7 @@ export const fetchLibraryForUser = async (
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
        WHERE ? = 1 OR s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
     )
-    .bind(userId, canModerateAll ? 1 : 0, userId)
+    .bind(userId, canReadAllResources ? 1 : 0, userId)
     .all<LibraryRow>();
 
   const mapRows = (rows: LibraryRow[]) =>
@@ -1334,7 +1334,7 @@ export const fetchLibraryForUser = async (
             lastEditedByAvatarUrl,
             lastEditedAt: row.last_edited_at,
             effectiveRole:
-              canModerateAll
+              canReadAllResources
                 ? "admin"
                 : row.owner_user_id === userId
                 ? "owner"
