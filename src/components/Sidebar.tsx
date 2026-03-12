@@ -1839,7 +1839,7 @@ export function Sidebar() {
               <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
                 {PRIMARY_ATTRIBUTION.projectName}
               </a>{" "}
-              by {PRIMARY_ATTRIBUTION.authorName}. {PRIMARY_ATTRIBUTION.disclaimer}
+              by {PRIMARY_ATTRIBUTION.authorName}
             </p>
             <p className="field-help subtle-note">
               Basemap style: {theme === "dark" ? "Carto Dark Matter" : "Carto Positron"} (provider attribution applies).

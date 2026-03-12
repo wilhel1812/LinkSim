@@ -9,5 +9,5 @@ export const PRIMARY_ATTRIBUTION = {
   projectName: "Radio Mobile",
   projectUrl: "https://www.ve2dbe.com",
   authorName: "Roger Coudé (VE2DBE)",
-  disclaimer: "Independent web reimplementation inspired by Radio Mobile. Not affiliated with VE2DBE.",
+  disclaimer: "",
 } as const;
