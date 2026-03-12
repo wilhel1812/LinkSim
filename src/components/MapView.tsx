@@ -768,7 +768,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(true);
-  const [showSimulationSummary, setShowSimulationSummary] = useState(true);
+  const [showSimulationSummary, setShowSimulationSummary] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
   const [interactionViewState, setInteractionViewState] = useState<{
