@@ -3,12 +3,11 @@ export type CloudLibraryPayload = {
   simulationPresets: unknown[];
 };
 
-const apiCall = async <T>(token: string, path: string, init?: RequestInit): Promise<T> => {
+const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${token}`,
       ...(init?.headers ?? {}),
     },
   });
@@ -19,8 +18,8 @@ const apiCall = async <T>(token: string, path: string, init?: RequestInit): Prom
   return (await response.json()) as T;
 };
 
-export const fetchCloudLibrary = async (token: string): Promise<CloudLibraryPayload> => {
-  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[] }>(token, "/api/library", {
+export const fetchCloudLibrary = async (): Promise<CloudLibraryPayload> => {
+  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[] }>("/api/library", {
     method: "GET",
   });
   return {
@@ -29,8 +28,8 @@ export const fetchCloudLibrary = async (token: string): Promise<CloudLibraryPayl
   };
 };
 
-export const pushCloudLibrary = async (token: string, payload: CloudLibraryPayload): Promise<void> => {
-  await apiCall(token, "/api/library", {
+export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<void> => {
+  await apiCall("/api/library", {
     method: "PUT",
     body: JSON.stringify(payload),
   });

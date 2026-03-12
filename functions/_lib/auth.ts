@@ -3,14 +3,6 @@ import type { AuthContext, Env } from "./types";
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
-const bearerTokenFrom = (request: Request): string | null => {
-  const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
-  if (!header) return null;
-  const [scheme, token] = header.split(" ");
-  if (!scheme || !token || scheme.toLowerCase() !== "bearer") return null;
-  return token.trim();
-};
-
 const remoteJwksFor = (url: string) => {
   const cached = jwksCache.get(url);
   if (cached) return cached;
@@ -19,28 +11,77 @@ const remoteJwksFor = (url: string) => {
   return jwks;
 };
 
-export const verifyAuth = async (request: Request, env: Env): Promise<AuthContext | null> => {
-  const token = bearerTokenFrom(request);
-  if (!token) return null;
+const normalizeUserId = (request: Request): string => {
+  const byEmail =
+    request.headers.get("cf-access-authenticated-user-email") ??
+    request.headers.get("Cf-Access-Authenticated-User-Email") ??
+    "";
+  if (byEmail.trim()) return byEmail.trim().toLowerCase();
+  const bySub =
+    request.headers.get("cf-access-authenticated-user-id") ??
+    request.headers.get("Cf-Access-Authenticated-User-Id") ??
+    "";
+  return bySub.trim();
+};
 
-  const issuer = (env.CLERK_JWT_ISSUER ?? "").trim();
-  if (!issuer) return null;
-  const jwksUrl = (env.CLERK_JWKS_URL ?? `${issuer}/.well-known/jwks.json`).trim();
-  if (!jwksUrl) return null;
+const verifyCloudflareAccessJwt = async (
+  token: string,
+  request: Request,
+  env: Env,
+): Promise<AuthContext | null> => {
+  const teamDomain = (env.ACCESS_TEAM_DOMAIN ?? "").trim();
+  const audience = (env.ACCESS_AUD ?? "").trim();
+  if (!teamDomain || !audience) return null;
 
-  const audience = (env.CLERK_JWT_AUDIENCE ?? "").trim();
+  const issuer = `https://${teamDomain}`;
+  const jwksUrl = `${issuer}/cdn-cgi/access/certs`;
   const jwks = remoteJwksFor(jwksUrl);
 
   const { payload } = await jwtVerify(token, jwks, {
     issuer,
-    audience: audience || undefined,
+    audience,
   });
 
-  const userId = typeof payload.sub === "string" ? payload.sub : "";
+  const fallback = typeof payload.sub === "string" ? payload.sub : "";
+  const fromHeader = normalizeUserId(request);
+  const userId = fromHeader || fallback;
   if (!userId) return null;
 
   return {
     userId,
     tokenPayload: payload as Record<string, unknown>,
   };
+};
+
+const verifyByHeadersOnly = (request: Request): AuthContext | null => {
+  const userId = normalizeUserId(request);
+  if (!userId) return null;
+  return { userId, tokenPayload: {} };
+};
+
+const allowInsecureDevAuth = (env: Env): AuthContext | null => {
+  if ((env.ALLOW_INSECURE_DEV_AUTH ?? "").toLowerCase() !== "true") return null;
+  const userId = (env.DEV_AUTH_USER_ID ?? "local-dev-user").trim();
+  if (!userId) return null;
+  return {
+    userId,
+    tokenPayload: { devAuth: true },
+  };
+};
+
+export const verifyAuth = async (request: Request, env: Env): Promise<AuthContext | null> => {
+  const token =
+    request.headers.get("cf-access-jwt-assertion") ??
+    request.headers.get("Cf-Access-Jwt-Assertion") ??
+    "";
+
+  if (token.trim()) {
+    const jwtVerified = await verifyCloudflareAccessJwt(token.trim(), request, env);
+    if (jwtVerified) return jwtVerified;
+  }
+
+  const byHeader = verifyByHeadersOnly(request);
+  if (byHeader) return byHeader;
+
+  return allowInsecureDevAuth(env);
 };

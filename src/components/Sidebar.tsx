@@ -132,7 +132,6 @@ const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
-const authEnabled = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 
 type LibraryBackupPayload = {
   schemaVersion: 1;
@@ -1532,13 +1531,9 @@ export function Sidebar() {
           <summary>More</summary>
           <div className="section-heading">
             <p className="field-help">Cloud Auth & Sync</p>
-            <InfoTip text="Sign in to sync Site Library and Simulation Library through Cloudflare D1. Resource owners and sharing metadata are persisted server-side." />
+            <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />
           </div>
-          {authEnabled ? (
-            <AuthSyncPanel />
-          ) : (
-            <p className="field-help">Set `VITE_CLERK_PUBLISHABLE_KEY` to enable passkey login and cloud sync.</p>
-          )}
+          <AuthSyncPanel />
           <div className="section-heading">
             <p className="field-help">Local Data Safety</p>
             <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly, and use Restore Snapshot if data looks missing after refresh." />

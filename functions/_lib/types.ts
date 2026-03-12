@@ -21,9 +21,10 @@ export type LibrarySnapshotPayload = {
 
 export type Env = {
   DB: D1Database;
-  CLERK_JWT_ISSUER: string;
-  CLERK_JWKS_URL?: string;
-  CLERK_JWT_AUDIENCE?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
+  ALLOW_INSECURE_DEV_AUTH?: string;
+  DEV_AUTH_USER_ID?: string;
 };
 
 export type AuthContext = {

@@ -45,13 +45,13 @@ npm install
 npm run dev
 ```
 
-## Cloud Auth + D1 (Passkey-First)
+## Cloud Auth + D1 (Cloudflare-Only)
 
 This repository now includes:
 
 - Cloudflare Pages Functions API under `functions/api/*`
 - D1 schema at `db/schema.sql`
-- Frontend Clerk passkey auth integration (`VITE_CLERK_PUBLISHABLE_KEY`)
+- Cloudflare Access integration for edge authentication
 
 Detailed setup steps:
 

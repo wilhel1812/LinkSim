@@ -17,7 +17,6 @@
     "smoke:itm": "node scripts/scripts_smoke_itm.mjs"
   },
   "dependencies": {
-    "@clerk/react": "^6.1.0",
     "clsx": "^2.1.1",
     "d3-array": "^3.2.4",
     "d3-scale": "^4.0.2",

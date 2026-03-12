@@ -1,10 +1,12 @@
-# Cloudflare + Passkey Auth Setup
+# Cloudflare-Only Auth + D1 Setup (No Clerk)
 
-This project now supports cloud-backed Site Library + Simulation Library with:
+This project uses:
 
-- Cloudflare Pages Functions API (`/api/*`)
+- Cloudflare Pages + Functions API
 - Cloudflare D1 for persistence
-- Clerk passkey authentication (JWT verified server-side)
+- Cloudflare Access for authentication at the edge
+
+No external auth provider is required.
 
 ## 1) Create D1 Database
 
@@ -12,7 +14,7 @@ This project now supports cloud-backed Site Library + Simulation Library with:
 npx wrangler d1 create linksim
 ```
 
-Copy the returned `database_id` into `wrangler.toml` under `[[d1_databases]]`.
+Copy the returned `database_id` into `wrangler.toml`.
 
 ## 2) Apply Schema
 
@@ -20,48 +22,50 @@ Copy the returned `database_id` into `wrangler.toml` under `[[d1_databases]]`.
 npx wrangler d1 execute linksim --file ./db/schema.sql
 ```
 
-## 3) Create Clerk App
+## 3) Configure Cloudflare Access
 
-In Clerk dashboard:
+In Cloudflare Zero Trust:
 
-1. Create application
-2. Enable passkeys in sign-in methods
-3. Disable password/email magic link methods if you want passkey-only
-4. Copy:
-   - Publishable key (`pk_...`)
-   - Issuer / frontend API domain (`https://<your-clerk-domain>`)
+1. Go to **Access** → **Applications**
+2. Add application protecting your Pages app domain
+3. Set login method policy (passkeys/IdP as desired)
+4. In application settings, find the **AUD** tag
+5. Note your team domain (example: `your-team.cloudflareaccess.com`)
 
-## 4) Configure Cloudflare Variables
+## 4) Configure Pages Environment Variables
 
-### Pages Project → Settings → Environment variables
+In Pages project env vars (Production + Preview):
 
-- `VITE_CLERK_PUBLISHABLE_KEY` = Clerk publishable key
-- `CLERK_JWT_ISSUER` = `https://<your-clerk-domain>`
-- Optional: `CLERK_JWKS_URL` = `https://<your-clerk-domain>/.well-known/jwks.json`
-- Optional strict template audience: `CLERK_JWT_AUDIENCE`
+- `ACCESS_TEAM_DOMAIN` = your team domain (without `https://`)
+- `ACCESS_AUD` = Access app AUD tag
 
-### Local development (.env)
+Do not enable local dev fallback vars in production.
 
-Create `.env` from `.env.example` and set:
+## 5) D1 Binding in Pages
+
+Pages project → Settings → Functions → D1 bindings:
+
+- Binding: `DB`
+- Database: `linksim`
+
+## 6) Deploy
+
+Deploy from this repo. Pages Functions under `functions/api/*` deploy automatically.
+
+## 7) Verify
+
+- Access protects app URL (unauth users blocked/challenged)
+- Open app, go to `More` → `Cloud Auth & Sync`
+- Trigger `Sync From Cloud`
+- Create/edit site/simulation and confirm cloud sync status updates
+
+## Local Development
+
+For local dev without Access edge, you can use insecure fallback in `.dev.vars`:
 
 ```bash
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+ALLOW_INSECURE_DEV_AUTH=true
+DEV_AUTH_USER_ID=local-dev-user@example.com
 ```
 
-## 5) Deploy
-
-Use Cloudflare Pages deployment for this repo. The `/functions/api/*` routes are deployed automatically.
-
-## 6) Verify
-
-- Open app
-- Go to `More` → `Cloud Auth & Sync`
-- Sign in with passkey
-- Create/edit a site or simulation
-- Confirm cloud sync status updates
-
-## Security Notes
-
-- Passkeys handle authentication; authorization is still enforced by API + D1 ACL tables.
-- Ownership and sharing metadata are persisted per resource.
-- API requires Bearer token and verifies Clerk JWT issuer/JWKS.
+This is for local testing only.
