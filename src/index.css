@@ -109,6 +109,16 @@ input {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.access-locked-shell {
+  grid-template-columns: minmax(320px, 560px);
+  justify-content: center;
+  align-content: start;
+}
+
+.access-locked-panel {
+  margin-top: 28px;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;

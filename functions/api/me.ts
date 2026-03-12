@@ -39,6 +39,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
       username?: unknown;
       email?: unknown;
       bio?: unknown;
+      accessRequestNote?: unknown;
       avatarUrl?: unknown;
     };
     const user = await updateUserProfile(env, auth.userId, body);

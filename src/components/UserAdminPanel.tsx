@@ -54,6 +54,7 @@ export function UserAdminPanel() {
   const [nameDraft, setNameDraft] = useState("");
   const [emailDraft, setEmailDraft] = useState("");
   const [bioDraft, setBioDraft] = useState("");
+  const [accessRequestNoteDraft, setAccessRequestNoteDraft] = useState("");
   const [avatarDraft, setAvatarDraft] = useState("");
 
   const canAdmin = Boolean(me?.isAdmin);
@@ -67,6 +68,7 @@ export function UserAdminPanel() {
       setNameDraft(current.username);
       setEmailDraft(current.email ?? "");
       setBioDraft(current.bio ?? "");
+      setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       if (current.isAdmin) {
         const all = await fetchUsers();
@@ -96,6 +98,7 @@ export function UserAdminPanel() {
         username: nameDraft,
         email: emailDraft,
         bio: bioDraft,
+        accessRequestNote: accessRequestNoteDraft,
         avatarUrl: avatarDraft,
       });
       setMe(updated);
@@ -225,6 +228,15 @@ export function UserAdminPanel() {
                   <span>Bio</span>
                   <textarea maxLength={300} onChange={(event) => setBioDraft(event.target.value)} value={bioDraft} />
                 </label>
+                <label className="field-grid user-bio-field user-field-grid">
+                  <span>Access request note</span>
+                  <textarea
+                    maxLength={1200}
+                    onChange={(event) => setAccessRequestNoteDraft(event.target.value)}
+                    placeholder="Optional private note to admins."
+                    value={accessRequestNoteDraft}
+                  />
+                </label>
                 <div className="chip-group">
                   <button
                     className="inline-action"
@@ -289,6 +301,7 @@ function ManagedUserRow({
       <div className="field-help">
         {user.id} | created {fmtDate(user.createdAt)} | access {user.isApproved ? "approved" : "pending"}
       </div>
+      {user.accessRequestNote ? <p className="field-help">Request: {user.accessRequestNote}</p> : null}
       <label className="field-grid user-field-grid">
         <span>Name</span>
         <input onChange={(event) => setNameDraft(event.target.value)} type="text" value={nameDraft} />

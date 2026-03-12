@@ -3,6 +3,7 @@ export type CloudUser = {
   username: string;
   email?: string;
   bio: string;
+  accessRequestNote?: string;
   avatarUrl: string;
   isAdmin: boolean;
   isApproved: boolean;
@@ -51,6 +52,7 @@ export const updateMyProfile = async (patch: {
   username?: string;
   email?: string;
   bio?: string;
+  accessRequestNote?: string;
   avatarUrl?: string;
 }): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>("/api/me", {
@@ -83,7 +85,13 @@ export const updateUserApproval = async (id: string, isApproved: boolean): Promi
 
 export const updateUserProfile = async (
   id: string,
-  patch: { username?: string; email?: string; bio?: string; avatarUrl?: string },
+  patch: {
+    username?: string;
+    email?: string;
+    bio?: string;
+    accessRequestNote?: string;
+    avatarUrl?: string;
+  },
 ): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>(`/api/users/${encodeURIComponent(id)}`, {
     method: "PATCH",

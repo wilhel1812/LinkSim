@@ -50,6 +50,12 @@ const sanitizeBio = (value: unknown): string | null => {
   return bio.length <= 300 ? bio : bio.slice(0, 300);
 };
 
+const sanitizeAccessRequestNote = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const note = value.trim();
+  return note.length <= 1200 ? note : note.slice(0, 1200);
+};
+
 const sanitizeAvatar = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const raw = value.trim();
@@ -111,6 +117,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
             username TEXT,
             email TEXT,
             bio TEXT,
+            access_request_note TEXT,
             avatar_url TEXT,
             is_admin INTEGER NOT NULL DEFAULT 0,
             is_approved INTEGER NOT NULL DEFAULT 0,
@@ -198,6 +205,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
         !userNames.has("username") ? "ALTER TABLE users ADD COLUMN username TEXT" : "",
         !userNames.has("email") ? "ALTER TABLE users ADD COLUMN email TEXT" : "",
         !userNames.has("bio") ? "ALTER TABLE users ADD COLUMN bio TEXT" : "",
+        !userNames.has("access_request_note") ? "ALTER TABLE users ADD COLUMN access_request_note TEXT" : "",
         !userNames.has("avatar_url") ? "ALTER TABLE users ADD COLUMN avatar_url TEXT" : "",
         !userNames.has("is_admin") ? "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0" : "",
         !userNames.has("is_approved") ? "ALTER TABLE users ADD COLUMN is_approved INTEGER NOT NULL DEFAULT 0" : "",
@@ -239,6 +247,7 @@ type UserRow = {
   username: string | null;
   email: string | null;
   bio: string | null;
+  access_request_note: string | null;
   avatar_url: string | null;
   is_admin: number;
   is_approved: number;
@@ -253,6 +262,7 @@ const toUserProfile = (row: UserRow) => ({
   username: sanitizeName(row.username) ?? "User",
   email: sanitizeEmail(row.email) ?? "unknown@users.linksim.local",
   bio: row.bio ?? "",
+  accessRequestNote: row.access_request_note ?? "",
   avatarUrl: row.avatar_url ?? "",
   isAdmin: row.is_admin === 1,
   isApproved: row.is_approved === 1,
@@ -266,7 +276,7 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, bio, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, bio, access_request_note, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
@@ -278,7 +288,7 @@ const reconcileUserIdentityByEmail = async (env: Env, userId: string, email: str
 
   const existing = await env.DB
     .prepare(
-      `SELECT id, username, email, bio, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at
+      `SELECT id, username, email, bio, access_request_note, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at
        FROM users
        WHERE lower(email) = lower(?) AND id <> ?
        ORDER BY is_admin DESC, is_approved DESC, created_at ASC
@@ -348,8 +358,8 @@ export const ensureUser = async (
 
   await env.DB.prepare(
     `INSERT OR IGNORE INTO users
-      (id, username, email, bio, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
-     VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, ?)`,
+      (id, username, email, bio, access_request_note, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, '', '', '', ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       userId,
@@ -409,7 +419,13 @@ export const assertUserAccess = async (env: Env, userId: string) => {
 export const updateUserProfile = async (
   env: Env,
   userId: string,
-  patch: { username?: unknown; email?: unknown; bio?: unknown; avatarUrl?: unknown },
+  patch: {
+    username?: unknown;
+    email?: unknown;
+    bio?: unknown;
+    accessRequestNote?: unknown;
+    avatarUrl?: unknown;
+  },
 ) => {
   const existing = await readUserRow(env, userId);
   if (!existing) throw new Error("User not found.");
@@ -417,6 +433,10 @@ export const updateUserProfile = async (
   const nextName = patch.username === undefined ? sanitizeName(existing.username) : sanitizeName(patch.username);
   const nextEmail = patch.email === undefined ? sanitizeEmail(existing.email) : sanitizeEmail(patch.email);
   const nextBio = patch.bio === undefined ? existing.bio ?? "" : sanitizeBio(patch.bio) ?? "";
+  const nextAccessRequestNote =
+    patch.accessRequestNote === undefined
+      ? existing.access_request_note ?? ""
+      : sanitizeAccessRequestNote(patch.accessRequestNote) ?? "";
   const nextAvatar = patch.avatarUrl === undefined ? existing.avatar_url ?? "" : sanitizeAvatar(patch.avatarUrl);
 
   if (!nextName) throw new Error("Name is required (2-80 chars).");
@@ -425,10 +445,18 @@ export const updateUserProfile = async (
 
   await env.DB.prepare(
     `UPDATE users
-     SET username = ?, email = ?, bio = ?, avatar_url = ?, updated_at = ?
+     SET username = ?, email = ?, bio = ?, access_request_note = ?, avatar_url = ?, updated_at = ?
      WHERE id = ?`,
   )
-    .bind(nextName, nextEmail, nextBio, nextAvatar ?? "", new Date().toISOString(), userId)
+    .bind(
+      nextName,
+      nextEmail,
+      nextBio,
+      nextAccessRequestNote,
+      nextAvatar ?? "",
+      new Date().toISOString(),
+      userId,
+    )
     .run();
 
   const profile = await fetchUserProfile(env, userId);
@@ -440,7 +468,7 @@ export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, bio, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, bio, access_request_note, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map(toUserProfile);

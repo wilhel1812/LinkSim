@@ -73,6 +73,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       username?: unknown;
       email?: unknown;
       bio?: unknown;
+      accessRequestNote?: unknown;
       avatarUrl?: unknown;
       isAdmin?: unknown;
       isApproved?: unknown;
@@ -89,12 +90,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       body.username !== undefined ||
       body.email !== undefined ||
       body.bio !== undefined ||
+      body.accessRequestNote !== undefined ||
       body.avatarUrl !== undefined
     ) {
       user = await updateUserProfile(env, targetId, {
         username: body.username,
         email: body.email,
         bio: body.bio,
+        accessRequestNote: body.accessRequestNote,
         avatarUrl: body.avatarUrl,
       });
     }
