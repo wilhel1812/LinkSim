@@ -212,11 +212,7 @@ const getSnapshotCount = (key: string): number => {
   }
 };
 
-type SidebarProps = {
-  onOpenOnboarding?: () => void;
-};
-
-export function Sidebar({ onOpenOnboarding }: SidebarProps) {
+export function Sidebar() {
   const theme = useSystemTheme();
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
@@ -500,7 +496,7 @@ export function Sidebar({ onOpenOnboarding }: SidebarProps) {
     }
     const scenarioId = selectedSimulationRef.replace("builtin:", "");
     const scenario = scenarioOptions.find((candidate) => candidate.id === scenarioId);
-    return scenario ? `${scenario.name} (built-in)` : "Built-in simulation";
+    return scenario ? `${scenario.name} (demo starter)` : "Demo starter simulation";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
   const collaboratorDirectoryById = useMemo(
     () => new globalThis.Map(resourceCollaboratorDirectory.map((user) => [user.id, user])),
@@ -1359,7 +1355,7 @@ export function Sidebar({ onOpenOnboarding }: SidebarProps) {
       <section className="panel-section section-scenario">
         <div className="section-heading">
           <h2>Scenario</h2>
-          <InfoTip text="Built-in simulations are fixed. Saved simulations are your editable full-simulation states." />
+          <InfoTip text="Demo starter scenarios are examples only, not real project scenarios. Saved simulations are your real editable working states." />
         </div>
         <p className="field-help">
           Active: <strong>{activeSimulationLabel}</strong>
@@ -1917,11 +1913,6 @@ export function Sidebar({ onOpenOnboarding }: SidebarProps) {
             <p className="field-help">Cloud Sync</p>
             <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />
           </div>
-          <div className="chip-group">
-            <button className="inline-action" onClick={onOpenOnboarding} type="button">
-              Open Onboarding
-            </button>
-          </div>
           <AuthSyncPanel />
           <div className="section-heading">
             <p className="field-help">Local Storage Safety</p>
@@ -1973,6 +1964,9 @@ export function Sidebar({ onOpenOnboarding }: SidebarProps) {
           </label>
           <p className="field-help">References and external resources:</p>
           <div className="asset-list">
+            <a href="https://github.com/wilhel1812/LinkSim/issues/new/choose" rel="noreferrer" target="_blank">
+              Feedback / Suggestions (GitHub Issues)
+            </a>
             <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/rf-models-and-sampling.md" rel="noreferrer" target="_blank">
               RF Models & Sampling Guide
             </a>
@@ -2245,14 +2239,15 @@ export function Sidebar({ onOpenOnboarding }: SidebarProps) {
               </button>
             </div>
             <p className="field-help">
-              Manage built-in presets and saved simulations here. Site/node editing still happens in the main
+              Manage demo starter scenarios and saved simulations here. Demo starters are examples only, not real
+              project scenarios. Site/node editing still happens in the main
               workspace.
             </p>
             <label className="field-grid">
               <span>Search</span>
               <input
                 onChange={(event) => setSimulationLibraryQuery(event.target.value)}
-                placeholder="Filter built-in + saved simulations"
+                placeholder="Filter demo starters + saved simulations"
                 type="text"
                 value={simulationLibraryQuery}
               />
@@ -2273,12 +2268,12 @@ export function Sidebar({ onOpenOnboarding }: SidebarProps) {
             </div>
             {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
             <div className="library-editor">
-              <h3>Built-in simulations</h3>
+              <h3>Demo starter scenarios (examples)</h3>
               <div className="library-manager-list">
                 {filteredBuiltinScenarios.map((scenario) => (
                   <div className="library-manager-row simulation-manager-row" key={scenario.id}>
                     <span className="library-row-label">
-                      <strong>{scenario.name}</strong> {" · "}Built-in
+                      <strong>{scenario.name}</strong> {" · "}Demo starter
                     </span>
                     <div className="library-row-actions">
                       <button
@@ -2291,7 +2286,7 @@ export function Sidebar({ onOpenOnboarding }: SidebarProps) {
                     </div>
                   </div>
                 ))}
-                {!filteredBuiltinScenarios.length ? <p className="field-help">No matching built-in simulations.</p> : null}
+                {!filteredBuiltinScenarios.length ? <p className="field-help">No matching demo starter scenarios.</p> : null}
               </div>
             </div>
             <div className="library-editor">

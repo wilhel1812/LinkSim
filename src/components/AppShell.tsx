@@ -93,6 +93,14 @@ export function AppShell() {
             <li>Wait for moderator/admin approval. You will keep profile access while pending.</li>
           </ul>
         </section>
+        <button
+          aria-label="Open onboarding"
+          className="floating-help-button"
+          onClick={() => setShowOnboarding(true)}
+          type="button"
+        >
+          ?
+        </button>
         <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
       </main>
     );
@@ -115,6 +123,14 @@ export function AppShell() {
             </button>
           </div>
         </section>
+        <button
+          aria-label="Open onboarding"
+          className="floating-help-button"
+          onClick={() => setShowOnboarding(true)}
+          type="button"
+        >
+          ?
+        </button>
         <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
       </main>
     );
@@ -122,11 +138,19 @@ export function AppShell() {
 
   return (
     <main className={`app-shell ${isMapExpanded ? "is-map-expanded" : ""}`}>
-      {!isMapExpanded ? <Sidebar onOpenOnboarding={() => setShowOnboarding(true)} /> : null}
+      {!isMapExpanded ? <Sidebar /> : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""}`}>
         <MapView isMapExpanded={isMapExpanded} onToggleMapExpanded={() => setIsMapExpanded((prev) => !prev)} />
         {!isMapExpanded ? <LinkProfileChart /> : null}
       </section>
+      <button
+        aria-label="Open onboarding"
+        className="floating-help-button"
+        onClick={() => setShowOnboarding(true)}
+        type="button"
+      >
+        ?
+      </button>
       <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
     </main>
   );

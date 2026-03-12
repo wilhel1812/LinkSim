@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import onboardingMarkdown from "../../docs/onboarding.md?raw";
 import { ModalOverlay } from "./ModalOverlay";
 
@@ -6,6 +7,8 @@ type OnboardingTutorialModalProps = {
   open: boolean;
   onClose: () => void;
 };
+
+const FEEDBACK_ISSUES_URL = "https://github.com/wilhel1812/LinkSim/issues/new/choose";
 
 export function OnboardingTutorialModal({ open, onClose }: OnboardingTutorialModalProps) {
   if (!open) return null;
@@ -21,7 +24,12 @@ export function OnboardingTutorialModal({ open, onClose }: OnboardingTutorialMod
           </div>
         </div>
         <div className="tutorial-markdown">
-          <ReactMarkdown>{onboardingMarkdown}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{onboardingMarkdown}</ReactMarkdown>
+        </div>
+        <div className="tutorial-report-cta">
+          <a className="inline-action tutorial-report-button" href={FEEDBACK_ISSUES_URL} rel="noreferrer" target="_blank">
+            Report Issue or Suggestion
+          </a>
         </div>
       </div>
     </ModalOverlay>

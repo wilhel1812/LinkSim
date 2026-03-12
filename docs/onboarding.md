@@ -1,36 +1,52 @@
 # LinkSim Onboarding
 
-## 1. Scenarios
-- A **simulation** is your working setup: selected sites, links, and radio/model settings.
+## Scenarios
+- A **simulation** is a complete setup of sites, links, and radio/model settings.
 - Open an existing simulation from **Simulation Library** or create a new one.
 - Use clear names so teammates can find simulations quickly.
 
-## 2. Sites
+## Sites
 - Sites are physical node locations with coordinates, ground elevation, and antenna height.
 - Manage your reusable site collection in **Site Library**.
-- Add sites by coordinates, map pick, search, or Meshtastic sources.
+- Add sites by coordinates, map pick, search, or Meshtastic MQTT sources.
 - Add sites from the library into the current simulation as needed.
+- Both sites and simulations can be shared with other users.
 
-## 3. Links
+## Links
 - A link is a **From -> To** path between two sites used for path analysis.
 - Links let you compare multiple candidate paths in one simulation.
 - Start with the two sites you care about most, then add relay candidate links.
 
-## 4. Other Settings
+## Other Settings
 - **Channel**: frequency, bandwidth, SF, coding rate, TX power, gains, cable loss.
 - **Propagation model**: FSPL, TwoRay, or ITM (terrain-aware approximation).
 - **Terrain**: fetch and refresh terrain before relying on pass/fail decisions.
 - **RX target**: your decision threshold; pass/fail is based on this target.
 
-## 5. Map and Plots
-- The map shows channel/coverage overlays for the selected simulation and link.
-- Use map controls to fit, inspect terrain, and switch visualization modes.
-- The **path profile** shows terrain, LOS/Fresnel context, and endpoint relationship.
-- Use overlays to find potential relay positions and validate route quality.
+## Map and Plots
+- The map can display several plot/overlay modes. Use them for different questions:
 
-## 6. User Rights and Permissions
+| Plot / Overlay | What it shows | What to use it for |
+| --- | --- | --- |
+| Heatmap | Continuous RX strength estimate (dBm) across sampled area | Quick quality overview and hotspot discovery |
+| Bands (Contours) | Stepped strength zones (same RX model as heatmap, grouped levels) | Fast threshold-oriented planning and area segmentation |
+| Pass/Fail | Binary result against current RX target | Clear go/no-go checks for deployment decisions |
+| Relay | Best relay-candidate regions for selected From/To pair | Find where a third node could bridge weak links |
+| Terrain overlay | Terrain raster used by simulation in current area | Confirm what elevation input the model is actually using |
+| Path profile | Elevation profile + link geometry between selected endpoints | Validate LOS/Fresnel context and understand obstructions |
+
+- Practical workflow:
+  1. Start with **Pass/Fail** for decision clarity.
+  2. Switch to **Heatmap/Bands** for quality gradients.
+  3. Use **Relay** to locate candidate repeater sites.
+  4. Confirm terrain and inspect **Path profile** before finalizing.
+
+## User Rights and Permissions
 - User roles: **Pending**, **User**, **Moderator**, **Admin**.
-- Resource visibility: **Private**, **Public**, **Shared**.
+- Resource visibility:
+  - **Private**: only owner/admin can view and edit.
+  - **Public**: everyone can view; owner/moderator/admin can edit.
+  - **Shared**: everyone can view and edit; only owner/moderator/admin can delete.
 - Collaborators grant edit rights on a site or simulation.
 - Moderation/admin actions are audited; use least privilege where possible.
 
