@@ -23,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("pending approval") ? 403 : 500;
+    const status = message.includes("pending approval") || message.includes("removed by admin") ? 403 : 500;
     return withCors(request, json({ error: message }, { status }));
   }
 };
@@ -53,7 +53,10 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("pending approval") ? 403 : 400;
+    const status =
+      message.includes("pending approval") || message.includes("removed by admin")
+        ? 403
+        : 400;
     return withCors(request, json({ error: message }, { status }));
   }
 };

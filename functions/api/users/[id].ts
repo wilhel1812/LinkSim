@@ -51,7 +51,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     return withCors(request, json({ user }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("pending approval") ? 403 : 500;
+    const status = message.includes("pending approval") || message.includes("removed by admin") ? 403 : 500;
     return withCors(request, json({ error: message }, { status }));
   }
 };
@@ -118,7 +118,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const status =
       message.includes("required") || message.includes("valid")
         ? 400
-        : message.includes("pending approval")
+        : message.includes("pending approval") || message.includes("removed by admin")
           ? 403
           : 500;
     return withCors(request, json({ error: message }, { status }));
@@ -142,11 +142,11 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
       return withCors(request, json({ error: "Admin cannot delete own account." }, { status: 400 }));
     }
 
-    await deleteUser(env, targetId);
+    await deleteUser(env, targetId, auth.userId);
     return withCors(request, json({ ok: true }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("pending approval") ? 403 : 500;
+    const status = message.includes("pending approval") || message.includes("removed by admin") ? 403 : 500;
     return withCors(request, json({ error: message }, { status }));
   }
 };

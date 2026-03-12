@@ -135,6 +135,13 @@ const ensureSchema = async (env: Env): Promise<void> => {
           )`,
         ),
         env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS deleted_users (
+            id TEXT PRIMARY KEY,
+            deleted_at TEXT NOT NULL,
+            deleted_by_user_id TEXT
+          )`,
+        ),
+        env.DB.prepare(
           `CREATE TABLE IF NOT EXISTS sites (
             id TEXT PRIMARY KEY,
             owner_user_id TEXT NOT NULL,
@@ -369,6 +376,10 @@ export const ensureUser = async (
   tokenPayload?: Record<string, unknown>,
 ): Promise<void> => {
   await ensureSchema(env);
+  const deleted = await env.DB.prepare("SELECT id FROM deleted_users WHERE id = ? LIMIT 1").bind(userId).first<{ id: string }>();
+  if (deleted?.id) {
+    throw new Error("Account removed by admin");
+  }
   const now = new Date().toISOString();
   const username = deriveDefaultName(userId, tokenPayload);
   const email = deriveDefaultEmail(userId, tokenPayload);
@@ -539,9 +550,19 @@ export const setUserApproval = async (
   return profile;
 };
 
-export const deleteUser = async (env: Env, userId: string): Promise<void> => {
+export const deleteUser = async (env: Env, userId: string, actorUserId?: string): Promise<void> => {
   await ensureSchema(env);
-  await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId).run();
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB
+      .prepare(
+        `INSERT INTO deleted_users (id, deleted_at, deleted_by_user_id)
+         VALUES (?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET deleted_at = excluded.deleted_at, deleted_by_user_id = excluded.deleted_by_user_id`,
+      )
+      .bind(userId, now, actorUserId ?? null),
+    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
+  ]);
 };
 
 export const listPendingApprovalUsers = async (

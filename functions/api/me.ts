@@ -24,7 +24,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return withCors(request, json({ error: message }, { status: 401 }));
+    const status = message.includes("removed by admin")
+      ? 403
+      : message.includes("pending approval")
+        ? 403
+        : 401;
+    return withCors(request, json({ error: message }, { status }));
   }
 };
 
@@ -46,7 +51,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
     return withCors(request, json({ user }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("required") || message.includes("valid") ? 400 : 500;
+    const status =
+      message.includes("removed by admin") || message.includes("pending approval")
+        ? 403
+        : message.includes("required") || message.includes("valid")
+          ? 400
+          : 500;
     return withCors(request, json({ error: message }, { status }));
   }
 };

@@ -12,7 +12,7 @@ export function AppShell() {
     (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
   const [isMapExpanded, setIsMapExpanded] = useState(false);
-  const [accessState, setAccessState] = useState<"checking" | "granted" | "pending">("checking");
+  const [accessState, setAccessState] = useState<"checking" | "granted" | "pending" | "locked">("checking");
 
   useEffect(() => {
     if (srtmTilesCount > 0) return;
@@ -25,10 +25,20 @@ export function AppShell() {
         const me = await fetchMe();
         setAccessState(me.isAdmin || me.isApproved ? "granted" : "pending");
       } catch {
-        setAccessState("granted");
+        setAccessState("locked");
       }
     })();
   }, []);
+
+  if (accessState === "checking") {
+    return (
+      <main className="app-shell access-locked-shell">
+        <section className="panel-section access-locked-panel">
+          <h2>Checking access…</h2>
+        </section>
+      </main>
+    );
+  }
 
   if (accessState === "pending") {
     return (
@@ -46,6 +56,27 @@ export function AppShell() {
             <li>Add an access request note so admins know why you need access.</li>
             <li>Wait for admin approval. You will keep profile access while pending.</li>
           </ul>
+        </section>
+      </main>
+    );
+  }
+
+  if (accessState === "locked") {
+    return (
+      <main className="app-shell access-locked-shell">
+        <section className="panel-section access-locked-panel">
+          <h2>Access unavailable</h2>
+          <p className="field-help">
+            Your account session is valid, but this account is not available in LinkSim right now.
+          </p>
+          <p className="field-help">
+            If your user was removed by an admin, ask for re-approval. Then sign out and sign in again.
+          </p>
+          <div className="chip-group">
+            <button className="inline-action" onClick={() => (window.location.href = "/cdn-cgi/access/logout")} type="button">
+              Sign Out
+            </button>
+          </div>
         </section>
       </main>
     );
