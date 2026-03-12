@@ -445,6 +445,16 @@ export function Sidebar() {
       return hay.includes(q);
     });
   }, [siteLibrary, siteLibraryQuery]);
+  const newestSiteLibraryEntryId = useMemo(() => {
+    if (!siteLibrary.length) return "";
+    const parseTs = (value: string): number => {
+      const ts = Date.parse(value);
+      return Number.isFinite(ts) ? ts : 0;
+    };
+    return siteLibrary
+      .slice()
+      .sort((a, b) => parseTs(b.createdAt) - parseTs(a.createdAt))[0]?.id ?? siteLibrary[0].id;
+  }, [siteLibrary]);
   const filteredSimulationPresets = useMemo(() => {
     const q = simulationLibraryQuery.trim().toLowerCase();
     if (!q) return simulationPresets;
@@ -1222,23 +1232,26 @@ export function Sidebar() {
           <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
             Open Site Library
           </button>
-          {siteLibrary.length ? (
-            <button className="inline-action" onClick={() => insertSiteFromLibrary(siteLibrary[0].id)} type="button">
+          {newestSiteLibraryEntryId ? (
+            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
               Insert Newest
             </button>
           ) : null}
         </div>
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
         <p className="field-help">Current sites in this simulation:</p>
-        <div className="chip-group">
+        <div className="site-list">
           {sites.map((site) => (
             <button
-              className={clsx("chip-button", selectedSiteId === site.id && "is-selected")}
+              className={clsx("site-row", selectedSiteId === site.id && "is-selected")}
               key={site.id}
               onClick={() => setSelectedSiteId(site.id)}
               type="button"
             >
-              {site.name}
+              <span>{site.name}</span>
+              <span className="site-row-meta">
+                {site.position.lat.toFixed(4)}, {site.position.lon.toFixed(4)}
+              </span>
             </button>
           ))}
         </div>
