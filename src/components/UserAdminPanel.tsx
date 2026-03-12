@@ -440,7 +440,14 @@ export function UserAdminPanel() {
                 </label>
                 <p className="field-help">ID: {me?.id ?? "-"}</p>
                 <p className="field-help">Role: {me?.isAdmin ? "Admin" : "User"}</p>
-                <p className="field-help">Access: {me?.isApproved ? "Approved" : "Pending approval"}</p>
+                <p className="field-help">
+                  Access:{" "}
+                  {me?.accountState === "revoked"
+                    ? "Revoked"
+                    : me?.isApproved
+                      ? "Approved"
+                      : "Pending approval"}
+                </p>
                 <p className="field-help">Created: {fmtDate(me?.createdAt)}</p>
               </div>
 
@@ -657,8 +664,13 @@ export function UserAdminPanel() {
                       </p>
                       <p className="field-help">Created: {fmtDate(managedUser.createdAt)}</p>
                       <p className="field-help">
-                        Access: {managedUser.isApproved ? "Approved" : "Pending"} | Role:{" "}
-                        {managedUser.isAdmin ? "Admin" : "User"}
+                        Access:{" "}
+                        {managedUser.accountState === "revoked"
+                          ? "Revoked"
+                          : managedUser.isApproved
+                            ? "Approved"
+                            : "Pending"}{" "}
+                        | Role: {managedUser.isAdmin ? "Admin" : "User"}
                       </p>
                     </div>
                   </div>

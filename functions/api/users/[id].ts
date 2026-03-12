@@ -1,5 +1,10 @@
 import { verifyAuth } from "../../_lib/auth";
 import {
+  canDeleteUserAccount,
+  canUpdateUserApproval,
+  canUpdateUserRole,
+} from "../../_lib/access";
+import {
   assertUserAccess,
   deleteUser,
   ensureUser,
@@ -101,12 +106,15 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       });
     }
     if (body.isAdmin !== undefined) {
-      if (targetId === auth.userId) {
+      if (!canUpdateUserRole(me, targetId)) {
         return withCors(request, json({ error: "Users cannot change their own admin role." }, { status: 400 }));
       }
       user = await setUserAdminFlag(env, targetId, body.isAdmin);
     }
     if (body.isApproved !== undefined) {
+      if (!canUpdateUserApproval(me, targetId)) {
+        return withCors(request, json({ error: "Users cannot change their own approval state." }, { status: 400 }));
+      }
       user = await setUserApproval(env, targetId, body.isApproved, auth.userId);
     }
 
@@ -129,7 +137,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
 
     const targetId = typeof params.id === "string" ? params.id : "";
     if (!targetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
-    if (targetId === auth.userId) {
+    if (!canDeleteUserAccount(me, targetId)) {
       return withCors(request, json({ error: "Admin cannot delete own account." }, { status: 400 }));
     }
 

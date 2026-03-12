@@ -40,6 +40,7 @@ export const handleOptions = (request: Request): Response =>
 export const normalizeApiErrorMessage = (message: string): string => {
   const lower = message.toLowerCase();
   if (lower.includes("session revoked by admin")) return "Session revoked by admin.";
+  if (lower.includes("access revoked by admin")) return "Account access revoked by admin.";
   if (lower.includes("pending approval")) return "Account pending approval.";
   if (lower.includes("unauthorized")) return "Unauthorized.";
   if (lower.includes("forbidden")) return "Forbidden.";
@@ -54,6 +55,7 @@ export const statusFromErrorMessage = (message: string, fallback = 500): number 
   const lower = message.toLowerCase();
   if (lower.includes("schema out of date")) return 503;
   if (lower.includes("session revoked by admin")) return 401;
+  if (lower.includes("access revoked by admin")) return 403;
   if (lower.includes("unauthorized")) return 401;
   if (lower.includes("pending approval")) return 403;
   if (lower.includes("forbidden")) return 403;

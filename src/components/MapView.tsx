@@ -742,6 +742,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const selectedProfile = getSelectedProfile();
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
+  const [showTerrainOverlay, setShowTerrainOverlay] = useState(true);
   const [showSimulationSummary, setShowSimulationSummary] = useState(true);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [interactionViewState, setInteractionViewState] = useState<{
@@ -1015,6 +1016,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           Fit
         </button>
         <button
+          className={`map-control-btn ${showTerrainOverlay ? "is-selected" : ""}`}
+          onClick={() => setShowTerrainOverlay((current) => !current)}
+          title="Toggle terrain overlay (visual only)"
+          type="button"
+        >
+          Terrain
+        </button>
+        <button
           className={`map-control-btn ${coverageVizMode === "heatmap" ? "is-selected" : ""}`}
           onClick={() => setCoverageVizMode("heatmap")}
           title="Coverage as continuous heatmap"
@@ -1139,6 +1148,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             <p>
               Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
             </p>
+            <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
             {coverageVizMode === "contours" ? <p>Band step: {currentBandStepDb} dB ({bandStepMode})</p> : null}
             {coverageVizMode === "passfail" ? (
               <p>Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter)</p>
@@ -1173,7 +1183,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         }
         onMoveEnd={onMoveEnd}
       >
-        {simulationTerrainOverlay ? (
+        {showTerrainOverlay && simulationTerrainOverlay ? (
           <Source
             coordinates={simulationTerrainOverlay.coordinates}
             id="terrain-overlay-source"

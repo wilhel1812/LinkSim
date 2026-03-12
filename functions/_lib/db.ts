@@ -4,7 +4,8 @@ const VISIBILITIES: Visibility[] = ["private", "public_read", "public_write"];
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
-const SCHEMA_VERSION = "2026-03-12";
+const SCHEMA_VERSION = "2026-03-12b";
+type AccountState = "pending" | "approved" | "revoked";
 
 const sanitizeVisibility = (value: unknown): Visibility =>
   typeof value === "string" && VISIBILITIES.includes(value as Visibility)
@@ -169,6 +170,16 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
   site_roles: ["site_id", "user_id", "role", "created_at"],
   simulation_roles: ["simulation_id", "user_id", "role", "created_at"],
   resource_changes: ["id", "resource_kind", "resource_id", "action", "actor_user_id", "changed_at", "note"],
+  user_identity_audit: [
+    "id",
+    "event_type",
+    "target_user_id",
+    "source_user_id",
+    "actor_user_id",
+    "idp_email",
+    "details_json",
+    "created_at",
+  ],
 };
 
 export const getSchemaDiagnostics = async (env: Env): Promise<{
@@ -278,6 +289,18 @@ const ensureSchema = async (env: Env): Promise<void> => {
             note TEXT
           )`,
         ),
+        env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS user_identity_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            target_user_id TEXT NOT NULL,
+            source_user_id TEXT,
+            actor_user_id TEXT,
+            idp_email TEXT,
+            details_json TEXT,
+            created_at TEXT NOT NULL
+          )`,
+        ),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sites_owner ON sites(owner_user_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sites_visibility ON sites(visibility)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_site_roles_user ON site_roles(user_id)"),
@@ -285,6 +308,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulations_visibility ON simulations(visibility)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulation_roles_user ON simulation_roles(user_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_identity_audit_target ON user_identity_audit(target_user_id, created_at DESC)"),
       ]);
 
       const diagnostics = await getSchemaDiagnostics(env);
@@ -327,6 +351,12 @@ const toUserProfile = (row: UserRow) => ({
   avatarUrl: row.avatar_url ?? "",
   isAdmin: row.is_admin === 1,
   isApproved: row.is_approved === 1,
+  accountState:
+    row.is_admin === 1 || row.is_approved === 1
+      ? ("approved" as AccountState)
+      : row.approved_at || row.approved_by_user_id
+        ? ("revoked" as AccountState)
+        : ("pending" as AccountState),
   approvedAt: row.approved_at,
   approvedByUserId: row.approved_by_user_id,
   createdAt: row.created_at,
@@ -407,6 +437,27 @@ const reconcileUserIdentityByIdpEmail = async (
     env.DB.prepare("UPDATE simulation_roles SET user_id = ? WHERE user_id = ?").bind(userId, existing.id),
     env.DB.prepare("UPDATE resource_changes SET actor_user_id = ? WHERE actor_user_id = ?").bind(userId, existing.id),
   ]);
+
+  await env.DB
+    .prepare(
+      `INSERT INTO user_identity_audit
+       (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      "reconciled_by_verified_idp_email",
+      userId,
+      existing.id,
+      userId,
+      normalized,
+      JSON.stringify({
+        mergedFromUserId: existing.id,
+        mergedFromIsAdmin: existing.is_admin === 1,
+        mergedFromIsApproved: existing.is_approved === 1,
+      }),
+      now,
+    )
+    .run();
 };
 
 export const ensureUser = async (
@@ -498,7 +549,10 @@ export const fetchUserProfile = async (env: Env, userId: string) => {
 export const assertUserAccess = async (env: Env, userId: string) => {
   const user = await fetchUserProfile(env, userId);
   if (!user) throw new Error("Unauthorized");
-  if (!user.isApproved && !user.isAdmin) {
+  if (user.accountState === "revoked") {
+    throw new Error("Account access revoked by admin");
+  }
+  if (user.accountState !== "approved") {
     throw new Error("Account pending approval");
   }
   return user;
@@ -585,8 +639,8 @@ export const setUserApproval = async (
     .prepare(
       `UPDATE users
        SET is_approved = ?,
-           approved_at = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-           approved_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+           approved_at = CASE WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
+           approved_by_user_id = CASE WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?) ELSE approved_by_user_id END,
            updated_at = ?
        WHERE id = ?`,
     )
@@ -649,7 +703,7 @@ export const listPendingApprovalUsers = async (
     .prepare(
       `SELECT id, username, email, created_at, access_request_note
        FROM users
-       WHERE is_approved = 0
+       WHERE is_approved = 0 AND approved_at IS NULL
        ORDER BY created_at ASC
        LIMIT 200`,
     )

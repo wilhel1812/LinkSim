@@ -1847,7 +1847,13 @@ export function Sidebar() {
             <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
             <p className="field-help">Role: {profilePopupUser.isAdmin ? "Admin" : "User"}</p>
             <p className="field-help">
-              Access: {profilePopupUser.isApproved ? "Approved" : "Pending"} | Created{" "}
+              Access:{" "}
+              {profilePopupUser.accountState === "revoked"
+                ? "Revoked"
+                : profilePopupUser.isApproved
+                  ? "Approved"
+                  : "Pending"}{" "}
+              | Created{" "}
               {new Date(profilePopupUser.createdAt).toLocaleString()}
             </p>
             <div className="chip-group">

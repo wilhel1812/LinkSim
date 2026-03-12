@@ -9,6 +9,7 @@ export type CloudUser = {
   avatarUrl: string;
   isAdmin: boolean;
   isApproved: boolean;
+  accountState?: "pending" | "approved" | "revoked";
   approvedAt?: string | null;
   approvedByUserId?: string | null;
   createdAt: string;

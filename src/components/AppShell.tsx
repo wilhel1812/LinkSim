@@ -25,6 +25,10 @@ export function AppShell() {
     void (async () => {
       try {
         const me = await fetchMe();
+        if (me.accountState === "revoked") {
+          setAccessState("locked");
+          return;
+        }
         setAccessState(me.isAdmin || me.isApproved ? "granted" : "pending");
       } catch (error) {
         const message = getUiErrorMessage(error);

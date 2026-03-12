@@ -24,7 +24,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
 - [x] What does the reject button currently do?
 - [x] Show profile pictures to other users when you click open the user popover. Also show a small one next to any user name in the UI
-- [ ] User should be able to select if 
+- [ ] User should be able to select if e-mail should be visible to everyone or only admins
 
 ## Active stabilization backlog
 
@@ -37,7 +37,9 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Restrict sign-ups and approval transitions with explicit lifecycle states
 - [ ] Add dedicated auth/permission tests for critical flows
 - Progress: baseline tests added for auth source resolution and error mapping; endpoint permission matrix still pending.
+- Progress: added access-policy helper matrix tests (`functions/_lib/access.test.ts`) and endpoint gating helpers in users endpoints.
 - [ ] Add dedicated identity reconciliation tests + audit logging coverage
+- Progress: identity reconciliation audit events now persisted in `user_identity_audit`; dedicated reconciliation tests still pending.
 - [x] Add observability for Cloudflare Access auth header/JWT variants
 
 ### Data and storage safety
@@ -73,6 +75,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Improve explanatory info for FSPL / TwoRay / ITM and defaults
 - [ ] Document map sampling strategies clearly in UI help
 - [ ] Recheck pass/fail interpretation and communication around terrain blocking
+- [x] Add terrain overlay visibility toggle (visual only; simulation still uses loaded terrain)
 
 ### Security and access hardening
 - [x] Productize Access policy templates in-app docs and setup checklist
