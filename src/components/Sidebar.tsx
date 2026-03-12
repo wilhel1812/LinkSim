@@ -451,6 +451,11 @@ export function Sidebar() {
   const [resourceCollaboratorDirectoryBusy, setResourceCollaboratorDirectoryBusy] = useState(false);
   const [resourceCollaboratorDirectoryStatus, setResourceCollaboratorDirectoryStatus] = useState("");
   const [resourceAccessStatus, setResourceAccessStatus] = useState("");
+  const [pendingSimulationVisibilityPrompt, setPendingSimulationVisibilityPrompt] = useState<{
+    simulationId: string;
+    targetVisibility: "public" | "shared";
+    referencedPrivateSiteIds: string[];
+  } | null>(null);
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
     siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
@@ -1295,18 +1300,29 @@ export function Sidebar() {
       });
     } else {
       const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
-      const referencedSiteIds = new Set(
-        (simulationEntry?.snapshot.sites ?? [])
-          .map((site) => site.libraryEntryId)
-          .filter((value): value is string => typeof value === "string" && value.length > 0),
-      );
-      const hasPrivateReference =
-        resourceAccessVisibility !== "private" &&
-        siteLibrary.some((entry) => referencedSiteIds.has(entry.id) && (entry.visibility ?? "private") === "private");
-      if (hasPrivateReference) {
-        setResourceAccessStatus(
-          "This simulation references private library sites, so access is forced to Private. Set those sites to Public/Shared first.",
-        );
+      const referencedPrivateSiteIds =
+        resourceAccessVisibility === "private"
+          ? []
+          : siteLibrary
+              .filter((entry) => {
+                if ((entry.visibility ?? "private") !== "private") return false;
+                const referencedIds = new Set(
+                  (simulationEntry?.snapshot.sites ?? [])
+                    .map((site) => site.libraryEntryId)
+                    .filter((value): value is string => typeof value === "string" && value.length > 0),
+                );
+                return referencedIds.has(entry.id);
+              })
+              .map((entry) => entry.id);
+      if (
+        referencedPrivateSiteIds.length > 0 &&
+        (resourceAccessVisibility === "public" || resourceAccessVisibility === "shared")
+      ) {
+        setPendingSimulationVisibilityPrompt({
+          simulationId: resourceDetailsPopup.resourceId,
+          targetVisibility: resourceAccessVisibility,
+          referencedPrivateSiteIds,
+        });
         return;
       }
       updateSimulationPresetEntry(resourceDetailsPopup.resourceId, {
@@ -1315,6 +1331,23 @@ export function Sidebar() {
       });
     }
     setResourceAccessStatus("Access settings saved.");
+  };
+
+  const applyPendingSimulationVisibilityChange = () => {
+    const pending = pendingSimulationVisibilityPrompt;
+    if (!pending) return;
+    for (const siteId of pending.referencedPrivateSiteIds) {
+      updateSiteLibraryEntry(siteId, { visibility: pending.targetVisibility });
+    }
+    const sharedWith = resourceCollaboratorUserIds
+      .filter((userId) => userId !== currentResourceOwnerId)
+      .map((userId) => ({ userId, role: "editor" as const }));
+    updateSimulationPresetEntry(pending.simulationId, {
+      visibility: pending.targetVisibility,
+      sharedWith,
+    });
+    setPendingSimulationVisibilityPrompt(null);
+    setResourceAccessStatus("Updated referenced private sites and saved access settings.");
   };
 
   const addCollaborator = (userId: string) => {
@@ -2373,6 +2406,40 @@ export function Sidebar() {
                 </div>
               </div>
             ) : null}
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {pendingSimulationVisibilityPrompt ? (
+        <ModalOverlay
+          aria-label="Confirm Simulation Visibility Change"
+          onClose={() => setPendingSimulationVisibilityPrompt(null)}
+          tier="raised"
+        >
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>Visibility Change Confirmation</h2>
+              <button className="inline-action" onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              You are setting this simulation to{" "}
+              <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong>, but it references{" "}
+              <strong>{pendingSimulationVisibilityPrompt.referencedPrivateSiteIds.length}</strong> private site(s).
+            </p>
+            <p className="field-help">
+              Do you want to change those referenced sites to{" "}
+              <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong> as well?
+            </p>
+            <div className="chip-group">
+              <button className="inline-action" onClick={applyPendingSimulationVisibilityChange} type="button">
+                Change
+              </button>
+              <button className="inline-action" onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
+                Cancel
+              </button>
+            </div>
           </div>
         </ModalOverlay>
       ) : null}
