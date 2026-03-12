@@ -25,6 +25,12 @@ export type ResourceChange = {
   actorAvatarUrl: string | null;
 };
 
+export type DeletedCloudUser = {
+  id: string;
+  deletedAt: string;
+  deletedByUserId: string | null;
+};
+
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
@@ -117,4 +123,14 @@ export const fetchResourceChanges = async (
     method: "GET",
   });
   return Array.isArray(data.changes) ? data.changes : [];
+};
+
+export const fetchDeletedUsers = async (): Promise<DeletedCloudUser[]> => {
+  const data = await apiCall<{ users: DeletedCloudUser[] }>("/api/deleted-users", { method: "GET" });
+  return Array.isArray(data.users) ? data.users : [];
+};
+
+export const restoreDeletedCloudUser = async (id: string): Promise<void> => {
+  const params = new URLSearchParams({ id });
+  await apiCall<{ ok: boolean }>(`/api/deleted-users?${params.toString()}`, { method: "DELETE" });
 };

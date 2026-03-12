@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import {
   deleteUser,
+  fetchDeletedUsers,
   fetchMe,
   fetchUsers,
+  restoreDeletedCloudUser,
   updateMyProfile,
   updateUserAdmin,
   updateUserApproval,
   updateUserProfile,
   type CloudUser,
+  type DeletedCloudUser,
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { ModalOverlay } from "./ModalOverlay";
@@ -74,6 +77,7 @@ export function UserAdminPanel() {
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
+  const [deletedUsers, setDeletedUsers] = useState<DeletedCloudUser[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
 
@@ -121,8 +125,11 @@ export function UserAdminPanel() {
       if (current.isAdmin) {
         const all = await fetchUsers();
         setUsers(all);
+        const deleted = await fetchDeletedUsers();
+        setDeletedUsers(deleted);
       } else {
         setUsers([]);
+        setDeletedUsers([]);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -168,6 +175,8 @@ export function UserAdminPanel() {
       if (canAdmin) {
         const all = await fetchUsers();
         setUsers(all);
+        const deleted = await fetchDeletedUsers();
+        setDeletedUsers(deleted);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -202,6 +211,8 @@ export function UserAdminPanel() {
       await updateUserAdmin(user.id, !user.isAdmin);
       const all = await fetchUsers();
       setUsers(all);
+      const deleted = await fetchDeletedUsers();
+      setDeletedUsers(deleted);
       setStatus(`Role updated for ${user.username}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -218,6 +229,8 @@ export function UserAdminPanel() {
       await updateUserApproval(user.id, !user.isApproved);
       const all = await fetchUsers();
       setUsers(all);
+      const deleted = await fetchDeletedUsers();
+      setDeletedUsers(deleted);
       setStatus(`${user.isApproved ? "Revoked" : "Granted"} access for ${user.username}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -234,6 +247,8 @@ export function UserAdminPanel() {
       await updateUserApproval(user.id, false);
       const all = await fetchUsers();
       setUsers(all);
+      const deleted = await fetchDeletedUsers();
+      setDeletedUsers(deleted);
       setStatus(`Rejected access for ${user.username}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -252,6 +267,8 @@ export function UserAdminPanel() {
       await deleteUser(user.id);
       const all = await fetchUsers();
       setUsers(all);
+      const deleted = await fetchDeletedUsers();
+      setDeletedUsers(deleted);
       setStatus(`Deleted user ${user.username}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -268,10 +285,28 @@ export function UserAdminPanel() {
       await updateUserProfile(user.id, patch);
       const all = await fetchUsers();
       setUsers(all);
+      const deleted = await fetchDeletedUsers();
+      setDeletedUsers(deleted);
       setStatus(`Profile updated for ${user.id}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus(`Profile update failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const restoreDeletedUser = async (userId: string) => {
+    setBusy(true);
+    setStatus("");
+    try {
+      await restoreDeletedCloudUser(userId);
+      const deleted = await fetchDeletedUsers();
+      setDeletedUsers(deleted);
+      setStatus(`Deleted-user lock removed for ${userId}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Restore failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -434,6 +469,27 @@ export function UserAdminPanel() {
                   />
                 ))}
                 {!userRows.length ? <p className="field-help">No other users yet.</p> : null}
+              </div>
+            ) : null}
+
+            {canAdmin ? (
+              <div className="user-manager-list">
+                <p className="field-help">Deleted users: remove lock to allow immediate re-creation.</p>
+                {deletedUsers.map((entry) => (
+                  <div className="library-row" key={entry.id}>
+                    <p className="field-help">
+                      <strong>{entry.id}</strong>
+                    </p>
+                    <p className="field-help">Deleted: {fmtDate(entry.deletedAt)}</p>
+                    <p className="field-help">Deleted by: {entry.deletedByUserId ?? "-"}</p>
+                    <div className="chip-group">
+                      <button className="inline-action" onClick={() => void restoreDeletedUser(entry.id)} type="button">
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {!deletedUsers.length ? <p className="field-help">No deleted-user locks.</p> : null}
               </div>
             ) : null}
 

@@ -584,6 +584,35 @@ export const deleteUser = async (env: Env, userId: string, actorUserId?: string)
   ]);
 };
 
+export const listDeletedUsers = async (
+  env: Env,
+): Promise<Array<{ id: string; deletedAt: string; deletedByUserId: string | null }>> => {
+  await ensureSchema(env);
+  const rows = await env.DB
+    .prepare(
+      `SELECT id, deleted_at, deleted_by_user_id
+       FROM deleted_users
+       ORDER BY deleted_at DESC
+       LIMIT 500`,
+    )
+    .all<{
+      id: string;
+      deleted_at: string;
+      deleted_by_user_id: string | null;
+    }>();
+
+  return rows.results.map((row) => ({
+    id: row.id,
+    deletedAt: row.deleted_at,
+    deletedByUserId: row.deleted_by_user_id,
+  }));
+};
+
+export const restoreDeletedUser = async (env: Env, userId: string): Promise<void> => {
+  await ensureSchema(env);
+  await env.DB.prepare("DELETE FROM deleted_users WHERE id = ?").bind(userId).run();
+};
+
 export const listPendingApprovalUsers = async (
   env: Env,
 ): Promise<Array<{ id: string; username: string; email: string; createdAt: string; accessRequestNote: string }>> => {

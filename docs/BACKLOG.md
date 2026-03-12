@@ -47,6 +47,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 
 ### Admin tooling
 - [ ] Build in-app admin utilities to reduce manual D1 SQL operations
+- Progress: added in-app deleted-user lock manager (list + restore) to remove direct SQL need for this flow.
 - [ ] Add user moderation actions and review queue ergonomics
 - [ ] Add simulation/site ownership repair tools in UI
 - [ ] Add admin-safe bulk operations with confirmations and logs
