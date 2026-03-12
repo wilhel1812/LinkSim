@@ -1721,7 +1721,12 @@ export function Sidebar() {
       </section>
 
       {profilePopupUser ? (
-        <div aria-label="User Profile" aria-modal="true" className="library-manager-overlay" role="dialog">
+        <div
+          aria-label="User Profile"
+          aria-modal="true"
+          className="library-manager-overlay overlay-level-2"
+          role="dialog"
+        >
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>User Profile</h2>
@@ -1756,7 +1761,7 @@ export function Sidebar() {
         <div
           aria-label="Change Log"
           aria-modal="true"
-          className="library-manager-overlay library-manager-overlay-top"
+          className="library-manager-overlay overlay-level-3"
           role="dialog"
         >
           <div className="library-manager-card">
@@ -1796,7 +1801,7 @@ export function Sidebar() {
         <div
           aria-label="Resource Details"
           aria-modal="true"
-          className="library-manager-overlay library-manager-overlay-top"
+          className="library-manager-overlay overlay-level-2"
           role="dialog"
         >
           <div className="library-manager-card user-profile-popup">
@@ -1845,7 +1850,7 @@ export function Sidebar() {
         <div
           aria-label="Simulation Library"
           aria-modal="true"
-          className="library-manager-overlay"
+          className="library-manager-overlay overlay-level-1"
           role="dialog"
         >
           <div className="library-manager-card">
@@ -1994,7 +1999,7 @@ export function Sidebar() {
         </div>
       ) : null}
       {showSiteLibraryManager ? (
-        <div aria-label="Site Library" aria-modal="true" className="library-manager-overlay" role="dialog">
+        <div aria-label="Site Library" aria-modal="true" className="library-manager-overlay overlay-level-1" role="dialog">
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Site Library</h2>

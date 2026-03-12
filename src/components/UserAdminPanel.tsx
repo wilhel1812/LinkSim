@@ -296,7 +296,12 @@ export function UserAdminPanel() {
       </button>
 
       {open ? (
-        <div aria-label="User Settings" aria-modal="true" className="library-manager-overlay" role="dialog">
+        <div
+          aria-label="User Settings"
+          aria-modal="true"
+          className="library-manager-overlay overlay-level-2"
+          role="dialog"
+        >
           <div className="library-manager-card user-settings-modal">
             <div className="library-manager-header">
               <h2>User Settings</h2>

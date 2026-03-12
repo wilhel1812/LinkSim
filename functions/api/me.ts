@@ -24,7 +24,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("removed by admin")
+    const status = message.includes("Session revoked by admin")
+      ? 401
+      : message.includes("removed by admin")
       ? 403
       : message.includes("pending approval")
         ? 403
@@ -52,7 +54,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status =
-      message.includes("removed by admin") || message.includes("pending approval")
+      message.includes("Session revoked by admin")
+        ? 401
+        : message.includes("removed by admin") || message.includes("pending approval")
         ? 403
         : message.includes("required") || message.includes("valid")
           ? 400

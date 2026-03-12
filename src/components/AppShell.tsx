@@ -24,7 +24,16 @@ export function AppShell() {
       try {
         const me = await fetchMe();
         setAccessState(me.isAdmin || me.isApproved ? "granted" : "pending");
-      } catch {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          message.includes("Session revoked by admin") ||
+          message.includes("401") ||
+          message.includes("Unauthorized")
+        ) {
+          window.location.href = "/cdn-cgi/access/logout";
+          return;
+        }
         setAccessState("locked");
       }
     })();

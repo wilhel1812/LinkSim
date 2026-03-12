@@ -97,6 +97,17 @@ const deriveVerifiedIdpEmail = (tokenPayload?: Record<string, unknown>): string 
   return fromPayload ?? "";
 };
 
+const parseTokenIssuedAtMs = (tokenPayload?: Record<string, unknown>): number | null => {
+  if (!tokenPayload) return null;
+  const raw = tokenPayload.iat;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw * 1000;
+  if (typeof raw === "string") {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) return parsed * 1000;
+  }
+  return null;
+};
+
 const parseAdminUserIds = (env: Env): Set<string> => {
   const raw = env.ADMIN_USER_IDS ?? "";
   return new Set(
@@ -376,6 +387,18 @@ export const ensureUser = async (
   tokenPayload?: Record<string, unknown>,
 ): Promise<void> => {
   await ensureSchema(env);
+  const deletion = await env.DB
+    .prepare("SELECT deleted_at FROM deleted_users WHERE id = ? LIMIT 1")
+    .bind(userId)
+    .first<{ deleted_at: string }>();
+  if (deletion?.deleted_at) {
+    const tokenIssuedAtMs = parseTokenIssuedAtMs(tokenPayload);
+    const deletedAtMs = Date.parse(deletion.deleted_at);
+    if (!Number.isFinite(deletedAtMs) || tokenIssuedAtMs === null || tokenIssuedAtMs <= deletedAtMs) {
+      throw new Error("Session revoked by admin");
+    }
+    await env.DB.prepare("DELETE FROM deleted_users WHERE id = ?").bind(userId).run();
+  }
   const now = new Date().toISOString();
   const username = deriveDefaultName(userId, tokenPayload);
   const email = deriveDefaultEmail(userId, tokenPayload);

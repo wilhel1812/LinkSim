@@ -14,6 +14,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Report types: feedback
 - [ ] Report types: spam/misuse
 - [ ] Banning users
+- [ ] E-mail notifications (starting with account approval)
 - [ ] Rehaul of dockumentation (readme.md)
 - [ ] Set up a compehensive testing plan
 - [ ] Branding
