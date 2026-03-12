@@ -2101,10 +2101,10 @@ export function Sidebar() {
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Details" onClose={() => setResourceDetailsPopup(null)} tier="raised">
+        <ModalOverlay aria-label="Resource Collaborators" onClose={() => setResourceDetailsPopup(null)} tier="raised">
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
-              <h2>Details · {resourceDetailsPopup.label}</h2>
+              <h2>Collaborators · {resourceDetailsPopup.label}</h2>
               <button className="inline-action" onClick={() => setResourceDetailsPopup(null)} type="button">
                 Close
               </button>
@@ -2320,7 +2320,7 @@ export function Sidebar() {
                       }
                       type="button"
                     >
-                      Details
+                      Collaborators
                     </button>
                     <button
                       className="inline-action"
@@ -2633,7 +2633,7 @@ export function Sidebar() {
                       }
                       type="button"
                     >
-                      Details
+                      Collaborators
                     </button>
                     <button className="inline-action" onClick={() => startLibraryEdit(entry.id)} type="button">
                       Edit
