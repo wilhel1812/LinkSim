@@ -912,6 +912,27 @@ export function Sidebar() {
     setEditingLibraryAntennaM(entry.antennaHeightM);
     setEditingLibraryStatus("");
   };
+  const openLibraryForSelectedSite = () => {
+    setShowSiteLibraryManager(true);
+    const matchedEntry = siteLibrary.find(
+      (entry) =>
+        entry.name === selectedSite.name &&
+        Math.abs(entry.position.lat - selectedSite.position.lat) < 0.000001 &&
+        Math.abs(entry.position.lon - selectedSite.position.lon) < 0.000001,
+    );
+    if (matchedEntry) {
+      startLibraryEdit(matchedEntry.id);
+      return;
+    }
+    setEditingLibraryId(null);
+    setShowAddLibraryForm(true);
+    setNewLibraryName(selectedSite.name);
+    setNewLibraryLat(selectedSite.position.lat);
+    setNewLibraryLon(selectedSite.position.lon);
+    setNewLibraryGroundM(selectedSite.groundElevationM);
+    setNewLibraryAntennaM(selectedSite.antennaHeightM);
+    setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
+  };
   const saveLibraryEdit = () => {
     if (!editingLibraryId) return;
     updateSiteLibraryEntry(editingLibraryId, {
@@ -1250,11 +1271,14 @@ export function Sidebar() {
             >
               <span>{site.name}</span>
               <span className="site-row-meta">
-                {site.position.lat.toFixed(4)}, {site.position.lon.toFixed(4)}
+                {Math.round(site.groundElevationM)} m ASL
               </span>
             </button>
           ))}
         </div>
+        <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+          Edit Selected Site
+        </button>
         <button
           className="inline-action"
           disabled={sites.length <= 1}
@@ -1266,28 +1290,27 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section section-radio">
-        <div className="section-heading">
-          <h2>Radio & Model</h2>
-          <InfoTip text="This is the shared channel profile. Frequency, bandwidth, spreading factor, and coding rate apply to all links." />
-        </div>
-        <div className="section-heading">
-          <p className="field-help">Coverage mode</p>
-          <InfoTip text="BestSite: computes strongest coverage from any site at each sample point. Polar: radial sampling around the selected From site. Cartesian: regular grid sampling over the current simulation area. Route: samples along the selected path corridor." />
-        </div>
-        <div className="chip-group">
-          {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
-            <button
-              className={clsx("chip-button", selectedCoverageMode === mode && "is-selected")}
-              key={mode}
-              onClick={() => onCoverageModeChange(mode)}
-              type="button"
-            >
-              {mode}
-            </button>
-          ))}
-        </div>
-        <details className="compact-details">
-          <summary>Channel and propagation settings</summary>
+        <details className="compact-details" open>
+          <summary>Radio & Model (Advanced)</summary>
+          <p className="field-help">
+            Shared channel profile for all links in this simulation.
+          </p>
+          <div className="section-heading">
+            <p className="field-help">Coverage mode</p>
+            <InfoTip text="BestSite: computes strongest coverage from any site at each sample point. Polar: radial sampling around the selected From site. Cartesian: regular grid sampling over the current simulation area. Route: samples along the selected path corridor." />
+          </div>
+          <div className="chip-group">
+            {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
+              <button
+                className={clsx("chip-button", selectedCoverageMode === mode && "is-selected")}
+                key={mode}
+                onClick={() => onCoverageModeChange(mode)}
+                type="button"
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
           {networks.length > 1 ? (
             <select
               className="locale-select"
@@ -1809,6 +1832,19 @@ export function Sidebar() {
               </a>
             ))}
           </div>
+          <details className="compact-details">
+            <summary>Credits & Attribution</summary>
+            <p className="field-help subtle-note">
+              Inspired by{" "}
+              <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
+                {PRIMARY_ATTRIBUTION.projectName}
+              </a>{" "}
+              by {PRIMARY_ATTRIBUTION.authorName}. {PRIMARY_ATTRIBUTION.disclaimer}
+            </p>
+            <p className="field-help subtle-note">
+              Basemap style: {theme === "dark" ? "Carto Dark Matter" : "Carto Positron"} (provider attribution applies).
+            </p>
+          </details>
         </details>
       </section>
 
@@ -2462,16 +2498,6 @@ export function Sidebar() {
         </ModalOverlay>
       ) : null}
       <div className="sidebar-grow" />
-      <footer className="sidebar-footer">
-        <p>
-          Inspired by{" "}
-          <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
-            {PRIMARY_ATTRIBUTION.projectName}
-          </a>{" "}
-          by {PRIMARY_ATTRIBUTION.authorName}. {PRIMARY_ATTRIBUTION.disclaimer}
-        </p>
-        <p>Basemap style: {theme === "dark" ? "Carto Dark Matter" : "Carto Positron"} (attribution applies).</p>
-      </footer>
     </aside>
   );
 }
