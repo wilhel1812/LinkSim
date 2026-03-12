@@ -317,7 +317,9 @@ export function UserAdminPanel() {
     try {
       await updateUserApproval(user.id, false);
       await refreshAdminData();
-      setStatus(`Set ${user.username} to pending access.`);
+      setStatus(
+        `${user.isApproved ? "Revoked access for" : "Set pending access for"} ${user.username}.`,
+      );
     } catch (error) {
       const message = getUiErrorMessage(error);
       setStatus(`Reject failed: ${message}`);
@@ -720,7 +722,7 @@ export function UserAdminPanel() {
                       {managedUser.isApproved ? "Revoke Access" : "Approve Access"}
                     </button>
                     <button className="inline-action" onClick={() => void rejectUser(managedUser)} type="button">
-                      Set Pending
+                      {managedUser.isApproved ? "Revoke To Revoked State" : "Set Pending"}
                     </button>
                     <button className="inline-action" onClick={() => void toggleAdmin(managedUser)} type="button">
                       {managedUser.isAdmin ? "Set User" : "Set Admin"}
@@ -730,7 +732,8 @@ export function UserAdminPanel() {
                     </button>
                   </div>
                   <p className="field-help">
-                    Set Pending removes approval only. It does not delete the account and the user can still update profile while pending.
+                    Set Pending keeps unapproved users in the pending queue. Revoke moves an approved user to revoked
+                    state without deleting the account.
                   </p>
                 </div>
               </ModalOverlay>

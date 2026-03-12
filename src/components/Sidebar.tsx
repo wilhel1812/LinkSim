@@ -1763,14 +1763,14 @@ export function Sidebar() {
 
       <section className="panel-section">
         <details className="compact-details">
-          <summary>More</summary>
+          <summary>Tools & Data</summary>
           <div className="section-heading">
-            <p className="field-help">Cloud Auth & Sync</p>
+            <p className="field-help">Cloud Sync</p>
             <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />
           </div>
           <AuthSyncPanel />
           <div className="section-heading">
-            <p className="field-help">Local Data Safety</p>
+            <p className="field-help">Local Storage Safety</p>
             <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly, and use Restore Snapshot if data looks missing after refresh." />
           </div>
           {storageOriginWarning ? <p className="field-help warning-text">{storageOriginWarning}</p> : null}
