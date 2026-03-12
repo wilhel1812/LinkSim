@@ -805,7 +805,9 @@ export const listCollaboratorDirectory = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      `SELECT id, username, COALESCE(email, idp_email, '') AS visible_email, COALESCE(avatar_url, '') AS avatar_url
+      `SELECT id, username,
+              CASE WHEN email_public = 1 THEN COALESCE(email, idp_email, '') ELSE '' END AS visible_email,
+              COALESCE(avatar_url, '') AS avatar_url
        FROM users
        WHERE (is_admin = 1 OR is_moderator = 1 OR is_approved = 1)
          AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%')
