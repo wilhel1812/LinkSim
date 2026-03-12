@@ -27,6 +27,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] access rights on sites and simulations. private, public, shared (+ collaborator edit grants)
 - [ ] explore if the route option actually makes sense anymore
 - [ ] explore if we can take buildings into account
+- [ ] Explore if we can make ourselves completely independent of VE2DBE data for SRTM
 
 ## Active stabilization backlog
 
