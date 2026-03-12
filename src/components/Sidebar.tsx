@@ -2108,7 +2108,7 @@ export function Sidebar() {
 
       {resourceDetailsPopup ? (
         <ModalOverlay aria-label="Resource Details" onClose={() => setResourceDetailsPopup(null)} tier="raised">
-          <div className="library-manager-card user-profile-popup">
+          <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
               <h2>Details · {resourceDetailsPopup.label}</h2>
               <button className="inline-action" onClick={() => setResourceDetailsPopup(null)} type="button">

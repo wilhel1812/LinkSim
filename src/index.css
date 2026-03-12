@@ -1173,6 +1173,10 @@ input {
   width: min(640px, 96vw);
 }
 
+.resource-details-card {
+  overflow: visible;
+}
+
 .user-profile-popup .info-tip-box,
 .user-settings-modal .info-tip-box {
   top: auto;
