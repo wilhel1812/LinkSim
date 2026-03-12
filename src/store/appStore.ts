@@ -9,7 +9,7 @@ import {
   withClimateDefaults,
 } from "../lib/propagationEnvironment";
 import { analyzeLink, buildProfile } from "../lib/propagation";
-import { DEMO_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
+import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import {
@@ -274,17 +274,17 @@ const writeStorage = (key: string, value: unknown, options?: { snapshot?: boolea
 const makeId = (prefix: string): string =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-const builtinSiteFingerprint = new Set(
-  DEMO_SCENARIOS.flatMap((scenario) =>
-    scenario.sites.map(
-      (site) =>
-        `${site.name.toLowerCase()}|${site.position.lat.toFixed(6)}|${site.position.lon.toFixed(6)}`,
-    ),
-  ),
-);
+const legacyDemoSiteFingerprint = new Set([
+  "bislett|59.925000|10.732000",
+  "grefsen|59.956000|10.781000",
+  "nordstrand|59.866000|10.790000",
+  "sandvika|59.891000|10.524000",
+  "lillestrøm|59.956000|11.050000",
+  "ski|59.719000|10.835000",
+]);
 
-const isBuiltinSiteLibraryEntry = (entry: SiteLibraryEntry): boolean =>
-  builtinSiteFingerprint.has(
+const isLegacyDemoSiteLibraryEntry = (entry: SiteLibraryEntry): boolean =>
+  legacyDemoSiteFingerprint.has(
     `${entry.name.toLowerCase()}|${entry.position.lat.toFixed(6)}|${entry.position.lon.toFixed(6)}`,
   );
 
@@ -301,7 +301,19 @@ const dedupeLibraryEntries = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =
 };
 
 const normalizeSiteLibrary = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =>
-  dedupeLibraryEntries(entries.filter((entry) => !isBuiltinSiteLibraryEntry(entry)));
+  dedupeLibraryEntries(entries.filter((entry) => !isLegacyDemoSiteLibraryEntry(entry)));
+
+const isLegacyDemoSimulationPreset = (preset: SimulationPreset): boolean => {
+  const normalized = preset.name.trim().toLowerCase();
+  if (normalized === "oslo local mesh" || normalized === "oslo regional ring") return true;
+  const sites = Array.isArray(preset.snapshot?.sites) ? preset.snapshot.sites : [];
+  if (!sites.length) return false;
+  return sites.every((site) =>
+    legacyDemoSiteFingerprint.has(
+      `${site.name.toLowerCase()}|${site.position.lat.toFixed(6)}|${site.position.lon.toFixed(6)}`,
+    ),
+  );
+};
 
 const normalizeSimulationPresets = (presets: SimulationPreset[]): SimulationPreset[] =>
   presets.filter(
@@ -312,7 +324,8 @@ const normalizeSimulationPresets = (presets: SimulationPreset[]): SimulationPres
           preset.id &&
           typeof preset.name === "string" &&
           preset.name &&
-          preset.snapshot,
+          preset.snapshot &&
+          !isLegacyDemoSimulationPreset(preset),
       ),
   );
 
@@ -490,7 +503,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   simulationPresets: initialSimulationPresets,
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
-  scenarioOptions: DEMO_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
+  scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   setLocale: (locale) => set({ locale }),
   selectScenario: (id) => {
     const scenario = getScenarioById(id);

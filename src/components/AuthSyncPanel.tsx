@@ -31,10 +31,10 @@ export function AuthSyncPanel() {
           siteLibrary: cloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
           simulationPresets: cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
         },
-        "merge",
+        "replace",
       );
       setStatus(
-        `Cloud sync loaded. Delta: ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
+        `Cloud sync loaded (replace). Delta: ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
       );
       hydrated.current = true;
     } finally {

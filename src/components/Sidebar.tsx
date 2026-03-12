@@ -483,11 +483,6 @@ export function Sidebar() {
       return hay.includes(q);
     });
   }, [simulationPresets, simulationLibraryQuery]);
-  const filteredBuiltinScenarios = useMemo(() => {
-    const q = simulationLibraryQuery.trim().toLowerCase();
-    if (!q) return scenarioOptions;
-    return scenarioOptions.filter((scenario) => scenario.name.toLowerCase().includes(q));
-  }, [scenarioOptions, simulationLibraryQuery]);
   const activeSimulationLabel = useMemo(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -496,7 +491,7 @@ export function Sidebar() {
     }
     const scenarioId = selectedSimulationRef.replace("builtin:", "");
     const scenario = scenarioOptions.find((candidate) => candidate.id === scenarioId);
-    return scenario ? `${scenario.name} (demo starter)` : "Demo starter simulation";
+    return scenario ? `${scenario.name} (starter)` : "Starter workspace";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
   const collaboratorDirectoryById = useMemo(
     () => new globalThis.Map(resourceCollaboratorDirectory.map((user) => [user.id, user])),
@@ -710,22 +705,6 @@ export function Sidebar() {
     downloadJson(`linksim-manifest-${stamp}.json`, manifest);
   };
 
-  const loadSimulationRef = (ref: string) => {
-    setSelectedSimulationRef(ref);
-    try {
-      localStorage.setItem(LAST_SIMULATION_REF_KEY, ref);
-    } catch {
-      // ignore
-    }
-    setSimulationSaveStatus("");
-    if (ref.startsWith("builtin:")) {
-      selectScenario(ref.replace("builtin:", ""));
-      return;
-    }
-    if (ref.startsWith("saved:")) {
-      loadSimulationPreset(ref.replace("saved:", ""));
-    }
-  };
   useEffect(() => {
     if (startupSimulationApplied) return;
     const defaultRef = `builtin:${selectedScenarioId}`;
@@ -1315,6 +1294,21 @@ export function Sidebar() {
         sharedWith,
       });
     } else {
+      const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+      const referencedSiteIds = new Set(
+        (simulationEntry?.snapshot.sites ?? [])
+          .map((site) => site.libraryEntryId)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      );
+      const hasPrivateReference =
+        resourceAccessVisibility !== "private" &&
+        siteLibrary.some((entry) => referencedSiteIds.has(entry.id) && (entry.visibility ?? "private") === "private");
+      if (hasPrivateReference) {
+        setResourceAccessStatus(
+          "This simulation references private library sites, so access is forced to Private. Set those sites to Public/Shared first.",
+        );
+        return;
+      }
       updateSimulationPresetEntry(resourceDetailsPopup.resourceId, {
         visibility: resourceAccessVisibility,
         sharedWith,
@@ -1380,7 +1374,7 @@ export function Sidebar() {
       <section className="panel-section section-scenario">
         <div className="section-heading">
           <h2>Scenario</h2>
-          <InfoTip text="Demo starter scenarios are examples only, not real project scenarios. Saved simulations are your real editable working states." />
+          <InfoTip text="Use saved simulations for project work. The starter workspace is just a local starting point." />
         </div>
         <p className="field-help">
           Active: <strong>{activeSimulationLabel}</strong>
@@ -2264,15 +2258,13 @@ export function Sidebar() {
               </button>
             </div>
             <p className="field-help">
-              Manage demo starter scenarios and saved simulations here. Demo starters are examples only, not real
-              project scenarios. Site/node editing still happens in the main
-              workspace.
+              Manage saved simulations here. Site/node editing still happens in the main workspace.
             </p>
             <label className="field-grid">
               <span>Search</span>
               <input
                 onChange={(event) => setSimulationLibraryQuery(event.target.value)}
-                placeholder="Filter demo starters + saved simulations"
+                placeholder="Filter saved simulations"
                 type="text"
                 value={simulationLibraryQuery}
               />
@@ -2292,28 +2284,6 @@ export function Sidebar() {
               </button>
             </div>
             {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
-            <div className="library-editor">
-              <h3>Demo starter scenarios (examples)</h3>
-              <div className="library-manager-list">
-                {filteredBuiltinScenarios.map((scenario) => (
-                  <div className="library-manager-row simulation-manager-row" key={scenario.id}>
-                    <span className="library-row-label">
-                      <strong>{scenario.name}</strong> {" · "}Demo starter
-                    </span>
-                    <div className="library-row-actions">
-                      <button
-                        className="inline-action"
-                        onClick={() => loadSimulationRef(`builtin:${scenario.id}`)}
-                        type="button"
-                      >
-                        Load
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {!filteredBuiltinScenarios.length ? <p className="field-help">No matching demo starter scenarios.</p> : null}
-              </div>
-            </div>
             <div className="library-editor">
               <h3>Saved simulations</h3>
             <div className="library-manager-list">
