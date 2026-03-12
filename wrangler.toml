@@ -12,18 +12,5 @@ binding = "AVATAR_BUCKET"
 bucket_name = "linksim-avatars"
 preview_bucket_name = "linksim-avatars"
 
-[vars]
-# Cloudflare Access settings for JWT validation in Pages Functions.
-# Set real values in Cloudflare Pages environment variables.
-# Team domain example: your-team.cloudflareaccess.com
-ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
-# Access application AUD tag from Cloudflare Zero Trust application settings.
-ACCESS_AUD = "replace-with-access-aud"
-ADMIN_USER_IDS = "replace-with-admin-user-id"
-REGISTRATION_MODE = "approval_required"
-# Optional: custom public base URL for avatar delivery.
-# If unset, avatars are served through /api/avatar/<key>.
-# AVATAR_PUBLIC_BASE_URL = "https://linksim.wilhelmfrancke.com/api/avatar"
-# Local dev fallback only (do not enable in production):
-# ALLOW_INSECURE_DEV_AUTH = "true"
-# DEV_AUTH_USER_ID = "local-dev-user@example.com"
+# Runtime vars are intentionally managed in Cloudflare Pages environment settings.
+# Do not commit auth-sensitive runtime values in this file.
