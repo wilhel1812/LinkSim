@@ -85,10 +85,12 @@ Detailed setup steps:
 ## Testing
 
 - Test plan: [docs/testing-plan.md](./docs/testing-plan.md)
+- TDD workflow: [docs/tdd-workflow.md](./docs/tdd-workflow.md)
 - Run baseline checks:
 
 ```bash
 npm test
+npm run test:ci
 npm run build
 ```
 

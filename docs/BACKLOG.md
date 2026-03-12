@@ -87,6 +87,10 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Productize Access policy templates in-app docs and setup checklist
 - [x] Add admin warning surfaces for unsafe auth/access configuration
 
+### Test discipline and TDD rollout
+- [x] Establish TDD framework baseline (strategy doc, test templates, and CI quality gates)
+- Progress: added CI workflow gate for PRs/non-main branches (`.github/workflows/ci-quality-gates.yml`), added PR TDD checklist template (`.github/pull_request_template.md`), and documented TDD workflow/templates in `docs/tdd-workflow.md` + `docs/templates/tdd-test-case-template.md`.
+
 ## Hardening execution paths (agreed, no further discussion required now)
 - [x] Runtime migrations
 - Path: move all `ALTER TABLE`/schema drift logic out of request handlers into explicit SQL migration files + CI/deploy migration step; expose schema version in admin diagnostics.
