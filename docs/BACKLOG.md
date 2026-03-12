@@ -19,7 +19,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Set up a compehensive testing plan
 - [x] Set up a compehensive testing plan
 - [ ] Branding
-- [ ] Elevation plot visibility toggle
+- [x] Elevation plot visibility toggle
 - [x] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
 - [x] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
 - [x] What does the reject button currently do?
@@ -46,6 +46,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Add migration/version status visibility in admin tools
 - Progress: admin schema diagnostics endpoint + warnings added in User Settings.
 - [ ] Add import/export/backup health indicators and stronger restore UX
+- Progress: added local storage health timeline (last export/import/restore) to reduce silent data-loss risk.
 
 ### Admin tooling
 - [ ] Build in-app admin utilities to reduce manual D1 SQL operations
@@ -61,10 +62,11 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Move crowded metadata out of list rows and into details panels
 - [ ] Clean sidebar information density and progressive disclosure
 - Progress: simplified library/action labels and streamlined user moderation list flow.
-- [ ] Unify labels/buttons across libraries and managers
+- [x] Unify labels/buttons across libraries and managers
 - Progress: aligned labels for library open/save/add actions and moderation wording.
 - [ ] Standardize error messages across endpoints and UI surfaces
 - Progress: backend endpoints now use centralized error normalization and status mapping; UI surface pass still pending.
+- Progress: shared UI error parser now wired in shell/sidebar/user settings flows for more consistent messages.
 - [x] Modal UX: support ESC and click-outside to close dialogs (in addition to close button)
 
 ### Simulation quality clarity

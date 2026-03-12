@@ -18,6 +18,7 @@ import {
   type SchemaDiagnostics,
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
+import { getUiErrorMessage } from "../lib/uiError";
 import { ModalOverlay } from "./ModalOverlay";
 
 const initialsFor = (name: string): string => {
@@ -137,7 +138,7 @@ export function UserAdminPanel() {
         `Metadata repair completed. Sites updated: ${result.sitesUpdated}. Simulations updated: ${result.simulationsUpdated}.`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Metadata repair failed: ${message}`);
     } finally {
       setBusy(false);
@@ -152,7 +153,7 @@ export function UserAdminPanel() {
       const next = await fetchNotifications();
       setNotificationFeed(next);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setNotificationStatus(`Notifications unavailable: ${message}`);
     } finally {
       setNotificationBusy(false);
@@ -188,7 +189,7 @@ export function UserAdminPanel() {
         setSchemaDiagnostics(null);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`User load failed: ${message}`);
     } finally {
       setBusy(false);
@@ -246,7 +247,7 @@ export function UserAdminPanel() {
         await refreshAdminData();
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Profile update failed: ${message}`);
     } finally {
       setBusy(false);
@@ -264,7 +265,7 @@ export function UserAdminPanel() {
       setAvatarDraft(resized);
       setStatus("Avatar resized locally. Click Save Profile to store it.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Avatar upload failed: ${message}`);
     } finally {
       setBusy(false);
@@ -279,7 +280,7 @@ export function UserAdminPanel() {
       await refreshAdminData();
       setStatus(`Role updated for ${user.username}.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Role update failed: ${message}`);
     } finally {
       setBusy(false);
@@ -294,7 +295,7 @@ export function UserAdminPanel() {
       await refreshAdminData();
       setStatus(`${user.isApproved ? "Revoked" : "Granted"} access for ${user.username}.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Approval update failed: ${message}`);
     } finally {
       setBusy(false);
@@ -309,7 +310,7 @@ export function UserAdminPanel() {
       await refreshAdminData();
       setStatus(`Set ${user.username} to pending access.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Reject failed: ${message}`);
     } finally {
       setBusy(false);
@@ -326,7 +327,7 @@ export function UserAdminPanel() {
       await refreshAdminData();
       setStatus(`Deleted user ${user.username}.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Delete failed: ${message}`);
     } finally {
       setBusy(false);
@@ -341,7 +342,7 @@ export function UserAdminPanel() {
       await refreshAdminData();
       setStatus(`Profile updated for ${user.id}.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Profile update failed: ${message}`);
     } finally {
       setBusy(false);
@@ -356,7 +357,7 @@ export function UserAdminPanel() {
       await refreshAdminData();
       setStatus(`Deleted-user lock removed for ${userId}.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Restore failed: ${message}`);
     } finally {
       setBusy(false);
@@ -640,7 +641,7 @@ export function UserAdminPanel() {
             ) : null}
 
             {managedUser ? (
-              <ModalOverlay aria-label="Managed User Profile" onClose={closeManagedUser}>
+              <ModalOverlay aria-label="Managed User Profile" onClose={closeManagedUser} tier="raised">
                 <div className="library-manager-card user-profile-popup">
                   <div className="library-manager-header">
                     <h2>User Profile</h2>

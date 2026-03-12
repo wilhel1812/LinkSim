@@ -38,6 +38,7 @@ import { analyzeLink } from "../lib/propagation";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
+import { getUiErrorMessage } from "../lib/uiError";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
@@ -160,6 +161,7 @@ const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
+const STORAGE_HEALTH_KEY = "rmw-storage-health-v1";
 
 type LibraryBackupPayload = {
   schemaVersion: 1;
@@ -167,6 +169,38 @@ type LibraryBackupPayload = {
   origin: string;
   siteLibrary?: unknown[];
   simulationPresets?: unknown[];
+};
+
+type StorageHealth = {
+  lastExportIso?: string;
+  lastImportIso?: string;
+  lastRestoreIso?: string;
+};
+
+const readStorageHealth = (): StorageHealth => {
+  try {
+    const raw = localStorage.getItem(STORAGE_HEALTH_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as StorageHealth;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeStorageHealth = (value: StorageHealth) => {
+  try {
+    localStorage.setItem(STORAGE_HEALTH_KEY, JSON.stringify(value));
+  } catch {
+    // Best effort only.
+  }
+};
+
+const formatChangeSummary = (action: string, note: string | null): string => {
+  if (note && note.trim()) return note;
+  if (action === "created") return "Created record.";
+  if (action === "updated") return "Updated record.";
+  return "Change recorded.";
 };
 
 const getSnapshotCount = (key: string): number => {
@@ -226,8 +260,10 @@ export function Sidebar() {
   const syncSiteElevationsOnline = useAppStore((state) => state.syncSiteElevationsOnline);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
+  const showPathProfile = useAppStore((state) => state.showPathProfile);
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
   const setTerrainDataset = useAppStore((state) => state.setTerrainDataset);
+  const setShowPathProfile = useAppStore((state) => state.setShowPathProfile);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
@@ -373,6 +409,7 @@ export function Sidebar() {
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
   const [storageImportMode, setStorageImportMode] = useState<"merge" | "replace">("merge");
   const [storageStatus, setStorageStatus] = useState("");
+  const [storageHealth, setStorageHealth] = useState<StorageHealth>(() => readStorageHealth());
   const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
   const [profilePopupBusy, setProfilePopupBusy] = useState(false);
   const [profilePopupStatus, setProfilePopupStatus] = useState("");
@@ -442,6 +479,14 @@ export function Sidebar() {
     const scenario = scenarioOptions.find((candidate) => candidate.id === scenarioId);
     return scenario ? `${scenario.name} (built-in)` : "Built-in simulation";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
+  const lastStorageActionLabel = useMemo(() => {
+    const entries = [
+      storageHealth.lastExportIso ? `Export ${new Date(storageHealth.lastExportIso).toLocaleString()}` : null,
+      storageHealth.lastImportIso ? `Import ${new Date(storageHealth.lastImportIso).toLocaleString()}` : null,
+      storageHealth.lastRestoreIso ? `Restore ${new Date(storageHealth.lastRestoreIso).toLocaleString()}` : null,
+    ].filter((entry): entry is string => Boolean(entry));
+    return entries.length ? entries.join(" | ") : "No backup/import/restore actions recorded yet.";
+  }, [storageHealth]);
   useEffect(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -662,6 +707,9 @@ export function Sidebar() {
     };
     const stamp = payload.exportedAtIso.replace(/[:.]/g, "-");
     downloadJson(`linksim-backup-${stamp}.json`, payload);
+    const nextHealth = { ...storageHealth, lastExportIso: payload.exportedAtIso };
+    setStorageHealth(nextHealth);
+    writeStorageHealth(nextHealth);
     setStorageStatus(
       `Exported backup (${siteLibrary.length} site(s), ${simulationPresets.length} simulation(s)) for ${payload.origin}.`,
     );
@@ -688,11 +736,15 @@ export function Sidebar() {
         storageImportMode,
       );
       refreshSnapshotInfo();
+      const now = new Date().toISOString();
+      const nextHealth = { ...storageHealth, lastImportIso: now };
+      setStorageHealth(nextHealth);
+      writeStorageHealth(nextHealth);
       setStorageStatus(
         `Import complete (${storageImportMode}): ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStorageStatus(`Import failed: ${message}`);
     } finally {
       event.target.value = "";
@@ -706,6 +758,10 @@ export function Sidebar() {
       setStorageStatus("No snapshots available to restore.");
       return;
     }
+    const now = new Date().toISOString();
+    const nextHealth = { ...storageHealth, lastRestoreIso: now };
+    setStorageHealth(nextHealth);
+    writeStorageHealth(nextHealth);
     setStorageStatus(
       `Restored from snapshots: ${result.siteCount} site(s), ${result.simulationCount} simulation(s).`,
     );
@@ -837,7 +893,7 @@ export function Sidebar() {
       setLibrarySearchResults(results);
       setLibrarySearchStatus(results.length ? `Found ${results.length} result(s)` : "No results");
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setLibrarySearchStatus(`Search failed: ${message}`);
     }
   };
@@ -856,7 +912,7 @@ export function Sidebar() {
         setLibrarySearchStatus(`Selected: ${result.label} (elevation unavailable)`);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setLibrarySearchStatus(`Selected coordinates, elevation lookup failed: ${message}`);
     } finally {
       setLibrarySearchPickBusyId(null);
@@ -881,7 +937,7 @@ export function Sidebar() {
         setMeshmapStatus(`Loaded ${result.nodes.length.toLocaleString()} node(s) from live feed.`);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setMeshmapStatus(`Meshtastic load failed: ${message}`);
     } finally {
       setMeshmapLoading(false);
@@ -948,7 +1004,7 @@ export function Sidebar() {
       const user = await fetchUserById(userId);
       setProfilePopupUser(user);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setProfilePopupStatus(`Failed loading user: ${message}`);
     } finally {
       setProfilePopupBusy(false);
@@ -966,7 +1022,7 @@ export function Sidebar() {
       const changes = await fetchResourceChanges(kind, resourceId);
       setChangeLogPopup({ kind, resourceId, label, changes, busy: false, status: "" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setChangeLogPopup({
         kind,
         resourceId,
@@ -999,16 +1055,29 @@ export function Sidebar() {
     lastEditedByName: string;
     lastEditedByAvatarUrl: string;
   }) => {
+    const resolvedCreatedAvatar =
+      createdByAvatarUrl.trim() || (createdByUserId && createdByUserId === lastEditedByUserId ? lastEditedByAvatarUrl : "");
+    const resolvedLastEditedAvatar =
+      lastEditedByAvatarUrl.trim() ||
+      (lastEditedByUserId && lastEditedByUserId === createdByUserId ? createdByAvatarUrl : "");
+    const resolvedCreatedName =
+      createdByName.trim() && createdByName !== "Unknown"
+        ? createdByName
+        : createdByUserId ?? "Unknown";
+    const resolvedLastEditedName =
+      lastEditedByName.trim() && lastEditedByName !== "Unknown"
+        ? lastEditedByName
+        : lastEditedByUserId ?? resolvedCreatedName;
     setResourceDetailsPopup({
       kind,
       resourceId,
       label,
       createdByUserId,
-      createdByName,
-      createdByAvatarUrl,
+      createdByName: resolvedCreatedName,
+      createdByAvatarUrl: resolvedCreatedAvatar,
       lastEditedByUserId,
-      lastEditedByName,
-      lastEditedByAvatarUrl,
+      lastEditedByName: resolvedLastEditedName,
+      lastEditedByAvatarUrl: resolvedLastEditedAvatar,
     });
   };
 
@@ -1021,7 +1090,7 @@ export function Sidebar() {
       setProfilePopupUser(updated);
       setProfilePopupStatus(`Updated role for ${updated.username}.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setProfilePopupStatus(`Role update failed: ${message}`);
     } finally {
       setProfilePopupBusy(false);
@@ -1037,7 +1106,7 @@ export function Sidebar() {
       setProfilePopupUser(updated);
       setProfilePopupStatus(`${updated.isApproved ? "Approved" : "Revoked"} ${updated.username}.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setProfilePopupStatus(`Approval update failed: ${message}`);
     } finally {
       setProfilePopupBusy(false);
@@ -1072,7 +1141,7 @@ export function Sidebar() {
             onClick={() => setShowSimulationLibraryManager(true)}
             type="button"
           >
-            Simulation Library
+            Open Simulation Library
           </button>
           <button className="inline-action" onClick={saveSimulationAsNew} type="button">
             Save Simulation
@@ -1110,6 +1179,17 @@ export function Sidebar() {
             <p className="field-help">Area window capped to 5° span for performance.</p>
           ) : null}
         </div>
+        <label className="field-grid">
+          <span>Path profile panel</span>
+          <select
+            className="locale-select"
+            onChange={(event) => setShowPathProfile(event.target.value === "show")}
+            value={showPathProfile ? "show" : "hide"}
+          >
+            <option value="show">Show</option>
+            <option value="hide">Hide</option>
+          </select>
+        </label>
       </section>
 
       <section className="panel-section">
@@ -1120,7 +1200,7 @@ export function Sidebar() {
         <p className="field-help">Use Site Library to add/edit sites, then add selected sites to this simulation.</p>
         <div className="chip-group">
           <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
-            Site Library
+            Open Site Library
           </button>
           {siteLibrary.length ? (
             <button className="inline-action" onClick={() => insertSiteFromLibrary(siteLibrary[0].id)} type="button">
@@ -1694,6 +1774,7 @@ export function Sidebar() {
             <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly, and use Restore Snapshot if data looks missing after refresh." />
           </div>
           {storageOriginWarning ? <p className="field-help warning-text">{storageOriginWarning}</p> : null}
+          <p className="field-help">{lastStorageActionLabel}</p>
           <p className="field-help">
             Snapshot history: {storageSnapshotInfo.siteSnapshots} site snapshot(s),{" "}
             {storageSnapshotInfo.simulationSnapshots} simulation snapshot(s).
@@ -1748,7 +1829,7 @@ export function Sidebar() {
       </section>
 
       {profilePopupUser ? (
-        <ModalOverlay aria-label="User Profile" onClose={() => setProfilePopupUser(null)}>
+        <ModalOverlay aria-label="User Profile" onClose={() => setProfilePopupUser(null)} tier="raised">
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>User Profile</h2>
@@ -1783,7 +1864,7 @@ export function Sidebar() {
       ) : null}
 
       {changeLogPopup ? (
-        <ModalOverlay aria-label="Change Log" onClose={() => setChangeLogPopup(null)}>
+        <ModalOverlay aria-label="Change Log" onClose={() => setChangeLogPopup(null)} tier="raised">
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Change Log · {changeLogPopup.label}</h2>
@@ -1806,7 +1887,7 @@ export function Sidebar() {
                   >
                     <UserBadge avatarUrl={change.actorAvatarUrl} name={change.actorName ?? change.actorUserId} />
                   </button>
-                  <p className="field-help">{change.note ?? "-"}</p>
+                  <p className="field-help">{formatChangeSummary(change.action, change.note)}</p>
                 </div>
               ))}
               {!changeLogPopup.busy && !changeLogPopup.changes.length ? (
@@ -1818,7 +1899,7 @@ export function Sidebar() {
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Details" onClose={() => setResourceDetailsPopup(null)}>
+        <ModalOverlay aria-label="Resource Details" onClose={() => setResourceDetailsPopup(null)} tier="raised">
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>Details · {resourceDetailsPopup.label}</h2>
@@ -1885,7 +1966,7 @@ export function Sidebar() {
               />
             </label>
             <label className="field-grid">
-              <span>Save current simulation as</span>
+              <span>Save as new simulation</span>
               <input
                 onChange={(event) => setNewPresetName(event.target.value)}
                 placeholder="My simulation"

@@ -5,18 +5,22 @@ type ModalOverlayProps = {
   "aria-label": string;
   children: ReactNode;
   onClose?: () => void;
+  tier?: "base" | "raised";
 };
 
 let modalIdCounter = 0;
 let openModalCount = 0;
 const openModalStack: number[] = [];
 
-export function ModalOverlay({ children, onClose, ...rest }: ModalOverlayProps) {
+export function ModalOverlay({ children, onClose, tier = "base", ...rest }: ModalOverlayProps) {
   const modalId = useMemo(() => {
     modalIdCounter += 1;
     return modalIdCounter;
   }, []);
-  const zIndex = useMemo(() => 2000 + modalId * 10, [modalId]);
+  const zIndex = useMemo(() => {
+    const base = tier === "raised" ? 8000 : 2000;
+    return base + modalId * 10;
+  }, [modalId, tier]);
 
   useEffect(() => {
     openModalCount += 1;

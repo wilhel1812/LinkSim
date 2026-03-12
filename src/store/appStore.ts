@@ -87,6 +87,7 @@ type AppState = {
   simulationProgress: number;
   simulationRunToken: string;
   coverageResolutionMode: "auto" | "high";
+  showPathProfile: boolean;
   isTerrainFetching: boolean;
   isTerrainRecommending: boolean;
   isElevationSyncing: boolean;
@@ -121,6 +122,7 @@ type AppState = {
   setSelectedSiteId: (id: string) => void;
   setSelectedNetworkId: (id: string) => void;
   setSelectedCoverageMode: (mode: CoverageMode) => void;
+  setShowPathProfile: (show: boolean) => void;
   runHighQualitySimulation: () => void;
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
@@ -404,6 +406,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   simulationProgress: 0,
   simulationRunToken: "",
   coverageResolutionMode: "auto",
+  showPathProfile: true,
   isTerrainFetching: false,
   isTerrainRecommending: false,
   isElevationSyncing: false,
@@ -474,6 +477,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedCoverageMode: mode });
     get().recomputeCoverage();
   },
+  setShowPathProfile: (show) => set({ showPathProfile: show }),
   runHighQualitySimulation: () => {
     get().recomputeCoverage("high");
   },

@@ -1,27 +1,9 @@
 # LinkSim Agent Rules
 
-## Delivery mode
-- Default to stabilization and cleanup work.
-- Do not start new feature tracks unless explicitly requested by the user.
-- Execute in small, reviewable batches.
-
-## Backlog discipline
-- Source of truth: `docs/BACKLOG.md`.
-- Any new request must be added to backlog before implementation.
-- Mark tasks complete only after:
-  - implementation is done,
-  - build/tests are run,
-  - commit is created,
-  - commit is pushed.
-
-## Quality bar
-- Keep wording consistent across UI and API.
-- Prefer clear, actionable error messages.
-- Avoid hidden side effects in request handlers.
-- Favor explicit observability for auth and permission paths.
-
-## Collaboration
-- Summarize each batch with:
-  - what was changed,
-  - what was validated,
-  - what remains next in backlog order.
+- Always update `docs/BACKLOG.md` before and after implementation batches.
+- Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
+- Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.
+- Keep terminology consistent: use `Simulation`, `Site`, `Library`, `Path`, and `Channel` terms across UI and docs.
+- Any modal/popover that can open on top of another dialog must use `tier="raised"` in `ModalOverlay`.
+- When catching UI errors, use `getUiErrorMessage()` from `src/lib/uiError.ts` for consistent messaging.
+- Do not leave backlog tasks in ambiguous state. Use `[x]` only when code and verification are done.

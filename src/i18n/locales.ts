@@ -56,7 +56,7 @@ type TranslationTable = Record<TranslationKey, string>;
 const ENGLISH: TranslationTable = {
   appTitle: "LinkSim",
   workspaceSubtitle: "Propagation workspace",
-  networkCoverageWorkspace: "Network and Coverage Workspace",
+  networkCoverageWorkspace: "Channel and Coverage",
   model: "Model",
   links: "Links",
   sites: "Sites",

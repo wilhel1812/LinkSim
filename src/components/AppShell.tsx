@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchMe } from "../lib/cloudUser";
+import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
@@ -11,6 +12,7 @@ export function AppShell() {
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
+  const showPathProfile = useAppStore((state) => state.showPathProfile);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "pending" | "locked">("checking");
 
@@ -25,7 +27,7 @@ export function AppShell() {
         const me = await fetchMe();
         setAccessState(me.isAdmin || me.isApproved ? "granted" : "pending");
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = getUiErrorMessage(error);
         if (
           message.includes("Session revoked by admin") ||
           message.includes("401") ||
@@ -96,7 +98,7 @@ export function AppShell() {
       {!isMapExpanded ? <Sidebar /> : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""}`}>
         <MapView isMapExpanded={isMapExpanded} onToggleMapExpanded={() => setIsMapExpanded((prev) => !prev)} />
-        {!isMapExpanded ? <LinkProfileChart /> : null}
+        {!isMapExpanded && showPathProfile ? <LinkProfileChart /> : null}
       </section>
     </main>
   );
