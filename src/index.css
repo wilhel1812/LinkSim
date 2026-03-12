@@ -863,6 +863,19 @@ input {
   cursor: pointer;
 }
 
+.user-admin-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.user-manager-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+
 .asset-list {
   display: grid;
   grid-template-columns: 1fr;

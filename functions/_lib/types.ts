@@ -25,6 +25,7 @@ export type Env = {
   ACCESS_AUD?: string;
   ALLOW_INSECURE_DEV_AUTH?: string;
   DEV_AUTH_USER_ID?: string;
+  ADMIN_USER_IDS?: string;
 };
 
 export type AuthContext = {

@@ -11,7 +11,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const auth = await verifyAuth(request, env);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
-    await ensureUser(env, auth.userId);
+    await ensureUser(env, auth.userId, auth.tokenPayload);
     const library = await fetchLibraryForUser(env, auth.userId);
     return withCors(
       request,
@@ -30,7 +30,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const auth = await verifyAuth(request, env);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
-    await ensureUser(env, auth.userId);
+    await ensureUser(env, auth.userId, auth.tokenPayload);
 
     const body = (await request.json()) as LibrarySnapshotPayload;
     const siteLibrary = normalizeArray(body.siteLibrary);

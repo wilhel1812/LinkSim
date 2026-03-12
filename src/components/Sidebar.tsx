@@ -34,6 +34,7 @@ import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { AuthSyncPanel } from "./AuthSyncPanel";
+import { UserAdminPanel } from "./UserAdminPanel";
 
 const metric = (label: string, value: string) => (
   <div className="metric-row" key={label}>
@@ -1529,6 +1530,7 @@ export function Sidebar() {
       <section className="panel-section">
         <details className="compact-details">
           <summary>More</summary>
+          <UserAdminPanel />
           <div className="section-heading">
             <p className="field-help">Cloud Auth & Sync</p>
             <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />

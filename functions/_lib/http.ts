@@ -16,7 +16,7 @@ export const corsHeaders = (request: Request): Headers => {
   headers.set("Vary", "Origin");
   headers.set("Access-Control-Allow-Credentials", "true");
   headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   return headers;
 };
 
