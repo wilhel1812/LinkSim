@@ -21,7 +21,6 @@ import {
   fetchResourceChanges,
   fetchUserById,
   updateUserRole,
-  updateUserApproval,
   type CollaboratorDirectoryUser,
   type CloudUser,
   type ResourceChange,
@@ -1346,22 +1345,6 @@ export function Sidebar() {
     }
   };
 
-  const toggleProfileApproval = async () => {
-    if (!profilePopupUser) return;
-    setProfilePopupBusy(true);
-    setProfilePopupStatus("");
-    try {
-      const updated = await updateUserApproval(profilePopupUser.id, !profilePopupUser.isApproved);
-      setProfilePopupUser(updated);
-      setProfilePopupStatus(`${updated.isApproved ? "Approved" : "Set pending"} ${updated.username}.`);
-    } catch (error) {
-      const message = getUiErrorMessage(error);
-      setProfilePopupStatus(`Approval update failed: ${message}`);
-    } finally {
-      setProfilePopupBusy(false);
-    }
-  };
-
   return (
     <aside className="sidebar-panel">
       <UserAdminPanel />
@@ -1650,7 +1633,7 @@ export function Sidebar() {
           </button>
           <button
             className="inline-action"
-            disabled={links.length <= 1}
+            disabled={!links.length}
             onClick={() => deleteLink(selectedLink.id)}
             type="button"
           >
@@ -2073,9 +2056,16 @@ export function Sidebar() {
                   <option value="admin">Admin</option>
                 </select>
               </label>
-              <button className="inline-action" disabled={profilePopupBusy} onClick={() => void toggleProfileApproval()} type="button">
-                {profilePopupUser.isApproved ? "Set Pending" : "Approve Access"}
-              </button>
+              {!profilePopupUser.isApproved ? (
+                <button
+                  className="inline-action"
+                  disabled={profilePopupBusy}
+                  onClick={() => void changeProfileRole("user")}
+                  type="button"
+                >
+                  Approve Access
+                </button>
+              ) : null}
             </div>
             {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
           </div>

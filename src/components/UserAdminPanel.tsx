@@ -377,38 +377,6 @@ export function UserAdminPanel() {
     }
   };
 
-  const toggleApproval = async (user: CloudUser) => {
-    setBusy(true);
-    setStatus("");
-    try {
-      await updateUserRole(user.id, user.isApproved ? "pending" : "user");
-      await refreshAdminData();
-      setStatus(`${user.isApproved ? "Revoked" : "Granted"} access for ${user.username}.`);
-    } catch (error) {
-      const message = getUiErrorMessage(error);
-      setStatus(`Approval update failed: ${message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const rejectUser = async (user: CloudUser) => {
-    setBusy(true);
-    setStatus("");
-    try {
-      await updateUserRole(user.id, "pending");
-      await refreshAdminData();
-      setStatus(
-        `${user.isApproved ? "Revoked access for" : "Set pending access for"} ${user.username}.`,
-      );
-    } catch (error) {
-      const message = getUiErrorMessage(error);
-      setStatus(`Reject failed: ${message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const deleteUserAccount = async (user: CloudUser) => {
     const confirmed = window.confirm(`Delete user ${user.username}? This will remove owned records.`);
     if (!confirmed) return;
@@ -1002,12 +970,15 @@ export function UserAdminPanel() {
                         <option disabled={!canAssignManagedRole(managedUser, "admin")} value="admin">Admin</option>
                       </select>
                     </label>
-                    <button className="inline-action" onClick={() => void toggleApproval(managedUser)} type="button">
-                      {managedUser.isApproved ? "Set Pending" : "Approve Access"}
-                    </button>
-                    <button className="inline-action" onClick={() => void rejectUser(managedUser)} type="button">
-                      Set Pending
-                    </button>
+                    {!managedUser.isApproved ? (
+                      <button
+                        className="inline-action"
+                        onClick={() => void updateRole(managedUser, "user")}
+                        type="button"
+                      >
+                        Approve Access
+                      </button>
+                    ) : null}
                     <button className="inline-action" onClick={() => void deleteUserAccount(managedUser)} type="button">
                       Delete User
                     </button>

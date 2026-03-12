@@ -646,7 +646,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteLink: (linkId) => {
     set((state) => {
       const remaining = state.links.filter((link) => link.id !== linkId);
-      if (!remaining.length) return state;
+      if (!remaining.length) {
+        if (state.sites.length < 2) return state;
+        const base = state.links[0];
+        const selectedNetwork = state.networks.find((network) => network.id === state.selectedNetworkId);
+        const inheritedFrequencyMHz =
+          selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? base?.frequencyMHz ?? 869.618;
+        const fallbackLink: Link = {
+          id: makeId("lnk"),
+          name: "Auto Link",
+          fromSiteId: state.sites[0].id,
+          toSiteId: state.sites[1].id,
+          frequencyMHz: inheritedFrequencyMHz,
+          txPowerDbm: base?.txPowerDbm ?? 22,
+          txGainDbi: base?.txGainDbi ?? 2,
+          rxGainDbi: base?.rxGainDbi ?? 2,
+          cableLossDb: base?.cableLossDb ?? 1,
+        };
+        return {
+          links: [fallbackLink],
+          selectedLinkId: fallbackLink.id,
+        };
+      }
       return {
         links: remaining,
         selectedLinkId:
