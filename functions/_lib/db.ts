@@ -376,10 +376,6 @@ export const ensureUser = async (
   tokenPayload?: Record<string, unknown>,
 ): Promise<void> => {
   await ensureSchema(env);
-  const deleted = await env.DB.prepare("SELECT id FROM deleted_users WHERE id = ? LIMIT 1").bind(userId).first<{ id: string }>();
-  if (deleted?.id) {
-    throw new Error("Account removed by admin");
-  }
   const now = new Date().toISOString();
   const username = deriveDefaultName(userId, tokenPayload);
   const email = deriveDefaultEmail(userId, tokenPayload);
@@ -695,7 +691,18 @@ const upsertOwnedResource = async (
     }
   }
 
-  await createResourceChange(env, kind, id, isCreate ? "created" : "updated", actorUserId, name);
+  const changeDetails: string[] = [];
+  if (isCreate) {
+    changeDetails.push("initial record");
+  } else {
+    if (existing && existing.name !== name) changeDetails.push("name");
+    if (existing && existing.visibility !== visibility) changeDetails.push("visibility");
+    if (existing && existing.payload_json !== payload) changeDetails.push("content");
+  }
+  const note = isCreate
+    ? `Created "${name}" (${changeDetails.join(", ")})`
+    : `Updated "${name}" (${changeDetails.join(", ") || "content"})`;
+  await createResourceChange(env, kind, id, isCreate ? "created" : "updated", actorUserId, note);
 
   return { ok: true };
 };

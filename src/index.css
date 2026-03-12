@@ -1138,6 +1138,10 @@ input {
   padding: 18px;
 }
 
+.library-manager-overlay-top {
+  z-index: 60;
+}
+
 .library-manager-card {
   width: min(1120px, 96vw);
   max-height: min(86vh, 980px);

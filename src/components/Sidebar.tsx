@@ -1753,7 +1753,12 @@ export function Sidebar() {
       ) : null}
 
       {changeLogPopup ? (
-        <div aria-label="Change Log" aria-modal="true" className="library-manager-overlay" role="dialog">
+        <div
+          aria-label="Change Log"
+          aria-modal="true"
+          className="library-manager-overlay library-manager-overlay-top"
+          role="dialog"
+        >
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Change Log · {changeLogPopup.label}</h2>
@@ -1788,7 +1793,12 @@ export function Sidebar() {
       ) : null}
 
       {resourceDetailsPopup ? (
-        <div aria-label="Resource Details" aria-modal="true" className="library-manager-overlay" role="dialog">
+        <div
+          aria-label="Resource Details"
+          aria-modal="true"
+          className="library-manager-overlay library-manager-overlay-top"
+          role="dialog"
+        >
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>Details · {resourceDetailsPopup.label}</h2>
