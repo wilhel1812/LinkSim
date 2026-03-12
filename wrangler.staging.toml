@@ -1,0 +1,19 @@
+name = "linksim-staging"
+compatibility_date = "2026-03-12"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "linksim_staging"
+database_id = "a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c"
+
+[[r2_buckets]]
+binding = "AVATAR_BUCKET"
+bucket_name = "linksim-avatars-staging"
+preview_bucket_name = "linksim-avatars-staging"
+
+[vars]
+ACCESS_TEAM_DOMAIN = "skarvassbu.cloudflareaccess.com"
+ACCESS_AUD = "08eb695895482e6a14ff49332f3491d0aa02c751670d37983aa7dbbe0da16a08"
+ADMIN_USER_IDS = "f35e2a08-3713-5671-9725-ba82b21f25d4"
+REGISTRATION_MODE = "approval_required"

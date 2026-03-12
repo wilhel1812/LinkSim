@@ -4,7 +4,7 @@ This project now supports a separate staging stack with production-like data.
 
 ## What is configured
 
-- Staging Worker environment in [`wrangler.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.toml)
+- Staging Worker environment in [`wrangler.staging.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.staging.toml)
 - Staging scripts in [`package.json`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/package.json)
 - Refresh scripts:
   - [`scripts/refresh-staging-d1.sh`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/scripts/refresh-staging-d1.sh)
@@ -24,9 +24,9 @@ npx wrangler d1 create linksim_staging
 npx wrangler r2 bucket create linksim-avatars-staging
 ```
 
-3. Update [`wrangler.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.toml):
-- Replace `REPLACE_WITH_STAGING_D1_DATABASE_ID`
-- Replace `REPLACE_WITH_STAGING_ACCESS_AUD`
+3. Confirm [`wrangler.staging.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.staging.toml) has:
+- Staging D1 database ID
+- Staging Access AUD
 
 4. Create a Cloudflare Pages project for staging (recommended name: `linksim-staging`).
 

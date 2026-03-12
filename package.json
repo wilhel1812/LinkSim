@@ -20,7 +20,7 @@
     "smoke:profile": "node scripts/scripts_smoke_profile_only.mjs",
     "smoke:fit-profile": "node scripts/scripts_smoke_fit_profile.mjs",
     "smoke:itm": "node scripts/scripts_smoke_itm.mjs",
-    "deploy:staging": "npm run build && npx wrangler pages deploy dist --project-name ${CF_PAGES_STAGING_PROJECT:-linksim-staging}",
+    "deploy:staging": "npm run build && npx wrangler pages deploy dist --config wrangler.staging.toml --project-name ${CF_PAGES_STAGING_PROJECT:-linksim-staging}",
     "refresh:staging:d1": "./scripts/refresh-staging-d1.sh",
     "refresh:staging:r2": "./scripts/refresh-staging-r2.sh",
     "refresh:staging": "npm run refresh:staging:d1 && npm run refresh:staging:r2",

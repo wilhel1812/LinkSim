@@ -28,6 +28,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] explore if the route option actually makes sense anymore
 - [ ] explore if we can take buildings into account
 - [ ] Explore if we can make ourselves completely independent of VE2DBE data for SRTM
+- [ ] Temporary nodes
 
 ## Active stabilization backlog
 
