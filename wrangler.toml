@@ -26,3 +26,21 @@ REGISTRATION_MODE = "approval_required"
 # PROXY_RATE_LIMIT_PER_MINUTE = "120"
 # Optional: per-IP request cap for /ve2dbe/geodata/gettile.asp (tile list), default 600/minute.
 # VE2DBE_TILELIST_RATE_LIMIT_PER_MINUTE = "600"
+
+# Staging environment: separate data plane + deploy target.
+# Fill in the staging IDs after creating DB/bucket.
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "linksim_staging"
+database_id = "REPLACE_WITH_STAGING_D1_DATABASE_ID"
+
+[[env.staging.r2_buckets]]
+binding = "AVATAR_BUCKET"
+bucket_name = "linksim-avatars-staging"
+preview_bucket_name = "linksim-avatars-staging"
+
+[env.staging.vars]
+ACCESS_TEAM_DOMAIN = "skarvassbu.cloudflareaccess.com"
+ACCESS_AUD = "REPLACE_WITH_STAGING_ACCESS_AUD"
+ADMIN_USER_IDS = "f35e2a08-3713-5671-9725-ba82b21f25d4"
+REGISTRATION_MODE = "approval_required"
