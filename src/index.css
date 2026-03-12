@@ -224,32 +224,20 @@ input {
   order: 3;
 }
 
-.sidebar-panel .section-results {
+.sidebar-panel .section-radio {
   order: 4;
 }
 
-.sidebar-panel .section-scenario-status {
+.sidebar-panel .section-results {
   order: 5;
 }
 
-.sidebar-panel .section-sites-selected {
+.sidebar-panel .section-data {
   order: 6;
 }
 
-.sidebar-panel .section-radio {
-  order: 7;
-}
-
-.sidebar-panel .section-data {
-  order: 8;
-}
-
 .sidebar-panel .section-more {
-  order: 9;
-}
-
-.sidebar-panel .section-intro {
-  order: 10;
+  order: 7;
 }
 
 .section-heading {

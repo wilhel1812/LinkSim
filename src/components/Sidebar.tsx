@@ -34,11 +34,9 @@ import {
 } from "../lib/meshtasticMqtt";
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { analyzeLink } from "../lib/propagation";
-import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { getUiErrorMessage } from "../lib/uiError";
-import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { AuthSyncPanel } from "./AuthSyncPanel";
@@ -438,16 +436,6 @@ export function Sidebar() {
     siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
     simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
   }));
-  const hasTwoSites = sites.length >= 2;
-  const hasPathEndpoints = Boolean(fromSite && toSite && fromSite.id !== toSite.id);
-  const hasTerrain = srtmTiles.length > 0;
-  const terrainBounds = simulationAreaBoundsForSites(sites);
-  const requiredTerrainTileKeys = terrainBounds
-    ? tilesForBounds(terrainBounds.minLat, terrainBounds.maxLat, terrainBounds.minLon, terrainBounds.maxLon)
-    : [];
-  const loadedTileKeys = new Set(srtmTiles.map((tile) => tile.key));
-  const missingTerrainTileKeys = requiredTerrainTileKeys.filter((key) => !loadedTileKeys.has(key));
-  const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
   const hasLocalLibraryData = siteLibrary.length > 0 || simulationPresets.length > 0;
   const filteredSiteLibrary = useMemo(() => {
     const q = siteLibraryQuery.trim().toLowerCase();
@@ -1224,30 +1212,6 @@ export function Sidebar() {
         </label>
       </section>
 
-      <section className="panel-section section-scenario-status">
-        <details className="compact-details">
-          <summary>Scenario Status</summary>
-          <div className="asset-list">
-            <p className="field-help">{hasTwoSites ? `Sites: ${sites.length} configured` : "Sites: add at least 2"}</p>
-            <p className="field-help">
-              {hasPathEndpoints
-                ? `Path: ${fromSite?.name ?? "?"} → ${toSite?.name ?? "?"}`
-                : "Path: choose different From/To nodes"}
-            </p>
-            <p className="field-help">
-              {terrainIsStaleForCurrentArea
-                ? `Terrain: out of date (${missingTerrainTileKeys.length}/${requiredTerrainTileKeys.length} tiles missing for current area)`
-                : hasTerrain
-                  ? `Terrain: up to date (${srtmTiles.length} tile(s) loaded)`
-                  : "Terrain: not loaded yet"}
-            </p>
-            {terrainBounds?.isCapped ? (
-              <p className="field-help">Area window capped to 5° span for performance.</p>
-            ) : null}
-          </div>
-        </details>
-      </section>
-
       <section className="panel-section section-sites">
         <div className="section-heading">
           <h2>Sites</h2>
@@ -1265,6 +1229,27 @@ export function Sidebar() {
           ) : null}
         </div>
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
+        <p className="field-help">Current sites in this simulation:</p>
+        <div className="chip-group">
+          {sites.map((site) => (
+            <button
+              className={clsx("chip-button", selectedSiteId === site.id && "is-selected")}
+              key={site.id}
+              onClick={() => setSelectedSiteId(site.id)}
+              type="button"
+            >
+              {site.name}
+            </button>
+          ))}
+        </div>
+        <button
+          className="inline-action"
+          disabled={sites.length <= 1}
+          onClick={() => deleteSite(selectedSite.id)}
+          type="button"
+        >
+          Remove Selected From Simulation
+        </button>
       </section>
 
       <section className="panel-section section-radio">
@@ -1602,32 +1587,6 @@ export function Sidebar() {
           </div>
         </ModalOverlay>
       ) : null}
-
-      <section className="panel-section section-sites-selected">
-        <details className="compact-details">
-          <summary>Site quick actions</summary>
-          <div className="chip-group">
-            {sites.map((site) => (
-              <button
-                className={clsx("chip-button", selectedSiteId === site.id && "is-selected")}
-                key={site.id}
-                onClick={() => setSelectedSiteId(site.id)}
-                type="button"
-              >
-                {site.name}
-              </button>
-            ))}
-          </div>
-          <button
-            className="inline-action"
-            disabled={sites.length <= 1}
-            onClick={() => deleteSite(selectedSite.id)}
-            type="button"
-          >
-            Remove Selected From Simulation
-          </button>
-        </details>
-      </section>
 
       <section className="panel-section section-data">
         <details className="compact-details">
