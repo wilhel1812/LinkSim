@@ -313,7 +313,6 @@ export function UserAdminPanel() {
         email: emailDraft,
         bio: bioDraft,
         accessRequestNote: accessRequestNoteDraft,
-        avatarUrl: avatarDraft,
         emailPublic: emailPublicDraft,
       });
       setMe(updated);
@@ -597,10 +596,6 @@ export function UserAdminPanel() {
                 <label className="field-grid user-field-grid">
                   <span>Email</span>
                   <input onChange={(event) => setEmailDraft(event.target.value)} type="email" value={emailDraft} />
-                </label>
-                <label className="field-grid user-field-grid">
-                  <span>Profile image URL</span>
-                  <input onChange={(event) => setAvatarDraft(event.target.value)} type="url" value={avatarDraft} />
                 </label>
                 <div className="field-grid user-field-grid">
                   <span>Email visibility</span>
