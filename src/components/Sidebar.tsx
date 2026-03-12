@@ -212,7 +212,11 @@ const getSnapshotCount = (key: string): number => {
   }
 };
 
-export function Sidebar() {
+type SidebarProps = {
+  onOpenOnboarding?: () => void;
+};
+
+export function Sidebar({ onOpenOnboarding }: SidebarProps) {
   const theme = useSystemTheme();
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
@@ -1912,6 +1916,11 @@ export function Sidebar() {
           <div className="section-heading">
             <p className="field-help">Cloud Sync</p>
             <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />
+          </div>
+          <div className="chip-group">
+            <button className="inline-action" onClick={onOpenOnboarding} type="button">
+              Open Onboarding
+            </button>
           </div>
           <AuthSyncPanel />
           <div className="section-heading">

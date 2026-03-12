@@ -1298,6 +1298,39 @@ input {
   gap: 10px;
 }
 
+.tutorial-modal-card {
+  width: min(1320px, 98vw);
+  height: min(94vh, 1100px);
+  max-height: min(94vh, 1100px);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.tutorial-markdown {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  overflow: auto;
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  color: var(--text);
+}
+
+.tutorial-markdown h1,
+.tutorial-markdown h2,
+.tutorial-markdown h3 {
+  margin: 0 0 8px;
+}
+
+.tutorial-markdown p,
+.tutorial-markdown ul,
+.tutorial-markdown ol {
+  margin: 0 0 10px;
+}
+
+.tutorial-markdown li {
+  margin: 0 0 6px;
+}
+
 .library-manager-header {
   display: flex;
   align-items: center;

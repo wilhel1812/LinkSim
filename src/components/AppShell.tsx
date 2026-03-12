@@ -4,8 +4,11 @@ import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
+import { OnboardingTutorialModal } from "./OnboardingTutorialModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
+
+const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 
 export function AppShell() {
   const srtmTilesCount = useAppStore((state) => state.srtmTiles.length);
@@ -14,6 +17,8 @@ export function AppShell() {
   );
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "pending" | "locked">("checking");
+  const [activeUserId, setActiveUserId] = useState("");
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     if (srtmTilesCount > 0) return;
@@ -24,6 +29,13 @@ export function AppShell() {
     void (async () => {
       try {
         const me = await fetchMe();
+        setActiveUserId(me.id);
+        try {
+          const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${me.id}`);
+          if (!seen) setShowOnboarding(true);
+        } catch {
+          // ignore storage errors
+        }
         if (me.accountState === "revoked") {
           setAccessState("locked");
           return;
@@ -43,6 +55,16 @@ export function AppShell() {
       }
     })();
   }, []);
+
+  const closeOnboarding = () => {
+    setShowOnboarding(false);
+    if (!activeUserId) return;
+    try {
+      localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   if (accessState === "checking") {
     return (
@@ -71,6 +93,7 @@ export function AppShell() {
             <li>Wait for moderator/admin approval. You will keep profile access while pending.</li>
           </ul>
         </section>
+        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
       </main>
     );
   }
@@ -92,17 +115,19 @@ export function AppShell() {
             </button>
           </div>
         </section>
+        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
       </main>
     );
   }
 
   return (
     <main className={`app-shell ${isMapExpanded ? "is-map-expanded" : ""}`}>
-      {!isMapExpanded ? <Sidebar /> : null}
+      {!isMapExpanded ? <Sidebar onOpenOnboarding={() => setShowOnboarding(true)} /> : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""}`}>
         <MapView isMapExpanded={isMapExpanded} onToggleMapExpanded={() => setIsMapExpanded((prev) => !prev)} />
         {!isMapExpanded ? <LinkProfileChart /> : null}
       </section>
+      <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
     </main>
   );
 }
