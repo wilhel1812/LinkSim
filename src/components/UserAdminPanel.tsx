@@ -62,38 +62,52 @@ const writeDismissedNotificationIds = (ids: Set<string>) => {
   }
 };
 
+const loadImageFromFile = async (file: File): Promise<HTMLImageElement> => {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Unable to decode image."));
+      img.src = objectUrl;
+    });
+    return image;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
 const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl: string; thumbDataUrl: string }> => {
-  const bitmap = await createImageBitmap(file);
+  const image = await loadImageFromFile(file);
   const maxOriginal = 2048;
   const maxThumb = 320;
-  const originalScale = Math.min(1, maxOriginal / Math.max(bitmap.width, bitmap.height));
-  const thumbScale = Math.min(1, maxThumb / Math.max(bitmap.width, bitmap.height));
-  const originalWidth = Math.max(1, Math.round(bitmap.width * originalScale));
-  const originalHeight = Math.max(1, Math.round(bitmap.height * originalScale));
-  const thumbWidth = Math.max(1, Math.round(bitmap.width * thumbScale));
-  const thumbHeight = Math.max(1, Math.round(bitmap.height * thumbScale));
+  const originalScale = Math.min(1, maxOriginal / Math.max(image.width, image.height));
+  const thumbScale = Math.min(1, maxThumb / Math.max(image.width, image.height));
+  const originalWidth = Math.max(1, Math.round(image.width * originalScale));
+  const originalHeight = Math.max(1, Math.round(image.height * originalScale));
+  const thumbWidth = Math.max(1, Math.round(image.width * thumbScale));
+  const thumbHeight = Math.max(1, Math.round(image.height * thumbScale));
 
   const originalCanvas = document.createElement("canvas");
   originalCanvas.width = originalWidth;
   originalCanvas.height = originalHeight;
   const originalCtx = originalCanvas.getContext("2d");
   if (!originalCtx) throw new Error("Canvas unavailable for image resize.");
-  originalCtx.drawImage(bitmap, 0, 0, originalWidth, originalHeight);
+  originalCtx.drawImage(image, 0, 0, originalWidth, originalHeight);
 
   const thumbCanvas = document.createElement("canvas");
   thumbCanvas.width = thumbWidth;
   thumbCanvas.height = thumbHeight;
   const thumbCtx = thumbCanvas.getContext("2d");
   if (!thumbCtx) throw new Error("Canvas unavailable for thumbnail resize.");
-  thumbCtx.drawImage(bitmap, 0, 0, thumbWidth, thumbHeight);
-  bitmap.close();
+  thumbCtx.drawImage(image, 0, 0, thumbWidth, thumbHeight);
 
   const originalDataUrl = originalCanvas.toDataURL("image/webp", 0.86);
   const thumbDataUrl = thumbCanvas.toDataURL("image/webp", 0.8);
-  if (originalDataUrl.length > 700_000) {
+  if (originalDataUrl.length > 7_000_000) {
     throw new Error("Profile image is still too large after resize.");
   }
-  if (thumbDataUrl.length > 220_000) {
+  if (thumbDataUrl.length > 1_400_000) {
     throw new Error("Profile thumbnail is still too large after resize.");
   }
   return { originalDataUrl, thumbDataUrl };
@@ -114,6 +128,7 @@ export function UserAdminPanel() {
   const [bioDraft, setBioDraft] = useState("");
   const [accessRequestNoteDraft, setAccessRequestNoteDraft] = useState("");
   const [avatarDraft, setAvatarDraft] = useState("");
+  const [avatarStatus, setAvatarStatus] = useState("");
   const [emailPublicDraft, setEmailPublicDraft] = useState(true);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
@@ -321,13 +336,17 @@ export function UserAdminPanel() {
     try {
       setBusy(true);
       setStatus("");
+      setAvatarStatus("Processing image…");
       const resized = await resizeAvatarFileToDataUrl(file);
+      setAvatarStatus("Uploading avatar…");
       const uploaded = await uploadAvatar(resized.originalDataUrl, resized.thumbDataUrl);
       setAvatarDraft(uploaded.user.avatarUrl ?? "");
       setMe(uploaded.user);
+      setAvatarStatus("Avatar uploaded and saved.");
       setStatus("Avatar uploaded and saved.");
     } catch (error) {
       const message = getUiErrorMessage(error);
+      setAvatarStatus(`Upload failed: ${message}`);
       setStatus(`Avatar upload failed: ${message}`);
     } finally {
       setBusy(false);
@@ -556,6 +575,7 @@ export function UserAdminPanel() {
                   Upload Picture
                   <input accept="image/*" onChange={(event) => void onUploadAvatar(event)} type="file" />
                 </label>
+                {avatarStatus ? <p className="field-help">{avatarStatus}</p> : null}
                 <p className="field-help">ID: {me?.id ?? "-"}</p>
                 <p className="field-help">Role: {me?.isAdmin ? "Admin" : "User"}</p>
                 <p className="field-help">
