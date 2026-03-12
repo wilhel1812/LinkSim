@@ -112,81 +112,6 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     defaultFrequencyPresetId: "oslo-local-869618",
   },
   {
-    id: "hogevarde-vardefjell",
-    name: "Høgevarde ↔ Vardefjell",
-    sites: [
-      {
-        id: "site-hogevarde",
-        name: "Høgevarde",
-        position: { lat: 60.297207, lon: 9.466634 },
-        groundElevationM: 1450,
-        antennaHeightM: 2,
-      },
-      {
-        id: "site-vardefjell",
-        name: "Vardefjell",
-        position: { lat: 60.357406, lon: 9.475813 },
-        groundElevationM: 1100,
-        antennaHeightM: 2,
-      },
-      {
-        id: "site-fyrisjovegen-299",
-        name: "Fyrisjøvegen 299",
-        position: { lat: 60.3412972, lon: 9.4645043 },
-        groundElevationM: 900,
-        antennaHeightM: 2,
-      },
-    ],
-    links: [
-      {
-        id: "lnk-hv-vf",
-        fromSiteId: "site-hogevarde",
-        toSiteId: "site-vardefjell",
-        frequencyMHz: 869.618,
-        txPowerDbm: 22,
-        txGainDbi: 5,
-        rxGainDbi: 5,
-        cableLossDb: 1,
-      },
-      {
-        id: "lnk-vf-fyris",
-        fromSiteId: "site-vardefjell",
-        toSiteId: "site-fyrisjovegen-299",
-        frequencyMHz: 869.618,
-        txPowerDbm: 22,
-        txGainDbi: 5,
-        rxGainDbi: 5,
-        cableLossDb: 1,
-      },
-    ],
-    systems: mkSystems(),
-    networks: [
-      {
-        id: "net-hv-vf",
-        name: "Scenario Channel",
-        frequencyMHz: 869.618,
-        bandwidthKhz: 62,
-        spreadFactor: 8,
-        codingRate: 5,
-        frequencyOverrideMHz: 869.618,
-        regionCode: "EU_868",
-        memberships: [
-          { siteId: "site-hogevarde", systemId: "sys-base" },
-          { siteId: "site-vardefjell", systemId: "sys-mobile" },
-          { siteId: "site-fyrisjovegen-299", systemId: "sys-mobile" },
-        ],
-      },
-    ],
-    viewport: {
-      center: { lat: 60.327, lon: 9.471 },
-      zoom: 10.3,
-    },
-    defaultSiteId: "site-hogevarde",
-    defaultLinkId: "lnk-hv-vf",
-    defaultNetworkId: "net-hv-vf",
-    defaultFrequencyPresetId: "oslo-local-869618",
-  },
-  {
     id: "oslo-regional",
     name: "Oslo Regional Ring",
     sites: [
@@ -266,4 +191,4 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
 export const getScenarioById = (id: string): DemoScenario | undefined =>
   DEMO_SCENARIOS.find((scenario) => scenario.id === id);
 
-export const defaultScenario = DEMO_SCENARIOS[1];
+export const defaultScenario = DEMO_SCENARIOS[0];
