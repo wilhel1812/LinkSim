@@ -1138,18 +1138,6 @@ input {
   padding: 18px;
 }
 
-.overlay-level-1 {
-  z-index: 1000;
-}
-
-.overlay-level-2 {
-  z-index: 1100;
-}
-
-.overlay-level-3 {
-  z-index: 1200;
-}
-
 .library-manager-card {
   width: min(1120px, 96vw);
   max-height: min(86vh, 980px);

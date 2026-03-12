@@ -42,6 +42,7 @@ import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { AuthSyncPanel } from "./AuthSyncPanel";
+import { ModalOverlay } from "./ModalOverlay";
 import { UserAdminPanel } from "./UserAdminPanel";
 
 const metric = (label: string, value: string) => (
@@ -1721,12 +1722,7 @@ export function Sidebar() {
       </section>
 
       {profilePopupUser ? (
-        <div
-          aria-label="User Profile"
-          aria-modal="true"
-          className="library-manager-overlay overlay-level-2"
-          role="dialog"
-        >
+        <ModalOverlay aria-label="User Profile">
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>User Profile</h2>
@@ -1754,16 +1750,11 @@ export function Sidebar() {
             </div>
             {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {changeLogPopup ? (
-        <div
-          aria-label="Change Log"
-          aria-modal="true"
-          className="library-manager-overlay overlay-level-3"
-          role="dialog"
-        >
+        <ModalOverlay aria-label="Change Log">
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Change Log · {changeLogPopup.label}</h2>
@@ -1794,16 +1785,11 @@ export function Sidebar() {
               ) : null}
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {resourceDetailsPopup ? (
-        <div
-          aria-label="Resource Details"
-          aria-modal="true"
-          className="library-manager-overlay overlay-level-2"
-          role="dialog"
-        >
+        <ModalOverlay aria-label="Resource Details">
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>Details · {resourceDetailsPopup.label}</h2>
@@ -1843,16 +1829,11 @@ export function Sidebar() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {showSimulationLibraryManager ? (
-        <div
-          aria-label="Simulation Library"
-          aria-modal="true"
-          className="library-manager-overlay overlay-level-1"
-          role="dialog"
-        >
+        <ModalOverlay aria-label="Simulation Library">
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Simulation Library</h2>
@@ -1996,10 +1977,10 @@ export function Sidebar() {
               </div>
             ) : null}
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
       {showSiteLibraryManager ? (
-        <div aria-label="Site Library" aria-modal="true" className="library-manager-overlay overlay-level-1" role="dialog">
+        <ModalOverlay aria-label="Site Library">
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Site Library</h2>
@@ -2369,7 +2350,7 @@ export function Sidebar() {
               </div>
             ) : null}
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">

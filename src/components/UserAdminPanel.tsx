@@ -10,6 +10,7 @@ import {
   type CloudUser,
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
+import { ModalOverlay } from "./ModalOverlay";
 
 const initialsFor = (name: string): string => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -296,12 +297,7 @@ export function UserAdminPanel() {
       </button>
 
       {open ? (
-        <div
-          aria-label="User Settings"
-          aria-modal="true"
-          className="library-manager-overlay overlay-level-2"
-          role="dialog"
-        >
+        <ModalOverlay aria-label="User Settings">
           <div className="library-manager-card user-settings-modal">
             <div className="library-manager-header">
               <h2>User Settings</h2>
@@ -443,7 +439,7 @@ export function UserAdminPanel() {
 
             {status ? <p className="field-help">{status}</p> : null}
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
     </>
   );
