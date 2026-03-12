@@ -48,26 +48,26 @@ See `config/vite.config.ts`.
 
 ## Running
 
+Install dependencies:
+
 ```bash
 npm install
-npm run dev
 ```
 
-## Local-First Workflow (Recommended)
+Primary local runtime (recommended): Docker edge parity stack
 
-Fast UI iteration (no Cloudflare build usage):
+```bash
+docker compose up --build edge
+```
+
+App is available at `http://localhost:8788`.
+
+Legacy local runtimes (kept for compatibility):
 
 ```bash
 npm run dev
-```
-
-Full local edge stack (Pages Functions + local D1):
-
-```bash
 npm run dev:edge
 ```
-
-Use `dev` during daily UI iteration, and `dev:edge` when validating auth/API/permissions before pushing.
 
 ## Cloud Auth + D1 (Cloudflare-Only)
 
@@ -94,26 +94,20 @@ npm run build
 
 ## Running with Docker Compose
 
-Production-like runtime (nginx + static assets + reverse proxy):
-
-```bash
-docker compose up --build web
-```
-
-App is available at `http://localhost:8080`.
-
-Development runtime (Vite dev server with live reload):
-
-```bash
-docker compose up --build dev
-```
-
-App is available at `http://localhost:5173`.
-
-Edge-parity runtime (Pages Functions + local D1/R2 + dev auth fallback):
+Preferred:
 
 ```bash
 docker compose up --build edge
 ```
 
-App is available at `http://localhost:8788`.
+Legacy/optional:
+
+```bash
+docker compose up --build web
+docker compose up --build dev
+```
+
+Ports:
+- `edge`: `http://localhost:8788`
+- `web`: `http://localhost:8080`
+- `dev`: `http://localhost:5173`

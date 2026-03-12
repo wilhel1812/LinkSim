@@ -10,13 +10,15 @@ page.on('pageerror', err => {
   console.log(`[pageerror] ${err.stack || err.message}`);
 });
 
-const resp = await page.goto('http://127.0.0.1:4174/', { waitUntil: 'networkidle' });
+const resp = await page.goto('http://127.0.0.1:8788/', { waitUntil: 'networkidle' });
 console.log('status', resp?.status());
 
 await page.waitForTimeout(2000);
-await page.screenshot({ path: '/tmp/rmw_ui_check.png', fullPage: true });
+await page.screenshot({ path: '/tmp/linksim_ui_check.png', fullPage: true });
 
 const hasTitle = await page.locator('text=LinkSim').count();
+const hasScenario = await page.locator('text=Scenario').count();
 console.log('has-title', hasTitle);
+console.log('has-scenario', hasScenario);
 
 await browser.close();

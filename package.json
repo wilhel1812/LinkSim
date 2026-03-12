@@ -13,6 +13,7 @@
     "preview": "vite preview --config config/vite.config.ts",
     "test": "vitest run --config config/vitest.config.ts",
     "test:watch": "vitest --config config/vitest.config.ts",
+    "smoke:edge": "node scripts/scripts_pw_check.mjs",
     "smoke:pw": "node scripts/scripts_pw_check.mjs",
     "smoke:scenario": "node scripts/scripts_smoke_scenario.mjs",
     "smoke:profile": "node scripts/scripts_smoke_profile_only.mjs",
