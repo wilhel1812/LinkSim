@@ -1,5 +1,5 @@
 import { verifyAuth } from "../_lib/auth";
-import { assertUserAccess, ensureUser, fetchUserProfile, listUsers } from "../_lib/db";
+import { assertUserAccess, ensureUser, fetchResourceChanges } from "../_lib/db";
 import { handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
@@ -12,12 +12,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     await ensureUser(env, auth.userId, auth.tokenPayload);
     await assertUserAccess(env, auth.userId);
-    const me = await fetchUserProfile(env, auth.userId);
-    if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
-    if (!me.isAdmin) return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
 
-    const users = await listUsers(env);
-    return withCors(request, json({ users }));
+    const url = new URL(request.url);
+    const kindRaw = url.searchParams.get("kind");
+    const resourceId = (url.searchParams.get("id") ?? "").trim();
+    const kind = kindRaw === "site" || kindRaw === "simulation" ? kindRaw : null;
+
+    if (!kind || !resourceId) {
+      return withCors(request, json({ error: "Missing kind or id" }, { status: 400 }));
+    }
+
+    const changes = await fetchResourceChanges(env, kind, resourceId);
+    return withCors(request, json({ changes }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes("pending approval") ? 403 : 500;

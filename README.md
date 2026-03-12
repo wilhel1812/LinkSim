@@ -45,6 +45,22 @@ npm install
 npm run dev
 ```
 
+## Local-First Workflow (Recommended)
+
+Fast UI iteration (no Cloudflare build usage):
+
+```bash
+npm run dev
+```
+
+Full local edge stack (Pages Functions + local D1):
+
+```bash
+npm run dev:edge
+```
+
+Use `dev` during daily UI iteration, and `dev:edge` when validating auth/API/permissions before pushing.
+
 ## Cloud Auth + D1 (Cloudflare-Only)
 
 This repository now includes:

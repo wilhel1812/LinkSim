@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import {
   fetchMe,
   fetchUsers,
   updateMyProfile,
   updateUserAdmin,
+  updateUserApproval,
   updateUserProfile,
   type CloudUser,
 } from "../lib/cloudUser";
@@ -15,10 +16,32 @@ const initialsFor = (name: string): string => {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 };
 
-const fmtDate = (iso: string | null): string => {
+const fmtDate = (iso: string | null | undefined): string => {
   if (!iso) return "-";
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
+};
+
+const resizeAvatarFileToDataUrl = async (file: File): Promise<string> => {
+  const bitmap = await createImageBitmap(file);
+  const maxSize = 192;
+  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas unavailable for image resize.");
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const webp = canvas.toDataURL("image/webp", 0.82);
+  if (webp.length > 240_000) {
+    throw new Error("Profile image is still too large after resize.");
+  }
+  return webp;
 };
 
 export function UserAdminPanel() {
@@ -42,7 +65,7 @@ export function UserAdminPanel() {
       const current = await fetchMe();
       setMe(current);
       setNameDraft(current.username);
-      setEmailDraft(current.email);
+      setEmailDraft(current.email ?? "");
       setBioDraft(current.bio ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       if (current.isAdmin) {
@@ -89,6 +112,24 @@ export function UserAdminPanel() {
     }
   };
 
+  const onUploadAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      setBusy(true);
+      setStatus("");
+      const resized = await resizeAvatarFileToDataUrl(file);
+      setAvatarDraft(resized);
+      setStatus("Avatar resized locally. Click Save Profile to store it.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Avatar upload failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggleAdmin = async (user: CloudUser) => {
     setBusy(true);
     setStatus("");
@@ -100,6 +141,22 @@ export function UserAdminPanel() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus(`Role update failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleApproval = async (user: CloudUser) => {
+    setBusy(true);
+    setStatus("");
+    try {
+      await updateUserApproval(user.id, !user.isApproved);
+      const all = await fetchUsers();
+      setUsers(all);
+      setStatus(`${user.isApproved ? "Revoked" : "Granted"} access for ${user.username}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Approval update failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -141,25 +198,30 @@ export function UserAdminPanel() {
             <div className="user-settings-layout">
               <div className="user-settings-avatar-column">
                 <ProfileAvatar avatarUrl={avatarDraft} name={nameDraft || "User"} size="large" />
+                <label className="upload-button">
+                  Upload Picture
+                  <input accept="image/*" onChange={(event) => void onUploadAvatar(event)} type="file" />
+                </label>
                 <p className="field-help">ID: {me?.id ?? "-"}</p>
                 <p className="field-help">Role: {me?.isAdmin ? "Admin" : "User"}</p>
-                <p className="field-help">Created: {fmtDate(me?.createdAt ?? null)}</p>
+                <p className="field-help">Access: {me?.isApproved ? "Approved" : "Pending approval"}</p>
+                <p className="field-help">Created: {fmtDate(me?.createdAt)}</p>
               </div>
 
               <div className="user-settings-form-column">
-                <label className="field-grid">
+                <label className="field-grid user-field-grid">
                   <span>Name</span>
                   <input onChange={(event) => setNameDraft(event.target.value)} type="text" value={nameDraft} />
                 </label>
-                <label className="field-grid">
+                <label className="field-grid user-field-grid">
                   <span>Email</span>
                   <input onChange={(event) => setEmailDraft(event.target.value)} type="email" value={emailDraft} />
                 </label>
-                <label className="field-grid">
+                <label className="field-grid user-field-grid">
                   <span>Profile image URL</span>
                   <input onChange={(event) => setAvatarDraft(event.target.value)} type="url" value={avatarDraft} />
                 </label>
-                <label className="field-grid user-bio-field">
+                <label className="field-grid user-bio-field user-field-grid">
                   <span>Bio</span>
                   <textarea maxLength={300} onChange={(event) => setBioDraft(event.target.value)} value={bioDraft} />
                 </label>
@@ -181,12 +243,13 @@ export function UserAdminPanel() {
 
             {canAdmin ? (
               <div className="user-manager-list">
-                <p className="field-help">Admin: manage other users</p>
+                <p className="field-help">Admin: manage approvals, roles, and profile basics</p>
                 {userRows.map((user) => (
                   <ManagedUserRow
                     key={user.id}
                     onSave={saveManagedProfile}
                     onToggleAdmin={toggleAdmin}
+                    onToggleApproval={toggleApproval}
                     user={user}
                   />
                 ))}
@@ -205,36 +268,41 @@ export function UserAdminPanel() {
 function ManagedUserRow({
   user,
   onToggleAdmin,
+  onToggleApproval,
   onSave,
 }: {
   user: CloudUser;
   onToggleAdmin: (user: CloudUser) => Promise<void>;
+  onToggleApproval: (user: CloudUser) => Promise<void>;
   onSave: (user: CloudUser, patch: { username: string; email: string }) => Promise<void>;
 }) {
   const [nameDraft, setNameDraft] = useState(user.username);
-  const [emailDraft, setEmailDraft] = useState(user.email);
+  const [emailDraft, setEmailDraft] = useState(user.email ?? "");
 
   useEffect(() => {
     setNameDraft(user.username);
-    setEmailDraft(user.email);
+    setEmailDraft(user.email ?? "");
   }, [user.username, user.email]);
 
   return (
     <div className="library-row">
       <div className="field-help">
-        {user.id} | created {fmtDate(user.createdAt)}
+        {user.id} | created {fmtDate(user.createdAt)} | access {user.isApproved ? "approved" : "pending"}
       </div>
-      <label className="field-grid">
+      <label className="field-grid user-field-grid">
         <span>Name</span>
         <input onChange={(event) => setNameDraft(event.target.value)} type="text" value={nameDraft} />
       </label>
-      <label className="field-grid">
+      <label className="field-grid user-field-grid">
         <span>Email</span>
         <input onChange={(event) => setEmailDraft(event.target.value)} type="email" value={emailDraft} />
       </label>
       <div className="chip-group">
         <button className="inline-action" onClick={() => void onSave(user, { username: nameDraft, email: emailDraft })} type="button">
           Save
+        </button>
+        <button className="inline-action" onClick={() => void onToggleApproval(user)} type="button">
+          {user.isApproved ? "Revoke" : "Approve"}
         </button>
         <button className="inline-action" onClick={() => void onToggleAdmin(user)} type="button">
           {user.isAdmin ? "Set User" : "Set Admin"}

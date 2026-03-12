@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config config/vite.config.ts",
+    "build:client": "vite build --config config/vite.config.ts",
+    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --local --persist-to .wrangler/state",
     "build": "tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",
     "lint": "eslint .",
     "preview": "vite preview --config config/vite.config.ts",

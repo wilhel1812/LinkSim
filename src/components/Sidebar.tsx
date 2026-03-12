@@ -17,6 +17,14 @@ import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import {
+  fetchResourceChanges,
+  fetchUserById,
+  updateUserAdmin,
+  updateUserApproval,
+  type CloudUser,
+  type ResourceChange,
+} from "../lib/cloudUser";
+import {
   fetchMeshmapNodes,
   getCachedMeshmapSnapshotInfo,
   getDefaultMeshmapFeedUrl,
@@ -346,6 +354,17 @@ export function Sidebar() {
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
   const [storageImportMode, setStorageImportMode] = useState<"merge" | "replace">("merge");
   const [storageStatus, setStorageStatus] = useState("");
+  const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
+  const [profilePopupBusy, setProfilePopupBusy] = useState(false);
+  const [profilePopupStatus, setProfilePopupStatus] = useState("");
+  const [changeLogPopup, setChangeLogPopup] = useState<{
+    kind: "site" | "simulation";
+    resourceId: string;
+    label: string;
+    changes: ResourceChange[];
+    busy: boolean;
+    status: string;
+  } | null>(null);
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
     siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
@@ -889,6 +908,76 @@ export function Sidebar() {
       },
     );
     setMeshmapStatus(`Added ${fallbackName} to site library.`);
+  };
+
+  const openUserProfilePopup = async (userId: string | undefined | null) => {
+    if (!userId) return;
+    setProfilePopupBusy(true);
+    setProfilePopupStatus("");
+    try {
+      const user = await fetchUserById(userId);
+      setProfilePopupUser(user);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setProfilePopupStatus(`Failed loading user: ${message}`);
+    } finally {
+      setProfilePopupBusy(false);
+    }
+  };
+
+  const openChangeLogPopup = async (
+    kind: "site" | "simulation",
+    resourceId: string | undefined,
+    label: string,
+  ) => {
+    if (!resourceId) return;
+    setChangeLogPopup({ kind, resourceId, label, changes: [], busy: true, status: "" });
+    try {
+      const changes = await fetchResourceChanges(kind, resourceId);
+      setChangeLogPopup({ kind, resourceId, label, changes, busy: false, status: "" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setChangeLogPopup({
+        kind,
+        resourceId,
+        label,
+        changes: [],
+        busy: false,
+        status: `Failed loading change log: ${message}`,
+      });
+    }
+  };
+
+  const toggleProfileAdmin = async () => {
+    if (!profilePopupUser) return;
+    setProfilePopupBusy(true);
+    setProfilePopupStatus("");
+    try {
+      const updated = await updateUserAdmin(profilePopupUser.id, !profilePopupUser.isAdmin);
+      setProfilePopupUser(updated);
+      setProfilePopupStatus(`Updated role for ${updated.username}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setProfilePopupStatus(`Role update failed: ${message}`);
+    } finally {
+      setProfilePopupBusy(false);
+    }
+  };
+
+  const toggleProfileApproval = async () => {
+    if (!profilePopupUser) return;
+    setProfilePopupBusy(true);
+    setProfilePopupStatus("");
+    try {
+      const updated = await updateUserApproval(profilePopupUser.id, !profilePopupUser.isApproved);
+      setProfilePopupUser(updated);
+      setProfilePopupStatus(`${updated.isApproved ? "Approved" : "Revoked"} ${updated.username}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setProfilePopupStatus(`Approval update failed: ${message}`);
+    } finally {
+      setProfilePopupBusy(false);
+    }
   };
 
   return (
@@ -1594,6 +1683,73 @@ export function Sidebar() {
         </details>
       </section>
 
+      {profilePopupUser ? (
+        <div aria-label="User Profile" aria-modal="true" className="library-manager-overlay" role="dialog">
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>User Profile</h2>
+              <button className="inline-action" onClick={() => setProfilePopupUser(null)} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              <strong>{profilePopupUser.username}</strong> ({profilePopupUser.id})
+            </p>
+            <p className="field-help">Email: {profilePopupUser.email ?? "Hidden"}</p>
+            <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
+            <p className="field-help">Role: {profilePopupUser.isAdmin ? "Admin" : "User"}</p>
+            <p className="field-help">
+              Access: {profilePopupUser.isApproved ? "Approved" : "Pending"} | Created{" "}
+              {new Date(profilePopupUser.createdAt).toLocaleString()}
+            </p>
+            <div className="chip-group">
+              <button className="inline-action" disabled={profilePopupBusy} onClick={() => void toggleProfileApproval()} type="button">
+                {profilePopupUser.isApproved ? "Revoke Access" : "Approve Access"}
+              </button>
+              <button className="inline-action" disabled={profilePopupBusy} onClick={() => void toggleProfileAdmin()} type="button">
+                {profilePopupUser.isAdmin ? "Set User" : "Set Admin"}
+              </button>
+            </div>
+            {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
+          </div>
+        </div>
+      ) : null}
+
+      {changeLogPopup ? (
+        <div aria-label="Change Log" aria-modal="true" className="library-manager-overlay" role="dialog">
+          <div className="library-manager-card">
+            <div className="library-manager-header">
+              <h2>Change Log · {changeLogPopup.label}</h2>
+              <button className="inline-action" onClick={() => setChangeLogPopup(null)} type="button">
+                Close
+              </button>
+            </div>
+            {changeLogPopup.busy ? <p className="field-help">Loading changes...</p> : null}
+            {changeLogPopup.status ? <p className="field-help">{changeLogPopup.status}</p> : null}
+            <div className="library-manager-list">
+              {changeLogPopup.changes.map((change) => (
+                <div className="library-row" key={change.id}>
+                  <p className="field-help">
+                    {change.action.toUpperCase()} · {new Date(change.changedAt).toLocaleString()}
+                  </p>
+                  <button
+                    className="inline-link-button"
+                    onClick={() => void openUserProfilePopup(change.actorUserId)}
+                    type="button"
+                  >
+                    {change.actorName ?? change.actorUserId}
+                  </button>
+                  <p className="field-help">{change.note ?? "-"}</p>
+                </div>
+              ))}
+              {!changeLogPopup.busy && !changeLogPopup.changes.length ? (
+                <p className="field-help">No change entries yet.</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showSimulationLibraryManager ? (
         <div
           aria-label="Simulation Library"
@@ -1667,6 +1823,39 @@ export function Sidebar() {
                     <strong>{preset.name}</strong>
                     {" · "}
                     Updated {new Date(preset.updatedAt).toLocaleString()}
+                    <span className="audit-meta-row">
+                      <button
+                        className="inline-link-button"
+                        onClick={() =>
+                          void openUserProfilePopup(
+                            (preset as unknown as { createdByUserId?: string }).createdByUserId ?? null,
+                          )
+                        }
+                        type="button"
+                      >
+                        Created by{" "}
+                        {(preset as unknown as { createdByName?: string }).createdByName ?? "Unknown"}
+                      </button>
+                      <button
+                        className="inline-link-button"
+                        onClick={() =>
+                          void openUserProfilePopup(
+                            (preset as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
+                          )
+                        }
+                        type="button"
+                      >
+                        Last edited by{" "}
+                        {(preset as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown"}
+                      </button>
+                      <button
+                        className="inline-link-button"
+                        onClick={() => void openChangeLogPopup("simulation", preset.id, preset.name)}
+                        type="button"
+                      >
+                        View changes
+                      </button>
+                    </span>
                   </span>
                   <div className="library-row-actions">
                     <button
@@ -1964,6 +2153,38 @@ export function Sidebar() {
                   />
                   <span className="library-row-label">
                     {entry.name} ({entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)})
+                    <span className="audit-meta-row">
+                      <button
+                        className="inline-link-button"
+                        onClick={() =>
+                          void openUserProfilePopup(
+                            (entry as unknown as { createdByUserId?: string }).createdByUserId ?? null,
+                          )
+                        }
+                        type="button"
+                      >
+                        Created by {(entry as unknown as { createdByName?: string }).createdByName ?? "Unknown"}
+                      </button>
+                      <button
+                        className="inline-link-button"
+                        onClick={() =>
+                          void openUserProfilePopup(
+                            (entry as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
+                          )
+                        }
+                        type="button"
+                      >
+                        Last edited by{" "}
+                        {(entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown"}
+                      </button>
+                      <button
+                        className="inline-link-button"
+                        onClick={() => void openChangeLogPopup("site", entry.id, entry.name)}
+                        type="button"
+                      >
+                        View changes
+                      </button>
+                    </span>
                   </span>
                   <div className="library-row-actions">
                     <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">

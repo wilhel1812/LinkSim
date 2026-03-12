@@ -26,6 +26,7 @@ export type Env = {
   ALLOW_INSECURE_DEV_AUTH?: string;
   DEV_AUTH_USER_ID?: string;
   ADMIN_USER_IDS?: string;
+  REGISTRATION_MODE?: string;
 };
 
 export type AuthContext = {

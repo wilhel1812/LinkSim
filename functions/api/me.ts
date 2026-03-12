@@ -24,7 +24,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return withCors(request, json({ error: `Auth verification failed: ${message}` }, { status: 401 }));
+    return withCors(request, json({ error: message }, { status: 401 }));
   }
 };
 
