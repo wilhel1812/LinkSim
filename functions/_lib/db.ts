@@ -1310,7 +1310,10 @@ export const fetchLibraryForUser = async (
        FROM sites s
        LEFT JOIN site_roles r ON r.site_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE ? = 1 OR s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
+       WHERE ? = 1
+          OR s.owner_user_id = ?
+          OR s.visibility IN ('public_read', 'public_write')
+          OR (r.user_id IS NOT NULL AND s.visibility != 'private')`,
     )
     .bind(userId, canReadAllResources ? 1 : 0, userId)
     .all<LibraryRow>();
@@ -1337,7 +1340,10 @@ export const fetchLibraryForUser = async (
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE ? = 1 OR s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
+       WHERE ? = 1
+          OR s.owner_user_id = ?
+          OR s.visibility IN ('public_read', 'public_write')
+          OR (r.user_id IS NOT NULL AND s.visibility != 'private')`,
     )
     .bind(userId, canReadAllResources ? 1 : 0, userId)
     .all<LibraryRow>();
