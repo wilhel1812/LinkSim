@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --config config/vite.config.ts",
     "build:client": "vite build --config config/vite.config.ts",
-    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=f35e2a08-3713-5671-9725-ba82b21f25d4 --local --persist-to .wrangler/state",
+    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --local --persist-to .wrangler/state",
     "build": "tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",
     "lint": "eslint .",
     "preview": "vite preview --config config/vite.config.ts",

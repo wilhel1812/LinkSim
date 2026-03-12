@@ -9,7 +9,7 @@ INSERT INTO users (
   approved_at, approved_by_user_id, created_at, updated_at
 ) VALUES
 -- Admins
-('f35e2a08-3713-5671-9725-ba82b21f25d4','Wilhelm Admin','wilhelm+admin@linksim.local','Bootstrap admin account','','wilhelm+admin@linksim.local',1,'',1,NULL,NULL,NULL,NULL,NULL,1,0,1,'2026-03-01T09:00:00.000Z','seed','2026-03-01T09:00:00.000Z','2026-03-12T19:30:00.000Z'),
+('admin_01','Primary Admin','admin.primary@linksim.local','Bootstrap admin account','','admin.primary@linksim.local',1,'',1,NULL,NULL,NULL,NULL,NULL,1,0,1,'2026-03-01T09:00:00.000Z','seed','2026-03-01T09:00:00.000Z','2026-03-12T19:30:00.000Z'),
 ('admin_02','Nora Admin','nora.admin@linksim.local','Secondary admin','','nora.admin@linksim.local',1,'',1,NULL,NULL,NULL,NULL,NULL,1,0,1,'2026-03-05T11:00:00.000Z','seed','2026-03-05T11:00:00.000Z','2026-03-12T19:30:00.000Z'),
 
 -- Moderators
