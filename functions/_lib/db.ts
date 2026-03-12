@@ -353,7 +353,11 @@ const ensureSchema = async (env: Env): Promise<void> => {
           .join(" | ");
         throw new Error(`Schema out of date. Run D1 migrations. Missing: ${summary}`);
       }
-    })();
+    })().catch((error) => {
+      // Allow next request to retry schema checks instead of pinning a rejected promise forever.
+      schemaReady = null;
+      throw error;
+    });
   }
   await schemaReady;
 };
