@@ -272,6 +272,68 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
     .first<UserRow>();
 };
 
+const reconcileUserIdentityByEmail = async (env: Env, userId: string, email: string): Promise<void> => {
+  const normalized = sanitizeEmail(email);
+  if (!normalized) return;
+
+  const existing = await env.DB
+    .prepare(
+      `SELECT id, username, email, bio, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at
+       FROM users
+       WHERE lower(email) = lower(?) AND id <> ?
+       ORDER BY is_admin DESC, is_approved DESC, created_at ASC
+       LIMIT 1`,
+    )
+    .bind(normalized, userId)
+    .first<UserRow>();
+  if (!existing) return;
+
+  const now = new Date().toISOString();
+  await env.DB
+    .prepare(
+      `UPDATE users
+       SET is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
+           is_approved = CASE WHEN ? = 1 THEN 1 ELSE is_approved END,
+           approved_at = CASE WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
+           approved_by_user_id = CASE WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?) ELSE approved_by_user_id END,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(
+      existing.is_admin === 1 ? 1 : 0,
+      existing.is_approved === 1 ? 1 : 0,
+      existing.is_approved === 1 ? 1 : 0,
+      existing.approved_at ?? now,
+      existing.is_approved === 1 ? 1 : 0,
+      existing.approved_by_user_id ?? existing.id,
+      now,
+      userId,
+    )
+    .run();
+
+  await env.DB.batch([
+    env.DB.prepare("UPDATE sites SET owner_user_id = ? WHERE owner_user_id = ?").bind(userId, existing.id),
+    env.DB
+      .prepare(
+        `UPDATE sites
+         SET created_by_user_id = CASE WHEN created_by_user_id = ? THEN ? ELSE created_by_user_id END,
+             last_edited_by_user_id = CASE WHEN last_edited_by_user_id = ? THEN ? ELSE last_edited_by_user_id END`,
+      )
+      .bind(existing.id, userId, existing.id, userId),
+    env.DB.prepare("UPDATE simulations SET owner_user_id = ? WHERE owner_user_id = ?").bind(userId, existing.id),
+    env.DB
+      .prepare(
+        `UPDATE simulations
+         SET created_by_user_id = CASE WHEN created_by_user_id = ? THEN ? ELSE created_by_user_id END,
+             last_edited_by_user_id = CASE WHEN last_edited_by_user_id = ? THEN ? ELSE last_edited_by_user_id END`,
+      )
+      .bind(existing.id, userId, existing.id, userId),
+    env.DB.prepare("UPDATE site_roles SET user_id = ? WHERE user_id = ?").bind(userId, existing.id),
+    env.DB.prepare("UPDATE simulation_roles SET user_id = ? WHERE user_id = ?").bind(userId, existing.id),
+    env.DB.prepare("UPDATE resource_changes SET actor_user_id = ? WHERE actor_user_id = ?").bind(userId, existing.id),
+  ]);
+};
+
 export const ensureUser = async (
   env: Env,
   userId: string,
@@ -326,6 +388,8 @@ export const ensureUser = async (
       userId,
     )
     .run();
+
+  await reconcileUserIdentityByEmail(env, userId, email);
 };
 
 export const fetchUserProfile = async (env: Env, userId: string) => {
