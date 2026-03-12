@@ -15,11 +15,19 @@ import { useSystemTheme } from "../hooks/useSystemTheme";
 import { useAppStore } from "../store/appStore";
 import type { Link, Site } from "../types/radio";
 
+const isStagingHost = (() => {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname.toLowerCase();
+  return host.startsWith("staging.") || host.endsWith(".linksim-staging.pages.dev");
+})();
+
+const mapLinkColor = isStagingHost ? "#ff73b4" : "#00c2ff";
+
 const mapLineLayer: LayerProps = {
   id: "link-lines",
   type: "line",
   paint: {
-    "line-color": ["case", ["==", ["get", "selected"], 1], "#ffd166", "#00c2ff"],
+    "line-color": ["case", ["==", ["get", "selected"], 1], "#ffd166", mapLinkColor],
     "line-width": ["case", ["==", ["get", "selected"], 1], 4.5, 3],
     "line-opacity": ["case", ["==", ["get", "selected"], 1], 0.98, 0.72],
     "line-dasharray": [1.5, 1],
