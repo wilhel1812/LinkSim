@@ -260,10 +260,8 @@ export function Sidebar() {
   const syncSiteElevationsOnline = useAppStore((state) => state.syncSiteElevationsOnline);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
-  const showPathProfile = useAppStore((state) => state.showPathProfile);
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
   const setTerrainDataset = useAppStore((state) => state.setTerrainDataset);
-  const setShowPathProfile = useAppStore((state) => state.setShowPathProfile);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
@@ -1179,17 +1177,6 @@ export function Sidebar() {
             <p className="field-help">Area window capped to 5° span for performance.</p>
           ) : null}
         </div>
-        <label className="field-grid">
-          <span>Path profile panel</span>
-          <select
-            className="locale-select"
-            onChange={(event) => setShowPathProfile(event.target.value === "show")}
-            value={showPathProfile ? "show" : "hide"}
-          >
-            <option value="show">Show</option>
-            <option value="hide">Hide</option>
-          </select>
-        </label>
       </section>
 
       <section className="panel-section">

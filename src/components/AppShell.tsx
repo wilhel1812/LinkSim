@@ -12,7 +12,6 @@ export function AppShell() {
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
-  const showPathProfile = useAppStore((state) => state.showPathProfile);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "pending" | "locked">("checking");
 
@@ -102,7 +101,7 @@ export function AppShell() {
       {!isMapExpanded ? <Sidebar /> : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""}`}>
         <MapView isMapExpanded={isMapExpanded} onToggleMapExpanded={() => setIsMapExpanded((prev) => !prev)} />
-        {!isMapExpanded && showPathProfile ? <LinkProfileChart /> : null}
+        {!isMapExpanded ? <LinkProfileChart /> : null}
       </section>
     </main>
   );
