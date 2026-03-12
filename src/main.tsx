@@ -12,6 +12,12 @@ if (window.location.hostname === "127.0.0.1") {
   window.location.replace(redirectUrl);
 }
 
+const host = window.location.hostname.toLowerCase();
+const isStagingHost = host.startsWith("staging.") || host.endsWith(".linksim-staging.pages.dev");
+if (isStagingHost) {
+  document.documentElement.classList.add("env-staging");
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

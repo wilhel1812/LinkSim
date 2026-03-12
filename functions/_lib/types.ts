@@ -25,6 +25,7 @@ export type Env = {
   DB: D1Database;
   AVATAR_BUCKET?: R2Bucket;
   AVATAR_PUBLIC_BASE_URL?: string;
+  AVATAR_FALLBACK_ORIGIN?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   AUTH_OBSERVABILITY?: string;

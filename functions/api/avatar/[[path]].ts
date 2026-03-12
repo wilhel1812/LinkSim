@@ -20,6 +20,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
   const object = await env.AVATAR_BUCKET.get(key);
   if (!object?.body) {
+    const fallbackOrigin = (env.AVATAR_FALLBACK_ORIGIN ?? "").trim().replace(/\/+$/, "");
+    if (fallbackOrigin) {
+      const fallbackUrl = `${fallbackOrigin}/api/avatar/${key
+        .split("/")
+        .map((part) => encodeURIComponent(part))
+        .join("/")}`;
+      try {
+        const upstream = await fetch(fallbackUrl, {
+          headers: { accept: request.headers.get("accept") ?? "*/*" },
+        });
+        if (upstream.ok && upstream.body) {
+          const headers = new Headers(upstream.headers);
+          if (!headers.has("cache-control")) headers.set("cache-control", "public, max-age=3600");
+          return withCors(request, new Response(upstream.body, { status: 200, headers }));
+        }
+      } catch {
+        // Fall through to standard not-found.
+      }
+    }
     return withCors(request, new Response("Not found", { status: 404 }));
   }
 

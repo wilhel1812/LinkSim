@@ -33,6 +33,20 @@
   }
 }
 
+.env-staging {
+  --accent: #d43f8d;
+  --accent-soft: rgba(212, 63, 141, 0.2);
+  --fresnel: rgba(212, 63, 141, 0.24);
+}
+
+@media (prefers-color-scheme: dark) {
+  .env-staging {
+    --accent: #ff73b4;
+    --accent-soft: rgba(255, 115, 180, 0.24);
+    --fresnel: rgba(255, 115, 180, 0.28);
+  }
+}
+
 * {
   box-sizing: border-box;
 }

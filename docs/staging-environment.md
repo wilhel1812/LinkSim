@@ -5,6 +5,7 @@ This project now supports a separate staging stack with production-like data.
 ## What is configured
 
 - Staging Worker environment in [`wrangler.staging.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.staging.toml)
+- Staging avatar fallback to production origin while staging R2 catches up
 - Staging scripts in [`package.json`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/package.json)
 - Refresh scripts:
   - [`scripts/refresh-staging-d1.sh`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/scripts/refresh-staging-d1.sh)
