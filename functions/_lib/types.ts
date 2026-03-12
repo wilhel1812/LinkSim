@@ -21,6 +21,8 @@ export type LibrarySnapshotPayload = {
 
 export type Env = {
   DB: D1Database;
+  AVATAR_BUCKET?: R2Bucket;
+  AVATAR_PUBLIC_BASE_URL?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   AUTH_OBSERVABILITY?: string;

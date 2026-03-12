@@ -1007,6 +1007,14 @@ input {
   font-family: "Space Grotesk", "Avenir Next", sans-serif;
 }
 
+.checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
 .user-bio-field {
   grid-template-columns: minmax(0, 1fr);
 }

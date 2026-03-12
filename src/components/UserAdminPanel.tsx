@@ -11,6 +11,7 @@ import {
   runMetadataRepair,
   reassignResourceOwner,
   restoreDeletedCloudUser,
+  uploadAvatar,
   updateMyProfile,
   updateUserAdmin,
   updateUserApproval,
@@ -61,26 +62,41 @@ const writeDismissedNotificationIds = (ids: Set<string>) => {
   }
 };
 
-const resizeAvatarFileToDataUrl = async (file: File): Promise<string> => {
+const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl: string; thumbDataUrl: string }> => {
   const bitmap = await createImageBitmap(file);
-  const maxSize = 192;
-  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const maxOriginal = 256;
+  const maxThumb = 72;
+  const originalScale = Math.min(1, maxOriginal / Math.max(bitmap.width, bitmap.height));
+  const thumbScale = Math.min(1, maxThumb / Math.max(bitmap.width, bitmap.height));
+  const originalWidth = Math.max(1, Math.round(bitmap.width * originalScale));
+  const originalHeight = Math.max(1, Math.round(bitmap.height * originalScale));
+  const thumbWidth = Math.max(1, Math.round(bitmap.width * thumbScale));
+  const thumbHeight = Math.max(1, Math.round(bitmap.height * thumbScale));
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas unavailable for image resize.");
-  ctx.drawImage(bitmap, 0, 0, width, height);
+  const originalCanvas = document.createElement("canvas");
+  originalCanvas.width = originalWidth;
+  originalCanvas.height = originalHeight;
+  const originalCtx = originalCanvas.getContext("2d");
+  if (!originalCtx) throw new Error("Canvas unavailable for image resize.");
+  originalCtx.drawImage(bitmap, 0, 0, originalWidth, originalHeight);
+
+  const thumbCanvas = document.createElement("canvas");
+  thumbCanvas.width = thumbWidth;
+  thumbCanvas.height = thumbHeight;
+  const thumbCtx = thumbCanvas.getContext("2d");
+  if (!thumbCtx) throw new Error("Canvas unavailable for thumbnail resize.");
+  thumbCtx.drawImage(bitmap, 0, 0, thumbWidth, thumbHeight);
   bitmap.close();
 
-  const webp = canvas.toDataURL("image/webp", 0.82);
-  if (webp.length > 240_000) {
+  const originalDataUrl = originalCanvas.toDataURL("image/webp", 0.86);
+  const thumbDataUrl = thumbCanvas.toDataURL("image/webp", 0.8);
+  if (originalDataUrl.length > 700_000) {
     throw new Error("Profile image is still too large after resize.");
   }
-  return webp;
+  if (thumbDataUrl.length > 220_000) {
+    throw new Error("Profile thumbnail is still too large after resize.");
+  }
+  return { originalDataUrl, thumbDataUrl };
 };
 
 export function UserAdminPanel() {
@@ -98,6 +114,7 @@ export function UserAdminPanel() {
   const [bioDraft, setBioDraft] = useState("");
   const [accessRequestNoteDraft, setAccessRequestNoteDraft] = useState("");
   const [avatarDraft, setAvatarDraft] = useState("");
+  const [emailPublicDraft, setEmailPublicDraft] = useState(true);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState("");
@@ -195,6 +212,7 @@ export function UserAdminPanel() {
       setBioDraft(current.bio ?? "");
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
+      setEmailPublicDraft(current.emailPublic ?? true);
       if (current.isAdmin) {
         const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
@@ -281,6 +299,7 @@ export function UserAdminPanel() {
         bio: bioDraft,
         accessRequestNote: accessRequestNoteDraft,
         avatarUrl: avatarDraft,
+        emailPublic: emailPublicDraft,
       });
       setMe(updated);
       setStatus("Profile updated.");
@@ -303,8 +322,10 @@ export function UserAdminPanel() {
       setBusy(true);
       setStatus("");
       const resized = await resizeAvatarFileToDataUrl(file);
-      setAvatarDraft(resized);
-      setStatus("Avatar resized locally. Click Save Profile to store it.");
+      const uploaded = await uploadAvatar(resized.originalDataUrl, resized.thumbDataUrl);
+      setAvatarDraft(uploaded.user.avatarUrl ?? "");
+      setMe(uploaded.user);
+      setStatus("Avatar uploaded and saved.");
     } catch (error) {
       const message = getUiErrorMessage(error);
       setStatus(`Avatar upload failed: ${message}`);
@@ -561,6 +582,17 @@ export function UserAdminPanel() {
                   <span>Profile image URL</span>
                   <input onChange={(event) => setAvatarDraft(event.target.value)} type="url" value={avatarDraft} />
                 </label>
+                <div className="field-grid user-field-grid">
+                  <span>Email visibility</span>
+                  <label className="checkbox-field">
+                    <input
+                      checked={emailPublicDraft}
+                      onChange={(event) => setEmailPublicDraft(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>Visible to all users in profile popover (admins always see it)</span>
+                  </label>
+                </div>
                 <label className="field-grid user-bio-field user-field-grid">
                   <span>Bio</span>
                   <textarea maxLength={300} onChange={(event) => setBioDraft(event.target.value)} value={bioDraft} />

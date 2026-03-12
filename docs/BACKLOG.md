@@ -17,14 +17,13 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] E-mail notifications (starting with account approval)
 - [ ] Rehaul of dockumentation (readme.md)
 - [ ] Set up a compehensive testing plan
-- [x] Set up a compehensive testing plan
 - [ ] Branding
 - [x] Elevation plot visibility toggle
 - [x] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
 - [x] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
 - [x] What does the reject button currently do?
 - [x] Show profile pictures to other users when you click open the user popover. Also show a small one next to any user name in the UI
-- [ ] User should be able to select if e-mail should be visible to everyone or only admins
+- [x] User should be able to select if e-mail should be visible to everyone or only admins
 - [ ] access rights on sites and simulations. public, public-read only, private
 - [ ] explore if the route option actually makes sense anymore
 - [ ] explore if we can take buildings into account
@@ -46,7 +45,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Add observability for Cloudflare Access auth header/JWT variants
 
 ### Data and storage safety
-- [ ] Replace avatar data URLs in D1 with object storage flow (R2) + thumbnails
+- [x] Replace avatar data URLs in D1 with object storage flow (R2) + thumbnails
 - [x] Remove runtime schema migration from request path
 - [x] Add migration/version status visibility in admin tools
 - Progress: admin schema diagnostics endpoint + warnings added in User Settings.
@@ -88,7 +87,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 ## Hardening execution paths (agreed, no further discussion required now)
 - [x] Runtime migrations
 - Path: move all `ALTER TABLE`/schema drift logic out of request handlers into explicit SQL migration files + CI/deploy migration step; expose schema version in admin diagnostics.
-- [ ] Avatar storage strategy
+- [x] Avatar storage strategy
 - Path: move avatar binaries to R2 with server-side resize/thumbnail generation; keep only URL, hash, size, and content-type in D1.
 - [x] Auth/permission regression coverage
 - Path: add API integration tests for self-role block, pending-user lock, approval/revocation, admin-only mutations, cross-user denial, and delete safeguards.

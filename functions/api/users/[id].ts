@@ -34,6 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     if (!user) return withCors(request, json({ error: "User not found" }, { status: 404 }));
 
     if (!me.isAdmin && me.id !== targetId) {
+      const canSeeEmail = user.emailPublic;
       return withCors(
         request,
         json(
@@ -43,8 +44,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
               username: user.username,
               bio: user.bio,
               avatarUrl: user.avatarUrl,
+              ...(canSeeEmail ? { email: user.email } : {}),
               isAdmin: user.isAdmin,
               isApproved: user.isApproved,
+              emailPublic: user.emailPublic,
               createdAt: user.createdAt,
               updatedAt: user.updatedAt,
             },
@@ -79,6 +82,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       bio?: unknown;
       accessRequestNote?: unknown;
       avatarUrl?: unknown;
+      emailPublic?: unknown;
       isAdmin?: unknown;
       isApproved?: unknown;
     };
@@ -103,6 +107,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         bio: body.bio,
         accessRequestNote: body.accessRequestNote,
         avatarUrl: body.avatarUrl,
+        emailPublic: body.emailPublic,
       });
     }
     if (body.isAdmin !== undefined) {

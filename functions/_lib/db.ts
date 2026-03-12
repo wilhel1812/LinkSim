@@ -4,7 +4,7 @@ const VISIBILITIES: Visibility[] = ["private", "public_read", "public_write"];
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
-const SCHEMA_VERSION = "2026-03-12b";
+const SCHEMA_VERSION = "2026-03-12c";
 type AccountState = "pending" | "approved" | "revoked";
 
 const sanitizeVisibility = (value: unknown): Visibility =>
@@ -58,15 +58,21 @@ const sanitizeAccessRequestNote = (value: unknown): string | null => {
   return note.length <= 1200 ? note : note.slice(0, 1200);
 };
 
+const sanitizeBoolean = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+};
+
 const sanitizeAvatar = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const raw = value.trim();
   if (!raw) return "";
-  if (raw.startsWith("data:image/")) {
-    if (raw.length > 240_000) return null;
-    if (!/^data:image\/(webp|png|jpeg|jpg);base64,/i.test(raw)) return null;
-    return raw;
-  }
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
@@ -135,6 +141,12 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     "idp_email",
     "idp_email_verified",
     "avatar_url",
+    "email_public",
+    "avatar_object_key",
+    "avatar_thumb_key",
+    "avatar_hash",
+    "avatar_bytes",
+    "avatar_content_type",
     "is_admin",
     "is_approved",
     "approved_at",
@@ -211,6 +223,12 @@ const ensureSchema = async (env: Env): Promise<void> => {
             idp_email TEXT,
             idp_email_verified INTEGER NOT NULL DEFAULT 0,
             avatar_url TEXT,
+            email_public INTEGER NOT NULL DEFAULT 1,
+            avatar_object_key TEXT,
+            avatar_thumb_key TEXT,
+            avatar_hash TEXT,
+            avatar_bytes INTEGER,
+            avatar_content_type TEXT,
             is_admin INTEGER NOT NULL DEFAULT 0,
             is_approved INTEGER NOT NULL DEFAULT 0,
             approved_at TEXT,
@@ -332,6 +350,12 @@ type UserRow = {
   idp_email: string | null;
   idp_email_verified: number;
   avatar_url: string | null;
+  email_public: number;
+  avatar_object_key: string | null;
+  avatar_thumb_key: string | null;
+  avatar_hash: string | null;
+  avatar_bytes: number | null;
+  avatar_content_type: string | null;
   is_admin: number;
   is_approved: number;
   approved_at: string | null;
@@ -376,6 +400,12 @@ const toUserProfile = (row: UserRow) => ({
   idpEmail: row.idp_email ?? "",
   idpEmailVerified: row.idp_email_verified === 1,
   avatarUrl: row.avatar_url ?? "",
+  emailPublic: row.email_public === 1,
+  avatarObjectKey: row.avatar_object_key ?? "",
+  avatarThumbKey: row.avatar_thumb_key ?? "",
+  avatarHash: row.avatar_hash ?? "",
+  avatarBytes: row.avatar_bytes ?? 0,
+  avatarContentType: row.avatar_content_type ?? "",
   isAdmin: row.is_admin === 1,
   isApproved: row.is_approved === 1,
   accountState:
@@ -394,7 +424,7 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
@@ -530,8 +560,8 @@ export const ensureUser = async (
 
   await env.DB.prepare(
     `INSERT OR IGNORE INTO users
-      (id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
-     VALUES (?, ?, ?, '', '', ?, ?, '', ?, ?, ?, ?, ?, ?)`,
+      (id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       userId,
@@ -609,6 +639,7 @@ export const updateUserProfile = async (
     bio?: unknown;
     accessRequestNote?: unknown;
     avatarUrl?: unknown;
+    emailPublic?: unknown;
   },
 ) => {
   const existing = await readUserRow(env, userId);
@@ -622,14 +653,29 @@ export const updateUserProfile = async (
       ? existing.access_request_note ?? ""
       : sanitizeAccessRequestNote(patch.accessRequestNote) ?? "";
   const nextAvatar = patch.avatarUrl === undefined ? existing.avatar_url ?? "" : sanitizeAvatar(patch.avatarUrl);
+  const nextEmailPublic =
+    patch.emailPublic === undefined ? existing.email_public === 1 : sanitizeBoolean(patch.emailPublic, true);
+  const shouldClearAvatarMetadata =
+    patch.avatarUrl !== undefined && (nextAvatar ?? "") !== (existing.avatar_url ?? "");
 
   if (!nextName) throw new Error("Name is required (2-80 chars).");
   if (!nextEmail) throw new Error("Email is required and must be valid.");
-  if (nextAvatar === null) throw new Error("Profile picture must be a valid http(s) URL or image data URL.");
+  if (nextAvatar === null) throw new Error("Profile picture must be a valid http(s) URL.");
 
   await env.DB.prepare(
     `UPDATE users
-     SET username = ?, email = ?, bio = ?, access_request_note = ?, avatar_url = ?, updated_at = ?
+     SET username = ?,
+         email = ?,
+         bio = ?,
+         access_request_note = ?,
+         avatar_url = ?,
+         email_public = ?,
+         avatar_object_key = ?,
+         avatar_thumb_key = ?,
+         avatar_hash = ?,
+         avatar_bytes = ?,
+         avatar_content_type = ?,
+         updated_at = ?
      WHERE id = ?`,
   )
     .bind(
@@ -638,6 +684,12 @@ export const updateUserProfile = async (
       nextBio,
       nextAccessRequestNote,
       nextAvatar ?? "",
+      nextEmailPublic ? 1 : 0,
+      shouldClearAvatarMetadata ? null : existing.avatar_object_key,
+      shouldClearAvatarMetadata ? null : existing.avatar_thumb_key,
+      shouldClearAvatarMetadata ? null : existing.avatar_hash,
+      shouldClearAvatarMetadata ? null : existing.avatar_bytes,
+      shouldClearAvatarMetadata ? null : existing.avatar_content_type,
       new Date().toISOString(),
       userId,
     )
@@ -648,11 +700,68 @@ export const updateUserProfile = async (
   return profile;
 };
 
+export const setUserAvatarAssets = async (
+  env: Env,
+  userId: string,
+  avatar: {
+    avatarUrl: string;
+    avatarObjectKey: string;
+    avatarThumbKey: string;
+    avatarHash: string;
+    avatarBytes: number;
+    avatarContentType: string;
+  },
+) => {
+  await ensureSchema(env);
+  const now = new Date().toISOString();
+  await env.DB
+    .prepare(
+      `UPDATE users
+       SET avatar_url = ?,
+           avatar_object_key = ?,
+           avatar_thumb_key = ?,
+           avatar_hash = ?,
+           avatar_bytes = ?,
+           avatar_content_type = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(
+      avatar.avatarUrl,
+      avatar.avatarObjectKey,
+      avatar.avatarThumbKey,
+      avatar.avatarHash,
+      avatar.avatarBytes,
+      avatar.avatarContentType,
+      now,
+      userId,
+    )
+    .run();
+  const profile = await fetchUserProfile(env, userId);
+  if (!profile) throw new Error("User not found after avatar update.");
+  return profile;
+};
+
+export const getUserAvatarKeys = async (
+  env: Env,
+  userId: string,
+): Promise<{ avatarObjectKey: string | null; avatarThumbKey: string | null }> => {
+  await ensureSchema(env);
+  const row = await env.DB
+    .prepare("SELECT avatar_object_key, avatar_thumb_key FROM users WHERE id = ? LIMIT 1")
+    .bind(userId)
+    .first<{ avatar_object_key: string | null; avatar_thumb_key: string | null }>();
+  return {
+    avatarObjectKey: row?.avatar_object_key ?? null,
+    avatarThumbKey: row?.avatar_thumb_key ?? null,
+  };
+};
+
 export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map(toUserProfile);

@@ -7,6 +7,7 @@ export type CloudUser = {
   idpEmail?: string;
   idpEmailVerified?: boolean;
   avatarUrl: string;
+  emailPublic?: boolean;
   isAdmin: boolean;
   isApproved: boolean;
   accountState?: "pending" | "approved" | "revoked";
@@ -95,6 +96,19 @@ export type AdminAuditEvent = {
   createdAt: string;
 };
 
+export type AvatarUploadResult = {
+  ok: boolean;
+  user: CloudUser;
+  avatar: {
+    url: string;
+    objectKey: string;
+    thumbKey: string;
+    hash: string;
+    contentType: string;
+    bytes: number;
+  };
+};
+
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
@@ -135,6 +149,7 @@ export const updateMyProfile = async (patch: {
   bio?: string;
   accessRequestNote?: string;
   avatarUrl?: string;
+  emailPublic?: boolean;
 }): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>("/api/me", {
     method: "PATCH",
@@ -172,6 +187,7 @@ export const updateUserProfile = async (
     bio?: string;
     accessRequestNote?: string;
     avatarUrl?: string;
+    emailPublic?: boolean;
   },
 ): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>(`/api/users/${encodeURIComponent(id)}`, {
@@ -262,3 +278,12 @@ export const fetchAdminAuditEvents = async (limit = 60): Promise<AdminAuditEvent
   });
   return Array.isArray(data.events) ? data.events : [];
 };
+
+export const uploadAvatar = async (originalDataUrl: string, thumbDataUrl: string): Promise<AvatarUploadResult> =>
+  apiCall<AvatarUploadResult>("/api/avatar-upload", {
+    method: "POST",
+    body: JSON.stringify({
+      originalDataUrl,
+      thumbDataUrl,
+    }),
+  });

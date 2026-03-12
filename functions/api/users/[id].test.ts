@@ -106,7 +106,7 @@ describe("users/[id] auth and permission guards", () => {
     expect(deleteUserMock).not.toHaveBeenCalled();
   });
 
-  it("returns redacted profile for non-admin requesting another user", async () => {
+  it("returns redacted profile with email when target opted public", async () => {
     const req = new Request("https://example.test/api/users/u2", { method: "GET" });
     fetchUserProfileMock.mockResolvedValueOnce({
       id: "u1",
@@ -116,6 +116,7 @@ describe("users/[id] auth and permission guards", () => {
       avatarUrl: "",
       isAdmin: false,
       isApproved: true,
+      emailPublic: true,
       accountState: "approved",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -128,6 +129,7 @@ describe("users/[id] auth and permission guards", () => {
       avatarUrl: "https://example.test/avatar.png",
       isAdmin: false,
       isApproved: true,
+      emailPublic: true,
       accountState: "approved",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -139,11 +141,47 @@ describe("users/[id] auth and permission guards", () => {
     expect(body.user).toMatchObject({
       id: "u2",
       username: "User Two",
+      email: "u2@example.com",
       bio: "bio",
       avatarUrl: "https://example.test/avatar.png",
       isAdmin: false,
       isApproved: true,
     });
+  });
+
+  it("hides email in redacted profile when target opted private", async () => {
+    const req = new Request("https://example.test/api/users/u2", { method: "GET" });
+    fetchUserProfileMock.mockResolvedValueOnce({
+      id: "u1",
+      username: "User One",
+      email: "u1@example.com",
+      bio: "",
+      avatarUrl: "",
+      isAdmin: false,
+      isApproved: true,
+      emailPublic: true,
+      accountState: "approved",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    fetchUserProfileMock.mockResolvedValueOnce({
+      id: "u2",
+      username: "User Two",
+      email: "u2@example.com",
+      bio: "bio",
+      avatarUrl: "https://example.test/avatar.png",
+      isAdmin: false,
+      isApproved: true,
+      emailPublic: false,
+      accountState: "approved",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const res = await onRequestGet(mkCtx(req, { id: "u2" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
     expect(body.user.email).toBeUndefined();
+    expect(body.user.emailPublic).toBe(false);
   });
 });

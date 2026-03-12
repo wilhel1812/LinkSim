@@ -1855,7 +1855,7 @@ export function Sidebar() {
               </strong>{" "}
               ({profilePopupUser.id})
             </p>
-            <p className="field-help">Email: {profilePopupUser.email ?? "Hidden"}</p>
+            <p className="field-help">Email: {profilePopupUser.email ?? "Hidden by user"}</p>
             <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
             <p className="field-help">Role: {profilePopupUser.isAdmin ? "Admin" : "User"}</p>
             <p className="field-help">

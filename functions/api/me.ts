@@ -40,6 +40,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
       bio?: unknown;
       accessRequestNote?: unknown;
       avatarUrl?: unknown;
+      emailPublic?: unknown;
     };
     const user = await updateUserProfile(env, auth.userId, body);
     return withCors(request, json({ user }));
