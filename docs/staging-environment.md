@@ -38,6 +38,8 @@ npx wrangler r2 bucket create linksim-avatars-staging
 npm run deploy:staging
 ```
 
+(Uses `wrangler.staging.toml` during deploy, then restores `wrangler.toml`.)
+
 Optional custom staging project name:
 
 ```bash
