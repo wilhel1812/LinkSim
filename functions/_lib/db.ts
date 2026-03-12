@@ -354,7 +354,7 @@ const toUserProfile = (row: UserRow) => ({
   accountState:
     row.is_admin === 1 || row.is_approved === 1
       ? ("approved" as AccountState)
-      : row.approved_at || row.approved_by_user_id
+      : typeof row.approved_by_user_id === "string" && row.approved_by_user_id.startsWith("revoked:")
         ? ("revoked" as AccountState)
         : ("pending" as AccountState),
   approvedAt: row.approved_at,
@@ -635,16 +635,30 @@ export const setUserApproval = async (
 ) => {
   const approved = Boolean(approvedRaw);
   const now = new Date().toISOString();
+  const revokedBy = `revoked:${actorUserId}`;
   await env.DB
     .prepare(
       `UPDATE users
        SET is_approved = ?,
            approved_at = CASE WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
-           approved_by_user_id = CASE WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?) ELSE approved_by_user_id END,
+           approved_by_user_id = CASE
+             WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?)
+             WHEN approved_at IS NULL THEN NULL
+             ELSE ?
+           END,
            updated_at = ?
        WHERE id = ?`,
     )
-    .bind(approved ? 1 : 0, approved ? 1 : 0, now, approved ? 1 : 0, actorUserId, now, userId)
+    .bind(
+      approved ? 1 : 0,
+      approved ? 1 : 0,
+      now,
+      approved ? 1 : 0,
+      actorUserId,
+      revokedBy,
+      now,
+      userId,
+    )
     .run();
   const profile = await fetchUserProfile(env, userId);
   if (!profile) throw new Error("User not found.");
@@ -703,7 +717,7 @@ export const listPendingApprovalUsers = async (
     .prepare(
       `SELECT id, username, email, created_at, access_request_note
        FROM users
-       WHERE is_approved = 0 AND approved_at IS NULL
+       WHERE is_approved = 0 AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%')
        ORDER BY created_at ASC
        LIMIT 200`,
     )
