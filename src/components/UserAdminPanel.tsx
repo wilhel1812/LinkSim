@@ -38,6 +38,13 @@ const fmtDate = (iso: string | null | undefined): string => {
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
 };
 
+const InfoTip = ({ text }: { text: string }) => (
+  <button aria-label={text} className="info-tip" type="button">
+    i
+    <span className="info-tip-box">{text}</span>
+  </button>
+);
+
 const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;
 
@@ -622,7 +629,10 @@ export function UserAdminPanel() {
                   <input onChange={(event) => setEmailDraft(event.target.value)} type="email" value={emailDraft} />
                 </label>
                 <div className="field-grid user-field-grid">
-                  <span>Email visibility</span>
+                  <span>
+                    Email visibility{" "}
+                    <InfoTip text="If enabled, your email is visible in user profile popovers and collaborator search. Admins always see emails for moderation." />
+                  </span>
                   <label className="checkbox-field">
                     <input
                       checked={emailPublicDraft}
@@ -970,7 +980,10 @@ export function UserAdminPanel() {
                       Save Profile
                     </button>
                     <label className="field-grid user-field-grid">
-                      <span>Role</span>
+                      <span>
+                        Role{" "}
+                        <InfoTip text="Role changes are audited. Admins can assign all roles except their own. Moderators can only set non-admin/non-moderator users to Pending or User." />
+                      </span>
                       <select
                         className="locale-select"
                         onChange={(event) => {

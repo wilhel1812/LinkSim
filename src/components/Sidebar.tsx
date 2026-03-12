@@ -2035,7 +2035,10 @@ export function Sidebar() {
             </p>
             <div className="chip-group">
               <label className="field-grid">
-                <span>Role</span>
+                <span>
+                  Role{" "}
+                  <InfoTip text="Admins can change roles for other users. Moderators can only move non-admin/non-moderator users between Pending and User. No one can change their own role." />
+                </span>
                 <select
                   className="locale-select"
                   disabled={profilePopupBusy}
@@ -2147,7 +2150,10 @@ export function Sidebar() {
             <details className="compact-details" open>
               <summary>Access</summary>
               <label className="field-grid">
-                <span>Access level</span>
+                <span>
+                  Access level{" "}
+                  <InfoTip text="Private: owner/admin edit. Public: everyone can view; owner/mod/admin edit. Shared: everyone can view/edit; only owner/mod/admin can delete." />
+                </span>
                 <select
                   className="locale-select"
                   onChange={(event) =>
@@ -2161,7 +2167,10 @@ export function Sidebar() {
                 </select>
               </label>
               <div className="field-grid user-bio-field collaborator-picker-grid">
-                <span>Collaborators</span>
+                <span>
+                  Collaborators{" "}
+                  <InfoTip text="Collaborators get edit rights on this resource. Editors can add collaborators but cannot remove existing collaborators. Owners/admins can remove." />
+                </span>
                 <div className="collaborator-picker">
                   <div className="chip-group collaborator-selected-list">
                     {selectedCollaboratorUsers.length ? (
