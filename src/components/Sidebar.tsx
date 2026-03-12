@@ -17,10 +17,12 @@ import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import {
+  fetchCollaboratorDirectory,
   fetchResourceChanges,
   fetchUserById,
   updateUserRole,
   updateUserApproval,
+  type CollaboratorDirectoryUser,
   type CloudUser,
   type ResourceChange,
 } from "../lib/cloudUser";
@@ -439,7 +441,11 @@ export function Sidebar() {
     lastEditedByAvatarUrl: string;
   } | null>(null);
   const [resourceAccessVisibility, setResourceAccessVisibility] = useState<"private" | "public" | "shared">("shared");
-  const [resourceCollaboratorsInput, setResourceCollaboratorsInput] = useState("");
+  const [resourceCollaboratorUserIds, setResourceCollaboratorUserIds] = useState<string[]>([]);
+  const [resourceCollaboratorQuery, setResourceCollaboratorQuery] = useState("");
+  const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
+  const [resourceCollaboratorDirectoryBusy, setResourceCollaboratorDirectoryBusy] = useState(false);
+  const [resourceCollaboratorDirectoryStatus, setResourceCollaboratorDirectoryStatus] = useState("");
   const [resourceAccessStatus, setResourceAccessStatus] = useState("");
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
@@ -488,6 +494,34 @@ export function Sidebar() {
     const scenario = scenarioOptions.find((candidate) => candidate.id === scenarioId);
     return scenario ? `${scenario.name} (built-in)` : "Built-in simulation";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
+  const collaboratorDirectoryById = useMemo(
+    () => new globalThis.Map(resourceCollaboratorDirectory.map((user) => [user.id, user])),
+    [resourceCollaboratorDirectory],
+  );
+  const selectedCollaboratorUsers = useMemo(
+    () =>
+      resourceCollaboratorUserIds.map((userId) => {
+        const user = collaboratorDirectoryById.get(userId);
+        return {
+          id: userId,
+          username: user?.username ?? userId,
+          email: user?.email ?? "",
+          avatarUrl: user?.avatarUrl ?? "",
+        };
+      }),
+    [collaboratorDirectoryById, resourceCollaboratorUserIds],
+  );
+  const collaboratorCandidates = useMemo(() => {
+    const q = resourceCollaboratorQuery.trim().toLowerCase();
+    const selectedIds = new Set(resourceCollaboratorUserIds);
+    const filtered = resourceCollaboratorDirectory.filter((user) => {
+      if (selectedIds.has(user.id)) return false;
+      if (!q) return true;
+      const hay = `${user.username} ${user.email}`.toLowerCase();
+      return hay.includes(q);
+    });
+    return filtered.slice(0, 30);
+  }, [resourceCollaboratorDirectory, resourceCollaboratorUserIds, resourceCollaboratorQuery]);
   const lastStorageActionLabel = useMemo(() => {
     const entries = [
       storageHealth.lastExportIso ? `Export ${new Date(storageHealth.lastExportIso).toLocaleString()}` : null,
@@ -511,6 +545,29 @@ export function Sidebar() {
       }
     }
   }, [selectedSimulationRef, simulationPresets, selectedScenarioId]);
+  useEffect(() => {
+    if (!resourceDetailsPopup) return;
+    let canceled = false;
+    setResourceCollaboratorDirectoryBusy(true);
+    setResourceCollaboratorDirectoryStatus("");
+    void fetchCollaboratorDirectory()
+      .then((users) => {
+        if (canceled) return;
+        setResourceCollaboratorDirectory(users);
+      })
+      .catch((error) => {
+        if (canceled) return;
+        const message = getUiErrorMessage(error);
+        setResourceCollaboratorDirectoryStatus(`Collaborator lookup unavailable: ${message}`);
+      })
+      .finally(() => {
+        if (canceled) return;
+        setResourceCollaboratorDirectoryBusy(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [resourceDetailsPopup]);
   const meshmapNodesInView = useMemo(() => {
     const lonSpan = Math.max(0.12, 360 / Math.pow(2, meshmapView.zoom) * 2.2);
     const latSpan = Math.max(0.12, 170 / Math.pow(2, meshmapView.zoom) * 1.8);
@@ -1159,22 +1216,21 @@ export function Sidebar() {
     if (kind === "site") {
       const site = siteLibrary.find((entry) => entry.id === resourceId);
       setResourceAccessVisibility(normalizeAccessVisibility(site?.visibility));
-      setResourceCollaboratorsInput(
+      setResourceCollaboratorUserIds(
         (site?.sharedWith ?? [])
           .filter((grant) => grant.role === "editor" || grant.role === "admin")
-          .map((grant) => grant.userId)
-          .join(", "),
+          .map((grant) => grant.userId),
       );
     } else {
       const simulation = simulationPresets.find((entry) => entry.id === resourceId);
       setResourceAccessVisibility(normalizeAccessVisibility(simulation?.visibility));
-      setResourceCollaboratorsInput(
+      setResourceCollaboratorUserIds(
         (simulation?.sharedWith ?? [])
           .filter((grant) => grant.role === "editor" || grant.role === "admin")
-          .map((grant) => grant.userId)
-          .join(", "),
+          .map((grant) => grant.userId),
       );
     }
+    setResourceCollaboratorQuery("");
     setResourceAccessStatus("");
     const resolvedCreatedAvatar =
       createdByAvatarUrl.trim() || (createdByUserId && createdByUserId === lastEditedByUserId ? lastEditedByAvatarUrl : "");
@@ -1204,11 +1260,7 @@ export function Sidebar() {
 
   const saveResourceAccessSettings = () => {
     if (!resourceDetailsPopup) return;
-    const sharedWith = resourceCollaboratorsInput
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map((userId) => ({ userId, role: "editor" as const }));
+    const sharedWith = resourceCollaboratorUserIds.map((userId) => ({ userId, role: "editor" as const }));
     const currentEntry =
       resourceDetailsPopup.kind === "site"
         ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
@@ -1238,6 +1290,33 @@ export function Sidebar() {
       });
     }
     setResourceAccessStatus("Access settings saved.");
+  };
+
+  const addCollaborator = (userId: string) => {
+    if (!userId.trim()) return;
+    setResourceCollaboratorUserIds((current) => (current.includes(userId) ? current : [...current, userId]));
+    setResourceCollaboratorQuery("");
+    setResourceAccessStatus("");
+  };
+
+  const removeCollaborator = (userId: string) => {
+    if (!resourceDetailsPopup) return;
+    const currentEntry =
+      resourceDetailsPopup.kind === "site"
+        ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
+        : simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+    const effectiveRole = (currentEntry as { effectiveRole?: string } | undefined)?.effectiveRole ?? "owner";
+    const currentSharedUserIds = new Set(
+      ((currentEntry as { sharedWith?: Array<{ userId: string }> } | undefined)?.sharedWith ?? []).map(
+        (grant) => grant.userId,
+      ),
+    );
+    if (currentSharedUserIds.has(userId) && !["owner", "admin"].includes(effectiveRole)) {
+      setResourceAccessStatus("Only owners/admins can remove existing collaborators.");
+      return;
+    }
+    setResourceCollaboratorUserIds((current) => current.filter((id) => id !== userId));
+    setResourceAccessStatus("");
   };
 
   const changeProfileRole = async (nextRole: "admin" | "moderator" | "user" | "pending") => {
@@ -2081,14 +2160,49 @@ export function Sidebar() {
                   <option value="shared">Shared</option>
                 </select>
               </label>
-              <label className="field-grid user-bio-field">
+              <div className="field-grid user-bio-field collaborator-picker-grid">
                 <span>Collaborators</span>
-                <textarea
-                  onChange={(event) => setResourceCollaboratorsInput(event.target.value)}
-                  placeholder="user-id-1, user-id-2"
-                  value={resourceCollaboratorsInput}
-                />
-              </label>
+                <div className="collaborator-picker">
+                  <div className="chip-group collaborator-selected-list">
+                    {selectedCollaboratorUsers.length ? (
+                      selectedCollaboratorUsers.map((user) => (
+                        <span className="site-quick-item" key={user.id}>
+                          <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                          <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
+                            Remove
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="field-help">No collaborators yet.</span>
+                    )}
+                  </div>
+                  <input
+                    onChange={(event) => setResourceCollaboratorQuery(event.target.value)}
+                    placeholder="Search users by name or email"
+                    type="text"
+                    value={resourceCollaboratorQuery}
+                  />
+                  <div className="collaborator-candidate-list">
+                    {resourceCollaboratorDirectoryBusy ? (
+                      <p className="field-help">Loading users…</p>
+                    ) : collaboratorCandidates.length ? (
+                      collaboratorCandidates.map((user) => (
+                        <button className="site-quick-item" key={user.id} onClick={() => addCollaborator(user.id)} type="button">
+                          <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                          <span className="field-help">{user.email}</span>
+                          <span className="inline-action">Add</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="field-help">No matching users.</p>
+                    )}
+                  </div>
+                  {resourceCollaboratorDirectoryStatus ? (
+                    <p className="field-help">{resourceCollaboratorDirectoryStatus}</p>
+                  ) : null}
+                </div>
+              </div>
               <p className="field-help">
                 Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
                 collaborators/owner.

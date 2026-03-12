@@ -1094,6 +1094,61 @@ input {
   font-family: "Space Grotesk", "Avenir Next", sans-serif;
 }
 
+.collaborator-picker-grid {
+  align-items: start;
+}
+
+.collaborator-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.collaborator-selected-list {
+  max-height: 148px;
+  overflow: auto;
+}
+
+.collaborator-selected-list .site-quick-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+
+.collaborator-candidate-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 170px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--surface-2) 84%, transparent);
+}
+
+.collaborator-candidate-list .site-quick-item {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.collaborator-candidate-list .site-quick-item:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface));
+}
+
 .inline-link-button {
   border: none;
   background: transparent;

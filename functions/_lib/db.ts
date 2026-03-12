@@ -801,6 +801,26 @@ export const listUsers = async (env: Env) => {
   return rows.results.map(toUserProfile);
 };
 
+export const listCollaboratorDirectory = async (env: Env) => {
+  await ensureSchema(env);
+  const rows = await env.DB
+    .prepare(
+      `SELECT id, username, COALESCE(email, idp_email, '') AS visible_email, COALESCE(avatar_url, '') AS avatar_url
+       FROM users
+       WHERE (is_admin = 1 OR is_moderator = 1 OR is_approved = 1)
+         AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%')
+       ORDER BY username COLLATE NOCASE ASC
+       LIMIT 4000`,
+    )
+    .all<{ id: string; username: string; visible_email: string; avatar_url: string }>();
+  return rows.results.map((row) => ({
+    id: row.id,
+    username: row.username,
+    email: row.visible_email,
+    avatarUrl: row.avatar_url,
+  }));
+};
+
 export const setUserAdminFlag = async (env: Env, userId: string, isAdminRaw: unknown) => {
   const isAdmin = Boolean(isAdminRaw);
   await env.DB

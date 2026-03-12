@@ -111,6 +111,13 @@ export type AvatarUploadResult = {
   };
 };
 
+export type CollaboratorDirectoryUser = {
+  id: string;
+  username: string;
+  email: string;
+  avatarUrl: string;
+};
+
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
@@ -162,6 +169,13 @@ export const updateMyProfile = async (patch: {
 
 export const fetchUsers = async (): Promise<CloudUser[]> => {
   const data = await apiCall<{ users: CloudUser[] }>("/api/users", { method: "GET" });
+  return Array.isArray(data.users) ? data.users : [];
+};
+
+export const fetchCollaboratorDirectory = async (): Promise<CollaboratorDirectoryUser[]> => {
+  const data = await apiCall<{ users: CollaboratorDirectoryUser[] }>("/api/collaborator-directory", {
+    method: "GET",
+  });
   return Array.isArray(data.users) ? data.users : [];
 };
 
