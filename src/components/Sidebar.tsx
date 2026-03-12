@@ -349,6 +349,17 @@ export function Sidebar() {
     ...row,
     marginDb: row.rxDbm === null ? null : row.rxDbm - rxSensitivityTargetDbm,
   }));
+  const hasNonAutoLinks = useMemo(
+    () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
+    [links],
+  );
+  const visibleLinks = useMemo(
+    () =>
+      hasNonAutoLinks
+        ? links.filter((link) => (link.name ?? "").trim().toLowerCase() !== "auto link")
+        : links,
+    [hasNonAutoLinks, links],
+  );
   const [newPresetName, setNewPresetName] = useState("");
   const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
@@ -539,6 +550,12 @@ export function Sidebar() {
       }
     }
   }, [selectedSimulationRef, simulationPresets, selectedScenarioId]);
+  useEffect(() => {
+    if (!visibleLinks.length) return;
+    const stillVisible = visibleLinks.some((link) => link.id === selectedLinkId);
+    if (stillVisible) return;
+    setSelectedLinkId(visibleLinks[0].id);
+  }, [selectedLinkId, setSelectedLinkId, visibleLinks]);
   useEffect(() => {
     if (!resourceDetailsPopup) return;
     let canceled = false;
@@ -1612,7 +1629,7 @@ export function Sidebar() {
           <InfoTip text="Select a link for path analysis. Use Add/Edit/Delete to manage links in this simulation." />
         </div>
         <div className="link-list">
-          {links.map((link) => (
+          {visibleLinks.map((link) => (
             <button
               className={clsx("link-item", selectedLinkId === link.id && "is-selected")}
               key={link.id}
