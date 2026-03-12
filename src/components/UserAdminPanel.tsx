@@ -165,18 +165,23 @@ export function UserAdminPanel() {
 
   const refreshAdminData = async () => {
     if (!canModerate) return;
-    const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
-      fetchUsers(),
-      fetchDeletedUsers(),
-      fetchAuthDiagnostics(),
-      fetchSchemaDiagnostics(),
-      fetchAdminAuditEvents(80),
-    ]);
+    const [all, deleted] = await Promise.all([fetchUsers(), fetchDeletedUsers()]);
     setUsers(all);
     setDeletedUsers(deleted);
-    setAuthDiagnostics(authDiag);
-    setSchemaDiagnostics(schemaDiag);
-    setAuditEvents(events);
+    if (canAdmin) {
+      const [authDiag, schemaDiag, events] = await Promise.all([
+        fetchAuthDiagnostics(),
+        fetchSchemaDiagnostics(),
+        fetchAdminAuditEvents(80),
+      ]);
+      setAuthDiagnostics(authDiag);
+      setSchemaDiagnostics(schemaDiag);
+      setAuditEvents(events);
+    } else {
+      setAuthDiagnostics(null);
+      setSchemaDiagnostics(null);
+      setAuditEvents([]);
+    }
     setManagedUser((current) => {
       if (!current) return null;
       return all.find((user) => user.id === current.id) ?? null;
@@ -184,6 +189,7 @@ export function UserAdminPanel() {
   };
 
   const repairMetadata = async () => {
+    if (!canAdmin) return;
     setBusy(true);
     setStatus("");
     try {
@@ -216,7 +222,7 @@ export function UserAdminPanel() {
   }, [canModerate]);
 
   const loadAdminAudit = useCallback(async () => {
-    if (!canModerate) return;
+    if (!canAdmin) return;
     setAuditBusy(true);
     try {
       const events = await fetchAdminAuditEvents(80);
@@ -224,7 +230,7 @@ export function UserAdminPanel() {
     } finally {
       setAuditBusy(false);
     }
-  }, [canModerate]);
+  }, [canAdmin]);
 
   const load = async () => {
     setBusy(true);
@@ -238,7 +244,7 @@ export function UserAdminPanel() {
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       setEmailPublicDraft(current.emailPublic ?? true);
-      if (current.isAdmin || current.isModerator) {
+      if (current.isAdmin) {
         const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
           fetchDeletedUsers(),
@@ -251,6 +257,13 @@ export function UserAdminPanel() {
         setAuthDiagnostics(authDiag);
         setSchemaDiagnostics(schemaDiag);
         setAuditEvents(events);
+      } else if (current.isModerator) {
+        const [all, deleted] = await Promise.all([fetchUsers(), fetchDeletedUsers()]);
+        setUsers(all);
+        setDeletedUsers(deleted);
+        setAuthDiagnostics(null);
+        setSchemaDiagnostics(null);
+        setAuditEvents([]);
       } else {
         setUsers([]);
         setDeletedUsers([]);
@@ -644,7 +657,7 @@ export function UserAdminPanel() {
               </div>
             </div>
 
-            {canModerate ? (
+            {canAdmin ? (
               <div className="user-manager-list">
                 <div className="section-heading">
                   <p className="field-help">System diagnostics</p>
