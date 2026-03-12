@@ -6,6 +6,7 @@ import {
   fetchMe,
   fetchSchemaDiagnostics,
   fetchUsers,
+  runMetadataRepair,
   restoreDeletedCloudUser,
   updateMyProfile,
   updateUserAdmin,
@@ -122,6 +123,23 @@ export function UserAdminPanel() {
       if (!current) return null;
       return all.find((user) => user.id === current.id) ?? null;
     });
+  };
+
+  const repairMetadata = async () => {
+    setBusy(true);
+    setStatus("");
+    try {
+      const result = await runMetadataRepair();
+      await refreshAdminData();
+      setStatus(
+        `Metadata repair completed. Sites updated: ${result.sitesUpdated}. Simulations updated: ${result.simulationsUpdated}.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Metadata repair failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const loadNotifications = async () => {
@@ -464,9 +482,14 @@ export function UserAdminPanel() {
               <div className="user-manager-list">
                 <div className="section-heading">
                   <p className="field-help">System diagnostics</p>
-                  <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
-                    Refresh
-                  </button>
+                  <div className="chip-group">
+                    <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
+                      Refresh
+                    </button>
+                    <button className="inline-action" disabled={busy} onClick={() => void repairMetadata()} type="button">
+                      Repair Metadata
+                    </button>
+                  </div>
                 </div>
                 {authWarnings.length ? (
                   <div className="notification-banner" role="status">

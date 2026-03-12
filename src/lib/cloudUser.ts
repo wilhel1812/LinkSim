@@ -66,6 +66,12 @@ export type SchemaDiagnostics = {
   };
 };
 
+export type MetadataRepairResult = {
+  ok: boolean;
+  sitesUpdated: number;
+  simulationsUpdated: number;
+};
+
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
@@ -184,3 +190,6 @@ export const fetchAuthDiagnostics = async (): Promise<AuthDiagnostics> =>
 
 export const fetchSchemaDiagnostics = async (): Promise<SchemaDiagnostics> =>
   apiCall<SchemaDiagnostics>("/api/schema-diagnostics", { method: "GET" });
+
+export const runMetadataRepair = async (): Promise<MetadataRepairResult> =>
+  apiCall<MetadataRepairResult>("/api/admin-repair-metadata", { method: "POST" });

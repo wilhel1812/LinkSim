@@ -818,12 +818,22 @@ const canEditByRole = (role: string | null, visibility: Visibility): boolean =>
 type LibraryRow = {
   payload_json: string;
   owner_user_id: string;
+  owner_name: string | null;
+  owner_avatar_url: string | null;
   visibility: Visibility;
   role: string | null;
   created_by_user_id: string | null;
   created_by_name: string | null;
+  created_by_avatar_url: string | null;
+  first_actor_user_id: string | null;
+  first_actor_name: string | null;
+  first_actor_avatar_url: string | null;
   last_edited_by_user_id: string | null;
   last_edited_by_name: string | null;
+  last_edited_by_avatar_url: string | null;
+  last_actor_user_id: string | null;
+  last_actor_name: string | null;
+  last_actor_avatar_url: string | null;
   created_at: string | null;
   last_edited_at: string | null;
 };
@@ -836,14 +846,25 @@ export const fetchLibraryForUser = async (
   const siteRows = await env.DB
     .prepare(
       `SELECT s.payload_json, s.owner_user_id, s.visibility, r.role,
+              owner_u.username AS owner_name,
+              owner_u.avatar_url AS owner_avatar_url,
               s.created_by_user_id,
               (SELECT u.username FROM users u WHERE u.id = s.created_by_user_id) AS created_by_name,
+              (SELECT u.avatar_url FROM users u WHERE u.id = s.created_by_user_id) AS created_by_avatar_url,
+              (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1) AS first_actor_user_id,
+              (SELECT u.username FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_name,
+              (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_avatar_url,
               s.last_edited_by_user_id,
               (SELECT u.username FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_name,
+              (SELECT u.avatar_url FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_avatar_url,
+              (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1) AS last_actor_user_id,
+              (SELECT u.username FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_name,
+              (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_url,
               s.created_at,
               s.last_edited_at
        FROM sites s
        LEFT JOIN site_roles r ON r.site_id = s.id AND r.user_id = ?
+       LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
        WHERE s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
     )
     .bind(userId, userId)
@@ -852,14 +873,25 @@ export const fetchLibraryForUser = async (
   const simulationRows = await env.DB
     .prepare(
       `SELECT s.payload_json, s.owner_user_id, s.visibility, r.role,
+              owner_u.username AS owner_name,
+              owner_u.avatar_url AS owner_avatar_url,
               s.created_by_user_id,
               (SELECT u.username FROM users u WHERE u.id = s.created_by_user_id) AS created_by_name,
+              (SELECT u.avatar_url FROM users u WHERE u.id = s.created_by_user_id) AS created_by_avatar_url,
+              (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1) AS first_actor_user_id,
+              (SELECT u.username FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_name,
+              (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_avatar_url,
               s.last_edited_by_user_id,
               (SELECT u.username FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_name,
+              (SELECT u.avatar_url FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_avatar_url,
+              (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1) AS last_actor_user_id,
+              (SELECT u.username FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_name,
+              (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_url,
               s.created_at,
               s.last_edited_at
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
+       LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
        WHERE s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
     )
     .bind(userId, userId)
@@ -870,15 +902,27 @@ export const fetchLibraryForUser = async (
       .map((row) => {
         try {
           const parsed = JSON.parse(row.payload_json) as CloudResourceRecord;
+          const createdByUserId = row.created_by_user_id ?? row.first_actor_user_id ?? row.owner_user_id;
+          const createdByName = row.created_by_name ?? row.first_actor_name ?? row.owner_name ?? "Unknown";
+          const createdByAvatarUrl =
+            row.created_by_avatar_url ?? row.first_actor_avatar_url ?? row.owner_avatar_url ?? "";
+          const lastEditedByUserId =
+            row.last_edited_by_user_id ?? row.last_actor_user_id ?? createdByUserId ?? row.owner_user_id;
+          const lastEditedByName =
+            row.last_edited_by_name ?? row.last_actor_name ?? createdByName ?? row.owner_name ?? "Unknown";
+          const lastEditedByAvatarUrl =
+            row.last_edited_by_avatar_url ?? row.last_actor_avatar_url ?? createdByAvatarUrl ?? row.owner_avatar_url ?? "";
           return {
             ...parsed,
             ownerUserId: row.owner_user_id,
             visibility: row.visibility,
-            createdByUserId: row.created_by_user_id,
-            createdByName: row.created_by_name,
+            createdByUserId,
+            createdByName,
+            createdByAvatarUrl,
             createdAt: row.created_at,
-            lastEditedByUserId: row.last_edited_by_user_id,
-            lastEditedByName: row.last_edited_by_name,
+            lastEditedByUserId,
+            lastEditedByName,
+            lastEditedByAvatarUrl,
             lastEditedAt: row.last_edited_at,
             effectiveRole:
               row.owner_user_id === userId
@@ -894,6 +938,71 @@ export const fetchLibraryForUser = async (
   return {
     siteLibrary: mapRows(siteRows.results),
     simulationPresets: mapRows(simulationRows.results),
+  };
+};
+
+export const backfillResourceMetadata = async (
+  env: Env,
+): Promise<{ sitesUpdated: number; simulationsUpdated: number }> => {
+  await ensureSchema(env);
+
+  const siteResult = await env.DB
+    .prepare(
+      `UPDATE sites
+       SET created_by_user_id = COALESCE(
+             created_by_user_id,
+             (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = sites.id ORDER BY rc.changed_at ASC LIMIT 1),
+             owner_user_id
+           ),
+           last_edited_by_user_id = COALESCE(
+             last_edited_by_user_id,
+             (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = sites.id ORDER BY rc.changed_at DESC LIMIT 1),
+             created_by_user_id,
+             owner_user_id
+           ),
+           created_at = COALESCE(
+             created_at,
+             (SELECT rc.changed_at FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = sites.id ORDER BY rc.changed_at ASC LIMIT 1),
+             updated_at
+           ),
+           last_edited_at = COALESCE(
+             last_edited_at,
+             (SELECT rc.changed_at FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = sites.id ORDER BY rc.changed_at DESC LIMIT 1),
+             updated_at
+           )`,
+    )
+    .run();
+
+  const simulationResult = await env.DB
+    .prepare(
+      `UPDATE simulations
+       SET created_by_user_id = COALESCE(
+             created_by_user_id,
+             (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = simulations.id ORDER BY rc.changed_at ASC LIMIT 1),
+             owner_user_id
+           ),
+           last_edited_by_user_id = COALESCE(
+             last_edited_by_user_id,
+             (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = simulations.id ORDER BY rc.changed_at DESC LIMIT 1),
+             created_by_user_id,
+             owner_user_id
+           ),
+           created_at = COALESCE(
+             created_at,
+             (SELECT rc.changed_at FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = simulations.id ORDER BY rc.changed_at ASC LIMIT 1),
+             updated_at
+           ),
+           last_edited_at = COALESCE(
+             last_edited_at,
+             (SELECT rc.changed_at FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = simulations.id ORDER BY rc.changed_at DESC LIMIT 1),
+             updated_at
+           )`,
+    )
+    .run();
+
+  return {
+    sitesUpdated: Number((siteResult.meta as { changes?: number } | undefined)?.changes ?? 0),
+    simulationsUpdated: Number((simulationResult.meta as { changes?: number } | undefined)?.changes ?? 0),
   };
 };
 

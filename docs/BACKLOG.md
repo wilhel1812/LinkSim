@@ -49,8 +49,10 @@ State: stabilization pass (no net-new product features unless explicitly approve
 ### Admin tooling
 - [ ] Build in-app admin utilities to reduce manual D1 SQL operations
 - Progress: added in-app deleted-user lock manager (list + restore) to remove direct SQL need for this flow.
+- Progress: added in-app metadata repair utility for created/last-edited backfill from ownership/change history.
 - [ ] Add user moderation actions and review queue ergonomics
 - [ ] Add simulation/site ownership repair tools in UI
+- Progress: ownership-related display gaps now repaired via metadata repair + fallback mapping; explicit owner reassignment UI still pending.
 - [ ] Add admin-safe bulk operations with confirmations and logs
 
 ### UI and wording consistency

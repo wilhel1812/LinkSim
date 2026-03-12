@@ -390,8 +390,10 @@ export function Sidebar() {
     label: string;
     createdByUserId: string | null;
     createdByName: string;
+    createdByAvatarUrl: string;
     lastEditedByUserId: string | null;
     lastEditedByName: string;
+    lastEditedByAvatarUrl: string;
   } | null>(null);
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
@@ -982,16 +984,20 @@ export function Sidebar() {
     label,
     createdByUserId,
     createdByName,
+    createdByAvatarUrl,
     lastEditedByUserId,
     lastEditedByName,
+    lastEditedByAvatarUrl,
   }: {
     kind: "site" | "simulation";
     resourceId: string;
     label: string;
     createdByUserId: string | null;
     createdByName: string;
+    createdByAvatarUrl: string;
     lastEditedByUserId: string | null;
     lastEditedByName: string;
+    lastEditedByAvatarUrl: string;
   }) => {
     setResourceDetailsPopup({
       kind,
@@ -999,8 +1005,10 @@ export function Sidebar() {
       label,
       createdByUserId,
       createdByName,
+      createdByAvatarUrl,
       lastEditedByUserId,
       lastEditedByName,
+      lastEditedByAvatarUrl,
     });
   };
 
@@ -1826,14 +1834,15 @@ export function Sidebar() {
                 onClick={() => void openUserProfilePopup(resourceDetailsPopup.createdByUserId)}
                 type="button"
               >
-                Created by <UserBadge name={resourceDetailsPopup.createdByName} />
+                Created by <UserBadge avatarUrl={resourceDetailsPopup.createdByAvatarUrl} name={resourceDetailsPopup.createdByName} />
               </button>
               <button
                 className="inline-action"
                 onClick={() => void openUserProfilePopup(resourceDetailsPopup.lastEditedByUserId)}
                 type="button"
               >
-                Last edited by <UserBadge name={resourceDetailsPopup.lastEditedByName} />
+                Last edited by{" "}
+                <UserBadge avatarUrl={resourceDetailsPopup.lastEditedByAvatarUrl} name={resourceDetailsPopup.lastEditedByName} />
               </button>
               <button
                 className="inline-action"
@@ -1942,10 +1951,14 @@ export function Sidebar() {
                           label: preset.name,
                           createdByUserId: (preset as unknown as { createdByUserId?: string }).createdByUserId ?? null,
                           createdByName: (preset as unknown as { createdByName?: string }).createdByName ?? "Unknown",
+                          createdByAvatarUrl:
+                            (preset as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
                           lastEditedByUserId:
                             (preset as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
                           lastEditedByName:
                             (preset as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
+                          lastEditedByAvatarUrl:
+                            (preset as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
                         })
                       }
                       type="button"
@@ -2251,10 +2264,14 @@ export function Sidebar() {
                           label: entry.name,
                           createdByUserId: (entry as unknown as { createdByUserId?: string }).createdByUserId ?? null,
                           createdByName: (entry as unknown as { createdByName?: string }).createdByName ?? "Unknown",
+                          createdByAvatarUrl:
+                            (entry as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
                           lastEditedByUserId:
                             (entry as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
                           lastEditedByName:
                             (entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
+                          lastEditedByAvatarUrl:
+                            (entry as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
                         })
                       }
                       type="button"
