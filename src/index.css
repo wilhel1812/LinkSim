@@ -923,6 +923,10 @@ input {
   white-space: nowrap;
 }
 
+.user-chip .notification-badge {
+  margin-left: auto;
+}
+
 .profile-avatar {
   width: 30px;
   height: 30px;
@@ -1073,6 +1077,10 @@ input {
   gap: 8px;
   max-height: 220px;
   overflow: auto;
+}
+
+.notifications-center {
+  max-height: 320px;
 }
 
 .asset-list {

@@ -103,6 +103,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       });
     }
     if (body.isAdmin !== undefined) {
+      if (targetId === auth.userId) {
+        return withCors(request, json({ error: "Users cannot change their own admin role." }, { status: 400 }));
+      }
       user = await setUserAdminFlag(env, targetId, body.isAdmin);
     }
     if (body.isApproved !== undefined) {

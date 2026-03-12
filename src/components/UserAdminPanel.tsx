@@ -9,6 +9,7 @@ import {
   updateUserProfile,
   type CloudUser,
 } from "../lib/cloudUser";
+import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 
 const initialsFor = (name: string): string => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -21,6 +22,29 @@ const fmtDate = (iso: string | null | undefined): string => {
   if (!iso) return "-";
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
+};
+
+const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
+const NOTIFICATION_POLL_MS = 30_000;
+
+const readDismissedNotificationIds = (): Set<string> => {
+  try {
+    const raw = window.localStorage.getItem(NOTIFICATION_DISMISS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((value): value is string => typeof value === "string"));
+  } catch {
+    return new Set();
+  }
+};
+
+const writeDismissedNotificationIds = (ids: Set<string>) => {
+  try {
+    window.localStorage.setItem(NOTIFICATION_DISMISS_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Best effort only.
+  }
 };
 
 const resizeAvatarFileToDataUrl = async (file: File): Promise<string> => {
@@ -57,8 +81,30 @@ export function UserAdminPanel() {
   const [bioDraft, setBioDraft] = useState("");
   const [accessRequestNoteDraft, setAccessRequestNoteDraft] = useState("");
   const [avatarDraft, setAvatarDraft] = useState("");
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationBusy, setNotificationBusy] = useState(false);
+  const [notificationStatus, setNotificationStatus] = useState("");
+  const [notificationFeed, setNotificationFeed] = useState<NotificationFeed>({ unreadCount: 0, items: [] });
+  const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(() =>
+    typeof window === "undefined" ? new Set() : readDismissedNotificationIds(),
+  );
 
   const canAdmin = Boolean(me?.isAdmin);
+
+  const loadNotifications = async () => {
+    if (!canAdmin) return;
+    setNotificationBusy(true);
+    setNotificationStatus("");
+    try {
+      const next = await fetchNotifications();
+      setNotificationFeed(next);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setNotificationStatus(`Notifications unavailable: ${message}`);
+    } finally {
+      setNotificationBusy(false);
+    }
+  };
 
   const load = async () => {
     setBusy(true);
@@ -89,7 +135,21 @@ export function UserAdminPanel() {
     void load();
   }, []);
 
+  useEffect(() => {
+    if (!canAdmin) {
+      setNotificationFeed({ unreadCount: 0, items: [] });
+      return;
+    }
+    void loadNotifications();
+    const timer = window.setInterval(() => void loadNotifications(), NOTIFICATION_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [canAdmin]);
+
   const userRows = useMemo(() => users.filter((user) => user.id !== me?.id), [users, me?.id]);
+  const unreadNotifications = useMemo(
+    () => notificationFeed.items.filter((item) => !dismissedNotifications.has(item.id)),
+    [notificationFeed.items, dismissedNotifications],
+  );
 
   const saveMyProfile = async () => {
     setBusy(true);
@@ -216,11 +276,23 @@ export function UserAdminPanel() {
     }
   };
 
+  const dismissNotification = (id: string) => {
+    setDismissedNotifications((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      writeDismissedNotificationIds(next);
+      return next;
+    });
+  };
+
   return (
     <>
       <button className="user-chip" onClick={() => setOpen(true)} type="button">
         <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
         <span className="user-chip-text">{me?.username ?? "Loading user..."}</span>
+        {canAdmin && unreadNotifications.length > 0 ? (
+          <span className="notification-badge">{unreadNotifications.length}</span>
+        ) : null}
       </button>
 
       {open ? (
@@ -228,9 +300,14 @@ export function UserAdminPanel() {
           <div className="library-manager-card user-settings-modal">
             <div className="library-manager-header">
               <h2>User Settings</h2>
-              <button className="inline-action" onClick={() => setOpen(false)} type="button">
-                Close
-              </button>
+              <div className="chip-group">
+                <button className="inline-action" onClick={() => (window.location.href = "/cdn-cgi/access/logout")} type="button">
+                  Sign Out
+                </button>
+                <button className="inline-action" onClick={() => setOpen(false)} type="button">
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="user-settings-layout">
@@ -287,6 +364,59 @@ export function UserAdminPanel() {
                 </div>
               </div>
             </div>
+
+            {canAdmin ? (
+              <div className="user-manager-list notifications-center">
+                {unreadNotifications.length > 0 ? (
+                  <div className="notification-banner" role="status">
+                    <strong>{unreadNotifications.length} admin notification(s)</strong> need your review.
+                  </div>
+                ) : null}
+                <div className="section-heading">
+                  <p className="field-help">Notification Center</p>
+                  <div className="chip-group">
+                    <button className="inline-action" onClick={() => setNotificationOpen((prev) => !prev)} type="button">
+                      {notificationOpen ? "Hide" : "Open"}
+                    </button>
+                    <button className="inline-action" onClick={() => void loadNotifications()} type="button">
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+                {notificationOpen ? (
+                  <>
+                    {notificationBusy ? <p className="field-help">Loading notifications…</p> : null}
+                    {notificationStatus ? <p className="field-help">{notificationStatus}</p> : null}
+                    {notificationFeed.items.length ? (
+                      <div className="notifications-list">
+                        {notificationFeed.items.map((item) => {
+                          const isDismissed = dismissedNotifications.has(item.id);
+                          return (
+                            <div className="library-row" key={item.id}>
+                              <strong>{item.title}</strong>
+                              <p className="field-help">{item.message}</p>
+                              <p className="field-help">Updated: {fmtDate(item.createdAt)}</p>
+                              <div className="chip-group">
+                                <button
+                                  className="inline-action"
+                                  disabled={isDismissed}
+                                  onClick={() => dismissNotification(item.id)}
+                                  type="button"
+                                >
+                                  {isDismissed ? "Dismissed" : "Dismiss Badge"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="field-help">No notifications yet.</p>
+                    )}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
 
             {canAdmin ? (
               <div className="user-manager-list">

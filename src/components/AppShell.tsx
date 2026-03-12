@@ -37,8 +37,11 @@ export function AppShell() {
           <UserAdminPanel />
           <h2>Account Pending Approval</h2>
           <p className="field-help">
-            Complete your profile and add an access request note. An admin must approve your account before you can use
-            simulations or libraries.
+            You can sign in and edit your profile, but simulation tools stay locked until an admin approves your access.
+          </p>
+          <p className="field-help">
+            Next steps: add your full name, a valid email, and an access request note in User Settings. Admins review
+            requests from Notification Center.
           </p>
         </section>
       </main>

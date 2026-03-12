@@ -42,7 +42,6 @@ import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { AuthSyncPanel } from "./AuthSyncPanel";
-import { NotificationsPanel } from "./NotificationsPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
 
 const metric = (label: string, value: string) => (
@@ -983,7 +982,6 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar-panel">
-      <NotificationsPanel />
       <UserAdminPanel />
       <header>
         <h1>{t(locale, "appTitle")}</h1>
