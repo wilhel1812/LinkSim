@@ -1018,6 +1018,63 @@ input {
   width: min(640px, 96vw);
 }
 
+.notifications-panel {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.notification-bell {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.notification-badge {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: #ff6b6b;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.notification-banner {
+  border: 1px solid color-mix(in srgb, #ffb703 52%, var(--border));
+  background: color-mix(in srgb, #ffb703 18%, var(--surface-2));
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+
+.notifications-popover {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.notifications-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
 .asset-list {
   display: grid;
   grid-template-columns: 1fr;

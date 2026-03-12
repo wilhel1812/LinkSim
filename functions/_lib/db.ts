@@ -544,6 +544,35 @@ export const deleteUser = async (env: Env, userId: string): Promise<void> => {
   await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId).run();
 };
 
+export const listPendingApprovalUsers = async (
+  env: Env,
+): Promise<Array<{ id: string; username: string; email: string; createdAt: string; accessRequestNote: string }>> => {
+  await ensureSchema(env);
+  const rows = await env.DB
+    .prepare(
+      `SELECT id, username, email, created_at, access_request_note
+       FROM users
+       WHERE is_approved = 0
+       ORDER BY created_at ASC
+       LIMIT 200`,
+    )
+    .all<{
+      id: string;
+      username: string | null;
+      email: string | null;
+      created_at: string;
+      access_request_note: string | null;
+    }>();
+
+  return rows.results.map((row) => ({
+    id: row.id,
+    username: sanitizeName(row.username) ?? row.id,
+    email: sanitizeEmail(row.email) ?? "",
+    createdAt: row.created_at,
+    accessRequestNote: row.access_request_note ?? "",
+  }));
+};
+
 const createResourceChange = async (
   env: Env,
   kind: "site" | "simulation",
