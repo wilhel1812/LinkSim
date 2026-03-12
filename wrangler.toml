@@ -24,3 +24,5 @@ REGISTRATION_MODE = "approval_required"
 # GEOCODE_RATE_LIMIT_PER_MINUTE = "20"
 # Optional: per-IP request cap for upstream proxy routes (/meshmap, /ve2dbe), default 120/minute.
 # PROXY_RATE_LIMIT_PER_MINUTE = "120"
+# Optional: per-IP request cap for /ve2dbe/geodata/gettile.asp (tile list), default 600/minute.
+# VE2DBE_TILELIST_RATE_LIMIT_PER_MINUTE = "600"

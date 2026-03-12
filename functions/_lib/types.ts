@@ -34,6 +34,7 @@ export type Env = {
   REGISTRATION_MODE?: string;
   GEOCODE_RATE_LIMIT_PER_MINUTE?: string;
   PROXY_RATE_LIMIT_PER_MINUTE?: string;
+  VE2DBE_TILELIST_RATE_LIMIT_PER_MINUTE?: string;
 };
 
 export type AuthContext = {

@@ -23,9 +23,13 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const ip = getClientAddress(request);
+  const rateLimitKey = isTileListEndpoint ? `proxy:ve2dbe:tilelist:${ip}` : `proxy:ve2dbe:${ip}`;
+  const rateLimit = isTileListEndpoint
+    ? parsePerMinuteLimit(env.VE2DBE_TILELIST_RATE_LIMIT_PER_MINUTE, 600)
+    : parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 120);
   const limiter = takeRateLimitToken({
-    key: `proxy:ve2dbe:${ip}`,
-    limit: parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 120),
+    key: rateLimitKey,
+    limit: rateLimit,
   });
   if (!limiter.allowed) {
     return new Response("Rate limit reached", {

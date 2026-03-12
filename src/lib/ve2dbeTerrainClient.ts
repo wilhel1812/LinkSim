@@ -24,8 +24,10 @@ const DATASET_TO_MODE: Record<TerrainDataset, string> = {
 
 const CACHE_NAME = "linksim-ve2dbe-srtm-v1";
 const META_KEY = "linksim-ve2dbe-cache-meta-v1";
+const TILELIST_CACHE_KEY = "linksim-ve2dbe-tilelist-cache-v1";
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_RETRIES = 3;
+const TILELIST_TTL_MS = 5 * 60 * 1000;
 
 const tileKey = (lat: number, lon: number): string => {
   const ns = lat >= 0 ? "N" : "S";
@@ -60,6 +62,20 @@ export const fetchAvailableVe2dbeTilePaths = async (
   maxLon: number,
   dataset: TerrainDataset,
 ): Promise<string[]> => {
+  const requestKey = `${dataset}:${Math.floor(minLat)}:${Math.ceil(maxLat)}:${Math.floor(minLon)}:${Math.ceil(maxLon)}`;
+  try {
+    const raw = localStorage.getItem(TILELIST_CACHE_KEY);
+    if (raw) {
+      const cache = JSON.parse(raw) as Record<string, { fetchedAtMs: number; links: string[] }>;
+      const cached = cache[requestKey];
+      if (cached && Date.now() - cached.fetchedAtMs <= TILELIST_TTL_MS) {
+        return cached.links;
+      }
+    }
+  } catch {
+    // Ignore corrupt local cache and continue with network fetch.
+  }
+
   const body = new URLSearchParams({
     lat1: String(Math.floor(minLat)),
     lat2: String(Math.ceil(maxLat)),
@@ -87,7 +103,16 @@ export const fetchAvailableVe2dbeTilePaths = async (
   while ((match = rx.exec(html))) {
     links.add(match[1]);
   }
-  return Array.from(links).sort();
+  const sortedLinks = Array.from(links).sort();
+  try {
+    const raw = localStorage.getItem(TILELIST_CACHE_KEY);
+    const existing = raw ? (JSON.parse(raw) as Record<string, { fetchedAtMs: number; links: string[] }>) : {};
+    existing[requestKey] = { fetchedAtMs: Date.now(), links: sortedLinks };
+    localStorage.setItem(TILELIST_CACHE_KEY, JSON.stringify(existing));
+  } catch {
+    // Best-effort local cache only.
+  }
+  return sortedLinks;
 };
 
 type CacheMetaRecord = {
@@ -204,6 +229,7 @@ export const loadVe2dbeTilesForArea = async (
 export const clearVe2dbeCache = async (): Promise<void> => {
   await caches.delete(CACHE_NAME);
   localStorage.removeItem(META_KEY);
+  localStorage.removeItem(TILELIST_CACHE_KEY);
 };
 
 export const recommendVe2dbeDatasetForArea = async (
