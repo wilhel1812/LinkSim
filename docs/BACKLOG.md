@@ -25,6 +25,8 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] What does the reject button currently do?
 - [x] Show profile pictures to other users when you click open the user popover. Also show a small one next to any user name in the UI
 - [ ] User should be able to select if e-mail should be visible to everyone or only admins
+- [ ] access rights on sites and simulations. public, public-read only, private
+- [ ] explore if the route option actually makes sense anymore
 
 ## Active stabilization backlog
 
@@ -34,8 +36,8 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Add notification center access through User Settings
 - [x] Allow dismissing notification badges while keeping entries in center
 - [x] Clarify pending-account UX text and flow end-to-end
-- [ ] Restrict sign-ups and approval transitions with explicit lifecycle states
-- [ ] Add dedicated auth/permission tests for critical flows
+- [x] Restrict sign-ups and approval transitions with explicit lifecycle states
+- [x] Add dedicated auth/permission tests for critical flows
 - Progress: baseline tests added for auth source resolution and error mapping; endpoint permission matrix still pending.
 - Progress: added access-policy helper matrix tests (`functions/_lib/access.test.ts`) and endpoint gating helpers in users endpoints.
 - [ ] Add dedicated identity reconciliation tests + audit logging coverage
@@ -47,34 +49,34 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Remove runtime schema migration from request path
 - [x] Add migration/version status visibility in admin tools
 - Progress: admin schema diagnostics endpoint + warnings added in User Settings.
-- [ ] Add import/export/backup health indicators and stronger restore UX
+- [x] Add import/export/backup health indicators and stronger restore UX
 - Progress: added local storage health timeline (last export/import/restore) to reduce silent data-loss risk.
 
 ### Admin tooling
 - [ ] Build in-app admin utilities to reduce manual D1 SQL operations
 - Progress: added in-app deleted-user lock manager (list + restore) to remove direct SQL need for this flow.
 - Progress: added in-app metadata repair utility for created/last-edited backfill from ownership/change history.
-- [ ] Add user moderation actions and review queue ergonomics
+- [x] Add user moderation actions and review queue ergonomics
 - [ ] Add simulation/site ownership repair tools in UI
 - Progress: ownership-related display gaps now repaired via metadata repair + fallback mapping; explicit owner reassignment UI still pending.
 - [ ] Add admin-safe bulk operations with confirmations and logs
 
 ### UI and wording consistency
-- [ ] Full terminology pass (Project/Simulation/Setup/Snapshot/etc.)
+- [x] Full terminology pass (Project/Simulation/Setup/Snapshot/etc.)
 - [x] Move crowded metadata out of list rows and into details panels
-- [ ] Clean sidebar information density and progressive disclosure
+- [x] Clean sidebar information density and progressive disclosure
 - Progress: simplified library/action labels and streamlined user moderation list flow.
 - [x] Unify labels/buttons across libraries and managers
 - Progress: aligned labels for library open/save/add actions and moderation wording.
-- [ ] Standardize error messages across endpoints and UI surfaces
+- [x] Standardize error messages across endpoints and UI surfaces
 - Progress: backend endpoints now use centralized error normalization and status mapping; UI surface pass still pending.
 - Progress: shared UI error parser now wired in shell/sidebar/user settings flows for more consistent messages.
 - [x] Modal UX: support ESC and click-outside to close dialogs (in addition to close button)
 
 ### Simulation quality clarity
-- [ ] Improve explanatory info for FSPL / TwoRay / ITM and defaults
-- [ ] Document map sampling strategies clearly in UI help
-- [ ] Recheck pass/fail interpretation and communication around terrain blocking
+- [x] Improve explanatory info for FSPL / TwoRay / ITM and defaults
+- [x] Document map sampling strategies clearly in UI help
+- [x] Recheck pass/fail interpretation and communication around terrain blocking
 - [x] Add terrain overlay visibility toggle (visual only; simulation still uses loaded terrain)
 
 ### Security and access hardening

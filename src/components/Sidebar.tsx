@@ -716,6 +716,16 @@ export function Sidebar() {
   const importLocalLibraries = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (storageImportMode === "replace") {
+      const confirmed = window.confirm(
+        "Replace mode will overwrite current local site/simulation libraries with imported data. Continue?",
+      );
+      if (!confirmed) {
+        event.target.value = "";
+        setStorageStatus("Import cancelled.");
+        return;
+      }
+    }
     setStorageStatus("Importing backup...");
     try {
       const raw = await file.text();
@@ -750,6 +760,13 @@ export function Sidebar() {
   };
 
   const restoreLocalLibraries = () => {
+    const confirmed = window.confirm(
+      "Restore latest snapshot for local site/simulation libraries? This can overwrite recent unsaved local edits.",
+    );
+    if (!confirmed) {
+      setStorageStatus("Restore cancelled.");
+      return;
+    }
     const result = restoreLibrariesFromSnapshots();
     refreshSnapshotInfo();
     if (!result.restored) {
@@ -1158,25 +1175,27 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section">
-        <h2>Simulation Status</h2>
-        <div className="asset-list">
-          <p className="field-help">{hasTwoSites ? `Sites: ${sites.length} configured` : "Sites: add at least 2"}</p>
-          <p className="field-help">
-            {hasPathEndpoints
-              ? `Path: ${fromSite?.name ?? "?"} → ${toSite?.name ?? "?"}`
-              : "Path: choose different From/To nodes"}
-          </p>
-          <p className="field-help">
-            {terrainIsStaleForCurrentArea
-              ? `Terrain: out of date (${missingTerrainTileKeys.length}/${requiredTerrainTileKeys.length} tiles missing for current area)`
-              : hasTerrain
-                ? `Terrain: up to date (${srtmTiles.length} tile(s) loaded)`
-                : "Terrain: not loaded yet"}
-          </p>
-          {terrainBounds?.isCapped ? (
-            <p className="field-help">Area window capped to 5° span for performance.</p>
-          ) : null}
-        </div>
+        <details className="compact-details">
+          <summary>Simulation Status</summary>
+          <div className="asset-list">
+            <p className="field-help">{hasTwoSites ? `Sites: ${sites.length} configured` : "Sites: add at least 2"}</p>
+            <p className="field-help">
+              {hasPathEndpoints
+                ? `Path: ${fromSite?.name ?? "?"} → ${toSite?.name ?? "?"}`
+                : "Path: choose different From/To nodes"}
+            </p>
+            <p className="field-help">
+              {terrainIsStaleForCurrentArea
+                ? `Terrain: out of date (${missingTerrainTileKeys.length}/${requiredTerrainTileKeys.length} tiles missing for current area)`
+                : hasTerrain
+                  ? `Terrain: up to date (${srtmTiles.length} tile(s) loaded)`
+                  : "Terrain: not loaded yet"}
+            </p>
+            {terrainBounds?.isCapped ? (
+              <p className="field-help">Area window capped to 5° span for performance.</p>
+            ) : null}
+          </div>
+        </details>
       </section>
 
       <section className="panel-section">
@@ -1728,9 +1747,12 @@ export function Sidebar() {
             to use it.
           </p>
         )}
-        <div className={clsx("margin-status", linkMarginDb >= 0 ? "is-pass" : "is-fail")}>
-          Link margin: {linkMarginDb >= 0 ? "+" : ""}
-          {linkMarginDb.toFixed(1)} dB ({linkMarginDb >= 0 ? "PASS" : "FAIL"})
+        <div className="section-heading">
+          <div className={clsx("margin-status", linkMarginDb >= 0 ? "is-pass" : "is-fail")}>
+            Link margin: {linkMarginDb >= 0 ? "+" : ""}
+            {linkMarginDb.toFixed(1)} dB ({linkMarginDb >= 0 ? "PASS" : "FAIL"})
+          </div>
+          <InfoTip text="Pass/Fail is based on calibrated RX estimate minus RX target. Terrain blocking affects this when ITM model is selected and terrain data is loaded." />
         </div>
         <div className="whatif-table">
           {whatIfRows.map((row) => (
@@ -1806,6 +1828,9 @@ export function Sidebar() {
           </label>
           <p className="field-help">References and external resources:</p>
           <div className="asset-list">
+            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/rf-models-and-sampling.md" rel="noreferrer" target="_blank">
+              RF Models & Sampling Guide
+            </a>
             {LEGACY_ASSETS.map((asset) => (
               <a href={asset.url} key={asset.url} rel="noreferrer" target="_blank">
                 {asset.label}

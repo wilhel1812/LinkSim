@@ -1,3 +1,5 @@
+import { parseApiErrorMessage } from "./apiError";
+
 export type CloudLibraryPayload = {
   siteLibrary: unknown[];
   simulationPresets: unknown[];
@@ -12,7 +14,7 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
     },
   });
   if (!response.ok) {
-    const message = await response.text();
+    const message = await parseApiErrorMessage(response);
     throw new Error(`${response.status} ${response.statusText}: ${message}`);
   }
   return (await response.json()) as T;

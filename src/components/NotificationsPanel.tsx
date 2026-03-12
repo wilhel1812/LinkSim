@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchNotifications, type NotificationFeed, type PendingApprovalUser } from "../lib/cloudNotifications";
+import { getUiErrorMessage } from "../lib/uiError";
 
 const POLL_MS = 30_000;
 
@@ -21,7 +22,7 @@ export function NotificationsPanel() {
       const next = await fetchNotifications();
       setFeed(next);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       setStatus(`Notifications unavailable: ${message}`);
     } finally {
       setBusy(false);

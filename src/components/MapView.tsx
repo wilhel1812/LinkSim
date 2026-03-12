@@ -1151,7 +1151,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
             {coverageVizMode === "contours" ? <p>Band step: {currentBandStepDb} dB ({bandStepMode})</p> : null}
             {coverageVizMode === "passfail" ? (
-              <p>Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter)</p>
+              <p>
+                Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter). Pass requires
+                predicted RX at/above RX target.
+              </p>
             ) : null}
             {coverageVizMode === "relay" ? (
               <p>

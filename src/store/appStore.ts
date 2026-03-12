@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { buildCoverage } from "../lib/coverage";
 import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
+import { getUiErrorMessage } from "../lib/uiError";
 import {
   defaultPropagationEnvironment,
   deriveDynamicPropagationEnvironment,
@@ -1045,7 +1046,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isTerrainRecommending: false,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       set({ terrainRecommendation: `Recommendation failed: ${message}`, isTerrainRecommending: false });
     }
   },
@@ -1087,7 +1088,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       get().recomputeCoverage();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getUiErrorMessage(error);
       set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false });
     }
   },
