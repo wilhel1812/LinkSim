@@ -50,6 +50,22 @@ const normalizeUserId = (request: Request): string => {
   return bySub.trim();
 };
 
+const readHeaderEmail = (request: Request): string => {
+  const email =
+    request.headers.get("cf-access-authenticated-user-email") ??
+    request.headers.get("Cf-Access-Authenticated-User-Email") ??
+    "";
+  return email.trim().toLowerCase();
+};
+
+const readHeaderUserName = (request: Request): string => {
+  const name =
+    request.headers.get("cf-access-authenticated-user-name") ??
+    request.headers.get("Cf-Access-Authenticated-User-Name") ??
+    "";
+  return name.trim();
+};
+
 const verifyCloudflareAccessJwt = async (
   token: string,
   request: Request,
@@ -90,14 +106,24 @@ const verifyCloudflareAccessJwt = async (
 
   return {
     userId,
-    tokenPayload: lastPayload,
+    tokenPayload: {
+      ...lastPayload,
+      email: typeof lastPayload.email === "string" && lastPayload.email.trim() ? lastPayload.email : readHeaderEmail(request),
+      name: typeof lastPayload.name === "string" && lastPayload.name.trim() ? lastPayload.name : readHeaderUserName(request),
+    },
   };
 };
 
 const verifyByHeadersOnly = (request: Request): AuthContext | null => {
   const userId = normalizeUserId(request);
   if (!userId) return null;
-  return { userId, tokenPayload: {} };
+  return {
+    userId,
+    tokenPayload: {
+      email: readHeaderEmail(request),
+      name: readHeaderUserName(request),
+    },
+  };
 };
 
 const allowInsecureDevAuth = (env: Env): AuthContext | null => {
