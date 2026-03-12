@@ -1173,6 +1173,12 @@ input {
   width: min(640px, 96vw);
 }
 
+.user-profile-popup .info-tip-box,
+.user-settings-modal .info-tip-box {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
 .notifications-panel {
   position: relative;
   display: grid;
