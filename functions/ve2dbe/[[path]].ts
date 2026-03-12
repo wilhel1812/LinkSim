@@ -11,7 +11,14 @@ const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number 
 };
 
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
-  if (request.method !== "GET" && request.method !== "HEAD") {
+  const url = new URL(request.url);
+  const upstreamPath = url.pathname.replace(/^\/ve2dbe/, "");
+  const isTileListEndpoint = upstreamPath === "/geodata/gettile.asp";
+  const allowsPost = isTileListEndpoint;
+  const methodAllowed =
+    request.method === "GET" || request.method === "HEAD" || (allowsPost && request.method === "POST");
+
+  if (!methodAllowed) {
     return new Response("Method not allowed", { status: 405 });
   }
 
@@ -29,15 +36,17 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     });
   }
 
-  const url = new URL(request.url);
-  const upstreamPath = url.pathname.replace(/^\/ve2dbe/, "");
   const upstream = new URL(`https://www.ve2dbe.com${upstreamPath}${url.search}`);
+  const contentType = request.headers.get("content-type");
+  const shouldForwardBody = request.method === "POST" || request.method === "PUT" || request.method === "PATCH";
 
   const response = await fetch(upstream.toString(), {
     method: request.method,
     headers: {
       accept: request.headers.get("accept") ?? "*/*",
+      ...(contentType ? { "content-type": contentType } : {}),
     },
+    body: shouldForwardBody ? request.body : undefined,
   });
 
   return new Response(response.body, {
