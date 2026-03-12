@@ -1072,10 +1072,10 @@ export function Sidebar() {
             onClick={() => setShowSimulationLibraryManager(true)}
             type="button"
           >
-            Open Simulation Library
+            Simulation Library
           </button>
           <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-            Save Current Simulation
+            Save Simulation
           </button>
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
@@ -1120,7 +1120,7 @@ export function Sidebar() {
         <p className="field-help">Use Site Library to add/edit sites, then add selected sites to this simulation.</p>
         <div className="chip-group">
           <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
-            Open Site Library
+            Site Library
           </button>
           {siteLibrary.length ? (
             <button className="inline-action" onClick={() => insertSiteFromLibrary(siteLibrary[0].id)} type="button">
@@ -1748,7 +1748,7 @@ export function Sidebar() {
       </section>
 
       {profilePopupUser ? (
-        <ModalOverlay aria-label="User Profile">
+        <ModalOverlay aria-label="User Profile" onClose={() => setProfilePopupUser(null)}>
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>User Profile</h2>
@@ -1783,7 +1783,7 @@ export function Sidebar() {
       ) : null}
 
       {changeLogPopup ? (
-        <ModalOverlay aria-label="Change Log">
+        <ModalOverlay aria-label="Change Log" onClose={() => setChangeLogPopup(null)}>
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Change Log · {changeLogPopup.label}</h2>
@@ -1818,7 +1818,7 @@ export function Sidebar() {
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Details">
+        <ModalOverlay aria-label="Resource Details" onClose={() => setResourceDetailsPopup(null)}>
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>Details · {resourceDetailsPopup.label}</h2>
@@ -1863,7 +1863,7 @@ export function Sidebar() {
       ) : null}
 
       {showSimulationLibraryManager ? (
-        <ModalOverlay aria-label="Simulation Library">
+        <ModalOverlay aria-label="Simulation Library" onClose={() => setShowSimulationLibraryManager(false)}>
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Simulation Library</h2>
@@ -1895,7 +1895,7 @@ export function Sidebar() {
             </label>
             <div className="chip-group">
               <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-                Save Current Simulation
+                Save Simulation
               </button>
             </div>
             {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
@@ -2014,7 +2014,7 @@ export function Sidebar() {
         </ModalOverlay>
       ) : null}
       {showSiteLibraryManager ? (
-        <ModalOverlay aria-label="Site Library">
+        <ModalOverlay aria-label="Site Library" onClose={() => setShowSiteLibraryManager(false)}>
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Site Library</h2>
@@ -2040,7 +2040,7 @@ export function Sidebar() {
                 onClick={() => setShowAddLibraryForm((current) => !current)}
                 type="button"
               >
-                {showAddLibraryForm ? "Hide Add" : "Add Library Site"}
+                {showAddLibraryForm ? "Hide Add Form" : "Add Site"}
               </button>
               <button
                 className="inline-action"
@@ -2077,7 +2077,7 @@ export function Sidebar() {
             </div>
             {showAddLibraryForm ? (
               <div className="library-editor">
-                <h3>Add Library Site</h3>
+                <h3>Add Site</h3>
                 <label className="field-grid">
                   <span>Name</span>
                   <input

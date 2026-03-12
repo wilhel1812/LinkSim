@@ -17,6 +17,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] E-mail notifications (starting with account approval)
 - [ ] Rehaul of dockumentation (readme.md)
 - [ ] Set up a compehensive testing plan
+- [x] Set up a compehensive testing plan
 - [ ] Branding
 - [ ] Elevation plot visibility toggle
 - [x] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
@@ -59,9 +60,12 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Full terminology pass (Project/Simulation/Setup/Snapshot/etc.)
 - [x] Move crowded metadata out of list rows and into details panels
 - [ ] Clean sidebar information density and progressive disclosure
+- Progress: simplified library/action labels and streamlined user moderation list flow.
 - [ ] Unify labels/buttons across libraries and managers
+- Progress: aligned labels for library open/save/add actions and moderation wording.
 - [ ] Standardize error messages across endpoints and UI surfaces
 - Progress: backend endpoints now use centralized error normalization and status mapping; UI surface pass still pending.
+- [x] Modal UX: support ESC and click-outside to close dialogs (in addition to close button)
 
 ### Simulation quality clarity
 - [ ] Improve explanatory info for FSPL / TwoRay / ITM and defaults
@@ -69,7 +73,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Recheck pass/fail interpretation and communication around terrain blocking
 
 ### Security and access hardening
-- [ ] Productize Access policy templates in-app docs and setup checklist
+- [x] Productize Access policy templates in-app docs and setup checklist
 - [x] Add admin warning surfaces for unsafe auth/access configuration
 
 ## Hardening execution paths (agreed, no further discussion required now)

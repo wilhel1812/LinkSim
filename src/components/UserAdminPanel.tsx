@@ -100,6 +100,8 @@ export function UserAdminPanel() {
   const [managedUser, setManagedUser] = useState<CloudUser | null>(null);
   const [managedNameDraft, setManagedNameDraft] = useState("");
   const [managedEmailDraft, setManagedEmailDraft] = useState("");
+  const [userFilter, setUserFilter] = useState<"all" | "pending" | "approved">("all");
+  const [userSearch, setUserSearch] = useState("");
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(() =>
     typeof window === "undefined" ? new Set() : readDismissedNotificationIds(),
   );
@@ -208,6 +210,20 @@ export function UserAdminPanel() {
   }, [canAdmin]);
 
   const userRows = useMemo(() => users.filter((user) => user.id !== me?.id), [users, me?.id]);
+  const pendingUserCount = useMemo(() => userRows.filter((user) => !user.isApproved).length, [userRows]);
+  const filteredUserRows = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return userRows.filter((user) => {
+      if (userFilter === "pending" && user.isApproved) return false;
+      if (userFilter === "approved" && !user.isApproved) return false;
+      if (!q) return true;
+      return (
+        user.username.toLowerCase().includes(q) ||
+        (user.email ?? "").toLowerCase().includes(q) ||
+        user.id.toLowerCase().includes(q)
+      );
+    });
+  }, [userRows, userFilter, userSearch]);
   const unreadNotifications = useMemo(
     () => notificationFeed.items.filter((item) => !dismissedNotifications.has(item.id)),
     [notificationFeed.items, dismissedNotifications],
@@ -400,7 +416,7 @@ export function UserAdminPanel() {
       </button>
 
       {open ? (
-        <ModalOverlay aria-label="User Settings">
+        <ModalOverlay aria-label="User Settings" onClose={() => setOpen(false)}>
           <div className="library-manager-card user-settings-modal">
             <div className="library-manager-header">
               <h2>User Settings</h2>
@@ -569,8 +585,23 @@ export function UserAdminPanel() {
 
             {canAdmin ? (
               <div className="user-manager-list">
-                <p className="field-help">Users: open a profile to review and moderate.</p>
-                {userRows.map((user) => (
+                <div className="section-heading">
+                  <p className="field-help">Users: open a profile to review and moderate.</p>
+                  <p className="field-help">Pending: {pendingUserCount}</p>
+                </div>
+                <label className="field-grid user-field-grid">
+                  <span>Filter</span>
+                  <select className="locale-select" onChange={(event) => setUserFilter(event.target.value as "all" | "pending" | "approved")} value={userFilter}>
+                    <option value="all">All users</option>
+                    <option value="pending">Pending only</option>
+                    <option value="approved">Approved only</option>
+                  </select>
+                </label>
+                <label className="field-grid user-field-grid">
+                  <span>Search</span>
+                  <input onChange={(event) => setUserSearch(event.target.value)} placeholder="Name, email, or user ID" type="text" value={userSearch} />
+                </label>
+                {filteredUserRows.map((user) => (
                   <button className="library-row user-list-row-btn" key={user.id} onClick={() => openManagedUser(user)} type="button">
                     <div className="user-list-row">
                       <ProfileAvatar avatarUrl={user.avatarUrl} name={user.username} />
@@ -583,7 +614,7 @@ export function UserAdminPanel() {
                     </div>
                   </button>
                 ))}
-                {!userRows.length ? <p className="field-help">No other users yet.</p> : null}
+                {!filteredUserRows.length ? <p className="field-help">No users match this filter.</p> : null}
               </div>
             ) : null}
 
@@ -609,7 +640,7 @@ export function UserAdminPanel() {
             ) : null}
 
             {managedUser ? (
-              <ModalOverlay aria-label="Managed User Profile">
+              <ModalOverlay aria-label="Managed User Profile" onClose={closeManagedUser}>
                 <div className="library-manager-card user-profile-popup">
                   <div className="library-manager-header">
                     <h2>User Profile</h2>

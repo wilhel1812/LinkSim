@@ -103,3 +103,8 @@ npm run dev:edge
 ```
 
 This is for local testing only.
+
+## Related docs
+
+- Access policy templates: `docs/access-policy-templates.md`
+- Testing plan: `docs/testing-plan.md`

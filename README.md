@@ -72,6 +72,17 @@ This repository now includes:
 Detailed setup steps:
 
 - [docs/cloudflare-auth-setup.md](./docs/cloudflare-auth-setup.md)
+- [docs/access-policy-templates.md](./docs/access-policy-templates.md)
+
+## Testing
+
+- Test plan: [docs/testing-plan.md](./docs/testing-plan.md)
+- Run baseline checks:
+
+```bash
+npm test
+npm run build
+```
 
 ## Running with Docker Compose
 
