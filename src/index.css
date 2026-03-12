@@ -119,6 +119,13 @@ input {
   margin-top: 28px;
 }
 
+.access-pending-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;

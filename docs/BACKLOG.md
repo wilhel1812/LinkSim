@@ -14,6 +14,13 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Report types: feedback
 - [ ] Report types: spam/misuse
 - [ ] Banning users
+- [ ] Rehaul of dockumentation (readme.md)
+- [ ] Set up a compehensive testing plan
+- [ ] Branding
+- [ ] Elevation plot visibility toggle
+- [ ] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
+- [ ] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
+- [ ] What does the reject button currently do?
 
 ## Active stabilization backlog
 
@@ -22,7 +29,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Add Sign Out in User Settings (top area, always reachable)
 - [x] Add notification center access through User Settings
 - [x] Allow dismissing notification badges while keeping entries in center
-- [ ] Clarify pending-account UX text and flow end-to-end
+- [x] Clarify pending-account UX text and flow end-to-end
 - [ ] Restrict sign-ups and approval transitions with explicit lifecycle states
 - [ ] Add dedicated auth/permission tests for critical flows
 - [ ] Add dedicated identity reconciliation tests + audit logging coverage
@@ -42,7 +49,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 
 ### UI and wording consistency
 - [ ] Full terminology pass (Project/Simulation/Setup/Snapshot/etc.)
-- [ ] Move crowded metadata out of list rows and into details panels
+- [x] Move crowded metadata out of list rows and into details panels
 - [ ] Clean sidebar information density and progressive disclosure
 - [ ] Unify labels/buttons across libraries and managers
 - [ ] Standardize error messages across endpoints and UI surfaces
@@ -55,6 +62,18 @@ State: stabilization pass (no net-new product features unless explicitly approve
 ### Security and access hardening
 - [ ] Productize Access policy templates in-app docs and setup checklist
 - [ ] Add admin warning surfaces for unsafe auth/access configuration
+
+## Hardening execution paths (agreed, no further discussion required now)
+- [ ] Runtime migrations
+- Path: move all `ALTER TABLE`/schema drift logic out of request handlers into explicit SQL migration files + CI/deploy migration step; expose schema version in admin diagnostics.
+- [ ] Avatar storage strategy
+- Path: move avatar binaries to R2 with server-side resize/thumbnail generation; keep only URL, hash, size, and content-type in D1.
+- [ ] Auth/permission regression coverage
+- Path: add API integration tests for self-role block, pending-user lock, approval/revocation, admin-only mutations, cross-user denial, and delete safeguards.
+- [ ] Identity reconciliation hardening
+- Path: define deterministic merge/link matrix (idp subject, verified email, legacy local email), add immutable audit events for link/merge decisions, and test every branch.
+- [ ] Cloudflare Access auth observability
+- Path: add structured auth logs with reason codes for 401/403, include parsed identity source and header/JWT shape, and expose admin diagnostics endpoint/view.
 
 ## Next batch plan
 1. Pending-account UX clarity pass + wording consistency pass.

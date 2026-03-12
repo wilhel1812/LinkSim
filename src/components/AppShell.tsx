@@ -39,10 +39,13 @@ export function AppShell() {
           <p className="field-help">
             You can sign in and edit your profile, but simulation tools stay locked until an admin approves your access.
           </p>
-          <p className="field-help">
-            Next steps: add your full name, a valid email, and an access request note in User Settings. Admins review
-            requests from Notification Center.
-          </p>
+          <p className="field-help">To continue:</p>
+          <ul className="field-help access-pending-list">
+            <li>Open User Settings.</li>
+            <li>Add your full name and valid email address.</li>
+            <li>Add an access request note so admins know why you need access.</li>
+            <li>Wait for admin approval. You will keep profile access while pending.</li>
+          </ul>
         </section>
       </main>
     );

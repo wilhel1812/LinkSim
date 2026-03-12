@@ -365,6 +365,15 @@ export function Sidebar() {
     busy: boolean;
     status: string;
   } | null>(null);
+  const [resourceDetailsPopup, setResourceDetailsPopup] = useState<{
+    kind: "site" | "simulation";
+    resourceId: string;
+    label: string;
+    createdByUserId: string | null;
+    createdByName: string;
+    lastEditedByUserId: string | null;
+    lastEditedByName: string;
+  } | null>(null);
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
     siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
@@ -946,6 +955,34 @@ export function Sidebar() {
         status: `Failed loading change log: ${message}`,
       });
     }
+  };
+
+  const openResourceDetailsPopup = ({
+    kind,
+    resourceId,
+    label,
+    createdByUserId,
+    createdByName,
+    lastEditedByUserId,
+    lastEditedByName,
+  }: {
+    kind: "site" | "simulation";
+    resourceId: string;
+    label: string;
+    createdByUserId: string | null;
+    createdByName: string;
+    lastEditedByUserId: string | null;
+    lastEditedByName: string;
+  }) => {
+    setResourceDetailsPopup({
+      kind,
+      resourceId,
+      label,
+      createdByUserId,
+      createdByName,
+      lastEditedByUserId,
+      lastEditedByName,
+    });
   };
 
   const toggleProfileAdmin = async () => {
@@ -1750,6 +1787,50 @@ export function Sidebar() {
         </div>
       ) : null}
 
+      {resourceDetailsPopup ? (
+        <div aria-label="Resource Details" aria-modal="true" className="library-manager-overlay" role="dialog">
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>Details · {resourceDetailsPopup.label}</h2>
+              <button className="inline-action" onClick={() => setResourceDetailsPopup(null)} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
+            <p className="field-help">ID: {resourceDetailsPopup.resourceId}</p>
+            <div className="chip-group">
+              <button
+                className="inline-action"
+                onClick={() => void openUserProfilePopup(resourceDetailsPopup.createdByUserId)}
+                type="button"
+              >
+                Created by {resourceDetailsPopup.createdByName}
+              </button>
+              <button
+                className="inline-action"
+                onClick={() => void openUserProfilePopup(resourceDetailsPopup.lastEditedByUserId)}
+                type="button"
+              >
+                Last edited by {resourceDetailsPopup.lastEditedByName}
+              </button>
+              <button
+                className="inline-action"
+                onClick={() =>
+                  void openChangeLogPopup(
+                    resourceDetailsPopup.kind,
+                    resourceDetailsPopup.resourceId,
+                    resourceDetailsPopup.label,
+                  )
+                }
+                type="button"
+              >
+                Open change log
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showSimulationLibraryManager ? (
         <div
           aria-label="Simulation Library"
@@ -1793,12 +1874,12 @@ export function Sidebar() {
             </div>
             {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
             <div className="library-editor">
-              <h3>Built-in Presets</h3>
+              <h3>Built-in simulations</h3>
               <div className="library-manager-list">
                 {filteredBuiltinScenarios.map((scenario) => (
                   <div className="library-manager-row simulation-manager-row" key={scenario.id}>
                     <span className="library-row-label">
-                      <strong>{scenario.name}</strong> {" · "}Built-in preset
+                      <strong>{scenario.name}</strong> {" · "}Built-in
                     </span>
                     <div className="library-row-actions">
                       <button
@@ -1811,11 +1892,11 @@ export function Sidebar() {
                     </div>
                   </div>
                 ))}
-                {!filteredBuiltinScenarios.length ? <p className="field-help">No matching built-in presets.</p> : null}
+                {!filteredBuiltinScenarios.length ? <p className="field-help">No matching built-in simulations.</p> : null}
               </div>
             </div>
             <div className="library-editor">
-              <h3>Saved Simulations</h3>
+              <h3>Saved simulations</h3>
             <div className="library-manager-list">
               {filteredSimulationPresets.map((preset) => (
                 <div className="library-manager-row simulation-manager-row" key={preset.id}>
@@ -1823,39 +1904,6 @@ export function Sidebar() {
                     <strong>{preset.name}</strong>
                     {" · "}
                     Updated {new Date(preset.updatedAt).toLocaleString()}
-                    <span className="audit-meta-row">
-                      <button
-                        className="inline-link-button"
-                        onClick={() =>
-                          void openUserProfilePopup(
-                            (preset as unknown as { createdByUserId?: string }).createdByUserId ?? null,
-                          )
-                        }
-                        type="button"
-                      >
-                        Created by{" "}
-                        {(preset as unknown as { createdByName?: string }).createdByName ?? "Unknown"}
-                      </button>
-                      <button
-                        className="inline-link-button"
-                        onClick={() =>
-                          void openUserProfilePopup(
-                            (preset as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
-                          )
-                        }
-                        type="button"
-                      >
-                        Last edited by{" "}
-                        {(preset as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown"}
-                      </button>
-                      <button
-                        className="inline-link-button"
-                        onClick={() => void openChangeLogPopup("simulation", preset.id, preset.name)}
-                        type="button"
-                      >
-                        View changes
-                      </button>
-                    </span>
                   </span>
                   <div className="library-row-actions">
                     <button
@@ -1867,6 +1915,25 @@ export function Sidebar() {
                       type="button"
                     >
                       Load
+                    </button>
+                    <button
+                      className="inline-action"
+                      onClick={() =>
+                        openResourceDetailsPopup({
+                          kind: "simulation",
+                          resourceId: preset.id,
+                          label: preset.name,
+                          createdByUserId: (preset as unknown as { createdByUserId?: string }).createdByUserId ?? null,
+                          createdByName: (preset as unknown as { createdByName?: string }).createdByName ?? "Unknown",
+                          lastEditedByUserId:
+                            (preset as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
+                          lastEditedByName:
+                            (preset as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
+                        })
+                      }
+                      type="button"
+                    >
+                      Details
                     </button>
                     <button
                       className="inline-action"
@@ -2153,42 +2220,29 @@ export function Sidebar() {
                   />
                   <span className="library-row-label">
                     {entry.name} ({entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)})
-                    <span className="audit-meta-row">
-                      <button
-                        className="inline-link-button"
-                        onClick={() =>
-                          void openUserProfilePopup(
-                            (entry as unknown as { createdByUserId?: string }).createdByUserId ?? null,
-                          )
-                        }
-                        type="button"
-                      >
-                        Created by {(entry as unknown as { createdByName?: string }).createdByName ?? "Unknown"}
-                      </button>
-                      <button
-                        className="inline-link-button"
-                        onClick={() =>
-                          void openUserProfilePopup(
-                            (entry as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
-                          )
-                        }
-                        type="button"
-                      >
-                        Last edited by{" "}
-                        {(entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown"}
-                      </button>
-                      <button
-                        className="inline-link-button"
-                        onClick={() => void openChangeLogPopup("site", entry.id, entry.name)}
-                        type="button"
-                      >
-                        View changes
-                      </button>
-                    </span>
                   </span>
                   <div className="library-row-actions">
                     <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
                       Add
+                    </button>
+                    <button
+                      className="inline-action"
+                      onClick={() =>
+                        openResourceDetailsPopup({
+                          kind: "site",
+                          resourceId: entry.id,
+                          label: entry.name,
+                          createdByUserId: (entry as unknown as { createdByUserId?: string }).createdByUserId ?? null,
+                          createdByName: (entry as unknown as { createdByName?: string }).createdByName ?? "Unknown",
+                          lastEditedByUserId:
+                            (entry as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
+                          lastEditedByName:
+                            (entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
+                        })
+                      }
+                      type="button"
+                    >
+                      Details
                     </button>
                     <button className="inline-action" onClick={() => startLibraryEdit(entry.id)} type="button">
                       Edit
