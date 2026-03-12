@@ -41,8 +41,9 @@ State: stabilization pass (no net-new product features unless explicitly approve
 
 ### Data and storage safety
 - [ ] Replace avatar data URLs in D1 with object storage flow (R2) + thumbnails
-- [ ] Remove runtime schema migration from request path
+- [x] Remove runtime schema migration from request path
 - [ ] Add migration/version status visibility in admin tools
+- Progress: admin schema diagnostics endpoint + warnings added in User Settings.
 - [ ] Add import/export/backup health indicators and stronger restore UX
 
 ### Admin tooling
@@ -67,7 +68,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 
 ### Security and access hardening
 - [ ] Productize Access policy templates in-app docs and setup checklist
-- [ ] Add admin warning surfaces for unsafe auth/access configuration
+- [x] Add admin warning surfaces for unsafe auth/access configuration
 
 ## Hardening execution paths (agreed, no further discussion required now)
 - [ ] Runtime migrations

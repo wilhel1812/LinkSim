@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS deleted_users (
+  id TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL,
+  deleted_by_user_id TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY,
   owner_user_id TEXT NOT NULL,

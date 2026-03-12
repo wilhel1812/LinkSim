@@ -29,8 +29,17 @@ export const fetchNotifications = async (): Promise<NotificationFeed> => {
     headers: { "content-type": "application/json" },
   });
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`${response.status} ${response.statusText}: ${text}`);
+    const raw = await response.text();
+    let message = raw;
+    try {
+      const parsed = JSON.parse(raw) as { error?: unknown };
+      if (typeof parsed.error === "string" && parsed.error.trim()) {
+        message = parsed.error.trim();
+      }
+    } catch {
+      // Keep raw fallback.
+    }
+    throw new Error(`${response.status} ${response.statusText}: ${message}`);
   }
   const json = (await response.json()) as Partial<NotificationFeed>;
   return {

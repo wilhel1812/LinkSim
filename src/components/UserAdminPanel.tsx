@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import {
+  fetchAuthDiagnostics,
   deleteUser,
   fetchDeletedUsers,
   fetchMe,
+  fetchSchemaDiagnostics,
   fetchUsers,
   restoreDeletedCloudUser,
   updateMyProfile,
@@ -11,6 +13,8 @@ import {
   updateUserProfile,
   type CloudUser,
   type DeletedCloudUser,
+  type AuthDiagnostics,
+  type SchemaDiagnostics,
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { ModalOverlay } from "./ModalOverlay";
@@ -78,6 +82,8 @@ export function UserAdminPanel() {
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
   const [deletedUsers, setDeletedUsers] = useState<DeletedCloudUser[]>([]);
+  const [authDiagnostics, setAuthDiagnostics] = useState<AuthDiagnostics | null>(null);
+  const [schemaDiagnostics, setSchemaDiagnostics] = useState<SchemaDiagnostics | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
 
@@ -123,13 +129,21 @@ export function UserAdminPanel() {
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       if (current.isAdmin) {
-        const all = await fetchUsers();
+        const [all, deleted, authDiag, schemaDiag] = await Promise.all([
+          fetchUsers(),
+          fetchDeletedUsers(),
+          fetchAuthDiagnostics(),
+          fetchSchemaDiagnostics(),
+        ]);
         setUsers(all);
-        const deleted = await fetchDeletedUsers();
         setDeletedUsers(deleted);
+        setAuthDiagnostics(authDiag);
+        setSchemaDiagnostics(schemaDiag);
       } else {
         setUsers([]);
         setDeletedUsers([]);
+        setAuthDiagnostics(null);
+        setSchemaDiagnostics(null);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -173,10 +187,16 @@ export function UserAdminPanel() {
       setMe(updated);
       setStatus("Profile updated.");
       if (canAdmin) {
-        const all = await fetchUsers();
+        const [all, deleted, authDiag, schemaDiag] = await Promise.all([
+          fetchUsers(),
+          fetchDeletedUsers(),
+          fetchAuthDiagnostics(),
+          fetchSchemaDiagnostics(),
+        ]);
         setUsers(all);
-        const deleted = await fetchDeletedUsers();
         setDeletedUsers(deleted);
+        setAuthDiagnostics(authDiag);
+        setSchemaDiagnostics(schemaDiag);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -321,6 +341,23 @@ export function UserAdminPanel() {
     });
   };
 
+  const authWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    const cfg = authDiagnostics?.auth?.config;
+    if (!cfg) return warnings;
+    if (!cfg.accessAudConfigured) warnings.push("ACCESS_AUD is not configured.");
+    if (!cfg.accessTeamDomainConfigured) warnings.push("ACCESS_TEAM_DOMAIN is not configured.");
+    if (cfg.insecureDevAuthEnabled) warnings.push("ALLOW_INSECURE_DEV_AUTH is enabled.");
+    if (!cfg.authObservabilityEnabled) warnings.push("AUTH_OBSERVABILITY is disabled.");
+    return warnings;
+  }, [authDiagnostics]);
+
+  const schemaWarnings = useMemo(() => {
+    const missing = schemaDiagnostics?.schema?.missing ?? [];
+    if (!missing.length) return [];
+    return missing.map((entry) => `${entry.table}: ${entry.columns.join(", ")}`);
+  }, [schemaDiagnostics]);
+
   return (
     <>
       <button className="user-chip" onClick={() => setOpen(true)} type="button">
@@ -400,6 +437,36 @@ export function UserAdminPanel() {
                 </div>
               </div>
             </div>
+
+            {canAdmin ? (
+              <div className="user-manager-list">
+                <div className="section-heading">
+                  <p className="field-help">System diagnostics</p>
+                  <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
+                    Refresh
+                  </button>
+                </div>
+                {authWarnings.length ? (
+                  <div className="notification-banner" role="status">
+                    <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
+                  </div>
+                ) : (
+                  <p className="field-help">Auth configuration checks passed.</p>
+                )}
+                {schemaWarnings.length ? (
+                  <div className="notification-banner" role="status">
+                    <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
+                  </div>
+                ) : (
+                  <p className="field-help">Schema diagnostics passed.</p>
+                )}
+                <p className="field-help">
+                  Auth source: {authDiagnostics?.auth.source ?? "-"} | JWT:{" "}
+                  {authDiagnostics?.auth.signals.hasJwtAssertion ? "yes" : "no"} | Header email:{" "}
+                  {authDiagnostics?.auth.signals.hasEmailHeader ? "yes" : "no"}
+                </p>
+              </div>
+            ) : null}
 
             {canAdmin ? (
               <div className="user-manager-list notifications-center">

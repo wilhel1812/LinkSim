@@ -123,6 +123,67 @@ const registrationMode = (env: Env): "open" | "approval_required" => {
   return value === "open" ? "open" : "approval_required";
 };
 
+const REQUIRED_COLUMNS: Record<string, string[]> = {
+  users: [
+    "id",
+    "username",
+    "email",
+    "bio",
+    "access_request_note",
+    "idp_email",
+    "idp_email_verified",
+    "avatar_url",
+    "is_admin",
+    "is_approved",
+    "approved_at",
+    "approved_by_user_id",
+    "created_at",
+    "updated_at",
+  ],
+  sites: [
+    "id",
+    "owner_user_id",
+    "created_by_user_id",
+    "last_edited_by_user_id",
+    "created_at",
+    "last_edited_at",
+    "name",
+    "visibility",
+    "payload_json",
+    "updated_at",
+  ],
+  simulations: [
+    "id",
+    "owner_user_id",
+    "created_by_user_id",
+    "last_edited_by_user_id",
+    "created_at",
+    "last_edited_at",
+    "name",
+    "visibility",
+    "payload_json",
+    "updated_at",
+  ],
+  deleted_users: ["id", "deleted_at", "deleted_by_user_id"],
+  site_roles: ["site_id", "user_id", "role", "created_at"],
+  simulation_roles: ["simulation_id", "user_id", "role", "created_at"],
+  resource_changes: ["id", "resource_kind", "resource_id", "action", "actor_user_id", "changed_at", "note"],
+};
+
+export const getSchemaDiagnostics = async (env: Env): Promise<{
+  ok: boolean;
+  missing: Array<{ table: string; columns: string[] }>;
+}> => {
+  const missing: Array<{ table: string; columns: string[] }> = [];
+  for (const [table, required] of Object.entries(REQUIRED_COLUMNS)) {
+    const pragma = await env.DB.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
+    const existing = new Set(pragma.results.map((col) => col.name));
+    const missingColumns = required.filter((col) => !existing.has(col));
+    if (missingColumns.length) missing.push({ table, columns: missingColumns });
+  }
+  return { ok: missing.length === 0, missing };
+};
+
 const ensureSchema = async (env: Env): Promise<void> => {
   if (!schemaReady) {
     schemaReady = (async () => {
@@ -224,47 +285,12 @@ const ensureSchema = async (env: Env): Promise<void> => {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC)"),
       ]);
 
-      const userColumns = await env.DB.prepare("PRAGMA table_info(users)").all<{ name: string }>();
-      const userNames = new Set(userColumns.results.map((col) => col.name));
-      for (const query of [
-        !userNames.has("username") ? "ALTER TABLE users ADD COLUMN username TEXT" : "",
-        !userNames.has("email") ? "ALTER TABLE users ADD COLUMN email TEXT" : "",
-        !userNames.has("bio") ? "ALTER TABLE users ADD COLUMN bio TEXT" : "",
-        !userNames.has("access_request_note") ? "ALTER TABLE users ADD COLUMN access_request_note TEXT" : "",
-        !userNames.has("idp_email") ? "ALTER TABLE users ADD COLUMN idp_email TEXT" : "",
-        !userNames.has("idp_email_verified")
-          ? "ALTER TABLE users ADD COLUMN idp_email_verified INTEGER NOT NULL DEFAULT 0"
-          : "",
-        !userNames.has("avatar_url") ? "ALTER TABLE users ADD COLUMN avatar_url TEXT" : "",
-        !userNames.has("is_admin") ? "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0" : "",
-        !userNames.has("is_approved") ? "ALTER TABLE users ADD COLUMN is_approved INTEGER NOT NULL DEFAULT 0" : "",
-        !userNames.has("approved_at") ? "ALTER TABLE users ADD COLUMN approved_at TEXT" : "",
-        !userNames.has("approved_by_user_id") ? "ALTER TABLE users ADD COLUMN approved_by_user_id TEXT" : "",
-        !userNames.has("updated_at") ? "ALTER TABLE users ADD COLUMN updated_at TEXT" : "",
-      ]) {
-        if (query) await env.DB.prepare(query).run();
-      }
-
-      const siteColumns = await env.DB.prepare("PRAGMA table_info(sites)").all<{ name: string }>();
-      const siteNames = new Set(siteColumns.results.map((col) => col.name));
-      for (const query of [
-        !siteNames.has("created_by_user_id") ? "ALTER TABLE sites ADD COLUMN created_by_user_id TEXT" : "",
-        !siteNames.has("last_edited_by_user_id") ? "ALTER TABLE sites ADD COLUMN last_edited_by_user_id TEXT" : "",
-        !siteNames.has("created_at") ? "ALTER TABLE sites ADD COLUMN created_at TEXT" : "",
-        !siteNames.has("last_edited_at") ? "ALTER TABLE sites ADD COLUMN last_edited_at TEXT" : "",
-      ]) {
-        if (query) await env.DB.prepare(query).run();
-      }
-
-      const simColumns = await env.DB.prepare("PRAGMA table_info(simulations)").all<{ name: string }>();
-      const simNames = new Set(simColumns.results.map((col) => col.name));
-      for (const query of [
-        !simNames.has("created_by_user_id") ? "ALTER TABLE simulations ADD COLUMN created_by_user_id TEXT" : "",
-        !simNames.has("last_edited_by_user_id") ? "ALTER TABLE simulations ADD COLUMN last_edited_by_user_id TEXT" : "",
-        !simNames.has("created_at") ? "ALTER TABLE simulations ADD COLUMN created_at TEXT" : "",
-        !simNames.has("last_edited_at") ? "ALTER TABLE simulations ADD COLUMN last_edited_at TEXT" : "",
-      ]) {
-        if (query) await env.DB.prepare(query).run();
+      const diagnostics = await getSchemaDiagnostics(env);
+      if (!diagnostics.ok) {
+        const summary = diagnostics.missing
+          .map((entry) => `${entry.table}: ${entry.columns.join(",")}`)
+          .join(" | ");
+        throw new Error(`Schema out of date. Run D1 migrations. Missing: ${summary}`);
       }
     })();
   }

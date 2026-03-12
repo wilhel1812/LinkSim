@@ -52,6 +52,7 @@ export const normalizeApiErrorMessage = (message: string): string => {
 
 export const statusFromErrorMessage = (message: string, fallback = 500): number => {
   const lower = message.toLowerCase();
+  if (lower.includes("schema out of date")) return 503;
   if (lower.includes("session revoked by admin")) return 401;
   if (lower.includes("unauthorized")) return 401;
   if (lower.includes("pending approval")) return 403;

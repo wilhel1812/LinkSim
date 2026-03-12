@@ -31,6 +31,40 @@ export type DeletedCloudUser = {
   deletedByUserId: string | null;
 };
 
+export type AuthDiagnostics = {
+  auth: {
+    source: string;
+    userId: string;
+    signals: {
+      hasJwtAssertion: boolean;
+      hasEmailHeader: boolean;
+      hasUserIdHeader: boolean;
+      hasUserNameHeader: boolean;
+    };
+    claims: {
+      iss: string | null;
+      sub: string | null;
+      email: string | null;
+      name: string | null;
+      iat: number | null;
+      exp: number | null;
+    };
+    config: {
+      accessAudConfigured: boolean;
+      accessTeamDomainConfigured: boolean;
+      insecureDevAuthEnabled: boolean;
+      authObservabilityEnabled: boolean;
+    };
+  };
+};
+
+export type SchemaDiagnostics = {
+  schema: {
+    ok: boolean;
+    missing: Array<{ table: string; columns: string[] }>;
+  };
+};
+
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
@@ -40,7 +74,16 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
     },
   });
   if (!response.ok) {
-    const message = await response.text();
+    const raw = await response.text();
+    let message = raw;
+    try {
+      const parsed = JSON.parse(raw) as { error?: unknown };
+      if (typeof parsed.error === "string" && parsed.error.trim()) {
+        message = parsed.error.trim();
+      }
+    } catch {
+      // Keep raw fallback.
+    }
     throw new Error(`${response.status} ${response.statusText}: ${message}`);
   }
   return (await response.json()) as T;
@@ -134,3 +177,9 @@ export const restoreDeletedCloudUser = async (id: string): Promise<void> => {
   const params = new URLSearchParams({ id });
   await apiCall<{ ok: boolean }>(`/api/deleted-users?${params.toString()}`, { method: "DELETE" });
 };
+
+export const fetchAuthDiagnostics = async (): Promise<AuthDiagnostics> =>
+  apiCall<AuthDiagnostics>("/api/auth-diagnostics", { method: "GET" });
+
+export const fetchSchemaDiagnostics = async (): Promise<SchemaDiagnostics> =>
+  apiCall<SchemaDiagnostics>("/api/schema-diagnostics", { method: "GET" });

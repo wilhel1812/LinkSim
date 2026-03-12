@@ -24,6 +24,12 @@ describe("auth inspection", () => {
 });
 
 describe("verifyAuth", () => {
+  it("returns null without auth signals when dev fallback is disabled", async () => {
+    const request = new Request("https://example.test/api/me");
+    const auth = await verifyAuth(request, makeEnv({ ALLOW_INSECURE_DEV_AUTH: "false" }));
+    expect(auth).toBeNull();
+  });
+
   it("accepts header-based auth when user headers are present", async () => {
     const request = new Request("https://example.test/api/me", {
       headers: {

@@ -22,6 +22,12 @@ Copy the returned `database_id` into `wrangler.toml`.
 npx wrangler d1 execute linksim --file ./db/schema.sql
 ```
 
+For upgrades from older deployments, apply migrations explicitly (runtime auto-migrations are disabled):
+
+```bash
+npx wrangler d1 execute linksim --file ./db/migrations/2026-03-12_schema_alignment.sql
+```
+
 ## 3) Configure Cloudflare Access (GitHub + OTP)
 
 In Cloudflare Zero Trust:
@@ -77,6 +83,7 @@ Deploy from this repo. Pages Functions under `functions/api/*` deploy automatica
 - Access protects app URL (unauth users blocked/challenged)
 - Sign in via GitHub (or OTP fallback)
 - Open User Settings and confirm user status
+- For admins: check `/api/schema-diagnostics` and `/api/auth-diagnostics`
 - Trigger `Sync From Cloud`
 - Create/edit site/simulation and confirm cloud sync status updates
 
