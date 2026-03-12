@@ -32,6 +32,8 @@ export type Env = {
   DEV_AUTH_USER_ID?: string;
   ADMIN_USER_IDS?: string;
   REGISTRATION_MODE?: string;
+  GEOCODE_RATE_LIMIT_PER_MINUTE?: string;
+  PROXY_RATE_LIMIT_PER_MINUTE?: string;
 };
 
 export type AuthContext = {

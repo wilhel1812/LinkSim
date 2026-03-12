@@ -1055,6 +1055,11 @@ export function Sidebar() {
     setEditingLibraryStatus(`Ground elevation set from loaded terrain: ${elevation} m`);
   };
   const runLibrarySearch = async () => {
+    if (librarySearchQuery.trim().length < 3) {
+      setLibrarySearchResults([]);
+      setLibrarySearchStatus("Enter at least 3 characters to search.");
+      return;
+    }
     setLibrarySearchStatus("Searching...");
     try {
       const results = await searchLocations(librarySearchQuery);

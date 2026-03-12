@@ -5,11 +5,21 @@ export type GeocodeResult = {
   lon: number;
 };
 
+const CACHE_TTL_MS = 5 * 60_000;
+const cache = new Map<string, { expiresAt: number; results: GeocodeResult[] }>();
+
 export const searchLocations = async (query: string): Promise<GeocodeResult[]> => {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  if (trimmed.length < 3) return [];
 
-  const url = new URL("https://nominatim.openstreetmap.org/search");
+  const key = trimmed.toLowerCase();
+  const cached = cache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.results;
+
+  if (cached && cached.expiresAt <= Date.now()) cache.delete(key);
+
+  const url = new URL("/api/geocode", window.location.origin);
   url.searchParams.set("q", trimmed);
   url.searchParams.set("format", "jsonv2");
   url.searchParams.set("limit", "6");
@@ -21,22 +31,18 @@ export const searchLocations = async (query: string): Promise<GeocodeResult[]> =
     },
   });
   if (!response.ok) {
+    if (response.status === 429) {
+      throw new Error("Search rate limit reached. Please wait a moment.");
+    }
     throw new Error(`Geocode lookup failed (${response.status})`);
   }
 
-  const payload = (await response.json()) as Array<{
-    place_id: number;
-    display_name: string;
-    lat: string;
-    lon: string;
-  }>;
+  const payload = (await response.json()) as { results?: GeocodeResult[] };
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  cache.set(key, {
+    expiresAt: Date.now() + CACHE_TTL_MS,
+    results,
+  });
 
-  return payload
-    .map((item) => ({
-      id: String(item.place_id),
-      label: item.display_name,
-      lat: Number(item.lat),
-      lon: Number(item.lon),
-    }))
-    .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lon));
+  return results;
 };

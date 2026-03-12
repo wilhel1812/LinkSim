@@ -15,6 +15,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/ve2dbe/, ""),
       },
+      "/api/geocode": {
+        target: "https://nominatim.openstreetmap.org",
+        changeOrigin: true,
+        rewrite: () => "/search",
+      },
     },
   },
   preview: {
@@ -28,6 +33,11 @@ export default defineConfig({
         target: "https://www.ve2dbe.com",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/ve2dbe/, ""),
+      },
+      "/api/geocode": {
+        target: "https://nominatim.openstreetmap.org",
+        changeOrigin: true,
+        rewrite: () => "/search",
       },
     },
   },

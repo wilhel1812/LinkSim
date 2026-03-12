@@ -85,6 +85,8 @@ State: stabilization pass (no net-new product features unless explicitly approve
 ### Security and access hardening
 - [x] Productize Access policy templates in-app docs and setup checklist
 - [x] Add admin warning surfaces for unsafe auth/access configuration
+- [x] Add upstream request safeguards (rate limits + caching) for external map/geocode proxy traffic
+- Progress: added `/api/geocode` proxy with per-IP limits and caching, added per-IP throttles + GET/HEAD-only guards on `/meshmap` and `/ve2dbe`, and switched raster fallback away from direct OSM tile hosts.
 
 ## Hardening execution paths (agreed, no further discussion required now)
 - [x] Runtime migrations

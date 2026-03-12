@@ -14,6 +14,12 @@ Independent web reimplementation inspired by Radio Mobile workflows.
 4. Cache archives in browser Cache Storage.
 5. Parse and use loaded SRTM tiles in propagation/profile/terrain overlay.
 
+## External Service Safeguards
+
+- Geocoding requests are routed through `/api/geocode` with per-IP rate limits and short-lived caching.
+- Upstream proxy routes (`/meshmap/*`, `/ve2dbe/*`) are limited to `GET/HEAD` and include per-IP request caps.
+- Fallback map raster tiles use CARTO CDN attribution endpoints rather than direct OSM tile hosts.
+
 ## Runtime Proxy
 
 Vite proxy is used for browser CORS compatibility in dev/preview:

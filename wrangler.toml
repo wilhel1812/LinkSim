@@ -21,6 +21,10 @@ ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
 ACCESS_AUD = "replace-with-access-aud"
 ADMIN_USER_IDS = "replace-with-admin-user-id"
 REGISTRATION_MODE = "approval_required"
+# Optional: per-IP request cap for /api/geocode (default 20/minute).
+# GEOCODE_RATE_LIMIT_PER_MINUTE = "20"
+# Optional: per-IP request cap for upstream proxy routes (/meshmap, /ve2dbe), default 120/minute.
+# PROXY_RATE_LIMIT_PER_MINUTE = "120"
 # Optional: custom public base URL for avatar delivery.
 # If unset, avatars are served through /api/avatar/<key>.
 # AVATAR_PUBLIC_BASE_URL = "https://linksim.wilhelmfrancke.com/api/avatar"

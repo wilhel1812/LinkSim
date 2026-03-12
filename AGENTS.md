@@ -3,6 +3,7 @@
 - Always update `docs/BACKLOG.md` before and after implementation batches.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
 - Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.
+- Never commit or push directly to `main`; always create/use a separate branch for changes and push that branch.
 - Keep terminology consistent: use `Simulation`, `Site`, `Library`, `Path`, and `Channel` terms across UI and docs.
 - Any modal/popover that can open on top of another dialog must use `tier="raised"` in `ModalOverlay`.
 - When catching UI errors, use `getUiErrorMessage()` from `src/lib/uiError.ts` for consistent messaging.
