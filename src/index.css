@@ -212,6 +212,46 @@ input {
   font-size: 0.96rem;
 }
 
+.sidebar-panel .section-scenario {
+  order: 1;
+}
+
+.sidebar-panel .section-sites {
+  order: 2;
+}
+
+.sidebar-panel .section-path {
+  order: 3;
+}
+
+.sidebar-panel .section-results {
+  order: 4;
+}
+
+.sidebar-panel .section-scenario-status {
+  order: 5;
+}
+
+.sidebar-panel .section-sites-selected {
+  order: 6;
+}
+
+.sidebar-panel .section-radio {
+  order: 7;
+}
+
+.sidebar-panel .section-data {
+  order: 8;
+}
+
+.sidebar-panel .section-more {
+  order: 9;
+}
+
+.sidebar-panel .section-intro {
+  order: 10;
+}
+
 .section-heading {
   display: flex;
   align-items: center;

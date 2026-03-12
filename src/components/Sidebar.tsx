@@ -32,7 +32,6 @@ import {
   savePreferredMeshmapSourceUrl,
   type MeshmapNode,
 } from "../lib/meshtasticMqtt";
-import { findMeshtasticPreset, MESHTASTIC_RF_PRESETS } from "../lib/meshtasticProfiles";
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { analyzeLink } from "../lib/propagation";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
@@ -247,9 +246,7 @@ export function Sidebar() {
   const setAutoPropagationEnvironment = useAppStore((state) => state.setAutoPropagationEnvironment);
   const setPropagationEnvironment = useAppStore((state) => state.setPropagationEnvironment);
   const applyClimateDefaults = useAppStore((state) => state.applyClimateDefaults);
-  const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
   const pendingSiteLibraryDraft = useAppStore((state) => state.pendingSiteLibraryDraft);
-  const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const clearPendingSiteLibraryDraft = useAppStore((state) => state.clearPendingSiteLibraryDraft);
   const applyFrequencyPresetToSelectedNetwork = useAppStore(
     (state) => state.applyFrequencyPresetToSelectedNetwork,
@@ -300,9 +297,6 @@ export function Sidebar() {
   const isLoraEstimateRelevant = (selectedFrequencyPreset?.source ?? "Meshtastic") !== "RadioMobile";
   const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const toSite = sites.find((site) => site.id === selectedLink.toSiteId);
-  const fromSiteChoices = sites.filter((site) => site.id !== selectedLink.toSiteId);
-  const toSiteChoices = sites.filter((site) => site.id !== selectedLink.fromSiteId);
-  const canEditEndpoints = sites.length >= 2;
   const sourceSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const destinationSite = sites.find((site) => site.id === selectedLink.toSiteId);
   const adjustedRxDbm = analysis.rxLevelDbm - environmentLossDb;
@@ -360,9 +354,18 @@ export function Sidebar() {
   const [simulationLibraryQuery, setSimulationLibraryQuery] = useState("");
   const [editingSimulationId, setEditingSimulationId] = useState<string | null>(null);
   const [editingSimulationName, setEditingSimulationName] = useState("");
-  const [newLinkName, setNewLinkName] = useState("");
-  const [newLinkFromId, setNewLinkFromId] = useState(sites[0]?.id ?? "");
-  const [newLinkToId, setNewLinkToId] = useState(sites[1]?.id ?? "");
+  const [linkModal, setLinkModal] = useState<{
+    mode: "add" | "edit";
+    linkId: string | null;
+    name: string;
+    fromSiteId: string;
+    toSiteId: string;
+    txPowerDbm: number;
+    txGainDbi: number;
+    rxGainDbi: number;
+    cableLossDb: number;
+    status: string;
+  } | null>(null);
   const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
   const [siteLibraryQuery, setSiteLibraryQuery] = useState("");
   const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
@@ -560,18 +563,6 @@ export function Sidebar() {
     }
     clearPendingSiteLibraryDraft();
   }, [pendingSiteLibraryDraft, srtmTiles, clearPendingSiteLibraryDraft]);
-
-  const applyRfPreset = (presetId: string) => {
-    const preset = findMeshtasticPreset(presetId);
-    if (!preset) return;
-    updateLink(selectedLink.id, {
-      txPowerDbm: preset.txPowerDbm,
-      txGainDbi: preset.txGainDbi,
-      rxGainDbi: preset.rxGainDbi,
-      cableLossDb: preset.cableLossDb,
-    });
-    setEnvironmentLossDb(preset.environmentLossDb);
-  };
 
   const onModelChange = (next: PropagationModel) => {
     setPropagationModel(next);
@@ -782,13 +773,79 @@ export function Sidebar() {
     );
   };
 
-  const createNewLink = () => {
-    if (!newLinkFromId || !newLinkToId || newLinkFromId === newLinkToId) return;
-    if (!sites.some((site) => site.id === newLinkFromId) || !sites.some((site) => site.id === newLinkToId)) {
+  const openAddLinkModal = () => {
+    const fallbackFrom = selectedLink.fromSiteId || sites[0]?.id || "";
+    const fallbackTo =
+      selectedLink.toSiteId ||
+      sites.find((site) => site.id !== fallbackFrom)?.id ||
+      "";
+    setLinkModal({
+      mode: "add",
+      linkId: null,
+      name: "",
+      fromSiteId: fallbackFrom,
+      toSiteId: fallbackTo,
+      txPowerDbm: selectedLink.txPowerDbm,
+      txGainDbi: selectedLink.txGainDbi,
+      rxGainDbi: selectedLink.rxGainDbi,
+      cableLossDb: selectedLink.cableLossDb,
+      status: "",
+    });
+  };
+
+  const openEditLinkModal = () => {
+    setLinkModal({
+      mode: "edit",
+      linkId: selectedLink.id,
+      name: selectedLink.name ?? "",
+      fromSiteId: selectedLink.fromSiteId,
+      toSiteId: selectedLink.toSiteId,
+      txPowerDbm: selectedLink.txPowerDbm,
+      txGainDbi: selectedLink.txGainDbi,
+      rxGainDbi: selectedLink.rxGainDbi,
+      cableLossDb: selectedLink.cableLossDb,
+      status: "",
+    });
+  };
+
+  const saveLinkModal = () => {
+    if (!linkModal) return;
+    if (!linkModal.fromSiteId || !linkModal.toSiteId) {
+      setLinkModal((current) => (current ? { ...current, status: "Select both From and To sites." } : current));
       return;
     }
-    createLink(newLinkFromId, newLinkToId, newLinkName);
-    setNewLinkName("");
+    if (linkModal.fromSiteId === linkModal.toSiteId) {
+      setLinkModal((current) => (current ? { ...current, status: "From and To must be different sites." } : current));
+      return;
+    }
+    if (linkModal.mode === "add") {
+      createLink(linkModal.fromSiteId, linkModal.toSiteId, linkModal.name);
+      const createdId = useAppStore.getState().selectedLinkId;
+      if (createdId) {
+        updateLink(createdId, {
+          name: linkModal.name.trim() || undefined,
+          fromSiteId: linkModal.fromSiteId,
+          toSiteId: linkModal.toSiteId,
+          txPowerDbm: linkModal.txPowerDbm,
+          txGainDbi: linkModal.txGainDbi,
+          rxGainDbi: linkModal.rxGainDbi,
+          cableLossDb: linkModal.cableLossDb,
+        });
+      }
+      setLinkModal(null);
+      return;
+    }
+    if (!linkModal.linkId) return;
+    updateLink(linkModal.linkId, {
+      name: linkModal.name.trim() || undefined,
+      fromSiteId: linkModal.fromSiteId,
+      toSiteId: linkModal.toSiteId,
+      txPowerDbm: linkModal.txPowerDbm,
+      txGainDbi: linkModal.txGainDbi,
+      rxGainDbi: linkModal.rxGainDbi,
+      cableLossDb: linkModal.cableLossDb,
+    });
+    setLinkModal(null);
   };
   const saveSimulationAsNew = () => {
     const trimmed = newPresetName.trim();
@@ -1135,16 +1192,9 @@ export function Sidebar() {
         <h1>{t(locale, "appTitle")}</h1>
         <p>{t(locale, "workspaceSubtitle")}</p>
       </header>
-      <section className="panel-section">
-        <h2>{t(locale, "networkCoverageWorkspace")}</h2>
-        <p className="field-help">
-          Choose simulation sites and a From/To path, then tune channel settings for coverage and link analysis.
-        </p>
-      </section>
-
-      <section className="panel-section">
+      <section className="panel-section section-scenario">
         <div className="section-heading">
-          <h2>Simulation Library</h2>
+          <h2>Scenario</h2>
           <InfoTip text="Built-in simulations are fixed. Saved simulations are your editable full-simulation states." />
         </div>
         <p className="field-help">
@@ -1174,9 +1224,9 @@ export function Sidebar() {
         </label>
       </section>
 
-      <section className="panel-section">
+      <section className="panel-section section-scenario-status">
         <details className="compact-details">
-          <summary>Simulation Status</summary>
+          <summary>Scenario Status</summary>
           <div className="asset-list">
             <p className="field-help">{hasTwoSites ? `Sites: ${sites.length} configured` : "Sites: add at least 2"}</p>
             <p className="field-help">
@@ -1198,7 +1248,7 @@ export function Sidebar() {
         </details>
       </section>
 
-      <section className="panel-section">
+      <section className="panel-section section-sites">
         <div className="section-heading">
           <h2>Sites</h2>
           <InfoTip text="Site add/edit is managed in Site Library. Here you only include or remove sites in this simulation." />
@@ -1217,30 +1267,13 @@ export function Sidebar() {
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
       </section>
 
-      <section className="panel-section">
+      <section className="panel-section section-radio">
         <div className="section-heading">
-          <h2>Channel / Coverage</h2>
+          <h2>Radio & Model</h2>
           <InfoTip text="This is the shared channel profile. Frequency, bandwidth, spreading factor, and coding rate apply to all links." />
         </div>
-        {networks.length > 1 ? (
-          <select
-            className="locale-select"
-            onChange={(event) => setSelectedNetworkId(event.target.value)}
-            value={selectedNetworkId}
-          >
-            {networks.map((network) => (
-              <option key={network.id} value={network.id}>
-                {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
-              </option>
-            ))}
-          </select>
-        ) : (
-          <p className="field-help">
-            Active channel profile: <strong>{selectedNetwork.name}</strong>
-          </p>
-        )}
         <div className="section-heading">
-          <p className="field-help">Coverage mode controls map sampling strategy.</p>
+          <p className="field-help">Coverage mode</p>
           <InfoTip text="BestSite: computes strongest coverage from any site at each sample point. Polar: radial sampling around the selected From site. Cartesian: regular grid sampling over the current simulation area. Route: samples along the selected path corridor." />
         </div>
         <div className="chip-group">
@@ -1255,41 +1288,60 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        <label className="field-grid">
-          <span>Frequency Plan</span>
-          <select
-            className="locale-select"
-            onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
-            value={selectedFrequencyPresetId}
-          >
-            {FREQUENCY_PRESETS.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
-          Apply Frequency Plan
-        </button>
-        <div className="section-heading">
-          <p className="field-help">Propagation model (advanced)</p>
-          <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: direct + ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: terrain-aware approximation using elevation diffraction penalty in this tool; generally the most realistic option here for hilly/mountain links." />
-        </div>
-        <div className="chip-group">
-          {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
-            <button
-              className={clsx("chip-button", model === candidate && "is-selected")}
-              key={candidate}
-              onClick={() => onModelChange(candidate)}
-              type="button"
-            >
-              {candidate}
-            </button>
-          ))}
-        </div>
         <details className="compact-details">
-          <summary>ITM Environment</summary>
+          <summary>Channel and propagation settings</summary>
+          {networks.length > 1 ? (
+            <select
+              className="locale-select"
+              onChange={(event) => setSelectedNetworkId(event.target.value)}
+              value={selectedNetworkId}
+            >
+              {networks.map((network) => (
+                <option key={network.id} value={network.id}>
+                  {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="field-help">
+              Active channel profile: <strong>{selectedNetwork.name}</strong>
+            </p>
+          )}
+          <label className="field-grid">
+            <span>Frequency Plan</span>
+            <select
+              className="locale-select"
+              onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
+              value={selectedFrequencyPresetId}
+            >
+              {FREQUENCY_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
+            Apply Frequency Plan
+          </button>
+          <div className="section-heading">
+            <p className="field-help">Propagation model</p>
+            <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: direct + ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: terrain-aware approximation using elevation diffraction penalty in this tool; generally the most realistic option here for hilly/mountain links." />
+          </div>
+          <div className="chip-group">
+            {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
+              <button
+                className={clsx("chip-button", model === candidate && "is-selected")}
+                key={candidate}
+                onClick={() => onModelChange(candidate)}
+                type="button"
+              >
+                {candidate}
+              </button>
+            ))}
+          </div>
+          <details className="compact-details">
+            <summary>ITM Environment</summary>
           <p className="field-help">
             These parameters feed terrain-aware path loss. Auto mode derives defaults from current terrain/profile and
             you can override manually.
@@ -1388,13 +1440,14 @@ export function Sidebar() {
               value={effectivePropagationEnvironment.atmosphericBendingNUnits}
             />
           </label>
+          </details>
         </details>
       </section>
 
-      <section className="panel-section">
+      <section className="panel-section section-path">
         <div className="section-heading">
-          <h2>Path (From / To)</h2>
-          <InfoTip text="Choose the two nodes for link analysis. Link radio values below are per-path hardware settings." />
+          <h2>Links</h2>
+          <InfoTip text="Select a link for path analysis. Use Add/Edit/Delete to manage links in this simulation." />
         </div>
         <div className="link-list">
           {links.map((link) => (
@@ -1409,59 +1462,12 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        <label className="field-grid">
-          <span>New link name</span>
-          <input
-            onChange={(event) => setNewLinkName(event.target.value)}
-            placeholder="Backhaul A"
-            type="text"
-            value={newLinkName}
-          />
-        </label>
-        <label className="field-grid">
-          <span>New from</span>
-          <select
-            className="locale-select"
-            onChange={(event) => {
-              setNewLinkFromId(event.target.value);
-              if (event.target.value === newLinkToId) {
-                const fallback = sites.find((site) => site.id !== event.target.value)?.id ?? "";
-                setNewLinkToId(fallback);
-              }
-            }}
-            value={newLinkFromId}
-          >
-            {sites.map((site) => (
-              <option key={`new-from-${site.id}`} value={site.id}>
-                {site.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field-grid">
-          <span>New to</span>
-          <select
-            className="locale-select"
-            onChange={(event) => setNewLinkToId(event.target.value)}
-            value={newLinkToId}
-          >
-            {sites
-              .filter((site) => site.id !== newLinkFromId)
-              .map((site) => (
-                <option key={`new-to-${site.id}`} value={site.id}>
-                  {site.name}
-                </option>
-              ))}
-          </select>
-        </label>
         <div className="chip-group">
-          <button
-            className="inline-action"
-            disabled={!newLinkFromId || !newLinkToId || newLinkFromId === newLinkToId}
-            onClick={createNewLink}
-            type="button"
-          >
-            Create Link
+          <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+            Add Link
+          </button>
+          <button className="inline-action" onClick={openEditLinkModal} type="button">
+            Edit Link
           </button>
           <button
             className="inline-action"
@@ -1472,166 +1478,160 @@ export function Sidebar() {
             Delete Selected Link
           </button>
         </div>
+      </section>
 
-        <div className="endpoint-summary" aria-live="polite">
-          {fromSite?.name ?? "Unknown"} <span aria-hidden>→</span> {toSite?.name ?? "Unknown"}
-        </div>
-        <div className="endpoint-picker-row">
-          <button
-            className={clsx("chip-button", endpointPickTarget === "from" && "is-selected")}
-            disabled={!canEditEndpoints}
-            onClick={() => setEndpointPickTarget(endpointPickTarget === "from" ? null : "from")}
-            type="button"
-          >
-            Pick From On Map
-          </button>
-          <button
-            className={clsx("chip-button", endpointPickTarget === "to" && "is-selected")}
-            disabled={!canEditEndpoints}
-            onClick={() => setEndpointPickTarget(endpointPickTarget === "to" ? null : "to")}
-            type="button"
-          >
-            Pick To On Map
-          </button>
-        </div>
-        {endpointPickTarget ? (
-          <p className="field-help">
-            Map picker active: click a node marker to set the {endpointPickTarget === "from" ? "From" : "To"} site.
-          </p>
-        ) : null}
+      {linkModal ? (
+        <ModalOverlay aria-label={linkModal.mode === "add" ? "Add Link" : "Edit Link"} onClose={() => setLinkModal(null)} tier="raised">
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>{linkModal.mode === "add" ? "Add Link" : "Edit Link"}</h2>
+              <button className="inline-action" onClick={() => setLinkModal(null)} type="button">
+                Close
+              </button>
+            </div>
+            <label className="field-grid">
+              <span>Link name</span>
+              <input
+                onChange={(event) =>
+                  setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
+                }
+                placeholder="Backhaul A"
+                type="text"
+                value={linkModal.name}
+              />
+            </label>
+            <label className="field-grid endpoint-field">
+              <span>From site</span>
+              <select
+                className="locale-select"
+                onChange={(event) =>
+                  setLinkModal((current) => {
+                    if (!current) return current;
+                    const nextFrom = event.target.value;
+                    const nextTo =
+                      current.toSiteId === nextFrom
+                        ? sites.find((site) => site.id !== nextFrom)?.id ?? ""
+                        : current.toSiteId;
+                    return { ...current, fromSiteId: nextFrom, toSiteId: nextTo, status: "" };
+                  })
+                }
+                value={linkModal.fromSiteId}
+              >
+                {sites.map((site) => (
+                  <option key={`modal-from-${site.id}`} value={site.id}>
+                    {site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-grid endpoint-field">
+              <span>To site</span>
+              <select
+                className="locale-select"
+                onChange={(event) =>
+                  setLinkModal((current) => (current ? { ...current, toSiteId: event.target.value, status: "" } : current))
+                }
+                value={linkModal.toSiteId}
+              >
+                {sites
+                  .filter((site) => site.id !== linkModal.fromSiteId)
+                  .map((site) => (
+                    <option key={`modal-to-${site.id}`} value={site.id}>
+                      {site.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <details className="compact-details" open>
+              <summary>Radio</summary>
+              <label className="field-grid">
+                <span>Tx power (dBm)</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, txPowerDbm: parseNumber(event.target.value), status: "" } : current,
+                    )
+                  }
+                  type="number"
+                  value={linkModal.txPowerDbm}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Tx gain (dBi)</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, txGainDbi: parseNumber(event.target.value), status: "" } : current,
+                    )
+                  }
+                  type="number"
+                  value={linkModal.txGainDbi}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Rx gain (dBi)</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, rxGainDbi: parseNumber(event.target.value), status: "" } : current,
+                    )
+                  }
+                  type="number"
+                  value={linkModal.rxGainDbi}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Cable loss (dB)</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, cableLossDb: parseNumber(event.target.value), status: "" } : current,
+                    )
+                  }
+                  type="number"
+                  value={linkModal.cableLossDb}
+                />
+              </label>
+            </details>
+            <div className="chip-group">
+              <button className="inline-action" onClick={saveLinkModal} type="button">
+                {linkModal.mode === "add" ? "Create Link" : "Save Link"}
+              </button>
+            </div>
+            {linkModal.status ? <p className="field-help">{linkModal.status}</p> : null}
+          </div>
+        </ModalOverlay>
+      ) : null}
 
-        <label className="field-grid endpoint-field">
-          <span>From site</span>
-          <select
-            className="locale-select"
-            disabled={!canEditEndpoints}
-            onChange={(event) => updateLink(selectedLink.id, { fromSiteId: event.target.value })}
-            value={selectedLink.fromSiteId}
-          >
-            {fromSiteChoices.map((site) => (
-              <option key={`from-${site.id}`} value={site.id}>
-                {site.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field-grid endpoint-field">
-          <span>To site</span>
-          <select
-            className="locale-select"
-            disabled={!canEditEndpoints}
-            onChange={(event) => updateLink(selectedLink.id, { toSiteId: event.target.value })}
-            value={selectedLink.toSiteId}
-          >
-            {toSiteChoices.map((site) => (
-              <option key={`to-${site.id}`} value={site.id}>
-                {site.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {!canEditEndpoints ? <p className="field-help">Add at least two sites to define a link path.</p> : null}
-        <label className="field-grid">
-          <span>Link name</span>
-          <input
-            onChange={(event) => updateLink(selectedLink.id, { name: event.target.value })}
-            placeholder={`${fromSite?.name ?? "From"} -> ${toSite?.name ?? "To"}`}
-            type="text"
-            value={selectedLink.name ?? ""}
-          />
-        </label>
-
-        <p className="field-help">Frequency is controlled in Channel / Coverage and shared by all links.</p>
+      <section className="panel-section section-sites-selected">
         <details className="compact-details">
-          <summary>Advanced Link Radio</summary>
-          <label className="field-grid">
-            <span>Tx power (dBm)</span>
-            <input
-              onChange={(event) =>
-                updateLink(selectedLink.id, { txPowerDbm: parseNumber(event.target.value) })
-              }
-              type="number"
-              value={selectedLink.txPowerDbm}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Tx gain (dBi)</span>
-            <input
-              onChange={(event) =>
-                updateLink(selectedLink.id, { txGainDbi: parseNumber(event.target.value) })
-              }
-              type="number"
-              value={selectedLink.txGainDbi}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Rx gain (dBi)</span>
-            <input
-              onChange={(event) =>
-                updateLink(selectedLink.id, { rxGainDbi: parseNumber(event.target.value) })
-              }
-              type="number"
-              value={selectedLink.rxGainDbi}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Cable loss (dB)</span>
-            <input
-              onChange={(event) =>
-                updateLink(selectedLink.id, { cableLossDb: parseNumber(event.target.value) })
-              }
-              type="number"
-              value={selectedLink.cableLossDb}
-            />
-          </label>
-          <label className="field-grid">
-            <span>RF preset</span>
-            <select
-              className="locale-select"
-              onChange={(event) => applyRfPreset(event.target.value)}
-              value=""
-            >
-              <option value="" disabled>
-                Apply preset...
-              </option>
-              {MESHTASTIC_RF_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <summary>Site quick actions</summary>
+          <div className="chip-group">
+            {sites.map((site) => (
+              <button
+                className={clsx("chip-button", selectedSiteId === site.id && "is-selected")}
+                key={site.id}
+                onClick={() => setSelectedSiteId(site.id)}
+                type="button"
+              >
+                {site.name}
+              </button>
+            ))}
+          </div>
+          <button
+            className="inline-action"
+            disabled={sites.length <= 1}
+            onClick={() => deleteSite(selectedSite.id)}
+            type="button"
+          >
+            Remove Selected From Simulation
+          </button>
         </details>
       </section>
 
-      <section className="panel-section">
-        <h2>Selected Site</h2>
-        <div className="chip-group">
-          {sites.map((site) => (
-            <button
-              className={clsx("chip-button", selectedSiteId === site.id && "is-selected")}
-              key={site.id}
-              onClick={() => setSelectedSiteId(site.id)}
-              type="button"
-            >
-              {site.name}
-            </button>
-          ))}
-        </div>
-        <button
-          className="inline-action"
-          disabled={sites.length <= 1}
-          onClick={() => deleteSite(selectedSite.id)}
-          type="button"
-        >
-          Remove Selected From Simulation
-        </button>
-      </section>
-
-      <section className="panel-section">
+      <section className="panel-section section-data">
         <details className="compact-details">
-          <summary>Terrain Data (Manual Controls)</summary>
+          <summary>Terrain & Sources (Advanced)</summary>
           <p className="field-help">
             {srtmTiles.length} SRTM tile(s) loaded. Terrain is used in profile and obstruction/loss calculations.
           </p>
@@ -1687,9 +1687,9 @@ export function Sidebar() {
         </details>
       </section>
 
-      <section className="panel-section">
+      <section className="panel-section section-results">
         <div className="section-heading">
-          <h2>{t(locale, "rfSummary")}</h2>
+          <h2>Results</h2>
           <InfoTip text="Computed link budget summary for the selected path and current channel/model settings." />
         </div>
         <div className="metrics">
@@ -1770,9 +1770,9 @@ export function Sidebar() {
         </button>
       </section>
 
-      <section className="panel-section">
+      <section className="panel-section section-more">
         <details className="compact-details">
-          <summary>Tools & Data</summary>
+          <summary>More</summary>
           <div className="section-heading">
             <p className="field-help">Cloud Sync</p>
             <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />
