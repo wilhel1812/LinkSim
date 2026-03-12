@@ -266,7 +266,7 @@ input {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 2000;
+  z-index: 12000;
   width: 240px;
   border: 1px solid var(--border);
   border-radius: 8px;
