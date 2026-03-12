@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { ClerkProvider } from "@clerk/react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./index.css";
 import App from "./App";
@@ -12,8 +13,18 @@ if (window.location.hostname === "127.0.0.1") {
   window.location.replace(redirectUrl);
 }
 
-createRoot(document.getElementById("root")!).render(
+const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
+
+const app = (
   <StrictMode>
-    <App />
-  </StrictMode>,
+    {clerkKey ? (
+      <ClerkProvider publishableKey={clerkKey}>
+        <App />
+      </ClerkProvider>
+    ) : (
+      <App />
+    )}
+  </StrictMode>
 );
+
+createRoot(document.getElementById("root")!).render(app);

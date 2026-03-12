@@ -1,0 +1,15 @@
+name = "radio-mobile-web"
+compatibility_date = "2026-03-12"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "radio-mobile-web"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+CLERK_JWT_ISSUER = "https://REPLACE_WITH_CLERK_FRONTEND_API"
+# Optional if issuer metadata is unavailable:
+# CLERK_JWKS_URL = "https://REPLACE_WITH_CLERK_FRONTEND_API/.well-known/jwks.json"
+# Optional audience check for strict token templates:
+# CLERK_JWT_AUDIENCE = "radio-mobile-web"

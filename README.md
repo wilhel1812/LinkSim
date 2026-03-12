@@ -45,6 +45,18 @@ npm install
 npm run dev
 ```
 
+## Cloud Auth + D1 (Passkey-First)
+
+This repository now includes:
+
+- Cloudflare Pages Functions API under `functions/api/*`
+- D1 schema at `db/schema.sql`
+- Frontend Clerk passkey auth integration (`VITE_CLERK_PUBLISHABLE_KEY`)
+
+Detailed setup steps:
+
+- [docs/cloudflare-auth-setup.md](./docs/cloudflare-auth-setup.md)
+
 ## Running with Docker Compose
 
 Production-like runtime (nginx + static assets + reverse proxy):
