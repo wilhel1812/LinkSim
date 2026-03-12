@@ -8,7 +8,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request }) =>
     request,
     json({
       ok: true,
-      service: "radio-mobile-web-api",
+      service: "linksim-api",
       ts: new Date().toISOString(),
     }),
   );

@@ -9,7 +9,7 @@ This project now supports cloud-backed Site Library + Simulation Library with:
 ## 1) Create D1 Database
 
 ```bash
-npx wrangler d1 create radio-mobile-web
+npx wrangler d1 create linksim
 ```
 
 Copy the returned `database_id` into `wrangler.toml` under `[[d1_databases]]`.
@@ -17,7 +17,7 @@ Copy the returned `database_id` into `wrangler.toml` under `[[d1_databases]]`.
 ## 2) Apply Schema
 
 ```bash
-npx wrangler d1 execute radio-mobile-web --file ./db/schema.sql
+npx wrangler d1 execute linksim --file ./db/schema.sql
 ```
 
 ## 3) Create Clerk App

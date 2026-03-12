@@ -537,7 +537,7 @@ export function Sidebar() {
     };
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    downloadJson(`radio-mobile-web-manifest-${stamp}.json`, manifest);
+    downloadJson(`linksim-manifest-${stamp}.json`, manifest);
   };
 
   const loadSimulationRef = (ref: string) => {
@@ -612,7 +612,7 @@ export function Sidebar() {
       simulationPresets,
     };
     const stamp = payload.exportedAtIso.replace(/[:.]/g, "-");
-    downloadJson(`radio-mobile-web-backup-${stamp}.json`, payload);
+    downloadJson(`linksim-backup-${stamp}.json`, payload);
     setStorageStatus(
       `Exported backup (${siteLibrary.length} site(s), ${simulationPresets.length} simulation(s)) for ${payload.origin}.`,
     );

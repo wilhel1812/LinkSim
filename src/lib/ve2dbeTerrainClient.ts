@@ -22,8 +22,8 @@ const DATASET_TO_MODE: Record<TerrainDataset, string> = {
   srtmthird: "2",
 };
 
-const CACHE_NAME = "radio-mobile-web-ve2dbe-srtm-v1";
-const META_KEY = "radio-mobile-web-ve2dbe-cache-meta-v1";
+const CACHE_NAME = "linksim-ve2dbe-srtm-v1";
+const META_KEY = "linksim-ve2dbe-cache-meta-v1";
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_RETRIES = 3;
 

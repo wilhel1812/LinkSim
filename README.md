@@ -1,4 +1,4 @@
-# Radio Mobile Web (WIP)
+# LinkSim (WIP)
 
 Independent web reimplementation inspired by Radio Mobile workflows.
 

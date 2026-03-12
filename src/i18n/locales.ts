@@ -54,7 +54,7 @@ export type TranslationKey =
 type TranslationTable = Record<TranslationKey, string>;
 
 const ENGLISH: TranslationTable = {
-  appTitle: "Radio Mobile Web",
+  appTitle: "LinkSim",
   workspaceSubtitle: "Propagation workspace",
   networkCoverageWorkspace: "Network and Coverage Workspace",
   model: "Model",
@@ -70,8 +70,8 @@ const ENGLISH: TranslationTable = {
 };
 
 export const TRANSLATIONS: Record<LocaleCode, TranslationTable> = {
-  ara: { ...ENGLISH, appTitle: "راديو موبايل ويب", model: "النموذج", links: "الروابط", sites: "المواقع", terrainData: "بيانات التضاريس", rfSummary: "ملخص RF" },
-  bra: { ...ENGLISH, appTitle: "Radio Mobile Web", model: "Modelo", links: "Enlaces", sites: "Locais", terrainData: "Dados de terreno", rfSummary: "Resumo RF" },
+  ara: { ...ENGLISH, appTitle: "LinkSim", model: "النموذج", links: "الروابط", sites: "المواقع", terrainData: "بيانات التضاريس", rfSummary: "ملخص RF" },
+  bra: { ...ENGLISH, appTitle: "LinkSim", model: "Modelo", links: "Enlaces", sites: "Locais", terrainData: "Dados de terreno", rfSummary: "Resumo RF" },
   dan: { ...ENGLISH, model: "Model", links: "Links", sites: "Steder", terrainData: "Terrændata", rfSummary: "RF-oversigt" },
   deu: { ...ENGLISH, model: "Modell", links: "Verbindungen", sites: "Standorte", terrainData: "Geländedaten", rfSummary: "HF-Zusammenfassung" },
   eng: ENGLISH,

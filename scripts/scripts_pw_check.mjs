@@ -16,7 +16,7 @@ console.log('status', resp?.status());
 await page.waitForTimeout(2000);
 await page.screenshot({ path: '/tmp/rmw_ui_check.png', fullPage: true });
 
-const hasTitle = await page.locator('text=Radio Mobile Web').count();
+const hasTitle = await page.locator('text=LinkSim').count();
 console.log('has-title', hasTitle);
 
 await browser.close();
