@@ -18,7 +18,10 @@ const sanitizeGrants = (value: unknown): Grant[] => {
   const dedup = new Map<string, Grant>();
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
-    const userId = typeof (item as { userId?: unknown }).userId === "string" ? (item as { userId: string }).userId.trim() : "";
+    const userId =
+      typeof (item as { userId?: unknown }).userId === "string"
+        ? (item as { userId: string }).userId.trim()
+        : "";
     const role = sanitizeRole((item as { role?: unknown }).role);
     if (!userId || !role) continue;
     dedup.set(userId, { userId, role });
@@ -26,21 +29,57 @@ const sanitizeGrants = (value: unknown): Grant[] => {
   return Array.from(dedup.values());
 };
 
-const sanitizeUsername = (value: unknown): string | null => {
+const sanitizeName = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
-  const username = value.trim().replace(/\s+/g, " ");
-  if (username.length < 2 || username.length > 48) return null;
-  return username;
+  const name = value.trim().replace(/\s+/g, " ");
+  if (name.length < 2 || name.length > 80) return null;
+  return name;
 };
 
-const deriveDefaultUsername = (userId: string, tokenPayload?: Record<string, unknown>): string => {
-  const fromName = sanitizeUsername(tokenPayload?.name);
+const sanitizeEmail = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const email = value.trim().toLowerCase();
+  if (!email || email.length > 180) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+  return email;
+};
+
+const sanitizeBio = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const bio = value.trim();
+  return bio.length <= 300 ? bio : bio.slice(0, 300);
+};
+
+const sanitizeAvatarUrl = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const url = value.trim();
+  if (!url) return null;
+  if (url.length > 500) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+const deriveDefaultName = (userId: string, tokenPayload?: Record<string, unknown>): string => {
+  const fromName = sanitizeName(tokenPayload?.name);
   if (fromName) return fromName;
-  const fromEmail = sanitizeUsername(tokenPayload?.email);
-  if (fromEmail) return fromEmail;
+  const fromEmail = sanitizeEmail(tokenPayload?.email);
+  if (fromEmail) return fromEmail.split("@")[0];
   const prefix = userId.includes("@") ? userId.split("@")[0] : userId;
-  const compact = prefix.replace(/[_-]+/g, " ");
-  return sanitizeUsername(compact) ?? "User";
+  const compact = prefix.replace(/[_-]+/g, " ").trim();
+  return sanitizeName(compact) ?? "User";
+};
+
+const deriveDefaultEmail = (userId: string, tokenPayload?: Record<string, unknown>): string => {
+  const fromEmail = sanitizeEmail(tokenPayload?.email);
+  if (fromEmail) return fromEmail;
+  const fromUserId = sanitizeEmail(userId);
+  if (fromUserId) return fromUserId;
+  return `${userId.slice(0, 16)}@users.linksim.local`;
 };
 
 const parseAdminUserIds = (env: Env): Set<string> => {
@@ -61,6 +100,9 @@ const ensureSchema = async (env: Env): Promise<void> => {
           `CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             username TEXT,
+            email TEXT,
+            bio TEXT,
+            avatar_url TEXT,
             is_admin INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT
@@ -124,6 +166,15 @@ const ensureSchema = async (env: Env): Promise<void> => {
       if (!names.has("username")) {
         await env.DB.prepare("ALTER TABLE users ADD COLUMN username TEXT").run();
       }
+      if (!names.has("email")) {
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN email TEXT").run();
+      }
+      if (!names.has("bio")) {
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN bio TEXT").run();
+      }
+      if (!names.has("avatar_url")) {
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN avatar_url TEXT").run();
+      }
       if (!names.has("is_admin")) {
         await env.DB.prepare("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0").run();
       }
@@ -138,6 +189,9 @@ const ensureSchema = async (env: Env): Promise<void> => {
 type UserRow = {
   id: string;
   username: string | null;
+  email: string | null;
+  bio: string | null;
+  avatar_url: string | null;
   is_admin: number;
   created_at: string;
   updated_at: string | null;
@@ -145,7 +199,10 @@ type UserRow = {
 
 const toUserProfile = (row: UserRow) => ({
   id: row.id,
-  username: row.username && row.username.trim() ? row.username : row.id,
+  username: sanitizeName(row.username) ?? "User",
+  email: sanitizeEmail(row.email) ?? "unknown@users.linksim.local",
+  bio: row.bio ?? "",
+  avatarUrl: row.avatar_url ?? "",
   isAdmin: row.is_admin === 1,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -158,47 +215,84 @@ export const ensureUser = async (
 ): Promise<void> => {
   await ensureSchema(env);
   const now = new Date().toISOString();
-  const username = deriveDefaultUsername(userId, tokenPayload);
+  const username = deriveDefaultName(userId, tokenPayload);
+  const email = deriveDefaultEmail(userId, tokenPayload);
   const isBootstrapAdmin = parseAdminUserIds(env).has(userId.toLowerCase()) ? 1 : 0;
 
   await env.DB.prepare(
-    `INSERT OR IGNORE INTO users (id, username, is_admin, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO users (id, username, email, bio, avatar_url, is_admin, created_at, updated_at)
+     VALUES (?, ?, ?, '', '', ?, ?, ?)`,
   )
-    .bind(userId, username, isBootstrapAdmin, now, now)
+    .bind(userId, username, email, isBootstrapAdmin, now, now)
     .run();
 
   await env.DB.prepare(
     `UPDATE users
      SET username = COALESCE(NULLIF(TRIM(username), ''), ?),
+         email = COALESCE(NULLIF(TRIM(email), ''), ?),
          is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
          updated_at = ?
      WHERE id = ?`,
   )
-    .bind(username, isBootstrapAdmin, now, userId)
+    .bind(username, email, isBootstrapAdmin, now, userId)
     .run();
 };
 
 export const fetchUserProfile = async (env: Env, userId: string) => {
   await ensureSchema(env);
   const row = await env.DB.prepare(
-    "SELECT id, username, is_admin, created_at, updated_at FROM users WHERE id = ?",
+    "SELECT id, username, email, bio, avatar_url, is_admin, created_at, updated_at FROM users WHERE id = ?",
   )
     .bind(userId)
     .first<UserRow>();
   return row ? toUserProfile(row) : null;
 };
 
-export const updateOwnUsername = async (env: Env, userId: string, usernameRaw: unknown) => {
+const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> => {
   await ensureSchema(env);
-  const username = sanitizeUsername(usernameRaw);
-  if (!username) {
-    throw new Error("Username must be between 2 and 48 characters.");
-  }
-  const now = new Date().toISOString();
-  await env.DB.prepare("UPDATE users SET username = ?, updated_at = ? WHERE id = ?")
-    .bind(username, now, userId)
+  return env.DB.prepare(
+    "SELECT id, username, email, bio, avatar_url, is_admin, created_at, updated_at FROM users WHERE id = ?",
+  )
+    .bind(userId)
+    .first<UserRow>();
+};
+
+export const updateUserProfile = async (
+  env: Env,
+  userId: string,
+  patch: { username?: unknown; email?: unknown; bio?: unknown; avatarUrl?: unknown },
+) => {
+  await ensureSchema(env);
+  const existing = await readUserRow(env, userId);
+  if (!existing) throw new Error("User not found.");
+
+  const nextName =
+    patch.username === undefined
+      ? sanitizeName(existing.username)
+      : sanitizeName(patch.username);
+  const nextEmail =
+    patch.email === undefined
+      ? sanitizeEmail(existing.email)
+      : sanitizeEmail(patch.email);
+  const nextBio = patch.bio === undefined ? existing.bio ?? "" : sanitizeBio(patch.bio) ?? "";
+  const nextAvatar =
+    patch.avatarUrl === undefined ? existing.avatar_url ?? "" : sanitizeAvatarUrl(patch.avatarUrl) ?? "";
+
+  if (!nextName) throw new Error("Name is required (2-80 chars).");
+  if (!nextEmail) throw new Error("Email is required and must be valid.");
+
+  await env.DB.prepare(
+    `UPDATE users
+     SET username = ?,
+         email = ?,
+         bio = ?,
+         avatar_url = ?,
+         updated_at = ?
+     WHERE id = ?`,
+  )
+    .bind(nextName, nextEmail, nextBio, nextAvatar, new Date().toISOString(), userId)
     .run();
+
   const profile = await fetchUserProfile(env, userId);
   if (!profile) throw new Error("User not found after update.");
   return profile;
@@ -207,7 +301,7 @@ export const updateOwnUsername = async (env: Env, userId: string, usernameRaw: u
 export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB.prepare(
-    "SELECT id, username, is_admin, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+    "SELECT id, username, email, bio, avatar_url, is_admin, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
   ).all<UserRow>();
   return rows.results.map(toUserProfile);
 };

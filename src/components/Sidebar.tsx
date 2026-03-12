@@ -893,6 +893,7 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar-panel">
+      <UserAdminPanel />
       <header>
         <h1>{t(locale, "appTitle")}</h1>
         <p>{t(locale, "workspaceSubtitle")}</p>
@@ -1530,7 +1531,6 @@ export function Sidebar() {
       <section className="panel-section">
         <details className="compact-details">
           <summary>More</summary>
-          <UserAdminPanel />
           <div className="section-heading">
             <p className="field-help">Cloud Auth & Sync</p>
             <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />

@@ -1,6 +1,9 @@
 export type CloudUser = {
   id: string;
   username: string;
+  email: string;
+  bio: string;
+  avatarUrl: string;
   isAdmin: boolean;
   createdAt: string;
   updatedAt: string | null;
@@ -26,10 +29,15 @@ export const fetchMe = async (): Promise<CloudUser> => {
   return data.user;
 };
 
-export const updateMyUsername = async (username: string): Promise<CloudUser> => {
+export const updateMyProfile = async (patch: {
+  username?: string;
+  email?: string;
+  bio?: string;
+  avatarUrl?: string;
+}): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>("/api/me", {
     method: "PATCH",
-    body: JSON.stringify({ username }),
+    body: JSON.stringify(patch),
   });
   return data.user;
 };
@@ -47,10 +55,13 @@ export const updateUserAdmin = async (id: string, isAdmin: boolean): Promise<Clo
   return data.user;
 };
 
-export const updateUserUsername = async (id: string, username: string): Promise<CloudUser> => {
+export const updateUserProfile = async (
+  id: string,
+  patch: { username?: string; email?: string; bio?: string; avatarUrl?: string },
+): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>(`/api/users/${encodeURIComponent(id)}`, {
     method: "PATCH",
-    body: JSON.stringify({ username }),
+    body: JSON.stringify(patch),
   });
   return data.user;
 };

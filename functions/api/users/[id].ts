@@ -1,5 +1,5 @@
 import { verifyAuth } from "../../_lib/auth";
-import { ensureUser, fetchUserProfile, setUserAdminFlag, updateOwnUsername } from "../../_lib/db";
+import { ensureUser, fetchUserProfile, setUserAdminFlag, updateUserProfile } from "../../_lib/db";
 import { handleOptions, json, withCors } from "../../_lib/http";
 import type { Env } from "../../_lib/types";
 
@@ -18,7 +18,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const targetId = typeof params.id === "string" ? params.id : "";
     if (!targetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
 
-    const body = (await request.json()) as { username?: unknown; isAdmin?: unknown };
+    const body = (await request.json()) as {
+      username?: unknown;
+      email?: unknown;
+      bio?: unknown;
+      avatarUrl?: unknown;
+      isAdmin?: unknown;
+    };
 
     let user = await fetchUserProfile(env, targetId);
     if (!user) {
@@ -27,8 +33,18 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     }
     if (!user) return withCors(request, json({ error: "User not found" }, { status: 404 }));
 
-    if (body.username !== undefined) {
-      user = await updateOwnUsername(env, targetId, body.username);
+    if (
+      body.username !== undefined ||
+      body.email !== undefined ||
+      body.bio !== undefined ||
+      body.avatarUrl !== undefined
+    ) {
+      user = await updateUserProfile(env, targetId, {
+        username: body.username,
+        email: body.email,
+        bio: body.bio,
+        avatarUrl: body.avatarUrl,
+      });
     }
     if (body.isAdmin !== undefined) {
       user = await setUserAdminFlag(env, targetId, body.isAdmin);
@@ -37,7 +53,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     return withCors(request, json({ user }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("between 2 and 48") ? 400 : 500;
+    const status = message.includes("required") || message.includes("valid") ? 400 : 500;
     return withCors(request, json({ error: message }, { status }));
   }
 };
