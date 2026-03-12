@@ -316,6 +316,48 @@ const normalizeSimulationPresets = (presets: SimulationPreset[]): SimulationPres
       ),
   );
 
+const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
+  if (!sites.length || !library.length) return sites;
+  const libraryByFingerprint = new Map<string, SiteLibraryEntry>();
+  for (const entry of library) {
+    const key = [
+      entry.name.trim().toLowerCase(),
+      entry.position.lat.toFixed(6),
+      entry.position.lon.toFixed(6),
+      entry.groundElevationM.toFixed(1),
+      entry.antennaHeightM.toFixed(1),
+    ].join("|");
+    libraryByFingerprint.set(key, entry);
+  }
+  return sites.map((site) => {
+    if (site.libraryEntryId) return site;
+    const key = [
+      site.name.trim().toLowerCase(),
+      site.position.lat.toFixed(6),
+      site.position.lon.toFixed(6),
+      site.groundElevationM.toFixed(1),
+      site.antennaHeightM.toFixed(1),
+    ].join("|");
+    const matched = libraryByFingerprint.get(key);
+    if (!matched) return site;
+    return { ...site, libraryEntryId: matched.id };
+  });
+};
+
+const hasPrivateLibrarySiteReferences = (
+  sites: Site[],
+  siteLibrary: SiteLibraryEntry[],
+): boolean => {
+  if (!sites.length || !siteLibrary.length) return false;
+  const privateIds = new Set(
+    siteLibrary
+      .filter((entry) => (entry.visibility ?? "private") === "private")
+      .map((entry) => entry.id),
+  );
+  if (!privateIds.size) return false;
+  return sites.some((site) => typeof site.libraryEntryId === "string" && privateIds.has(site.libraryEntryId));
+};
+
 const ensureMinimumTopology = (
   inputSites: Site[],
   inputLinks: Link[],
@@ -694,6 +736,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         position: entry.position,
         groundElevationM: entry.groundElevationM,
         antennaHeightM: entry.antennaHeightM,
+        libraryEntryId: entry.id,
       };
     });
 
@@ -742,7 +785,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!presetName) return null;
     const state = get();
     const snapshot: SimulationPreset["snapshot"] = {
-      sites: state.sites,
+      sites: annotateSitesWithLibraryRefs(state.sites, state.siteLibrary),
       links: state.links,
       systems: state.systems,
       networks: state.networks,
@@ -762,10 +805,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set((current) => {
       const existing = current.simulationPresets.find((preset) => preset.name === presetName);
+      const visibilityBase = existing?.visibility ?? "shared";
+      const visibilitySafe =
+        visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, current.siteLibrary)
+          ? "private"
+          : visibilityBase;
       const nextPreset: SimulationPreset = {
         id: existing?.id ?? makeId("sim"),
         name: presetName,
-        visibility: existing?.visibility ?? "shared",
+        visibility: visibilitySafe,
         sharedWith: existing?.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
@@ -781,7 +829,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const existing = state.simulationPresets.find((preset) => preset.id === presetId);
     if (!existing) return;
     const snapshot: SimulationPreset["snapshot"] = {
-      sites: state.sites,
+      sites: annotateSitesWithLibraryRefs(state.sites, state.siteLibrary),
       links: state.links,
       systems: state.systems,
       networks: state.networks,
@@ -799,10 +847,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       mapViewport: state.mapViewport,
     };
     set((current) => {
+      const visibilityBase = existing.visibility ?? "shared";
+      const visibilitySafe =
+        visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, current.siteLibrary)
+          ? "private"
+          : visibilityBase;
       const nextPreset: SimulationPreset = {
         id: existing.id,
         name: existing.name,
-        visibility: existing.visibility ?? "shared",
+        visibility: visibilitySafe,
         sharedWith: existing.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
@@ -893,9 +946,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const next = state.simulationPresets.map((preset) => {
         if (preset.id !== presetId) return preset;
+        const nextVisibilityRaw = patch.visibility ?? preset.visibility ?? "shared";
+        const nextVisibility =
+          nextVisibilityRaw !== "private" && hasPrivateLibrarySiteReferences(preset.snapshot.sites, state.siteLibrary)
+            ? "private"
+            : nextVisibilityRaw;
         return {
           ...preset,
           ...patch,
+          visibility: nextVisibility,
           updatedAt: new Date().toISOString(),
         };
       });

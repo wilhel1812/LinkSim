@@ -1049,6 +1049,23 @@ type ActorPolicy = {
   isModerator: boolean;
 };
 
+const referencedLibrarySiteIdsFromSimulation = (item: CloudResourceRecord): string[] => {
+  const snapshot = (item as { snapshot?: unknown }).snapshot;
+  if (!snapshot || typeof snapshot !== "object") return [];
+  const rawSites = (snapshot as { sites?: unknown }).sites;
+  if (!Array.isArray(rawSites)) return [];
+  const ids = new Set<string>();
+  for (const site of rawSites) {
+    if (!site || typeof site !== "object") continue;
+    const libraryEntryId = (site as { libraryEntryId?: unknown }).libraryEntryId;
+    if (typeof libraryEntryId !== "string") continue;
+    const trimmed = libraryEntryId.trim();
+    if (!trimmed) continue;
+    ids.add(trimmed);
+  }
+  return [...ids];
+};
+
 const canReadResource = (
   actor: ActorPolicy,
   ownerUserId: string,
@@ -1112,6 +1129,25 @@ const upsertOwnedResource = async (
   }
 
   const ownerId = existing?.owner_user_id ?? actor.id;
+
+  if (kind === "simulation" && visibility !== "private") {
+    const referencedSiteIds = referencedLibrarySiteIdsFromSimulation(item);
+    if (referencedSiteIds.length) {
+      const checks = await env.DB.batch(
+        referencedSiteIds.map((siteId) =>
+          env.DB.prepare("SELECT id, visibility FROM sites WHERE id = ?").bind(siteId),
+        ),
+      );
+      const hasPrivateReference = checks.some((check) => {
+        const row = check.results[0] as { visibility?: unknown } | undefined;
+        if (!row) return false;
+        return visibilityFromDbVisibility(row.visibility) === "private";
+      });
+      if (hasPrivateReference) {
+        return { ok: false, reason: "simulation_private_site_reference" };
+      }
+    }
+  }
 
   const isCreate = !existing;
   const changed =

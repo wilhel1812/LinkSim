@@ -9,6 +9,7 @@ export type Site = {
   position: Coordinates;
   groundElevationM: number;
   antennaHeightM: number;
+  libraryEntryId?: string;
 };
 
 export type Link = {
