@@ -42,6 +42,7 @@ import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { AuthSyncPanel } from "./AuthSyncPanel";
+import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import { UserAdminPanel } from "./UserAdminPanel";
 
@@ -62,13 +63,6 @@ const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shar
   if (value === "public" || value === "public_read") return "public";
   return "private";
 };
-
-const InfoTip = ({ text }: { text: string }) => (
-  <button aria-label={text} className="info-tip" type="button">
-    i
-    <span className="info-tip-box">{text}</span>
-  </button>
-);
 
 const initialsForUser = (name: string): string => {
   const parts = name.trim().split(/\s+/).filter(Boolean);

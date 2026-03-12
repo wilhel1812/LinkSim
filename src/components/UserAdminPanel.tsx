@@ -23,6 +23,7 @@ import {
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getUiErrorMessage } from "../lib/uiError";
+import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 
 const initialsFor = (name: string): string => {
@@ -37,13 +38,6 @@ const fmtDate = (iso: string | null | undefined): string => {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
 };
-
-const InfoTip = ({ text }: { text: string }) => (
-  <button aria-label={text} className="info-tip" type="button">
-    i
-    <span className="info-tip-box">{text}</span>
-  </button>
-);
 
 const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;

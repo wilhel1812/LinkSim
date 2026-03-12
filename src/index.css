@@ -263,10 +263,10 @@ input {
 }
 
 .info-tip-box {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 20;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2000;
   width: 240px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -282,8 +282,7 @@ input {
   transition: opacity 130ms ease, transform 130ms ease;
 }
 
-.info-tip:hover .info-tip-box,
-.info-tip:focus-visible .info-tip-box {
+.info-tip-box.is-open {
   opacity: 1;
   transform: translateY(0);
 }
@@ -1175,12 +1174,6 @@ input {
 
 .resource-details-card {
   overflow: visible;
-}
-
-.user-profile-popup .info-tip-box,
-.user-settings-modal .info-tip-box {
-  top: auto;
-  bottom: calc(100% + 8px);
 }
 
 .notifications-panel {
