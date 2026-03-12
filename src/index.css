@@ -908,6 +908,19 @@ input {
   overflow: auto;
 }
 
+.user-list-row-btn {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.user-list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .user-chip {
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
   background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface));

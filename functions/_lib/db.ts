@@ -4,6 +4,7 @@ const VISIBILITIES: Visibility[] = ["private", "public_read", "public_write"];
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
+const SCHEMA_VERSION = "2026-03-12";
 
 const sanitizeVisibility = (value: unknown): Visibility =>
   typeof value === "string" && VISIBILITIES.includes(value as Visibility)
@@ -171,6 +172,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
 };
 
 export const getSchemaDiagnostics = async (env: Env): Promise<{
+  version: string;
   ok: boolean;
   missing: Array<{ table: string; columns: string[] }>;
 }> => {
@@ -181,7 +183,7 @@ export const getSchemaDiagnostics = async (env: Env): Promise<{
     const missingColumns = required.filter((col) => !existing.has(col));
     if (missingColumns.length) missing.push({ table, columns: missingColumns });
   }
-  return { ok: missing.length === 0, missing };
+  return { version: SCHEMA_VERSION, ok: missing.length === 0, missing };
 };
 
 const ensureSchema = async (env: Env): Promise<void> => {

@@ -60,6 +60,7 @@ export type AuthDiagnostics = {
 
 export type SchemaDiagnostics = {
   schema: {
+    version: string;
     ok: boolean;
     missing: Array<{ table: string; columns: string[] }>;
   };

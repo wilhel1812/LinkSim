@@ -96,11 +96,33 @@ export function UserAdminPanel() {
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState("");
   const [notificationFeed, setNotificationFeed] = useState<NotificationFeed>({ unreadCount: 0, items: [] });
+  const [managedUser, setManagedUser] = useState<CloudUser | null>(null);
+  const [managedNameDraft, setManagedNameDraft] = useState("");
+  const [managedEmailDraft, setManagedEmailDraft] = useState("");
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(() =>
     typeof window === "undefined" ? new Set() : readDismissedNotificationIds(),
   );
 
   const canAdmin = Boolean(me?.isAdmin);
+  const canEditAccessRequestNote = Boolean(me?.isAdmin || !me?.isApproved);
+
+  const refreshAdminData = async () => {
+    if (!canAdmin) return;
+    const [all, deleted, authDiag, schemaDiag] = await Promise.all([
+      fetchUsers(),
+      fetchDeletedUsers(),
+      fetchAuthDiagnostics(),
+      fetchSchemaDiagnostics(),
+    ]);
+    setUsers(all);
+    setDeletedUsers(deleted);
+    setAuthDiagnostics(authDiag);
+    setSchemaDiagnostics(schemaDiag);
+    setManagedUser((current) => {
+      if (!current) return null;
+      return all.find((user) => user.id === current.id) ?? null;
+    });
+  };
 
   const loadNotifications = async () => {
     if (!canAdmin) return;
@@ -187,16 +209,7 @@ export function UserAdminPanel() {
       setMe(updated);
       setStatus("Profile updated.");
       if (canAdmin) {
-        const [all, deleted, authDiag, schemaDiag] = await Promise.all([
-          fetchUsers(),
-          fetchDeletedUsers(),
-          fetchAuthDiagnostics(),
-          fetchSchemaDiagnostics(),
-        ]);
-        setUsers(all);
-        setDeletedUsers(deleted);
-        setAuthDiagnostics(authDiag);
-        setSchemaDiagnostics(schemaDiag);
+        await refreshAdminData();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -229,10 +242,7 @@ export function UserAdminPanel() {
     setStatus("");
     try {
       await updateUserAdmin(user.id, !user.isAdmin);
-      const all = await fetchUsers();
-      setUsers(all);
-      const deleted = await fetchDeletedUsers();
-      setDeletedUsers(deleted);
+      await refreshAdminData();
       setStatus(`Role updated for ${user.username}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -247,10 +257,7 @@ export function UserAdminPanel() {
     setStatus("");
     try {
       await updateUserApproval(user.id, !user.isApproved);
-      const all = await fetchUsers();
-      setUsers(all);
-      const deleted = await fetchDeletedUsers();
-      setDeletedUsers(deleted);
+      await refreshAdminData();
       setStatus(`${user.isApproved ? "Revoked" : "Granted"} access for ${user.username}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -265,11 +272,8 @@ export function UserAdminPanel() {
     setStatus("");
     try {
       await updateUserApproval(user.id, false);
-      const all = await fetchUsers();
-      setUsers(all);
-      const deleted = await fetchDeletedUsers();
-      setDeletedUsers(deleted);
-      setStatus(`Rejected access for ${user.username}.`);
+      await refreshAdminData();
+      setStatus(`Set ${user.username} to pending access.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus(`Reject failed: ${message}`);
@@ -285,10 +289,7 @@ export function UserAdminPanel() {
     setStatus("");
     try {
       await deleteUser(user.id);
-      const all = await fetchUsers();
-      setUsers(all);
-      const deleted = await fetchDeletedUsers();
-      setDeletedUsers(deleted);
+      await refreshAdminData();
       setStatus(`Deleted user ${user.username}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -303,10 +304,7 @@ export function UserAdminPanel() {
     setStatus("");
     try {
       await updateUserProfile(user.id, patch);
-      const all = await fetchUsers();
-      setUsers(all);
-      const deleted = await fetchDeletedUsers();
-      setDeletedUsers(deleted);
+      await refreshAdminData();
       setStatus(`Profile updated for ${user.id}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -321,8 +319,7 @@ export function UserAdminPanel() {
     setStatus("");
     try {
       await restoreDeletedCloudUser(userId);
-      const deleted = await fetchDeletedUsers();
-      setDeletedUsers(deleted);
+      await refreshAdminData();
       setStatus(`Deleted-user lock removed for ${userId}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -357,6 +354,22 @@ export function UserAdminPanel() {
     if (!missing.length) return [];
     return missing.map((entry) => `${entry.table}: ${entry.columns.join(", ")}`);
   }, [schemaDiagnostics]);
+
+  useEffect(() => {
+    if (!managedUser) return;
+    setManagedNameDraft(managedUser.username);
+    setManagedEmailDraft(managedUser.email ?? "");
+  }, [managedUser]);
+
+  const openManagedUser = (user: CloudUser) => {
+    setManagedUser(user);
+  };
+
+  const closeManagedUser = () => {
+    setManagedUser(null);
+    setManagedNameDraft("");
+    setManagedEmailDraft("");
+  };
 
   return (
     <>
@@ -417,11 +430,20 @@ export function UserAdminPanel() {
                   <span>Access request note</span>
                   <textarea
                     maxLength={1200}
+                    disabled={!canEditAccessRequestNote}
                     onChange={(event) => setAccessRequestNoteDraft(event.target.value)}
-                    placeholder="Optional private note to admins."
+                    placeholder={
+                      canEditAccessRequestNote
+                        ? "Optional private note to admins."
+                        : "Request note is locked after approval."
+                    }
+                    readOnly={!canEditAccessRequestNote}
                     value={accessRequestNoteDraft}
                   />
                 </label>
+                {!canEditAccessRequestNote ? (
+                  <p className="field-help">Access request note is read-only after your account is approved.</p>
+                ) : null}
                 <div className="chip-group">
                   <button
                     className="inline-action"
@@ -461,6 +483,7 @@ export function UserAdminPanel() {
                   <p className="field-help">Schema diagnostics passed.</p>
                 )}
                 <p className="field-help">
+                  Schema version: {schemaDiagnostics?.schema.version ?? "-"} |{" "}
                   Auth source: {authDiagnostics?.auth.source ?? "-"} | JWT:{" "}
                   {authDiagnostics?.auth.signals.hasJwtAssertion ? "yes" : "no"} | Header email:{" "}
                   {authDiagnostics?.auth.signals.hasEmailHeader ? "yes" : "no"}
@@ -523,17 +546,19 @@ export function UserAdminPanel() {
 
             {canAdmin ? (
               <div className="user-manager-list">
-                <p className="field-help">Admin: manage approvals, roles, and profile basics</p>
+                <p className="field-help">Users: open a profile to review and moderate.</p>
                 {userRows.map((user) => (
-                  <ManagedUserRow
-                    key={user.id}
-                    onSave={saveManagedProfile}
-                    onToggleAdmin={toggleAdmin}
-                    onToggleApproval={toggleApproval}
-                    onReject={rejectUser}
-                    onDelete={deleteUserAccount}
-                    user={user}
-                  />
+                  <button className="library-row user-list-row-btn" key={user.id} onClick={() => openManagedUser(user)} type="button">
+                    <div className="user-list-row">
+                      <ProfileAvatar avatarUrl={user.avatarUrl} name={user.username} />
+                      <div>
+                        <p className="field-help">
+                          <strong>{user.username}</strong>
+                        </p>
+                        <p className="field-help">{user.email ?? "-"}</p>
+                      </div>
+                    </div>
+                  </button>
                 ))}
                 {!userRows.length ? <p className="field-help">No other users yet.</p> : null}
               </div>
@@ -560,69 +585,74 @@ export function UserAdminPanel() {
               </div>
             ) : null}
 
+            {managedUser ? (
+              <ModalOverlay aria-label="Managed User Profile">
+                <div className="library-manager-card user-profile-popup">
+                  <div className="library-manager-header">
+                    <h2>User Profile</h2>
+                    <button className="inline-action" onClick={closeManagedUser} type="button">
+                      Close
+                    </button>
+                  </div>
+                  <div className="user-list-row">
+                    <ProfileAvatar avatarUrl={managedUser.avatarUrl} name={managedUser.username} size="large" />
+                    <div>
+                      <p className="field-help">
+                        <strong>{managedUser.username}</strong> ({managedUser.id})
+                      </p>
+                      <p className="field-help">Created: {fmtDate(managedUser.createdAt)}</p>
+                      <p className="field-help">
+                        Access: {managedUser.isApproved ? "Approved" : "Pending"} | Role:{" "}
+                        {managedUser.isAdmin ? "Admin" : "User"}
+                      </p>
+                    </div>
+                  </div>
+                  <label className="field-grid user-field-grid">
+                    <span>Name</span>
+                    <input onChange={(event) => setManagedNameDraft(event.target.value)} type="text" value={managedNameDraft} />
+                  </label>
+                  <label className="field-grid user-field-grid">
+                    <span>Email</span>
+                    <input onChange={(event) => setManagedEmailDraft(event.target.value)} type="email" value={managedEmailDraft} />
+                  </label>
+                  {managedUser.accessRequestNote ? (
+                    <p className="field-help">Access request note: {managedUser.accessRequestNote}</p>
+                  ) : (
+                    <p className="field-help">No access request note.</p>
+                  )}
+                  <div className="chip-group">
+                    <button
+                      className="inline-action"
+                      onClick={() => void saveManagedProfile(managedUser, { username: managedNameDraft, email: managedEmailDraft })}
+                      type="button"
+                    >
+                      Save Profile
+                    </button>
+                    <button className="inline-action" onClick={() => void toggleApproval(managedUser)} type="button">
+                      {managedUser.isApproved ? "Revoke Access" : "Approve Access"}
+                    </button>
+                    <button className="inline-action" onClick={() => void rejectUser(managedUser)} type="button">
+                      Set Pending
+                    </button>
+                    <button className="inline-action" onClick={() => void toggleAdmin(managedUser)} type="button">
+                      {managedUser.isAdmin ? "Set User" : "Set Admin"}
+                    </button>
+                    <button className="inline-action" onClick={() => void deleteUserAccount(managedUser)} type="button">
+                      Delete User
+                    </button>
+                  </div>
+                  <p className="field-help">
+                    Set Pending removes approval only. It does not delete the account and the user can still update profile while pending.
+                  </p>
+                </div>
+              </ModalOverlay>
+            ) : null}
+
             {status ? <p className="field-help">{status}</p> : null}
           </div>
         </ModalOverlay>
       ) : null}
     </>
-  );
-}
-
-function ManagedUserRow({
-  user,
-  onToggleAdmin,
-  onToggleApproval,
-  onReject,
-  onDelete,
-  onSave,
-}: {
-  user: CloudUser;
-  onToggleAdmin: (user: CloudUser) => Promise<void>;
-  onToggleApproval: (user: CloudUser) => Promise<void>;
-  onReject: (user: CloudUser) => Promise<void>;
-  onDelete: (user: CloudUser) => Promise<void>;
-  onSave: (user: CloudUser, patch: { username: string; email: string }) => Promise<void>;
-}) {
-  const [nameDraft, setNameDraft] = useState(user.username);
-  const [emailDraft, setEmailDraft] = useState(user.email ?? "");
-
-  useEffect(() => {
-    setNameDraft(user.username);
-    setEmailDraft(user.email ?? "");
-  }, [user.username, user.email]);
-
-  return (
-    <div className="library-row">
-      <div className="field-help">
-        {user.id} | created {fmtDate(user.createdAt)} | access {user.isApproved ? "approved" : "pending"}
-      </div>
-      {user.accessRequestNote ? <p className="field-help">Request: {user.accessRequestNote}</p> : null}
-      <label className="field-grid user-field-grid">
-        <span>Name</span>
-        <input onChange={(event) => setNameDraft(event.target.value)} type="text" value={nameDraft} />
-      </label>
-      <label className="field-grid user-field-grid">
-        <span>Email</span>
-        <input onChange={(event) => setEmailDraft(event.target.value)} type="email" value={emailDraft} />
-      </label>
-      <div className="chip-group">
-        <button className="inline-action" onClick={() => void onSave(user, { username: nameDraft, email: emailDraft })} type="button">
-          Save
-        </button>
-        <button className="inline-action" onClick={() => void onToggleApproval(user)} type="button">
-          {user.isApproved ? "Revoke" : "Approve"}
-        </button>
-        <button className="inline-action" onClick={() => void onReject(user)} type="button">
-          Reject
-        </button>
-        <button className="inline-action" onClick={() => void onToggleAdmin(user)} type="button">
-          {user.isAdmin ? "Set User" : "Set Admin"}
-        </button>
-        <button className="inline-action" onClick={() => void onDelete(user)} type="button">
-          Delete
-        </button>
-      </div>
-    </div>
   );
 }
 

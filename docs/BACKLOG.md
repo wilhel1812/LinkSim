@@ -19,10 +19,10 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Set up a compehensive testing plan
 - [ ] Branding
 - [ ] Elevation plot visibility toggle
-- [ ] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
-- [ ] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
-- [ ] What does the reject button currently do?
-- [ ] Show profile pictures to other users when you click open the user popover. Also show a small one next to any user name in the UI
+- [x] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
+- [x] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
+- [x] What does the reject button currently do?
+- [x] Show profile pictures to other users when you click open the user popover. Also show a small one next to any user name in the UI
 - [ ] User should be able to select if 
 
 ## Active stabilization backlog
@@ -42,7 +42,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 ### Data and storage safety
 - [ ] Replace avatar data URLs in D1 with object storage flow (R2) + thumbnails
 - [x] Remove runtime schema migration from request path
-- [ ] Add migration/version status visibility in admin tools
+- [x] Add migration/version status visibility in admin tools
 - Progress: admin schema diagnostics endpoint + warnings added in User Settings.
 - [ ] Add import/export/backup health indicators and stronger restore UX
 

@@ -64,6 +64,24 @@ const InfoTip = ({ text }: { text: string }) => (
   </button>
 );
 
+const initialsForUser = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "U";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+};
+
+const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
+  <span className="user-list-row">
+    {avatarUrl && avatarUrl.trim() ? (
+      <img alt={name} className="profile-avatar" src={avatarUrl} />
+    ) : (
+      <span className="profile-avatar">{initialsForUser(name)}</span>
+    )}
+    <span>{name}</span>
+  </span>
+);
+
 const styleByTheme = {
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
@@ -1731,7 +1749,10 @@ export function Sidebar() {
               </button>
             </div>
             <p className="field-help">
-              <strong>{profilePopupUser.username}</strong> ({profilePopupUser.id})
+              <strong>
+                <UserBadge avatarUrl={profilePopupUser.avatarUrl} name={profilePopupUser.username} />
+              </strong>{" "}
+              ({profilePopupUser.id})
             </p>
             <p className="field-help">Email: {profilePopupUser.email ?? "Hidden"}</p>
             <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
@@ -1775,7 +1796,7 @@ export function Sidebar() {
                     onClick={() => void openUserProfilePopup(change.actorUserId)}
                     type="button"
                   >
-                    {change.actorName ?? change.actorUserId}
+                    <UserBadge avatarUrl={change.actorAvatarUrl} name={change.actorName ?? change.actorUserId} />
                   </button>
                   <p className="field-help">{change.note ?? "-"}</p>
                 </div>
@@ -1805,14 +1826,14 @@ export function Sidebar() {
                 onClick={() => void openUserProfilePopup(resourceDetailsPopup.createdByUserId)}
                 type="button"
               >
-                Created by {resourceDetailsPopup.createdByName}
+                Created by <UserBadge name={resourceDetailsPopup.createdByName} />
               </button>
               <button
                 className="inline-action"
                 onClick={() => void openUserProfilePopup(resourceDetailsPopup.lastEditedByUserId)}
                 type="button"
               >
-                Last edited by {resourceDetailsPopup.lastEditedByName}
+                Last edited by <UserBadge name={resourceDetailsPopup.lastEditedByName} />
               </button>
               <button
                 className="inline-action"
