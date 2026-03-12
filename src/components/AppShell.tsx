@@ -28,7 +28,7 @@ export function AppShell() {
           setAccessState("locked");
           return;
         }
-        setAccessState(me.isAdmin || me.isApproved ? "granted" : "pending");
+        setAccessState(me.isAdmin || me.isModerator || me.isApproved ? "granted" : "pending");
       } catch (error) {
         const message = getUiErrorMessage(error);
         if (
@@ -61,14 +61,14 @@ export function AppShell() {
           <UserAdminPanel />
           <h2>Account Pending Approval</h2>
           <p className="field-help">
-            You can sign in and edit your profile, but simulation tools stay locked until an admin approves your access.
+            You can sign in and edit your profile, but simulation tools stay locked until a moderator or admin approves your access.
           </p>
           <p className="field-help">To continue:</p>
           <ul className="field-help access-pending-list">
             <li>Open User Settings.</li>
             <li>Add your name and valid email address.</li>
             <li>Optionally add an access request note to explain why you need access.</li>
-            <li>Wait for admin approval. You will keep profile access while pending.</li>
+            <li>Wait for moderator/admin approval. You will keep profile access while pending.</li>
           </ul>
         </section>
       </main>

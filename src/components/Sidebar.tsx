@@ -19,7 +19,7 @@ import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import {
   fetchResourceChanges,
   fetchUserById,
-  updateUserAdmin,
+  updateUserRole,
   updateUserApproval,
   type CloudUser,
   type ResourceChange,
@@ -53,6 +53,12 @@ const metric = (label: string, value: string) => (
 const parseNumber = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
+  if (value === "shared" || value === "public_write") return "shared";
+  if (value === "public" || value === "public_read") return "public";
+  return "private";
 };
 
 const InfoTip = ({ text }: { text: string }) => (
@@ -270,6 +276,7 @@ export function Sidebar() {
   const overwriteSimulationPreset = useAppStore((state) => state.overwriteSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const renameSimulationPreset = useAppStore((state) => state.renameSimulationPreset);
+  const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const importLibraryData = useAppStore((state) => state.importLibraryData);
   const restoreLibrariesFromSnapshots = useAppStore((state) => state.restoreLibrariesFromSnapshots);
@@ -431,6 +438,9 @@ export function Sidebar() {
     lastEditedByName: string;
     lastEditedByAvatarUrl: string;
   } | null>(null);
+  const [resourceAccessVisibility, setResourceAccessVisibility] = useState<"private" | "public" | "shared">("shared");
+  const [resourceCollaboratorsInput, setResourceCollaboratorsInput] = useState("");
+  const [resourceAccessStatus, setResourceAccessStatus] = useState("");
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
     siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
@@ -1146,6 +1156,26 @@ export function Sidebar() {
     lastEditedByName: string;
     lastEditedByAvatarUrl: string;
   }) => {
+    if (kind === "site") {
+      const site = siteLibrary.find((entry) => entry.id === resourceId);
+      setResourceAccessVisibility(normalizeAccessVisibility(site?.visibility));
+      setResourceCollaboratorsInput(
+        (site?.sharedWith ?? [])
+          .filter((grant) => grant.role === "editor" || grant.role === "admin")
+          .map((grant) => grant.userId)
+          .join(", "),
+      );
+    } else {
+      const simulation = simulationPresets.find((entry) => entry.id === resourceId);
+      setResourceAccessVisibility(normalizeAccessVisibility(simulation?.visibility));
+      setResourceCollaboratorsInput(
+        (simulation?.sharedWith ?? [])
+          .filter((grant) => grant.role === "editor" || grant.role === "admin")
+          .map((grant) => grant.userId)
+          .join(", "),
+      );
+    }
+    setResourceAccessStatus("");
     const resolvedCreatedAvatar =
       createdByAvatarUrl.trim() || (createdByUserId && createdByUserId === lastEditedByUserId ? lastEditedByAvatarUrl : "");
     const resolvedLastEditedAvatar =
@@ -1172,12 +1202,50 @@ export function Sidebar() {
     });
   };
 
-  const toggleProfileAdmin = async () => {
+  const saveResourceAccessSettings = () => {
+    if (!resourceDetailsPopup) return;
+    const sharedWith = resourceCollaboratorsInput
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((userId) => ({ userId, role: "editor" as const }));
+    const currentEntry =
+      resourceDetailsPopup.kind === "site"
+        ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
+        : simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+    const effectiveRole = (currentEntry as { effectiveRole?: string } | undefined)?.effectiveRole ?? "owner";
+    const currentSharedUserIds = new Set(
+      ((currentEntry as { sharedWith?: Array<{ userId: string }> } | undefined)?.sharedWith ?? []).map(
+        (grant) => grant.userId,
+      ),
+    );
+    const nextSharedUserIds = new Set(sharedWith.map((grant) => grant.userId));
+    const removedCollaborators = [...currentSharedUserIds].filter((userId) => !nextSharedUserIds.has(userId));
+    if (removedCollaborators.length > 0 && !["owner", "admin"].includes(effectiveRole)) {
+      setResourceAccessStatus("Only owners/admins can remove existing collaborators.");
+      return;
+    }
+
+    if (resourceDetailsPopup.kind === "site") {
+      updateSiteLibraryEntry(resourceDetailsPopup.resourceId, {
+        visibility: resourceAccessVisibility,
+        sharedWith,
+      });
+    } else {
+      updateSimulationPresetEntry(resourceDetailsPopup.resourceId, {
+        visibility: resourceAccessVisibility,
+        sharedWith,
+      });
+    }
+    setResourceAccessStatus("Access settings saved.");
+  };
+
+  const changeProfileRole = async (nextRole: "admin" | "moderator" | "user" | "pending") => {
     if (!profilePopupUser) return;
     setProfilePopupBusy(true);
     setProfilePopupStatus("");
     try {
-      const updated = await updateUserAdmin(profilePopupUser.id, !profilePopupUser.isAdmin);
+      const updated = await updateUserRole(profilePopupUser.id, nextRole);
       setProfilePopupUser(updated);
       setProfilePopupStatus(`Updated role for ${updated.username}.`);
     } catch (error) {
@@ -1195,7 +1263,7 @@ export function Sidebar() {
     try {
       const updated = await updateUserApproval(profilePopupUser.id, !profilePopupUser.isApproved);
       setProfilePopupUser(updated);
-      setProfilePopupStatus(`${updated.isApproved ? "Approved" : "Revoked"} ${updated.username}.`);
+      setProfilePopupStatus(`${updated.isApproved ? "Approved" : "Set pending"} ${updated.username}.`);
     } catch (error) {
       const message = getUiErrorMessage(error);
       setProfilePopupStatus(`Approval update failed: ${message}`);
@@ -1865,7 +1933,17 @@ export function Sidebar() {
             </p>
             <p className="field-help">Email: {profilePopupUser.email ?? "Hidden by user"}</p>
             <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
-            <p className="field-help">Role: {profilePopupUser.isAdmin ? "Admin" : "User"}</p>
+            <p className="field-help">
+              Role:{" "}
+              {profilePopupUser.role ??
+                (profilePopupUser.isAdmin
+                  ? "admin"
+                  : profilePopupUser.isModerator
+                    ? "moderator"
+                    : profilePopupUser.isApproved
+                      ? "user"
+                      : "pending")}
+            </p>
             <p className="field-help">
               Access:{" "}
               {profilePopupUser.accountState === "revoked"
@@ -1877,11 +1955,33 @@ export function Sidebar() {
               {new Date(profilePopupUser.createdAt).toLocaleString()}
             </p>
             <div className="chip-group">
+              <label className="field-grid">
+                <span>Role</span>
+                <select
+                  className="locale-select"
+                  disabled={profilePopupBusy}
+                  onChange={(event) =>
+                    void changeProfileRole(event.target.value as "admin" | "moderator" | "user" | "pending")
+                  }
+                  value={
+                    profilePopupUser.role ??
+                    (profilePopupUser.isAdmin
+                      ? "admin"
+                      : profilePopupUser.isModerator
+                        ? "moderator"
+                        : profilePopupUser.isApproved
+                          ? "user"
+                          : "pending")
+                  }
+                >
+                  <option value="pending">Pending</option>
+                  <option value="user">User</option>
+                  <option value="moderator">Moderator</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
               <button className="inline-action" disabled={profilePopupBusy} onClick={() => void toggleProfileApproval()} type="button">
-                {profilePopupUser.isApproved ? "Revoke Access" : "Approve Access"}
-              </button>
-              <button className="inline-action" disabled={profilePopupBusy} onClick={() => void toggleProfileAdmin()} type="button">
-                {profilePopupUser.isAdmin ? "Set User" : "Set Admin"}
+                {profilePopupUser.isApproved ? "Set Pending" : "Approve Access"}
               </button>
             </div>
             {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
@@ -1965,6 +2065,39 @@ export function Sidebar() {
                 Open change log
               </button>
             </div>
+            <details className="compact-details" open>
+              <summary>Access</summary>
+              <label className="field-grid">
+                <span>Access level</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) =>
+                    setResourceAccessVisibility(event.target.value as "private" | "public" | "shared")
+                  }
+                  value={resourceAccessVisibility}
+                >
+                  <option value="private">Private</option>
+                  <option value="public">Public</option>
+                  <option value="shared">Shared</option>
+                </select>
+              </label>
+              <label className="field-grid user-bio-field">
+                <span>Collaborators</span>
+                <textarea
+                  onChange={(event) => setResourceCollaboratorsInput(event.target.value)}
+                  placeholder="user-id-1, user-id-2"
+                  value={resourceCollaboratorsInput}
+                />
+              </label>
+              <p className="field-help">
+                Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
+                collaborators/owner.
+              </p>
+              <button className="inline-action" onClick={saveResourceAccessSettings} type="button">
+                Save Access
+              </button>
+              {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : null}
+            </details>
           </div>
         </ModalOverlay>
       ) : null}

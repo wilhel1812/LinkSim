@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_bytes INTEGER,
   avatar_content_type TEXT,
   is_admin INTEGER NOT NULL DEFAULT 0,
+  is_moderator INTEGER NOT NULL DEFAULT 0,
   is_approved INTEGER NOT NULL DEFAULT 0,
   approved_at TEXT,
   approved_by_user_id TEXT,

@@ -6,7 +6,7 @@ const {
   assertUserAccessMock,
   fetchUserProfileMock,
   updateUserProfileMock,
-  setUserAdminFlagMock,
+  setUserRoleMock,
   setUserApprovalMock,
   deleteUserMock,
 } = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ const {
   assertUserAccessMock: vi.fn(),
   fetchUserProfileMock: vi.fn(),
   updateUserProfileMock: vi.fn(),
-  setUserAdminFlagMock: vi.fn(),
+  setUserRoleMock: vi.fn(),
   setUserApprovalMock: vi.fn(),
   deleteUserMock: vi.fn(),
 }));
@@ -29,7 +29,7 @@ vi.mock("../../_lib/db", () => ({
   assertUserAccess: assertUserAccessMock,
   fetchUserProfile: fetchUserProfileMock,
   updateUserProfile: updateUserProfileMock,
-  setUserAdminFlag: setUserAdminFlagMock,
+  setUserRole: setUserRoleMock,
   setUserApproval: setUserApprovalMock,
   deleteUser: deleteUserMock,
 }));
@@ -65,7 +65,7 @@ describe("users/[id] auth and permission guards", () => {
     const req = new Request("https://example.test/api/users/admin", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ isAdmin: false }),
+      body: JSON.stringify({ role: "user" }),
     });
 
     fetchUserProfileMock.mockResolvedValueOnce({
@@ -94,8 +94,8 @@ describe("users/[id] auth and permission guards", () => {
     });
 
     const res = await onRequestPatch(mkCtx(req, { id: "admin" }));
-    expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ error: "Users cannot change their own admin role." });
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({ error: "You cannot assign this role for the selected user." });
   });
 
   it("blocks self delete", async () => {

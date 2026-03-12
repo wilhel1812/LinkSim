@@ -24,7 +24,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] What does the reject button currently do?
 - [x] Show profile pictures to other users when you click open the user popover. Also show a small one next to any user name in the UI
 - [x] User should be able to select if e-mail should be visible to everyone or only admins
-- [ ] access rights on sites and simulations. public, public-read only, private
+- [x] access rights on sites and simulations. private, public, shared (+ collaborator edit grants)
 - [ ] explore if the route option actually makes sense anymore
 - [ ] explore if we can take buildings into account
 
@@ -58,6 +58,8 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - Progress: added in-app metadata repair utility for created/last-edited backfill from ownership/change history.
 - Progress: added admin ownership operations endpoint/UI (single + bulk reassign) with in-app audit view.
 - [x] Add user moderation actions and review queue ergonomics
+- Progress: role model expanded to `Admin/Moderator/User/Pending`; user role changes now use dropdown role assignment (with moderator constraints).
+- Progress: pending approvals/notifications now target moderator/admin reviewers.
 - [x] Add simulation/site ownership repair tools in UI
 - Progress: ownership-related display gaps now repaired via metadata repair + fallback mapping; explicit owner reassignment UI now available for admins.
 - [x] Add admin-safe bulk operations with confirmations and logs

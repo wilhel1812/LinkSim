@@ -9,7 +9,9 @@ export type CloudUser = {
   avatarUrl: string;
   emailPublic?: boolean;
   isAdmin: boolean;
+  isModerator?: boolean;
   isApproved: boolean;
+  role?: "admin" | "moderator" | "user" | "pending";
   accountState?: "pending" | "approved" | "revoked";
   approvedAt?: string | null;
   approvedByUserId?: string | null;
@@ -167,6 +169,17 @@ export const updateUserAdmin = async (id: string, isAdmin: boolean): Promise<Clo
   const data = await apiCall<{ user: CloudUser }>(`/api/users/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify({ isAdmin }),
+  });
+  return data.user;
+};
+
+export const updateUserRole = async (
+  id: string,
+  role: "admin" | "moderator" | "user" | "pending",
+): Promise<CloudUser> => {
+  const data = await apiCall<{ user: CloudUser }>(`/api/users/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
   });
   return data.user;
 };

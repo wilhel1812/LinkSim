@@ -37,6 +37,10 @@ import type {
 type SiteLibraryEntry = {
   id: string;
   name: string;
+  visibility?: "private" | "public" | "shared";
+  sharedWith?: Array<{ userId: string; role: "viewer" | "editor" | "admin" }>;
+  ownerUserId?: string;
+  effectiveRole?: "owner" | "admin" | "editor" | "viewer";
   position: { lat: number; lon: number };
   groundElevationM: number;
   antennaHeightM: number;
@@ -56,6 +60,10 @@ type SiteLibraryEntry = {
 type SimulationPreset = {
   id: string;
   name: string;
+  visibility?: "private" | "public" | "shared";
+  sharedWith?: Array<{ userId: string; role: "viewer" | "editor" | "admin" }>;
+  ownerUserId?: string;
+  effectiveRole?: "owner" | "admin" | "editor" | "viewer";
   updatedAt: string;
   snapshot: {
     sites: Site[];
@@ -146,7 +154,12 @@ type AppState = {
   insertSitesFromLibrary: (entryIds: string[]) => void;
   updateSiteLibraryEntry: (
     entryId: string,
-    patch: Partial<Pick<SiteLibraryEntry, "name" | "position" | "groundElevationM" | "antennaHeightM">>,
+    patch: Partial<
+      Pick<
+        SiteLibraryEntry,
+        "name" | "position" | "groundElevationM" | "antennaHeightM" | "visibility" | "sharedWith"
+      >
+    >,
   ) => void;
   deleteSiteLibraryEntry: (entryId: string) => void;
   deleteSiteLibraryEntries: (entryIds: string[]) => void;
@@ -154,6 +167,10 @@ type AppState = {
   overwriteSimulationPreset: (presetId: string) => void;
   loadSimulationPreset: (presetId: string) => void;
   renameSimulationPreset: (presetId: string, name: string) => void;
+  updateSimulationPresetEntry: (
+    presetId: string,
+    patch: Partial<Pick<SimulationPreset, "name" | "visibility" | "sharedWith">>,
+  ) => void;
   deleteSimulationPreset: (presetId: string) => void;
   importLibraryData: (
     bundle: { siteLibrary?: SiteLibraryEntry[]; simulationPresets?: SimulationPreset[] },
@@ -612,6 +629,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const entry: SiteLibraryEntry = {
       id: makeId("libsite"),
       name: label,
+      visibility: "shared",
+      sharedWith: [],
       position: { lat, lon },
       groundElevationM,
       antennaHeightM,
@@ -725,6 +744,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextPreset: SimulationPreset = {
         id: existing?.id ?? makeId("sim"),
         name: presetName,
+        visibility: existing?.visibility ?? "shared",
+        sharedWith: existing?.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
       };
@@ -760,6 +781,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextPreset: SimulationPreset = {
         id: existing.id,
         name: existing.name,
+        visibility: existing.visibility ?? "shared",
+        sharedWith: existing.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
       };
@@ -841,6 +864,20 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : preset,
       );
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
+    });
+  },
+  updateSimulationPresetEntry: (presetId, patch) => {
+    set((state) => {
+      const next = state.simulationPresets.map((preset) => {
+        if (preset.id !== presetId) return preset;
+        return {
+          ...preset,
+          ...patch,
+          updatedAt: new Date().toISOString(),
+        };
+      });
       writeStorage(SIM_PRESETS_KEY, next);
       return { simulationPresets: next };
     });

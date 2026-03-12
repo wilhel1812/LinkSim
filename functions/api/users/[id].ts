@@ -1,20 +1,21 @@
 import { verifyAuth } from "../../_lib/auth";
 import {
   canDeleteUserAccount,
-  canUpdateUserApproval,
-  canUpdateUserRole,
+  canAssignRole,
+  canSetPendingOrUser,
+  deriveUserRole,
 } from "../../_lib/access";
 import {
   assertUserAccess,
   deleteUser,
   ensureUser,
   fetchUserProfile,
-  setUserAdminFlag,
+  setUserRole,
   setUserApproval,
   updateUserProfile,
 } from "../../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
-import type { Env } from "../../_lib/types";
+import type { Env, UserRole } from "../../_lib/types";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
@@ -33,7 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     const user = await fetchUserProfile(env, targetId);
     if (!user) return withCors(request, json({ error: "User not found" }, { status: 404 }));
 
-    if (!me.isAdmin && me.id !== targetId) {
+    if (!me.isAdmin && !("isModerator" in me && Boolean((me as { isModerator?: boolean }).isModerator)) && me.id !== targetId) {
       const canSeeEmail = user.emailPublic;
       return withCors(
         request,
@@ -46,7 +47,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
               avatarUrl: user.avatarUrl,
               ...(canSeeEmail ? { email: user.email } : {}),
               isAdmin: user.isAdmin,
+              isModerator: (user as { isModerator?: boolean }).isModerator ?? false,
               isApproved: user.isApproved,
+              role: (user as { role?: UserRole }).role ?? deriveUserRole(user),
               emailPublic: user.emailPublic,
               createdAt: user.createdAt,
               updatedAt: user.updatedAt,
@@ -71,7 +74,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     await assertUserAccess(env, auth.userId);
     const me = await fetchUserProfile(env, auth.userId);
     if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
-    if (!me.isAdmin) return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
+    if (!me.isAdmin && !("isModerator" in me && Boolean((me as { isModerator?: boolean }).isModerator))) {
+      return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
+    }
 
     const targetId = typeof params.id === "string" ? params.id : "";
     if (!targetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
@@ -83,7 +88,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       accessRequestNote?: unknown;
       avatarUrl?: unknown;
       emailPublic?: unknown;
-      isAdmin?: unknown;
+      role?: unknown;
       isApproved?: unknown;
     };
 
@@ -101,6 +106,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       body.accessRequestNote !== undefined ||
       body.avatarUrl !== undefined
     ) {
+      if (!me.isAdmin && targetId !== auth.userId) {
+        return withCors(request, json({ error: "Only admins can edit another user's profile fields." }, { status: 403 }));
+      }
       user = await updateUserProfile(env, targetId, {
         username: body.username,
         email: body.email,
@@ -110,15 +118,22 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         emailPublic: body.emailPublic,
       });
     }
-    if (body.isAdmin !== undefined) {
-      if (!canUpdateUserRole(me, targetId)) {
-        return withCors(request, json({ error: "Users cannot change their own admin role." }, { status: 400 }));
+    if (body.role !== undefined) {
+      const nextRole = typeof body.role === "string" ? (body.role.trim().toLowerCase() as UserRole) : null;
+      if (!nextRole || !["admin", "moderator", "user", "pending"].includes(nextRole)) {
+        return withCors(request, json({ error: "Invalid role." }, { status: 400 }));
       }
-      user = await setUserAdminFlag(env, targetId, body.isAdmin);
+      if (!canAssignRole(me, user, nextRole)) {
+        return withCors(
+          request,
+          json({ error: "You cannot assign this role for the selected user." }, { status: 403 }),
+        );
+      }
+      user = await setUserRole(env, targetId, nextRole, auth.userId);
     }
     if (body.isApproved !== undefined) {
-      if (!canUpdateUserApproval(me, targetId)) {
-        return withCors(request, json({ error: "Users cannot change their own approval state." }, { status: 400 }));
+      if (!canSetPendingOrUser(me, user)) {
+        return withCors(request, json({ error: "You cannot change approval for this user." }, { status: 403 }));
       }
       user = await setUserApproval(env, targetId, body.isApproved, auth.userId);
     }

@@ -44,7 +44,7 @@ export function NotificationsPanel() {
     <div className="notifications-panel">
       {feed.unreadCount > 0 ? (
         <div className="notification-banner" role="status">
-          <strong>{feed.unreadCount} pending user(s)</strong> need review.
+          <strong>{feed.unreadCount} pending user(s)</strong> need moderator/admin review.
         </div>
       ) : null}
 
@@ -56,7 +56,7 @@ export function NotificationsPanel() {
       {open ? (
         <div className="notifications-popover">
           <div className="section-heading">
-            <p className="field-help">Admin notifications</p>
+            <p className="field-help">Moderator/Admin notifications</p>
             <button className="inline-action" onClick={() => void load()} type="button">
               Refresh
             </button>

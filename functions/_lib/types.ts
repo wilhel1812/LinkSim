@@ -1,5 +1,7 @@
-export type Visibility = "private" | "public_read" | "public_write";
+export type Visibility = "private" | "public" | "shared";
+export type DbVisibility = "private" | "public_read" | "public_write";
 export type ResourceRole = "viewer" | "editor" | "admin";
+export type UserRole = "admin" | "moderator" | "user" | "pending";
 
 export type Grant = {
   userId: string;

@@ -13,8 +13,7 @@ import {
   restoreDeletedCloudUser,
   uploadAvatar,
   updateMyProfile,
-  updateUserAdmin,
-  updateUserApproval,
+  updateUserRole,
   updateUserProfile,
   type AdminAuditEvent,
   type CloudUser,
@@ -151,10 +150,20 @@ export function UserAdminPanel() {
   );
 
   const canAdmin = Boolean(me?.isAdmin);
-  const canEditAccessRequestNote = Boolean(me?.isAdmin || !me?.isApproved);
+  const canModerate = Boolean(me?.isAdmin || me?.isModerator);
+  const myRole: "admin" | "moderator" | "user" | "pending" = me?.role
+    ? me.role
+    : me?.isAdmin
+      ? "admin"
+      : me?.isModerator
+        ? "moderator"
+        : me?.isApproved
+          ? "user"
+          : "pending";
+  const canEditAccessRequestNote = Boolean(canModerate || !me?.isApproved);
 
   const refreshAdminData = async () => {
-    if (!canAdmin) return;
+    if (!canModerate) return;
     const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
       fetchUsers(),
       fetchDeletedUsers(),
@@ -191,7 +200,7 @@ export function UserAdminPanel() {
   };
 
   const loadNotifications = useCallback(async () => {
-    if (!canAdmin) return;
+    if (!canModerate) return;
     setNotificationBusy(true);
     setNotificationStatus("");
     try {
@@ -203,10 +212,10 @@ export function UserAdminPanel() {
     } finally {
       setNotificationBusy(false);
     }
-  }, [canAdmin]);
+  }, [canModerate]);
 
   const loadAdminAudit = useCallback(async () => {
-    if (!canAdmin) return;
+    if (!canModerate) return;
     setAuditBusy(true);
     try {
       const events = await fetchAdminAuditEvents(80);
@@ -214,7 +223,7 @@ export function UserAdminPanel() {
     } finally {
       setAuditBusy(false);
     }
-  }, [canAdmin]);
+  }, [canModerate]);
 
   const load = async () => {
     setBusy(true);
@@ -228,7 +237,7 @@ export function UserAdminPanel() {
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       setEmailPublicDraft(current.emailPublic ?? true);
-      if (current.isAdmin) {
+      if (current.isAdmin || current.isModerator) {
         const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
           fetchDeletedUsers(),
@@ -261,19 +270,19 @@ export function UserAdminPanel() {
   }, []);
 
   useEffect(() => {
-    if (!canAdmin) {
+    if (!canModerate) {
       setNotificationFeed({ unreadCount: 0, items: [] });
       return;
     }
     void loadNotifications();
     const timer = window.setInterval(() => void loadNotifications(), NOTIFICATION_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [canAdmin, loadNotifications]);
+  }, [canModerate, loadNotifications]);
 
   useEffect(() => {
-    if (!canAdmin) return;
+    if (!canModerate) return;
     void loadAdminAudit();
-  }, [canAdmin, loadAdminAudit]);
+  }, [canModerate, loadAdminAudit]);
 
   const userRows = useMemo(() => users.filter((user) => user.id !== me?.id), [users, me?.id]);
   const pendingUserCount = useMemo(
@@ -317,7 +326,7 @@ export function UserAdminPanel() {
       });
       setMe(updated);
       setStatus("Profile updated.");
-      if (canAdmin) {
+      if (canModerate) {
         await refreshAdminData();
       }
     } catch (error) {
@@ -352,11 +361,11 @@ export function UserAdminPanel() {
     }
   };
 
-  const toggleAdmin = async (user: CloudUser) => {
+  const updateRole = async (user: CloudUser, role: "admin" | "moderator" | "user" | "pending") => {
     setBusy(true);
     setStatus("");
     try {
-      await updateUserAdmin(user.id, !user.isAdmin);
+      await updateUserRole(user.id, role);
       await refreshAdminData();
       setStatus(`Role updated for ${user.username}.`);
     } catch (error) {
@@ -371,7 +380,7 @@ export function UserAdminPanel() {
     setBusy(true);
     setStatus("");
     try {
-      await updateUserApproval(user.id, !user.isApproved);
+      await updateUserRole(user.id, user.isApproved ? "pending" : "user");
       await refreshAdminData();
       setStatus(`${user.isApproved ? "Revoked" : "Granted"} access for ${user.username}.`);
     } catch (error) {
@@ -386,7 +395,7 @@ export function UserAdminPanel() {
     setBusy(true);
     setStatus("");
     try {
-      await updateUserApproval(user.id, false);
+      await updateUserRole(user.id, "pending");
       await refreshAdminData();
       setStatus(
         `${user.isApproved ? "Revoked access for" : "Set pending access for"} ${user.username}.`,
@@ -542,12 +551,27 @@ export function UserAdminPanel() {
     setManagedEmailDraft("");
   };
 
+  const resolveRole = (user: CloudUser): "admin" | "moderator" | "user" | "pending" =>
+    user.role ?? (user.isAdmin ? "admin" : user.isModerator ? "moderator" : user.isApproved ? "user" : "pending");
+
+  const canAssignManagedRole = (
+    user: CloudUser,
+    nextRole: "admin" | "moderator" | "user" | "pending",
+  ): boolean => {
+    if (!me || me.id === user.id) return false;
+    if (myRole === "admin") return true;
+    if (myRole !== "moderator") return false;
+    const targetRole = resolveRole(user);
+    if (targetRole === "admin" || targetRole === "moderator") return false;
+    return nextRole === "pending" || nextRole === "user";
+  };
+
   return (
     <>
       <button className="user-chip" onClick={() => setOpen(true)} type="button">
         <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
         <span className="user-chip-text">{me?.username ?? "Loading user..."}</span>
-        {canAdmin && unreadNotifications.length > 0 ? (
+        {canModerate && unreadNotifications.length > 0 ? (
           <span className="notification-badge">{unreadNotifications.length}</span>
         ) : null}
       </button>
@@ -576,7 +600,7 @@ export function UserAdminPanel() {
                 </label>
                 {avatarStatus ? <p className="field-help">{avatarStatus}</p> : null}
                 <p className="field-help">ID: {me?.id ?? "-"}</p>
-                <p className="field-help">Role: {me?.isAdmin ? "Admin" : "User"}</p>
+                <p className="field-help">Role: {me?.role ?? (me?.isAdmin ? "admin" : me?.isModerator ? "moderator" : me?.isApproved ? "user" : "pending")}</p>
                 <p className="field-help">
                   Access:{" "}
                   {me?.accountState === "revoked"
@@ -620,7 +644,7 @@ export function UserAdminPanel() {
                     onChange={(event) => setAccessRequestNoteDraft(event.target.value)}
                     placeholder={
                       canEditAccessRequestNote
-                        ? "Optional private note to admins."
+                        ? "Optional private note to moderators/admins."
                         : "Request note is locked after approval."
                     }
                     readOnly={!canEditAccessRequestNote}
@@ -646,7 +670,7 @@ export function UserAdminPanel() {
               </div>
             </div>
 
-            {canAdmin ? (
+            {canModerate ? (
               <div className="user-manager-list">
                 <div className="section-heading">
                   <p className="field-help">System diagnostics</p>
@@ -776,11 +800,11 @@ export function UserAdminPanel() {
               </div>
             ) : null}
 
-            {canAdmin ? (
+            {canModerate ? (
               <div className="user-manager-list notifications-center">
                 {unreadNotifications.length > 0 ? (
                   <div className="notification-banner" role="status">
-                    <strong>{unreadNotifications.length} admin notification(s)</strong> need your review.
+                    <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
                   </div>
                 ) : null}
                 <div className="section-heading">
@@ -829,7 +853,7 @@ export function UserAdminPanel() {
               </div>
             ) : null}
 
-            {canAdmin ? (
+            {canModerate ? (
               <div className="user-manager-list">
                 <div className="section-heading">
                   <p className="field-help">Users: open a profile to review and moderate.</p>
@@ -876,7 +900,7 @@ export function UserAdminPanel() {
               </div>
             ) : null}
 
-            {canAdmin ? (
+            {canModerate ? (
               <div className="user-manager-list">
                 <p className="field-help">Deleted users: remove lock to allow immediate re-creation.</p>
                 {deletedUsers.map((entry) => (
@@ -920,7 +944,7 @@ export function UserAdminPanel() {
                           : managedUser.isApproved
                             ? "Approved"
                             : "Pending"}{" "}
-                        | Role: {managedUser.isAdmin ? "Admin" : "User"}
+                        | Role: {managedUser.role ?? (managedUser.isAdmin ? "admin" : managedUser.isModerator ? "moderator" : managedUser.isApproved ? "user" : "pending")}
                       </p>
                     </div>
                   </div>
@@ -945,22 +969,45 @@ export function UserAdminPanel() {
                     >
                       Save Profile
                     </button>
+                    <label className="field-grid user-field-grid">
+                      <span>Role</span>
+                      <select
+                        className="locale-select"
+                        onChange={(event) => {
+                          const nextRole = event.target.value as "admin" | "moderator" | "user" | "pending";
+                          if (!canAssignManagedRole(managedUser, nextRole)) return;
+                          void updateRole(managedUser, nextRole);
+                        }}
+                        value={
+                          managedUser.role ??
+                          (managedUser.isAdmin
+                            ? "admin"
+                            : managedUser.isModerator
+                              ? "moderator"
+                              : managedUser.isApproved
+                                ? "user"
+                                : "pending")
+                        }
+                      >
+                        <option disabled={!canAssignManagedRole(managedUser, "pending")} value="pending">Pending</option>
+                        <option disabled={!canAssignManagedRole(managedUser, "user")} value="user">User</option>
+                        <option disabled={!canAssignManagedRole(managedUser, "moderator")} value="moderator">Moderator</option>
+                        <option disabled={!canAssignManagedRole(managedUser, "admin")} value="admin">Admin</option>
+                      </select>
+                    </label>
                     <button className="inline-action" onClick={() => void toggleApproval(managedUser)} type="button">
-                      {managedUser.isApproved ? "Revoke Access" : "Approve Access"}
+                      {managedUser.isApproved ? "Set Pending" : "Approve Access"}
                     </button>
                     <button className="inline-action" onClick={() => void rejectUser(managedUser)} type="button">
-                      {managedUser.isApproved ? "Revoke To Revoked State" : "Set Pending"}
-                    </button>
-                    <button className="inline-action" onClick={() => void toggleAdmin(managedUser)} type="button">
-                      {managedUser.isAdmin ? "Set User" : "Set Admin"}
+                      Set Pending
                     </button>
                     <button className="inline-action" onClick={() => void deleteUserAccount(managedUser)} type="button">
                       Delete User
                     </button>
                   </div>
                   <p className="field-help">
-                    Set Pending keeps unapproved users in the pending queue. Revoke moves an approved user to revoked
-                    state without deleting the account.
+                    Role and approval changes are audited. Moderators can only move regular users between Pending and
+                    User.
                   </p>
                 </div>
               </ModalOverlay>

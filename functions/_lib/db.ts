@@ -1,16 +1,31 @@
-import type { CloudResourceRecord, Env, Grant, ResourceRole, Visibility } from "./types";
+import type { CloudResourceRecord, DbVisibility, Env, Grant, ResourceRole, UserRole, Visibility } from "./types";
 
-const VISIBILITIES: Visibility[] = ["private", "public_read", "public_write"];
+const VISIBILITIES: Visibility[] = ["private", "public", "shared"];
+const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write"];
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
 const SCHEMA_VERSION = "2026-03-12c";
 type AccountState = "pending" | "approved" | "revoked";
 
-const sanitizeVisibility = (value: unknown): Visibility =>
-  typeof value === "string" && VISIBILITIES.includes(value as Visibility)
-    ? (value as Visibility)
-    : "private";
+const dbVisibilityFromVisibility = (value: Visibility): DbVisibility => {
+  if (value === "public") return "public_read";
+  if (value === "shared") return "public_write";
+  return "private";
+};
+
+const visibilityFromDbVisibility = (value: unknown): Visibility => {
+  if (value === "public_write") return "shared";
+  if (value === "public_read") return "public";
+  return "private";
+};
+
+const sanitizeVisibility = (value: unknown): Visibility => {
+  if (typeof value !== "string") return "private";
+  if (VISIBILITIES.includes(value as Visibility)) return value as Visibility;
+  if (DB_VISIBILITIES.includes(value as DbVisibility)) return visibilityFromDbVisibility(value);
+  return "private";
+};
 
 const sanitizeRole = (value: unknown): ResourceRole | null =>
   typeof value === "string" && ROLES.includes(value as ResourceRole) ? (value as ResourceRole) : null;
@@ -148,6 +163,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     "avatar_bytes",
     "avatar_content_type",
     "is_admin",
+    "is_moderator",
     "is_approved",
     "approved_at",
     "approved_by_user_id",
@@ -230,6 +246,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
             avatar_bytes INTEGER,
             avatar_content_type TEXT,
             is_admin INTEGER NOT NULL DEFAULT 0,
+            is_moderator INTEGER NOT NULL DEFAULT 0,
             is_approved INTEGER NOT NULL DEFAULT 0,
             approved_at TEXT,
             approved_by_user_id TEXT,
@@ -357,6 +374,7 @@ type UserRow = {
   avatar_bytes: number | null;
   avatar_content_type: string | null;
   is_admin: number;
+  is_moderator: number;
   is_approved: number;
   approved_at: string | null;
   approved_by_user_id: string | null;
@@ -383,6 +401,7 @@ export const chooseIdentityReconcileCandidate = (
     const rankDiff = matchRank(b.match_kind) - matchRank(a.match_kind);
     if (rankDiff !== 0) return rankDiff;
     if (a.is_admin !== b.is_admin) return b.is_admin - a.is_admin;
+    if (a.is_moderator !== b.is_moderator) return b.is_moderator - a.is_moderator;
     if (a.is_approved !== b.is_approved) return b.is_approved - a.is_approved;
     const createdDiff = normalizeDateSafe(a.created_at) - normalizeDateSafe(b.created_at);
     if (createdDiff !== 0) return createdDiff;
@@ -407,9 +426,18 @@ const toUserProfile = (row: UserRow) => ({
   avatarBytes: row.avatar_bytes ?? 0,
   avatarContentType: row.avatar_content_type ?? "",
   isAdmin: row.is_admin === 1,
+  isModerator: row.is_moderator === 1,
   isApproved: row.is_approved === 1,
+  role:
+    row.is_admin === 1
+      ? ("admin" as UserRole)
+      : row.is_moderator === 1
+        ? ("moderator" as UserRole)
+        : row.is_approved === 1
+          ? ("user" as UserRole)
+          : ("pending" as UserRole),
   accountState:
-    row.is_admin === 1 || row.is_approved === 1
+    row.is_admin === 1 || row.is_moderator === 1 || row.is_approved === 1
       ? ("approved" as AccountState)
       : typeof row.approved_by_user_id === "string" && row.approved_by_user_id.startsWith("revoked:")
         ? ("revoked" as AccountState)
@@ -424,7 +452,7 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
@@ -440,7 +468,7 @@ const reconcileUserIdentityByIdpEmail = async (
 
   const rows = await env.DB
     .prepare(
-      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
+      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
               CASE
                 WHEN lower(idp_email) = lower(?) AND idp_email_verified = 1 THEN 'verified_idp_email'
                 WHEN lower(email) = lower(?) THEN 'legacy_email'
@@ -469,6 +497,7 @@ const reconcileUserIdentityByIdpEmail = async (
     .prepare(
       `UPDATE users
        SET is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
+           is_moderator = CASE WHEN ? = 1 THEN 1 ELSE is_moderator END,
            is_approved = CASE WHEN ? = 1 THEN 1 ELSE is_approved END,
            approved_at = CASE WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
            approved_by_user_id = CASE WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?) ELSE approved_by_user_id END,
@@ -477,6 +506,7 @@ const reconcileUserIdentityByIdpEmail = async (
     )
     .bind(
       existing.is_admin === 1 ? 1 : 0,
+      existing.is_moderator === 1 ? 1 : 0,
       existing.is_approved === 1 ? 1 : 0,
       existing.is_approved === 1 ? 1 : 0,
       existing.approved_at ?? now,
@@ -525,6 +555,7 @@ const reconcileUserIdentityByIdpEmail = async (
         mergedFromUserId: existing.id,
         matchKind: existing.match_kind,
         mergedFromIsAdmin: existing.is_admin === 1,
+        mergedFromIsModerator: existing.is_moderator === 1,
         mergedFromIsApproved: existing.is_approved === 1,
       }),
       now,
@@ -560,8 +591,8 @@ export const ensureUser = async (
 
   await env.DB.prepare(
     `INSERT OR IGNORE INTO users
-      (id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
-     VALUES (?, ?, ?, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
+      (id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       userId,
@@ -570,6 +601,7 @@ export const ensureUser = async (
       idpEmail || null,
       idpEmailVerified,
       isBootstrapAdmin,
+      0,
       autoApprove ? 1 : 0,
       autoApprove ? now : null,
       autoApprove ? userId : null,
@@ -585,6 +617,7 @@ export const ensureUser = async (
          idp_email = CASE WHEN ? = 1 THEN COALESCE(NULLIF(TRIM(idp_email), ''), ?) ELSE idp_email END,
          idp_email_verified = CASE WHEN ? = 1 THEN 1 ELSE idp_email_verified END,
          is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
+         is_moderator = CASE WHEN ? = 1 THEN 1 ELSE is_moderator END,
          is_approved = CASE WHEN ? = 1 THEN 1 ELSE is_approved END,
          approved_at = CASE WHEN ? = 1 AND approved_at IS NULL THEN ? ELSE approved_at END,
          approved_by_user_id = CASE WHEN ? = 1 AND approved_by_user_id IS NULL THEN ? ELSE approved_by_user_id END,
@@ -598,6 +631,7 @@ export const ensureUser = async (
       idpEmail || null,
       idpEmailVerified,
       isBootstrapAdmin,
+      0,
       autoApprove ? 1 : 0,
       autoApprove ? 1 : 0,
       now,
@@ -761,7 +795,7 @@ export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map(toUserProfile);
@@ -770,9 +804,77 @@ export const listUsers = async (env: Env) => {
 export const setUserAdminFlag = async (env: Env, userId: string, isAdminRaw: unknown) => {
   const isAdmin = Boolean(isAdminRaw);
   await env.DB
-    .prepare("UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?")
-    .bind(isAdmin ? 1 : 0, new Date().toISOString(), userId)
+    .prepare("UPDATE users SET is_admin = ?, is_moderator = CASE WHEN ? = 1 THEN 0 ELSE is_moderator END, updated_at = ? WHERE id = ?")
+    .bind(isAdmin ? 1 : 0, isAdmin ? 1 : 0, new Date().toISOString(), userId)
     .run();
+  const profile = await fetchUserProfile(env, userId);
+  if (!profile) throw new Error("User not found.");
+  return profile;
+};
+
+export const setUserRole = async (env: Env, userId: string, role: UserRole, actorUserId: string) => {
+  const now = new Date().toISOString();
+  const revokedBy = `revoked:${actorUserId}`;
+  if (role === "admin") {
+    await env.DB
+      .prepare(
+        `UPDATE users
+         SET is_admin = 1,
+             is_moderator = 0,
+             is_approved = 1,
+             approved_at = COALESCE(approved_at, ?),
+             approved_by_user_id = COALESCE(approved_by_user_id, ?),
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, actorUserId, now, userId)
+      .run();
+  } else if (role === "moderator") {
+    await env.DB
+      .prepare(
+        `UPDATE users
+         SET is_admin = 0,
+             is_moderator = 1,
+             is_approved = 1,
+             approved_at = COALESCE(approved_at, ?),
+             approved_by_user_id = COALESCE(approved_by_user_id, ?),
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, actorUserId, now, userId)
+      .run();
+  } else if (role === "user") {
+    await env.DB
+      .prepare(
+        `UPDATE users
+         SET is_admin = 0,
+             is_moderator = 0,
+             is_approved = 1,
+             approved_at = COALESCE(approved_at, ?),
+             approved_by_user_id = COALESCE(approved_by_user_id, ?),
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, actorUserId, now, userId)
+      .run();
+  } else {
+    await env.DB
+      .prepare(
+        `UPDATE users
+         SET is_admin = 0,
+             is_moderator = 0,
+             is_approved = 0,
+             approved_at = approved_at,
+             approved_by_user_id = CASE
+               WHEN approved_at IS NULL THEN NULL
+               ELSE ?
+             END,
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(revokedBy, now, userId)
+      .run();
+  }
   const profile = await fetchUserProfile(env, userId);
   if (!profile) throw new Error("User not found.");
   return profile;
@@ -785,35 +887,7 @@ export const setUserApproval = async (
   actorUserId: string,
 ) => {
   const approved = Boolean(approvedRaw);
-  const now = new Date().toISOString();
-  const revokedBy = `revoked:${actorUserId}`;
-  await env.DB
-    .prepare(
-      `UPDATE users
-       SET is_approved = ?,
-           approved_at = CASE WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
-           approved_by_user_id = CASE
-             WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?)
-             WHEN approved_at IS NULL THEN NULL
-             ELSE ?
-           END,
-           updated_at = ?
-       WHERE id = ?`,
-    )
-    .bind(
-      approved ? 1 : 0,
-      approved ? 1 : 0,
-      now,
-      approved ? 1 : 0,
-      actorUserId,
-      revokedBy,
-      now,
-      userId,
-    )
-    .run();
-  const profile = await fetchUserProfile(env, userId);
-  if (!profile) throw new Error("User not found.");
-  return profile;
+  return setUserRole(env, userId, approved ? "user" : "pending", actorUserId);
 };
 
 export const deleteUser = async (env: Env, userId: string, actorUserId?: string): Promise<void> => {
@@ -868,7 +942,10 @@ export const listPendingApprovalUsers = async (
     .prepare(
       `SELECT id, username, email, created_at, access_request_note
        FROM users
-       WHERE is_approved = 0 AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%')
+       WHERE is_admin = 0
+         AND is_moderator = 0
+         AND is_approved = 0
+         AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%')
        ORDER BY created_at ASC
        LIMIT 200`,
     )
@@ -936,15 +1013,45 @@ type ResourceRow = {
   owner_user_id: string;
   payload_json: string;
   name: string;
-  visibility: Visibility;
+  visibility: DbVisibility;
   created_at: string | null;
+};
+
+type ActorPolicy = {
+  id: string;
+  isAdmin: boolean;
+  isModerator: boolean;
+};
+
+const canReadResource = (
+  actor: ActorPolicy,
+  ownerUserId: string,
+  visibility: Visibility,
+  explicitRole: string | null,
+): boolean => {
+  if (actor.isAdmin) return true;
+  if (ownerUserId === actor.id) return true;
+  if (explicitRole !== null) return true;
+  return visibility === "public" || visibility === "shared";
+};
+
+const canEditResource = (
+  actor: ActorPolicy,
+  ownerUserId: string,
+  visibility: Visibility,
+  explicitRole: string | null,
+): boolean => {
+  if (actor.isAdmin) return true;
+  if (ownerUserId === actor.id) return true;
+  if (explicitRole === "admin" || explicitRole === "editor") return true;
+  if (actor.isModerator && (visibility === "public" || visibility === "shared")) return true;
+  return visibility === "shared";
 };
 
 const upsertOwnedResource = async (
   env: Env,
   kind: "site" | "simulation",
-  ownerId: string,
-  actorUserId: string,
+  actor: ActorPolicy,
   item: CloudResourceRecord,
 ): Promise<{ ok: boolean; reason?: string }> => {
   const table = kind === "site" ? "sites" : "simulations";
@@ -955,30 +1062,59 @@ const upsertOwnedResource = async (
   if (!id || !name) return { ok: false, reason: `invalid_${kind}` };
 
   const visibility = sanitizeVisibility(item.visibility);
+  const visibilityDb = dbVisibilityFromVisibility(visibility);
   const sharedWith = sanitizeGrants(item.sharedWith);
   const payload = JSON.stringify({ ...item, visibility, sharedWith });
   const now = new Date().toISOString();
 
   const existing = await env.DB
     .prepare(
-      `SELECT owner_user_id, payload_json, name, visibility, created_at
-       FROM ${table} WHERE id = ?`,
+      `SELECT t.owner_user_id, t.payload_json, t.name, t.visibility, t.created_at, r.role AS actor_role
+       FROM ${table} t
+       LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
+       WHERE t.id = ?`,
     )
-    .bind(id)
-    .first<ResourceRow>();
+    .bind(actor.id, id)
+    .first<ResourceRow & { actor_role?: string | null }>();
 
-  if (existing && existing.owner_user_id !== ownerId) {
-    return { ok: false, reason: `not_owner_${kind}` };
+  if (existing) {
+    const existingVisibility = visibilityFromDbVisibility(existing.visibility);
+    const actorRole = typeof existing.actor_role === "string" ? existing.actor_role : null;
+    if (!canEditResource(actor, existing.owner_user_id, existingVisibility, actorRole)) {
+      return { ok: false, reason: `forbidden_${kind}` };
+    }
   }
+
+  const ownerId = existing?.owner_user_id ?? actor.id;
 
   const isCreate = !existing;
   const changed =
     isCreate ||
     existing.payload_json !== payload ||
     existing.name !== name ||
-    existing.visibility !== visibility;
+    existing.visibility !== visibilityDb;
 
   if (!changed) return { ok: true };
+
+  if (existing) {
+    const existingPayload = JSON.parse(existing.payload_json) as CloudResourceRecord;
+    const existingGrants = sanitizeGrants(existingPayload.sharedWith);
+    const existingGrantUsers = new Set(existingGrants.map((grant) => grant.userId));
+    const nextGrantUsers = new Set(sharedWith.map((grant) => grant.userId));
+    const removedCollaborators = [...existingGrantUsers].filter((userId) => !nextGrantUsers.has(userId));
+    if (removedCollaborators.length > 0 && !(actor.isAdmin || actor.isModerator || ownerId === actor.id)) {
+      return { ok: false, reason: `cannot_remove_collaborator_${kind}` };
+    }
+  }
+
+  const actorRoleAfter =
+    ownerId === actor.id
+      ? "owner"
+      : sharedWith.find((grant) => grant.userId === actor.id)?.role ??
+        (visibility === "shared" ? "editor" : visibility === "public" ? "viewer" : null);
+  if (!canReadResource(actor, ownerId, visibility, actorRoleAfter)) {
+    return { ok: false, reason: `would_lose_access_${kind}` };
+  }
 
   await env.DB
     .prepare(
@@ -995,7 +1131,7 @@ const upsertOwnedResource = async (
          created_by_user_id = COALESCE(${table}.created_by_user_id, excluded.created_by_user_id),
          created_at = COALESCE(${table}.created_at, excluded.created_at)`,
     )
-    .bind(id, ownerId, ownerId, actorUserId, existing?.created_at ?? now, now, name, visibility, payload, now)
+    .bind(id, ownerId, ownerId, actor.id, existing?.created_at ?? now, now, name, visibilityDb, payload, now)
     .run();
 
   await env.DB.prepare(`DELETE FROM ${rolesTable} WHERE ${kind}_id = ?`).bind(id).run();
@@ -1021,20 +1157,20 @@ const upsertOwnedResource = async (
     changeDetails.push("initial record");
   } else {
     if (existing && existing.name !== name) changeDetails.push("name");
-    if (existing && existing.visibility !== visibility) changeDetails.push("visibility");
+    if (existing && visibilityFromDbVisibility(existing.visibility) !== visibility) changeDetails.push("visibility");
     if (existing && existing.payload_json !== payload) changeDetails.push("content");
   }
   const note = isCreate
     ? `Created "${name}" (${changeDetails.join(", ")})`
     : `Updated "${name}" (${changeDetails.join(", ") || "content"})`;
-  await createResourceChange(env, kind, id, isCreate ? "created" : "updated", actorUserId, note);
+  await createResourceChange(env, kind, id, isCreate ? "created" : "updated", actor.id, note);
 
   return { ok: true };
 };
 
 export const upsertLibrarySnapshot = async (
   env: Env,
-  ownerId: string,
+  actor: ActorPolicy,
   payload: { siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] },
 ): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[] }> => {
   await ensureSchema(env);
@@ -1043,13 +1179,13 @@ export const upsertLibrarySnapshot = async (
   let upsertedSimulations = 0;
 
   for (const site of payload.siteLibrary.slice(0, 4000)) {
-    const result = await upsertOwnedResource(env, "site", ownerId, ownerId, site);
+    const result = await upsertOwnedResource(env, "site", actor, site);
     if (result.ok) upsertedSites += 1;
     else if (result.reason) conflicts.push(result.reason);
   }
 
   for (const simulation of payload.simulationPresets.slice(0, 4000)) {
-    const result = await upsertOwnedResource(env, "simulation", ownerId, ownerId, simulation);
+    const result = await upsertOwnedResource(env, "simulation", actor, simulation);
     if (result.ok) upsertedSimulations += 1;
     else if (result.reason) conflicts.push(result.reason);
   }
@@ -1058,14 +1194,14 @@ export const upsertLibrarySnapshot = async (
 };
 
 const canEditByRole = (role: string | null, visibility: Visibility): boolean =>
-  role === "admin" || role === "editor" || visibility === "public_write";
+  role === "admin" || role === "editor" || visibility === "shared";
 
 type LibraryRow = {
   payload_json: string;
   owner_user_id: string;
   owner_name: string | null;
   owner_avatar_url: string | null;
-  visibility: Visibility;
+  visibility: DbVisibility;
   role: string | null;
   created_by_user_id: string | null;
   created_by_name: string | null;
@@ -1088,6 +1224,8 @@ export const fetchLibraryForUser = async (
   userId: string,
 ): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] }> => {
   await ensureSchema(env);
+  const me = await fetchUserProfile(env, userId);
+  const canModerateAll = Boolean(me?.isAdmin || me?.isModerator);
   const siteRows = await env.DB
     .prepare(
       `SELECT s.payload_json, s.owner_user_id, s.visibility, r.role,
@@ -1110,9 +1248,9 @@ export const fetchLibraryForUser = async (
        FROM sites s
        LEFT JOIN site_roles r ON r.site_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
+       WHERE ? = 1 OR s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
     )
-    .bind(userId, userId)
+    .bind(userId, canModerateAll ? 1 : 0, userId)
     .all<LibraryRow>();
 
   const simulationRows = await env.DB
@@ -1137,9 +1275,9 @@ export const fetchLibraryForUser = async (
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
+       WHERE ? = 1 OR s.owner_user_id = ? OR r.user_id IS NOT NULL OR s.visibility IN ('public_read', 'public_write')`,
     )
-    .bind(userId, userId)
+    .bind(userId, canModerateAll ? 1 : 0, userId)
     .all<LibraryRow>();
 
   const mapRows = (rows: LibraryRow[]) =>
@@ -1160,7 +1298,7 @@ export const fetchLibraryForUser = async (
           return {
             ...parsed,
             ownerUserId: row.owner_user_id,
-            visibility: row.visibility,
+            visibility: visibilityFromDbVisibility(row.visibility),
             createdByUserId,
             createdByName,
             createdByAvatarUrl,
@@ -1170,9 +1308,11 @@ export const fetchLibraryForUser = async (
             lastEditedByAvatarUrl,
             lastEditedAt: row.last_edited_at,
             effectiveRole:
-              row.owner_user_id === userId
+              canModerateAll
+                ? "admin"
+                : row.owner_user_id === userId
                 ? "owner"
-                : row.role ?? (canEditByRole(null, row.visibility) ? "editor" : "viewer"),
+                : row.role ?? (canEditByRole(null, visibilityFromDbVisibility(row.visibility)) ? "editor" : "viewer"),
           };
         } catch {
           return null;

@@ -31,16 +31,24 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const auth = await verifyAuth(request, env);
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     await ensureUser(env, auth.userId, auth.tokenPayload);
-    await assertUserAccess(env, auth.userId);
+    const me = await assertUserAccess(env, auth.userId);
 
     const body = (await request.json()) as LibrarySnapshotPayload;
     const siteLibrary = normalizeArray(body.siteLibrary);
     const simulationPresets = normalizeArray(body.simulationPresets);
 
-    const result = await upsertLibrarySnapshot(env, auth.userId, {
+    const result = await upsertLibrarySnapshot(
+      env,
+      {
+        id: me.id,
+        isAdmin: me.isAdmin,
+        isModerator: Boolean((me as { isModerator?: boolean }).isModerator),
+      },
+      {
       siteLibrary,
       simulationPresets,
-    });
+      },
+    );
 
     return withCors(
       request,

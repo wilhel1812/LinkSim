@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const me = await fetchUserProfile(env, auth.userId);
     if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
 
-    if (!me.isAdmin) {
+    if (!me.isAdmin && !("isModerator" in me && Boolean((me as { isModerator?: boolean }).isModerator))) {
       return withCors(request, json({ unreadCount: 0, items: [] }));
     }
 
@@ -27,7 +27,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           type: "pending_users",
           severity: "warning",
           title: `Pending approvals (${pending.length})`,
-          message: `${pending.length} user(s) waiting for admin review.`,
+          message: `${pending.length} user(s) waiting for moderator/admin review.`,
           createdAt: new Date().toISOString(),
           meta: { pendingUsers: pending },
         }
