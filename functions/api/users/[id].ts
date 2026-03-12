@@ -1,6 +1,7 @@
 import { verifyAuth } from "../../_lib/auth";
 import {
   assertUserAccess,
+  deleteUser,
   ensureUser,
   fetchUserProfile,
   setUserAdminFlag,
@@ -117,6 +118,32 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         : message.includes("pending approval")
           ? 403
           : 500;
+    return withCors(request, json({ error: message }, { status }));
+  }
+};
+
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+  try {
+    const auth = await verifyAuth(request, env);
+    if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
+
+    await ensureUser(env, auth.userId, auth.tokenPayload);
+    await assertUserAccess(env, auth.userId);
+    const me = await fetchUserProfile(env, auth.userId);
+    if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
+    if (!me.isAdmin) return withCors(request, json({ error: "Forbidden" }, { status: 403 }));
+
+    const targetId = typeof params.id === "string" ? params.id : "";
+    if (!targetId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
+    if (targetId === auth.userId) {
+      return withCors(request, json({ error: "Admin cannot delete own account." }, { status: 400 }));
+    }
+
+    await deleteUser(env, targetId);
+    return withCors(request, json({ ok: true }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message.includes("pending approval") ? 403 : 500;
     return withCors(request, json({ error: message }, { status }));
   }
 };

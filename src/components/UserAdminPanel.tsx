@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import {
+  deleteUser,
   fetchMe,
   fetchUsers,
   updateMyProfile,
@@ -165,6 +166,40 @@ export function UserAdminPanel() {
     }
   };
 
+  const rejectUser = async (user: CloudUser) => {
+    setBusy(true);
+    setStatus("");
+    try {
+      await updateUserApproval(user.id, false);
+      const all = await fetchUsers();
+      setUsers(all);
+      setStatus(`Rejected access for ${user.username}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Reject failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteUserAccount = async (user: CloudUser) => {
+    const confirmed = window.confirm(`Delete user ${user.username}? This will remove owned records.`);
+    if (!confirmed) return;
+    setBusy(true);
+    setStatus("");
+    try {
+      await deleteUser(user.id);
+      const all = await fetchUsers();
+      setUsers(all);
+      setStatus(`Deleted user ${user.username}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Delete failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saveManagedProfile = async (user: CloudUser, patch: { username: string; email: string }) => {
     setBusy(true);
     setStatus("");
@@ -262,6 +297,8 @@ export function UserAdminPanel() {
                     onSave={saveManagedProfile}
                     onToggleAdmin={toggleAdmin}
                     onToggleApproval={toggleApproval}
+                    onReject={rejectUser}
+                    onDelete={deleteUserAccount}
                     user={user}
                   />
                 ))}
@@ -281,11 +318,15 @@ function ManagedUserRow({
   user,
   onToggleAdmin,
   onToggleApproval,
+  onReject,
+  onDelete,
   onSave,
 }: {
   user: CloudUser;
   onToggleAdmin: (user: CloudUser) => Promise<void>;
   onToggleApproval: (user: CloudUser) => Promise<void>;
+  onReject: (user: CloudUser) => Promise<void>;
+  onDelete: (user: CloudUser) => Promise<void>;
   onSave: (user: CloudUser, patch: { username: string; email: string }) => Promise<void>;
 }) {
   const [nameDraft, setNameDraft] = useState(user.username);
@@ -317,8 +358,14 @@ function ManagedUserRow({
         <button className="inline-action" onClick={() => void onToggleApproval(user)} type="button">
           {user.isApproved ? "Revoke" : "Approve"}
         </button>
+        <button className="inline-action" onClick={() => void onReject(user)} type="button">
+          Reject
+        </button>
         <button className="inline-action" onClick={() => void onToggleAdmin(user)} type="button">
           {user.isAdmin ? "Set User" : "Set Admin"}
+        </button>
+        <button className="inline-action" onClick={() => void onDelete(user)} type="button">
+          Delete
         </button>
       </div>
     </div>

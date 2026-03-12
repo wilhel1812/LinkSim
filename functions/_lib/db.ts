@@ -92,6 +92,11 @@ const deriveDefaultEmail = (userId: string, tokenPayload?: Record<string, unknow
   return `${userId.slice(0, 12)}@users.linksim.local`;
 };
 
+const deriveVerifiedIdpEmail = (tokenPayload?: Record<string, unknown>): string => {
+  const fromPayload = sanitizeEmail(tokenPayload?.email);
+  return fromPayload ?? "";
+};
+
 const parseAdminUserIds = (env: Env): Set<string> => {
   const raw = env.ADMIN_USER_IDS ?? "";
   return new Set(
@@ -118,6 +123,8 @@ const ensureSchema = async (env: Env): Promise<void> => {
             email TEXT,
             bio TEXT,
             access_request_note TEXT,
+            idp_email TEXT,
+            idp_email_verified INTEGER NOT NULL DEFAULT 0,
             avatar_url TEXT,
             is_admin INTEGER NOT NULL DEFAULT 0,
             is_approved INTEGER NOT NULL DEFAULT 0,
@@ -206,6 +213,10 @@ const ensureSchema = async (env: Env): Promise<void> => {
         !userNames.has("email") ? "ALTER TABLE users ADD COLUMN email TEXT" : "",
         !userNames.has("bio") ? "ALTER TABLE users ADD COLUMN bio TEXT" : "",
         !userNames.has("access_request_note") ? "ALTER TABLE users ADD COLUMN access_request_note TEXT" : "",
+        !userNames.has("idp_email") ? "ALTER TABLE users ADD COLUMN idp_email TEXT" : "",
+        !userNames.has("idp_email_verified")
+          ? "ALTER TABLE users ADD COLUMN idp_email_verified INTEGER NOT NULL DEFAULT 0"
+          : "",
         !userNames.has("avatar_url") ? "ALTER TABLE users ADD COLUMN avatar_url TEXT" : "",
         !userNames.has("is_admin") ? "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0" : "",
         !userNames.has("is_approved") ? "ALTER TABLE users ADD COLUMN is_approved INTEGER NOT NULL DEFAULT 0" : "",
@@ -248,6 +259,8 @@ type UserRow = {
   email: string | null;
   bio: string | null;
   access_request_note: string | null;
+  idp_email: string | null;
+  idp_email_verified: number;
   avatar_url: string | null;
   is_admin: number;
   is_approved: number;
@@ -263,6 +276,8 @@ const toUserProfile = (row: UserRow) => ({
   email: sanitizeEmail(row.email) ?? "unknown@users.linksim.local",
   bio: row.bio ?? "",
   accessRequestNote: row.access_request_note ?? "",
+  idpEmail: row.idp_email ?? "",
+  idpEmailVerified: row.idp_email_verified === 1,
   avatarUrl: row.avatar_url ?? "",
   isAdmin: row.is_admin === 1,
   isApproved: row.is_approved === 1,
@@ -276,21 +291,25 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
 };
 
-const reconcileUserIdentityByEmail = async (env: Env, userId: string, email: string): Promise<void> => {
-  const normalized = sanitizeEmail(email);
+const reconcileUserIdentityByIdpEmail = async (
+  env: Env,
+  userId: string,
+  idpEmail: string,
+): Promise<void> => {
+  const normalized = sanitizeEmail(idpEmail);
   if (!normalized) return;
 
   const existing = await env.DB
     .prepare(
-      `SELECT id, username, email, bio, access_request_note, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at
+      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at
        FROM users
-       WHERE lower(email) = lower(?) AND id <> ?
+       WHERE lower(idp_email) = lower(?) AND idp_email_verified = 1 AND id <> ?
        ORDER BY is_admin DESC, is_approved DESC, created_at ASC
        LIMIT 1`,
     )
@@ -353,18 +372,22 @@ export const ensureUser = async (
   const now = new Date().toISOString();
   const username = deriveDefaultName(userId, tokenPayload);
   const email = deriveDefaultEmail(userId, tokenPayload);
+  const idpEmail = deriveVerifiedIdpEmail(tokenPayload);
+  const idpEmailVerified = idpEmail ? 1 : 0;
   const isBootstrapAdmin = parseAdminUserIds(env).has(userId.toLowerCase()) ? 1 : 0;
   const autoApprove = isBootstrapAdmin === 1 || registrationMode(env) === "open";
 
   await env.DB.prepare(
     `INSERT OR IGNORE INTO users
-      (id, username, email, bio, access_request_note, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
-     VALUES (?, ?, ?, '', '', '', ?, ?, ?, ?, ?, ?)`,
+      (id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, '', '', ?, ?, '', ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       userId,
       username,
       email,
+      idpEmail || null,
+      idpEmailVerified,
       isBootstrapAdmin,
       autoApprove ? 1 : 0,
       autoApprove ? now : null,
@@ -378,6 +401,8 @@ export const ensureUser = async (
     `UPDATE users
      SET username = COALESCE(NULLIF(TRIM(username), ''), ?),
          email = COALESCE(NULLIF(TRIM(email), ''), ?),
+         idp_email = CASE WHEN ? = 1 THEN COALESCE(NULLIF(TRIM(idp_email), ''), ?) ELSE idp_email END,
+         idp_email_verified = CASE WHEN ? = 1 THEN 1 ELSE idp_email_verified END,
          is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
          is_approved = CASE WHEN ? = 1 THEN 1 ELSE is_approved END,
          approved_at = CASE WHEN ? = 1 AND approved_at IS NULL THEN ? ELSE approved_at END,
@@ -388,6 +413,9 @@ export const ensureUser = async (
     .bind(
       username,
       email,
+      idpEmailVerified,
+      idpEmail || null,
+      idpEmailVerified,
       isBootstrapAdmin,
       autoApprove ? 1 : 0,
       autoApprove ? 1 : 0,
@@ -399,7 +427,9 @@ export const ensureUser = async (
     )
     .run();
 
-  await reconcileUserIdentityByEmail(env, userId, email);
+  if (idpEmailVerified) {
+    await reconcileUserIdentityByIdpEmail(env, userId, idpEmail);
+  }
 };
 
 export const fetchUserProfile = async (env: Env, userId: string) => {
@@ -468,7 +498,7 @@ export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, is_admin, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map(toUserProfile);
@@ -507,6 +537,11 @@ export const setUserApproval = async (
   const profile = await fetchUserProfile(env, userId);
   if (!profile) throw new Error("User not found.");
   return profile;
+};
+
+export const deleteUser = async (env: Env, userId: string): Promise<void> => {
+  await ensureSchema(env);
+  await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId).run();
 };
 
 const createResourceChange = async (

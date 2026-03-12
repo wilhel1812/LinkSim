@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT,
   bio TEXT,
   access_request_note TEXT,
+  idp_email TEXT,
+  idp_email_verified INTEGER NOT NULL DEFAULT 0,
   avatar_url TEXT,
   is_admin INTEGER NOT NULL DEFAULT 0,
   is_approved INTEGER NOT NULL DEFAULT 0,

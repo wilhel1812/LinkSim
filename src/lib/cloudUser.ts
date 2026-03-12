@@ -4,6 +4,8 @@ export type CloudUser = {
   email?: string;
   bio: string;
   accessRequestNote?: string;
+  idpEmail?: string;
+  idpEmailVerified?: boolean;
   avatarUrl: string;
   isAdmin: boolean;
   isApproved: boolean;
@@ -98,6 +100,12 @@ export const updateUserProfile = async (
     body: JSON.stringify(patch),
   });
   return data.user;
+};
+
+export const deleteUser = async (id: string): Promise<void> => {
+  await apiCall<{ ok: boolean }>(`/api/users/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 };
 
 export const fetchResourceChanges = async (
