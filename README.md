@@ -109,3 +109,11 @@ docker compose up --build dev
 ```
 
 App is available at `http://localhost:5173`.
+
+Edge-parity runtime (Pages Functions + local D1/R2 + dev auth fallback):
+
+```bash
+docker compose up --build edge
+```
+
+App is available at `http://localhost:8788`.
