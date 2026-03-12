@@ -532,7 +532,9 @@ export function UserAdminPanel() {
     if (myRole !== "moderator") return false;
     const targetRole = resolveRole(user);
     if (targetRole === "admin" || targetRole === "moderator") return false;
-    return nextRole === "pending" || nextRole === "user";
+    if (targetRole === "pending") return nextRole === "user";
+    if (targetRole === "user") return nextRole === "pending";
+    return false;
   };
 
   return (
@@ -944,7 +946,7 @@ export function UserAdminPanel() {
                     <label className="field-grid user-field-grid">
                       <span>
                         Role{" "}
-                        <InfoTip text="Role changes are audited. Admins can assign all roles except their own. Moderators can only set non-admin/non-moderator users to Pending or User." />
+                        <InfoTip text="Role changes are audited. Admins can assign all roles except their own. Moderators can only approve pending users to User, or move existing users back to Pending." />
                       </span>
                       <select
                         className="locale-select"
@@ -984,8 +986,8 @@ export function UserAdminPanel() {
                     </button>
                   </div>
                   <p className="field-help">
-                    Role and approval changes are audited. Moderators can only move regular users between Pending and
-                    User.
+                    Role and approval changes are audited. Moderators can only approve pending users to User, or
+                    move existing users back to Pending.
                   </p>
                 </div>
               </ModalOverlay>

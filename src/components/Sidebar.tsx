@@ -2037,10 +2037,10 @@ export function Sidebar() {
             </p>
             <div className="chip-group">
               <label className="field-grid">
-                <span>
-                  Role{" "}
-                  <InfoTip text="Admins can change roles for other users. Moderators can only move non-admin/non-moderator users between Pending and User. No one can change their own role." />
-                </span>
+                  <span>
+                    Role{" "}
+                  <InfoTip text="Admins can change roles for other users. Moderators can only approve pending users to User, or move existing users back to Pending. No one can change their own role." />
+                  </span>
                 <select
                   className="locale-select"
                   disabled={profilePopupBusy}

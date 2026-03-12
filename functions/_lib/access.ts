@@ -48,7 +48,7 @@ export const canAssignRole = (
   if (actor.isAdmin) return true;
   if (!actor.isModerator) return false;
   if (target.isAdmin || target.isModerator) return false;
-  return nextRole === "pending" || nextRole === "user";
+  return target.isApproved ? nextRole === "pending" : nextRole === "user";
 };
 
 export const canSetPendingOrUser = (actor: AccessUserLike, target: AccessUserLike): boolean =>

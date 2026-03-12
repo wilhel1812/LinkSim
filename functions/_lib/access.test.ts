@@ -47,6 +47,9 @@ describe("access matrix", () => {
     expect(canAssignRole(admin, normal, "moderator")).toBe(true);
     expect(canAssignRole(admin, admin, "user")).toBe(false);
     expect(canAssignRole(moderator, normal, "pending")).toBe(true);
+    expect(canAssignRole(moderator, normal, "user")).toBe(false);
+    expect(canAssignRole(moderator, pending, "user")).toBe(true);
+    expect(canAssignRole(moderator, pending, "pending")).toBe(false);
     expect(canAssignRole(moderator, normal, "admin")).toBe(false);
     expect(canAssignRole(moderator, admin, "pending")).toBe(false);
     expect(canAssignRole(normal, pending, "user")).toBe(false);

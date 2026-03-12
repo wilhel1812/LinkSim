@@ -28,6 +28,8 @@ const TILELIST_CACHE_KEY = "linksim-ve2dbe-tilelist-cache-v1";
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_RETRIES = 3;
 const TILELIST_TTL_MS = 5 * 60 * 1000;
+const TILELIST_MAX_RETRIES = 5;
+const BASE_RETRY_DELAY_MS = 500;
 
 const tileKey = (lat: number, lon: number): string => {
   const ns = lat >= 0 ? "N" : "S";
@@ -63,6 +65,7 @@ export const fetchAvailableVe2dbeTilePaths = async (
   dataset: TerrainDataset,
 ): Promise<string[]> => {
   const requestKey = `${dataset}:${Math.floor(minLat)}:${Math.ceil(maxLat)}:${Math.floor(minLon)}:${Math.ceil(maxLon)}`;
+  let staleLinks: string[] | null = null;
   try {
     const raw = localStorage.getItem(TILELIST_CACHE_KEY);
     if (raw) {
@@ -71,6 +74,7 @@ export const fetchAvailableVe2dbeTilePaths = async (
       if (cached && Date.now() - cached.fetchedAtMs <= TILELIST_TTL_MS) {
         return cached.links;
       }
+      staleLinks = cached?.links ?? null;
     }
   } catch {
     // Ignore corrupt local cache and continue with network fetch.
@@ -84,16 +88,33 @@ export const fetchAvailableVe2dbeTilePaths = async (
     mode: DATASET_TO_MODE[dataset],
   });
 
-  const response = await fetch("/ve2dbe/geodata/gettile.asp", {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  });
+  const requestBody = body.toString();
+  let response: Response | null = null;
+  let lastStatus = 0;
+  for (let attempt = 1; attempt <= TILELIST_MAX_RETRIES; attempt += 1) {
+    response = await fetch("/ve2dbe/geodata/gettile.asp", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: requestBody,
+    });
+    if (response.ok) break;
+    lastStatus = response.status;
+    if (response.status !== 429 && response.status !== 503) break;
+    if (attempt < TILELIST_MAX_RETRIES) {
+      const retryAfterHeader = Number(response.headers.get("retry-after") ?? "");
+      const retryAfterMs =
+        Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+          ? Math.floor(retryAfterHeader * 1000)
+          : BASE_RETRY_DELAY_MS * 2 ** (attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+    }
+  }
 
-  if (!response.ok) {
-    throw new Error(`ve2dbe tile list failed (${response.status})`);
+  if (!response || !response.ok) {
+    if (staleLinks && staleLinks.length) return staleLinks;
+    throw new Error(`ve2dbe tile list failed (${lastStatus || response?.status || 0})`);
   }
 
   const html = await response.text();
@@ -242,7 +263,12 @@ export const recommendVe2dbeDatasetForArea = async (
   const datasets: TerrainDataset[] = ["srtmthird", "srtm1", "srtm3"];
   const results = await Promise.all(
     datasets.map(async (dataset) => {
-      const available = (await fetchAvailableVe2dbeTilePaths(minLat, maxLat, minLon, maxLon, dataset)).length;
+      let available = 0;
+      try {
+        available = (await fetchAvailableVe2dbeTilePaths(minLat, maxLat, minLon, maxLon, dataset)).length;
+      } catch {
+        available = 0;
+      }
       return {
         dataset,
         available,
