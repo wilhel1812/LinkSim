@@ -34,7 +34,7 @@ See `config/vite.config.ts`.
 
 - Credits: [docs/legal/CREDITS.md](./docs/legal/CREDITS.md)
 - Third-party/data notices: [docs/legal/THIRD_PARTY_NOTICES.md](./docs/legal/THIRD_PARTY_NOTICES.md)
-- Project license: [LICENSE](./LICENSE)
+- Project license: GNU GPL v3.0 ([LICENSE](./LICENSE))
 - Security policy: [SECURITY.md](./SECURITY.md)
 
 ## Project Structure
