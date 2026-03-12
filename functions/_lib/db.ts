@@ -1106,8 +1106,7 @@ const upsertOwnedResource = async (
 
   const visibility = sanitizeVisibility(item.visibility);
   const visibilityDb = dbVisibilityFromVisibility(visibility);
-  const sharedWith = sanitizeGrants(item.sharedWith);
-  const payload = JSON.stringify({ ...item, visibility, sharedWith });
+  const requestedSharedWith = sanitizeGrants(item.sharedWith);
   const now = new Date().toISOString();
 
   const existing = await env.DB
@@ -1129,6 +1128,8 @@ const upsertOwnedResource = async (
   }
 
   const ownerId = existing?.owner_user_id ?? actor.id;
+  const sharedWith = requestedSharedWith.filter((grant) => grant.userId !== ownerId);
+  const payload = JSON.stringify({ ...item, visibility, sharedWith });
 
   if (kind === "simulation" && visibility !== "private") {
     const referencedSiteIds = referencedLibrarySiteIdsFromSimulation(item);
@@ -1160,7 +1161,7 @@ const upsertOwnedResource = async (
 
   if (existing) {
     const existingPayload = JSON.parse(existing.payload_json) as CloudResourceRecord;
-    const existingGrants = sanitizeGrants(existingPayload.sharedWith);
+    const existingGrants = sanitizeGrants(existingPayload.sharedWith).filter((grant) => grant.userId !== ownerId);
     const existingGrantUsers = new Set(existingGrants.map((grant) => grant.userId));
     const nextGrantUsers = new Set(sharedWith.map((grant) => grant.userId));
     const removedCollaborators = [...existingGrantUsers].filter((userId) => !nextGrantUsers.has(userId));

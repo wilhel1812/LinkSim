@@ -515,17 +515,29 @@ export function Sidebar() {
       }),
     [collaboratorDirectoryById, resourceCollaboratorUserIds],
   );
+  const currentResourceOwnerId = useMemo(() => {
+    if (!resourceDetailsPopup) return "";
+    if (resourceDetailsPopup.kind === "site") {
+      return (
+        siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)?.ownerUserId ?? ""
+      );
+    }
+    return (
+      simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId)?.ownerUserId ?? ""
+    );
+  }, [resourceDetailsPopup, siteLibrary, simulationPresets]);
   const collaboratorCandidates = useMemo(() => {
     const q = resourceCollaboratorQuery.trim().toLowerCase();
     const selectedIds = new Set(resourceCollaboratorUserIds);
     const filtered = resourceCollaboratorDirectory.filter((user) => {
+      if (currentResourceOwnerId && user.id === currentResourceOwnerId) return false;
       if (selectedIds.has(user.id)) return false;
       if (!q) return true;
       const hay = `${user.username} ${user.email}`.toLowerCase();
       return hay.includes(q);
     });
     return filtered.slice(0, 30);
-  }, [resourceCollaboratorDirectory, resourceCollaboratorUserIds, resourceCollaboratorQuery]);
+  }, [currentResourceOwnerId, resourceCollaboratorDirectory, resourceCollaboratorUserIds, resourceCollaboratorQuery]);
   const lastStorageActionLabel = useMemo(() => {
     const entries = [
       storageHealth.lastExportIso ? `Export ${new Date(storageHealth.lastExportIso).toLocaleString()}` : null,
@@ -1234,6 +1246,7 @@ export function Sidebar() {
       setResourceCollaboratorUserIds(
         (site?.sharedWith ?? [])
           .filter((grant) => grant.role === "editor" || grant.role === "admin")
+          .filter((grant) => grant.userId !== site?.ownerUserId)
           .map((grant) => grant.userId),
       );
     } else {
@@ -1242,6 +1255,7 @@ export function Sidebar() {
       setResourceCollaboratorUserIds(
         (simulation?.sharedWith ?? [])
           .filter((grant) => grant.role === "editor" || grant.role === "admin")
+          .filter((grant) => grant.userId !== simulation?.ownerUserId)
           .map((grant) => grant.userId),
       );
     }
@@ -1275,7 +1289,9 @@ export function Sidebar() {
 
   const saveResourceAccessSettings = () => {
     if (!resourceDetailsPopup) return;
-    const sharedWith = resourceCollaboratorUserIds.map((userId) => ({ userId, role: "editor" as const }));
+    const sharedWith = resourceCollaboratorUserIds
+      .filter((userId) => userId !== currentResourceOwnerId)
+      .map((userId) => ({ userId, role: "editor" as const }));
     const currentEntry =
       resourceDetailsPopup.kind === "site"
         ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
@@ -1309,6 +1325,10 @@ export function Sidebar() {
 
   const addCollaborator = (userId: string) => {
     if (!userId.trim()) return;
+    if (currentResourceOwnerId && userId === currentResourceOwnerId) {
+      setResourceAccessStatus("Owner is implicit and cannot be added as collaborator.");
+      return;
+    }
     setResourceCollaboratorUserIds((current) => (current.includes(userId) ? current : [...current, userId]));
     setResourceCollaboratorQuery("");
     setResourceAccessStatus("");
