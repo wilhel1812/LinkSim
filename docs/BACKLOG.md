@@ -91,6 +91,12 @@ State: stabilization pass (no net-new product features unless explicitly approve
 ### Test discipline and TDD rollout
 - [x] Establish TDD framework baseline (strategy doc, test templates, and CI quality gates)
 - Progress: added CI workflow gate for PRs/non-main branches (`.github/workflows/ci-quality-gates.yml`), added PR TDD checklist template (`.github/pull_request_template.md`), and documented TDD workflow/templates in `docs/tdd-workflow.md` + `docs/templates/tdd-test-case-template.md`.
+- [x] Expand repository test coverage batch 1 (rate limit + geocode API + geocode client)
+- Progress: added focused test suites for limiter behavior (`functions/_lib/rateLimit.test.ts`), geocode edge endpoint behavior and cache/rate-limit paths (`functions/api/geocode.test.ts`), and geocode client local/fallback cache flows (`src/lib/geocode.test.ts`).
+- [x] Expand repository test coverage batch 2 (meshmap/ve2dbe proxies + elevation service)
+- Progress: added proxy behavior tests for method gating/rate-limit forwarding (`functions/meshmap/[[path]].test.ts`, `functions/ve2dbe/[[path]].test.ts`) plus chunking/error-path tests for elevation batching (`src/lib/elevationService.test.ts`).
+- [x] Expand repository test coverage batch 3 (library/changes/admin endpoints + cloud client libs)
+- Progress: added API endpoint coverage for library/changes/admin routes (`functions/api/library.test.ts`, `functions/api/changes.test.ts`, `functions/api/admin-audit-events.test.ts`, `functions/api/admin-ownership-tools.test.ts`) and client-path/error-shape tests for cloud libraries (`src/lib/cloudLibrary.test.ts`, `src/lib/cloudUser.test.ts`).
 
 ## Hardening execution paths (agreed, no further discussion required now)
 - [x] Runtime migrations
