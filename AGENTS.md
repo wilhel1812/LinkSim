@@ -1,6 +1,10 @@
 # LinkSim Agent Rules
 
 - Always update `docs/BACKLOG.md` before and after implementation batches.
+- Default environment workflow:
+  - Unless the user explicitly says otherwise, work in local test environment.
+  - After local verification, deploy to live test/staging for verification.
+  - Only promote to production after explicit user approval, using the same verified commit.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
 - Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.
 - Never commit or push directly to `main`; always create/use a separate branch for changes and push that branch.
@@ -11,3 +15,4 @@
 - Do not leave backlog tasks in ambiguous state. Use `[x]` only when code and verification are done.
 - Do not start user-added backlog items without explicit user confirmation in the current thread.
 - After every live deploy, monitor Cloudflare Pages deployment status (`wrangler pages deployment list --project-name linksim`) and explicitly notify the user when deployment is complete.
+- Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
