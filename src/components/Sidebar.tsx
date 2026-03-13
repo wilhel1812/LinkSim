@@ -10,7 +10,7 @@ import Map, {
   type MarkerDragEvent,
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
-import { useUiTheme } from "../hooks/useUiTheme";
+import { useThemeVariant } from "../hooks/useThemeVariant";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
@@ -98,19 +98,19 @@ const RADIO_CLIMATE_OPTIONS: RadioClimate[] = [
   "Maritime Temperate (Sea)",
 ];
 
-const meshmapNodesLayer = (colorTheme: "blue" | "pink"): LayerProps => ({
+const meshmapNodesLayer = (color: string, strokeColor: string): LayerProps => ({
   id: "meshmap-nodes-layer",
   type: "circle",
   paint: {
     "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2, 8, 4, 12, 6],
-    "circle-color": colorTheme === "pink" ? "#ff73b4" : "#2bc0ff",
+    "circle-color": color,
     "circle-opacity": 0.82,
     "circle-stroke-width": 1,
-    "circle-stroke-color": "#0a1a24",
+    "circle-stroke-color": strokeColor,
   },
 });
 
-const meshmapLabelsLayer = (colorTheme: "blue" | "pink"): LayerProps => ({
+const meshmapLabelsLayer = (color: string, haloColor: string): LayerProps => ({
   id: "meshmap-labels-layer",
   type: "symbol",
   layout: {
@@ -122,8 +122,8 @@ const meshmapLabelsLayer = (colorTheme: "blue" | "pink"): LayerProps => ({
     "text-allow-overlap": false,
   },
   paint: {
-    "text-color": colorTheme === "pink" ? "#ffd6e8" : "#e7f1ff",
-    "text-halo-color": "rgba(10, 26, 36, 0.95)",
+    "text-color": color,
+    "text-halo-color": haloColor,
     "text-halo-width": 1.3,
   },
 });
@@ -215,7 +215,7 @@ const getSnapshotCount = (key: string): number => {
 };
 
 export function Sidebar() {
-  const { theme, colorTheme } = useUiTheme();
+  const { theme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
@@ -2635,8 +2635,18 @@ export function Sidebar() {
                           onMove={onMeshmapMove}
                         >
                           <Source data={meshmapNodesGeoJson} id="meshmap-nodes" type="geojson">
-                            <Layer {...meshmapNodesLayer(colorTheme)} />
-                            <Layer {...meshmapLabelsLayer(colorTheme)} />
+                            <Layer
+                              {...meshmapNodesLayer(
+                                variant.map.meshNodeColor,
+                                variant.map.meshStrokeColor,
+                              )}
+                            />
+                            <Layer
+                              {...meshmapLabelsLayer(
+                                variant.map.meshLabelColor,
+                                variant.map.meshHaloColor,
+                              )}
+                            />
                           </Source>
                         </Map>
                       </div>
