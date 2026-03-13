@@ -12,6 +12,7 @@
     "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --local --persist-to .wrangler/state",
     "build": "npm run build:meta && npm run build:bundle",
     "lint": "eslint .",
+    "security:scan": "node scripts/security-scan.mjs",
     "preview": "vite preview --config config/vite.config.ts",
     "test": "vitest run --config config/vitest.config.ts",
     "test:ci": "vitest run --coverage --config config/vitest.config.ts",

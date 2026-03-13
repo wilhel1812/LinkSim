@@ -2020,6 +2020,12 @@ export function Sidebar() {
             <a href="https://github.com/wilhel1812/LinkSim/issues/new/choose" rel="noreferrer" target="_blank">
               Feedback / Suggestions (GitHub Issues)
             </a>
+            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md" rel="noreferrer" target="_blank">
+              Privacy Notice
+            </a>
+            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">
+              Terms & Acceptable Use
+            </a>
             <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/rf-models-and-sampling.md" rel="noreferrer" target="_blank">
               RF Models & Sampling Guide
             </a>

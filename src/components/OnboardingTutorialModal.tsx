@@ -9,6 +9,8 @@ type OnboardingTutorialModalProps = {
 };
 
 const FEEDBACK_ISSUES_URL = "https://github.com/wilhel1812/LinkSim/issues/new/choose";
+const PRIVACY_URL = "https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md";
+const TERMS_URL = "https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md";
 
 export function OnboardingTutorialModal({ open, onClose }: OnboardingTutorialModalProps) {
   if (!open) return null;
@@ -30,6 +32,14 @@ export function OnboardingTutorialModal({ open, onClose }: OnboardingTutorialMod
           <a className="inline-action tutorial-report-button" href={FEEDBACK_ISSUES_URL} rel="noreferrer" target="_blank">
             Report Issue or Suggestion
           </a>
+          <div className="asset-list">
+            <a href={PRIVACY_URL} rel="noreferrer" target="_blank">
+              Privacy Notice
+            </a>
+            <a href={TERMS_URL} rel="noreferrer" target="_blank">
+              Terms & Acceptable Use
+            </a>
+          </div>
         </div>
       </div>
     </ModalOverlay>

@@ -25,6 +25,7 @@ As listed on the ve2dbe geodata page, sources include:
 - Viewfinder Panoramas
 
 Use of fetched data should comply with applicable source terms and licenses.
+Operational policy: see [SOURCE_COMPLIANCE.md](./SOURCE_COMPLIANCE.md).
 
 ### Online Site Elevation Sync
 

@@ -8,9 +8,12 @@ Inspired by Radio Mobile by Roger Coude (VE2DBE).
 
 - License: GNU GPL v3.0 ([LICENSE](./LICENSE))
 - Security policy: [SECURITY.md](./SECURITY.md)
+- Privacy notice: [docs/legal/PRIVACY.md](./docs/legal/PRIVACY.md)
+- Terms and acceptable use: [docs/legal/TERMS.md](./docs/legal/TERMS.md)
 - Legal credits/notices:
   - [docs/legal/CREDITS.md](./docs/legal/CREDITS.md)
   - [docs/legal/THIRD_PARTY_NOTICES.md](./docs/legal/THIRD_PARTY_NOTICES.md)
+  - [docs/legal/SOURCE_COMPLIANCE.md](./docs/legal/SOURCE_COMPLIANCE.md)
 
 ## Environment Model
 

@@ -53,6 +53,13 @@ CF_PAGES_STAGING_PROJECT=my-staging-project npm run deploy:staging
 npm run refresh:staging:d1
 ```
 
+By default, this now anonymizes user personal fields in staging after import (`ANONYMIZE_STAGING=1`).
+To skip anonymization explicitly:
+
+```bash
+ANONYMIZE_STAGING=0 npm run refresh:staging:d1
+```
+
 Optional DB names:
 
 ```bash
@@ -92,3 +99,4 @@ npm run refresh-and-deploy:staging
 - Refresh is one-way: production -> staging
 - Do not point staging bindings at production resources
 - Keep staging Access policy restricted (admin/mod only)
+- Keep `ANONYMIZE_STAGING=1` unless you have a documented operational need otherwise
