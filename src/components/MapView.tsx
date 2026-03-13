@@ -787,7 +787,9 @@ type PendingNewSiteDraft = {
 type PendingSiteMove = {
   siteId: string;
   originalPosition: { lat: number; lon: number };
+  originalGroundElevationM: number;
   currentPosition: { lat: number; lon: number };
+  currentGroundElevationM: number;
 };
 
 export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
@@ -1129,7 +1131,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const dismissPendingSiteMove = () => {
     if (!pendingMoveCount) return;
     for (const move of pendingMoveEntries) {
-      updateSite(move.siteId, { position: move.originalPosition });
+      updateSite(move.siteId, {
+        position: move.originalPosition,
+        groundElevationM: move.originalGroundElevationM,
+      });
     }
     setPendingSiteMoves({});
     setSiteDraftStatus(null);
@@ -1146,15 +1151,25 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       lat: event.lngLat.lat,
       lon: event.lngLat.lng,
     };
+    const terrainElevation = sampleSrtmElevation(srtmTiles, nextPosition.lat, nextPosition.lon);
+    const nextGroundElevationM = Number.isFinite(terrainElevation)
+      ? Math.round(terrainElevation as number)
+      : site.groundElevationM;
     const existingPendingMove = pendingSiteMoves[siteId] ?? null;
     const originalPosition = existingPendingMove?.originalPosition ?? site.position;
-    updateSite(siteId, { position: nextPosition });
+    const originalGroundElevationM = existingPendingMove?.originalGroundElevationM ?? site.groundElevationM;
+    updateSite(siteId, {
+      position: nextPosition,
+      groundElevationM: nextGroundElevationM,
+    });
     setPendingSiteMoves((current) => ({
       ...current,
       [siteId]: {
         siteId,
         originalPosition,
+        originalGroundElevationM,
         currentPosition: nextPosition,
+        currentGroundElevationM: nextGroundElevationM,
       },
     }));
     setSiteDraftStatus(null);
