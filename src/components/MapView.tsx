@@ -859,6 +859,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
+  const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
   const networks = useAppStore((state) => state.networks);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const hasOnlineElevationSync = useAppStore((state) => state.hasOnlineElevationSync);
@@ -880,6 +881,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(true);
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
+  const [showOverlayGuide, setShowOverlayGuide] = useState(true);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
   const [pendingSiteMoves, setPendingSiteMoves] = useState<Record<string, PendingSiteMove>>({});
@@ -902,8 +904,22 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? visibleLinks[0] ?? links[0] ?? null;
-  const selectedFromSite = useAppStore((state) => state.getSelectedSites().fromSite);
-  const selectedToSite = useAppStore((state) => state.getSelectedSites().toSite);
+  const selectedFromSiteId = selectedLink
+    ? temporaryDirectionReversed
+      ? selectedLink.toSiteId
+      : selectedLink.fromSiteId
+    : null;
+  const selectedToSiteId = selectedLink
+    ? temporaryDirectionReversed
+      ? selectedLink.fromSiteId
+      : selectedLink.toSiteId
+    : null;
+  const selectedFromSite = selectedFromSiteId
+    ? sites.find((site) => site.id === selectedFromSiteId) ?? null
+    : null;
+  const selectedToSite = selectedToSiteId
+    ? sites.find((site) => site.id === selectedToSiteId) ?? null
+    : null;
   const analysisBounds = useMemo(
     () =>
       selectedFromSite && selectedToSite
@@ -1068,6 +1084,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     if (!bounds) return 5;
     return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
   }, [analysisBounds, samplesForOverlay, bandStepMode]);
+  const overlayGuideTitle =
+    coverageVizMode === "heatmap"
+      ? "Heatmap"
+      : coverageVizMode === "contours"
+        ? "Bands"
+        : coverageVizMode === "passfail"
+          ? "Pass/Fail"
+          : "Relay";
 
   const simulationTerrainOverlay = useMemo(() => {
     if (!hasSimulationTerrain || !analysisBounds) return null;
@@ -1447,18 +1471,43 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
             </p>
             <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
-            {coverageVizMode === "contours" ? <p>Band step: {currentBandStepDb} dB ({bandStepMode})</p> : null}
+          </>
+        ) : null}
+      </aside>
+      <aside className="map-overlay-guide" aria-live="polite">
+        <div className="map-sim-summary-header">
+          <h3>Overlay Guide</h3>
+          <button
+            className="map-control-btn map-summary-toggle"
+            onClick={() => setShowOverlayGuide((current) => !current)}
+            type="button"
+          >
+            {showOverlayGuide ? "Hide" : "Show"}
+          </button>
+        </div>
+        {showOverlayGuide ? (
+          <>
+            <p>
+              Mode: <strong>{overlayGuideTitle}</strong>
+            </p>
+            {coverageVizMode === "heatmap" ? (
+              <p>Continuous predicted RX dBm. Brighter/warmer colors indicate stronger signal.</p>
+            ) : null}
+            {coverageVizMode === "contours" ? (
+              <p>
+                Stepped dB bands for easier threshold reading. Current step: {currentBandStepDb} dB ({bandStepMode}).
+              </p>
+            ) : null}
             {coverageVizMode === "passfail" ? (
               <p>
-                Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter). Pass requires
-                predicted RX at/above RX target. Colors: green = LOS clear + pass, yellow = LOS blocked + pass,
-                orange = LOS clear + fail, red = LOS blocked + fail.
+                Green = LOS clear + pass, yellow = LOS blocked + pass, orange = LOS clear + fail, red = LOS blocked
+                + fail.
               </p>
             ) : null}
             {coverageVizMode === "relay" ? (
               <p>
-                Relay map source: {selectedFromSite?.name ?? "n/a"} to candidate to {selectedToSite?.name ?? "n/a"}{" "}
-                (bottleneck RX dBm)
+                Relay bottleneck RX dBm for {selectedFromSite?.name ?? "n/a"} → candidate →{" "}
+                {selectedToSite?.name ?? "n/a"}. Brighter/warmer is better.
               </p>
             ) : null}
           </>

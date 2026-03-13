@@ -698,6 +698,25 @@ input {
   font-size: 0.76rem;
 }
 
+.map-overlay-guide {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  max-width: 340px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 11px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  box-shadow: var(--shadow-elev-2);
+  font-size: 0.76rem;
+}
+
+.map-overlay-guide p {
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
 .map-sim-summary h3 {
   margin: 0 0 6px;
   font-size: 0.82rem;

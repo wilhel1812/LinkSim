@@ -46,9 +46,10 @@ const terrainVisibilityFromFromNode = (profile: ProfilePoint[]): boolean[] => {
 export function LinkProfileChart() {
   const locale = useAppStore((state) => state.locale);
   const sites = useAppStore((state) => state.sites);
+  const links = useAppStore((state) => state.links);
+  const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
   const toggleTemporaryDirectionReversed = useAppStore((state) => state.toggleTemporaryDirectionReversed);
-  const { fromSite: selectedFromSite, toSite: selectedToSite } = useAppStore((state) => state.getSelectedSites());
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const setProfileCursorIndex = useAppStore((state) => state.setProfileCursorIndex);
@@ -63,6 +64,19 @@ export function LinkProfileChart() {
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}`,
   );
   const profile = getSelectedProfile();
+  const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
+  const selectedFromSiteId = selectedLink
+    ? temporaryDirectionReversed
+      ? selectedLink.toSiteId
+      : selectedLink.fromSiteId
+    : null;
+  const selectedToSiteId = selectedLink
+    ? temporaryDirectionReversed
+      ? selectedLink.fromSiteId
+      : selectedLink.toSiteId
+    : null;
+  const selectedFromSite = selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null;
+  const selectedToSite = selectedToSiteId ? sites.find((site) => site.id === selectedToSiteId) ?? null : null;
   const fromSiteName = selectedFromSite?.name ?? "From";
   const toSiteName = selectedToSite?.name ?? "To";
   const terrainBounds = simulationAreaBoundsForSites(sites);
