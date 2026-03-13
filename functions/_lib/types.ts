@@ -33,6 +33,9 @@ export type Env = {
   DEV_AUTH_USER_ID?: string;
   ADMIN_USER_IDS?: string;
   REGISTRATION_MODE?: string;
+  CF_PAGES_URL?: string;
+  CF_PAGES_BRANCH?: string;
+  CF_PAGES_COMMIT_SHA?: string;
   GEOCODE_RATE_LIMIT_PER_MINUTE?: string;
   PROXY_RATE_LIMIT_PER_MINUTE?: string;
   VE2DBE_TILELIST_RATE_LIMIT_PER_MINUTE?: string;

@@ -17,6 +17,7 @@ import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import { isCurrentTestEnvironment } from "../lib/environment";
+import { APP_BUILD_LABEL } from "../lib/buildInfo";
 import {
   fetchCollaboratorDirectory,
   fetchResourceChanges,
@@ -2031,6 +2032,9 @@ export function Sidebar() {
           </div>
           <details className="compact-details">
             <summary>Credits & Attribution</summary>
+            <p className="field-help subtle-note">
+              Build: {APP_BUILD_LABEL} ({isCurrentTestEnvironment() ? "test" : "production"})
+            </p>
             <p className="field-help subtle-note">
               Inspired by{" "}
               <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
