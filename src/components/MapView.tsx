@@ -830,7 +830,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
-  const [pendingSiteMove, setPendingSiteMove] = useState<PendingSiteMove | null>(null);
+  const [pendingSiteMoves, setPendingSiteMoves] = useState<Record<string, PendingSiteMove>>({});
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
   const [interactionViewState, setInteractionViewState] = useState<{
@@ -1091,16 +1091,22 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     setSiteDraftStatus(null);
   };
 
+  const pendingMoveCount = Object.keys(pendingSiteMoves).length;
+  const pendingMoveEntries = Object.values(pendingSiteMoves);
+  const pendingMovePreview = pendingMoveEntries[0] ?? null;
+
   const savePendingSiteMove = () => {
-    if (!pendingSiteMove) return;
-    setPendingSiteMove(null);
+    if (!pendingMoveCount) return;
+    setPendingSiteMoves({});
     setSiteDraftStatus(null);
   };
 
   const dismissPendingSiteMove = () => {
-    if (!pendingSiteMove) return;
-    updateSite(pendingSiteMove.siteId, { position: pendingSiteMove.originalPosition });
-    setPendingSiteMove(null);
+    if (!pendingMoveCount) return;
+    for (const move of pendingMoveEntries) {
+      updateSite(move.siteId, { position: move.originalPosition });
+    }
+    setPendingSiteMoves({});
     setSiteDraftStatus(null);
   };
 
@@ -1115,14 +1121,17 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       lat: event.lngLat.lat,
       lon: event.lngLat.lng,
     };
-    const existingPendingMove = pendingSiteMove?.siteId === siteId ? pendingSiteMove : null;
+    const existingPendingMove = pendingSiteMoves[siteId] ?? null;
     const originalPosition = existingPendingMove?.originalPosition ?? site.position;
     updateSite(siteId, { position: nextPosition });
-    setPendingSiteMove({
-      siteId,
-      originalPosition,
-      currentPosition: nextPosition,
-    });
+    setPendingSiteMoves((current) => ({
+      ...current,
+      [siteId]: {
+        siteId,
+        originalPosition,
+        currentPosition: nextPosition,
+      },
+    }));
     setSiteDraftStatus(null);
   };
 
@@ -1144,7 +1153,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       setSelectedLinkId(id);
       return;
     }
-    if (pendingSiteMove) {
+    if (pendingMoveCount > 0) {
       setSiteDraftStatus("Save or dismiss the current site move before creating another temporary site.");
       return;
     }
@@ -1279,13 +1288,14 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </span>
         </div>
       ) : null}
-      {pendingSiteMove ? (
+      {pendingMoveCount > 0 && pendingMovePreview ? (
         <div className="map-control-note map-control-note-tertiary">
-          Temporary move for {sites.find((site) => site.id === pendingSiteMove.siteId)?.name ?? "site"} to{" "}
-          {pendingSiteMove.currentPosition.lat.toFixed(5)}, {pendingSiteMove.currentPosition.lon.toFixed(5)}.
+          {pendingMoveCount === 1
+            ? `Temporary move for ${sites.find((site) => site.id === pendingMovePreview.siteId)?.name ?? "site"} to ${pendingMovePreview.currentPosition.lat.toFixed(5)}, ${pendingMovePreview.currentPosition.lon.toFixed(5)}.`
+            : `${pendingMoveCount} sites have temporary moved positions.`}
           <span className="map-inline-actions">
             <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
-              Save Position
+              Save Positions
             </button>
             <button className="map-control-btn" onClick={dismissPendingSiteMove} type="button">
               Dismiss
@@ -1430,7 +1440,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           >
             <div
               className={`site-pin ${site.id === selectedSiteId ? "is-selected" : ""} ${
-                pendingSiteMove?.siteId === site.id ? "is-temporary" : ""
+                pendingSiteMoves[site.id] ? "is-temporary" : ""
               }`}
               onClick={() => onSiteClick(site.id)}
               onKeyDown={(event) => {
