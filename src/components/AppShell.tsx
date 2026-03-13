@@ -96,10 +96,11 @@ export function AppShell() {
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
           <UserAdminPanel />
-          <h2>Account Pending Approval</h2>
+          <h2>Closed Beta: Access Pending Approval</h2>
           <p className="field-help">
             You can sign in and edit your profile, but simulation tools stay locked until a moderator or admin approves your access.
           </p>
+          <p className="field-help">LinkSim is currently invite/approval-only while we run a closed beta.</p>
           <p className="field-help">To continue:</p>
           <ul className="field-help access-pending-list">
             <li>Open User Settings.</li>
