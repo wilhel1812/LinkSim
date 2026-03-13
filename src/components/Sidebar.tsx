@@ -634,7 +634,7 @@ export function Sidebar() {
     if (!pendingSiteLibraryDraft) return;
     setShowSiteLibraryManager(true);
     setShowAddLibraryForm(true);
-    setNewLibraryName("");
+    setNewLibraryName(pendingSiteLibraryDraft.suggestedName ?? "");
     setNewLibraryLat(pendingSiteLibraryDraft.lat);
     setNewLibraryLon(pendingSiteLibraryDraft.lon);
     const terrainElev = Number(

@@ -4,6 +4,7 @@ import Map, {
   Marker,
   Source,
   type MapLayerMouseEvent,
+  type MarkerDragEvent,
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
@@ -11,6 +12,7 @@ import { haversineDistanceKm } from "../lib/geo";
 import { getPathLossByModel } from "../lib/rfModels";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { estimateTerrainExcessLossDb } from "../lib/terrainLoss";
+import { getUiErrorMessage } from "../lib/uiError";
 import { useSystemTheme } from "../hooks/useSystemTheme";
 import { isCurrentTestEnvironment } from "../lib/environment";
 import { useAppStore } from "../store/appStore";
@@ -100,6 +102,48 @@ const supportsWebgl = (): boolean => {
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
+
+const guessSiteNameForPosition = async (lat: number, lon: number): Promise<string> => {
+  const fallback = `Site ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  const reverseUrl = new URL("https://nominatim.openstreetmap.org/reverse");
+  reverseUrl.searchParams.set("format", "jsonv2");
+  reverseUrl.searchParams.set("lat", lat.toFixed(7));
+  reverseUrl.searchParams.set("lon", lon.toFixed(7));
+  reverseUrl.searchParams.set("zoom", "16");
+  reverseUrl.searchParams.set("addressdetails", "1");
+
+  const response = await fetch(reverseUrl.toString(), {
+    headers: {
+      accept: "application/json",
+    },
+  });
+  if (!response.ok) return fallback;
+  const payload = (await response.json()) as {
+    name?: string;
+    display_name?: string;
+    address?: {
+      road?: string;
+      hamlet?: string;
+      village?: string;
+      town?: string;
+      city?: string;
+      municipality?: string;
+      county?: string;
+    };
+  };
+  const address = payload.address ?? {};
+  const place =
+    payload.name?.trim() ||
+    address.road?.trim() ||
+    address.hamlet?.trim() ||
+    address.village?.trim() ||
+    address.town?.trim() ||
+    address.city?.trim() ||
+    address.municipality?.trim() ||
+    address.county?.trim() ||
+    payload.display_name?.split(",")[0]?.trim();
+  return place?.length ? place : fallback;
+};
 
 type TerrainBounds = {
   minLat: number;
@@ -734,6 +778,17 @@ type MapViewProps = {
   onToggleMapExpanded: () => void;
 };
 
+type PendingNewSiteDraft = {
+  lat: number;
+  lon: number;
+};
+
+type PendingSiteMove = {
+  siteId: string;
+  originalPosition: { lat: number; lon: number };
+  currentPosition: { lat: number; lon: number };
+};
+
 export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
@@ -747,6 +802,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
   const updateLink = useAppStore((state) => state.updateLink);
+  const updateSite = useAppStore((state) => state.updateSite);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
   const coverageSamples = useAppStore((state) => state.coverageSamples);
@@ -773,6 +829,9 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(true);
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
+  const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
+  const [pendingSiteMove, setPendingSiteMove] = useState<PendingSiteMove | null>(null);
+  const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
   const [interactionViewState, setInteractionViewState] = useState<{
     longitude: number;
@@ -1014,6 +1073,68 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     setEndpointPickTarget(null);
   };
 
+  const savePendingNewSiteDraft = async () => {
+    if (!pendingNewSiteDraft) return;
+    setSiteDraftStatus("Preparing site draft...");
+    try {
+      const suggestedName = await guessSiteNameForPosition(pendingNewSiteDraft.lat, pendingNewSiteDraft.lon);
+      requestSiteLibraryDraftAt(pendingNewSiteDraft.lat, pendingNewSiteDraft.lon, suggestedName);
+      setPendingNewSiteDraft(null);
+      setSiteDraftStatus(null);
+    } catch (error) {
+      setSiteDraftStatus(`Unable to prepare the site draft: ${getUiErrorMessage(error)}`);
+    }
+  };
+
+  const dismissPendingNewSiteDraft = () => {
+    setPendingNewSiteDraft(null);
+    setSiteDraftStatus(null);
+  };
+
+  const savePendingSiteMove = () => {
+    if (!pendingSiteMove) return;
+    setPendingSiteMove(null);
+    setSiteDraftStatus(null);
+  };
+
+  const dismissPendingSiteMove = () => {
+    if (!pendingSiteMove) return;
+    updateSite(pendingSiteMove.siteId, { position: pendingSiteMove.originalPosition });
+    setPendingSiteMove(null);
+    setSiteDraftStatus(null);
+  };
+
+  const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
+    if (pendingNewSiteDraft) {
+      setSiteDraftStatus("Dismiss or save the temporary map site before moving existing sites.");
+      return;
+    }
+    const site = sites.find((candidate) => candidate.id === siteId);
+    if (!site) return;
+    const nextPosition = {
+      lat: event.lngLat.lat,
+      lon: event.lngLat.lng,
+    };
+    const existingPendingMove = pendingSiteMove?.siteId === siteId ? pendingSiteMove : null;
+    const originalPosition = existingPendingMove?.originalPosition ?? site.position;
+    updateSite(siteId, { position: nextPosition });
+    setPendingSiteMove({
+      siteId,
+      originalPosition,
+      currentPosition: nextPosition,
+    });
+    setSiteDraftStatus(null);
+  };
+
+  const onPendingNewSiteDragEnd = (event: MarkerDragEvent) => {
+    const nextPosition = {
+      lat: event.lngLat.lat,
+      lon: event.lngLat.lng,
+    };
+    setPendingNewSiteDraft(nextPosition);
+    setSiteDraftStatus(null);
+  };
+
   const onMapClick = (event: MapLayerMouseEvent) => {
     if (endpointPickTarget) return;
     const feature = event.features?.[0];
@@ -1023,7 +1144,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       setSelectedLinkId(id);
       return;
     }
-    requestSiteLibraryDraftAt(event.lngLat.lat, event.lngLat.lng);
+    if (pendingSiteMove) {
+      setSiteDraftStatus("Save or dismiss the current site move before creating another temporary site.");
+      return;
+    }
+    setPendingNewSiteDraft({
+      lat: event.lngLat.lat,
+      lon: event.lngLat.lng,
+    });
+    setSiteDraftStatus(null);
   };
 
   if (!webglAvailable) {
@@ -1137,6 +1266,34 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       {endpointPickTarget && endpointPickError ? (
         <div className="map-control-note map-control-note-tertiary">{endpointPickError}</div>
       ) : null}
+      {pendingNewSiteDraft ? (
+        <div className="map-control-note map-control-note-tertiary">
+          Temporary site at {pendingNewSiteDraft.lat.toFixed(5)}, {pendingNewSiteDraft.lon.toFixed(5)}. Drag it, then save or dismiss.
+          <span className="map-inline-actions">
+            <button className="map-control-btn" onClick={() => void savePendingNewSiteDraft()} type="button">
+              Save To Library
+            </button>
+            <button className="map-control-btn" onClick={dismissPendingNewSiteDraft} type="button">
+              Dismiss
+            </button>
+          </span>
+        </div>
+      ) : null}
+      {pendingSiteMove ? (
+        <div className="map-control-note map-control-note-tertiary">
+          Temporary move for {sites.find((site) => site.id === pendingSiteMove.siteId)?.name ?? "site"} to{" "}
+          {pendingSiteMove.currentPosition.lat.toFixed(5)}, {pendingSiteMove.currentPosition.lon.toFixed(5)}.
+          <span className="map-inline-actions">
+            <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
+              Save Position
+            </button>
+            <button className="map-control-btn" onClick={dismissPendingSiteMove} type="button">
+              Dismiss
+            </button>
+          </span>
+        </div>
+      ) : null}
+      {siteDraftStatus ? <div className="map-control-note map-control-note-secondary">{siteDraftStatus}</div> : null}
       <aside className="map-sim-summary" aria-live="polite">
         <div className="map-sim-summary-header">
           <h3>Simulation Sources</h3>
@@ -1265,12 +1422,16 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         {sites.map((site) => (
           <Marker
             anchor="bottom"
+            draggable
             key={site.id}
             latitude={site.position.lat}
             longitude={site.position.lon}
+            onDragEnd={(event) => onSiteDragEnd(site.id, event)}
           >
             <div
-              className={`site-pin ${site.id === selectedSiteId ? "is-selected" : ""}`}
+              className={`site-pin ${site.id === selectedSiteId ? "is-selected" : ""} ${
+                pendingSiteMove?.siteId === site.id ? "is-temporary" : ""
+              }`}
               onClick={() => onSiteClick(site.id)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") onSiteClick(site.id);
@@ -1282,6 +1443,20 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             </div>
           </Marker>
         ))}
+
+        {pendingNewSiteDraft ? (
+          <Marker
+            anchor="bottom"
+            draggable
+            latitude={pendingNewSiteDraft.lat}
+            longitude={pendingNewSiteDraft.lon}
+            onDragEnd={onPendingNewSiteDragEnd}
+          >
+            <div className="site-pin is-temporary" role="button" tabIndex={0}>
+              <span>Temporary Site</span>
+            </div>
+          </Marker>
+        ) : null}
 
         {cursorPoint ? (
           <Marker

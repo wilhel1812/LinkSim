@@ -646,6 +646,13 @@ input {
   max-width: 260px;
 }
 
+.map-inline-actions {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .map-control-note-secondary {
   top: 140px;
 }
@@ -816,6 +823,12 @@ input {
 .site-pin.is-selected {
   border-color: #ffd166;
   box-shadow: 0 0 0 4px color-mix(in srgb, #ffd166 26%, transparent);
+}
+
+.site-pin.is-temporary {
+  border-color: #ff9f43;
+  background: color-mix(in srgb, #ff9f43 16%, var(--surface-2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ff9f43 18%, transparent);
 }
 
 .profile-map-cursor {

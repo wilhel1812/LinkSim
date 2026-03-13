@@ -121,7 +121,7 @@ type AppState = {
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
   endpointPickTarget: "from" | "to" | null;
-  pendingSiteLibraryDraft: { lat: number; lon: number; token: string } | null;
+  pendingSiteLibraryDraft: { lat: number; lon: number; token: string; suggestedName?: string } | null;
   scenarioOptions: { id: string; name: string }[];
   setLocale: (locale: LocaleCode) => void;
   selectScenario: (id: string) => void;
@@ -182,7 +182,7 @@ type AppState = {
     simulationCount: number;
   };
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
-  requestSiteLibraryDraftAt: (lat: number, lon: number) => void;
+  requestSiteLibraryDraftAt: (lat: number, lon: number, suggestedName?: string) => void;
   clearPendingSiteLibraryDraft: () => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
   setPropagationModel: (model: PropagationModel) => void;
@@ -1047,12 +1047,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   },
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
-  requestSiteLibraryDraftAt: (lat, lon) =>
+  requestSiteLibraryDraftAt: (lat, lon, suggestedName) =>
     set({
       pendingSiteLibraryDraft: {
         lat,
         lon,
         token: makeId("draft"),
+        suggestedName: typeof suggestedName === "string" ? suggestedName : undefined,
       },
     }),
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
