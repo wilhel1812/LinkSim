@@ -20,7 +20,7 @@ if (isCurrentTestEnvironment()) {
 const applyEnvironmentBranding = () => {
   const isTest = isCurrentTestEnvironment();
   document.title = isTest ? "[TEST] LinkSim" : "LinkSim";
-  const iconHref = isTest ? "/favicon-test.svg?v=20260313a" : "/favicon.svg?v=20260313a";
+  const iconHref = isTest ? "/favicon-test.svg?v=20260313b" : "/favicon.svg?v=20260313b";
   for (const selector of ['link[rel="icon"]', 'link[rel="shortcut icon"]']) {
     const linkEl = document.querySelector<HTMLLinkElement>(selector);
     if (linkEl) linkEl.href = iconHref;
