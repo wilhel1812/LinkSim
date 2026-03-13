@@ -172,9 +172,18 @@ export function UserAdminPanel() {
 
   const refreshAdminData = async () => {
     if (!canModerate) return;
-    const [all, deleted] = await Promise.all([fetchUsers(), fetchDeletedUsers()]);
-    setUsers(all);
-    setDeletedUsers(deleted);
+    let allUsers: CloudUser[] = [];
+    if (canAdmin) {
+      const [all, deleted] = await Promise.all([fetchUsers(), fetchDeletedUsers()]);
+      allUsers = all;
+      setUsers(allUsers);
+      setDeletedUsers(deleted);
+    } else {
+      const all = await fetchUsers();
+      allUsers = all;
+      setUsers(allUsers);
+      setDeletedUsers([]);
+    }
     if (canAdmin) {
       const [authDiag, schemaDiag, events] = await Promise.all([
         fetchAuthDiagnostics(),
@@ -191,7 +200,7 @@ export function UserAdminPanel() {
     }
     setManagedUser((current) => {
       if (!current) return null;
-      return all.find((user) => user.id === current.id) ?? null;
+      return allUsers.find((user) => user.id === current.id) ?? null;
     });
   };
 
@@ -265,9 +274,9 @@ export function UserAdminPanel() {
         setSchemaDiagnostics(schemaDiag);
         setAuditEvents(events);
       } else if (current.isModerator) {
-        const [all, deleted] = await Promise.all([fetchUsers(), fetchDeletedUsers()]);
+        const all = await fetchUsers();
         setUsers(all);
-        setDeletedUsers(deleted);
+        setDeletedUsers([]);
         setAuthDiagnostics(null);
         setSchemaDiagnostics(null);
         setAuditEvents([]);
