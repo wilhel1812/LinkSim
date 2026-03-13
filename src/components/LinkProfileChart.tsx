@@ -1,7 +1,7 @@
 import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import type { MouseEvent } from "react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   classifyPassFailState,
   computeSourceCentricRxMetrics,
@@ -13,9 +13,8 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 
-const W = 1200;
 const H = 260;
-const M = { t: 14, r: 10, b: 34, l: 36 };
+const M = { t: 14, r: 20, b: 34, l: 44 };
 
 const linePath = (points: { x: number; y: number }[]): string =>
   points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
@@ -33,6 +32,8 @@ const areaPath = (
 };
 
 export function LinkProfileChart() {
+  const chartHostRef = useRef<HTMLDivElement | null>(null);
+  const [chartWidth, setChartWidth] = useState(1200);
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -112,6 +113,20 @@ export function LinkProfileChart() {
     terrainSignature,
   ]);
 
+  useEffect(() => {
+    const element = chartHostRef.current;
+    if (!element) return;
+    const updateWidth = () => {
+      const nextWidth = Math.max(720, Math.round(element.clientWidth));
+      setChartWidth((current) => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+    };
+    updateWidth();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => updateWidth());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const geometry = useMemo(() => {
     if (profile.length < 2) {
       return {
@@ -123,7 +138,7 @@ export function LinkProfileChart() {
         losPath: "",
         fresnelPath: "",
         yTicks: [] as { value: number; py: number }[],
-        xTicks: [] as { value: number; px: number }[],
+        xTicks: [] as { value: number; px: number; anchor: "start" | "middle" | "end" }[],
       };
     }
 
@@ -143,7 +158,7 @@ export function LinkProfileChart() {
     const safeElevMax = Number.isFinite(elevMax) ? elevMax : 10;
     const adjustedMax = safeElevMax <= safeElevMin ? safeElevMin + 1 : safeElevMax;
 
-    const x = scaleLinear().domain(safeDistanceDomain).range([M.l, W - M.r]);
+    const x = scaleLinear().domain(safeDistanceDomain).range([M.l, chartWidth - M.r]);
     const y = scaleLinear().domain([safeElevMin - 5, adjustedMax + 5]).range([H - M.b, M.t]);
 
     const terrainPoints = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.terrainM) }));
@@ -160,7 +175,7 @@ export function LinkProfileChart() {
       hasData: true,
       xForDistance: (distanceKm: number) => x(distanceKm),
       yForElevation: (elevation: number) => y(elevation),
-      terrainPath: `${linePath(terrainPoints)} L${W - M.r},${H - M.b} L${M.l},${H - M.b} Z`,
+      terrainPath: `${linePath(terrainPoints)} L${chartWidth - M.r},${H - M.b} L${M.l},${H - M.b} Z`,
       terrainLineSegments,
       losPath: linePath(losPoints),
       fresnelPath: areaPath(fresnelTop, fresnelBottom),
@@ -172,10 +187,14 @@ export function LinkProfileChart() {
         const value =
           safeDistanceDomain[0] +
           ((safeDistanceDomain[1] - safeDistanceDomain[0]) * i) / 5;
-        return { value, px: x(value) };
+        return {
+          value,
+          px: x(value),
+          anchor: (i === 0 ? "start" : i === 5 ? "end" : "middle") as "start" | "middle" | "end",
+        };
       }),
     };
-  }, [profile]);
+  }, [profile, chartWidth]);
 
   const terrainLineSegments = useMemo(() => {
     if (!geometry.hasData || !selectedFromSite || !selectedToSite || !effectiveLink) return geometry.terrainLineSegments;
@@ -250,7 +269,7 @@ export function LinkProfileChart() {
     if (!geometry.hasData || profile.length < 2) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const xNorm = event.clientX - rect.left;
-    const chartX = (xNorm / rect.width) * W;
+    const chartX = (xNorm / rect.width) * chartWidth;
 
     let nearest = 0;
     let nearestDistance = Number.POSITIVE_INFINITY;
@@ -294,7 +313,8 @@ export function LinkProfileChart() {
           <p>Path profile unavailable for the selected link.</p>
         </div>
       ) : (
-        <svg aria-label="Link profile" preserveAspectRatio="none" role="img" viewBox={`0 0 ${W} ${H}`}>
+        <div className="chart-svg-wrap" ref={chartHostRef}>
+        <svg aria-label="Link profile" role="img" viewBox={`0 0 ${chartWidth} ${H}`}>
           <defs>
             <linearGradient
               gradientUnits="userSpaceOnUse"
@@ -311,8 +331,8 @@ export function LinkProfileChart() {
           </defs>
           {geometry.yTicks.map((tick) => (
             <g className="chart-grid" key={`y-${tick.value}`}>
-              <line x1={M.l} x2={W - M.r} y1={tick.py} y2={tick.py} />
-              <text x={M.l - 8} y={tick.py + 4}>
+              <line x1={M.l} x2={chartWidth - M.r} y1={tick.py} y2={tick.py} />
+              <text textAnchor="end" x={M.l - 8} y={tick.py + 4}>
                 {tick.value.toFixed(0)}
               </text>
             </g>
@@ -321,7 +341,7 @@ export function LinkProfileChart() {
           {geometry.xTicks.map((tick) => (
             <g className="chart-grid" key={`x-${tick.value}`}>
               <line x1={tick.px} x2={tick.px} y1={M.t} y2={H - M.b} />
-              <text x={tick.px} y={H - 8}>
+              <text textAnchor={tick.anchor} x={tick.px} y={H - 8}>
                 {tick.value.toFixed(1)} km
               </text>
             </g>
@@ -356,13 +376,23 @@ export function LinkProfileChart() {
             className="profile-hitbox"
             x={M.l}
             y={M.t}
-            width={W - M.l - M.r}
+            width={chartWidth - M.l - M.r}
             height={H - M.t - M.b}
             onMouseMove={onSvgMove}
           />
         </svg>
+        </div>
       )}
       <div className="chart-footer-row">
+        <button
+          aria-label="Reverse path direction for this view"
+          className={`chart-endpoint-swap ${temporaryDirectionReversed ? "is-active" : ""}`}
+          onClick={toggleTemporaryDirectionReversed}
+          title="Temporarily reverse path direction"
+          type="button"
+        >
+          Flip Direction
+        </button>
         <div className="chart-hover-state">
           {cursorPoint && cursorState ? (
             <>
@@ -374,16 +404,6 @@ export function LinkProfileChart() {
             </>
           ) : null}
         </div>
-        <button
-          aria-label="Reverse path direction for this view"
-          className={`chart-endpoint-swap ${temporaryDirectionReversed ? "is-active" : ""}`}
-          onClick={toggleTemporaryDirectionReversed}
-          title="Temporarily reverse path direction"
-          type="button"
-        >
-          Flip Direction
-        </button>
-        <div />
       </div>
     </section>
   );

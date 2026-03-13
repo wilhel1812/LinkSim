@@ -1071,15 +1071,16 @@ input {
 }
 
 .chart-footer-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 0 10px;
 }
 
 .chart-footer-row > .chart-hover-state {
   min-height: 26px;
+  flex: 1;
+  min-width: 0;
 }
 
 .chart-empty {
