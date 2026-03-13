@@ -130,6 +130,7 @@ type AppState = {
   hasOnlineElevationSync: boolean;
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
+  siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
   endpointPickTarget: "from" | "to" | null;
   pendingSiteLibraryDraft: { lat: number; lon: number; token: string; suggestedName?: string } | null;
   scenarioOptions: { id: string; name: string }[];
@@ -201,7 +202,8 @@ type AppState = {
   applyFrequencyPresetToSelectedNetwork: () => void;
   setPropagationModel: (model: PropagationModel) => void;
   updateSite: (id: string, patch: Partial<Site>) => void;
-  updateSitePreview: (id: string, patch: Partial<Site>) => void;
+  setSiteDragPreview: (id: string, preview: { position: { lat: number; lon: number }; groundElevationM: number }) => void;
+  clearSiteDragPreview: (id?: string) => void;
   updateLink: (id: string, patch: Partial<Link>) => void;
   updateMapViewport: (patch: Partial<MapViewport>) => void;
   ingestSrtmFiles: (files: FileList | File[]) => Promise<void>;
@@ -578,6 +580,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasOnlineElevationSync: false,
   siteLibrary: initialSiteLibrary,
   simulationPresets: initialSimulationPresets,
+  siteDragPreview: {},
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
@@ -616,6 +619,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: "",
       terrainRecommendation: "",
       hasOnlineElevationSync: false,
+      siteDragPreview: {},
       endpointPickTarget: null,
       mapViewport: scenario.viewport,
     });
@@ -1035,6 +1039,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         typeof snap.mapViewport.center.lon === "number"
           ? snap.mapViewport
           : defaultScenario.viewport,
+      siteDragPreview: {},
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
     });
     get().recomputeCoverage();
@@ -1198,11 +1203,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     get().recomputeCoverage();
   },
-  updateSitePreview: (id, patch) => {
+  setSiteDragPreview: (id, preview) =>
     set((state) => ({
-      sites: state.sites.map((site) => (site.id === id ? { ...site, ...patch } : site)),
-    }));
-  },
+      siteDragPreview: { ...state.siteDragPreview, [id]: preview },
+    })),
+  clearSiteDragPreview: (id) =>
+    set((state) => {
+      if (!id) return { siteDragPreview: {} };
+      if (!(id in state.siteDragPreview)) return {};
+      const next = { ...state.siteDragPreview };
+      delete next[id];
+      return { siteDragPreview: next };
+    }),
   updateLink: (id, patch) => {
     set((state) => ({
       links: state.links.map((link) => {

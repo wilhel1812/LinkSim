@@ -8,6 +8,7 @@ import {
   passFailStateLabel,
   type PassFailState,
 } from "../lib/passFailState";
+import { buildProfile } from "../lib/propagation";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/terrainTiles";
@@ -60,15 +61,16 @@ export function LinkProfileChart() {
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
+  const siteDragPreview = useAppStore((state) => state.siteDragPreview);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const coverageResolutionMode = useAppStore((state) => state.coverageResolutionMode);
   const profileRevision = useAppStore(
     (state) =>
-      `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}`,
+      `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
   );
-  const profile = getSelectedProfile();
+  const baseProfile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
   const selectedFromSiteId = selectedLink
     ? temporaryDirectionReversed
@@ -82,6 +84,26 @@ export function LinkProfileChart() {
     : null;
   const selectedFromSite = selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null;
   const selectedToSite = selectedToSiteId ? sites.find((site) => site.id === selectedToSiteId) ?? null : null;
+  const selectedFromSiteEffective = useMemo(() => {
+    if (!selectedFromSite) return null;
+    const preview = siteDragPreview[selectedFromSite.id];
+    if (!preview) return selectedFromSite;
+    return {
+      ...selectedFromSite,
+      position: preview.position,
+      groundElevationM: preview.groundElevationM,
+    };
+  }, [selectedFromSite, siteDragPreview]);
+  const selectedToSiteEffective = useMemo(() => {
+    if (!selectedToSite) return null;
+    const preview = siteDragPreview[selectedToSite.id];
+    if (!preview) return selectedToSite;
+    return {
+      ...selectedToSite,
+      position: preview.position,
+      groundElevationM: preview.groundElevationM,
+    };
+  }, [selectedToSite, siteDragPreview]);
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId) ?? networks[0] ?? null;
   const effectiveLink =
     selectedLink && selectedNetwork
@@ -90,6 +112,27 @@ export function LinkProfileChart() {
           frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz ?? selectedLink.frequencyMHz,
         }
       : null;
+  const profile = useMemo(() => {
+    if (!effectiveLink || !selectedFromSiteEffective || !selectedToSiteEffective) return baseProfile;
+    const hasPreview =
+      Boolean(siteDragPreview[selectedFromSiteEffective.id]) || Boolean(siteDragPreview[selectedToSiteEffective.id]);
+    if (!hasPreview) return baseProfile;
+    return buildProfile(
+      effectiveLink,
+      selectedFromSiteEffective,
+      selectedToSiteEffective,
+      ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+      coverageResolutionMode === "high" ? 320 : 120,
+    );
+  }, [
+    baseProfile,
+    effectiveLink,
+    selectedFromSiteEffective,
+    selectedToSiteEffective,
+    siteDragPreview,
+    srtmTiles,
+    coverageResolutionMode,
+  ]);
   const fromSiteName = selectedFromSite?.name ?? "From";
   const toSiteName = selectedToSite?.name ?? "To";
   const terrainBounds = simulationAreaBoundsForSites(sites);
@@ -219,14 +262,14 @@ export function LinkProfileChart() {
   }, [profile, chartWidth, chartHeight]);
 
   const terrainLineSegments = useMemo(() => {
-    if (!geometry.hasData || !selectedFromSite || !selectedToSite || !effectiveLink) return geometry.terrainLineSegments;
+    if (!geometry.hasData || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink) return geometry.terrainLineSegments;
     return profile.slice(1).map((point, index) => {
       const metrics = computeSourceCentricRxMetrics(
         point.lat,
         point.lon,
-        selectedFromSite,
+        selectedFromSiteEffective,
         effectiveLink,
-        selectedToSite.antennaHeightM,
+        selectedToSiteEffective.antennaHeightM,
         propagationModel,
         (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
         coverageResolutionMode === "high" ? 80 : 24,
@@ -243,8 +286,8 @@ export function LinkProfileChart() {
     geometry.hasData,
     geometry.terrainLineSegments,
     profile,
-    selectedFromSite,
-    selectedToSite,
+    selectedFromSiteEffective,
+    selectedToSiteEffective,
     effectiveLink,
     propagationModel,
     srtmTiles,
@@ -309,13 +352,13 @@ export function LinkProfileChart() {
     return areaPath(top, bottom);
   }, [activeProfileSlice, activeFresnel, geometry]);
   const cursorState = useMemo(() => {
-    if (!cursorPoint || !selectedFromSite || !selectedToSite || !effectiveLink) return null;
+    if (!cursorPoint || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink) return null;
     const metrics = computeSourceCentricRxMetrics(
       cursorPoint.lat,
       cursorPoint.lon,
-      selectedFromSite,
+      selectedFromSiteEffective,
       effectiveLink,
-      selectedToSite.antennaHeightM,
+      selectedToSiteEffective.antennaHeightM,
       propagationModel,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       coverageResolutionMode === "high" ? 80 : 24,
@@ -330,8 +373,8 @@ export function LinkProfileChart() {
     };
   }, [
     cursorPoint,
-    selectedFromSite,
-    selectedToSite,
+    selectedFromSiteEffective,
+    selectedToSiteEffective,
     effectiveLink,
     propagationModel,
     srtmTiles,

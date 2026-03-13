@@ -801,7 +801,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
   const updateLink = useAppStore((state) => state.updateLink);
   const updateSite = useAppStore((state) => state.updateSite);
-  const updateSitePreview = useAppStore((state) => state.updateSitePreview);
+  const setSiteDragPreview = useAppStore((state) => state.setSiteDragPreview);
+  const clearSiteDragPreview = useAppStore((state) => state.clearSiteDragPreview);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
   const coverageSamples = useAppStore((state) => state.coverageSamples);
@@ -1143,6 +1144,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const savePendingSiteMove = () => {
     if (!pendingMoveCount) return;
     setPendingSiteMoves({});
+    clearSiteDragPreview();
     setSiteDraftStatus(null);
   };
 
@@ -1155,6 +1157,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       });
     }
     setPendingSiteMoves({});
+    clearSiteDragPreview();
     setSiteDraftStatus(null);
   };
 
@@ -1176,7 +1179,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     const existingPendingMove = pendingSiteMoves[siteId] ?? null;
     const originalPosition = existingPendingMove?.originalPosition ?? site.position;
     const originalGroundElevationM = existingPendingMove?.originalGroundElevationM ?? site.groundElevationM;
-    updateSitePreview(siteId, {
+    setSiteDragPreview(siteId, {
       position: nextPosition,
       groundElevationM: nextGroundElevationM,
     });
@@ -1204,6 +1207,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     const nextGroundElevationM = Number.isFinite(terrainElevation)
       ? Math.round(terrainElevation as number)
       : site.groundElevationM;
+    clearSiteDragPreview(siteId);
     updateSite(siteId, {
       position: nextPosition,
       groundElevationM: nextGroundElevationM,
@@ -1634,7 +1638,9 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
         {sites.map((site) => {
           const isSelected = site.id === selectedSiteId;
-          const isTemporarilyMoved = Boolean(pendingSiteMoves[site.id]);
+          const pendingMove = pendingSiteMoves[site.id];
+          const markerPosition = pendingMove?.currentPosition ?? site.position;
+          const isTemporarilyMoved = Boolean(pendingMove);
           const isPassFailMode = coverageVizMode === "passfail" && Boolean(selectedFromSite);
           const isRelayMode = coverageVizMode === "relay" && Boolean(selectedFromSite) && Boolean(selectedToSite);
           const isFocusNode = isPassFailMode
@@ -1647,8 +1653,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               anchor="bottom"
               draggable
               key={site.id}
-              latitude={site.position.lat}
-              longitude={site.position.lon}
+              latitude={markerPosition.lat}
+              longitude={markerPosition.lon}
               onDrag={(event) => onSiteDrag(site.id, event)}
               onDragEnd={(event) => onSiteDragEnd(site.id, event)}
             >
