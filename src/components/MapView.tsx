@@ -537,20 +537,24 @@ const buildSourcePassFailOverlay = (
         terrainSamples,
       );
       const pass = metrics.rxDbm - environmentLossDb >= rxTargetDbm;
-      const shadowedPass = pass && propagationModel === "ITM" && metrics.terrainObstructed;
+      const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
       const px = (y * width + x) * 4;
-      if (!pass) {
-        image.data[px] = 205;
-        image.data[px + 1] = 87;
-        image.data[px + 2] = 79;
-      } else if (shadowedPass) {
-        image.data[px] = 232;
-        image.data[px + 1] = 170;
-        image.data[px + 2] = 72;
-      } else {
+      if (pass && !losBlocked) {
         image.data[px] = 82;
         image.data[px + 1] = 181;
         image.data[px + 2] = 96;
+      } else if (pass && losBlocked) {
+        image.data[px] = 232;
+        image.data[px + 1] = 170;
+        image.data[px + 2] = 72;
+      } else if (!pass && !losBlocked) {
+        image.data[px] = 235;
+        image.data[px + 1] = 120;
+        image.data[px + 2] = 70;
+      } else {
+        image.data[px] = 205;
+        image.data[px + 1] = 87;
+        image.data[px + 2] = 79;
       }
       image.data[px + 3] = 162;
     }
@@ -898,12 +902,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? visibleLinks[0] ?? links[0] ?? null;
-  const selectedFromSite = selectedLink
-    ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null
-    : null;
-  const selectedToSite = selectedLink
-    ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null
-    : null;
+  const selectedFromSite = useAppStore((state) => state.getSelectedSites().fromSite);
+  const selectedToSite = useAppStore((state) => state.getSelectedSites().toSite);
   const analysisBounds = useMemo(
     () =>
       selectedFromSite && selectedToSite
@@ -1451,8 +1451,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             {coverageVizMode === "passfail" ? (
               <p>
                 Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter). Pass requires
-                predicted RX at/above RX target. Colors: green = pass with LOS clear, amber = pass with LOS blocked,
-                red = fail.
+                predicted RX at/above RX target. Colors: green = LOS clear + pass, yellow = LOS blocked + pass,
+                orange = LOS clear + fail, red = LOS blocked + fail.
               </p>
             ) : null}
             {coverageVizMode === "relay" ? (

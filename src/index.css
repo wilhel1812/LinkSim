@@ -911,6 +911,13 @@ input {
   height: 100%;
 }
 
+.chart-header-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .chart-empty {
   display: grid;
   place-items: center;

@@ -102,6 +102,7 @@ type AppState = {
   isElevationSyncing: boolean;
   selectedLinkId: string;
   profileCursorIndex: number;
+  temporaryDirectionReversed: boolean;
   selectedSiteId: string;
   selectedNetworkId: string;
   selectedCoverageMode: CoverageMode;
@@ -131,6 +132,8 @@ type AppState = {
   setUiColorTheme: (value: UiColorTheme) => void;
   selectScenario: (id: string) => void;
   setSelectedLinkId: (id: string) => void;
+  setTemporaryDirectionReversed: (value: boolean) => void;
+  toggleTemporaryDirectionReversed: () => void;
   setProfileCursorIndex: (index: number) => void;
   setSelectedSiteId: (id: string) => void;
   setSelectedNetworkId: (id: string) => void;
@@ -531,6 +534,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isElevationSyncing: false,
   selectedLinkId: defaultScenario.defaultLinkId,
   profileCursorIndex: 0,
+  temporaryDirectionReversed: false,
   selectedSiteId: defaultScenario.defaultSiteId,
   selectedNetworkId: defaultScenario.defaultNetworkId,
   selectedCoverageMode: "BestSite",
@@ -578,6 +582,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSiteId: scenario.defaultSiteId,
       selectedLinkId: scenario.defaultLinkId,
       profileCursorIndex: 0,
+      temporaryDirectionReversed: false,
       selectedNetworkId: scenario.defaultNetworkId,
       selectedFrequencyPresetId: scenario.defaultFrequencyPresetId,
       propagationModel: "ITM",
@@ -594,7 +599,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     get().recomputeCoverage();
   },
-  setSelectedLinkId: (id) => set({ selectedLinkId: id, profileCursorIndex: 0 }),
+  setSelectedLinkId: (id) =>
+    set({ selectedLinkId: id, profileCursorIndex: 0, temporaryDirectionReversed: false }),
+  setTemporaryDirectionReversed: (value) => set({ temporaryDirectionReversed: Boolean(value) }),
+  toggleTemporaryDirectionReversed: () =>
+    set((state) => ({ temporaryDirectionReversed: !state.temporaryDirectionReversed })),
   setProfileCursorIndex: (index) => set({ profileCursorIndex: Math.max(0, Math.floor(index)) }),
   setSelectedSiteId: (id) => {
     set({ selectedSiteId: id });
@@ -737,6 +746,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       links: [...state.links, link],
       selectedLinkId: id,
+      temporaryDirectionReversed: false,
     }));
     get().recomputeCoverage();
   },
@@ -782,12 +792,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         return {
           links: [fallbackLink],
           selectedLinkId: fallbackLink.id,
+          temporaryDirectionReversed: false,
         };
       }
       return {
         links: remaining,
         selectedLinkId:
           state.selectedLinkId === linkId ? remaining[0].id : state.selectedLinkId,
+        temporaryDirectionReversed:
+          state.selectedLinkId === linkId ? false : state.temporaryDirectionReversed,
       };
     });
     get().recomputeCoverage();
@@ -968,6 +981,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       networks: recovered.networks,
       selectedSiteId,
       selectedLinkId,
+      temporaryDirectionReversed: false,
       selectedNetworkId,
       selectedCoverageMode:
         snap.selectedCoverageMode === "BestSite" ||
@@ -1482,10 +1496,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     return network ?? networks[0] ?? defaultScenario.networks[0];
   },
   getSelectedSites: () => {
-    const { sites, getSelectedLink } = get();
+    const { sites, getSelectedLink, temporaryDirectionReversed } = get();
     const link = getSelectedLink();
-    const fromSite = sites.find((s) => s.id === link.fromSiteId);
-    const toSite = sites.find((s) => s.id === link.toSiteId);
+    const effectiveFromId = temporaryDirectionReversed ? link.toSiteId : link.fromSiteId;
+    const effectiveToId = temporaryDirectionReversed ? link.fromSiteId : link.toSiteId;
+    const fromSite = sites.find((s) => s.id === effectiveFromId);
+    const toSite = sites.find((s) => s.id === effectiveToId);
     return {
       fromSite: fromSite ?? sites[0] ?? defaultScenario.sites[0],
       toSite: toSite ?? sites[Math.min(1, Math.max(0, sites.length - 1))] ?? defaultScenario.sites[1],

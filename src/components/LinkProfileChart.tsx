@@ -45,9 +45,10 @@ const terrainVisibilityFromFromNode = (profile: ProfilePoint[]): boolean[] => {
 
 export function LinkProfileChart() {
   const locale = useAppStore((state) => state.locale);
-  const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
-  const selectedLinkId = useAppStore((state) => state.selectedLinkId);
+  const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
+  const toggleTemporaryDirectionReversed = useAppStore((state) => state.toggleTemporaryDirectionReversed);
+  const { fromSite: selectedFromSite, toSite: selectedToSite } = useAppStore((state) => state.getSelectedSites());
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const setProfileCursorIndex = useAppStore((state) => state.setProfileCursorIndex);
@@ -62,9 +63,8 @@ export function LinkProfileChart() {
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}`,
   );
   const profile = getSelectedProfile();
-  const selectedLink = links.find((link) => link.id === selectedLinkId);
-  const fromSiteName = sites.find((site) => site.id === selectedLink?.fromSiteId)?.name ?? "From";
-  const toSiteName = sites.find((site) => site.id === selectedLink?.toSiteId)?.name ?? "To";
+  const fromSiteName = selectedFromSite?.name ?? "From";
+  const toSiteName = selectedToSite?.name ?? "To";
   const terrainBounds = simulationAreaBoundsForSites(sites);
   const requiredTerrainTileKeys = terrainBounds
     ? tilesForBounds(terrainBounds.minLat, terrainBounds.maxLat, terrainBounds.minLon, terrainBounds.maxLon)
@@ -188,7 +188,12 @@ export function LinkProfileChart() {
     <section className="chart-panel" data-profile-revision={profileRevision}>
       <header className="chart-header">
         <h2>{t(locale, "pathProfile")}</h2>
-        <p>{t(locale, "profileSubtitle")}</p>
+        <div className="chart-header-inline">
+          <p>{t(locale, "profileSubtitle")}</p>
+          <button className="inline-action" onClick={() => toggleTemporaryDirectionReversed()} type="button">
+            {temporaryDirectionReversed ? "Direction: Reversed (Temp)" : "Reverse Direction (Temp)"}
+          </button>
+        </div>
       </header>
       {terrainIsStaleForCurrentArea ? (
         <div className="terrain-alert" role="status">
