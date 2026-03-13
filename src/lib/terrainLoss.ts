@@ -46,6 +46,17 @@ type TerrainLossInput = {
   polarization?: Polarization;
 };
 
+type TerrainLosInput = {
+  from: Coordinates;
+  to: Coordinates;
+  fromAntennaAbsM: number;
+  toAntennaAbsM: number;
+  terrainSampler: TerrainSampler;
+  samples?: number;
+  kFactor?: number;
+  clutterHeightM?: number;
+};
+
 export const estimateTerrainExcessLossDb = ({
   from,
   to,
@@ -138,4 +149,33 @@ export const estimateTerrainExcessLossDb = ({
   }
 
   return clamp(diffractionLoss + roughnessLoss + clutterLoss, 0, 90);
+};
+
+export const isTerrainLineObstructed = ({
+  from,
+  to,
+  fromAntennaAbsM,
+  toAntennaAbsM,
+  terrainSampler,
+  samples = 24,
+  kFactor = 4 / 3,
+  clutterHeightM = 0,
+}: TerrainLosInput): boolean => {
+  const sampleCount = Math.max(12, Math.round(samples));
+  const distanceKm = Math.max(0.001, haversineDistanceKm(from, to));
+  const distanceM = distanceKm * 1000;
+  const clutterBoost = Math.max(0, clutterHeightM) * 0.55;
+
+  for (let i = 1; i < sampleCount - 1; i += 1) {
+    const t = i / (sampleCount - 1);
+    const p = interpolateCoordinate(from, to, t);
+    const terrain = terrainSampler(p);
+    if (terrain === null) continue;
+    const d1 = distanceM * t;
+    const losM = fromAntennaAbsM + (toAntennaAbsM - fromAntennaAbsM) * t;
+    const bulgeM = earthBulgeM(distanceM, d1, kFactor);
+    const obstacleM = terrain + bulgeM + clutterBoost;
+    if (obstacleM > losM) return true;
+  }
+  return false;
 };

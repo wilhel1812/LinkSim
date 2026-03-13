@@ -12,7 +12,7 @@ import type { LayerProps } from "react-map-gl/maplibre";
 import { haversineDistanceKm } from "../lib/geo";
 import { getPathLossByModel } from "../lib/rfModels";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { estimateTerrainExcessLossDb } from "../lib/terrainLoss";
+import { estimateTerrainExcessLossDb, isTerrainLineObstructed } from "../lib/terrainLoss";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
@@ -377,7 +377,7 @@ const computeSourceCentricRxMetrics = (
   propagationModel: "FSPL" | "TwoRay" | "ITM",
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
-): { rxDbm: number; terrainPenaltyDb: number } => {
+): { rxDbm: number; terrainPenaltyDb: number; terrainObstructed: boolean } => {
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, { lat, lon }));
   const baseLoss = getPathLossByModel(
     propagationModel,
@@ -388,6 +388,7 @@ const computeSourceCentricRxMetrics = (
   );
 
   let terrainPenaltyDb = 0;
+  let terrainObstructed = false;
   if (propagationModel === "ITM") {
     const rxGround = terrainSampler(lat, lon);
     if (rxGround !== null) {
@@ -400,6 +401,14 @@ const computeSourceCentricRxMetrics = (
         terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
         samples: terrainSamples,
       });
+      terrainObstructed = isTerrainLineObstructed({
+        from: fromSite.position,
+        to: { lat, lon },
+        fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
+        toAntennaAbsM: rxGround + receiverAntennaHeightM,
+        terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
+        samples: Math.max(12, Math.round(terrainSamples * 0.66)),
+      });
     }
   }
 
@@ -407,6 +416,7 @@ const computeSourceCentricRxMetrics = (
   return {
     rxDbm: eirpDbm + effectiveLink.rxGainDbi - (baseLoss + terrainPenaltyDb),
     terrainPenaltyDb,
+    terrainObstructed,
   };
 };
 
@@ -527,7 +537,7 @@ const buildSourcePassFailOverlay = (
         terrainSamples,
       );
       const pass = metrics.rxDbm - environmentLossDb >= rxTargetDbm;
-      const shadowedPass = pass && propagationModel === "ITM" && metrics.terrainPenaltyDb > 1;
+      const shadowedPass = pass && propagationModel === "ITM" && metrics.terrainObstructed;
       const px = (y * width + x) * 4;
       if (!pass) {
         image.data[px] = 205;
@@ -1441,7 +1451,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             {coverageVizMode === "passfail" ? (
               <p>
                 Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter). Pass requires
-                predicted RX at/above RX target. Colors: green = pass clear, amber = pass with terrain penalty,
+                predicted RX at/above RX target. Colors: green = pass with LOS clear, amber = pass with LOS blocked,
                 red = fail.
               </p>
             ) : null}
