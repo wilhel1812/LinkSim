@@ -17,6 +17,18 @@ if (isCurrentTestEnvironment()) {
   document.documentElement.classList.add("env-staging");
 }
 
+const applyEnvironmentBranding = () => {
+  const isTest = isCurrentTestEnvironment();
+  document.title = isTest ? "[TEST] LinkSim" : "LinkSim";
+  const iconHref = isTest ? "/favicon-test.svg?v=20260313a" : "/favicon.svg?v=20260313a";
+  for (const selector of ['link[rel="icon"]', 'link[rel="shortcut icon"]']) {
+    const linkEl = document.querySelector<HTMLLinkElement>(selector);
+    if (linkEl) linkEl.href = iconHref;
+  }
+};
+
+applyEnvironmentBranding();
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
