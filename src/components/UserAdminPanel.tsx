@@ -637,6 +637,7 @@ export function UserAdminPanel() {
                   >
                     <option value="blue">Blue</option>
                     <option value="pink">Pink</option>
+                    <option value="red">Red</option>
                   </select>
                 </div>
                 <div className="field-grid user-field-grid">

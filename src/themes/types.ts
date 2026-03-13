@@ -1,5 +1,5 @@
 export type UiThemeMode = "light" | "dark";
-export type UiColorTheme = "blue" | "pink";
+export type UiColorTheme = "blue" | "pink" | "red";
 
 export type ThemeVariant = {
   cssVars: Record<string, string>;
