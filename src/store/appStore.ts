@@ -18,7 +18,12 @@ import {
   loadCopernicusTilesForArea,
   recommendCopernicusDatasetForArea,
 } from "../lib/copernicusTerrainClient";
-import { normalizeTerrainDataset, type TerrainDataset } from "../lib/terrainDataset";
+import {
+  normalizeTerrainDataset,
+  TERRAIN_DATASET_FETCH_LABEL,
+  TERRAIN_DATASET_LABEL,
+  type TerrainDataset,
+} from "../lib/terrainDataset";
 import {
   clearVe2dbeCache,
   loadVe2dbeTilesForArea,
@@ -1264,7 +1269,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bounds = simulationAreaBoundsForSites(sites);
     if (!bounds) return;
 
-    set({ terrainRecommendation: "Evaluating Copernicus/legacy terrain coverage...", isTerrainRecommending: true });
+    set({ terrainRecommendation: "Evaluating terrain dataset coverage...", isTerrainRecommending: true });
     try {
       const copernicusRecommendation = await recommendCopernicusDatasetForArea(
         bounds.minLat,
@@ -1273,19 +1278,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         bounds.maxLon,
       );
       const perDataset = [
-        `Copernicus 30m: ${Math.round(copernicusRecommendation.byDataset.copernicus30.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus30.availableTiles}/${copernicusRecommendation.expectedTiles})`,
-        `Copernicus 90m: ${Math.round(copernicusRecommendation.byDataset.copernicus90.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus90.availableTiles}/${copernicusRecommendation.expectedTiles})`,
+        `${TERRAIN_DATASET_LABEL.copernicus30}: ${Math.round(copernicusRecommendation.byDataset.copernicus30.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus30.availableTiles}/${copernicusRecommendation.expectedTiles})`,
+        `${TERRAIN_DATASET_LABEL.copernicus90}: ${Math.round(copernicusRecommendation.byDataset.copernicus90.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus90.availableTiles}/${copernicusRecommendation.expectedTiles})`,
       ].join(" | ");
       const recommendedDataset = copernicusRecommendation.dataset;
-      const recommendedLabel =
-        recommendedDataset === "copernicus30"
-          ? "Copernicus 30m"
-          : recommendedDataset === "copernicus90"
-            ? "Copernicus 90m"
-            : "Legacy SRTM Third";
       set({
         terrainDataset: recommendedDataset,
-        terrainRecommendation: `Recommended: ${recommendedLabel}. ${perDataset}`,
+        terrainRecommendation: `Recommended: ${TERRAIN_DATASET_LABEL[recommendedDataset]}. ${perDataset}`,
         isTerrainRecommending: false,
       });
     } catch (error) {
@@ -1302,11 +1301,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({
       terrainFetchStatus:
-        terrainDataset === "copernicus30"
-          ? "Fetching Copernicus GLO-30 tiles..."
-          : terrainDataset === "copernicus90"
-            ? "Fetching Copernicus GLO-90 tiles..."
-            : "Fetching legacy ve2dbe SRTM Third tiles...",
+        `Fetching ${TERRAIN_DATASET_FETCH_LABEL[terrainDataset]} terrain tiles...`,
       isTerrainFetching: true,
     });
 
@@ -1339,12 +1334,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
           failedItems.length ? `${failedItems.length} failed` : "",
         ].filter(Boolean);
-        const sourceLabel =
-          terrainDataset === "copernicus30"
-            ? "Copernicus GLO-30"
-            : terrainDataset === "copernicus90"
-              ? "Copernicus GLO-90"
-              : "legacy ve2dbe SRTM Third";
+        const sourceLabel = TERRAIN_DATASET_FETCH_LABEL[terrainDataset];
         const missing = failedItems;
         return {
           srtmTiles: Array.from(dedup.values()),

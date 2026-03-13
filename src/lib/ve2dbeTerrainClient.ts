@@ -228,7 +228,7 @@ export const loadVe2dbeTilesForArea = async (
             ...parseSrtmZip(archivePath, buffer),
             sourceKind: "auto-fetch" as const,
             sourceId: `ve2dbe-${dataset}`,
-            sourceLabel: "Legacy SRTM Third (ve2dbe)",
+            sourceLabel: "Legacy SRTM 3 arc-second (ve2dbe)",
             sourceDetail: archivePath,
           },
         };

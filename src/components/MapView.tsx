@@ -14,7 +14,7 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
-import type { TerrainDataset } from "../lib/terrainDataset";
+import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
@@ -99,12 +99,6 @@ const supportsWebgl = (): boolean => {
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
-
-const TERRAIN_DATASET_LABEL: Record<TerrainDataset, string> = {
-  copernicus30: "Copernicus GLO-30 (30m)",
-  copernicus90: "Copernicus GLO-90 (90m)",
-  legacySrtmThird: "Legacy SRTM Third (ve2dbe)",
-};
 
 const guessSiteNameForPosition = async (lat: number, lon: number): Promise<string> => {
   const fallback = `Site ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
@@ -1408,7 +1402,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               {overlayDimensions.height})
             </p>
             <p>
-              Coverage values are terrain-aware when ITM model is selected and SRTM tiles are loaded.
+              Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
             </p>
             <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
           </>

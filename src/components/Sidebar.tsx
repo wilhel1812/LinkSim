@@ -39,7 +39,7 @@ import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironme
 import { analyzeLink } from "../lib/propagation";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
-import type { TerrainDataset } from "../lib/terrainDataset";
+import { TERRAIN_DATASET_LABEL, type TerrainDataset } from "../lib/terrainDataset";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
@@ -1825,7 +1825,7 @@ export function Sidebar() {
         <details className="compact-details">
           <summary>Terrain & Sources (Advanced)</summary>
           <p className="field-help">
-            {srtmTiles.length} SRTM tile(s) loaded. Terrain is used in profile and obstruction/loss calculations.
+            {srtmTiles.length} terrain tile(s) loaded. Terrain is used in profile and obstruction/loss calculations.
           </p>
           <button
             className="inline-action"
@@ -1841,9 +1841,9 @@ export function Sidebar() {
               onChange={(event) => setTerrainDataset(event.target.value as TerrainDataset)}
               value={terrainDataset}
             >
-              <option value="copernicus30">Copernicus GLO-30 (30m)</option>
-              <option value="copernicus90">Copernicus GLO-90 (90m)</option>
-              <option value="legacySrtmThird">Legacy SRTM Third (ve2dbe)</option>
+              <option value="copernicus30">{TERRAIN_DATASET_LABEL.copernicus30}</option>
+              <option value="copernicus90">{TERRAIN_DATASET_LABEL.copernicus90}</option>
+              <option value="legacySrtmThird">{TERRAIN_DATASET_LABEL.legacySrtmThird}</option>
             </select>
           </label>
           <button className="inline-action" onClick={() => void fetchTerrainForCurrentArea()} type="button">
@@ -1870,10 +1870,10 @@ export function Sidebar() {
           {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
           <div className="asset-list">
             <a href={REMOTE_SRTM_ENDPOINTS[terrainDataset]} rel="noreferrer" target="_blank">
-              Open selected terrain dataset source
+              Open selected terrain dataset page
             </a>
             <a href="https://www.ve2dbe.com/geodata/" rel="noreferrer" target="_blank">
-              Legacy ve2dbe geodata selector
+              Open legacy ve2dbe geodata page
             </a>
           </div>
         </details>
