@@ -98,7 +98,7 @@ const RADIO_CLIMATE_OPTIONS: RadioClimate[] = [
   "Maritime Temperate (Sea)",
 ];
 
-const meshmapNodesLayer = (color: string): LayerProps => ({
+const meshmapNodesLayer = (color: string, strokeColor: string): LayerProps => ({
   id: "meshmap-nodes-layer",
   type: "circle",
   paint: {
@@ -106,11 +106,11 @@ const meshmapNodesLayer = (color: string): LayerProps => ({
     "circle-color": color,
     "circle-opacity": 0.82,
     "circle-stroke-width": 1,
-    "circle-stroke-color": "#0a1a24",
+    "circle-stroke-color": strokeColor,
   },
 });
 
-const meshmapLabelsLayer = (color: string): LayerProps => ({
+const meshmapLabelsLayer = (color: string, haloColor: string): LayerProps => ({
   id: "meshmap-labels-layer",
   type: "symbol",
   layout: {
@@ -123,7 +123,7 @@ const meshmapLabelsLayer = (color: string): LayerProps => ({
   },
   paint: {
     "text-color": color,
-    "text-halo-color": "rgba(10, 26, 36, 0.95)",
+    "text-halo-color": haloColor,
     "text-halo-width": 1.3,
   },
 });
@@ -2635,8 +2635,18 @@ export function Sidebar() {
                           onMove={onMeshmapMove}
                         >
                           <Source data={meshmapNodesGeoJson} id="meshmap-nodes" type="geojson">
-                            <Layer {...meshmapNodesLayer(variant.map.meshNodeColor)} />
-                            <Layer {...meshmapLabelsLayer(variant.map.meshLabelColor)} />
+                            <Layer
+                              {...meshmapNodesLayer(
+                                variant.map.meshNodeColor,
+                                variant.map.meshStrokeColor,
+                              )}
+                            />
+                            <Layer
+                              {...meshmapLabelsLayer(
+                                variant.map.meshLabelColor,
+                                variant.map.meshHaloColor,
+                              )}
+                            />
                           </Source>
                         </Map>
                       </div>

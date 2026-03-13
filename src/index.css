@@ -13,7 +13,8 @@
   --terrain: GrayText;
   --fresnel: color-mix(in srgb, Highlight 22%, transparent);
   --los: Highlight;
-  --shadow: 0 16px 42px rgba(0, 0, 0, 0.14);
+  --shadow: 0 16px 42px color-mix(in srgb, CanvasText 14%, transparent);
+  --focus-outline: color-mix(in srgb, var(--accent) 62%, Canvas 18%);
 }
 
 * {
@@ -77,11 +78,11 @@ body::before {
 }
 
 .env-staging body::after {
-  border-color: color-mix(in srgb, var(--accent) 74%, #ffffff 8%);
+  border-color: var(--staging-frame);
 }
 
 .env-local body::after {
-  border-color: #f7a545;
+  border-color: var(--local-frame);
 }
 
 h1,
@@ -470,7 +471,7 @@ input {
 }
 
 .warning-text {
-  color: color-mix(in srgb, #ffb703 72%, var(--text));
+  color: var(--warning-text);
 }
 
 .compact-details {
@@ -611,8 +612,8 @@ input {
   z-index: 5;
   padding: 6px 9px;
   border-radius: 8px;
-  border: 1px solid color-mix(in srgb, #ffd166 45%, var(--border));
-  background: color-mix(in srgb, #ffd166 18%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--selection) 45%, var(--border));
+  background: color-mix(in srgb, var(--selection) 18%, var(--surface-2));
   color: var(--text);
   font-size: 0.74rem;
   max-width: 260px;
@@ -642,7 +643,7 @@ input {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-2) 92%, transparent);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-elev-1);
   padding: 6px 8px 8px;
 }
 
@@ -657,7 +658,7 @@ input {
   height: 7px;
   border-radius: 999px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--surface) 84%, #000 16%);
+  background: var(--progress-track-bg);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
 }
 
@@ -665,7 +666,7 @@ input {
   height: 100%;
   width: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, #4ad37b, #2bc0ff);
+  background: linear-gradient(90deg, var(--progress-gradient-start), var(--progress-gradient-end));
   transition: width 0.16s ease-out;
 }
 
@@ -693,7 +694,7 @@ input {
   border-radius: 10px;
   padding: 10px 11px;
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-elev-2);
   font-size: 0.76rem;
 }
 
@@ -744,7 +745,7 @@ input {
   border-radius: 10px;
   cursor: pointer;
   font-weight: 600;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+  box-shadow: var(--shadow-elev-3);
 }
 
 .map-control-btn:hover {
@@ -794,8 +795,8 @@ input {
 }
 
 .site-pin.is-selected {
-  border-color: #ffd166;
-  box-shadow: 0 0 0 4px color-mix(in srgb, #ffd166 26%, transparent);
+  border-color: var(--selection);
+  box-shadow: 0 0 0 4px var(--selection-soft);
 }
 
 .site-pin.is-mode-focus {
@@ -823,13 +824,13 @@ input {
   height: 0;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-top: 8px solid #ffd166;
+  border-top: 8px solid var(--selection);
 }
 
 .site-pin.is-temporary {
-  border-color: #ff9f43;
-  background: color-mix(in srgb, #ff9f43 16%, var(--surface-2));
-  box-shadow: 0 0 0 3px color-mix(in srgb, #ff9f43 18%, transparent);
+  border-color: var(--temporary);
+  background: var(--temporary-soft);
+  box-shadow: 0 0 0 3px var(--temporary-ring);
   position: relative;
 }
 
@@ -843,7 +844,7 @@ input {
   height: 0;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-top: 8px solid #ff9f43;
+  border-top: 8px solid var(--temporary);
 }
 
 
@@ -851,9 +852,9 @@ input {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #ffd166;
-  border: 2px solid #202835;
-  box-shadow: 0 0 0 6px color-mix(in srgb, #ffd166 26%, transparent);
+  background: var(--selection);
+  border: 2px solid var(--cursor-outline);
+  box-shadow: 0 0 0 6px var(--selection-soft);
 }
 
 .chart-panel {
@@ -940,14 +941,14 @@ input {
 }
 
 .profile-cursor line {
-  stroke: #ffd166;
+  stroke: var(--selection);
   stroke-width: 1.4;
   stroke-dasharray: 4 3;
 }
 
 .profile-cursor circle {
-  fill: #ffd166;
-  stroke: #202835;
+  fill: var(--selection);
+  stroke: var(--cursor-outline);
   stroke-width: 1.5;
 }
 
@@ -1095,7 +1096,7 @@ input {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-elev-4);
   z-index: 920;
 }
 
@@ -1118,7 +1119,7 @@ input {
   letter-spacing: 0.04em;
   font-weight: 700;
   padding: 8px 12px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
+  box-shadow: var(--shadow-elev-5);
 }
 
 .floating-help-button:hover {
@@ -1126,7 +1127,7 @@ input {
 }
 
 .floating-help-button:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 62%, white 18%);
+  outline: 2px solid var(--focus-outline);
   outline-offset: 2px;
 }
 
@@ -1316,16 +1317,16 @@ input {
   border-radius: 999px;
   display: inline-grid;
   place-items: center;
-  background: #ff6b6b;
-  color: #fff;
+  background: var(--danger);
+  color: var(--danger-on);
   font-size: 0.72rem;
   font-weight: 700;
   padding: 0 6px;
 }
 
 .notification-banner {
-  border: 1px solid color-mix(in srgb, #ffb703 52%, var(--border));
-  background: color-mix(in srgb, #ffb703 18%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--warning) 52%, var(--border));
+  background: var(--warning-soft);
   color: var(--text);
   border-radius: 10px;
   padding: 8px 10px;
@@ -1393,7 +1394,7 @@ input {
 .library-manager-overlay {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, #000 54%, transparent);
+  background: var(--overlay-backdrop);
   display: grid;
   place-items: center;
   z-index: 1000;
@@ -1604,18 +1605,18 @@ input {
 }
 
 .margin-status.is-pass {
-  border-color: color-mix(in srgb, #2fdb9f 55%, var(--border));
-  background: color-mix(in srgb, #2fdb9f 18%, transparent);
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+  background: color-mix(in srgb, var(--success) 18%, transparent);
 }
 
 .margin-status.is-fail {
-  border-color: color-mix(in srgb, #ff6b6b 55%, var(--border));
-  background: color-mix(in srgb, #ff6b6b 16%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
 .terrain-alert {
-  border: 1px solid color-mix(in srgb, #ffb703 55%, var(--border));
-  background: color-mix(in srgb, #ffb703 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border));
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
   border-radius: 10px;
   padding: 10px;
   display: grid;

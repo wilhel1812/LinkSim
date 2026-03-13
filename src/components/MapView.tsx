@@ -18,26 +18,26 @@ import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import type { Link, Site } from "../types/radio";
 
-const mapLineLayer = (linkColor: string): LayerProps => ({
+const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
   type: "line",
   paint: {
-    "line-color": ["case", ["==", ["get", "selected"], 1], "#ffd166", linkColor],
+    "line-color": ["case", ["==", ["get", "selected"], 1], selectedColor, linkColor],
     "line-width": ["case", ["==", ["get", "selected"], 1], 4.5, 3],
     "line-opacity": ["case", ["==", ["get", "selected"], 1], 0.98, 0.72],
     "line-dasharray": [1.5, 1],
   },
 });
 
-const profileLineLayer: LayerProps = {
+const profileLineLayer = (color: string): LayerProps => ({
   id: "profile-line",
   type: "line",
   paint: {
-    "line-color": "#ffd166",
+    "line-color": color,
     "line-width": 3.6,
     "line-opacity": 0.9,
   },
-};
+});
 
 const coverageRasterLayer: LayerProps = {
   id: "coverage-overlay-layer",
@@ -824,6 +824,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const isElevationSyncing = useAppStore((state) => state.isElevationSyncing);
   const { theme, variant } = useThemeVariant();
   const linkColor = variant.map.linkColor;
+  const selectedLinkColor = variant.map.selectedLinkColor;
+  const profileColor = variant.map.profileLineColor;
   const selectedProfile = getSelectedProfile();
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
@@ -1462,7 +1464,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         ) : null}
 
         <Source data={profileFeatures} id="profile-path" type="geojson">
-          <Layer {...profileLineLayer} />
+          <Layer {...profileLineLayer(profileColor)} />
         </Source>
 
         {coverageOverlay ? (
@@ -1477,7 +1479,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         ) : null}
 
         <Source data={lineFeatures} id="links" type="geojson">
-          <Layer {...mapLineLayer(linkColor)} />
+          <Layer {...mapLineLayer(linkColor, selectedLinkColor)} />
         </Source>
 
         {sites.map((site) => {
