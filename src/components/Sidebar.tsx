@@ -1834,15 +1834,15 @@ export function Sidebar() {
             Auto Fetch Terrain Data
           </button>
           <label className="field-grid">
-            <span>ve2dbe source</span>
+            <span>Terrain source</span>
             <select
               className="locale-select"
               onChange={(event) => setTerrainDataset(event.target.value as "srtm1" | "srtm3" | "srtmthird")}
               value={terrainDataset}
             >
-              <option value="srtm1">SRTM1</option>
-              <option value="srtm3">SRTM3</option>
-              <option value="srtmthird">SRTM Third</option>
+              <option value="srtm1">Copernicus GLO-30 (30m)</option>
+              <option value="srtm3">Copernicus GLO-90 (90m)</option>
+              <option value="srtmthird">Legacy SRTM Third (ve2dbe)</option>
             </select>
           </label>
           <button className="inline-action" onClick={() => void fetchTerrainForCurrentArea()} type="button">
@@ -1863,16 +1863,16 @@ export function Sidebar() {
             {t(locale, "syncSiteElevations")}
           </button>
           <button className="inline-action" onClick={() => void clearTerrainCache()} type="button">
-            Clear ve2dbe Cache
+            Clear Terrain Caches
           </button>
           {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
           {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
           <div className="asset-list">
             <a href={REMOTE_SRTM_ENDPOINTS[terrainDataset]} rel="noreferrer" target="_blank">
-              Open selected ve2dbe dataset source
+              Open selected terrain dataset source
             </a>
             <a href="https://www.ve2dbe.com/geodata/" rel="noreferrer" target="_blank">
-              ve2dbe geodata selector
+              Legacy ve2dbe geodata selector
             </a>
           </div>
         </details>

@@ -82,6 +82,8 @@ export type SrtmTile = {
   latStart: number;
   lonStart: number;
   size: number;
+  width?: number;
+  height?: number;
   arcSecondSpacing: 1 | 3;
   elevations: Int16Array;
   sourceKind?: "bundled" | "auto-fetch" | "manual-upload";

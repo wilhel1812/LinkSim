@@ -1,0 +1,251 @@
+import { fromArrayBuffer } from "geotiff";
+import type { SrtmTile } from "../types/radio";
+import { tilesForBounds, type TerrainDataset } from "./ve2dbeTerrainClient";
+
+type CopernicusDataset = Extract<TerrainDataset, "srtm1" | "srtm3">;
+
+type CopernicusLoadResult = {
+  tiles: SrtmTile[];
+  failedTiles: string[];
+  fetchedTiles: string[];
+  cacheHits: string[];
+};
+
+type CopernicusRecommendation = {
+  dataset: CopernicusDataset;
+  completeness: number;
+  expectedTiles: number;
+  availableTiles: number;
+  byDataset: Record<CopernicusDataset, { availableTiles: number; completeness: number }>;
+};
+
+const DATASET_PATH: Record<CopernicusDataset, "30m" | "90m"> = {
+  srtm1: "30m",
+  srtm3: "90m",
+};
+
+const CACHE_NAME = "linksim-copernicus-cog-v1";
+const TILELIST_CACHE_KEY = "linksim-copernicus-tilelist-v1";
+const TILELIST_TTL_MS = 6 * 60 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 20000;
+const MAX_RETRIES = 3;
+
+const parseCopernicusKey = (entry: string): string | null => {
+  const match = entry.match(/Copernicus_DSM_COG_\d+_([NS])(\d{2})_00_([EW])(\d{3})_00_DEM/i);
+  if (!match) return null;
+  return `${match[1].toUpperCase()}${match[2]}${match[3].toUpperCase()}${match[4]}`;
+};
+
+const tilePathForEntry = (entry: string): string => `${entry}/${entry}.tif`;
+
+const requestWithTimeout = async (url: string): Promise<Response> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const fetchWithRetry = async (url: string): Promise<Response> => {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      const response = await requestWithTimeout(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt < MAX_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, 450 * 2 ** (attempt - 1)));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+};
+
+const loadTileList = async (
+  dataset: CopernicusDataset,
+): Promise<Record<string, { entry: string; path: string }>> => {
+  const cacheKey = dataset;
+  try {
+    const raw = localStorage.getItem(TILELIST_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<
+        string,
+        { fetchedAtMs: number; entries: Record<string, { entry: string; path: string }> }
+      >;
+      const cached = parsed[cacheKey];
+      if (cached && Date.now() - cached.fetchedAtMs < TILELIST_TTL_MS) {
+        return cached.entries;
+      }
+    }
+  } catch {
+    // Ignore corrupt cache and refetch.
+  }
+
+  const pathPrefix = DATASET_PATH[dataset];
+  const response = await fetchWithRetry(`/copernicus/${pathPrefix}/tileList.txt`);
+  const text = await response.text();
+  const entries: Record<string, { entry: string; path: string }> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const entry = line.trim();
+    if (!entry) continue;
+    const key = parseCopernicusKey(entry);
+    if (!key) continue;
+    entries[key] = { entry, path: tilePathForEntry(entry) };
+  }
+
+  try {
+    const raw = localStorage.getItem(TILELIST_CACHE_KEY);
+    const parsed = raw
+      ? (JSON.parse(raw) as Record<
+          string,
+          { fetchedAtMs: number; entries: Record<string, { entry: string; path: string }> }
+        >)
+      : {};
+    parsed[cacheKey] = { fetchedAtMs: Date.now(), entries };
+    localStorage.setItem(TILELIST_CACHE_KEY, JSON.stringify(parsed));
+  } catch {
+    // Best effort only.
+  }
+
+  return entries;
+};
+
+const parseCopernicusTile = async (
+  tileKey: string,
+  dataset: CopernicusDataset,
+  path: string,
+  buffer: ArrayBuffer,
+): Promise<SrtmTile> => {
+  const tiff = await fromArrayBuffer(buffer);
+  const image = await tiff.getImage();
+  const width = image.getWidth();
+  const height = image.getHeight();
+  const [minLon, minLat] = image.getBoundingBox();
+  const nodata = image.getGDALNoData();
+  const raster = await image.readRasters({ interleave: true, samples: [0] });
+  const out = new Int16Array(width * height);
+  const nodataNumeric = nodata === null ? NaN : Number(nodata);
+  for (let i = 0; i < out.length; i += 1) {
+    const value = Number((raster as ArrayLike<number>)[i]);
+    if (!Number.isFinite(value) || (Number.isFinite(nodataNumeric) && Math.abs(value - nodataNumeric) <= 0.01)) {
+      out[i] = -32768;
+      continue;
+    }
+    out[i] = Math.max(-32767, Math.min(32767, Math.round(value)));
+  }
+  return {
+    key: tileKey,
+    latStart: Math.floor(minLat),
+    lonStart: Math.floor(minLon),
+    size: Math.max(width, height),
+    width,
+    height,
+    arcSecondSpacing: dataset === "srtm1" ? 1 : 3,
+    elevations: out,
+    sourceKind: "auto-fetch",
+    sourceId: `copernicus-${dataset}`,
+    sourceLabel: `Copernicus ${dataset === "srtm1" ? "GLO-30" : "GLO-90"}`,
+    sourceDetail: path,
+  };
+};
+
+const getCachedOrFetchTile = async (pathPrefix: "30m" | "90m", path: string): Promise<{ buffer: ArrayBuffer; fromCache: boolean }> => {
+  const cache = await caches.open(CACHE_NAME);
+  const proxiedUrl = `/copernicus/${pathPrefix}/${path}`;
+  const cached = await cache.match(proxiedUrl);
+  if (cached) return { buffer: await cached.arrayBuffer(), fromCache: true };
+  const response = await fetchWithRetry(proxiedUrl);
+  await cache.put(proxiedUrl, response.clone());
+  return { buffer: await response.arrayBuffer(), fromCache: false };
+};
+
+export const loadCopernicusTilesForArea = async (
+  minLat: number,
+  maxLat: number,
+  minLon: number,
+  maxLon: number,
+  dataset: CopernicusDataset,
+): Promise<CopernicusLoadResult> => {
+  const tileList = await loadTileList(dataset);
+  const candidateKeys = tilesForBounds(minLat, maxLat, minLon, maxLon);
+  const pathPrefix = DATASET_PATH[dataset];
+  const fetchedTiles: string[] = [];
+  const cacheHits: string[] = [];
+  const failedTiles: string[] = [];
+  const parsedTiles: SrtmTile[] = [];
+
+  for (const key of candidateKeys) {
+    const item = tileList[key];
+    if (!item) {
+      failedTiles.push(key);
+      continue;
+    }
+    try {
+      const { buffer, fromCache } = await getCachedOrFetchTile(pathPrefix, item.path);
+      if (fromCache) cacheHits.push(key);
+      else fetchedTiles.push(key);
+      parsedTiles.push(await parseCopernicusTile(key, dataset, item.path, buffer));
+    } catch {
+      failedTiles.push(key);
+    }
+  }
+
+  return { tiles: parsedTiles, failedTiles, fetchedTiles, cacheHits };
+};
+
+export const clearCopernicusCache = async (): Promise<void> => {
+  await caches.delete(CACHE_NAME);
+  localStorage.removeItem(TILELIST_CACHE_KEY);
+};
+
+export const recommendCopernicusDatasetForArea = async (
+  minLat: number,
+  maxLat: number,
+  minLon: number,
+  maxLon: number,
+): Promise<CopernicusRecommendation> => {
+  const expected = Math.max(1, tilesForBounds(minLat, maxLat, minLon, maxLon).length);
+  const keys = new Set(tilesForBounds(minLat, maxLat, minLon, maxLon));
+  const datasets: CopernicusDataset[] = ["srtm1", "srtm3"];
+  const stats: Array<{ dataset: CopernicusDataset; availableTiles: number; completeness: number }> = [];
+  for (const dataset of datasets) {
+    try {
+      const list = await loadTileList(dataset);
+      let available = 0;
+      for (const key of keys) if (list[key]) available += 1;
+      stats.push({
+        dataset,
+        availableTiles: available,
+        completeness: available / expected,
+      });
+    } catch {
+      stats.push({ dataset, availableTiles: 0, completeness: 0 });
+    }
+  }
+  const sorted = [...stats].sort((a, b) => {
+    if (b.completeness !== a.completeness) return b.completeness - a.completeness;
+    return a.dataset === "srtm1" ? -1 : 1;
+  });
+  const best = sorted[0];
+  return {
+    dataset: best.dataset,
+    completeness: best.completeness,
+    expectedTiles: expected,
+    availableTiles: best.availableTiles,
+    byDataset: {
+      srtm1: {
+        availableTiles: stats.find((entry) => entry.dataset === "srtm1")?.availableTiles ?? 0,
+        completeness: stats.find((entry) => entry.dataset === "srtm1")?.completeness ?? 0,
+      },
+      srtm3: {
+        availableTiles: stats.find((entry) => entry.dataset === "srtm3")?.availableTiles ?? 0,
+        completeness: stats.find((entry) => entry.dataset === "srtm3")?.completeness ?? 0,
+      },
+    },
+  };
+};
+

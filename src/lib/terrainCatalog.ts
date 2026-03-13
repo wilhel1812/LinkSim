@@ -1,6 +1,6 @@
 export const REMOTE_SRTM_ENDPOINTS = {
-  srtm1: "https://www.ve2dbe.com/geodata/srtm1",
-  srtm3: "https://www.ve2dbe.com/geodata/srtm3",
+  srtm1: "https://copernicus-dem-30m.s3.amazonaws.com/readme.html",
+  srtm3: "https://copernicus-dem-90m.s3.amazonaws.com/readme.html",
   srtmthird: "https://www.ve2dbe.com/geodata/srtmthird",
   landcover: "https://www.ve2dbe.com/geodata/landcover",
 } as const;

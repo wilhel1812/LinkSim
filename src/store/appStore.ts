@@ -14,9 +14,13 @@ import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scen
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import {
+  clearCopernicusCache,
+  loadCopernicusTilesForArea,
+  recommendCopernicusDatasetForArea,
+} from "../lib/copernicusTerrainClient";
+import {
   clearVe2dbeCache,
   loadVe2dbeTilesForArea,
-  recommendVe2dbeDatasetForArea,
   type TerrainDataset,
 } from "../lib/ve2dbeTerrainClient";
 import type { LocaleCode } from "../i18n/locales";
@@ -1019,7 +1023,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationEnvironmentReason: (snap.autoPropagationEnvironment ?? true)
         ? "Auto defaults active."
         : "Manual override active.",
-      terrainDataset: snap.terrainDataset === "srtm3" || snap.terrainDataset === "srtm1" ? snap.terrainDataset : "srtm1",
+      terrainDataset:
+        snap.terrainDataset === "srtm3" || snap.terrainDataset === "srtm1" || snap.terrainDataset === "srtmthird"
+          ? snap.terrainDataset
+          : "srtm1",
       mapViewport:
         snap.mapViewport &&
         typeof snap.mapViewport.zoom === "number" &&
@@ -1259,22 +1266,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bounds = simulationAreaBoundsForSites(sites);
     if (!bounds) return;
 
-    set({ terrainRecommendation: "Evaluating ve2dbe coverage...", isTerrainRecommending: true });
+    set({ terrainRecommendation: "Evaluating Copernicus/legacy terrain coverage...", isTerrainRecommending: true });
     try {
-      const recommendation = await recommendVe2dbeDatasetForArea(
+      const copernicusRecommendation = await recommendCopernicusDatasetForArea(
         bounds.minLat,
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
       );
       const perDataset = [
-        `SRTM Third: ${Math.round(recommendation.byDataset.srtmthird.completeness * 100)}% (${recommendation.byDataset.srtmthird.availableTiles}/${recommendation.expectedTiles})`,
-        `SRTM1: ${Math.round(recommendation.byDataset.srtm1.completeness * 100)}% (${recommendation.byDataset.srtm1.availableTiles}/${recommendation.expectedTiles})`,
-        `SRTM3: ${Math.round(recommendation.byDataset.srtm3.completeness * 100)}% (${recommendation.byDataset.srtm3.availableTiles}/${recommendation.expectedTiles})`,
+        `Copernicus 30m: ${Math.round(copernicusRecommendation.byDataset.srtm1.completeness * 100)}% (${copernicusRecommendation.byDataset.srtm1.availableTiles}/${copernicusRecommendation.expectedTiles})`,
+        `Copernicus 90m: ${Math.round(copernicusRecommendation.byDataset.srtm3.completeness * 100)}% (${copernicusRecommendation.byDataset.srtm3.availableTiles}/${copernicusRecommendation.expectedTiles})`,
       ].join(" | ");
+      const recommendedDataset = copernicusRecommendation.dataset;
+      const recommendedLabel =
+        recommendedDataset === "srtm1"
+          ? "Copernicus 30m"
+          : recommendedDataset === "srtm3"
+            ? "Copernicus 90m"
+            : "Legacy SRTM Third";
       set({
-        terrainDataset: recommendation.dataset,
-        terrainRecommendation: `Recommended: ${recommendation.dataset.toUpperCase()} (${Math.round(recommendation.completeness * 100)}%, ${recommendation.availableTiles}/${recommendation.expectedTiles}). ${perDataset}`,
+        terrainDataset: recommendedDataset,
+        terrainRecommendation: `Recommended: ${recommendedLabel}. ${perDataset}`,
         isTerrainRecommending: false,
       });
     } catch (error) {
@@ -1290,32 +1303,55 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!bounds) return;
 
     set({
-      terrainFetchStatus: `Fetching ${terrainDataset.toUpperCase()} tiles from ve2dbe...`,
+      terrainFetchStatus:
+        terrainDataset === "srtm1"
+          ? "Fetching Copernicus GLO-30 tiles..."
+          : terrainDataset === "srtm3"
+            ? "Fetching Copernicus GLO-90 tiles..."
+            : "Fetching legacy ve2dbe SRTM Third tiles...",
       isTerrainFetching: true,
     });
 
     try {
-      const result = await loadVe2dbeTilesForArea(
-        bounds.minLat,
-        bounds.maxLat,
-        bounds.minLon,
-        bounds.maxLon,
-        terrainDataset,
-      );
+      const result =
+        terrainDataset === "srtmthird"
+          ? await loadVe2dbeTilesForArea(
+              bounds.minLat,
+              bounds.maxLat,
+              bounds.minLon,
+              bounds.maxLon,
+              terrainDataset,
+            )
+          : await loadCopernicusTilesForArea(
+              bounds.minLat,
+              bounds.maxLat,
+              bounds.minLon,
+              bounds.maxLon,
+              terrainDataset,
+            );
+      const fetchedItems = "fetchedArchives" in result ? result.fetchedArchives : result.fetchedTiles;
+      const failedItems = "failedArchives" in result ? result.failedArchives : result.failedTiles;
       set((state) => {
         const dedup = new Map<string, SrtmTile>();
         for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
         for (const tile of result.tiles) dedup.set(tile.key, tile);
         const statusParts = [
           `Loaded ${result.tiles.length} tile(s)`,
-          result.fetchedArchives.length ? `${result.fetchedArchives.length} fetched` : "",
+          fetchedItems.length ? `${fetchedItems.length} fetched` : "",
           result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
-          result.failedArchives.length ? `${result.failedArchives.length} failed` : "",
+          failedItems.length ? `${failedItems.length} failed` : "",
         ].filter(Boolean);
+        const sourceLabel =
+          terrainDataset === "srtm1"
+            ? "Copernicus GLO-30"
+            : terrainDataset === "srtm3"
+              ? "Copernicus GLO-90"
+              : "legacy ve2dbe SRTM Third";
+        const missing = failedItems;
         return {
           srtmTiles: Array.from(dedup.values()),
           isTerrainFetching: false,
-          terrainFetchStatus: `${statusParts.join(", ")} from ve2dbe ${terrainDataset}.${result.failedArchives.length ? ` Missing: ${result.failedArchives.slice(0, 4).join(", ")}${result.failedArchives.length > 4 ? "..." : ""}` : ""}`,
+          terrainFetchStatus: `${statusParts.join(", ")} from ${sourceLabel}.${missing.length ? ` Missing: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}` : ""}`,
         };
       });
       get().recomputeCoverage();
@@ -1330,11 +1366,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   clearTerrainCache: async () => {
     set({ isTerrainFetching: true });
-    await clearVe2dbeCache();
+    await Promise.all([clearVe2dbeCache(), clearCopernicusCache()]);
     set((state) => ({
       srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
       isTerrainFetching: false,
-      terrainFetchStatus: "ve2dbe cache cleared.",
+      terrainFetchStatus: "Terrain source caches cleared.",
     }));
     get().recomputeCoverage();
   },

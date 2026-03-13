@@ -70,6 +70,8 @@ export const parseSrtmBuffer = (fileName: string, buffer: ArrayBuffer): SrtmTile
     latStart: header.latStart,
     lonStart: header.lonStart,
     size: detected.size,
+    width: detected.size,
+    height: detected.size,
     arcSecondSpacing: detected.arcSecondSpacing,
     elevations,
   };
@@ -97,13 +99,15 @@ const inTile = (tile: SrtmTile, lat: number, lon: number): boolean =>
   lon <= tile.lonStart + 1;
 
 const sampleFromTile = (tile: SrtmTile, lat: number, lon: number): number => {
+  const width = tile.width ?? tile.size;
+  const height = tile.height ?? tile.size;
   const latNorm = (lat - tile.latStart) / 1;
   const lonNorm = (lon - tile.lonStart) / 1;
 
-  const row = Math.max(0, Math.min(tile.size - 1, Math.round((1 - latNorm) * (tile.size - 1))));
-  const col = Math.max(0, Math.min(tile.size - 1, Math.round(lonNorm * (tile.size - 1))));
+  const row = Math.max(0, Math.min(height - 1, Math.round((1 - latNorm) * (height - 1))));
+  const col = Math.max(0, Math.min(width - 1, Math.round(lonNorm * (width - 1))));
 
-  return tile.elevations[row * tile.size + col];
+  return tile.elevations[row * width + col];
 };
 
 export const sampleSrtmElevation = (
