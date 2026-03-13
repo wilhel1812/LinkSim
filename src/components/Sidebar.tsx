@@ -17,7 +17,7 @@ import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
-import { APP_BUILD_LABEL } from "../lib/buildInfo";
+import { buildLabelForChannel } from "../lib/buildInfo";
 import {
   fetchCollaboratorDirectory,
   fetchResourceChanges,
@@ -217,6 +217,8 @@ const getSnapshotCount = (key: string): number => {
 export function Sidebar() {
   const { theme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
+  const buildChannel = runtimeEnvironment === "production" ? "stable" : runtimeEnvironment === "staging" ? "beta" : "alpha";
+  const buildLabel = buildLabelForChannel(buildChannel);
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -2056,7 +2058,7 @@ export function Sidebar() {
       </section>
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
-        Build: {APP_BUILD_LABEL} (
+        Build: {buildLabel} (
         {runtimeEnvironment === "production" ? "live-prod" : runtimeEnvironment === "local" ? "local" : "live-test"})
       </footer>
 

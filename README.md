@@ -119,6 +119,12 @@ What `release:prod` does:
 5. Deploys staging
 6. Deploys production
 
+Build label rules:
+- Local: `vX.Y.Z-alpha+<commit>`
+- Staging: `vX.Y.Z-beta+<commit>`
+- Production: `vX.Y.Z`
+- Same commit always keeps the same base version (`X.Y.Z`) across all environments.
+
 ## Cloudflare Setup Overview
 
 This repo uses:

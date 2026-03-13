@@ -39,9 +39,12 @@
   - `MINOR` (`0.x.0`): new user-facing features or meaningful workflow additions that are backward-compatible.
   - `MAJOR` (`x.0.0`): breaking changes (data model incompatibility, removed/renamed API behavior, auth/permission model breaks), or first stable `1.0.0` declaration.
 - Environment bump rules:
-  - Local test: no version bump required.
-  - Live test (staging): no version bump required; commit SHA is sufficient for traceability.
-  - Live production: version bump is required before release.
+  - Same commit must keep the same base SemVer (`X.Y.Z`) in all environments.
+  - Build label channel by environment:
+    - Local: `vX.Y.Z-alpha+<commit>`
+    - Staging: `vX.Y.Z-beta+<commit>`
+    - Production: `vX.Y.Z`
+  - Live production: SemVer bump is required before release.
 - Production release checklist:
   1. Decide bump level (`PATCH`/`MINOR`/`MAJOR`) from rules above.
   2. Update `package.json` version.
