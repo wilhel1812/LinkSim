@@ -32,7 +32,7 @@
 | --- | --- | --- |
 | Heatmap | Continuous RX strength estimate (dBm) across sampled area | Quick quality overview and hotspot discovery |
 | Bands (Contours) | Stepped strength zones (same RX model as heatmap, grouped levels) | Fast threshold-oriented planning and area segmentation |
-| Pass/Fail | Binary result against current RX target | Clear go/no-go checks for deployment decisions |
+| Pass/Fail | Three-state target check: green (pass + clear), amber (pass + terrain-penalized), red (fail) | Clear go/no-go checks plus terrain-risk awareness |
 | Relay | Best relay-candidate regions for selected From/To pair | Find where a third node could bridge weak links |
 | Terrain overlay | Terrain raster used by simulation in current area | Confirm what elevation input the model is actually using |
 | Path profile | Elevation profile + link geometry between selected endpoints | Validate LOS/Fresnel context and understand obstructions |
