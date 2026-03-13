@@ -829,6 +829,59 @@ input {
   border-color: #ff9f43;
   background: color-mix(in srgb, #ff9f43 16%, var(--surface-2));
   box-shadow: 0 0 0 3px color-mix(in srgb, #ff9f43 18%, transparent);
+  position: relative;
+}
+
+.site-pin.is-temporary::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(100% + 1px);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #ff9f43;
+}
+
+.site-precision-crosshair {
+  width: 24px;
+  height: 24px;
+  position: relative;
+  pointer-events: none;
+}
+
+.site-precision-crosshair::before,
+.site-precision-crosshair::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #ff9f43;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #0c1218 70%, transparent);
+}
+
+.site-precision-crosshair::before {
+  width: 18px;
+  height: 2px;
+}
+
+.site-precision-crosshair::after {
+  width: 2px;
+  height: 18px;
+}
+
+.site-precision-crosshair > span {
+  display: none;
+}
+
+.site-precision-crosshair {
+  border: 2px solid color-mix(in srgb, #ff9f43 92%, #fff 8%);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #0c1218 64%, transparent);
+  background: color-mix(in srgb, #ff9f43 16%, transparent);
 }
 
 .profile-map-cursor {
