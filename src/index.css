@@ -529,7 +529,7 @@ input {
 
 .workspace-panel {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(220px, 32vh);
+  grid-template-rows: minmax(0, 1fr) minmax(320px, 40vh);
   gap: 18px;
   min-height: 0;
 }
@@ -1098,7 +1098,7 @@ input {
 
 .chart-grid text {
   fill: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   text-anchor: middle;
   font-family: "IBM Plex Mono", monospace;
@@ -1182,7 +1182,7 @@ input {
   }
 
   .workspace-panel {
-    grid-template-rows: 360px 240px;
+    grid-template-rows: 360px 320px;
   }
 
   .workspace-panel.is-map-expanded {

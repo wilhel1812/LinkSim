@@ -14,7 +14,7 @@ import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 
 const H = 260;
-const M = { t: 14, r: 20, b: 34, l: 44 };
+const M = { t: 14, r: 28, b: 34, l: 50 };
 
 const linePath = (points: { x: number; y: number }[]): string =>
   points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
