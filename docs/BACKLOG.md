@@ -29,6 +29,8 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] explore if we can take buildings into account
 - [ ] Explore if we can make ourselves completely independent of VE2DBE data for SRTM
 - [ ] Temporary nodes
+- [ ] Color theming pass (user-configurable themes)
+- [ ] Environment distinction redesign for test/staging (must not rely on theme colors)
 
 ## Active stabilization backlog
 

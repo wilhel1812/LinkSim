@@ -1,7 +1,7 @@
 import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import type { MouseEvent } from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { t } from "../i18n/locales";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
@@ -38,6 +38,8 @@ export function LinkProfileChart() {
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
+  const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
+  const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const profileRevision = useAppStore(
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}`,
@@ -53,6 +55,25 @@ export function LinkProfileChart() {
   const loadedTileKeys = new Set(srtmTiles.map((tile) => tile.key));
   const missingTerrainTileKeys = requiredTerrainTileKeys.filter((key) => !loadedTileKeys.has(key));
   const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
+  const autoFetchAttemptRef = useRef("");
+  const terrainSignature = `${requiredTerrainTileKeys.join(",")}|missing:${missingTerrainTileKeys.join(",")}`;
+
+  useEffect(() => {
+    if (!terrainIsStaleForCurrentArea) {
+      autoFetchAttemptRef.current = "";
+      return;
+    }
+    if (isTerrainFetching || isTerrainRecommending) return;
+    if (autoFetchAttemptRef.current === terrainSignature) return;
+    autoFetchAttemptRef.current = terrainSignature;
+    void recommendAndFetchTerrainForCurrentArea();
+  }, [
+    terrainIsStaleForCurrentArea,
+    isTerrainFetching,
+    isTerrainRecommending,
+    recommendAndFetchTerrainForCurrentArea,
+    terrainSignature,
+  ]);
 
   const geometry = useMemo(() => {
     if (profile.length < 2) {

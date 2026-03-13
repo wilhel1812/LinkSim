@@ -162,6 +162,7 @@ export function UserAdminPanel() {
           ? "user"
           : "pending";
   const canEditAccessRequestNote = Boolean(canModerate || !me?.isApproved);
+  const showAccessRequestNoteField = Boolean(canModerate || !me?.isApproved);
 
   const refreshAdminData = async () => {
     if (!canModerate) return;
@@ -623,23 +624,22 @@ export function UserAdminPanel() {
                   <span>Bio</span>
                   <textarea maxLength={300} onChange={(event) => setBioDraft(event.target.value)} value={bioDraft} />
                 </label>
-                <label className="field-grid user-bio-field user-field-grid">
-                  <span>Access request note</span>
-                  <textarea
-                    maxLength={1200}
-                    disabled={!canEditAccessRequestNote}
-                    onChange={(event) => setAccessRequestNoteDraft(event.target.value)}
-                    placeholder={
-                      canEditAccessRequestNote
-                        ? "Optional private note to moderators/admins."
-                        : "Request note is locked after approval."
-                    }
-                    readOnly={!canEditAccessRequestNote}
-                    value={accessRequestNoteDraft}
-                  />
-                </label>
-                {!canEditAccessRequestNote ? (
-                  <p className="field-help">Access request note is read-only after your account is approved.</p>
+                {showAccessRequestNoteField ? (
+                  <label className="field-grid user-bio-field user-field-grid">
+                    <span>Access request note</span>
+                    <textarea
+                      maxLength={1200}
+                      disabled={!canEditAccessRequestNote}
+                      onChange={(event) => setAccessRequestNoteDraft(event.target.value)}
+                      placeholder={
+                        canEditAccessRequestNote
+                          ? "Optional private note to moderators/admins."
+                          : "Request note is locked after approval."
+                      }
+                      readOnly={!canEditAccessRequestNote}
+                      value={accessRequestNoteDraft}
+                    />
+                  </label>
                 ) : null}
                 <div className="chip-group">
                   <button
