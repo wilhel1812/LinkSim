@@ -201,6 +201,7 @@ type AppState = {
   applyFrequencyPresetToSelectedNetwork: () => void;
   setPropagationModel: (model: PropagationModel) => void;
   updateSite: (id: string, patch: Partial<Site>) => void;
+  updateSitePreview: (id: string, patch: Partial<Site>) => void;
   updateLink: (id: string, patch: Partial<Link>) => void;
   updateMapViewport: (patch: Partial<MapViewport>) => void;
   ingestSrtmFiles: (files: FileList | File[]) => Promise<void>;
@@ -1196,6 +1197,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       sites: state.sites.map((site) => (site.id === id ? { ...site, ...patch } : site)),
     }));
     get().recomputeCoverage();
+  },
+  updateSitePreview: (id, patch) => {
+    set((state) => ({
+      sites: state.sites.map((site) => (site.id === id ? { ...site, ...patch } : site)),
+    }));
   },
   updateLink: (id, patch) => {
     set((state) => ({

@@ -801,6 +801,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
   const updateLink = useAppStore((state) => state.updateLink);
   const updateSite = useAppStore((state) => state.updateSite);
+  const updateSitePreview = useAppStore((state) => state.updateSitePreview);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
   const coverageSamples = useAppStore((state) => state.coverageSamples);
@@ -1157,7 +1158,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     setSiteDraftStatus(null);
   };
 
-  const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
+  const onSiteDrag = (siteId: string, event: MarkerDragEvent) => {
     if (pendingNewSiteDraft) {
       setSiteDraftStatus("Dismiss or save the new map site before moving existing sites.");
       return;
@@ -1175,7 +1176,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     const existingPendingMove = pendingSiteMoves[siteId] ?? null;
     const originalPosition = existingPendingMove?.originalPosition ?? site.position;
     const originalGroundElevationM = existingPendingMove?.originalGroundElevationM ?? site.groundElevationM;
-    updateSite(siteId, {
+    updateSitePreview(siteId, {
       position: nextPosition,
       groundElevationM: nextGroundElevationM,
     });
@@ -1190,6 +1191,23 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       },
     }));
     setSiteDraftStatus(null);
+  };
+
+  const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
+    const site = sites.find((candidate) => candidate.id === siteId);
+    if (!site) return;
+    const nextPosition = {
+      lat: event.lngLat.lat,
+      lon: event.lngLat.lng,
+    };
+    const terrainElevation = sampleSrtmElevation(srtmTiles, nextPosition.lat, nextPosition.lon);
+    const nextGroundElevationM = Number.isFinite(terrainElevation)
+      ? Math.round(terrainElevation as number)
+      : site.groundElevationM;
+    updateSite(siteId, {
+      position: nextPosition,
+      groundElevationM: nextGroundElevationM,
+    });
   };
 
   const onPendingNewSiteDragEnd = (event: MarkerDragEvent) => {
@@ -1631,6 +1649,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               key={site.id}
               latitude={site.position.lat}
               longitude={site.position.lon}
+              onDrag={(event) => onSiteDrag(site.id, event)}
               onDragEnd={(event) => onSiteDragEnd(site.id, event)}
             >
               <div
