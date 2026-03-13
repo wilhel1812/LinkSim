@@ -13,9 +13,9 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 
-const W = 840;
-const H = 240;
-const M = { t: 16, r: 18, b: 30, l: 48 };
+const W = 1200;
+const H = 260;
+const M = { t: 14, r: 10, b: 34, l: 36 };
 
 const linePath = (points: { x: number; y: number }[]): string =>
   points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
