@@ -790,6 +790,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
+  const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
   const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
@@ -850,8 +851,16 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? visibleLinks[0] ?? links[0] ?? null;
-  const selectedFromSiteId = selectedLink ? selectedLink.fromSiteId : null;
-  const selectedToSiteId = selectedLink ? selectedLink.toSiteId : null;
+  const selectedFromSiteId = selectedLink
+    ? temporaryDirectionReversed
+      ? selectedLink.toSiteId
+      : selectedLink.fromSiteId
+    : null;
+  const selectedToSiteId = selectedLink
+    ? temporaryDirectionReversed
+      ? selectedLink.fromSiteId
+      : selectedLink.toSiteId
+    : null;
   const selectedFromSite = selectedFromSiteId
     ? sites.find((site) => site.id === selectedFromSiteId) ?? null
     : null;
@@ -1149,7 +1158,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
   const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
     if (pendingNewSiteDraft) {
-      setSiteDraftStatus("Dismiss or save the temporary map site before moving existing sites.");
+      setSiteDraftStatus("Dismiss or save the new map site before moving existing sites.");
       return;
     }
     const site = sites.find((candidate) => candidate.id === siteId);
@@ -1213,7 +1222,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       return;
     }
     if (pendingMoveCount > 0) {
-      setSiteDraftStatus("Save or dismiss the current site move before creating another temporary site.");
+      setSiteDraftStatus("Save or dismiss the current site move before creating another new site.");
       return;
     }
     setPendingNewSiteDraft({
@@ -1235,59 +1244,63 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   return (
     <div className="map-panel">
       <div className="map-controls">
-        <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
-          {isMapExpanded ? "Show UI" : "Expand"}
-        </button>
-        <button className="map-control-btn" onClick={fitToNodes} type="button">
-          Fit
-        </button>
-        <button
-          className={`map-control-btn ${showTerrainOverlay ? "is-selected" : ""}`}
-          onClick={() => setShowTerrainOverlay((current) => !current)}
-          title="Toggle terrain overlay (visual only)"
-          type="button"
-        >
-          Terrain
-        </button>
-        <button
-          className={`map-control-btn ${coverageVizMode === "heatmap" ? "is-selected" : ""}`}
-          onClick={() => setCoverageVizMode("heatmap")}
-          title="Coverage strength overlay"
-          type="button"
-        >
-          Heat
-        </button>
-        <button
-          className="map-control-btn"
-          disabled={isSimulationRecomputing}
-          onClick={() => runHighQualitySimulation()}
-          title="Run one high-quality simulation pass"
-          type="button"
-        >
-          Render HQ
-        </button>
-        <button
-          className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
-          onClick={() => setCoverageVizMode("passfail")}
-          title="Coverage pass/fail against RX target"
-          type="button"
-        >
-          Pass/Fail
-        </button>
-        <button
-          className={`map-control-btn ${coverageVizMode === "relay" ? "is-selected" : ""}`}
-          onClick={() => setCoverageVizMode("relay")}
-          title="Relay candidate quality between selected From/To endpoints"
-          type="button"
-        >
-          Relay
-        </button>
-        <button className="map-control-btn" onClick={() => zoomBy(1)} type="button">
-          +
-        </button>
-        <button className="map-control-btn" onClick={() => zoomBy(-1)} type="button">
-          -
-        </button>
+        <div className="map-controls-group">
+          <button
+            className={`map-control-btn ${showTerrainOverlay ? "is-selected" : ""}`}
+            onClick={() => setShowTerrainOverlay((current) => !current)}
+            title="Toggle terrain overlay (visual only)"
+            type="button"
+          >
+            Terrain
+          </button>
+          <button
+            className={`map-control-btn ${coverageVizMode === "heatmap" || coverageVizMode === "contours" ? "is-selected" : ""}`}
+            onClick={() => setCoverageVizMode("heatmap")}
+            title="Coverage strength overlay"
+            type="button"
+          >
+            Heat
+          </button>
+          <button
+            className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
+            onClick={() => setCoverageVizMode("passfail")}
+            title="Coverage pass/fail against RX target"
+            type="button"
+          >
+            Pass/Fail
+          </button>
+          <button
+            className={`map-control-btn ${coverageVizMode === "relay" ? "is-selected" : ""}`}
+            onClick={() => setCoverageVizMode("relay")}
+            title="Relay candidate quality between selected From/To endpoints"
+            type="button"
+          >
+            Relay
+          </button>
+        </div>
+        <div className="map-controls-group map-controls-group-utility">
+          <button
+            className="map-control-btn"
+            disabled={isSimulationRecomputing}
+            onClick={() => runHighQualitySimulation()}
+            title="Run one high-quality simulation pass"
+            type="button"
+          >
+            Render HQ
+          </button>
+          <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
+            {isMapExpanded ? "Show UI" : "Expand"}
+          </button>
+          <button className="map-control-btn" onClick={fitToNodes} type="button">
+            Fit
+          </button>
+          <button className="map-control-btn" onClick={() => zoomBy(1)} type="button">
+            +
+          </button>
+          <button className="map-control-btn" onClick={() => zoomBy(-1)} type="button">
+            -
+          </button>
+        </div>
       </div>
       {isSimulationRecomputing || isBackgroundBusy ? (
         <div className="map-progress" aria-live="polite" aria-label="Simulation recalculation progress">
@@ -1314,7 +1327,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       ) : null}
       {pendingNewSiteDraft ? (
         <div className="map-control-note map-control-note-tertiary">
-          Temporary site at {pendingNewSiteDraft.lat.toFixed(5)}, {pendingNewSiteDraft.lon.toFixed(5)}. Drag it, then save or dismiss.
+          New site at {pendingNewSiteDraft.lat.toFixed(5)}, {pendingNewSiteDraft.lon.toFixed(5)}. Drag it, then save or dismiss.
           <span className="map-inline-actions">
             <button className="map-control-btn" onClick={() => void savePendingNewSiteDraft()} type="button">
               Save To Library
@@ -1328,8 +1341,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       {pendingMoveCount > 0 && pendingMovePreview ? (
         <div className="map-control-note map-control-note-tertiary">
           {pendingMoveCount === 1
-            ? `Temporary move for ${sites.find((site) => site.id === pendingMovePreview.siteId)?.name ?? "site"} to ${pendingMovePreview.currentPosition.lat.toFixed(5)}, ${pendingMovePreview.currentPosition.lon.toFixed(5)}.`
-            : `${pendingMoveCount} sites have temporary moved positions.`}
+            ? `Unsaved move for ${sites.find((site) => site.id === pendingMovePreview.siteId)?.name ?? "site"} to ${pendingMovePreview.currentPosition.lat.toFixed(5)}, ${pendingMovePreview.currentPosition.lon.toFixed(5)}.`
+            : `${pendingMoveCount} sites have unsaved position changes.`}
           <span className="map-inline-actions">
             <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
               Save Positions
@@ -1645,7 +1658,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             onDragEnd={onPendingNewSiteDragEnd}
           >
             <div className="site-pin is-temporary" role="button" tabIndex={0}>
-              <span>Temporary Site</span>
+              <span>New Site</span>
             </div>
           </Marker>
         ) : null}

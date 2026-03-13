@@ -1,7 +1,7 @@
 import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import type { MouseEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   classifyPassFailState,
   computeSourceCentricRxMetrics,
@@ -39,6 +39,8 @@ export function LinkProfileChart() {
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const setProfileCursorIndex = useAppStore((state) => state.setProfileCursorIndex);
+  const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
+  const toggleTemporaryDirectionReversed = useAppStore((state) => state.toggleTemporaryDirectionReversed);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
@@ -55,30 +57,15 @@ export function LinkProfileChart() {
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}`,
   );
-  const baseProfile = getSelectedProfile();
-  const [isDirectionFlipped, setIsDirectionFlipped] = useState(false);
-  useEffect(() => {
-    setIsDirectionFlipped(false);
-  }, [selectedLinkId, profileRevision]);
-  const profile = useMemo(() => {
-    if (!isDirectionFlipped || baseProfile.length < 2) return baseProfile;
-    const totalDistanceKm = baseProfile[baseProfile.length - 1]?.distanceKm ?? 0;
-    return [...baseProfile]
-      .reverse()
-      .map((point) => ({
-        ...point,
-        distanceKm: Math.max(0, totalDistanceKm - point.distanceKm),
-      }))
-      .sort((a, b) => a.distanceKm - b.distanceKm);
-  }, [baseProfile, isDirectionFlipped]);
+  const profile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
   const selectedFromSiteId = selectedLink
-    ? isDirectionFlipped
+    ? temporaryDirectionReversed
       ? selectedLink.toSiteId
       : selectedLink.fromSiteId
     : null;
   const selectedToSiteId = selectedLink
-    ? isDirectionFlipped
+    ? temporaryDirectionReversed
       ? selectedLink.fromSiteId
       : selectedLink.toSiteId
     : null;
@@ -389,8 +376,8 @@ export function LinkProfileChart() {
         </div>
         <button
           aria-label="Reverse path direction for this view"
-          className={`chart-endpoint-swap ${isDirectionFlipped ? "is-active" : ""}`}
-          onClick={() => setIsDirectionFlipped((current) => !current)}
+          className={`chart-endpoint-swap ${temporaryDirectionReversed ? "is-active" : ""}`}
+          onClick={toggleTemporaryDirectionReversed}
           title="Temporarily reverse path direction"
           type="button"
         >
