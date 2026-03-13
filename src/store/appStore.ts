@@ -357,6 +357,23 @@ const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]
   });
 };
 
+const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
+  if (!sites.length || !library.length) return sites;
+  const byId = new Map<string, SiteLibraryEntry>(library.map((entry) => [entry.id, entry]));
+  return sites.map((site) => {
+    if (!site.libraryEntryId) return site;
+    const entry = byId.get(site.libraryEntryId);
+    if (!entry) return site;
+    return {
+      ...site,
+      name: entry.name,
+      position: entry.position,
+      groundElevationM: entry.groundElevationM,
+      antennaHeightM: entry.antennaHeightM,
+    };
+  });
+};
+
 const hasPrivateLibrarySiteReferences = (
   sites: Site[],
   siteLibrary: SiteLibraryEntry[],
@@ -778,8 +795,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         }),
       );
       writeStorage(SITE_LIBRARY_KEY, next);
-      return { siteLibrary: next };
+      const nextSites = syncLibraryLinkedSiteValues(state.sites, next);
+      return { siteLibrary: next, sites: nextSites };
     });
+    get().recomputeCoverage();
   },
   deleteSiteLibraryEntry: (entryId) => {
     get().deleteSiteLibraryEntries([entryId]);
@@ -888,9 +907,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       Array.isArray(snap.systems) ? snap.systems : [],
       Array.isArray(snap.networks) ? snap.networks : [],
     );
-    const selectedSiteId = recovered.sites.some((site) => site.id === snap.selectedSiteId)
+    const recoveredSites = syncLibraryLinkedSiteValues(recovered.sites, get().siteLibrary);
+    const selectedSiteId = recoveredSites.some((site) => site.id === snap.selectedSiteId)
       ? snap.selectedSiteId
-      : recovered.sites[0].id;
+      : recoveredSites[0].id;
     const selectedLinkId = recovered.links.some((link) => link.id === snap.selectedLinkId)
       ? snap.selectedLinkId
       : recovered.links[0].id;
@@ -898,7 +918,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? snap.selectedNetworkId
       : recovered.networks[0].id;
     set({
-      sites: recovered.sites,
+      sites: recoveredSites,
       links: recovered.links,
       systems: recovered.systems,
       networks: recovered.networks,
