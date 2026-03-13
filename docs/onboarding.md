@@ -10,6 +10,8 @@
 - Manage your reusable site collection in **Site Library**.
 - Add sites by coordinates, map pick, search, or Meshtastic MQTT sources.
 - Add sites from the library into the current simulation as needed.
+- Click on the map to create a temporary site pin, drag to refine position, then use **Save to Library** or **Dismiss**.
+- Drag existing sites to test alternative positions instantly, then use **Save Positions** or **Dismiss** to commit/revert temporary moves.
 - Both sites and simulations can be shared with other users.
 
 ## Links

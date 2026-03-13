@@ -2212,7 +2212,7 @@ export function Sidebar() {
               <label className="field-grid">
                 <span>
                   Access level{" "}
-                  <InfoTip text="Private: owner/admin edit. Public: everyone can view; owner/mod/admin edit. Shared: everyone can view/edit; only owner/mod/admin can delete." />
+                  <InfoTip text="Private: only owner/admin can view and edit. Public: everyone can view; owner/mod/admin can edit. Shared: everyone can view and edit; only owner/mod/admin can delete." />
                 </span>
                 <select
                   className="locale-select"
@@ -2229,7 +2229,7 @@ export function Sidebar() {
               <div className="field-grid user-bio-field collaborator-picker-grid">
                 <span>
                   Collaborators{" "}
-                  <InfoTip text="Collaborators get edit rights on this resource. Editors can add collaborators but cannot remove existing collaborators. Owners/admins can remove." />
+                  <InfoTip text="Collaborators get edit rights on this resource. Editors can add collaborators but cannot remove existing collaborators. Owners/moderators/admins can remove." />
                 </span>
                 <div className="collaborator-picker">
                   <div className="chip-group collaborator-selected-list">
@@ -2274,7 +2274,7 @@ export function Sidebar() {
               </div>
               <p className="field-help">
                 Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
-                collaborators/owner.
+                collaborators/owner. Owners/moderators/admins can remove collaborators.
               </p>
               <button className="inline-action" onClick={saveResourceAccessSettings} type="button">
                 Save Access
