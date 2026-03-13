@@ -1,52 +1,31 @@
-# LinkSim (WIP)
+# LinkSim
 
-Independent web reimplementation inspired by Radio Mobile workflows.
+Link planning web application for terrain-aware radio path analysis.
 
-- Not affiliated with VE2DBE.
-- No original Radio Mobile binaries/assets are redistributed in this repository.
-- Terrain archives are fetched from official sources at runtime and cached locally.
+Inspired by Radio Mobile by Roger Coude (VE2DBE).
 
-## Data Flow
+## Repository Status
 
-1. Area selection (from current scenario/site extent).
-2. Query `https://www.ve2dbe.com/geodata/gettile.asp` for available tiles.
-3. Download selected `.hgt.zip` archives from ve2dbe geodata endpoints.
-4. Cache archives in browser Cache Storage.
-5. Parse and use loaded SRTM tiles in propagation/profile/terrain overlay.
-
-## External Service Safeguards
-
-- Geocoding requests prefer `/api/geocode` (with per-IP rate limits + short-lived edge caching when running with Functions).
-- Geocode calls gracefully fall back to direct Nominatim in local runtimes without Functions.
-- Upstream proxy routes (`/meshmap/*`, `/ve2dbe/*`) are limited to `GET/HEAD` and include per-IP request caps in Functions.
-- Fallback map raster tiles use CARTO CDN attribution endpoints rather than direct OSM tile hosts.
-
-## Runtime Proxy
-
-Vite proxy is used for browser CORS compatibility in dev/preview:
-
-- `/ve2dbe/geodata/gettile.asp`
-- `/ve2dbe/geodata/<dataset>/<tile>.hgt.zip`
-
-See `config/vite.config.ts`.
-
-## Legal/Attribution
-
-- Credits: [docs/legal/CREDITS.md](./docs/legal/CREDITS.md)
-- Third-party/data notices: [docs/legal/THIRD_PARTY_NOTICES.md](./docs/legal/THIRD_PARTY_NOTICES.md)
-- Project license: GNU GPL v3.0 ([LICENSE](./LICENSE))
+- License: GNU GPL v3.0 ([LICENSE](./LICENSE))
 - Security policy: [SECURITY.md](./SECURITY.md)
+- Legal credits/notices:
+  - [docs/legal/CREDITS.md](./docs/legal/CREDITS.md)
+  - [docs/legal/THIRD_PARTY_NOTICES.md](./docs/legal/THIRD_PARTY_NOTICES.md)
 
-## Project Structure
+## Environment Model
 
-- `src/`: app source code
-- `public/`: static assets
-- `config/`: TypeScript, Vite, and Vitest configuration
-- `scripts/`: smoke and browser automation scripts
-- `docs/legal/`: credits and third-party notices
-- `nginx/`: production nginx config used by Docker
+The project is operated in three stages:
 
-## Running
+1. Local dev (primary iteration environment)
+2. Staging (cloud validation)
+3. Production (live)
+
+Operational rule:
+- Changes are built and tested locally first.
+- Then deployed to staging.
+- Then promoted to production.
+
+## Quick Start (Local)
 
 Install dependencies:
 
@@ -54,62 +33,138 @@ Install dependencies:
 npm install
 ```
 
-Primary local runtime (recommended): Docker edge parity stack
+Run local edge-parity stack:
 
 ```bash
 docker compose up --build edge
 ```
 
-App is available at `http://localhost:8788`.
+Open:
+- `http://localhost:8788`
 
-Legacy local runtimes (kept for compatibility):
+Other local runtime options (legacy/optional):
 
 ```bash
 npm run dev
 npm run dev:edge
-```
-
-## Cloud Auth + D1 (Cloudflare-Only)
-
-This repository now includes:
-
-- Cloudflare Pages Functions API under `functions/api/*`
-- D1 schema at `db/schema.sql`
-- Cloudflare Access integration for edge authentication
-
-Detailed setup steps:
-
-- [docs/cloudflare-auth-setup.md](./docs/cloudflare-auth-setup.md)
-- [docs/access-policy-templates.md](./docs/access-policy-templates.md)
-
-## Testing
-
-- Test plan: [docs/testing-plan.md](./docs/testing-plan.md)
-- TDD workflow: [docs/tdd-workflow.md](./docs/tdd-workflow.md)
-- Run baseline checks:
-
-```bash
-npm test
-npm run test:ci
-npm run build
-```
-
-## Running with Docker Compose
-
-Preferred:
-
-```bash
-docker compose up --build edge
-```
-
-Legacy/optional:
-
-```bash
 docker compose up --build web
 docker compose up --build dev
 ```
 
-Ports:
+Default ports:
 - `edge`: `http://localhost:8788`
 - `web`: `http://localhost:8080`
 - `dev`: `http://localhost:5173`
+
+## Build, Test, Smoke
+
+Core commands:
+
+```bash
+npm run build
+npm test
+npm run test:ci
+```
+
+Additional smoke scripts:
+
+```bash
+npm run smoke:edge
+npm run smoke:scenario
+npm run smoke:profile
+npm run smoke:fit-profile
+npm run smoke:itm
+```
+
+## Deploy and Release
+
+### Staging deploy
+
+```bash
+npm run deploy:staging:main
+```
+
+### Production deploy (guarded)
+
+```bash
+npm run deploy:prod:main
+```
+
+`deploy:prod:main` is blocked unless release requirements are met:
+- `HEAD` is tagged `v<package.json version>`
+- Version is bumped in `HEAD` compared to `HEAD^`
+
+### Recommended release flow (use this)
+
+```bash
+npm run release:prod
+```
+
+Optional bump level:
+
+```bash
+npm run release:prod -- --bump minor
+npm run release:prod -- --bump major
+```
+
+What `release:prod` does:
+1. Bumps version in `package.json`
+2. Regenerates build metadata
+3. Commits + tags release
+4. Pushes `main` and tags
+5. Deploys staging
+6. Deploys production
+
+## Cloudflare Setup Overview
+
+This repo uses:
+- Cloudflare Pages + Functions
+- D1 for application data
+- R2 for avatar images
+- Cloudflare Access for authentication boundary
+
+Primary configs:
+- Production: [wrangler.toml](./wrangler.toml)
+- Staging: [wrangler.staging.toml](./wrangler.staging.toml)
+
+Detailed setup docs:
+- [docs/cloudflare-auth-setup.md](./docs/cloudflare-auth-setup.md)
+- [docs/access-policy-templates.md](./docs/access-policy-templates.md)
+
+## Staging Data Refresh
+
+Refresh staging from production snapshots:
+
+```bash
+npm run refresh:staging
+```
+
+Or run separately:
+
+```bash
+npm run refresh:staging:d1
+npm run refresh:staging:r2
+```
+
+## Data/Service Notes
+
+- Terrain data is fetched on demand and cached client-side.
+- API proxies and geocode endpoints include method/rate-limit safeguards.
+- In local runtimes without edge functions, some cloud behaviors are emulated/fallback.
+
+## Project Structure
+
+- `src/`: frontend app
+- `functions/`: Cloudflare Pages Functions API
+- `db/`: SQL schema and migration assets
+- `scripts/`: deploy/release/smoke tooling
+- `config/`: TS/Vite/Vitest configs
+- `docs/`: setup, legal, testing, and operations documentation
+- `public/`: static assets
+- `nginx/`: nginx config used by Docker flows
+
+## Contributor Notes
+
+- Keep working tree clean before deploy commands.
+- Prefer `npm run release:prod` over manual production deploy.
+- When changing auth/permissions, add or update tests in the same pass.
