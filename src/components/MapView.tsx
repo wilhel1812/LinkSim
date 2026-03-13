@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Map, {
   Layer,
+  type MapRef,
   Marker,
   Source,
   type MapLayerMouseEvent,
@@ -838,9 +839,18 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     latitude: number;
     zoom: number;
   } | null>(null);
+  const mapRef = useRef<MapRef | null>(null);
+  const hasNonAutoLinks = useMemo(
+    () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
+    [links],
+  );
+  const visibleLinks = useMemo(
+    () => (hasNonAutoLinks ? links.filter((link) => (link.name ?? "").trim().toLowerCase() !== "auto link") : links),
+    [hasNonAutoLinks, links],
+  );
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
-  const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
+  const selectedLink = links.find((link) => link.id === selectedLinkId) ?? visibleLinks[0] ?? links[0] ?? null;
   const selectedFromSite = selectedLink
     ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null
     : null;
@@ -887,7 +897,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const lineFeatures = useMemo(
     () => ({
       type: "FeatureCollection" as const,
-      features: links
+      features: visibleLinks
         .map((link) => {
           const from = sites.find((site) => site.id === link.fromSiteId);
           const to = sites.find((site) => site.id === link.toSiteId);
@@ -906,7 +916,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         })
         .filter((feature): feature is NonNullable<typeof feature> => feature !== null),
     }),
-    [links, selectedLinkId, sites],
+    [visibleLinks, selectedLinkId, sites],
   );
 
   const profileFeatures = useMemo(
@@ -1146,9 +1156,22 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
   const onMapClick = (event: MapLayerMouseEvent) => {
     if (endpointPickTarget) return;
-    const linkFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
-    const id = linkFeature?.properties ? String(linkFeature.properties.id ?? "") : "";
-    if (id) {
+    const interactiveFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
+    let id = interactiveFeature?.properties ? String(interactiveFeature.properties.id ?? "") : "";
+    if (!id && mapRef.current) {
+      const clickPoint = event.point;
+      const buffer = 8;
+      const features = mapRef.current.queryRenderedFeatures(
+        [
+          [clickPoint.x - buffer, clickPoint.y - buffer],
+          [clickPoint.x + buffer, clickPoint.y + buffer],
+        ],
+        { layers: ["link-lines"] },
+      );
+      const nearby = features.find((feature) => feature.properties && typeof feature.properties.id !== "undefined");
+      id = nearby?.properties ? String(nearby.properties.id ?? "") : "";
+    }
+    if (id && visibleLinks.some((link) => link.id === id)) {
       setSelectedLinkId(id);
       return;
     }
@@ -1366,6 +1389,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         ) : null}
       </aside>
       <Map
+        ref={mapRef}
         longitude={activeViewState.longitude}
         latitude={activeViewState.latitude}
         zoom={activeViewState.zoom}
