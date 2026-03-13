@@ -14,6 +14,7 @@ import { tilesForBounds } from "../lib/terrainTiles";
 import { useAppStore } from "../store/appStore";
 
 const M = { t: 14, r: 28, b: 34, l: 50 };
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 const linePath = (points: { x: number; y: number }[]): string =>
   points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
@@ -28,6 +29,14 @@ const areaPath = (
     .map((p) => `L${p.x.toFixed(2)},${p.y.toFixed(2)}`)
     .join(" ");
   return `${top} ${bottom} Z`;
+};
+
+const firstFresnelRadiusM = (distanceKm: number, frequencyMHz: number, t: number): number => {
+  const dTotalM = Math.max(1, distanceKm * 1000);
+  const d1 = dTotalM * t;
+  const d2 = dTotalM - d1;
+  const wavelengthM = 300 / Math.max(1, frequencyMHz);
+  return Math.sqrt((wavelengthM * d1 * d2) / dTotalM);
 };
 
 export function LinkProfileChart() {
@@ -250,25 +259,55 @@ export function LinkProfileChart() {
     () => (profile.length > 1 ? profile.slice(0, Math.max(2, clampedCursorIndex + 1)) : profile),
     [profile, clampedCursorIndex],
   );
+  const activeLosHeights = useMemo(() => {
+    if (!activeProfileSlice.length) return [] as number[];
+    const sourceAntennaM = profile[0]?.losM ?? activeProfileSlice[0]?.losM ?? 0;
+    const targetTerrainM = activeProfileSlice[activeProfileSlice.length - 1]?.terrainM ?? sourceAntennaM;
+    const totalDistanceKm = Math.max(0.001, activeProfileSlice[activeProfileSlice.length - 1]?.distanceKm ?? 0.001);
+    return activeProfileSlice.map((point) => {
+      const t = clamp(point.distanceKm / totalDistanceKm, 0, 1);
+      return sourceAntennaM + (targetTerrainM - sourceAntennaM) * t;
+    });
+  }, [activeProfileSlice, profile]);
+
+  const activeFresnel = useMemo(() => {
+    if (!activeProfileSlice.length || !effectiveLink) return [] as Array<{ top: number; bottom: number }>;
+    const totalDistanceKm = Math.max(0.001, activeProfileSlice[activeProfileSlice.length - 1]?.distanceKm ?? 0.001);
+    return activeProfileSlice.map((point, index) => {
+      const t = clamp(point.distanceKm / totalDistanceKm, 0, 1);
+      const radius = firstFresnelRadiusM(totalDistanceKm, effectiveLink.frequencyMHz, t);
+      const center = activeLosHeights[index] ?? 0;
+      return {
+        top: center + radius,
+        bottom: center - radius,
+      };
+    });
+  }, [activeProfileSlice, effectiveLink, activeLosHeights]);
+
   const activeLosPath = useMemo(
     () =>
       activeProfileSlice.length > 1
-        ? linePath(activeProfileSlice.map((p) => ({ x: geometry.xForDistance(p.distanceKm), y: geometry.yForElevation(p.losM) })))
+        ? linePath(
+            activeProfileSlice.map((p, index) => ({
+              x: geometry.xForDistance(p.distanceKm),
+              y: geometry.yForElevation(activeLosHeights[index] ?? p.losM),
+            })),
+          )
         : "",
-    [activeProfileSlice, geometry],
+    [activeProfileSlice, geometry, activeLosHeights],
   );
   const activeFresnelPath = useMemo(() => {
-    if (activeProfileSlice.length < 2) return "";
-    const top = activeProfileSlice.map((p) => ({
+    if (activeProfileSlice.length < 2 || activeFresnel.length < 2) return "";
+    const top = activeProfileSlice.map((p, index) => ({
       x: geometry.xForDistance(p.distanceKm),
-      y: geometry.yForElevation(p.fresnelTopM),
+      y: geometry.yForElevation(activeFresnel[index]?.top ?? p.fresnelTopM),
     }));
-    const bottom = activeProfileSlice.map((p) => ({
+    const bottom = activeProfileSlice.map((p, index) => ({
       x: geometry.xForDistance(p.distanceKm),
-      y: geometry.yForElevation(p.fresnelBottomM),
+      y: geometry.yForElevation(activeFresnel[index]?.bottom ?? p.fresnelBottomM),
     }));
     return areaPath(top, bottom);
-  }, [activeProfileSlice, geometry]);
+  }, [activeProfileSlice, activeFresnel, geometry]);
   const cursorState = useMemo(() => {
     if (!cursorPoint || !selectedFromSite || !selectedToSite || !effectiveLink) return null;
     const metrics = computeSourceCentricRxMetrics(
