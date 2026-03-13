@@ -9,9 +9,9 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - Prefer cleanup, consistency, and hardening over new feature scope.
 
 ## User-provided backlog (seed)
-- [ ] Clean up sidebar
+- [x] Clean up sidebar
 - [ ] Report to admins/mods
-- [ ] Report types: feedback
+- [x] Report types: feedback
 - [ ] Report types: spam/misuse
 - [ ] Banning users
 - [ ] E-mail notifications (starting with account approval)
@@ -28,9 +28,9 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] explore if the route option actually makes sense anymore
 - [ ] explore if we can take buildings into account
 - [ ] Explore if we can make ourselves completely independent of VE2DBE data for SRTM
-- [ ] Temporary nodes
-- [ ] Color theming pass (user-configurable themes)
-- [ ] Environment distinction redesign for test/staging (must not rely on theme colors)
+- [x] Temporary nodes
+- [x] Color theming pass (user-configurable themes)
+- [x] Environment distinction redesign for test/staging (must not rely on theme colors)
 
 ## Active stabilization backlog
 
@@ -116,3 +116,88 @@ State: stabilization pass (no net-new product features unless explicitly approve
 1. Auth/permission endpoint matrix tests (admin/user/pending/revoked/deleted sessions).
 2. Runtime migration extraction from request path into explicit migration step.
 3. Admin utilities scope draft replacing manual SQL operations.
+
+## Open items (elaborated for future passes)
+
+### 1) Explore if we can make ourselves completely independent of VE2DBE data for SRTM
+- Status: open
+- Why it matters: external dependency/rate-limit risk and availability risk.
+- Proposed scope:
+  - Evaluate direct upstream terrain providers and mirror strategy.
+  - Add provider priority/fallback chain with cache-first behavior.
+  - Keep attribution/licensing clear per source.
+- Suggested acceptance:
+  - Simulation/fetch still works if VE2DBE path is unavailable.
+  - Source summary UI reflects active terrain source accurately.
+
+### 2) Rehaul of documentation (README.md)
+- Status: open
+- Why it matters: repo is public and deployment/release flow has changed.
+- Proposed scope:
+  - Environment model (local dev -> staging -> production).
+  - Release process (`npm run release:prod`) and version/tag rules.
+  - Cloudflare setup prerequisites and common failure modes.
+  - Contributor workflow, test expectations, and deployment guardrails.
+- Suggested acceptance:
+  - New contributor can run locally and deploy staging without tribal knowledge.
+
+### 3) Report to admins/mods
+- Status: open
+- Why it matters: moderation requires in-app reporting, not only external feedback links.
+- Proposed scope:
+  - Report button on sites/simulations/users with typed reason + optional note.
+  - Moderator/admin queue with status transitions.
+  - Basic audit log entries for report actions.
+
+### 4) Report types: spam/misuse
+- Status: open
+- Why it matters: separate signal from generic feedback.
+- Proposed scope:
+  - Add explicit `spam/misuse` reason category in report flow.
+  - Fast moderation actions from queue item (hide/deactivate/escalate).
+
+### 5) Banning users
+- Status: open
+- Why it matters: needed enforcement endpoint after misuse reports.
+- Proposed scope:
+  - User lifecycle states include banned/suspended.
+  - Ban blocks write actions and optionally login/session continuation.
+  - Preserve audit trail and reversible admin action.
+
+### 6) E-mail notifications (starting with account approval)
+- Status: open
+- Why it matters: closed-loop onboarding and moderation follow-up.
+- Proposed scope:
+  - Start with approval/rejection notifications.
+  - Queue/templated sending path (provider-neutral abstraction).
+- Note: defer until moderation/report primitives are in place.
+
+### 7) Set up a comprehensive testing plan
+- Status: open
+- Why it matters: prevent regressions in auth/permissions/moderation.
+- Proposed scope:
+  - Define test pyramid and mandatory suites per change type.
+  - Add release checklist and minimum coverage gates.
+  - Add smoke checks for staging before production release.
+
+### 8) Branding
+- Status: open
+- Why it matters: consistency/polish, lower product risk than moderation/data reliability.
+- Proposed scope:
+  - Finalize voice/tone, iconography, naming consistency.
+  - Ensure theme-safe branding tokens.
+
+### 9) Explore if the route option actually makes sense anymore
+- Status: open
+- Why it matters: avoid duplicated/confusing map overlays.
+- Proposed scope:
+  - Decide if route mode remains separate, is redesigned, or removed.
+  - Validate against actual user tasks (point-to-point, relay planning).
+
+### 10) Explore if we can take buildings into account
+- Status: open
+- Why it matters: improves realism in dense/urban scenarios.
+- Proposed scope:
+  - Research data source quality/coverage and licensing.
+  - Prototype optional clutter/building attenuation layer.
+  - Keep performance budget explicit (LQ/HQ mode impact).
