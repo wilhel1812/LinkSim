@@ -2045,6 +2045,7 @@ export function Sidebar() {
           </details>
         </details>
       </section>
+      <div className="sidebar-grow" />
       <footer className="sidebar-footer">
         Build: {APP_BUILD_LABEL} ({isCurrentTestEnvironment() ? "test" : "production"})
       </footer>
@@ -2825,7 +2826,6 @@ export function Sidebar() {
           </div>
         </ModalOverlay>
       ) : null}
-      <div className="sidebar-grow" />
     </aside>
   );
 }
