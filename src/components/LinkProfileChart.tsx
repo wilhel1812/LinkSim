@@ -115,6 +115,12 @@ export function LinkProfileChart() {
   ]);
 
   useEffect(() => {
+    if (profile.length < 1) return;
+    // Default map/profile target should be the current path endpoint.
+    setProfileCursorIndex(profile.length - 1);
+  }, [profile.length, selectedLinkId, temporaryDirectionReversed, setProfileCursorIndex]);
+
+  useEffect(() => {
     if (profile.length < 2) return;
     const element = chartHostRef.current;
     if (!element) return;
@@ -291,6 +297,11 @@ export function LinkProfileChart() {
     setProfileCursorIndex(nearest);
   };
 
+  const onSvgLeave = () => {
+    if (profile.length < 1) return;
+    setProfileCursorIndex(profile.length - 1);
+  };
+
   return (
     <section className="chart-panel" data-profile-revision={profileRevision}>
       {terrainIsStaleForCurrentArea ? (
@@ -386,6 +397,7 @@ export function LinkProfileChart() {
             width={chartWidth - M.l - M.r}
             height={chartHeight - M.t - M.b}
             onMouseMove={onSvgMove}
+            onMouseLeave={onSvgLeave}
           />
         </svg>
         </div>
