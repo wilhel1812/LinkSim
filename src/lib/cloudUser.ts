@@ -306,11 +306,6 @@ export const fetchAdminAuditEvents = async (limit = 60): Promise<AdminAuditEvent
   return Array.isArray(data.events) ? data.events : [];
 };
 
-export const sendAdminTestAccessEmail = async (): Promise<{ ok: boolean; result: { sent: boolean; reason?: string } }> =>
-  apiCall<{ ok: boolean; result: { sent: boolean; reason?: string } }>("/api/admin-email-test", {
-    method: "POST",
-  });
-
 export const uploadAvatar = async (originalDataUrl: string, thumbDataUrl: string): Promise<AvatarUploadResult> =>
   apiCall<AvatarUploadResult>("/api/avatar-upload", {
     method: "POST",
