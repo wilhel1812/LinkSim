@@ -297,18 +297,11 @@ export function LinkProfileChart() {
       ) : null}
       <div className="chart-endpoints" aria-live="polite">
         <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
-        <button
-          aria-label="Reverse path direction for this view"
-          className={`chart-endpoint-swap ${isDirectionFlipped ? "is-active" : ""}`}
-          onClick={() => setIsDirectionFlipped((current) => !current)}
-          title="Temporarily reverse path direction"
-          type="button"
-        >
-          Flip Direction
-        </button>
+        <span className="chart-endpoint-sep" aria-hidden>
+          →
+        </span>
         <span className="chart-endpoint chart-endpoint-right">{toSiteName}</span>
       </div>
-      <p className="chart-direction-label">Direction (left → right): {fromSiteName} → {toSiteName}</p>
       {!geometry.hasData ? (
         <div className="chart-empty">
           <p>Path profile unavailable for the selected link.</p>
@@ -382,14 +375,29 @@ export function LinkProfileChart() {
           />
         </svg>
       )}
-      {cursorPoint && cursorState ? (
+      <div className="chart-footer-row">
         <div className="chart-hover-state">
-          <span className={`state-dot state-dot-${cursorState.state}`} aria-hidden />
-          <span>
-            {cursorState.label} at {cursorPoint.distanceKm.toFixed(2)} km ({(cursorState.rxDbm - environmentLossDb).toFixed(1)} dBm after env loss)
-          </span>
+          {cursorPoint && cursorState ? (
+            <>
+              <span className={`state-dot state-dot-${cursorState.state}`} aria-hidden />
+              <span>
+                {cursorState.label} at {cursorPoint.distanceKm.toFixed(2)} km (
+                {(cursorState.rxDbm - environmentLossDb).toFixed(1)} dBm after env loss)
+              </span>
+            </>
+          ) : null}
         </div>
-      ) : null}
+        <button
+          aria-label="Reverse path direction for this view"
+          className={`chart-endpoint-swap ${isDirectionFlipped ? "is-active" : ""}`}
+          onClick={() => setIsDirectionFlipped((current) => !current)}
+          title="Temporarily reverse path direction"
+          type="button"
+        >
+          Flip Direction
+        </button>
+        <div />
+      </div>
     </section>
   );
 }

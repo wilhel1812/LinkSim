@@ -947,10 +947,10 @@ input {
 }
 
 .chart-panel {
-  padding: 12px 14px 8px;
+  padding: 8px 8px 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .chart-header {
@@ -1006,7 +1006,7 @@ input {
   color: var(--text);
   border-radius: 8px;
   width: auto;
-  min-width: 108px;
+  min-width: 118px;
   height: 26px;
   padding: 0 10px;
   line-height: 1.1;
@@ -1033,13 +1033,6 @@ input {
   padding: 2px 2px 0;
 }
 
-.chart-direction-label {
-  margin: 0;
-  font-size: 0.74rem;
-  color: var(--muted);
-  font-family: "IBM Plex Mono", monospace;
-}
-
 .state-dot {
   width: 10px;
   height: 10px;
@@ -1061,6 +1054,17 @@ input {
 
 .state-dot-fail_blocked {
   background: #cd574f;
+}
+
+.chart-footer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-footer-row > .chart-hover-state {
+  min-height: 26px;
 }
 
 .chart-empty {
