@@ -169,6 +169,24 @@ body::before {
   mix-blend-mode: overlay;
 }
 
+.env-staging body::after,
+.env-local body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  border: 4px solid transparent;
+}
+
+.env-staging body::after {
+  border-color: color-mix(in srgb, var(--accent) 74%, #ffffff 8%);
+}
+
+.env-local body::after {
+  border-color: #f7a545;
+}
+
 h1,
 h2,
 p {

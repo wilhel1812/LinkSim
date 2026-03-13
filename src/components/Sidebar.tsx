@@ -16,7 +16,7 @@ import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
-import { isCurrentTestEnvironment } from "../lib/environment";
+import { getCurrentRuntimeEnvironment, isCurrentTestEnvironment } from "../lib/environment";
 import { APP_BUILD_LABEL } from "../lib/buildInfo";
 import {
   fetchCollaboratorDirectory,
@@ -216,6 +216,7 @@ const getSnapshotCount = (key: string): number => {
 
 export function Sidebar() {
   const { theme } = useUiTheme();
+  const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -2045,7 +2046,8 @@ export function Sidebar() {
       </section>
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
-        Build: {APP_BUILD_LABEL} ({isCurrentTestEnvironment() ? "test" : "production"})
+        Build: {APP_BUILD_LABEL} (
+        {runtimeEnvironment === "production" ? "live-prod" : runtimeEnvironment === "local" ? "local" : "live-test"})
       </footer>
 
       {profilePopupUser ? (

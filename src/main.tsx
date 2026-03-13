@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./index.css";
 import App from "./App";
-import { isCurrentTestEnvironment } from "./lib/environment";
+import { getCurrentRuntimeEnvironment } from "./lib/environment";
 
 if (window.location.hostname === "127.0.0.1") {
   const redirectUrl =
@@ -13,14 +13,18 @@ if (window.location.hostname === "127.0.0.1") {
   window.location.replace(redirectUrl);
 }
 
-if (isCurrentTestEnvironment()) {
-  document.documentElement.classList.add("env-staging");
-}
+const runtimeEnvironment = getCurrentRuntimeEnvironment();
+document.documentElement.classList.remove("env-local", "env-staging", "env-production");
+document.documentElement.classList.add(`env-${runtimeEnvironment}`);
 
 const applyEnvironmentBranding = () => {
-  const isTest = isCurrentTestEnvironment();
-  document.title = isTest ? "[TEST] LinkSim" : "LinkSim";
-  const iconHref = isTest ? "/favicon-test.svg?v=20260313b" : "/favicon.svg?v=20260313b";
+  document.title =
+    runtimeEnvironment === "production"
+      ? "LinkSim"
+      : runtimeEnvironment === "local"
+        ? "[LOCAL] LinkSim"
+        : "[TEST] LinkSim";
+  const iconHref = runtimeEnvironment === "production" ? "/favicon.svg?v=20260313b" : "/favicon-test.svg?v=20260313b";
   for (const selector of ['link[rel="icon"]', 'link[rel="shortcut icon"]']) {
     const linkEl = document.querySelector<HTMLLinkElement>(selector);
     if (linkEl) linkEl.href = iconHref;
