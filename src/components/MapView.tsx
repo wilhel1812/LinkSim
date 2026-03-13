@@ -887,11 +887,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     return Array.from(breakdown.values()).sort((a, b) => b.count - a.count);
   }, [srtmTiles]);
   const selectedDatasetTileCount = useMemo(
-    () =>
-      srtmTiles.filter((tile) => {
-        const sourceId = tile.sourceId ?? "";
-        return sourceId === terrainDataset || sourceId === `ve2dbe-${terrainDataset}`;
-      }).length,
+    () => srtmTiles.filter((tile) => (tile.sourceId ?? "") === terrainDataset).length,
     [srtmTiles, terrainDataset],
   );
   const boundedCoverageSamples = useMemo(() => {

@@ -24,10 +24,6 @@ import {
   TERRAIN_DATASET_LABEL,
   type TerrainDataset,
 } from "../lib/terrainDataset";
-import {
-  clearVe2dbeCache,
-  loadVe2dbeTilesForArea,
-} from "../lib/ve2dbeTerrainClient";
 import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
 import type {
@@ -1306,24 +1302,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     try {
-      const result =
-        terrainDataset === "legacySrtmThird"
-          ? await loadVe2dbeTilesForArea(
-              bounds.minLat,
-              bounds.maxLat,
-              bounds.minLon,
-              bounds.maxLon,
-              terrainDataset,
-            )
-          : await loadCopernicusTilesForArea(
-              bounds.minLat,
-              bounds.maxLat,
-              bounds.minLon,
-              bounds.maxLon,
-              terrainDataset,
-            );
-      const fetchedItems = "fetchedArchives" in result ? result.fetchedArchives : result.fetchedTiles;
-      const failedItems = "failedArchives" in result ? result.failedArchives : result.failedTiles;
+      const result = await loadCopernicusTilesForArea(
+        bounds.minLat,
+        bounds.maxLat,
+        bounds.minLon,
+        bounds.maxLon,
+        terrainDataset,
+      );
+      const fetchedItems = result.fetchedTiles;
+      const failedItems = result.failedTiles;
       set((state) => {
         const dedup = new Map<string, SrtmTile>();
         for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
@@ -1354,7 +1341,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   clearTerrainCache: async () => {
     set({ isTerrainFetching: true });
-    await Promise.all([clearVe2dbeCache(), clearCopernicusCache()]);
+    await clearCopernicusCache();
     set((state) => ({
       srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
       isTerrainFetching: false,

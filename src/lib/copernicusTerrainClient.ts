@@ -1,6 +1,6 @@
 import { fromArrayBuffer } from "geotiff";
 import type { SrtmTile } from "../types/radio";
-import { tilesForBounds } from "./ve2dbeTerrainClient";
+import { tilesForBounds } from "./terrainTiles";
 import type { TerrainDataset } from "./terrainDataset";
 
 type CopernicusDataset = Extract<TerrainDataset, "copernicus30" | "copernicus90">;

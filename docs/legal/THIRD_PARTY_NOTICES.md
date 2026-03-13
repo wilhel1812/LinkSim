@@ -6,26 +6,14 @@ This project uses open-source npm packages listed in `package.json` and distribu
 
 ## External Data and Services
 
-### Radio Mobile / ve2dbe
+### Terrain Data
 
-- Source portal used by runtime fetch:
-  - https://www.ve2dbe.com/geodata/
-- Tile availability is queried from:
-  - `https://www.ve2dbe.com/geodata/gettile.asp`
-- Terrain archives are fetched at runtime from ve2dbe geodata endpoints and cached locally in-browser.
-
-### Upstream Elevation/Landcover Sources Listed by ve2dbe
-
-As listed on the ve2dbe geodata page, sources include:
-
-- NASA Shuttle Radar Topography Mission
-- USA National map viewer
-- Natural Resources Canada
-- European Environment Agency
-- Viewfinder Panoramas
-
-Use of fetched data should comply with applicable source terms and licenses.
-Operational policy: see [SOURCE_COMPLIANCE.md](./SOURCE_COMPLIANCE.md).
+- Copernicus DEM GLO-30 and GLO-90 tile catalogs and data:
+  - `https://copernicus-dem-30m.s3.amazonaws.com/`
+  - `https://copernicus-dem-90m.s3.amazonaws.com/`
+- Terrain tiles are fetched at runtime and cached locally in-browser.
+- Use of fetched data should comply with applicable source terms and licenses.
+- Operational policy: see [SOURCE_COMPLIANCE.md](./SOURCE_COMPLIANCE.md).
 
 ### Online Site Elevation Sync
 

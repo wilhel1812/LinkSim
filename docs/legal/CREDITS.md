@@ -8,9 +8,9 @@
 
 This project is an independent web reimplementation inspired by Radio Mobile concepts and workflows, and is not affiliated with VE2DBE.
 
-## Terrain/Data Portal
+## Terrain Data
 
-- ve2dbe geodata portal: https://www.ve2dbe.com/geodata/
+- Copernicus DEM (GLO-30 / GLO-90): https://copernicus-dem-30m.s3.amazonaws.com/ and https://copernicus-dem-90m.s3.amazonaws.com/
 
 ## Basemap Styles
 

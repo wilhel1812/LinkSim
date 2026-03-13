@@ -15,7 +15,6 @@ import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
-import { LEGACY_ASSETS } from "../lib/legacyAssets";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
 import {
@@ -1843,7 +1842,6 @@ export function Sidebar() {
             >
               <option value="copernicus30">{TERRAIN_DATASET_LABEL.copernicus30}</option>
               <option value="copernicus90">{TERRAIN_DATASET_LABEL.copernicus90}</option>
-              <option value="legacySrtmThird">{TERRAIN_DATASET_LABEL.legacySrtmThird}</option>
             </select>
           </label>
           <button className="inline-action" onClick={() => void fetchTerrainForCurrentArea()} type="button">
@@ -1871,9 +1869,6 @@ export function Sidebar() {
           <div className="asset-list">
             <a href={REMOTE_SRTM_ENDPOINTS[terrainDataset]} rel="noreferrer" target="_blank">
               Open selected terrain dataset page
-            </a>
-            <a href="https://www.ve2dbe.com/geodata/" rel="noreferrer" target="_blank">
-              Open legacy ve2dbe geodata page
             </a>
           </div>
         </details>
@@ -2036,11 +2031,6 @@ export function Sidebar() {
             <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/rf-models-and-sampling.md" rel="noreferrer" target="_blank">
               RF Models & Sampling Guide
             </a>
-            {LEGACY_ASSETS.map((asset) => (
-              <a href={asset.url} key={asset.url} rel="noreferrer" target="_blank">
-                {asset.label}
-              </a>
-            ))}
           </div>
           <details className="compact-details">
             <summary>Credits & Attribution</summary>

@@ -10,7 +10,7 @@ import {
 } from "../lib/passFailState";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
+import { tilesForBounds } from "../lib/terrainTiles";
 import { useAppStore } from "../store/appStore";
 
 const M = { t: 14, r: 28, b: 34, l: 50 };
