@@ -948,13 +948,15 @@ input {
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   color: var(--text);
-  border-radius: 999px;
-  width: 34px;
+  border-radius: 8px;
+  width: auto;
+  min-width: 108px;
   height: 26px;
-  line-height: 1;
+  padding: 0 10px;
+  line-height: 1.1;
   cursor: pointer;
-  font-weight: 700;
-  font-size: 0.9rem;
+  font-weight: 600;
+  font-size: 0.74rem;
 }
 
 .chart-endpoint-swap:hover {
@@ -973,6 +975,13 @@ input {
   font-size: 0.78rem;
   color: var(--text);
   padding: 2px 2px 0;
+}
+
+.chart-direction-label {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
 }
 
 .state-dot {
@@ -1048,20 +1057,30 @@ input {
   stroke: none;
 }
 
-.terrain-visibility-visible,
-.terrain-visibility-shadow {
+.terrain-state-pass_clear,
+.terrain-state-pass_blocked,
+.terrain-state-fail_clear,
+.terrain-state-fail_blocked {
   fill: none;
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.terrain-visibility-visible {
-  stroke: color-mix(in srgb, var(--success) 82%, white 8%);
+.terrain-state-pass_clear {
+  stroke: #52b560;
 }
 
-.terrain-visibility-shadow {
-  stroke: color-mix(in srgb, var(--warning) 88%, #c20000 12%);
+.terrain-state-pass_blocked {
+  stroke: #e8aa48;
+}
+
+.terrain-state-fail_clear {
+  stroke: #eb7846;
+}
+
+.terrain-state-fail_blocked {
+  stroke: #cd574f;
 }
 
 .los-path {

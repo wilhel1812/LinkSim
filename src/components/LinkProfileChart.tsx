@@ -1,13 +1,16 @@
 import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import type { MouseEvent } from "react";
-import { useEffect, useMemo, useRef } from "react";
-import { t } from "../i18n/locales";
-import { classifyPassFailState, computeSourceCentricRxMetrics, passFailStateLabel } from "../lib/passFailState";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  classifyPassFailState,
+  computeSourceCentricRxMetrics,
+  passFailStateLabel,
+  type PassFailState,
+} from "../lib/passFailState";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
-import type { ProfilePoint } from "../types/radio";
 import { useAppStore } from "../store/appStore";
 
 const W = 840;
@@ -29,29 +32,10 @@ const areaPath = (
   return `${top} ${bottom} Z`;
 };
 
-const terrainVisibilityFromFromNode = (profile: ProfilePoint[]): boolean[] => {
-  if (profile.length === 0) return [];
-  const fromAntennaElevationM = profile[0].losM;
-  const visibility = Array.from({ length: profile.length }, () => false);
-  visibility[0] = true;
-  let maxSlopeSeen = Number.NEGATIVE_INFINITY;
-  for (let i = 1; i < profile.length; i += 1) {
-    const distanceM = Math.max(1, profile[i].distanceKm * 1000);
-    const slope = (profile[i].terrainM - fromAntennaElevationM) / distanceM;
-    const isVisible = slope >= maxSlopeSeen - 1e-9;
-    visibility[i] = isVisible;
-    if (isVisible) maxSlopeSeen = slope;
-  }
-  return visibility;
-};
-
 export function LinkProfileChart() {
-  const locale = useAppStore((state) => state.locale);
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
-  const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
-  const toggleTemporaryDirectionReversed = useAppStore((state) => state.toggleTemporaryDirectionReversed);
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const setProfileCursorIndex = useAppStore((state) => state.setProfileCursorIndex);
@@ -71,15 +55,30 @@ export function LinkProfileChart() {
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}`,
   );
-  const profile = getSelectedProfile();
+  const baseProfile = getSelectedProfile();
+  const [isDirectionFlipped, setIsDirectionFlipped] = useState(false);
+  useEffect(() => {
+    setIsDirectionFlipped(false);
+  }, [selectedLinkId, profileRevision]);
+  const profile = useMemo(() => {
+    if (!isDirectionFlipped || baseProfile.length < 2) return baseProfile;
+    const totalDistanceKm = baseProfile[baseProfile.length - 1]?.distanceKm ?? 0;
+    return [...baseProfile]
+      .reverse()
+      .map((point) => ({
+        ...point,
+        distanceKm: Math.max(0, totalDistanceKm - point.distanceKm),
+      }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+  }, [baseProfile, isDirectionFlipped]);
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
   const selectedFromSiteId = selectedLink
-    ? temporaryDirectionReversed
+    ? isDirectionFlipped
       ? selectedLink.toSiteId
       : selectedLink.fromSiteId
     : null;
   const selectedToSiteId = selectedLink
-    ? temporaryDirectionReversed
+    ? isDirectionFlipped
       ? selectedLink.fromSiteId
       : selectedLink.toSiteId
     : null;
@@ -133,7 +132,7 @@ export function LinkProfileChart() {
         xForDistance: () => M.l,
         yForElevation: () => H - M.b,
         terrainPath: "",
-        terrainLineSegments: [] as { d: string; visibleFromFromNode: boolean }[],
+        terrainLineSegments: [] as { d: string; state: PassFailState }[],
         losPath: "",
         fresnelPath: "",
         yTicks: [] as { value: number; py: number }[],
@@ -165,10 +164,9 @@ export function LinkProfileChart() {
     const fresnelTop = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.fresnelTopM) }));
     const fresnelBottom = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.fresnelBottomM) }));
 
-    const visibilityFlags = terrainVisibilityFromFromNode(profile);
     const terrainLineSegments = terrainPoints.slice(1).map((point, i) => ({
       d: linePath([terrainPoints[i], point]),
-      visibleFromFromNode: visibilityFlags[i + 1],
+      state: "pass_clear" as PassFailState,
     }));
 
     return {
@@ -191,6 +189,41 @@ export function LinkProfileChart() {
       }),
     };
   }, [profile]);
+
+  const terrainLineSegments = useMemo(() => {
+    if (!geometry.hasData || !selectedFromSite || !selectedToSite || !effectiveLink) return geometry.terrainLineSegments;
+    return profile.slice(1).map((point, index) => {
+      const metrics = computeSourceCentricRxMetrics(
+        point.lat,
+        point.lon,
+        selectedFromSite,
+        effectiveLink,
+        selectedToSite.antennaHeightM,
+        propagationModel,
+        (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+        coverageResolutionMode === "high" ? 80 : 24,
+      );
+      const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
+      const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
+      const state = classifyPassFailState(pass, losBlocked);
+      return {
+        d: geometry.terrainLineSegments[index]?.d ?? "",
+        state,
+      };
+    });
+  }, [
+    geometry.hasData,
+    geometry.terrainLineSegments,
+    profile,
+    selectedFromSite,
+    selectedToSite,
+    effectiveLink,
+    propagationModel,
+    srtmTiles,
+    coverageResolutionMode,
+    environmentLossDb,
+    rxSensitivityTargetDbm,
+  ]);
 
   const clampedCursorIndex = Math.max(0, Math.min(profile.length - 1, profileCursorIndex));
   const cursorPoint = profile[clampedCursorIndex];
@@ -247,10 +280,6 @@ export function LinkProfileChart() {
 
   return (
     <section className="chart-panel" data-profile-revision={profileRevision}>
-      <header className="chart-header">
-        <h2>{t(locale, "pathProfile")}</h2>
-        <p>{t(locale, "profileSubtitle")}</p>
-      </header>
       {terrainIsStaleForCurrentArea ? (
         <div className="terrain-alert" role="status">
           <p>
@@ -270,15 +299,16 @@ export function LinkProfileChart() {
         <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
         <button
           aria-label="Reverse path direction for this view"
-          className={`chart-endpoint-swap ${temporaryDirectionReversed ? "is-active" : ""}`}
-          onClick={() => toggleTemporaryDirectionReversed()}
+          className={`chart-endpoint-swap ${isDirectionFlipped ? "is-active" : ""}`}
+          onClick={() => setIsDirectionFlipped((current) => !current)}
           title="Temporarily reverse path direction"
           type="button"
         >
-          ⇄
+          Flip Direction
         </button>
         <span className="chart-endpoint chart-endpoint-right">{toSiteName}</span>
       </div>
+      <p className="chart-direction-label">Direction (left → right): {fromSiteName} → {toSiteName}</p>
       {!geometry.hasData ? (
         <div className="chart-empty">
           <p>Path profile unavailable for the selected link.</p>
@@ -319,9 +349,9 @@ export function LinkProfileChart() {
 
           <path className="fresnel-band" d={geometry.fresnelPath} />
           <path className="terrain-fill-path" d={geometry.terrainPath} fill={`url(#${terrainFillGradientId})`} />
-          {geometry.terrainLineSegments.map((segment, index) => (
+          {terrainLineSegments.map((segment, index) => (
             <path
-              className={segment.visibleFromFromNode ? "terrain-visibility-visible" : "terrain-visibility-shadow"}
+              className={`terrain-state-${segment.state}`}
               d={segment.d}
               key={`terrain-segment-${index}`}
             />

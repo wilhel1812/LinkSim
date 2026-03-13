@@ -806,7 +806,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
-  const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
   const networks = useAppStore((state) => state.networks);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const hasOnlineElevationSync = useAppStore((state) => state.hasOnlineElevationSync);
@@ -851,16 +850,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? visibleLinks[0] ?? links[0] ?? null;
-  const selectedFromSiteId = selectedLink
-    ? temporaryDirectionReversed
-      ? selectedLink.toSiteId
-      : selectedLink.fromSiteId
-    : null;
-  const selectedToSiteId = selectedLink
-    ? temporaryDirectionReversed
-      ? selectedLink.fromSiteId
-      : selectedLink.toSiteId
-    : null;
+  const selectedFromSiteId = selectedLink ? selectedLink.fromSiteId : null;
+  const selectedToSiteId = selectedLink ? selectedLink.toSiteId : null;
   const selectedFromSite = selectedFromSiteId
     ? sites.find((site) => site.id === selectedFromSiteId) ?? null
     : null;
