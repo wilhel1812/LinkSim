@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { t } from "../i18n/locales";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
+import type { ProfilePoint } from "../types/radio";
 import { useAppStore } from "../store/appStore";
 
 const W = 840;
@@ -24,6 +25,22 @@ const areaPath = (
     .map((p) => `L${p.x.toFixed(2)},${p.y.toFixed(2)}`)
     .join(" ");
   return `${top} ${bottom} Z`;
+};
+
+const terrainVisibilityFromFromNode = (profile: ProfilePoint[]): boolean[] => {
+  if (profile.length === 0) return [];
+  const fromAntennaElevationM = profile[0].losM;
+  const visibility = Array.from({ length: profile.length }, () => false);
+  visibility[0] = true;
+  let maxSlopeSeen = Number.NEGATIVE_INFINITY;
+  for (let i = 1; i < profile.length; i += 1) {
+    const distanceM = Math.max(1, profile[i].distanceKm * 1000);
+    const slope = (profile[i].terrainM - fromAntennaElevationM) / distanceM;
+    const isVisible = slope >= maxSlopeSeen - 1e-9;
+    visibility[i] = isVisible;
+    if (isVisible) maxSlopeSeen = slope;
+  }
+  return visibility;
 };
 
 export function LinkProfileChart() {
@@ -57,6 +74,10 @@ export function LinkProfileChart() {
   const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
   const autoFetchAttemptRef = useRef("");
   const terrainSignature = `${requiredTerrainTileKeys.join(",")}|missing:${missingTerrainTileKeys.join(",")}`;
+  const terrainFillGradientId = useMemo(
+    () => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`,
+    [],
+  );
 
   useEffect(() => {
     if (!terrainIsStaleForCurrentArea) {
@@ -82,6 +103,7 @@ export function LinkProfileChart() {
         xForDistance: () => M.l,
         yForElevation: () => H - M.b,
         terrainPath: "",
+        terrainLineSegments: [] as { d: string; visibleFromFromNode: boolean }[],
         losPath: "",
         fresnelPath: "",
         yTicks: [] as { value: number; py: number }[],
@@ -113,11 +135,18 @@ export function LinkProfileChart() {
     const fresnelTop = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.fresnelTopM) }));
     const fresnelBottom = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.fresnelBottomM) }));
 
+    const visibilityFlags = terrainVisibilityFromFromNode(profile);
+    const terrainLineSegments = terrainPoints.slice(1).map((point, i) => ({
+      d: linePath([terrainPoints[i], point]),
+      visibleFromFromNode: visibilityFlags[i + 1],
+    }));
+
     return {
       hasData: true,
       xForDistance: (distanceKm: number) => x(distanceKm),
       yForElevation: (elevation: number) => y(elevation),
       terrainPath: `${linePath(terrainPoints)} L${W - M.r},${H - M.b} L${M.l},${H - M.b} Z`,
+      terrainLineSegments,
       losPath: linePath(losPoints),
       fresnelPath: areaPath(fresnelTop, fresnelBottom),
       yTicks: Array.from({ length: 5 }, (_, i) => {
@@ -189,6 +218,20 @@ export function LinkProfileChart() {
         </div>
       ) : (
         <svg aria-label="Link profile" role="img" viewBox={`0 0 ${W} ${H}`}>
+          <defs>
+            <linearGradient
+              gradientUnits="userSpaceOnUse"
+              id={terrainFillGradientId}
+              x1={0}
+              x2={0}
+              y1={M.t}
+              y2={H - M.b}
+            >
+              <stop offset="0%" stopColor="var(--terrain)" stopOpacity="0.06" />
+              <stop offset="55%" stopColor="var(--terrain)" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="var(--terrain)" stopOpacity="0.5" />
+            </linearGradient>
+          </defs>
           {geometry.yTicks.map((tick) => (
             <g className="chart-grid" key={`y-${tick.value}`}>
               <line x1={M.l} x2={W - M.r} y1={tick.py} y2={tick.py} />
@@ -208,7 +251,14 @@ export function LinkProfileChart() {
           ))}
 
           <path className="fresnel-band" d={geometry.fresnelPath} />
-          <path className="terrain-path" d={geometry.terrainPath} />
+          <path className="terrain-fill-path" d={geometry.terrainPath} fill={`url(#${terrainFillGradientId})`} />
+          {geometry.terrainLineSegments.map((segment, index) => (
+            <path
+              className={segment.visibleFromFromNode ? "terrain-visibility-visible" : "terrain-visibility-shadow"}
+              d={segment.d}
+              key={`terrain-segment-${index}`}
+            />
+          ))}
           <path className="los-path" d={geometry.losPath} />
           {cursorPoint ? (
             <g className="profile-cursor">

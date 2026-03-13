@@ -957,10 +957,24 @@ input {
   cursor: crosshair;
 }
 
-.terrain-path {
-  fill: color-mix(in srgb, var(--terrain) 72%, transparent);
-  stroke: var(--terrain);
-  stroke-width: 1.3;
+.terrain-fill-path {
+  stroke: none;
+}
+
+.terrain-visibility-visible,
+.terrain-visibility-shadow {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.terrain-visibility-visible {
+  stroke: color-mix(in srgb, var(--success) 82%, white 8%);
+}
+
+.terrain-visibility-shadow {
+  stroke: color-mix(in srgb, var(--warning) 88%, #c20000 12%);
 }
 
 .los-path {
