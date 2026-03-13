@@ -420,6 +420,14 @@ export function Sidebar() {
       return fallback;
     }
   });
+  const persistSelectedSimulationRef = (ref: string) => {
+    setSelectedSimulationRef(ref);
+    try {
+      localStorage.setItem(LAST_SIMULATION_REF_KEY, ref);
+    } catch {
+      // ignore
+    }
+  };
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
   const [storageImportMode, setStorageImportMode] = useState<"merge" | "replace">("merge");
   const [storageStatus, setStorageStatus] = useState("");
@@ -554,12 +562,7 @@ export function Sidebar() {
       const exists = simulationPresets.some((preset) => preset.id === presetId);
       if (!exists) {
         const fallback = `builtin:${selectedScenarioId}`;
-        setSelectedSimulationRef(fallback);
-        try {
-          localStorage.setItem(LAST_SIMULATION_REF_KEY, fallback);
-        } catch {
-          // ignore
-        }
+        persistSelectedSimulationRef(fallback);
       }
     }
   }, [selectedSimulationRef, simulationPresets, selectedScenarioId]);
@@ -935,12 +938,7 @@ export function Sidebar() {
     const savedId = saveCurrentSimulationPreset(trimmed);
     if (savedId) {
       const ref = `saved:${savedId}`;
-      setSelectedSimulationRef(ref);
-      try {
-        localStorage.setItem(LAST_SIMULATION_REF_KEY, ref);
-      } catch {
-        // ignore
-      }
+      persistSelectedSimulationRef(ref);
       setSimulationSaveStatus(`Saved simulation: ${trimmed}`);
     }
     setNewPresetName("");
@@ -2338,7 +2336,7 @@ export function Sidebar() {
                       className="inline-action"
                       onClick={() => {
                         loadSimulationPreset(preset.id);
-                        setSelectedSimulationRef(`saved:${preset.id}`);
+                        persistSelectedSimulationRef(`saved:${preset.id}`);
                       }}
                       type="button"
                     >
