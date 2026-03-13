@@ -4,11 +4,14 @@ import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 
 const SYNC_DEBOUNCE_MS = 1200;
+const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 
 export function AuthSyncPanel() {
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const importLibraryData = useAppStore((state) => state.importLibraryData);
+  const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
+  const selectScenario = useAppStore((state) => state.selectScenario);
   const [status, setStatus] = useState("");
   const [syncBusy, setSyncBusy] = useState(false);
   const hydrated = useRef(false);
@@ -23,16 +26,32 @@ export function AuthSyncPanel() {
   );
 
   const refreshFromCloud = async () => {
+    const applyStartupSelection = !hydrated.current;
     setSyncBusy(true);
     try {
       const cloud = await fetchCloudLibrary();
+      const cloudPresets =
+        (cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"] | undefined) ?? [];
       const result = importLibraryData(
         {
           siteLibrary: cloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
-          simulationPresets: cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
+          simulationPresets: cloudPresets,
         },
         "replace",
       );
+      if (applyStartupSelection && typeof window !== "undefined") {
+        const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
+        const lastRef = (lastRefRaw ?? "").trim();
+        if (lastRef.startsWith("saved:")) {
+          const presetId = lastRef.slice("saved:".length);
+          if (presetId && cloudPresets.some((preset) => preset.id === presetId)) {
+            loadSimulationPreset(presetId);
+          }
+        } else if (lastRef.startsWith("builtin:")) {
+          const scenarioId = lastRef.slice("builtin:".length);
+          if (scenarioId) selectScenario(scenarioId);
+        }
+      }
       setStatus(
         `Cloud sync loaded (replace). Delta: ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
       );

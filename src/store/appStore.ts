@@ -1072,12 +1072,19 @@ export const useAppStore = create<AppState>((set, get) => ({
             );
           })();
 
+    const syncedSites = syncLibraryLinkedSiteValues(
+      annotateSitesWithLibraryRefs(current.sites, nextSiteLibrary),
+      nextSiteLibrary,
+    );
+
     writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
     writeStorage(SIM_PRESETS_KEY, nextSimulationPresets);
     set({
       siteLibrary: nextSiteLibrary,
       simulationPresets: nextSimulationPresets,
+      sites: syncedSites,
     });
+    get().recomputeCoverage();
     return {
       siteCount: nextSiteLibrary.length - siteCountBefore,
       simulationCount: nextSimulationPresets.length - simCountBefore,
