@@ -16,6 +16,7 @@ import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
+import { isCurrentTestEnvironment } from "../lib/environment";
 import {
   fetchCollaboratorDirectory,
   fetchResourceChanges,
@@ -86,12 +87,6 @@ const styleByTheme = {
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
 };
 
-const isStagingHost = (() => {
-  if (typeof window === "undefined") return false;
-  const host = window.location.hostname.toLowerCase();
-  return host.startsWith("staging.") || host.endsWith(".linksim-staging.pages.dev");
-})();
-
 const RADIO_CLIMATE_OPTIONS: RadioClimate[] = [
   "Equatorial",
   "Continental Subtropical",
@@ -107,7 +102,7 @@ const meshmapNodesLayer: LayerProps = {
   type: "circle",
   paint: {
     "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2, 8, 4, 12, 6],
-    "circle-color": isStagingHost ? "#ff73b4" : "#2bc0ff",
+    "circle-color": isCurrentTestEnvironment() ? "#ff73b4" : "#2bc0ff",
     "circle-opacity": 0.82,
     "circle-stroke-width": 1,
     "circle-stroke-color": "#0a1a24",
@@ -126,7 +121,7 @@ const meshmapLabelsLayer: LayerProps = {
     "text-allow-overlap": false,
   },
   paint: {
-    "text-color": isStagingHost ? "#ffd6e8" : "#e7f1ff",
+    "text-color": isCurrentTestEnvironment() ? "#ffd6e8" : "#e7f1ff",
     "text-halo-color": "rgba(10, 26, 36, 0.95)",
     "text-halo-width": 1.3,
   },

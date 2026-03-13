@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./index.css";
 import App from "./App";
+import { isCurrentTestEnvironment } from "./lib/environment";
 
 if (window.location.hostname === "127.0.0.1") {
   const redirectUrl =
@@ -12,9 +13,7 @@ if (window.location.hostname === "127.0.0.1") {
   window.location.replace(redirectUrl);
 }
 
-const host = window.location.hostname.toLowerCase();
-const isStagingHost = host.startsWith("staging.") || host.endsWith(".linksim-staging.pages.dev");
-if (isStagingHost) {
+if (isCurrentTestEnvironment()) {
   document.documentElement.classList.add("env-staging");
 }
 

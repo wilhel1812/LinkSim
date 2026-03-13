@@ -12,16 +12,11 @@ import { getPathLossByModel } from "../lib/rfModels";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { estimateTerrainExcessLossDb } from "../lib/terrainLoss";
 import { useSystemTheme } from "../hooks/useSystemTheme";
+import { isCurrentTestEnvironment } from "../lib/environment";
 import { useAppStore } from "../store/appStore";
 import type { Link, Site } from "../types/radio";
 
-const isStagingHost = (() => {
-  if (typeof window === "undefined") return false;
-  const host = window.location.hostname.toLowerCase();
-  return host.startsWith("staging.") || host.endsWith(".linksim-staging.pages.dev");
-})();
-
-const mapLinkColor = isStagingHost ? "#ff73b4" : "#00c2ff";
+const mapLinkColor = isCurrentTestEnvironment() ? "#ff73b4" : "#00c2ff";
 
 const mapLineLayer: LayerProps = {
   id: "link-lines",
