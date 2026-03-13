@@ -16,3 +16,4 @@
 - Do not start user-added backlog items without explicit user confirmation in the current thread.
 - After every live deploy, monitor Cloudflare Pages deployment status (`wrangler pages deployment list --project-name linksim`) and explicitly notify the user when deployment is complete.
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
+- Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
