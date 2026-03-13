@@ -1,0 +1,11 @@
+{
+  "name": "LinkSim [TEST]",
+  "short_name": "LinkSim TEST",
+  "icons": [
+    { "src": "/icon-test-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-test-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#ff73b4",
+  "background_color": "#100b12",
+  "display": "standalone"
+}
