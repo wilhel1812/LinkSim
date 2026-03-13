@@ -368,7 +368,7 @@ const computeOverlayDimensions = (
   };
 };
 
-const computeSourceCentricRxDbm = (
+const computeSourceCentricRxMetrics = (
   lat: number,
   lon: number,
   fromSite: Site,
@@ -377,7 +377,7 @@ const computeSourceCentricRxDbm = (
   propagationModel: "FSPL" | "TwoRay" | "ITM",
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
-): number => {
+): { rxDbm: number; terrainPenaltyDb: number } => {
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, { lat, lon }));
   const baseLoss = getPathLossByModel(
     propagationModel,
@@ -404,8 +404,32 @@ const computeSourceCentricRxDbm = (
   }
 
   const eirpDbm = effectiveLink.txPowerDbm + effectiveLink.txGainDbi - effectiveLink.cableLossDb;
-  return eirpDbm + effectiveLink.rxGainDbi - (baseLoss + terrainPenaltyDb);
+  return {
+    rxDbm: eirpDbm + effectiveLink.rxGainDbi - (baseLoss + terrainPenaltyDb),
+    terrainPenaltyDb,
+  };
 };
+
+const computeSourceCentricRxDbm = (
+  lat: number,
+  lon: number,
+  fromSite: Site,
+  effectiveLink: Link,
+  receiverAntennaHeightM: number,
+  propagationModel: "FSPL" | "TwoRay" | "ITM",
+  terrainSampler: (lat: number, lon: number) => number | null,
+  terrainSamples: number,
+): number =>
+  computeSourceCentricRxMetrics(
+    lat,
+    lon,
+    fromSite,
+    effectiveLink,
+    receiverAntennaHeightM,
+    propagationModel,
+    terrainSampler,
+    terrainSamples,
+  ).rxDbm;
 
 const buildCoverageOverlay = (
   bounds: TerrainBounds,
@@ -492,7 +516,7 @@ const buildSourcePassFailOverlay = (
     for (let x = 0; x < width; x += 1) {
       const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      const rxDbm = computeSourceCentricRxDbm(
+      const metrics = computeSourceCentricRxMetrics(
         lat,
         lon,
         fromSite,
@@ -502,11 +526,22 @@ const buildSourcePassFailOverlay = (
         terrainSampler,
         terrainSamples,
       );
-      const pass = rxDbm - environmentLossDb >= rxTargetDbm;
+      const pass = metrics.rxDbm - environmentLossDb >= rxTargetDbm;
+      const shadowedPass = pass && propagationModel === "ITM" && metrics.terrainPenaltyDb > 1;
       const px = (y * width + x) * 4;
-      image.data[px] = pass ? 82 : 205;
-      image.data[px + 1] = pass ? 181 : 87;
-      image.data[px + 2] = pass ? 96 : 79;
+      if (!pass) {
+        image.data[px] = 205;
+        image.data[px + 1] = 87;
+        image.data[px + 2] = 79;
+      } else if (shadowedPass) {
+        image.data[px] = 232;
+        image.data[px + 1] = 170;
+        image.data[px + 2] = 72;
+      } else {
+        image.data[px] = 82;
+        image.data[px + 1] = 181;
+        image.data[px + 2] = 96;
+      }
       image.data[px + 3] = 162;
     }
   }
@@ -1406,7 +1441,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             {coverageVizMode === "passfail" ? (
               <p>
                 Pass/Fail source: {selectedFromSite?.name ?? "n/a"} (selected link transmitter). Pass requires
-                predicted RX at/above RX target.
+                predicted RX at/above RX target. Colors: green = pass clear, amber = pass with terrain penalty,
+                red = fail.
               </p>
             ) : null}
             {coverageVizMode === "relay" ? (
