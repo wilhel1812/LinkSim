@@ -1068,6 +1068,21 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
   const onSiteClick = (siteId: string) => {
     setSelectedSiteId(siteId);
+    if (coverageVizMode === "passfail" && selectedLink) {
+      if (siteId === selectedLink.fromSiteId) return;
+      if (siteId === selectedLink.toSiteId) {
+        const swapToId =
+          selectedLink.fromSiteId !== siteId
+            ? selectedLink.fromSiteId
+            : sites.find((candidate) => candidate.id !== siteId)?.id;
+        if (swapToId && swapToId !== siteId) {
+          updateLink(selectedLink.id, { fromSiteId: siteId, toSiteId: swapToId });
+        }
+        return;
+      }
+      updateLink(selectedLink.id, { fromSiteId: siteId });
+      return;
+    }
     if (!endpointPickTarget || !selectedLink) return;
     setEndpointPickError(null);
     if (endpointPickTarget === "from" && siteId === selectedLink.toSiteId) {
