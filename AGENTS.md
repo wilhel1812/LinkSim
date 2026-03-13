@@ -17,3 +17,4 @@
 - After every live deploy, monitor Cloudflare Pages deployment status (`wrangler pages deployment list --project-name linksim`) and explicitly notify the user when deployment is complete.
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
 - Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
+- Do not require a version bump for local/staging iterations; require a SemVer bump before every production release.

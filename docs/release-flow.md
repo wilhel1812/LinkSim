@@ -23,18 +23,21 @@
 
 ## Versioning Policy
 - SemVer is mandatory (`MAJOR.MINOR.PATCH`).
-- Current baseline: `0.8.0` (feature-rich beta, stabilization phase).
-- Bump rules:
-  - `PATCH` (`0.8.x`): bug fixes, polish, non-breaking UX updates, test/docs-only improvements.
-  - `MINOR` (`0.x.0`): new user-facing capabilities or meaningful workflow additions.
-  - `MAJOR` (`1.0.0+`): stable production contract changes or first declared stable release.
-- Version bump timing:
-  - Bump before staging promotion for the release candidate.
-  - Promote the exact same version/commit from staging to production.
-- Every release note in commit/PR should state:
-  - version,
-  - commit SHA,
-  - environment promoted (`staging` or `production`).
+- Current baseline: `0.8.0`.
+- Bump level decision rules:
+  - `PATCH` (`0.8.x`): bug fixes, polish, performance tuning, and non-breaking UX behavior fixes.
+  - `MINOR` (`0.x.0`): new user-facing features or meaningful workflow additions that are backward-compatible.
+  - `MAJOR` (`x.0.0`): breaking changes (data model incompatibility, removed/renamed API behavior, auth/permission model breaks), or first stable `1.0.0` declaration.
+- Environment bump rules:
+  - Local test: no version bump required.
+  - Live test (staging): no version bump required; commit SHA is sufficient for traceability.
+  - Live production: version bump is required before release.
+- Production release checklist:
+  1. Decide bump level (`PATCH`/`MINOR`/`MAJOR`) from rules above.
+  2. Update `package.json` version.
+  3. Commit with `release: vX.Y.Z`.
+  4. Deploy and verify.
+  5. Tag `vX.Y.Z`.
 
 ## Iteration Rules
 - Default loop for every task:
