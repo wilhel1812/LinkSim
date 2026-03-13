@@ -61,9 +61,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate release gate
+        run: node scripts/validate-prod-release.mjs
+
       - name: Deploy prod/main with guardrails
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npm run deploy:prod:main
-

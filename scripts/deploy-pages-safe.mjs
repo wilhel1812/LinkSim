@@ -135,6 +135,10 @@ async function preflight(targetName, target) {
     `Preflight failed: bucket_name '${bucketName}' != '${target.expected.bucketName}'.`,
   );
 
+  if (targetName === "prod-main") {
+    await run("node", ["scripts/validate-prod-release.mjs"]);
+  }
+
   return { branch, commit };
 }
 
@@ -218,4 +222,3 @@ main().catch((error) => {
   console.error(`[deploy-pages-safe] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
-
