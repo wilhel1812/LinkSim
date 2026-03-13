@@ -18,3 +18,8 @@
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
 - Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
 - Do not require a version bump for local/staging iterations; require a SemVer bump before every production release.
+- Deploys must use guarded npm scripts only:
+  - `npm run deploy:staging:preview`
+  - `npm run deploy:staging:main`
+  - `npm run deploy:prod:main`
+- Never run raw `wrangler pages deploy` for release operations.

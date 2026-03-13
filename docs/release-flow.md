@@ -11,15 +11,25 @@
 2. Live test (staging)
 - Push code and deploy to staging.
 - Verify the same commit in the live test environment.
+- Use explicit guarded commands only:
+  - Branch preview deploy: `npm run deploy:staging:preview`
+  - Staging main deploy: `npm run deploy:staging:main`
 
 3. Production
 - Promote only after explicit user approval.
 - Deploy the exact verified staging commit to production (no extra code changes in between).
+- Use explicit guarded command only: `npm run deploy:prod:main`
 
 ## Guardrails
 - No direct production hotfixes unless explicitly requested by the user.
 - Always report deployed commit SHA for staging and production.
 - Keep clear non-production indicators enabled for local/staging environments.
+- Do not run raw `wrangler pages deploy` for release operations.
+- All deploys must pass scripted preflight checks:
+  - clean git tree
+  - valid target config (project/bindings)
+  - branch policy (`main` required for `staging-main` and `prod-main`)
+- All deploys must pass scripted post-deploy verification against Cloudflare deployment list.
 
 ## Versioning Policy
 - SemVer is mandatory (`MAJOR.MINOR.PATCH`).
@@ -47,3 +57,10 @@
   4. Deploy to staging and verify.
   5. Promote to production only with explicit approval.
 - No hidden scope changes during promotion; if code changes after staging verification, restart the loop.
+
+## CI/CD Controls
+- GitHub Actions deploy workflow is manual (`workflow_dispatch`) with explicit target selection:
+  - `staging-main`
+  - `prod-main`
+- `prod-main` job runs in the `production` GitHub environment (configure required reviewers in repo settings).
+- `staging-main` runs in `staging` environment.

@@ -21,11 +21,14 @@
     "smoke:profile": "node scripts/scripts_smoke_profile_only.mjs",
     "smoke:fit-profile": "node scripts/scripts_smoke_fit_profile.mjs",
     "smoke:itm": "node scripts/scripts_smoke_itm.mjs",
-    "deploy:staging": "npm run build && node scripts/deploy-staging.mjs",
+    "deploy:staging": "npm run deploy:staging:preview",
+    "deploy:staging:preview": "npm run build && node scripts/deploy-pages-safe.mjs --target staging-preview",
+    "deploy:staging:main": "npm run build && node scripts/deploy-pages-safe.mjs --target staging-main",
+    "deploy:prod:main": "npm run build && node scripts/deploy-pages-safe.mjs --target prod-main",
     "refresh:staging:d1": "./scripts/refresh-staging-d1.sh",
     "refresh:staging:r2": "./scripts/refresh-staging-r2.sh",
     "refresh:staging": "npm run refresh:staging:d1 && npm run refresh:staging:r2",
-    "refresh-and-deploy:staging": "npm run refresh:staging && npm run deploy:staging"
+    "refresh-and-deploy:staging": "npm run refresh:staging && npm run deploy:staging:main"
   },
   "dependencies": {
     "clsx": "^2.1.1",
