@@ -23,6 +23,7 @@ import {
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getUiErrorMessage } from "../lib/uiError";
+import { useAppStore } from "../store/appStore";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 
@@ -114,6 +115,8 @@ const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl:
 };
 
 export function UserAdminPanel() {
+  const uiThemePreference = useAppStore((state) => state.uiThemePreference);
+  const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
@@ -606,6 +609,20 @@ export function UserAdminPanel() {
                   <span>Email</span>
                   <input onChange={(event) => setEmailDraft(event.target.value)} type="email" value={emailDraft} />
                 </label>
+                <div className="field-grid user-field-grid">
+                  <span>
+                    UI theme <InfoTip text="Choose whether LinkSim follows your system theme, or force light/dark mode." />
+                  </span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setUiThemePreference(event.target.value as "system" | "light" | "dark")}
+                    value={uiThemePreference}
+                  >
+                    <option value="system">System</option>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                  </select>
+                </div>
                 <div className="field-grid user-field-grid">
                   <span>
                     Email visibility{" "}

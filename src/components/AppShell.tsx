@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchMe } from "../lib/cloudUser";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
+import { useUiTheme } from "../hooks/useUiTheme";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { OnboardingTutorialModal } from "./OnboardingTutorialModal";
@@ -19,6 +20,14 @@ export function AppShell() {
   const [accessState, setAccessState] = useState<"checking" | "granted" | "pending" | "locked">("checking");
   const [activeUserId, setActiveUserId] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const { theme } = useUiTheme();
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove("theme-light", "theme-dark");
+    root.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
+    root.style.colorScheme = theme;
+  }, [theme]);
 
   useEffect(() => {
     if (srtmTilesCount > 0) return;

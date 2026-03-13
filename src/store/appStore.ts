@@ -107,6 +107,7 @@ type AppState = {
   propagationModel: PropagationModel;
   mapViewport: MapViewport;
   locale: LocaleCode;
+  uiThemePreference: "system" | "light" | "dark";
   selectedScenarioId: string;
   selectedFrequencyPresetId: string;
   rxSensitivityTargetDbm: number;
@@ -124,6 +125,7 @@ type AppState = {
   pendingSiteLibraryDraft: { lat: number; lon: number; token: string; suggestedName?: string } | null;
   scenarioOptions: { id: string; name: string }[];
   setLocale: (locale: LocaleCode) => void;
+  setUiThemePreference: (value: "system" | "light" | "dark") => void;
   selectScenario: (id: string) => void;
   setSelectedLinkId: (id: string) => void;
   setProfileCursorIndex: (index: number) => void;
@@ -207,6 +209,7 @@ type AppState = {
 
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
+const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const STORAGE_SNAPSHOT_LIMIT = 24;
 
 type StoredSnapshot<T> = {
@@ -499,6 +502,12 @@ if (
   writeStorage(SIM_PRESETS_KEY, initialSimulationPresets);
 }
 
+const normalizeUiThemePreference = (value: unknown): "system" | "light" | "dark" =>
+  value === "light" || value === "dark" || value === "system" ? value : "system";
+const initialUiThemePreference = normalizeUiThemePreference(
+  readStorage<string>(UI_THEME_PREFERENCE_KEY, "system"),
+);
+
 export const useAppStore = create<AppState>((set, get) => ({
   sites: defaultScenario.sites,
   links: defaultScenario.links,
@@ -521,6 +530,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   propagationModel: "ITM",
   mapViewport: defaultScenario.viewport,
   locale: "eng",
+  uiThemePreference: initialUiThemePreference,
   selectedScenarioId: defaultScenario.id,
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
@@ -538,6 +548,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingSiteLibraryDraft: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   setLocale: (locale) => set({ locale }),
+  setUiThemePreference: (value) => {
+    const normalized = normalizeUiThemePreference(value);
+    writeStorage(UI_THEME_PREFERENCE_KEY, normalized, { snapshot: false });
+    set({ uiThemePreference: normalized });
+  },
   selectScenario: (id) => {
     const scenario = getScenarioById(id);
     if (!scenario) return;

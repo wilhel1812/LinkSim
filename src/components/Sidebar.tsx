@@ -10,7 +10,7 @@ import Map, {
   type MarkerDragEvent,
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
-import { useSystemTheme } from "../hooks/useSystemTheme";
+import { useUiTheme } from "../hooks/useUiTheme";
 import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
 import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
@@ -215,7 +215,7 @@ const getSnapshotCount = (key: string): number => {
 };
 
 export function Sidebar() {
-  const theme = useSystemTheme();
+  const { theme } = useUiTheme();
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
