@@ -186,29 +186,11 @@ input {
 }
 
 .sidebar-footer {
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 0.78rem;
-}
-
-.sidebar-footer p {
-  margin: 0 0 4px;
+  margin-top: 2px;
+  padding: 0 2px;
+  font-size: 0.74rem;
+  line-height: 1.35;
   color: var(--muted);
-}
-
-.sidebar-footer p:last-child {
-  margin-bottom: 0;
-}
-
-.sidebar-footer a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.sidebar-footer a:hover {
-  text-decoration: underline;
 }
 
 .sidebar-panel > header {

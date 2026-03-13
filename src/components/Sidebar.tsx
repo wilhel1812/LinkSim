@@ -2033,9 +2033,6 @@ export function Sidebar() {
           <details className="compact-details">
             <summary>Credits & Attribution</summary>
             <p className="field-help subtle-note">
-              Build: {APP_BUILD_LABEL} ({isCurrentTestEnvironment() ? "test" : "production"})
-            </p>
-            <p className="field-help subtle-note">
               Inspired by{" "}
               <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
                 {PRIMARY_ATTRIBUTION.projectName}
@@ -2048,6 +2045,9 @@ export function Sidebar() {
           </details>
         </details>
       </section>
+      <footer className="sidebar-footer">
+        Build: {APP_BUILD_LABEL} ({isCurrentTestEnvironment() ? "test" : "production"})
+      </footer>
 
       {profilePopupUser ? (
         <ModalOverlay aria-label="User Profile" onClose={() => setProfilePopupUser(null)} tier="raised">
