@@ -1019,11 +1019,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
-  const pendingPrecisionPosition = pendingNewSiteDraft
-    ? { lat: pendingNewSiteDraft.lat, lon: pendingNewSiteDraft.lon }
-    : pendingSiteMove
-      ? { lat: pendingSiteMove.currentPosition.lat, lon: pendingSiteMove.currentPosition.lon }
-      : null;
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
   const backgroundBusyLabel = isTerrainFetching
     ? "Fetching terrain data..."
@@ -1460,16 +1455,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             <div className="site-pin is-temporary" role="button" tabIndex={0}>
               <span>Temporary Site</span>
             </div>
-          </Marker>
-        ) : null}
-
-        {pendingPrecisionPosition ? (
-          <Marker
-            anchor="center"
-            latitude={pendingPrecisionPosition.lat}
-            longitude={pendingPrecisionPosition.lon}
-          >
-            <div className="site-precision-crosshair" aria-hidden="true" />
           </Marker>
         ) : null}
 
