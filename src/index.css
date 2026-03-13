@@ -1097,7 +1097,7 @@ input {
 
 .chart-grid text {
   fill: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   text-anchor: middle;
   font-family: "IBM Plex Mono", monospace;

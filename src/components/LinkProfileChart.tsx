@@ -294,7 +294,7 @@ export function LinkProfileChart() {
           <p>Path profile unavailable for the selected link.</p>
         </div>
       ) : (
-        <svg aria-label="Link profile" role="img" viewBox={`0 0 ${W} ${H}`}>
+        <svg aria-label="Link profile" preserveAspectRatio="none" role="img" viewBox={`0 0 ${W} ${H}`}>
           <defs>
             <linearGradient
               gradientUnits="userSpaceOnUse"
