@@ -15,8 +15,8 @@
 - Pass/Fail compares predicted calibrated RX dBm to RX target dBm.
 - `PASS` means `RX >= target`.
 - Map colors in Pass/Fail mode:
-  - `green`: line-of-sight clear and pass
-  - `yellow`: line-of-sight blocked and pass (indirect/diffraction still predicts `RX >= target`)
-  - `orange`: line-of-sight clear but fail (`RX < target`)
-  - `red`: line-of-sight blocked and fail (`RX < target`)
+  - `green`: clear path and meets target
+  - `yellow`: blocked path but still meets target
+  - `orange`: clear path but below target
+  - `red`: blocked path and below target
 - Terrain influences this result when `ITM` is selected and terrain tiles are loaded.

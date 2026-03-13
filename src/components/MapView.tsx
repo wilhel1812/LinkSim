@@ -9,10 +9,8 @@ import Map, {
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
-import { haversineDistanceKm } from "../lib/geo";
-import { getPathLossByModel } from "../lib/rfModels";
+import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { estimateTerrainExcessLossDb, isTerrainLineObstructed } from "../lib/terrainLoss";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
@@ -368,58 +366,6 @@ const computeOverlayDimensions = (
   };
 };
 
-const computeSourceCentricRxMetrics = (
-  lat: number,
-  lon: number,
-  fromSite: Site,
-  effectiveLink: Link,
-  receiverAntennaHeightM: number,
-  propagationModel: "FSPL" | "TwoRay" | "ITM",
-  terrainSampler: (lat: number, lon: number) => number | null,
-  terrainSamples: number,
-): { rxDbm: number; terrainPenaltyDb: number; terrainObstructed: boolean } => {
-  const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, { lat, lon }));
-  const baseLoss = getPathLossByModel(
-    propagationModel,
-    distanceKm,
-    effectiveLink.frequencyMHz,
-    fromSite.antennaHeightM,
-    receiverAntennaHeightM,
-  );
-
-  let terrainPenaltyDb = 0;
-  let terrainObstructed = false;
-  if (propagationModel === "ITM") {
-    const rxGround = terrainSampler(lat, lon);
-    if (rxGround !== null) {
-      terrainPenaltyDb = estimateTerrainExcessLossDb({
-        from: fromSite.position,
-        to: { lat, lon },
-        fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
-        toAntennaAbsM: rxGround + receiverAntennaHeightM,
-        frequencyMHz: effectiveLink.frequencyMHz,
-        terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
-        samples: terrainSamples,
-      });
-      terrainObstructed = isTerrainLineObstructed({
-        from: fromSite.position,
-        to: { lat, lon },
-        fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
-        toAntennaAbsM: rxGround + receiverAntennaHeightM,
-        terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
-        samples: Math.max(12, Math.round(terrainSamples * 0.66)),
-      });
-    }
-  }
-
-  const eirpDbm = effectiveLink.txPowerDbm + effectiveLink.txGainDbi - effectiveLink.cableLossDb;
-  return {
-    rxDbm: eirpDbm + effectiveLink.rxGainDbi - (baseLoss + terrainPenaltyDb),
-    terrainPenaltyDb,
-    terrainObstructed,
-  };
-};
-
 const computeSourceCentricRxDbm = (
   lat: number,
   lon: number,
@@ -538,16 +484,17 @@ const buildSourcePassFailOverlay = (
       );
       const pass = metrics.rxDbm - environmentLossDb >= rxTargetDbm;
       const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
+      const state = classifyPassFailState(pass, losBlocked);
       const px = (y * width + x) * 4;
-      if (pass && !losBlocked) {
+      if (state === "pass_clear") {
         image.data[px] = 82;
         image.data[px + 1] = 181;
         image.data[px + 2] = 96;
-      } else if (pass && losBlocked) {
+      } else if (state === "pass_blocked") {
         image.data[px] = 232;
         image.data[px + 1] = 170;
         image.data[px + 2] = 72;
-      } else if (!pass && !losBlocked) {
+      } else if (state === "fail_clear") {
         image.data[px] = 235;
         image.data[px + 1] = 120;
         image.data[px + 2] = 70;
@@ -1491,23 +1438,44 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               Mode: <strong>{overlayGuideTitle}</strong>
             </p>
             {coverageVizMode === "heatmap" ? (
-              <p>Continuous predicted RX dBm. Brighter/warmer colors indicate stronger signal.</p>
+              <p>
+                Shows overall coverage strength from your current simulation sites. Think of it as “how good signal
+                should feel if you stand here”.
+              </p>
             ) : null}
             {coverageVizMode === "contours" ? (
               <p>
-                Stepped dB bands for easier threshold reading. Current step: {currentBandStepDb} dB ({bandStepMode}).
+                Same data as Heatmap, but grouped into visible steps so boundaries are easier to read. Current step:{" "}
+                {currentBandStepDb} dB ({bandStepMode}).
               </p>
             ) : null}
             {coverageVizMode === "passfail" ? (
-              <p>
-                Green = LOS clear + pass, yellow = LOS blocked + pass, orange = LOS clear + fail, red = LOS blocked
-                + fail.
-              </p>
+              <>
+                <p>Go/no-go map with terrain context.</p>
+                <ul className="overlay-legend">
+                  <li>
+                    <span className="state-dot state-dot-pass_clear" />
+                    <span>Clear path and meets target</span>
+                  </li>
+                  <li>
+                    <span className="state-dot state-dot-pass_blocked" />
+                    <span>Blocked path, but still meets target</span>
+                  </li>
+                  <li>
+                    <span className="state-dot state-dot-fail_clear" />
+                    <span>Clear path, but below target</span>
+                  </li>
+                  <li>
+                    <span className="state-dot state-dot-fail_blocked" />
+                    <span>Blocked path and below target</span>
+                  </li>
+                </ul>
+              </>
             ) : null}
             {coverageVizMode === "relay" ? (
               <p>
-                Relay bottleneck RX dBm for {selectedFromSite?.name ?? "n/a"} → candidate →{" "}
-                {selectedToSite?.name ?? "n/a"}. Brighter/warmer is better.
+                Helps you find where to place a relay between {selectedFromSite?.name ?? "n/a"} and{" "}
+                {selectedToSite?.name ?? "n/a"}. Warmer/brighter areas are better relay candidates.
               </p>
             ) : null}
           </>

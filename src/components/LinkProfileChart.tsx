@@ -3,7 +3,9 @@ import { scaleLinear } from "d3-scale";
 import type { MouseEvent } from "react";
 import { useEffect, useMemo, useRef } from "react";
 import { t } from "../i18n/locales";
+import { classifyPassFailState, computeSourceCentricRxMetrics, passFailStateLabel } from "../lib/passFailState";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import type { ProfilePoint } from "../types/radio";
 import { useAppStore } from "../store/appStore";
@@ -59,6 +61,12 @@ export function LinkProfileChart() {
   );
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
+  const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
+  const networks = useAppStore((state) => state.networks);
+  const propagationModel = useAppStore((state) => state.propagationModel);
+  const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
+  const environmentLossDb = useAppStore((state) => state.environmentLossDb);
+  const coverageResolutionMode = useAppStore((state) => state.coverageResolutionMode);
   const profileRevision = useAppStore(
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}`,
@@ -77,6 +85,14 @@ export function LinkProfileChart() {
     : null;
   const selectedFromSite = selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null;
   const selectedToSite = selectedToSiteId ? sites.find((site) => site.id === selectedToSiteId) ?? null : null;
+  const selectedNetwork = networks.find((network) => network.id === selectedNetworkId) ?? networks[0] ?? null;
+  const effectiveLink =
+    selectedLink && selectedNetwork
+      ? {
+          ...selectedLink,
+          frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz ?? selectedLink.frequencyMHz,
+        }
+      : null;
   const fromSiteName = selectedFromSite?.name ?? "From";
   const toSiteName = selectedToSite?.name ?? "To";
   const terrainBounds = simulationAreaBoundsForSites(sites);
@@ -178,6 +194,37 @@ export function LinkProfileChart() {
 
   const clampedCursorIndex = Math.max(0, Math.min(profile.length - 1, profileCursorIndex));
   const cursorPoint = profile[clampedCursorIndex];
+  const cursorState = useMemo(() => {
+    if (!cursorPoint || !selectedFromSite || !selectedToSite || !effectiveLink) return null;
+    const metrics = computeSourceCentricRxMetrics(
+      cursorPoint.lat,
+      cursorPoint.lon,
+      selectedFromSite,
+      effectiveLink,
+      selectedToSite.antennaHeightM,
+      propagationModel,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+      coverageResolutionMode === "high" ? 80 : 24,
+    );
+    const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
+    const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
+    const state = classifyPassFailState(pass, losBlocked);
+    return {
+      state,
+      label: passFailStateLabel(state),
+      rxDbm: metrics.rxDbm,
+    };
+  }, [
+    cursorPoint,
+    selectedFromSite,
+    selectedToSite,
+    effectiveLink,
+    propagationModel,
+    srtmTiles,
+    coverageResolutionMode,
+    environmentLossDb,
+    rxSensitivityTargetDbm,
+  ]);
 
   const onSvgMove = (event: MouseEvent<SVGRectElement>) => {
     if (!geometry.hasData || profile.length < 2) return;
@@ -202,12 +249,7 @@ export function LinkProfileChart() {
     <section className="chart-panel" data-profile-revision={profileRevision}>
       <header className="chart-header">
         <h2>{t(locale, "pathProfile")}</h2>
-        <div className="chart-header-inline">
-          <p>{t(locale, "profileSubtitle")}</p>
-          <button className="inline-action" onClick={() => toggleTemporaryDirectionReversed()} type="button">
-            {temporaryDirectionReversed ? "Direction: Reversed (Temp)" : "Reverse Direction (Temp)"}
-          </button>
-        </div>
+        <p>{t(locale, "profileSubtitle")}</p>
       </header>
       {terrainIsStaleForCurrentArea ? (
         <div className="terrain-alert" role="status">
@@ -226,9 +268,15 @@ export function LinkProfileChart() {
       ) : null}
       <div className="chart-endpoints" aria-live="polite">
         <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
-        <span className="chart-endpoint-sep" aria-hidden>
-          →
-        </span>
+        <button
+          aria-label="Reverse path direction for this view"
+          className={`chart-endpoint-swap ${temporaryDirectionReversed ? "is-active" : ""}`}
+          onClick={() => toggleTemporaryDirectionReversed()}
+          title="Temporarily reverse path direction"
+          type="button"
+        >
+          ⇄
+        </button>
         <span className="chart-endpoint chart-endpoint-right">{toSiteName}</span>
       </div>
       {!geometry.hasData ? (
@@ -304,6 +352,14 @@ export function LinkProfileChart() {
           />
         </svg>
       )}
+      {cursorPoint && cursorState ? (
+        <div className="chart-hover-state">
+          <span className={`state-dot state-dot-${cursorState.state}`} aria-hidden />
+          <span>
+            {cursorState.label} at {cursorPoint.distanceKm.toFixed(2)} km ({(cursorState.rxDbm - environmentLossDb).toFixed(1)} dBm after env loss)
+          </span>
+        </div>
+      ) : null}
     </section>
   );
 }

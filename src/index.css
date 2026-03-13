@@ -717,6 +717,20 @@ input {
   color: var(--text);
 }
 
+.overlay-legend {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.overlay-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .map-sim-summary h3 {
   margin: 0 0 6px;
   font-size: 0.82rem;
@@ -930,11 +944,58 @@ input {
   height: 100%;
 }
 
-.chart-header-inline {
+.chart-endpoint-swap {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  color: var(--text);
+  border-radius: 999px;
+  width: 34px;
+  height: 26px;
+  line-height: 1;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.chart-endpoint-swap:hover {
+  border-color: var(--accent);
+}
+
+.chart-endpoint-swap.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.chart-hover-state {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text);
+  padding: 2px 2px 0;
+}
+
+.state-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--text) 26%, transparent);
+}
+
+.state-dot-pass_clear {
+  background: #52b560;
+}
+
+.state-dot-pass_blocked {
+  background: #e8aa48;
+}
+
+.state-dot-fail_clear {
+  background: #eb7846;
+}
+
+.state-dot-fail_blocked {
+  background: #cd574f;
 }
 
 .chart-empty {
