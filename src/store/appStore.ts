@@ -334,19 +334,27 @@ const siteNamePosKey = (
 ): string =>
   `${site.name.trim().toLowerCase()}|${site.position.lat.toFixed(6)}|${site.position.lon.toFixed(6)}`;
 
+const siteNameKey = (name: string): string => name.trim().toLowerCase();
+
 const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
   if (!sites.length || !library.length) return sites;
   const libraryByFingerprint = new Map<string, SiteLibraryEntry[]>();
+  const libraryByName = new Map<string, SiteLibraryEntry[]>();
   for (const entry of library) {
-    const key = siteNamePosKey(entry);
-    const current = libraryByFingerprint.get(key) ?? [];
-    libraryByFingerprint.set(key, [...current, entry]);
+    const posKey = siteNamePosKey(entry);
+    const currentByPos = libraryByFingerprint.get(posKey) ?? [];
+    libraryByFingerprint.set(posKey, [...currentByPos, entry]);
+    const nameKey = siteNameKey(entry.name);
+    const currentByName = libraryByName.get(nameKey) ?? [];
+    libraryByName.set(nameKey, [...currentByName, entry]);
   }
   return sites.map((site) => {
     if (site.libraryEntryId) return site;
-    const matches = libraryByFingerprint.get(siteNamePosKey(site)) ?? [];
-    if (matches.length !== 1) return site;
-    return { ...site, libraryEntryId: matches[0].id };
+    const matchesByPos = libraryByFingerprint.get(siteNamePosKey(site)) ?? [];
+    if (matchesByPos.length === 1) return { ...site, libraryEntryId: matchesByPos[0].id };
+    const matchesByName = libraryByName.get(siteNameKey(site.name)) ?? [];
+    if (matchesByName.length === 1) return { ...site, libraryEntryId: matchesByName[0].id };
+    return site;
   });
 };
 
@@ -354,16 +362,22 @@ const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[])
   if (!sites.length || !library.length) return sites;
   const byId = new Map<string, SiteLibraryEntry>(library.map((entry) => [entry.id, entry]));
   const byNamePos = new Map<string, SiteLibraryEntry[]>();
+  const byName = new Map<string, SiteLibraryEntry[]>();
   for (const entry of library) {
-    const key = siteNamePosKey(entry);
-    const current = byNamePos.get(key) ?? [];
-    byNamePos.set(key, [...current, entry]);
+    const posKey = siteNamePosKey(entry);
+    const currentByPos = byNamePos.get(posKey) ?? [];
+    byNamePos.set(posKey, [...currentByPos, entry]);
+    const nameKey = siteNameKey(entry.name);
+    const currentByName = byName.get(nameKey) ?? [];
+    byName.set(nameKey, [...currentByName, entry]);
   }
   return sites.map((site) => {
     const direct = site.libraryEntryId ? byId.get(site.libraryEntryId) : undefined;
-    const inferredMatches = byNamePos.get(siteNamePosKey(site)) ?? [];
-    const inferred = inferredMatches.length === 1 ? inferredMatches[0] : undefined;
-    const entry = direct ?? inferred;
+    const inferredMatchesByPos = byNamePos.get(siteNamePosKey(site)) ?? [];
+    const inferredByPos = inferredMatchesByPos.length === 1 ? inferredMatchesByPos[0] : undefined;
+    const inferredMatchesByName = byName.get(siteNameKey(site.name)) ?? [];
+    const inferredByName = inferredMatchesByName.length === 1 ? inferredMatchesByName[0] : undefined;
+    const entry = direct ?? inferredByPos ?? inferredByName;
     if (!entry) return site;
     return {
       ...site,
