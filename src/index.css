@@ -193,6 +193,10 @@ input {
   line-height: 1.35;
   color: var(--muted);
   order: 999;
+  width: 100%;
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
   text-align: center;
 }
 
