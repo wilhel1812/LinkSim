@@ -1452,30 +1452,41 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           <Layer {...mapLineLayer} />
         </Source>
 
-        {sites.map((site) => (
-          <Marker
-            anchor="bottom"
-            draggable
-            key={site.id}
-            latitude={site.position.lat}
-            longitude={site.position.lon}
-            onDragEnd={(event) => onSiteDragEnd(site.id, event)}
-          >
-            <div
-              className={`site-pin ${site.id === selectedSiteId ? "is-selected" : ""} ${
-                pendingSiteMoves[site.id] ? "is-temporary" : ""
-              }`}
-              onClick={() => onSiteClick(site.id)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") onSiteClick(site.id);
-              }}
-              role="button"
-              tabIndex={0}
+        {sites.map((site) => {
+          const isSelected = site.id === selectedSiteId;
+          const isTemporarilyMoved = Boolean(pendingSiteMoves[site.id]);
+          const isPassFailMode = coverageVizMode === "passfail" && Boolean(selectedFromSite);
+          const isRelayMode = coverageVizMode === "relay" && Boolean(selectedFromSite) && Boolean(selectedToSite);
+          const isFocusNode = isPassFailMode
+            ? site.id === selectedFromSite?.id
+            : isRelayMode
+              ? site.id === selectedFromSite?.id || site.id === selectedToSite?.id
+              : true;
+          return (
+            <Marker
+              anchor="bottom"
+              draggable
+              key={site.id}
+              latitude={site.position.lat}
+              longitude={site.position.lon}
+              onDragEnd={(event) => onSiteDragEnd(site.id, event)}
             >
-              <span>{site.name}</span>
-            </div>
-          </Marker>
-        ))}
+              <div
+                className={`site-pin ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""} ${
+                  isFocusNode ? "is-mode-focus" : "is-dimmed"
+                }`}
+                onClick={() => onSiteClick(site.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") onSiteClick(site.id);
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <span>{site.name}</span>
+              </div>
+            </Marker>
+          );
+        })}
 
         {pendingNewSiteDraft ? (
           <Marker

@@ -813,6 +813,7 @@ input {
   font-weight: 500;
   cursor: pointer;
   user-select: none;
+  transition: opacity 0.12s ease, filter 0.12s ease, transform 0.12s ease;
 }
 
 .site-pin:focus-visible {
@@ -823,6 +824,16 @@ input {
 .site-pin.is-selected {
   border-color: #ffd166;
   box-shadow: 0 0 0 4px color-mix(in srgb, #ffd166 26%, transparent);
+}
+
+.site-pin.is-mode-focus {
+  opacity: 1;
+  filter: saturate(1);
+}
+
+.site-pin.is-dimmed {
+  opacity: 0.32;
+  filter: saturate(0.4);
 }
 
 .site-pin.is-selected,
