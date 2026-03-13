@@ -13,7 +13,6 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/ve2dbeTerrainClient";
 import { useAppStore } from "../store/appStore";
 
-const H = 260;
 const M = { t: 14, r: 28, b: 34, l: 50 };
 
 const linePath = (points: { x: number; y: number }[]): string =>
@@ -33,7 +32,9 @@ const areaPath = (
 
 export function LinkProfileChart() {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
-  const [chartWidth, setChartWidth] = useState(1200);
+  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
+  const chartWidth = chartSize.width;
+  const chartHeight = chartSize.height;
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -114,25 +115,31 @@ export function LinkProfileChart() {
   ]);
 
   useEffect(() => {
+    if (profile.length < 2) return;
     const element = chartHostRef.current;
     if (!element) return;
-    const updateWidth = () => {
-      const nextWidth = Math.max(720, Math.round(element.clientWidth));
-      setChartWidth((current) => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+    const updateSize = () => {
+      const nextWidth = Math.max(480, Math.round(element.clientWidth));
+      const nextHeight = Math.max(150, Math.round(element.clientHeight));
+      setChartSize((current) =>
+        Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1
+          ? { width: nextWidth, height: nextHeight }
+          : current,
+      );
     };
-    updateWidth();
+    updateSize();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => updateWidth());
+    const observer = new ResizeObserver(() => updateSize());
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [profile.length]);
 
   const geometry = useMemo(() => {
     if (profile.length < 2) {
       return {
         hasData: false,
         xForDistance: () => M.l,
-        yForElevation: () => H - M.b,
+        yForElevation: () => chartHeight - M.b,
         terrainPath: "",
         terrainLineSegments: [] as { d: string; state: PassFailState }[],
         losPath: "",
@@ -159,7 +166,7 @@ export function LinkProfileChart() {
     const adjustedMax = safeElevMax <= safeElevMin ? safeElevMin + 1 : safeElevMax;
 
     const x = scaleLinear().domain(safeDistanceDomain).range([M.l, chartWidth - M.r]);
-    const y = scaleLinear().domain([safeElevMin - 5, adjustedMax + 5]).range([H - M.b, M.t]);
+    const y = scaleLinear().domain([safeElevMin - 5, adjustedMax + 5]).range([chartHeight - M.b, M.t]);
 
     const terrainPoints = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.terrainM) }));
     const losPoints = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.losM) }));
@@ -175,7 +182,7 @@ export function LinkProfileChart() {
       hasData: true,
       xForDistance: (distanceKm: number) => x(distanceKm),
       yForElevation: (elevation: number) => y(elevation),
-      terrainPath: `${linePath(terrainPoints)} L${chartWidth - M.r},${H - M.b} L${M.l},${H - M.b} Z`,
+      terrainPath: `${linePath(terrainPoints)} L${chartWidth - M.r},${chartHeight - M.b} L${M.l},${chartHeight - M.b} Z`,
       terrainLineSegments,
       losPath: linePath(losPoints),
       fresnelPath: areaPath(fresnelTop, fresnelBottom),
@@ -194,7 +201,7 @@ export function LinkProfileChart() {
         };
       }),
     };
-  }, [profile, chartWidth]);
+  }, [profile, chartWidth, chartHeight]);
 
   const terrainLineSegments = useMemo(() => {
     if (!geometry.hasData || !selectedFromSite || !selectedToSite || !effectiveLink) return geometry.terrainLineSegments;
@@ -314,7 +321,7 @@ export function LinkProfileChart() {
         </div>
       ) : (
         <div className="chart-svg-wrap" ref={chartHostRef}>
-        <svg aria-label="Link profile" role="img" viewBox={`0 0 ${chartWidth} ${H}`}>
+        <svg aria-label="Link profile" role="img" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
           <defs>
             <linearGradient
               gradientUnits="userSpaceOnUse"
@@ -322,7 +329,7 @@ export function LinkProfileChart() {
               x1={0}
               x2={0}
               y1={M.t}
-              y2={H - M.b}
+              y2={chartHeight - M.b}
             >
               <stop offset="0%" stopColor="var(--terrain)" stopOpacity="0.06" />
               <stop offset="55%" stopColor="var(--terrain)" stopOpacity="0.18" />
@@ -340,8 +347,8 @@ export function LinkProfileChart() {
 
           {geometry.xTicks.map((tick) => (
             <g className="chart-grid" key={`x-${tick.value}`}>
-              <line x1={tick.px} x2={tick.px} y1={M.t} y2={H - M.b} />
-              <text textAnchor={tick.anchor} x={tick.px} y={H - 8}>
+              <line x1={tick.px} x2={tick.px} y1={M.t} y2={chartHeight - M.b} />
+              <text textAnchor={tick.anchor} x={tick.px} y={chartHeight - 8}>
                 {tick.value.toFixed(1)} km
               </text>
             </g>
@@ -363,7 +370,7 @@ export function LinkProfileChart() {
                 x1={geometry.xForDistance(cursorPoint.distanceKm)}
                 x2={geometry.xForDistance(cursorPoint.distanceKm)}
                 y1={M.t}
-                y2={H - M.b}
+                y2={chartHeight - M.b}
               />
               <circle
                 cx={geometry.xForDistance(cursorPoint.distanceKm)}
@@ -377,7 +384,7 @@ export function LinkProfileChart() {
             x={M.l}
             y={M.t}
             width={chartWidth - M.l - M.r}
-            height={H - M.t - M.b}
+            height={chartHeight - M.t - M.b}
             onMouseMove={onSvgMove}
           />
         </svg>

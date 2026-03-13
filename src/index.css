@@ -970,6 +970,7 @@ input {
 .chart-svg-wrap {
   flex: 1;
   min-height: 150px;
+  width: 100%;
 }
 
 .chart-header {
@@ -1106,7 +1107,7 @@ input {
 
 .chart-grid text {
   fill: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   text-anchor: middle;
   font-family: "IBM Plex Mono", monospace;
