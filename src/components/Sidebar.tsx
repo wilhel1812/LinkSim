@@ -1941,7 +1941,7 @@ export function Sidebar() {
             Link margin: {linkMarginDb >= 0 ? "+" : ""}
             {linkMarginDb.toFixed(1)} dB ({linkMarginDb >= 0 ? "PASS" : "FAIL"})
           </div>
-          <InfoTip text="Pass/Fail compares calibrated RX estimate to RX target. In map Pass/Fail view: green = LOS clear + pass, yellow = LOS blocked + pass, orange = LOS clear + fail, red = LOS blocked + fail. LOS blocking colors apply when ITM + terrain data are in use." />
+          <InfoTip text="Pass/Fail compares calibrated RX estimate to the signal target. In map view: green = clear path + meets signal target, yellow = blocked path + meets signal target, orange = clear path + below signal target, red = blocked path + below signal target. LOS blocking colors apply when ITM + terrain data are in use." />
         </div>
         <div className="whatif-table">
           {whatIfRows.map((row) => (

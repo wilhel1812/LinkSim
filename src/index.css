@@ -731,6 +731,62 @@ input {
   gap: 8px;
 }
 
+.overlay-inline-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.overlay-inline-controls > span {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.overlay-inline-controls .map-control-btn {
+  height: 28px;
+  min-width: 72px;
+  font-size: 0.72rem;
+  padding: 0 8px;
+}
+
+.overlay-inline-controls .locale-select {
+  height: 28px;
+  font-size: 0.72rem;
+  min-width: 130px;
+  padding: 2px 8px;
+}
+
+.overlay-scale {
+  margin-top: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.overlay-scale-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: linear-gradient(
+    90deg,
+    rgb(105, 42, 45) 0%,
+    rgb(201, 92, 45) 35%,
+    rgb(218, 175, 55) 58%,
+    rgb(95, 178, 95) 82%,
+    rgb(64, 150, 178) 100%
+  );
+}
+
+.overlay-scale-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
 .map-sim-summary h3 {
   margin: 0 0 6px;
   font-size: 0.82rem;

@@ -1252,32 +1252,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         <button
           className={`map-control-btn ${coverageVizMode === "heatmap" ? "is-selected" : ""}`}
           onClick={() => setCoverageVizMode("heatmap")}
-          title="Coverage as continuous heatmap"
+          title="Coverage strength overlay"
           type="button"
         >
           Heat
-        </button>
-        <button
-          className={`map-control-btn ${coverageVizMode === "contours" ? "is-selected" : ""}`}
-          onClick={() => setCoverageVizMode("contours")}
-          title="Coverage as contour-like bands"
-          type="button"
-        >
-          Bands
-        </button>
-        <button
-          className="map-control-btn"
-          onClick={() =>
-            setBandStepMode((current) => {
-              const order: BandStepMode[] = ["auto", 3, 5, 8, 10];
-              const idx = order.indexOf(current);
-              return order[(idx + 1) % order.length];
-            })
-          }
-          title="Band step size: Auto / 3 / 5 / 8 / 10 dB"
-          type="button"
-        >
-          Step {bandStepMode === "auto" ? `Auto(${currentBandStepDb})` : `${bandStepMode}dB`}
         </button>
         <button
           className="map-control-btn"
@@ -1429,16 +1407,93 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               Mode: <strong>{overlayGuideTitle}</strong>
             </p>
             {coverageVizMode === "heatmap" ? (
-              <p>
-                Shows overall coverage strength from your current simulation sites. Think of it as “how good signal
-                should feel if you stand here”.
-              </p>
+              <>
+                <p>
+                  Shows overall coverage strength from your current simulation sites. Think of it as “how good signal
+                  should feel if you stand here”.
+                </p>
+                <div className="overlay-inline-controls">
+                  <span>Style</span>
+                  <div className="chip-group">
+                    <button
+                      className="map-control-btn is-selected"
+                      onClick={() => setCoverageVizMode("heatmap")}
+                      type="button"
+                    >
+                      Smooth
+                    </button>
+                    <button
+                      className="map-control-btn"
+                      onClick={() => setCoverageVizMode("contours")}
+                      type="button"
+                    >
+                      Bands
+                    </button>
+                  </div>
+                </div>
+                <div className="overlay-scale">
+                  <div className="overlay-scale-bar" />
+                  <div className="overlay-scale-labels">
+                    <span>Weaker signal</span>
+                    <span>Stronger signal</span>
+                  </div>
+                </div>
+              </>
             ) : null}
             {coverageVizMode === "contours" ? (
-              <p>
-                Same data as Heatmap, but grouped into visible steps so boundaries are easier to read. Current step:{" "}
-                {currentBandStepDb} dB ({bandStepMode}).
-              </p>
+              <>
+                <p>Same data as Heatmap, but grouped into steps so boundaries are easier to read.</p>
+                <div className="overlay-inline-controls">
+                  <span>Style</span>
+                  <div className="chip-group">
+                    <button
+                      className="map-control-btn"
+                      onClick={() => setCoverageVizMode("heatmap")}
+                      type="button"
+                    >
+                      Smooth
+                    </button>
+                    <button
+                      className="map-control-btn is-selected"
+                      onClick={() => setCoverageVizMode("contours")}
+                      type="button"
+                    >
+                      Bands
+                    </button>
+                  </div>
+                </div>
+                <div className="overlay-inline-controls">
+                  <span>Band step</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === "auto") {
+                        setBandStepMode("auto");
+                        return;
+                      }
+                      const parsed = Number(value);
+                      if (parsed === 3 || parsed === 5 || parsed === 8 || parsed === 10) {
+                        setBandStepMode(parsed);
+                      }
+                    }}
+                    value={String(bandStepMode)}
+                  >
+                    <option value="auto">Auto ({currentBandStepDb} dB)</option>
+                    <option value="3">3 dB</option>
+                    <option value="5">5 dB</option>
+                    <option value="8">8 dB</option>
+                    <option value="10">10 dB</option>
+                  </select>
+                </div>
+                <div className="overlay-scale">
+                  <div className="overlay-scale-bar" />
+                  <div className="overlay-scale-labels">
+                    <span>Weaker signal</span>
+                    <span>Stronger signal</span>
+                  </div>
+                </div>
+              </>
             ) : null}
             {coverageVizMode === "passfail" ? (
               <>
@@ -1446,28 +1501,37 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                 <ul className="overlay-legend">
                   <li>
                     <span className="state-dot state-dot-pass_clear" />
-                    <span>Clear path and meets target</span>
+                    <span>Clear path and meets signal target</span>
                   </li>
                   <li>
                     <span className="state-dot state-dot-pass_blocked" />
-                    <span>Blocked path, but still meets target</span>
+                    <span>Blocked path, but still meets signal target</span>
                   </li>
                   <li>
                     <span className="state-dot state-dot-fail_clear" />
-                    <span>Clear path, but below target</span>
+                    <span>Clear path, but below signal target</span>
                   </li>
                   <li>
                     <span className="state-dot state-dot-fail_blocked" />
-                    <span>Blocked path and below target</span>
+                    <span>Blocked path and below signal target</span>
                   </li>
                 </ul>
               </>
             ) : null}
             {coverageVizMode === "relay" ? (
-              <p>
-                Helps you find where to place a relay between {selectedFromSite?.name ?? "n/a"} and{" "}
-                {selectedToSite?.name ?? "n/a"}. Warmer/brighter areas are better relay candidates.
-              </p>
+              <>
+                <p>
+                  Helps you find where to place a relay between {selectedFromSite?.name ?? "n/a"} and{" "}
+                  {selectedToSite?.name ?? "n/a"}.
+                </p>
+                <div className="overlay-scale">
+                  <div className="overlay-scale-bar" />
+                  <div className="overlay-scale-labels">
+                    <span>Worse relay position</span>
+                    <span>Better relay position</span>
+                  </div>
+                </div>
+              </>
             ) : null}
           </>
         ) : null}
