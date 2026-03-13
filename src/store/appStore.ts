@@ -19,6 +19,7 @@ import {
   type TerrainDataset,
 } from "../lib/ve2dbeTerrainClient";
 import type { LocaleCode } from "../i18n/locales";
+import type { UiColorTheme } from "../themes/types";
 import type {
   CoverageMode,
   CoverageSample,
@@ -108,7 +109,7 @@ type AppState = {
   mapViewport: MapViewport;
   locale: LocaleCode;
   uiThemePreference: "system" | "light" | "dark";
-  uiColorTheme: "blue" | "pink";
+  uiColorTheme: UiColorTheme;
   selectedScenarioId: string;
   selectedFrequencyPresetId: string;
   rxSensitivityTargetDbm: number;
@@ -127,7 +128,7 @@ type AppState = {
   scenarioOptions: { id: string; name: string }[];
   setLocale: (locale: LocaleCode) => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
-  setUiColorTheme: (value: "blue" | "pink") => void;
+  setUiColorTheme: (value: UiColorTheme) => void;
   selectScenario: (id: string) => void;
   setSelectedLinkId: (id: string) => void;
   setProfileCursorIndex: (index: number) => void;
@@ -510,7 +511,7 @@ const normalizeUiThemePreference = (value: unknown): "system" | "light" | "dark"
 const initialUiThemePreference = normalizeUiThemePreference(
   readStorage<string>(UI_THEME_PREFERENCE_KEY, "system"),
 );
-const normalizeUiColorTheme = (value: unknown): "blue" | "pink" =>
+const normalizeUiColorTheme = (value: unknown): UiColorTheme =>
   value === "pink" || value === "blue" ? value : "blue";
 const initialUiColorTheme = normalizeUiColorTheme(readStorage<string>(UI_COLOR_THEME_KEY, "blue"));
 

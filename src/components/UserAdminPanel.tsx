@@ -24,6 +24,7 @@ import {
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
+import type { UiColorTheme } from "../themes/types";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 
@@ -631,7 +632,7 @@ export function UserAdminPanel() {
                   </span>
                   <select
                     className="locale-select"
-                    onChange={(event) => setUiColorTheme(event.target.value as "blue" | "pink")}
+                    onChange={(event) => setUiColorTheme(event.target.value as UiColorTheme)}
                     value={uiColorTheme}
                   >
                     <option value="blue">Blue</option>

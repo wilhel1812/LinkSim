@@ -3,7 +3,7 @@ import { fetchMe } from "../lib/cloudUser";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
-import { useUiTheme } from "../hooks/useUiTheme";
+import { useThemeVariant } from "../hooks/useThemeVariant";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { OnboardingTutorialModal } from "./OnboardingTutorialModal";
@@ -21,17 +21,19 @@ export function AppShell() {
   const [accessState, setAccessState] = useState<"checking" | "granted" | "pending" | "locked">("checking");
   const [activeUserId, setActiveUserId] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const { theme, colorTheme } = useUiTheme();
+  const { theme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove("theme-light", "theme-dark", "palette-blue", "palette-pink");
+    root.classList.remove("theme-light", "theme-dark");
     root.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
-    root.classList.add(colorTheme === "pink" ? "palette-pink" : "palette-blue");
+    for (const [key, value] of Object.entries(variant.cssVars)) {
+      root.style.setProperty(key, value);
+    }
     root.style.colorScheme = theme;
-  }, [theme, colorTheme]);
+  }, [theme, variant]);
 
   useEffect(() => {
     if (srtmTilesCount > 0) return;
