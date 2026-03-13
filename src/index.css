@@ -193,6 +193,7 @@ input {
   line-height: 1.35;
   color: var(--muted);
   order: 999;
+  text-align: center;
 }
 
 .sidebar-panel > header {
