@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { buildCoverage } from "../lib/coverage";
 import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
+import { haversineDistanceKm } from "../lib/geo";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
   defaultPropagationEnvironment,
@@ -346,6 +347,20 @@ const siteNamePosKey = (
 
 const siteNameKey = (name: string): string => name.trim().toLowerCase();
 
+const pickClosestLibraryEntryByPosition = (
+  site: Pick<Site, "position">,
+  candidates: SiteLibraryEntry[],
+): SiteLibraryEntry | undefined => {
+  if (!candidates.length) return undefined;
+  if (candidates.length === 1) return candidates[0];
+  return candidates
+    .slice()
+    .sort(
+      (a, b) =>
+        haversineDistanceKm(site.position, a.position) - haversineDistanceKm(site.position, b.position),
+    )[0];
+};
+
 const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
   if (!sites.length || !library.length) return sites;
   const libraryByFingerprint = new Map<string, SiteLibraryEntry[]>();
@@ -363,7 +378,8 @@ const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]
     const matchesByPos = libraryByFingerprint.get(siteNamePosKey(site)) ?? [];
     if (matchesByPos.length === 1) return { ...site, libraryEntryId: matchesByPos[0].id };
     const matchesByName = libraryByName.get(siteNameKey(site.name)) ?? [];
-    if (matchesByName.length === 1) return { ...site, libraryEntryId: matchesByName[0].id };
+    const closestByName = pickClosestLibraryEntryByPosition(site, matchesByName);
+    if (closestByName) return { ...site, libraryEntryId: closestByName.id };
     return site;
   });
 };
@@ -386,7 +402,7 @@ const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[])
     const inferredMatchesByPos = byNamePos.get(siteNamePosKey(site)) ?? [];
     const inferredByPos = inferredMatchesByPos.length === 1 ? inferredMatchesByPos[0] : undefined;
     const inferredMatchesByName = byName.get(siteNameKey(site.name)) ?? [];
-    const inferredByName = inferredMatchesByName.length === 1 ? inferredMatchesByName[0] : undefined;
+    const inferredByName = pickClosestLibraryEntryByPosition(site, inferredMatchesByName);
     const entry = direct ?? inferredByPos ?? inferredByName;
     if (!entry) return site;
     return {
