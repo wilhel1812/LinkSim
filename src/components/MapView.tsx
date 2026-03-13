@@ -38,26 +38,6 @@ const profileLineLayer = (color: string): LayerProps => ({
   },
 });
 
-const profileTargetLosLayer = (color: string): LayerProps => ({
-  id: "profile-target-los",
-  type: "line",
-  paint: {
-    "line-color": color,
-    "line-width": 2.2,
-    "line-opacity": 0.95,
-    "line-dasharray": [3.5, 2.5],
-  },
-});
-
-const profileTargetFresnelLayer = (fillColor: string): LayerProps => ({
-  id: "profile-target-fresnel",
-  type: "fill",
-  paint: {
-    "fill-color": fillColor,
-    "fill-opacity": 0.18,
-  },
-});
-
 const coverageRasterLayer: LayerProps = {
   id: "coverage-overlay-layer",
   type: "raster",
@@ -788,85 +768,6 @@ const computeLinkAnalysisBounds = (
   };
 };
 
-const firstFresnelRadiusM = (distanceKm: number, frequencyMHz: number, t: number): number => {
-  const dTotalM = Math.max(1, distanceKm * 1000);
-  const d1 = dTotalM * t;
-  const d2 = dTotalM - d1;
-  const wavelengthM = 300 / Math.max(1, frequencyMHz);
-  return Math.sqrt((wavelengthM * d1 * d2) / dTotalM);
-};
-
-const buildCursorTargetGeometry = (
-  from: { lat: number; lon: number },
-  to: { lat: number; lon: number },
-  frequencyMHz: number,
-): {
-  los: GeoJSON.FeatureCollection<GeoJSON.LineString>;
-  fresnel: GeoJSON.FeatureCollection<GeoJSON.Polygon>;
-} | null => {
-  const avgLat = (from.lat + to.lat) / 2;
-  const metersPerLon = 111_320 * Math.max(0.1, Math.cos((avgLat * Math.PI) / 180));
-  const metersPerLat = 111_320;
-  const dx = (to.lon - from.lon) * metersPerLon;
-  const dy = (to.lat - from.lat) * metersPerLat;
-  const totalDistanceM = Math.hypot(dx, dy);
-  if (totalDistanceM < 5) return null;
-
-  const ux = dx / totalDistanceM;
-  const uy = dy / totalDistanceM;
-  const px = -uy;
-  const py = ux;
-  const distanceKm = totalDistanceM / 1000;
-  const steps = 28;
-  const upper: [number, number][] = [];
-  const lower: [number, number][] = [];
-
-  for (let i = 0; i <= steps; i += 1) {
-    const t = i / steps;
-    const centerLat = from.lat + (to.lat - from.lat) * t;
-    const centerLon = from.lon + (to.lon - from.lon) * t;
-    const radius = firstFresnelRadiusM(distanceKm, frequencyMHz, t);
-    const localMetersPerLon = 111_320 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
-    const dLon = (px * radius) / localMetersPerLon;
-    const dLat = (py * radius) / metersPerLat;
-    upper.push([centerLon + dLon, centerLat + dLat]);
-    lower.push([centerLon - dLon, centerLat - dLat]);
-  }
-
-  const polygon = [...upper, ...lower.reverse(), upper[0]];
-  return {
-    los: {
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          properties: {},
-          geometry: {
-            type: "LineString",
-            coordinates: [
-              [from.lon, from.lat],
-              [to.lon, to.lat],
-            ],
-          },
-        },
-      ],
-    },
-    fresnel: {
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          properties: {},
-          geometry: {
-            type: "Polygon",
-            coordinates: [polygon],
-          },
-        },
-      ],
-    },
-  };
-};
-
 type MapViewProps = {
   isMapExpanded: boolean;
   onToggleMapExpanded: () => void;
@@ -1050,15 +951,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   );
 
   const cursorPoint = selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))];
-  const cursorTargetOverlay = useMemo(() => {
-    if (!selectedFromSite || !selectedLink || !cursorPoint) return null;
-    const frequencyMHz = selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz;
-    return buildCursorTargetGeometry(
-      selectedFromSite.position,
-      { lat: cursorPoint.lat, lon: cursorPoint.lon },
-      frequencyMHz,
-    );
-  }, [selectedFromSite, selectedLink, cursorPoint, selectedNetwork]);
 
   const overlayDimensions = useMemo(() => {
     const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
@@ -1706,17 +1598,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         <Source data={profileFeatures} id="profile-path" type="geojson">
           <Layer {...profileLineLayer(profileColor)} />
         </Source>
-
-        {cursorTargetOverlay ? (
-          <Source data={cursorTargetOverlay.fresnel} id="profile-target-fresnel-source" type="geojson">
-            <Layer {...profileTargetFresnelLayer(selectedLinkColor)} />
-          </Source>
-        ) : null}
-        {cursorTargetOverlay ? (
-          <Source data={cursorTargetOverlay.los} id="profile-target-los-source" type="geojson">
-            <Layer {...profileTargetLosLayer(selectedLinkColor)} />
-          </Source>
-        ) : null}
 
         {coverageOverlay ? (
           <Source

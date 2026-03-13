@@ -246,6 +246,29 @@ export function LinkProfileChart() {
 
   const clampedCursorIndex = Math.max(0, Math.min(profile.length - 1, profileCursorIndex));
   const cursorPoint = profile[clampedCursorIndex];
+  const activeProfileSlice = useMemo(
+    () => (profile.length > 1 ? profile.slice(0, Math.max(2, clampedCursorIndex + 1)) : profile),
+    [profile, clampedCursorIndex],
+  );
+  const activeLosPath = useMemo(
+    () =>
+      activeProfileSlice.length > 1
+        ? linePath(activeProfileSlice.map((p) => ({ x: geometry.xForDistance(p.distanceKm), y: geometry.yForElevation(p.losM) })))
+        : "",
+    [activeProfileSlice, geometry],
+  );
+  const activeFresnelPath = useMemo(() => {
+    if (activeProfileSlice.length < 2) return "";
+    const top = activeProfileSlice.map((p) => ({
+      x: geometry.xForDistance(p.distanceKm),
+      y: geometry.yForElevation(p.fresnelTopM),
+    }));
+    const bottom = activeProfileSlice.map((p) => ({
+      x: geometry.xForDistance(p.distanceKm),
+      y: geometry.yForElevation(p.fresnelBottomM),
+    }));
+    return areaPath(top, bottom);
+  }, [activeProfileSlice, geometry]);
   const cursorState = useMemo(() => {
     if (!cursorPoint || !selectedFromSite || !selectedToSite || !effectiveLink) return null;
     const metrics = computeSourceCentricRxMetrics(
@@ -365,7 +388,7 @@ export function LinkProfileChart() {
             </g>
           ))}
 
-          <path className="fresnel-band" d={geometry.fresnelPath} />
+          <path className="fresnel-band" d={activeFresnelPath} />
           <path className="terrain-fill-path" d={geometry.terrainPath} fill={`url(#${terrainFillGradientId})`} />
           {terrainLineSegments.map((segment, index) => (
             <path
@@ -374,7 +397,7 @@ export function LinkProfileChart() {
               key={`terrain-segment-${index}`}
             />
           ))}
-          <path className="los-path" d={geometry.losPath} />
+          <path className="los-path" d={activeLosPath} />
           {cursorPoint ? (
             <g className="profile-cursor">
               <line
