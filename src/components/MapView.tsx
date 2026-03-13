@@ -1146,9 +1146,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
   const onMapClick = (event: MapLayerMouseEvent) => {
     if (endpointPickTarget) return;
-    const feature = event.features?.[0];
-    const id =
-      feature?.layer.id === "link-lines" && feature.properties ? String(feature.properties.id ?? "") : "";
+    const linkFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
+    const id = linkFeature?.properties ? String(linkFeature.properties.id ?? "") : "";
     if (id) {
       setSelectedLinkId(id);
       return;
