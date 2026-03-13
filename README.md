@@ -126,7 +126,6 @@ This repo uses:
 - D1 for application data
 - R2 for avatar images
 - Cloudflare Access for authentication boundary
-- Optional webhook for access-granted email notifications
 
 Primary configs:
 - Production: [wrangler.toml](./wrangler.toml)

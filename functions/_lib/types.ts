@@ -39,9 +39,6 @@ export type Env = {
   GEOCODE_RATE_LIMIT_PER_MINUTE?: string;
   PROXY_RATE_LIMIT_PER_MINUTE?: string;
   VE2DBE_TILELIST_RATE_LIMIT_PER_MINUTE?: string;
-  ACCESS_GRANTED_EMAIL_WEBHOOK_URL?: string;
-  ACCESS_GRANTED_EMAIL_WEBHOOK_BEARER?: string;
-  APP_BASE_URL?: string;
 };
 
 export type AuthContext = {

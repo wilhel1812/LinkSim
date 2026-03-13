@@ -64,9 +64,6 @@ In Pages project env vars (Production + Preview):
 - `ACCESS_AUD` = Access app AUD tag
 - `ADMIN_USER_IDS` = bootstrap admin user IDs
 - `REGISTRATION_MODE` = `approval_required`
-- `ACCESS_GRANTED_EMAIL_WEBHOOK_URL` = optional webhook URL used to send approval/access-granted emails
-- `ACCESS_GRANTED_EMAIL_WEBHOOK_BEARER` = optional bearer token for that webhook
-- `APP_BASE_URL` = canonical app URL included in access-granted email text
 
 Do not enable local dev fallback vars in production.
 
