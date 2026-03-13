@@ -38,7 +38,7 @@ import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironme
 import { analyzeLink } from "../lib/propagation";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
-import { TERRAIN_DATASET_LABEL, type TerrainDataset } from "../lib/terrainDataset";
+import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
@@ -262,7 +262,6 @@ export function Sidebar() {
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
-  const setTerrainDataset = useAppStore((state) => state.setTerrainDataset);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
@@ -280,14 +279,9 @@ export function Sidebar() {
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const importLibraryData = useAppStore((state) => state.importLibraryData);
   const restoreLibrariesFromSnapshots = useAppStore((state) => state.restoreLibrariesFromSnapshots);
-  const recommendTerrainDatasetForCurrentArea = useAppStore(
-    (state) => state.recommendTerrainDatasetForCurrentArea,
-  );
-  const fetchTerrainForCurrentArea = useAppStore((state) => state.fetchTerrainForCurrentArea);
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
-  const clearTerrainCache = useAppStore((state) => state.clearTerrainCache);
   const getSelectedAnalysis = useAppStore((state) => state.getSelectedAnalysis);
   const getSelectedLink = useAppStore((state) => state.getSelectedLink);
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
@@ -1833,36 +1827,13 @@ export function Sidebar() {
           >
             Auto Fetch Terrain Data
           </button>
-          <label className="field-grid">
-            <span>Terrain source</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setTerrainDataset(event.target.value as TerrainDataset)}
-              value={terrainDataset}
-            >
-              <option value="copernicus30">{TERRAIN_DATASET_LABEL.copernicus30}</option>
-              <option value="copernicus90">{TERRAIN_DATASET_LABEL.copernicus90}</option>
-            </select>
-          </label>
-          <button className="inline-action" onClick={() => void fetchTerrainForCurrentArea()} type="button">
-            Fetch Current Area (Current Source)
-          </button>
-          <button
-            className="inline-action"
-            onClick={() => void recommendTerrainDatasetForCurrentArea()}
-            type="button"
-          >
-            Recommend Source Only
-          </button>
+          <p className="field-help">Automatic source: {TERRAIN_DATASET_LABEL[terrainDataset]}</p>
           <label className="upload-button">
             {t(locale, "loadHgt")}
             <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
           </label>
           <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
             {t(locale, "syncSiteElevations")}
-          </button>
-          <button className="inline-action" onClick={() => void clearTerrainCache()} type="button">
-            Clear Terrain Caches
           </button>
           {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
           {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}

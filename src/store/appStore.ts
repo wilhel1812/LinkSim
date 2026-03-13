@@ -1315,12 +1315,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         const dedup = new Map<string, SrtmTile>();
         for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
         for (const tile of result.tiles) dedup.set(tile.key, tile);
-        const statusParts = [
-          `Loaded ${result.tiles.length} tile(s)`,
-          fetchedItems.length ? `${fetchedItems.length} fetched` : "",
-          result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
-          failedItems.length ? `${failedItems.length} failed` : "",
-        ].filter(Boolean);
+      const statusParts = [
+        `Loaded ${result.tiles.length} tile(s)`,
+        fetchedItems.length ? `${fetchedItems.length} fetched` : "",
+        result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
+        result.fallbackTiles.length ? `${result.fallbackTiles.length} fallback to Copernicus GLO-90` : "",
+        failedItems.length ? `${failedItems.length} failed` : "",
+      ].filter(Boolean);
         const sourceLabel = TERRAIN_DATASET_FETCH_LABEL[terrainDataset];
         const missing = failedItems;
         return {

@@ -10,6 +10,7 @@ type CopernicusLoadResult = {
   failedTiles: string[];
   fetchedTiles: string[];
   cacheHits: string[];
+  fallbackTiles: string[];
 };
 
 type CopernicusRecommendation = {
@@ -28,8 +29,9 @@ const DATASET_PATH: Record<CopernicusDataset, "30m" | "90m"> = {
 const CACHE_NAME = "linksim-copernicus-cog-v1";
 const TILELIST_CACHE_KEY = "linksim-copernicus-tilelist-v1";
 const TILELIST_TTL_MS = 6 * 60 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 20000;
-const MAX_RETRIES = 3;
+const FETCH_TIMEOUT_MS = 90000;
+const MAX_RETRIES = 5;
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const parseCopernicusKey = (entry: string): string | null => {
   const match = entry.match(/Copernicus_DSM_COG_\d+_([NS])(\d{2})_00_([EW])(\d{3})_00_DEM/i);
@@ -49,17 +51,35 @@ const requestWithTimeout = async (url: string): Promise<Response> => {
   }
 };
 
+const parseRetryAfterMs = (value: string | null): number | null => {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.floor(seconds * 1000);
+  const parsedDate = Date.parse(value);
+  if (!Number.isFinite(parsedDate)) return null;
+  const delta = parsedDate - Date.now();
+  return delta > 0 ? delta : null;
+};
+
 const fetchWithRetry = async (url: string): Promise<Response> => {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
     try {
       const response = await requestWithTimeout(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        if (!RETRYABLE_STATUSES.has(response.status) || attempt >= MAX_RETRIES) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+        const delayMs = retryAfterMs ?? 1000 * 2 ** (attempt - 1);
+        await new Promise((resolve) => setTimeout(resolve, Math.min(90000, delayMs)));
+        continue;
+      }
       return response;
     } catch (error) {
       lastError = error;
       if (attempt < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 450 * 2 ** (attempt - 1)));
+        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** (attempt - 1)));
       }
     }
   }
@@ -176,13 +196,14 @@ export const loadCopernicusTilesForArea = async (
   const pathPrefix = DATASET_PATH[dataset];
   const fetchedTiles: string[] = [];
   const cacheHits: string[] = [];
-  const failedTiles: string[] = [];
+  const failedTiles = new Set<string>();
+  const fallbackTiles: string[] = [];
   const parsedTiles: SrtmTile[] = [];
 
   for (const key of candidateKeys) {
     const item = tileList[key];
     if (!item) {
-      failedTiles.push(key);
+      failedTiles.add(key);
       continue;
     }
     try {
@@ -191,11 +212,30 @@ export const loadCopernicusTilesForArea = async (
       else fetchedTiles.push(key);
       parsedTiles.push(await parseCopernicusTile(key, dataset, item.path, buffer));
     } catch {
-      failedTiles.push(key);
+      failedTiles.add(key);
     }
   }
 
-  return { tiles: parsedTiles, failedTiles, fetchedTiles, cacheHits };
+  // Automatic fallback: if 30m fetch fails for some tiles, try 90m for those same tile keys.
+  if (dataset === "copernicus30" && failedTiles.size > 0) {
+    const fallbackList = await loadTileList("copernicus90");
+    for (const key of Array.from(failedTiles)) {
+      const item = fallbackList[key];
+      if (!item) continue;
+      try {
+        const { buffer, fromCache } = await getCachedOrFetchTile(DATASET_PATH.copernicus90, item.path);
+        if (fromCache) cacheHits.push(key);
+        else fetchedTiles.push(key);
+        parsedTiles.push(await parseCopernicusTile(key, "copernicus90", item.path, buffer));
+        fallbackTiles.push(key);
+        failedTiles.delete(key);
+      } catch {
+        // keep failed
+      }
+    }
+  }
+
+  return { tiles: parsedTiles, failedTiles: Array.from(failedTiles), fetchedTiles, cacheHits, fallbackTiles };
 };
 
 export const clearCopernicusCache = async (): Promise<void> => {
