@@ -9,6 +9,7 @@ import {
   fetchSchemaDiagnostics,
   fetchUsers,
   runMetadataRepair,
+  sendAdminTestAccessEmail,
   reassignResourceOwner,
   restoreDeletedCloudUser,
   uploadAvatar,
@@ -208,6 +209,25 @@ export function UserAdminPanel() {
     } catch (error) {
       const message = getUiErrorMessage(error);
       setStatus(`Metadata repair failed: ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendTestAccessEmail = async () => {
+    if (!canAdmin) return;
+    setBusy(true);
+    setStatus("");
+    try {
+      const response = await sendAdminTestAccessEmail();
+      if (response.result.sent) {
+        setStatus("Test access email sent to your account email.");
+      } else {
+        setStatus(`Test access email not sent: ${response.result.reason ?? "unknown reason"}.`);
+      }
+    } catch (error) {
+      const message = getUiErrorMessage(error);
+      setStatus(`Test access email failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -696,14 +716,17 @@ export function UserAdminPanel() {
               <div className="user-manager-list">
                 <div className="section-heading">
                   <p className="field-help">System diagnostics</p>
-                  <div className="chip-group">
-                    <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
-                      Refresh
-                    </button>
-                    <button className="inline-action" disabled={busy} onClick={() => void repairMetadata()} type="button">
-                      Repair Metadata
-                    </button>
-                  </div>
+                <div className="chip-group">
+                  <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
+                    Refresh
+                  </button>
+                  <button className="inline-action" disabled={busy} onClick={() => void repairMetadata()} type="button">
+                    Repair Metadata
+                  </button>
+                  <button className="inline-action" disabled={busy} onClick={() => void sendTestAccessEmail()} type="button">
+                    Send Test Access Email
+                  </button>
+                </div>
                 </div>
                 {authWarnings.length ? (
                   <div className="notification-banner" role="status">

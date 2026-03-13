@@ -104,7 +104,7 @@ export function AppShell() {
           <p className="field-help">To continue:</p>
           <ul className="field-help access-pending-list">
             <li>Open User Settings.</li>
-            <li>Add your name and valid email address.</li>
+            <li>Add your name and a valid email address (used for approval notifications).</li>
             <li>Optionally add an access request note to explain why you need access.</li>
             <li>Wait for moderator/admin approval. You will keep profile access while pending.</li>
           </ul>

@@ -3,6 +3,7 @@ import {
   canDeleteUserAccount,
   canAssignRole,
   canSetPendingOrUser,
+  deriveAccountState,
   deriveUserRole,
 } from "../../_lib/access";
 import { sendAccessGrantedEmail } from "../../_lib/access-grant-email";
@@ -99,7 +100,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       user = await fetchUserProfile(env, targetId);
     }
     if (!user) return withCors(request, json({ error: "User not found" }, { status: 404 }));
-    const initialRole = deriveUserRole(user);
+    const initialAccountState = deriveAccountState(user);
 
     if (
       body.username !== undefined ||
@@ -140,8 +141,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       user = await setUserApproval(env, targetId, body.isApproved, auth.userId);
     }
 
+    const finalAccountState = deriveAccountState(user);
     const finalRole = deriveUserRole(user);
-    if (initialRole === "pending" && finalRole !== "pending") {
+    if (initialAccountState === "pending" && finalAccountState === "approved") {
       const preferredEmail = typeof user.email === "string" && user.email.trim() ? user.email : user.idpEmail;
       const emailResult = await sendAccessGrantedEmail(env, {
         userId: user.id,
