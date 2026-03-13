@@ -1245,9 +1245,6 @@ input {
 }
 
 .floating-help-button {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
   width: 52px;
   height: 52px;
   border-radius: 999px;
@@ -1263,6 +1260,28 @@ input {
   cursor: pointer;
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3);
   z-index: 920;
+}
+
+.floating-help-cluster {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 920;
+}
+
+.floating-env-badge {
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
+  background: color-mix(in srgb, var(--surface) 78%, var(--accent-soft));
+  color: var(--text);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  padding: 8px 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
 }
 
 .floating-help-button:hover {

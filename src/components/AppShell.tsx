@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchMe } from "../lib/cloudUser";
+import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import { useUiTheme } from "../hooks/useUiTheme";
@@ -21,6 +22,8 @@ export function AppShell() {
   const [activeUserId, setActiveUserId] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
   const { theme, colorTheme } = useUiTheme();
+  const runtimeEnvironment = getCurrentRuntimeEnvironment();
+  const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -103,14 +106,17 @@ export function AppShell() {
             <li>Wait for moderator/admin approval. You will keep profile access while pending.</li>
           </ul>
         </section>
-        <button
-          aria-label="Open onboarding"
-          className="floating-help-button"
-          onClick={() => setShowOnboarding(true)}
-          type="button"
-        >
-          ?
-        </button>
+        <div className="floating-help-cluster">
+          {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
+          <button
+            aria-label="Open onboarding"
+            className="floating-help-button"
+            onClick={() => setShowOnboarding(true)}
+            type="button"
+          >
+            ?
+          </button>
+        </div>
         <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
       </main>
     );
@@ -133,14 +139,17 @@ export function AppShell() {
             </button>
           </div>
         </section>
-        <button
-          aria-label="Open onboarding"
-          className="floating-help-button"
-          onClick={() => setShowOnboarding(true)}
-          type="button"
-        >
-          ?
-        </button>
+        <div className="floating-help-cluster">
+          {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
+          <button
+            aria-label="Open onboarding"
+            className="floating-help-button"
+            onClick={() => setShowOnboarding(true)}
+            type="button"
+          >
+            ?
+          </button>
+        </div>
         <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
       </main>
     );
@@ -153,14 +162,17 @@ export function AppShell() {
         <MapView isMapExpanded={isMapExpanded} onToggleMapExpanded={() => setIsMapExpanded((prev) => !prev)} />
         {!isMapExpanded ? <LinkProfileChart /> : null}
       </section>
-      <button
-        aria-label="Open onboarding"
-        className="floating-help-button"
-        onClick={() => setShowOnboarding(true)}
-        type="button"
-      >
-        ?
-      </button>
+      <div className="floating-help-cluster">
+        {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
+        <button
+          aria-label="Open onboarding"
+          className="floating-help-button"
+          onClick={() => setShowOnboarding(true)}
+          type="button"
+        >
+          ?
+        </button>
+      </div>
       <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
     </main>
   );
