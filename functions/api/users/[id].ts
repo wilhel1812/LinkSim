@@ -5,6 +5,7 @@ import {
   canSetPendingOrUser,
   deriveUserRole,
 } from "../../_lib/access";
+import { sendAccessGrantedEmail } from "../../_lib/access-grant-email";
 import {
   assertUserAccess,
   deleteUser,
@@ -98,6 +99,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       user = await fetchUserProfile(env, targetId);
     }
     if (!user) return withCors(request, json({ error: "User not found" }, { status: 404 }));
+    const initialRole = deriveUserRole(user);
 
     if (
       body.username !== undefined ||
@@ -136,6 +138,21 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         return withCors(request, json({ error: "You cannot change approval for this user." }, { status: 403 }));
       }
       user = await setUserApproval(env, targetId, body.isApproved, auth.userId);
+    }
+
+    const finalRole = deriveUserRole(user);
+    if (initialRole === "pending" && finalRole !== "pending") {
+      const preferredEmail = typeof user.email === "string" && user.email.trim() ? user.email : user.idpEmail;
+      const emailResult = await sendAccessGrantedEmail(env, {
+        userId: user.id,
+        username: user.username,
+        email: preferredEmail ?? "",
+        role: finalRole,
+        approvedByUserId: auth.userId,
+      });
+      if (!emailResult.sent && emailResult.reason) {
+        console.warn(`[users/${targetId}] access grant email skipped/failed: ${emailResult.reason}`);
+      }
     }
 
     return withCors(request, json({ user }));
