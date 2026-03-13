@@ -108,6 +108,7 @@ type AppState = {
   mapViewport: MapViewport;
   locale: LocaleCode;
   uiThemePreference: "system" | "light" | "dark";
+  uiColorTheme: "blue" | "pink";
   selectedScenarioId: string;
   selectedFrequencyPresetId: string;
   rxSensitivityTargetDbm: number;
@@ -126,6 +127,7 @@ type AppState = {
   scenarioOptions: { id: string; name: string }[];
   setLocale: (locale: LocaleCode) => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
+  setUiColorTheme: (value: "blue" | "pink") => void;
   selectScenario: (id: string) => void;
   setSelectedLinkId: (id: string) => void;
   setProfileCursorIndex: (index: number) => void;
@@ -210,6 +212,7 @@ type AppState = {
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
+const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
 const STORAGE_SNAPSHOT_LIMIT = 24;
 
 type StoredSnapshot<T> = {
@@ -507,6 +510,9 @@ const normalizeUiThemePreference = (value: unknown): "system" | "light" | "dark"
 const initialUiThemePreference = normalizeUiThemePreference(
   readStorage<string>(UI_THEME_PREFERENCE_KEY, "system"),
 );
+const normalizeUiColorTheme = (value: unknown): "blue" | "pink" =>
+  value === "pink" || value === "blue" ? value : "blue";
+const initialUiColorTheme = normalizeUiColorTheme(readStorage<string>(UI_COLOR_THEME_KEY, "blue"));
 
 export const useAppStore = create<AppState>((set, get) => ({
   sites: defaultScenario.sites,
@@ -531,6 +537,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   mapViewport: defaultScenario.viewport,
   locale: "eng",
   uiThemePreference: initialUiThemePreference,
+  uiColorTheme: initialUiColorTheme,
   selectedScenarioId: defaultScenario.id,
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
@@ -552,6 +559,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const normalized = normalizeUiThemePreference(value);
     writeStorage(UI_THEME_PREFERENCE_KEY, normalized, { snapshot: false });
     set({ uiThemePreference: normalized });
+  },
+  setUiColorTheme: (value) => {
+    const normalized = normalizeUiColorTheme(value);
+    writeStorage(UI_COLOR_THEME_KEY, normalized, { snapshot: false });
+    set({ uiColorTheme: normalized });
   },
   selectScenario: (id) => {
     const scenario = getScenarioById(id);

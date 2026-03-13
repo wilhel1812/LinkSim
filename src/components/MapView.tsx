@@ -15,22 +15,19 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { estimateTerrainExcessLossDb } from "../lib/terrainLoss";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useUiTheme } from "../hooks/useUiTheme";
-import { isCurrentTestEnvironment } from "../lib/environment";
 import { useAppStore } from "../store/appStore";
 import type { Link, Site } from "../types/radio";
 
-const mapLinkColor = isCurrentTestEnvironment() ? "#ff73b4" : "#00c2ff";
-
-const mapLineLayer: LayerProps = {
+const mapLineLayer = (linkColor: string): LayerProps => ({
   id: "link-lines",
   type: "line",
   paint: {
-    "line-color": ["case", ["==", ["get", "selected"], 1], "#ffd166", mapLinkColor],
+    "line-color": ["case", ["==", ["get", "selected"], 1], "#ffd166", linkColor],
     "line-width": ["case", ["==", ["get", "selected"], 1], 4.5, 3],
     "line-opacity": ["case", ["==", ["get", "selected"], 1], 0.98, 0.72],
     "line-dasharray": [1.5, 1],
   },
-};
+});
 
 const profileLineLayer: LayerProps = {
   id: "profile-line",
@@ -825,7 +822,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const isElevationSyncing = useAppStore((state) => state.isElevationSyncing);
-  const { theme } = useUiTheme();
+  const { theme, colorTheme } = useUiTheme();
+  const linkColor = colorTheme === "pink" ? "#ff73b4" : "#00c2ff";
   const selectedProfile = getSelectedProfile();
   const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
@@ -1479,7 +1477,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         ) : null}
 
         <Source data={lineFeatures} id="links" type="geojson">
-          <Layer {...mapLineLayer} />
+          <Layer {...mapLineLayer(linkColor)} />
         </Source>
 
         {sites.map((site) => {

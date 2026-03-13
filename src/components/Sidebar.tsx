@@ -16,7 +16,7 @@ import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { LEGACY_ASSETS } from "../lib/legacyAssets";
-import { getCurrentRuntimeEnvironment, isCurrentTestEnvironment } from "../lib/environment";
+import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { APP_BUILD_LABEL } from "../lib/buildInfo";
 import {
   fetchCollaboratorDirectory,
@@ -98,19 +98,19 @@ const RADIO_CLIMATE_OPTIONS: RadioClimate[] = [
   "Maritime Temperate (Sea)",
 ];
 
-const meshmapNodesLayer: LayerProps = {
+const meshmapNodesLayer = (colorTheme: "blue" | "pink"): LayerProps => ({
   id: "meshmap-nodes-layer",
   type: "circle",
   paint: {
     "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2, 8, 4, 12, 6],
-    "circle-color": isCurrentTestEnvironment() ? "#ff73b4" : "#2bc0ff",
+    "circle-color": colorTheme === "pink" ? "#ff73b4" : "#2bc0ff",
     "circle-opacity": 0.82,
     "circle-stroke-width": 1,
     "circle-stroke-color": "#0a1a24",
   },
-};
+});
 
-const meshmapLabelsLayer: LayerProps = {
+const meshmapLabelsLayer = (colorTheme: "blue" | "pink"): LayerProps => ({
   id: "meshmap-labels-layer",
   type: "symbol",
   layout: {
@@ -122,11 +122,11 @@ const meshmapLabelsLayer: LayerProps = {
     "text-allow-overlap": false,
   },
   paint: {
-    "text-color": isCurrentTestEnvironment() ? "#ffd6e8" : "#e7f1ff",
+    "text-color": colorTheme === "pink" ? "#ffd6e8" : "#e7f1ff",
     "text-halo-color": "rgba(10, 26, 36, 0.95)",
     "text-halo-width": 1.3,
   },
-};
+});
 
 const clampSNR = (spreadFactor: number): number => {
   const map: Record<number, number> = {
@@ -215,7 +215,7 @@ const getSnapshotCount = (key: string): number => {
 };
 
 export function Sidebar() {
-  const { theme } = useUiTheme();
+  const { theme, colorTheme } = useUiTheme();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const links = useAppStore((state) => state.links);
   const sites = useAppStore((state) => state.sites);
@@ -2635,8 +2635,8 @@ export function Sidebar() {
                           onMove={onMeshmapMove}
                         >
                           <Source data={meshmapNodesGeoJson} id="meshmap-nodes" type="geojson">
-                            <Layer {...meshmapNodesLayer} />
-                            <Layer {...meshmapLabelsLayer} />
+                            <Layer {...meshmapNodesLayer(colorTheme)} />
+                            <Layer {...meshmapLabelsLayer(colorTheme)} />
                           </Source>
                         </Map>
                       </div>

@@ -117,6 +117,8 @@ const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl:
 export function UserAdminPanel() {
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
+  const uiColorTheme = useAppStore((state) => state.uiColorTheme);
+  const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
@@ -621,6 +623,19 @@ export function UserAdminPanel() {
                     <option value="system">System</option>
                     <option value="dark">Dark</option>
                     <option value="light">Light</option>
+                  </select>
+                </div>
+                <div className="field-grid user-field-grid">
+                  <span>
+                    Color theme <InfoTip text="Select the app accent palette. More palettes can be added later." />
+                  </span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setUiColorTheme(event.target.value as "blue" | "pink")}
+                    value={uiColorTheme}
+                  >
+                    <option value="blue">Blue</option>
+                    <option value="pink">Pink</option>
                   </select>
                 </div>
                 <div className="field-grid user-field-grid">

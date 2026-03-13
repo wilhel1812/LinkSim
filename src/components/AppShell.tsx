@@ -20,14 +20,15 @@ export function AppShell() {
   const [accessState, setAccessState] = useState<"checking" | "granted" | "pending" | "locked">("checking");
   const [activeUserId, setActiveUserId] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const { theme } = useUiTheme();
+  const { theme, colorTheme } = useUiTheme();
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove("theme-light", "theme-dark");
+    root.classList.remove("theme-light", "theme-dark", "palette-blue", "palette-pink");
     root.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
+    root.classList.add(colorTheme === "pink" ? "palette-pink" : "palette-blue");
     root.style.colorScheme = theme;
-  }, [theme]);
+  }, [theme, colorTheme]);
 
   useEffect(() => {
     if (srtmTilesCount > 0) return;
