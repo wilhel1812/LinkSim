@@ -512,7 +512,7 @@ const initialUiThemePreference = normalizeUiThemePreference(
   readStorage<string>(UI_THEME_PREFERENCE_KEY, "system"),
 );
 const normalizeUiColorTheme = (value: unknown): UiColorTheme =>
-  value === "pink" || value === "blue" || value === "red" ? value : "blue";
+  value === "pink" || value === "blue" || value === "red" || value === "green" ? value : "blue";
 const initialUiColorTheme = normalizeUiColorTheme(readStorage<string>(UI_COLOR_THEME_KEY, "blue"));
 
 export const useAppStore = create<AppState>((set, get) => ({
