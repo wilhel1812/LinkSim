@@ -183,6 +183,7 @@ input {
 .sidebar-grow {
   flex: 1 1 auto;
   min-height: 0;
+  order: 998;
 }
 
 .sidebar-footer {
@@ -191,6 +192,7 @@ input {
   font-size: 0.74rem;
   line-height: 1.35;
   color: var(--muted);
+  order: 999;
 }
 
 .sidebar-panel > header {
