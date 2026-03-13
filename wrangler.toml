@@ -1,28 +1,20 @@
-name = "linksim"
+name = "linksim-staging"
 compatibility_date = "2026-03-12"
 pages_build_output_dir = "dist"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "linksim"
-database_id = "d669aac0-37ea-4c68-9b27-ece888e1966a"
+database_name = "linksim_staging"
+database_id = "a35d016c-f2b8-40c8-ade9-b0f1b2b1bf1c"
 
 [[r2_buckets]]
 binding = "AVATAR_BUCKET"
-bucket_name = "linksim-avatars"
-preview_bucket_name = "linksim-avatars"
+bucket_name = "linksim-avatars-staging"
+preview_bucket_name = "linksim-avatars-staging"
 
 [vars]
-# Cloudflare Access settings for JWT validation in Pages Functions.
-# Team domain example: your-team.cloudflareaccess.com
 ACCESS_TEAM_DOMAIN = "skarvassbu.cloudflareaccess.com"
-# Access application AUD tag from Cloudflare Zero Trust application settings.
-ACCESS_AUD = "dcfed08418380b9ad6fa4d26cc6ba5d94274a8920764dbcb0e1917957d1825b2"
+ACCESS_AUD = "08eb695895482e6a14ff49332f3491d0aa02c751670d37983aa7dbbe0da16a08"
 ADMIN_USER_IDS = "f35e2a08-3713-5671-9725-ba82b21f25d4"
 REGISTRATION_MODE = "approval_required"
-# Optional: per-IP request cap for /api/geocode (default 20/minute).
-# GEOCODE_RATE_LIMIT_PER_MINUTE = "20"
-# Optional: per-IP request cap for upstream proxy routes (/meshmap, /ve2dbe), default 120/minute.
-# PROXY_RATE_LIMIT_PER_MINUTE = "120"
-# Optional: per-IP request cap for /ve2dbe/geodata/gettile.asp (tile list), default 600/minute.
-# VE2DBE_TILELIST_RATE_LIMIT_PER_MINUTE = "600"
+AVATAR_FALLBACK_ORIGIN = "https://linksim.pages.dev"
