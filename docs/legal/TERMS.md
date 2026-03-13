@@ -22,6 +22,8 @@ You must not:
 
 - You remain responsible for content you create or upload.
 - You must respect third-party data and map/source licenses.
+- You must not store sensitive secrets in app content (passwords, private keys, access tokens, or similar credentials).
+- Resource visibility/access levels are intended for collaboration and clutter control, not confidential secret storage.
 
 ## Service operation
 

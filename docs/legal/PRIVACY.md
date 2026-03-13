@@ -20,6 +20,16 @@ This document describes how LinkSim handles user data.
   - created/edited-by user IDs
   - change log events and moderation/audit events
 
+## Sensitive information warning
+
+Do not store secrets in LinkSim content (sites, simulations, notes, profile fields), including:
+- passwords
+- API keys/tokens
+- private keys
+- confidential credentials
+
+Visibility/access settings are collaboration controls, not a secure secret vault.
+
 ## Why data is processed
 
 - Authenticate and authorize access.

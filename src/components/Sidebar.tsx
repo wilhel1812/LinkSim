@@ -1966,6 +1966,10 @@ export function Sidebar() {
             <p className="field-help">Cloud Sync</p>
             <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />
           </div>
+          <p className="field-help warning-text">
+            Do not store secrets in LinkSim content. Treat uploaded/synced data as potentially visible to other users
+            and operators.
+          </p>
           <AuthSyncPanel />
           <div className="section-heading">
             <p className="field-help">Local Storage Safety</p>
@@ -2220,7 +2224,7 @@ export function Sidebar() {
               <label className="field-grid">
                 <span>
                   Access level{" "}
-                  <InfoTip text="Private: only owner/admin can view and edit. Public: everyone can view; owner/mod/admin can edit. Shared: everyone can view and edit; only owner/mod/admin can delete." />
+                  <InfoTip text="Private: only owner/admin can view and edit. Public: everyone can view; owner/mod/admin can edit. Shared: everyone can view and edit; only owner/mod/admin can delete. These levels are for collaboration/clutter control, not secret storage." />
                 </span>
                 <select
                   className="locale-select"
@@ -2234,6 +2238,10 @@ export function Sidebar() {
                   <option value="shared">Shared</option>
                 </select>
               </label>
+              <p className="field-help warning-text">
+                Access levels are not a confidential storage guarantee. Never place passwords, tokens, private keys, or
+                other secrets in resource content.
+              </p>
               <div className="field-grid user-bio-field collaborator-picker-grid">
                 <span>
                   Collaborators{" "}

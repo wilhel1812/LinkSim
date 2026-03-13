@@ -10,6 +10,7 @@ Inspired by Radio Mobile by Roger Coude (VE2DBE).
 - Security policy: [SECURITY.md](./SECURITY.md)
 - Privacy notice: [docs/legal/PRIVACY.md](./docs/legal/PRIVACY.md)
 - Terms and acceptable use: [docs/legal/TERMS.md](./docs/legal/TERMS.md)
+- Sensitive data warning: do not store secrets in app content; visibility levels are collaboration controls, not a secret vault.
 - Legal credits/notices:
   - [docs/legal/CREDITS.md](./docs/legal/CREDITS.md)
   - [docs/legal/THIRD_PARTY_NOTICES.md](./docs/legal/THIRD_PARTY_NOTICES.md)

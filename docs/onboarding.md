@@ -45,10 +45,12 @@
 
 ## User Rights and Permissions
 - User roles: **Pending**, **User**, **Moderator**, **Admin**.
+- Important: treat all content in LinkSim as potentially visible to other users and operators. Do not store passwords, private keys, API secrets, or other sensitive material in sites/simulations/profile fields.
 - Resource visibility:
   - **Private**: only owner/admin can view and edit.
   - **Public**: everyone can view; owner/moderator/admin can edit.
   - **Shared**: everyone can view and edit; only owner/moderator/admin can delete.
+- Visibility levels are for collaboration/clutter control, not secret storage guarantees.
 - Collaborators grant edit rights on a site or simulation.
 - Moderation/admin actions are audited; use least privilege where possible.
 
