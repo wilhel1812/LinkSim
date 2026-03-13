@@ -407,6 +407,10 @@ export function UserAdminPanel() {
   };
 
   const deleteUserAccount = async (user: CloudUser) => {
+    if (!canAdmin) {
+      setStatus("Only admins can delete users.");
+      return;
+    }
     const confirmed = window.confirm(`Delete user ${user.username}? This will remove owned records.`);
     if (!confirmed) return;
     setBusy(true);
@@ -931,7 +935,7 @@ export function UserAdminPanel() {
               </div>
             ) : null}
 
-            {canModerate ? (
+            {canAdmin ? (
               <div className="user-manager-list">
                 <p className="field-help">Deleted users: remove lock to allow immediate re-creation.</p>
                 {deletedUsers.map((entry) => (
@@ -1038,9 +1042,16 @@ export function UserAdminPanel() {
                         Approve Access
                       </button>
                     ) : null}
-                    <button className="inline-action" onClick={() => void deleteUserAccount(managedUser)} type="button">
-                      Delete User
-                    </button>
+                    {canAdmin ? (
+                      <button
+                        className="inline-action"
+                        disabled={managedUser.id === me?.id || resolveRole(managedUser) === "admin"}
+                        onClick={() => void deleteUserAccount(managedUser)}
+                        type="button"
+                      >
+                        Delete User
+                      </button>
+                    ) : null}
                   </div>
                   <p className="field-help">
                     Role and approval changes are audited. Moderators can only approve pending users to User, or
