@@ -15,6 +15,16 @@ const DATASET_TO_BUCKET: Record<string, string> = {
   "90m": "https://copernicus-dem-90m.s3.amazonaws.com",
 };
 
+const rateLimitIdentityFor = (request: Request): string => {
+  const accessEmail = (request.headers.get("cf-access-authenticated-user-email") ?? "").trim().toLowerCase();
+  if (accessEmail) return `user:${accessEmail}`;
+  const clientIp = getClientAddress(request);
+  if (clientIp && clientIp !== "unknown") return `ip:${clientIp}`;
+  const userAgent = (request.headers.get("user-agent") ?? "").trim().toLowerCase();
+  if (userAgent) return `ua:${userAgent}`;
+  return "anon";
+};
+
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method not allowed", { status: 405 });
@@ -31,10 +41,19 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (!objectPath.endsWith(".tif") && objectPath !== "tileList.txt") {
     return new Response("Unsupported object", { status: 400 });
   }
+  const isTileList = objectPath === "tileList.txt";
 
   const limiter = takeRateLimitToken({
-    key: `proxy:copernicus:${getClientAddress(request)}`,
-    limit: parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 240),
+    key: `proxy:copernicus:${isTileList ? "tilelist" : "tile"}:${rateLimitIdentityFor(request)}`,
+    limit: isTileList
+      ? parsePerMinuteLimit(
+          env.PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE,
+          parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 240),
+        )
+      : parsePerMinuteLimit(
+          env.PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE,
+          parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 2400),
+        ),
   });
   if (!limiter.allowed) {
     return new Response("Rate limit reached", {
@@ -58,4 +77,3 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     headers: response.headers,
   });
 };
-
