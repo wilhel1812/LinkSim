@@ -1,7 +1,8 @@
 import { parseSrtmZip } from "./srtm";
 import type { SrtmTile } from "../types/radio";
+import type { TerrainDataset as AnyTerrainDataset } from "./terrainDataset";
 
-type TerrainDataset = "srtm1" | "srtm3" | "srtmthird";
+type TerrainDataset = Extract<AnyTerrainDataset, "legacySrtmThird">;
 type TerrainRecommendation = {
   dataset: TerrainDataset;
   completeness: number;
@@ -17,9 +18,7 @@ type Ve2dbeLoadResult = {
 };
 
 const DATASET_TO_MODE: Record<TerrainDataset, string> = {
-  srtm3: "0",
-  srtm1: "1",
-  srtmthird: "2",
+  legacySrtmThird: "2",
 };
 
 const CACHE_NAME = "linksim-ve2dbe-srtm-v1";
@@ -229,7 +228,7 @@ export const loadVe2dbeTilesForArea = async (
             ...parseSrtmZip(archivePath, buffer),
             sourceKind: "auto-fetch" as const,
             sourceId: `ve2dbe-${dataset}`,
-            sourceLabel: `ve2dbe ${dataset}`,
+            sourceLabel: "Legacy SRTM Third (ve2dbe)",
             sourceDetail: archivePath,
           },
         };
@@ -260,7 +259,7 @@ export const recommendVe2dbeDatasetForArea = async (
   maxLon: number,
 ): Promise<TerrainRecommendation> => {
   const expected = Math.max(1, tilesForBounds(minLat, maxLat, minLon, maxLon).length);
-  const datasets: TerrainDataset[] = ["srtmthird", "srtm1", "srtm3"];
+  const datasets: TerrainDataset[] = ["legacySrtmThird"];
   const results = await Promise.all(
     datasets.map(async (dataset) => {
       let available = 0;
@@ -277,11 +276,7 @@ export const recommendVe2dbeDatasetForArea = async (
     }),
   );
 
-  const ranked = [...results].sort((a, b) => {
-    if (b.completeness !== a.completeness) return b.completeness - a.completeness;
-    const order = { srtmthird: 3, srtm1: 2, srtm3: 1 } as const;
-    return order[b.dataset] - order[a.dataset];
-  });
+  const ranked = [...results].sort((a, b) => b.completeness - a.completeness);
   const best = ranked[0];
 
   return {
@@ -290,17 +285,9 @@ export const recommendVe2dbeDatasetForArea = async (
     expectedTiles: expected,
     availableTiles: best.available,
     byDataset: {
-      srtm1: {
-        availableTiles: results.find((result) => result.dataset === "srtm1")?.available ?? 0,
-        completeness: results.find((result) => result.dataset === "srtm1")?.completeness ?? 0,
-      },
-      srtm3: {
-        availableTiles: results.find((result) => result.dataset === "srtm3")?.available ?? 0,
-        completeness: results.find((result) => result.dataset === "srtm3")?.completeness ?? 0,
-      },
-      srtmthird: {
-        availableTiles: results.find((result) => result.dataset === "srtmthird")?.available ?? 0,
-        completeness: results.find((result) => result.dataset === "srtmthird")?.completeness ?? 0,
+      legacySrtmThird: {
+        availableTiles: results.find((result) => result.dataset === "legacySrtmThird")?.available ?? 0,
+        completeness: results.find((result) => result.dataset === "legacySrtmThird")?.completeness ?? 0,
       },
     },
   };

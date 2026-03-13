@@ -39,6 +39,7 @@ import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironme
 import { analyzeLink } from "../lib/propagation";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
+import type { TerrainDataset } from "../lib/terrainDataset";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
@@ -1837,12 +1838,12 @@ export function Sidebar() {
             <span>Terrain source</span>
             <select
               className="locale-select"
-              onChange={(event) => setTerrainDataset(event.target.value as "srtm1" | "srtm3" | "srtmthird")}
+              onChange={(event) => setTerrainDataset(event.target.value as TerrainDataset)}
               value={terrainDataset}
             >
-              <option value="srtm1">Copernicus GLO-30 (30m)</option>
-              <option value="srtm3">Copernicus GLO-90 (90m)</option>
-              <option value="srtmthird">Legacy SRTM Third (ve2dbe)</option>
+              <option value="copernicus30">Copernicus GLO-30 (30m)</option>
+              <option value="copernicus90">Copernicus GLO-90 (90m)</option>
+              <option value="legacySrtmThird">Legacy SRTM Third (ve2dbe)</option>
             </select>
           </label>
           <button className="inline-action" onClick={() => void fetchTerrainForCurrentArea()} type="button">

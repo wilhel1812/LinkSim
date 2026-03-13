@@ -14,6 +14,7 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
+import type { TerrainDataset } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
@@ -98,6 +99,12 @@ const supportsWebgl = (): boolean => {
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
+
+const TERRAIN_DATASET_LABEL: Record<TerrainDataset, string> = {
+  copernicus30: "Copernicus GLO-30 (30m)",
+  copernicus90: "Copernicus GLO-90 (90m)",
+  legacySrtmThird: "Legacy SRTM Third (ve2dbe)",
+};
 
 const guessSiteNameForPosition = async (lat: number, lon: number): Promise<string> => {
   const fallback = `Site ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
@@ -886,7 +893,11 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     return Array.from(breakdown.values()).sort((a, b) => b.count - a.count);
   }, [srtmTiles]);
   const selectedDatasetTileCount = useMemo(
-    () => srtmTiles.filter((tile) => (tile.sourceId ?? "").endsWith(`-${terrainDataset}`)).length,
+    () =>
+      srtmTiles.filter((tile) => {
+        const sourceId = tile.sourceId ?? "";
+        return sourceId === terrainDataset || sourceId === `ve2dbe-${terrainDataset}`;
+      }).length,
     [srtmTiles, terrainDataset],
   );
   const boundedCoverageSamples = useMemo(() => {
@@ -1375,7 +1386,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
             </p>
             <p>
-              Terrain dataset: {terrainDataset.toUpperCase()} ({selectedDatasetTileCount} matching tile
+              Terrain dataset: {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
               {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
             </p>
             {terrainSourceSummary.length ? (

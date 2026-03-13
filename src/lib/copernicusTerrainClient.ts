@@ -1,8 +1,9 @@
 import { fromArrayBuffer } from "geotiff";
 import type { SrtmTile } from "../types/radio";
-import { tilesForBounds, type TerrainDataset } from "./ve2dbeTerrainClient";
+import { tilesForBounds } from "./ve2dbeTerrainClient";
+import type { TerrainDataset } from "./terrainDataset";
 
-type CopernicusDataset = Extract<TerrainDataset, "srtm1" | "srtm3">;
+type CopernicusDataset = Extract<TerrainDataset, "copernicus30" | "copernicus90">;
 
 type CopernicusLoadResult = {
   tiles: SrtmTile[];
@@ -20,8 +21,8 @@ type CopernicusRecommendation = {
 };
 
 const DATASET_PATH: Record<CopernicusDataset, "30m" | "90m"> = {
-  srtm1: "30m",
-  srtm3: "90m",
+  copernicus30: "30m",
+  copernicus90: "90m",
 };
 
 const CACHE_NAME = "linksim-copernicus-cog-v1";
@@ -144,11 +145,11 @@ const parseCopernicusTile = async (
     size: Math.max(width, height),
     width,
     height,
-    arcSecondSpacing: dataset === "srtm1" ? 1 : 3,
+    arcSecondSpacing: dataset === "copernicus30" ? 1 : 3,
     elevations: out,
     sourceKind: "auto-fetch",
-    sourceId: `copernicus-${dataset}`,
-    sourceLabel: `Copernicus ${dataset === "srtm1" ? "GLO-30" : "GLO-90"}`,
+    sourceId: dataset,
+    sourceLabel: `Copernicus ${dataset === "copernicus30" ? "GLO-30" : "GLO-90"}`,
     sourceDetail: path,
   };
 };
@@ -210,7 +211,7 @@ export const recommendCopernicusDatasetForArea = async (
 ): Promise<CopernicusRecommendation> => {
   const expected = Math.max(1, tilesForBounds(minLat, maxLat, minLon, maxLon).length);
   const keys = new Set(tilesForBounds(minLat, maxLat, minLon, maxLon));
-  const datasets: CopernicusDataset[] = ["srtm1", "srtm3"];
+  const datasets: CopernicusDataset[] = ["copernicus30", "copernicus90"];
   const stats: Array<{ dataset: CopernicusDataset; availableTiles: number; completeness: number }> = [];
   for (const dataset of datasets) {
     try {
@@ -228,7 +229,7 @@ export const recommendCopernicusDatasetForArea = async (
   }
   const sorted = [...stats].sort((a, b) => {
     if (b.completeness !== a.completeness) return b.completeness - a.completeness;
-    return a.dataset === "srtm1" ? -1 : 1;
+    return a.dataset === "copernicus30" ? -1 : 1;
   });
   const best = sorted[0];
   return {
@@ -237,15 +238,14 @@ export const recommendCopernicusDatasetForArea = async (
     expectedTiles: expected,
     availableTiles: best.availableTiles,
     byDataset: {
-      srtm1: {
-        availableTiles: stats.find((entry) => entry.dataset === "srtm1")?.availableTiles ?? 0,
-        completeness: stats.find((entry) => entry.dataset === "srtm1")?.completeness ?? 0,
+      copernicus30: {
+        availableTiles: stats.find((entry) => entry.dataset === "copernicus30")?.availableTiles ?? 0,
+        completeness: stats.find((entry) => entry.dataset === "copernicus30")?.completeness ?? 0,
       },
-      srtm3: {
-        availableTiles: stats.find((entry) => entry.dataset === "srtm3")?.availableTiles ?? 0,
-        completeness: stats.find((entry) => entry.dataset === "srtm3")?.completeness ?? 0,
+      copernicus90: {
+        availableTiles: stats.find((entry) => entry.dataset === "copernicus90")?.availableTiles ?? 0,
+        completeness: stats.find((entry) => entry.dataset === "copernicus90")?.completeness ?? 0,
       },
     },
   };
 };
-

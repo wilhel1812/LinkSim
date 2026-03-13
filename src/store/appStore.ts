@@ -18,10 +18,10 @@ import {
   loadCopernicusTilesForArea,
   recommendCopernicusDatasetForArea,
 } from "../lib/copernicusTerrainClient";
+import { normalizeTerrainDataset, type TerrainDataset } from "../lib/terrainDataset";
 import {
   clearVe2dbeCache,
   loadVe2dbeTilesForArea,
-  type TerrainDataset,
 } from "../lib/ve2dbeTerrainClient";
 import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
@@ -570,7 +570,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   propagationEnvironment: defaultPropagationEnvironment(),
   autoPropagationEnvironment: true,
   propagationEnvironmentReason: "Auto defaults active.",
-  terrainDataset: "srtm1",
+  terrainDataset: "copernicus30",
   terrainFetchStatus: "",
   terrainRecommendation: "",
   hasOnlineElevationSync: false,
@@ -1024,9 +1024,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? "Auto defaults active."
         : "Manual override active.",
       terrainDataset:
-        snap.terrainDataset === "srtm3" || snap.terrainDataset === "srtm1" || snap.terrainDataset === "srtmthird"
-          ? snap.terrainDataset
-          : "srtm1",
+        normalizeTerrainDataset(snap.terrainDataset),
       mapViewport:
         snap.mapViewport &&
         typeof snap.mapViewport.zoom === "number" &&
@@ -1275,14 +1273,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         bounds.maxLon,
       );
       const perDataset = [
-        `Copernicus 30m: ${Math.round(copernicusRecommendation.byDataset.srtm1.completeness * 100)}% (${copernicusRecommendation.byDataset.srtm1.availableTiles}/${copernicusRecommendation.expectedTiles})`,
-        `Copernicus 90m: ${Math.round(copernicusRecommendation.byDataset.srtm3.completeness * 100)}% (${copernicusRecommendation.byDataset.srtm3.availableTiles}/${copernicusRecommendation.expectedTiles})`,
+        `Copernicus 30m: ${Math.round(copernicusRecommendation.byDataset.copernicus30.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus30.availableTiles}/${copernicusRecommendation.expectedTiles})`,
+        `Copernicus 90m: ${Math.round(copernicusRecommendation.byDataset.copernicus90.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus90.availableTiles}/${copernicusRecommendation.expectedTiles})`,
       ].join(" | ");
       const recommendedDataset = copernicusRecommendation.dataset;
       const recommendedLabel =
-        recommendedDataset === "srtm1"
+        recommendedDataset === "copernicus30"
           ? "Copernicus 30m"
-          : recommendedDataset === "srtm3"
+          : recommendedDataset === "copernicus90"
             ? "Copernicus 90m"
             : "Legacy SRTM Third";
       set({
@@ -1304,9 +1302,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({
       terrainFetchStatus:
-        terrainDataset === "srtm1"
+        terrainDataset === "copernicus30"
           ? "Fetching Copernicus GLO-30 tiles..."
-          : terrainDataset === "srtm3"
+          : terrainDataset === "copernicus90"
             ? "Fetching Copernicus GLO-90 tiles..."
             : "Fetching legacy ve2dbe SRTM Third tiles...",
       isTerrainFetching: true,
@@ -1314,7 +1312,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const result =
-        terrainDataset === "srtmthird"
+        terrainDataset === "legacySrtmThird"
           ? await loadVe2dbeTilesForArea(
               bounds.minLat,
               bounds.maxLat,
@@ -1342,9 +1340,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           failedItems.length ? `${failedItems.length} failed` : "",
         ].filter(Boolean);
         const sourceLabel =
-          terrainDataset === "srtm1"
+          terrainDataset === "copernicus30"
             ? "Copernicus GLO-30"
-            : terrainDataset === "srtm3"
+            : terrainDataset === "copernicus90"
               ? "Copernicus GLO-90"
               : "legacy ve2dbe SRTM Third";
         const missing = failedItems;
