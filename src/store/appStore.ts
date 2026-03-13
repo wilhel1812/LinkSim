@@ -329,40 +329,41 @@ const normalizeSimulationPresets = (presets: SimulationPreset[]): SimulationPres
       ),
   );
 
+const siteNamePosKey = (
+  site: Pick<Site, "name" | "position"> | Pick<SiteLibraryEntry, "name" | "position">,
+): string =>
+  `${site.name.trim().toLowerCase()}|${site.position.lat.toFixed(6)}|${site.position.lon.toFixed(6)}`;
+
 const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
   if (!sites.length || !library.length) return sites;
-  const libraryByFingerprint = new Map<string, SiteLibraryEntry>();
+  const libraryByFingerprint = new Map<string, SiteLibraryEntry[]>();
   for (const entry of library) {
-    const key = [
-      entry.name.trim().toLowerCase(),
-      entry.position.lat.toFixed(6),
-      entry.position.lon.toFixed(6),
-      entry.groundElevationM.toFixed(1),
-      entry.antennaHeightM.toFixed(1),
-    ].join("|");
-    libraryByFingerprint.set(key, entry);
+    const key = siteNamePosKey(entry);
+    const current = libraryByFingerprint.get(key) ?? [];
+    libraryByFingerprint.set(key, [...current, entry]);
   }
   return sites.map((site) => {
     if (site.libraryEntryId) return site;
-    const key = [
-      site.name.trim().toLowerCase(),
-      site.position.lat.toFixed(6),
-      site.position.lon.toFixed(6),
-      site.groundElevationM.toFixed(1),
-      site.antennaHeightM.toFixed(1),
-    ].join("|");
-    const matched = libraryByFingerprint.get(key);
-    if (!matched) return site;
-    return { ...site, libraryEntryId: matched.id };
+    const matches = libraryByFingerprint.get(siteNamePosKey(site)) ?? [];
+    if (matches.length !== 1) return site;
+    return { ...site, libraryEntryId: matches[0].id };
   });
 };
 
 const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
   if (!sites.length || !library.length) return sites;
   const byId = new Map<string, SiteLibraryEntry>(library.map((entry) => [entry.id, entry]));
+  const byNamePos = new Map<string, SiteLibraryEntry[]>();
+  for (const entry of library) {
+    const key = siteNamePosKey(entry);
+    const current = byNamePos.get(key) ?? [];
+    byNamePos.set(key, [...current, entry]);
+  }
   return sites.map((site) => {
-    if (!site.libraryEntryId) return site;
-    const entry = byId.get(site.libraryEntryId);
+    const direct = site.libraryEntryId ? byId.get(site.libraryEntryId) : undefined;
+    const inferredMatches = byNamePos.get(siteNamePosKey(site)) ?? [];
+    const inferred = inferredMatches.length === 1 ? inferredMatches[0] : undefined;
+    const entry = direct ?? inferred;
     if (!entry) return site;
     return {
       ...site,
@@ -370,6 +371,7 @@ const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[])
       position: entry.position,
       groundElevationM: entry.groundElevationM,
       antennaHeightM: entry.antennaHeightM,
+      libraryEntryId: entry.id,
     };
   });
 };
