@@ -853,7 +853,26 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   );
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
-  const selectedLink = links.find((link) => link.id === selectedLinkId) ?? visibleLinks[0] ?? links[0] ?? null;
+  const selectedLink =
+    links.find((link) => link.id === selectedLinkId) ??
+    visibleLinks[0] ??
+    links[0] ??
+    (sites.length >= 1
+      ? {
+          id: "__auto__",
+          name: "Auto Link",
+          fromSiteId: sites[0].id,
+          toSiteId: sites[1]?.id ?? sites[0].id,
+          frequencyMHz:
+            selectedNetwork?.frequencyOverrideMHz ??
+            selectedNetwork?.frequencyMHz ??
+            869.618,
+          txPowerDbm: 22,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        }
+      : null);
   const selectedFromSiteId = selectedLink
     ? temporaryDirectionReversed
       ? selectedLink.toSiteId
@@ -870,7 +889,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const selectedToSite = selectedToSiteId
     ? sites.find((site) => site.id === selectedToSiteId) ?? null
     : null;
-  const hasMinimumTopology = sites.length >= 2 && links.length >= 1;
+  const hasHeatTopology = sites.length >= 1;
+  const hasPassFailTopology = sites.length >= 1;
+  const hasRelayTopology = sites.length >= 2;
+  const hasMinimumTopology = hasHeatTopology;
   const analysisBounds = useMemo(
     () =>
       selectedFromSite && selectedToSite
@@ -968,7 +990,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       const effectiveBandStepDb =
         bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
       if (coverageVizMode === "relay") {
-        if (!selectedLink || !selectedFromSite || !selectedToSite) return null;
+        if (!selectedLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
         const effectiveLink: Link = {
           ...selectedLink,
           frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
@@ -986,7 +1008,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         );
       }
       if (coverageVizMode === "passfail") {
-        if (!selectedLink || !selectedFromSite) return null;
+        if (!selectedLink || !selectedFromSite || !hasPassFailTopology) return null;
         const effectiveLink: Link = {
           ...selectedLink,
           frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
@@ -1028,6 +1050,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       analysisBounds,
       overlayDimensions,
       coverageResolutionMode,
+      hasPassFailTopology,
+      hasRelayTopology,
     ],
   );
   const currentBandStepDb = useMemo(() => {
@@ -1326,9 +1350,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
         </div>
       </div>
-      {!hasMinimumTopology ? (
+      {(!hasHeatTopology ||
+        (coverageVizMode === "relay" && !hasRelayTopology) ||
+        ((coverageVizMode === "passfail" || coverageVizMode === "relay") && !hasPassFailTopology)) ? (
         <div className="map-empty-state" role="status">
-          Add at least two sites to this simulation to run link analysis.
+          {coverageVizMode === "heatmap" || coverageVizMode === "contours"
+            ? "Add at least one site to start coverage mapping."
+            : coverageVizMode === "passfail"
+              ? "Add at least one site to run pass/fail mapping. Add a second site for path-based analysis."
+              : "Add at least two sites to run relay analysis."}
         </div>
       ) : null}
       {isSimulationRecomputing || isBackgroundBusy ? (

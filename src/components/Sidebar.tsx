@@ -382,6 +382,7 @@ export function Sidebar() {
   const [siteLibraryQuery, setSiteLibraryQuery] = useState("");
   const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
   const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
+  const [pendingDraftAutoInsert, setPendingDraftAutoInsert] = useState(false);
   const [newLibraryName, setNewLibraryName] = useState("");
   const [newLibraryLat, setNewLibraryLat] = useState(60.0);
   const [newLibraryLon, setNewLibraryLon] = useState(10.0);
@@ -677,6 +678,7 @@ export function Sidebar() {
     if (!pendingSiteLibraryDraft) return;
     setShowSiteLibraryManager(true);
     setShowAddLibraryForm(true);
+    setPendingDraftAutoInsert(true);
     setNewLibraryName(pendingSiteLibraryDraft.suggestedName ?? "");
     setNewLibraryLat(pendingSiteLibraryDraft.lat);
     setNewLibraryLon(pendingSiteLibraryDraft.lon);
@@ -890,11 +892,12 @@ export function Sidebar() {
   };
 
   const openAddLinkModal = () => {
-    const fallbackFrom = selectedLink.fromSiteId || sites[0]?.id || "";
-    const fallbackTo =
-      selectedLink.toSiteId ||
-      sites.find((site) => site.id !== fallbackFrom)?.id ||
-      "";
+    const hasFromInSites = sites.some((site) => site.id === selectedLink.fromSiteId);
+    const hasToInSites = sites.some((site) => site.id === selectedLink.toSiteId);
+    const fallbackFrom = hasFromInSites ? selectedLink.fromSiteId : sites[0]?.id || "";
+    const fallbackTo = hasToInSites
+      ? selectedLink.toSiteId
+      : sites.find((site) => site.id !== fallbackFrom)?.id || "";
     setLinkModal({
       mode: "add",
       linkId: null,
@@ -926,6 +929,14 @@ export function Sidebar() {
 
   const saveLinkModal = () => {
     if (!linkModal) return;
+    const fromExists = sites.some((site) => site.id === linkModal.fromSiteId);
+    const toExists = sites.some((site) => site.id === linkModal.toSiteId);
+    if (!fromExists || !toExists) {
+      setLinkModal((current) =>
+        current ? { ...current, status: "From/To must be valid current simulation sites." } : current,
+      );
+      return;
+    }
     if (!linkModal.fromSiteId || !linkModal.toSiteId) {
       setLinkModal((current) => (current ? { ...current, status: "Select both From and To sites." } : current));
       return;
@@ -935,8 +946,16 @@ export function Sidebar() {
       return;
     }
     if (linkModal.mode === "add") {
+      const beforeCount = links.length;
       createLink(linkModal.fromSiteId, linkModal.toSiteId, linkModal.name);
-      const createdId = useAppStore.getState().selectedLinkId;
+      const afterState = useAppStore.getState();
+      const createdId = afterState.selectedLinkId;
+      if (afterState.links.length <= beforeCount) {
+        setLinkModal((current) =>
+          current ? { ...current, status: "Failed to create link. Verify site selection and try again." } : current,
+        );
+        return;
+      }
       if (createdId) {
         updateLink(createdId, {
           name: linkModal.name.trim() || undefined,
@@ -1052,13 +1071,17 @@ export function Sidebar() {
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
   };
   const addLibraryEntryNow = () => {
-    addSiteLibraryEntry(
+    const createdId = addSiteLibraryEntry(
       newLibraryName,
       newLibraryLat,
       newLibraryLon,
       newLibraryGroundM,
       newLibraryAntennaM,
     );
+    if (pendingDraftAutoInsert && createdId) {
+      insertSiteFromLibrary(createdId);
+      setPendingDraftAutoInsert(false);
+    }
     setNewLibraryName("");
     setShowAddLibraryForm(false);
   };
@@ -2404,7 +2427,7 @@ export function Sidebar() {
                 collaborators/owner. Owners/moderators/admins can remove collaborators.
               </p>
               <button className="inline-action" onClick={saveResourceAccessSettings} type="button">
-                Save Access
+                Save Changes
               </button>
               {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : null}
             </details>
@@ -2635,11 +2658,24 @@ export function Sidebar() {
         </ModalOverlay>
       ) : null}
       {showSiteLibraryManager ? (
-        <ModalOverlay aria-label="Site Library" onClose={() => setShowSiteLibraryManager(false)}>
+        <ModalOverlay
+          aria-label="Site Library"
+          onClose={() => {
+            setShowSiteLibraryManager(false);
+            setPendingDraftAutoInsert(false);
+          }}
+        >
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Site Library</h2>
-              <button className="inline-action" onClick={() => setShowSiteLibraryManager(false)} type="button">
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setShowSiteLibraryManager(false);
+                  setPendingDraftAutoInsert(false);
+                }}
+                type="button"
+              >
                 Close
               </button>
             </div>
@@ -2658,7 +2694,10 @@ export function Sidebar() {
             <div className="chip-group">
               <button
                 className="inline-action"
-                onClick={() => setShowAddLibraryForm((current) => !current)}
+                onClick={() => {
+                  setShowAddLibraryForm((current) => !current);
+                  if (showAddLibraryForm) setPendingDraftAutoInsert(false);
+                }}
                 type="button"
               >
                 {showAddLibraryForm ? "Hide Add Form" : "Add Site"}
@@ -2865,7 +2904,14 @@ export function Sidebar() {
                   <button className="inline-action" onClick={addLibraryEntryNow} type="button">
                     Add To Library
                   </button>
-                  <button className="inline-action" onClick={() => setShowAddLibraryForm(false)} type="button">
+                  <button
+                    className="inline-action"
+                    onClick={() => {
+                      setShowAddLibraryForm(false);
+                      setPendingDraftAutoInsert(false);
+                    }}
+                    type="button"
+                  >
                     Cancel
                   </button>
                 </div>

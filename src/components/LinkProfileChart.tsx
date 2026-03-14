@@ -72,7 +72,7 @@ export function LinkProfileChart() {
   );
   const baseProfile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
-  const hasMinimumTopology = sites.length >= 2 && links.length >= 1;
+  const hasMinimumTopology = sites.length >= 2;
   const selectedFromSiteId = selectedLink
     ? temporaryDirectionReversed
       ? selectedLink.toSiteId

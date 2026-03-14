@@ -164,7 +164,7 @@ type AppState = {
     groundElevationM?: number,
     antennaHeightM?: number,
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
-  ) => void;
+  ) => string;
   insertSiteFromLibrary: (entryId: string) => void;
   insertSitesFromLibrary: (entryIds: string[]) => void;
   updateSiteLibraryEntry: (
@@ -807,6 +807,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       writeStorage(SITE_LIBRARY_KEY, next);
       return { siteLibrary: next };
     });
+    return entry.id;
   },
   deleteLink: (linkId) => {
     set((state) => {
@@ -866,10 +867,66 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
 
-    set((state) => ({
-      sites: [...state.sites, ...addedSites],
-      selectedSiteId: createdSiteIds[createdSiteIds.length - 1] ?? state.selectedSiteId,
-    }));
+    set((state) => {
+      const nextSites = [...state.sites, ...addedSites];
+      const nextSystems = state.systems.length ? state.systems : defaultScenario.systems;
+      const selectedNetwork = state.networks.find((network) => network.id === state.selectedNetworkId);
+      const inheritedFrequencyMHz =
+        selectedNetwork?.frequencyOverrideMHz ??
+        selectedNetwork?.frequencyMHz ??
+        state.links[0]?.frequencyMHz ??
+        869.618;
+
+      const nextNetworks =
+        state.networks.length > 0
+          ? state.networks.map((network) => {
+              const membershipBySite = new Set(network.memberships.map((member) => member.siteId));
+              const additions = addedSites
+                .filter((site) => !membershipBySite.has(site.id))
+                .map((site) => ({ siteId: site.id, systemId: nextSystems[0].id }));
+              return { ...network, memberships: [...network.memberships, ...additions] };
+            })
+          : [
+              {
+                id: makeId("network"),
+                name: "Local Mesh",
+                frequencyMHz: inheritedFrequencyMHz,
+                bandwidthKhz: 62,
+                spreadFactor: 8,
+                codingRate: 5,
+                frequencyOverrideMHz: inheritedFrequencyMHz,
+                memberships: nextSites.map((site) => ({ siteId: site.id, systemId: nextSystems[0].id })),
+              },
+            ];
+
+      const base = state.links[0];
+      const nextLinks =
+        state.links.length === 0 && nextSites.length >= 2
+          ? [
+              {
+                id: makeId("lnk"),
+                name: "Auto Link",
+                fromSiteId: nextSites[0].id,
+                toSiteId: nextSites[1].id,
+                frequencyMHz: inheritedFrequencyMHz,
+                txPowerDbm: base?.txPowerDbm ?? 22,
+                txGainDbi: base?.txGainDbi ?? 2,
+                rxGainDbi: base?.rxGainDbi ?? 2,
+                cableLossDb: base?.cableLossDb ?? 1,
+              },
+            ]
+          : state.links;
+
+      return {
+        sites: nextSites,
+        systems: nextSystems,
+        networks: nextNetworks,
+        links: nextLinks,
+        selectedSiteId: createdSiteIds[createdSiteIds.length - 1] ?? state.selectedSiteId,
+        selectedNetworkId: state.selectedNetworkId || nextNetworks[0]?.id || "",
+        selectedLinkId: state.selectedLinkId || nextLinks[0]?.id || "",
+      };
+    });
     get().recomputeCoverage();
     for (const siteId of createdSiteIds) {
       void get().syncSiteElevationOnline(siteId);
@@ -1633,9 +1690,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   getSelectedLink: () => {
-    const { links, selectedLinkId } = get();
+    const { links, selectedLinkId, sites, networks, selectedNetworkId } = get();
     const link = links.find((candidate) => candidate.id === selectedLinkId);
-    return link ?? links[0] ?? defaultScenario.links[0];
+    if (link) return link;
+    if (links[0]) return links[0];
+    if (sites.length >= 2) {
+      const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
+      const inheritedFrequencyMHz =
+        selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 869.618;
+      return {
+        id: "__auto__",
+        name: "Auto Link",
+        fromSiteId: sites[0].id,
+        toSiteId: sites[1].id,
+        frequencyMHz: inheritedFrequencyMHz,
+        txPowerDbm: 22,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      };
+    }
+    return defaultScenario.links[0];
   },
   getSelectedSite: () => {
     const { sites, selectedSiteId } = get();
