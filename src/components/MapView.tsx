@@ -1323,13 +1323,19 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   }
 
   const providerCapabilities = useMemo(() => getBasemapProviderCapabilities(), []);
-  const selectedProviderConfig =
-    providerCapabilities.find((entry) => entry.provider === basemapProvider) ?? providerCapabilities[0];
   const resolvedBasemap = useMemo(
     () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme),
     [basemapProvider, basemapStylePreset, theme],
   );
-  const resolvedPresetOptions = selectedProviderConfig?.presets ?? [];
+  const requestedProviderConfig =
+    providerCapabilities.find((entry) => entry.provider === basemapProvider) ?? providerCapabilities[0];
+  const activeProviderConfig =
+    providerCapabilities.find((entry) => entry.provider === resolvedBasemap.provider) ?? providerCapabilities[0];
+  const resolvedPresetOptions = activeProviderConfig?.presets ?? [];
+  const styleSelectValue =
+    resolvedPresetOptions.length <= 1
+      ? resolvedPresetOptions[0]?.id ?? basemapStylePreset
+      : basemapStylePreset;
   const globalProviders = providerCapabilities.filter((entry) => entry.group === "global");
   const regionalProviders = providerCapabilities.filter((entry) => entry.group === "regional");
 
@@ -1343,33 +1349,48 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               className="locale-select"
               onChange={(event) => {
                 const nextProvider = event.target.value as typeof basemapProvider;
+                const nextProviderConfig =
+                  providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
                 setBasemapProvider(nextProvider);
-                setBasemapStylePreset("auto");
+                setBasemapStylePreset(nextProviderConfig.presets.length <= 1 ? nextProviderConfig.presets[0]?.id ?? "auto" : "auto");
                 setUseFallbackMapStyle(false);
                 setMapProviderWarning(null);
               }}
               value={basemapProvider}
             >
-              {globalProviders.map((provider) => (
-                <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                  {provider.label}
-                  {!provider.available ? " (unavailable)" : ""}
-                </option>
-              ))}
+              <optgroup label="Global">
+                {globalProviders.map((provider) => (
+                  <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                    {provider.label}
+                    {!provider.available ? " (unavailable)" : ""}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Regional">
+                {regionalProviders.map((provider) => (
+                  <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                    {provider.label}
+                    {!provider.available ? " (unavailable)" : ""}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </label>
           <label className="map-provider-field">
             <span>Style</span>
             <select
               className="locale-select"
+              disabled={resolvedPresetOptions.length <= 1}
               onChange={(event) => {
                 setBasemapStylePreset(event.target.value);
                 setUseFallbackMapStyle(false);
                 setMapProviderWarning(null);
               }}
-              value={basemapStylePreset}
+              value={styleSelectValue}
             >
-              <option value="auto">Auto ({theme === "dark" ? "Dark" : "Light"})</option>
+              {resolvedPresetOptions.length > 1 ? (
+                <option value="auto">Auto ({theme === "dark" ? "Dark" : "Light"})</option>
+              ) : null}
               {resolvedPresetOptions.map((preset) => (
                 <option key={preset.id} value={preset.id}>
                   {preset.label}
@@ -1377,29 +1398,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               ))}
             </select>
           </label>
-          {regionalProviders.length ? (
-            <details className="compact-details map-provider-regional">
-              <summary>Regional providers</summary>
-              <div className="chip-group">
-                {regionalProviders.map((provider) => (
-                  <button
-                    className={`map-control-btn ${basemapProvider === provider.provider ? "is-selected" : ""}`}
-                    disabled={!provider.available}
-                    key={provider.provider}
-                    onClick={() => {
-                      setBasemapProvider(provider.provider);
-                      setBasemapStylePreset("auto");
-                      setUseFallbackMapStyle(false);
-                      setMapProviderWarning(null);
-                    }}
-                    type="button"
-                  >
-                    {provider.label}
-                  </button>
-                ))}
-              </div>
-            </details>
-          ) : null}
         </div>
       </div>
       <div className="map-controls map-controls-main">
@@ -1740,7 +1738,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           if (!useFallbackMapStyle) {
             setUseFallbackMapStyle(true);
             setMapProviderWarning(
-              `${selectedProviderConfig?.label ?? "Selected provider"} failed (network, quota, or style error).`,
+              `${requestedProviderConfig?.label ?? "Selected provider"} failed (network, quota, or style error).`,
             );
           }
         }}

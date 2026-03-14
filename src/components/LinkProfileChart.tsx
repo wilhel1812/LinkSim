@@ -40,7 +40,12 @@ const firstFresnelRadiusM = (distanceKm: number, frequencyMHz: number, t: number
   return Math.sqrt((wavelengthM * d1 * d2) / dTotalM);
 };
 
-export function LinkProfileChart() {
+type LinkProfileChartProps = {
+  isExpanded: boolean;
+  onToggleExpanded: () => void;
+};
+
+export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
   const chartWidth = chartSize.width;
@@ -527,6 +532,15 @@ export function LinkProfileChart() {
           type="button"
         >
           Flip Direction
+        </button>
+        <button
+          aria-label={isExpanded ? "Restore split view" : "Expand path profile"}
+          className={`chart-endpoint-swap ${isExpanded ? "is-active" : ""}`}
+          onClick={onToggleExpanded}
+          title={isExpanded ? "Restore split view" : "Expand profile"}
+          type="button"
+        >
+          {isExpanded ? "Show Split" : "Expand"}
         </button>
         <div className="chart-hover-state">
           {cursorPoint && cursorState ? (

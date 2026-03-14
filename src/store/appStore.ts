@@ -444,6 +444,64 @@ const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[])
   });
 };
 
+const ensureSitesBackedByLibrary = (
+  sites: Site[],
+  library: SiteLibraryEntry[],
+): { sites: Site[]; siteLibrary: SiteLibraryEntry[]; addedCount: number } => {
+  if (!sites.length) return { sites, siteLibrary: library, addedCount: 0 };
+  const nextLibrary = [...library];
+  const byId = new Map<string, SiteLibraryEntry>(nextLibrary.map((entry) => [entry.id, entry]));
+  const byNamePos = new Map<string, SiteLibraryEntry[]>();
+  const byName = new Map<string, SiteLibraryEntry[]>();
+  for (const entry of nextLibrary) {
+    const posKey = siteNamePosKey(entry);
+    byNamePos.set(posKey, [...(byNamePos.get(posKey) ?? []), entry]);
+    const nameKey = siteNameKey(entry.name);
+    byName.set(nameKey, [...(byName.get(nameKey) ?? []), entry]);
+  }
+  let addedCount = 0;
+  const normalizedSites = sites.map((site) => {
+    const direct = site.libraryEntryId ? byId.get(site.libraryEntryId) : undefined;
+    const inferredMatchesByPos = byNamePos.get(siteNamePosKey(site)) ?? [];
+    const inferredByPos = inferredMatchesByPos.length === 1 ? inferredMatchesByPos[0] : undefined;
+    const inferredMatchesByName = byName.get(siteNameKey(site.name)) ?? [];
+    const inferredByName = pickClosestLibraryEntryByPosition(site, inferredMatchesByName);
+    let entry = direct ?? inferredByPos ?? inferredByName;
+    if (!entry) {
+      entry = {
+        id: makeId("libsite"),
+        name: site.name,
+        visibility: "shared",
+        sharedWith: [],
+        position: site.position,
+        groundElevationM: site.groundElevationM,
+        antennaHeightM: site.antennaHeightM,
+        createdAt: new Date().toISOString(),
+      };
+      nextLibrary.unshift(entry);
+      byId.set(entry.id, entry);
+      const posKey = siteNamePosKey(entry);
+      byNamePos.set(posKey, [...(byNamePos.get(posKey) ?? []), entry]);
+      const nameKey = siteNameKey(entry.name);
+      byName.set(nameKey, [...(byName.get(nameKey) ?? []), entry]);
+      addedCount += 1;
+    }
+    return {
+      ...site,
+      name: entry.name,
+      position: entry.position,
+      groundElevationM: entry.groundElevationM,
+      antennaHeightM: entry.antennaHeightM,
+      libraryEntryId: entry.id,
+    };
+  });
+  return {
+    sites: normalizedSites,
+    siteLibrary: dedupeLibraryEntries(nextLibrary),
+    addedCount,
+  };
+};
+
 const hasPrivateLibrarySiteReferences = (
   sites: Site[],
   siteLibrary: SiteLibraryEntry[],
@@ -638,9 +696,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectScenario: (id) => {
     const scenario = getScenarioById(id);
     if (!scenario) return;
+    const libraryBacked = ensureSitesBackedByLibrary(scenario.sites, get().siteLibrary);
+    if (libraryBacked.addedCount > 0) {
+      writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
+    }
     set({
       selectedScenarioId: scenario.id,
-      sites: scenario.sites,
+      sites: libraryBacked.sites,
       links: scenario.links,
       systems: scenario.systems,
       networks: scenario.networks,
@@ -662,6 +724,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       siteDragPreview: {},
       endpointPickTarget: null,
       mapViewport: scenario.viewport,
+      siteLibrary: libraryBacked.siteLibrary,
     });
     get().recomputeCoverage();
   },
@@ -716,17 +779,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   addSiteByCoordinates: (name, lat, lon) => {
     const label = name.trim() || `Site ${get().sites.length + 1}`;
     const id = makeId("site");
+    const libraryEntryId = makeId("libsite");
     const newSite: Site = {
       id,
       name: label,
       position: { lat, lon },
       groundElevationM: 0,
       antennaHeightM: 2,
+      libraryEntryId,
     };
     set((state) => {
       const entry: SiteLibraryEntry = {
-        id: makeId("libsite"),
+        id: libraryEntryId,
         name: label,
+        visibility: "shared",
+        sharedWith: [],
         position: { lat, lon },
         groundElevationM: 0,
         antennaHeightM: 2,
@@ -996,8 +1063,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const presetName = name.trim();
     if (!presetName) return null;
     const state = get();
+    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
     const snapshot: SimulationPreset["snapshot"] = {
-      sites: annotateSitesWithLibraryRefs(state.sites, state.siteLibrary),
+      sites: normalized.sites,
       links: state.links,
       systems: state.systems,
       networks: state.networks,
@@ -1016,10 +1084,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     set((current) => {
+      const mergedLibrary =
+        normalized.addedCount > 0
+          ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
+          : current.siteLibrary;
       const existing = current.simulationPresets.find((preset) => preset.name === presetName);
       const visibilityBase = existing?.visibility ?? "shared";
       const visibilitySafe =
-        visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, current.siteLibrary)
+        visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
           ? "private"
           : visibilityBase;
       const nextPreset: SimulationPreset = {
@@ -1032,7 +1104,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
-      return { simulationPresets: next };
+      if (normalized.addedCount > 0) {
+        writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
+      }
+      return {
+        simulationPresets: next,
+        siteLibrary: mergedLibrary,
+        sites: normalized.sites,
+      };
     });
     return get().simulationPresets[0]?.id ?? null;
   },
@@ -1084,8 +1163,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = get();
     const existing = state.simulationPresets.find((preset) => preset.id === presetId);
     if (!existing) return;
+    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
     const snapshot: SimulationPreset["snapshot"] = {
-      sites: annotateSitesWithLibraryRefs(state.sites, state.siteLibrary),
+      sites: normalized.sites,
       links: state.links,
       systems: state.systems,
       networks: state.networks,
@@ -1103,9 +1183,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       mapViewport: state.mapViewport,
     };
     set((current) => {
+      const mergedLibrary =
+        normalized.addedCount > 0
+          ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
+          : current.siteLibrary;
       const visibilityBase = existing.visibility ?? "shared";
       const visibilitySafe =
-        visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, current.siteLibrary)
+        visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
           ? "private"
           : visibilityBase;
       const nextPreset: SimulationPreset = {
@@ -1118,7 +1202,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
-      return { simulationPresets: next };
+      if (normalized.addedCount > 0) {
+        writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
+      }
+      return {
+        simulationPresets: next,
+        siteLibrary: mergedLibrary,
+        sites: normalized.sites,
+      };
     });
   },
   loadSimulationPreset: (presetId) => {
@@ -1180,7 +1271,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       Array.isArray(snap.systems) ? snap.systems : [],
       Array.isArray(snap.networks) ? snap.networks : [],
     );
-    const recoveredSites = syncLibraryLinkedSiteValues(recovered.sites, get().siteLibrary);
+    const libraryBacked = ensureSitesBackedByLibrary(recovered.sites, get().siteLibrary);
+    const recoveredSites = syncLibraryLinkedSiteValues(libraryBacked.sites, libraryBacked.siteLibrary);
     const selectedSiteId = recoveredSites.some((site) => site.id === snap.selectedSiteId)
       ? snap.selectedSiteId
       : recoveredSites[0].id;
@@ -1231,7 +1323,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           : defaultScenario.viewport,
       siteDragPreview: {},
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
+      siteLibrary: libraryBacked.siteLibrary,
     });
+    if (libraryBacked.addedCount > 0) {
+      writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
+    }
     get().recomputeCoverage();
   },
   renameSimulationPreset: (presetId, name) => {
@@ -1304,15 +1400,19 @@ export const useAppStore = create<AppState>((set, get) => ({
             );
           })();
 
-    const syncedSites = syncLibraryLinkedSiteValues(
+    const libraryBackedSites = ensureSitesBackedByLibrary(
       annotateSitesWithLibraryRefs(current.sites, nextSiteLibrary),
       nextSiteLibrary,
     );
+    const syncedSites = syncLibraryLinkedSiteValues(
+      libraryBackedSites.sites,
+      libraryBackedSites.siteLibrary,
+    );
 
-    writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
+    writeStorage(SITE_LIBRARY_KEY, libraryBackedSites.siteLibrary);
     writeStorage(SIM_PRESETS_KEY, nextSimulationPresets);
     set({
-      siteLibrary: nextSiteLibrary,
+      siteLibrary: libraryBackedSites.siteLibrary,
       simulationPresets: nextSimulationPresets,
       sites: syncedSites,
     });
@@ -1388,9 +1488,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCoverage();
   },
   updateSite: (id, patch) => {
-    set((state) => ({
-      sites: state.sites.map((site) => (site.id === id ? { ...site, ...patch } : site)),
-    }));
+    set((state) => {
+      const nextSites = state.sites.map((site) => (site.id === id ? { ...site, ...patch } : site));
+      const updatedSite = nextSites.find((site) => site.id === id);
+      if (!updatedSite?.libraryEntryId) {
+        return { sites: nextSites };
+      }
+      const nextLibrary = state.siteLibrary.map((entry) =>
+        entry.id === updatedSite.libraryEntryId
+          ? {
+              ...entry,
+              name: updatedSite.name,
+              position: updatedSite.position,
+              groundElevationM: updatedSite.groundElevationM,
+              antennaHeightM: updatedSite.antennaHeightM,
+            }
+          : entry,
+      );
+      writeStorage(SITE_LIBRARY_KEY, nextLibrary);
+      return { sites: nextSites, siteLibrary: nextLibrary };
+    });
     get().recomputeCoverage();
   },
   setSiteDragPreview: (id, preview) =>

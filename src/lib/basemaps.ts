@@ -44,7 +44,7 @@ const KARTVERKET_TILE_TEMPLATE = String(import.meta.env.VITE_KARTVERKET_TILE_TEM
 const KARTVERKET_BASE_URL = String(import.meta.env.VITE_KARTVERKET_WMTS_BASE_URL ?? "").trim();
 
 const defaultKartverketTileTemplate =
-  "https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png";
+  "https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{x}/{y}.png";
 
 const kartverketTileTemplate = (() => {
   const base = KARTVERKET_TILE_TEMPLATE ||
@@ -90,7 +90,7 @@ const kartverketStyleObject = {
       tiles: [kartverketTileTemplate],
       tileSize: 256,
       attribution: '© Kartverket',
-      maxzoom: 18,
+      maxzoom: 20,
     },
   },
   layers: [
@@ -99,7 +99,7 @@ const kartverketStyleObject = {
       type: "raster",
       source: "kartverket",
       minzoom: 0,
-      maxzoom: 18,
+      maxzoom: 20,
     },
   ],
 } as const;

@@ -18,6 +18,7 @@ export function AppShell() {
     (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
   const [isMapExpanded, setIsMapExpanded] = useState(false);
+  const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "pending" | "locked">("checking");
   const [activeUserId, setActiveUserId] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -159,11 +160,27 @@ export function AppShell() {
   }
 
   return (
-    <main className={`app-shell ${isMapExpanded ? "is-map-expanded" : ""}`}>
-      {!isMapExpanded ? <Sidebar /> : null}
-      <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""}`}>
-        <MapView isMapExpanded={isMapExpanded} onToggleMapExpanded={() => setIsMapExpanded((prev) => !prev)} />
-        {!isMapExpanded ? <LinkProfileChart /> : null}
+    <main className={`app-shell ${isMapExpanded || isProfileExpanded ? "is-map-expanded" : ""}`}>
+      {!isMapExpanded && !isProfileExpanded ? <Sidebar /> : null}
+      <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
+        {!isProfileExpanded ? (
+          <MapView
+            isMapExpanded={isMapExpanded}
+            onToggleMapExpanded={() => {
+              setIsProfileExpanded(false);
+              setIsMapExpanded((prev) => !prev);
+            }}
+          />
+        ) : null}
+        {!isMapExpanded ? (
+          <LinkProfileChart
+            isExpanded={isProfileExpanded}
+            onToggleExpanded={() => {
+              setIsMapExpanded(false);
+              setIsProfileExpanded((prev) => !prev);
+            }}
+          />
+        ) : null}
       </section>
       <div className="floating-help-cluster">
         {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}

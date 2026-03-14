@@ -538,6 +538,10 @@ input {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.workspace-panel.is-profile-expanded {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .workspace-header {
   padding: 2px 2px 0;
 }
@@ -1264,6 +1268,10 @@ input {
   }
 
   .workspace-panel.is-map-expanded {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .workspace-panel.is-profile-expanded {
     grid-template-rows: minmax(0, 1fr);
   }
 
