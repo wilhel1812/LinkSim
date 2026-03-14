@@ -179,7 +179,19 @@ type AppState = {
   deleteSiteLibraryEntry: (entryId: string) => void;
   deleteSiteLibraryEntries: (entryIds: string[]) => void;
   saveCurrentSimulationPreset: (name: string) => string | null;
-  createBlankSimulationPreset: (name: string) => string | null;
+  createBlankSimulationPreset: (
+    name: string,
+    options?: {
+      visibility?: "private" | "public" | "shared";
+      ownerUserId?: string;
+      createdByUserId?: string;
+      createdByName?: string;
+      createdByAvatarUrl?: string;
+      lastEditedByUserId?: string;
+      lastEditedByName?: string;
+      lastEditedByAvatarUrl?: string;
+    },
+  ) => string | null;
   overwriteSimulationPreset: (presetId: string) => void;
   loadSimulationPreset: (presetId: string) => void;
   renameSimulationPreset: (presetId: string, name: string) => void;
@@ -940,7 +952,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     return get().simulationPresets[0]?.id ?? null;
   },
-  createBlankSimulationPreset: (name) => {
+  createBlankSimulationPreset: (name, options) => {
     const presetName = name.trim();
     if (!presetName) return null;
     set((current) => {
@@ -963,14 +975,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         terrainDataset: current.terrainDataset,
         mapViewport: current.mapViewport,
       };
-      const nextPreset: SimulationPreset = {
+      const nextPreset = {
         id: existing?.id ?? makeId("sim"),
         name: presetName,
-        visibility: existing?.visibility ?? "shared",
+        visibility: options?.visibility ?? existing?.visibility ?? "shared",
         sharedWith: existing?.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
-      };
+        ownerUserId: options?.ownerUserId ?? existing?.ownerUserId,
+        ...(options?.createdByUserId ? { createdByUserId: options.createdByUserId } : {}),
+        ...(options?.createdByName ? { createdByName: options.createdByName } : {}),
+        ...(options?.createdByAvatarUrl ? { createdByAvatarUrl: options.createdByAvatarUrl } : {}),
+        ...(options?.lastEditedByUserId ? { lastEditedByUserId: options.lastEditedByUserId } : {}),
+        ...(options?.lastEditedByName ? { lastEditedByName: options.lastEditedByName } : {}),
+        ...(options?.lastEditedByAvatarUrl ? { lastEditedByAvatarUrl: options.lastEditedByAvatarUrl } : {}),
+      } as SimulationPreset;
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
       return { simulationPresets: next };

@@ -1416,10 +1416,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                 ))}
               </ul>
             ) : (
-              <p>Terrain source: scenario/manual site elevations only</p>
+              <p>Terrain source: simulation/manual site elevations only</p>
             )}
             <p>
-              Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + scenario values" : "Scenario values"}
+              Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + simulation values" : "Simulation values"}
             </p>
             <p>
               Resolution: {coverageResolutionMode === "high" ? "High quality (one-shot)" : "Auto"} ({overlayDimensions.width}x
