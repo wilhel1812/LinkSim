@@ -596,6 +596,27 @@ input {
   position: relative;
 }
 
+.map-panel-empty .maplibregl-map {
+  filter: saturate(0.35) brightness(0.8);
+}
+
+.map-empty-state {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(520px, calc(100% - 32px));
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 95%, transparent);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 0.84rem;
+  box-shadow: var(--shadow-elev-2);
+}
+
 .map-controls {
   position: absolute;
   top: 12px;
@@ -967,6 +988,10 @@ input {
   min-height: 0;
 }
 
+.chart-panel-empty {
+  justify-content: center;
+}
+
 .chart-svg-wrap {
   flex: 1;
   min-height: 150px;
@@ -1181,9 +1206,13 @@ input {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
     padding: 12px;
-    height: auto;
+    height: 100dvh;
     min-height: 100dvh;
-    overflow: visible;
+    overflow: hidden;
+  }
+
+  .app-shell.is-map-expanded {
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .sidebar-panel {
@@ -1277,8 +1306,14 @@ input {
   white-space: nowrap;
 }
 
-.user-chip .notification-badge {
+.user-chip-settings-icon {
   margin-left: auto;
+  font-size: 0.95rem;
+  opacity: 0.85;
+}
+
+.user-chip .notification-badge {
+  margin-left: 8px;
 }
 
 .profile-avatar {
@@ -1713,14 +1748,60 @@ input {
   border-radius: 8px;
   padding: 8px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   background: var(--surface);
 }
 
 .simulation-manager-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.library-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+}
+
+.access-badge {
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.row-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  color: var(--text);
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+}
+
+.row-avatar.owner-avatar {
+  width: 24px;
+  height: 24px;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-soft) 50%, transparent);
+}
+
+.row-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .library-editor {

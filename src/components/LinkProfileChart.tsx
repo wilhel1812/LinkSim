@@ -72,6 +72,7 @@ export function LinkProfileChart() {
   );
   const baseProfile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
+  const hasMinimumTopology = sites.length >= 2 && links.length >= 1;
   const selectedFromSiteId = selectedLink
     ? temporaryDirectionReversed
       ? selectedLink.toSiteId
@@ -406,6 +407,16 @@ export function LinkProfileChart() {
     if (profile.length < 1) return;
     setProfileCursorIndex(profile.length - 1);
   };
+
+  if (!hasMinimumTopology) {
+    return (
+      <section className="chart-panel chart-panel-empty">
+        <div className="chart-empty">
+          Add at least two sites to this simulation to show path profile and LOS/Fresnel analysis.
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="chart-panel" data-profile-revision={profileRevision}>

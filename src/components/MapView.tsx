@@ -870,6 +870,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const selectedToSite = selectedToSiteId
     ? sites.find((site) => site.id === selectedToSiteId) ?? null
     : null;
+  const hasMinimumTopology = sites.length >= 2 && links.length >= 1;
   const analysisBounds = useMemo(
     () =>
       selectedFromSite && selectedToSite
@@ -1265,7 +1266,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   }
 
   return (
-    <div className="map-panel">
+    <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
       <div className="map-controls">
         <div className="map-controls-group">
           <button
@@ -1325,6 +1326,11 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
         </div>
       </div>
+      {!hasMinimumTopology ? (
+        <div className="map-empty-state" role="status">
+          Add at least two sites to this simulation to run link analysis.
+        </div>
+      ) : null}
       {isSimulationRecomputing || isBackgroundBusy ? (
         <div className="map-progress" aria-live="polite" aria-label="Simulation recalculation progress">
           <div className="map-progress-label">

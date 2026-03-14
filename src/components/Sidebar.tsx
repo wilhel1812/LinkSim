@@ -272,9 +272,9 @@ export function Sidebar() {
   const deleteLink = useAppStore((state) => state.deleteLink);
   const addSiteLibraryEntry = useAppStore((state) => state.addSiteLibraryEntry);
   const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
+  const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
   const overwriteSimulationPreset = useAppStore((state) => state.overwriteSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
-  const renameSimulationPreset = useAppStore((state) => state.renameSimulationPreset);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const importLibraryData = useAppStore((state) => state.importLibraryData);
@@ -362,8 +362,6 @@ export function Sidebar() {
   const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
   const [simulationLibraryQuery, setSimulationLibraryQuery] = useState("");
-  const [editingSimulationId, setEditingSimulationId] = useState<string | null>(null);
-  const [editingSimulationName, setEditingSimulationName] = useState("");
   const [linkModal, setLinkModal] = useState<{
     mode: "add" | "edit";
     linkId: string | null;
@@ -452,6 +450,7 @@ export function Sidebar() {
     lastEditedByAvatarUrl: string;
   } | null>(null);
   const [resourceAccessVisibility, setResourceAccessVisibility] = useState<"private" | "public" | "shared">("shared");
+  const [resourceNameDraft, setResourceNameDraft] = useState("");
   const [resourceCollaboratorUserIds, setResourceCollaboratorUserIds] = useState<string[]>([]);
   const [resourceCollaboratorQuery, setResourceCollaboratorQuery] = useState("");
   const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
@@ -569,6 +568,20 @@ export function Sidebar() {
     if (stillVisible) return;
     setSelectedLinkId(visibleLinks[0].id);
   }, [selectedLinkId, setSelectedLinkId, visibleLinks]);
+  useEffect(() => {
+    let canceled = false;
+    void fetchCollaboratorDirectory()
+      .then((users) => {
+        if (canceled) return;
+        setResourceCollaboratorDirectory(users);
+      })
+      .catch(() => {
+        // Best effort for row avatar labels; detailed errors are shown in edit modal fetches.
+      });
+    return () => {
+      canceled = true;
+    };
+  }, []);
   useEffect(() => {
     if (!resourceDetailsPopup) return;
     let canceled = false;
@@ -940,15 +953,17 @@ export function Sidebar() {
     }
     setNewPresetName("");
   };
-  const startSimulationRename = (presetId: string, name: string) => {
-    setEditingSimulationId(presetId);
-    setEditingSimulationName(name);
-  };
-  const saveSimulationRename = () => {
-    if (!editingSimulationId) return;
-    renameSimulationPreset(editingSimulationId, editingSimulationName);
-    setEditingSimulationId(null);
-    setEditingSimulationName("");
+  const createBlankSimulation = () => {
+    const trimmed = newPresetName.trim() || `Untitled ${new Date().toLocaleString()}`;
+    const createdId = createBlankSimulationPreset(trimmed);
+    if (!createdId) {
+      setSimulationSaveStatus("Failed creating blank simulation.");
+      return;
+    }
+    loadSimulationPreset(createdId);
+    persistSelectedSimulationRef(`saved:${createdId}`);
+    setSimulationSaveStatus(`Created blank simulation: ${trimmed}`);
+    setNewPresetName("");
   };
   const displayLinkName = (linkId: string, linkName?: string) => {
     const trimmedName = linkName?.trim();
@@ -1221,6 +1236,7 @@ export function Sidebar() {
     lastEditedByName: string;
     lastEditedByAvatarUrl: string;
   }) => {
+    setResourceNameDraft(label);
     if (kind === "site") {
       const site = siteLibrary.find((entry) => entry.id === resourceId);
       setResourceAccessVisibility(normalizeAccessVisibility(site?.visibility));
@@ -1270,6 +1286,8 @@ export function Sidebar() {
 
   const saveResourceAccessSettings = () => {
     if (!resourceDetailsPopup) return;
+    const normalizedVisibility = resourceAccessVisibility === "public" ? "shared" : resourceAccessVisibility;
+    const normalizedName = resourceNameDraft.trim() || resourceDetailsPopup.label;
     const sharedWith = resourceCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
       .map((userId) => ({ userId, role: "editor" as const }));
@@ -1292,13 +1310,14 @@ export function Sidebar() {
 
     if (resourceDetailsPopup.kind === "site") {
       updateSiteLibraryEntry(resourceDetailsPopup.resourceId, {
-        visibility: resourceAccessVisibility,
+        name: normalizedName,
+        visibility: normalizedVisibility,
         sharedWith,
       });
     } else {
       const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
       const referencedPrivateSiteIds =
-        resourceAccessVisibility === "private"
+        normalizedVisibility === "private"
           ? []
           : siteLibrary
               .filter((entry) => {
@@ -1313,20 +1332,22 @@ export function Sidebar() {
               .map((entry) => entry.id);
       if (
         referencedPrivateSiteIds.length > 0 &&
-        (resourceAccessVisibility === "public" || resourceAccessVisibility === "shared")
+        normalizedVisibility === "shared"
       ) {
         setPendingSimulationVisibilityPrompt({
           simulationId: resourceDetailsPopup.resourceId,
-          targetVisibility: resourceAccessVisibility,
+          targetVisibility: normalizedVisibility,
           referencedPrivateSiteIds,
         });
         return;
       }
       updateSimulationPresetEntry(resourceDetailsPopup.resourceId, {
-        visibility: resourceAccessVisibility,
+        name: normalizedName,
+        visibility: normalizedVisibility,
         sharedWith,
       });
     }
+    setResourceDetailsPopup((current) => (current ? { ...current, label: normalizedName } : current));
     setResourceAccessStatus("Access settings saved.");
   };
 
@@ -1419,6 +1440,9 @@ export function Sidebar() {
           </button>
           <button className="inline-action" onClick={saveSimulationAsNew} type="button">
             Save Simulation
+          </button>
+          <button className="inline-action" onClick={createBlankSimulation} type="button">
+            New Blank
           </button>
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
@@ -2143,16 +2167,24 @@ export function Sidebar() {
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Collaborators" onClose={() => setResourceDetailsPopup(null)} tier="raised">
+        <ModalOverlay aria-label="Resource Edit" onClose={() => setResourceDetailsPopup(null)} tier="raised">
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
-              <h2>Collaborators · {resourceDetailsPopup.label}</h2>
+              <h2>Edit · {resourceDetailsPopup.label}</h2>
               <button className="inline-action" onClick={() => setResourceDetailsPopup(null)} type="button">
                 Close
               </button>
             </div>
             <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
             <p className="field-help">ID: {resourceDetailsPopup.resourceId}</p>
+            <label className="field-grid">
+              <span>Name</span>
+              <input
+                onChange={(event) => setResourceNameDraft(event.target.value)}
+                type="text"
+                value={resourceNameDraft}
+              />
+            </label>
             <div className="chip-group">
               <button
                 className="inline-action"
@@ -2188,7 +2220,7 @@ export function Sidebar() {
               <label className="field-grid">
                 <span>
                   Access level{" "}
-                  <InfoTip text="Private: only owner/admin can view and edit. Public: everyone can view; owner/mod/admin can edit. Shared: everyone can view and edit; only owner/mod/admin can delete. These levels are for collaboration/clutter control, not secret storage." />
+                  <InfoTip text="Private: only owner/admin can view and edit. Shared: everyone can view and edit; only owner/mod/admin can delete. Access levels are for collaboration/clutter control, not secret storage." />
                 </span>
                 <select
                   className="locale-select"
@@ -2198,7 +2230,9 @@ export function Sidebar() {
                   value={resourceAccessVisibility}
                 >
                   <option value="private">Private</option>
-                  <option value="public">Public</option>
+                  <option value="public" disabled>
+                    Public (disabled)
+                  </option>
                   <option value="shared">Shared</option>
                 </select>
               </label>
@@ -2299,6 +2333,9 @@ export function Sidebar() {
               <button className="inline-action" onClick={saveSimulationAsNew} type="button">
                 Save Simulation
               </button>
+              <button className="inline-action" onClick={createBlankSimulation} type="button">
+                New Blank
+              </button>
             </div>
             {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
             <div className="library-editor">
@@ -2310,6 +2347,48 @@ export function Sidebar() {
                     <strong>{preset.name}</strong>
                     {" · "}
                     Updated {new Date(preset.updatedAt).toLocaleString()}
+                  </span>
+                  <span className="library-row-meta">
+                    <span className="access-badge">{normalizeAccessVisibility((preset as { visibility?: unknown }).visibility)}</span>
+                    <button
+                      className="row-avatar owner-avatar"
+                      onClick={() => void openUserProfilePopup((preset as { ownerUserId?: string }).ownerUserId)}
+                      title={`Owner: ${(preset as { createdByName?: string }).createdByName ?? "Unknown"}`}
+                      type="button"
+                    >
+                      {(preset as { createdByAvatarUrl?: string }).createdByAvatarUrl ? (
+                        <img
+                          alt={(preset as { createdByName?: string }).createdByName ?? "Owner"}
+                          className="row-avatar-image"
+                          src={(preset as { createdByAvatarUrl?: string }).createdByAvatarUrl}
+                        />
+                      ) : (
+                        initialsForUser((preset as { createdByName?: string }).createdByName ?? "Owner")
+                      )}
+                    </button>
+                    {((preset.sharedWith ?? [])
+                      .filter((grant) => grant.userId !== (preset as { ownerUserId?: string }).ownerUserId)
+                      .slice(0, 3)
+                      .map((grant) => {
+                        const user = collaboratorDirectoryById.get(grant.userId);
+                        const name = user?.username ?? grant.userId;
+                        const avatarUrl = user?.avatarUrl ?? "";
+                        return (
+                          <button
+                            className="row-avatar"
+                            key={grant.userId}
+                            onClick={() => void openUserProfilePopup(grant.userId)}
+                            title={name}
+                            type="button"
+                          >
+                            {avatarUrl ? (
+                              <img alt={name} className="row-avatar-image" src={avatarUrl} />
+                            ) : (
+                              initialsForUser(name)
+                            )}
+                          </button>
+                        );
+                      }))}
                   </span>
                   <div className="library-row-actions">
                     <button
@@ -2343,14 +2422,7 @@ export function Sidebar() {
                       }
                       type="button"
                     >
-                      Collaborators
-                    </button>
-                    <button
-                      className="inline-action"
-                      onClick={() => startSimulationRename(preset.id, preset.name)}
-                      type="button"
-                    >
-                      Edit Name
+                      Edit
                     </button>
                     <button className="inline-action" onClick={() => deleteSimulationPreset(preset.id)} type="button">
                       Delete
@@ -2361,35 +2433,6 @@ export function Sidebar() {
               {!filteredSimulationPresets.length ? <p className="field-help">No matching saved simulations.</p> : null}
             </div>
             </div>
-            {editingSimulationId ? (
-              <div className="library-editor">
-                <h3>Edit Simulation Name</h3>
-                <label className="field-grid">
-                  <span>Name</span>
-                  <input
-                    onChange={(event) => setEditingSimulationName(event.target.value)}
-                    placeholder="Simulation name"
-                    type="text"
-                    value={editingSimulationName}
-                  />
-                </label>
-                <div className="chip-group">
-                  <button className="inline-action" onClick={saveSimulationRename} type="button">
-                    Save
-                  </button>
-                  <button
-                    className="inline-action"
-                    onClick={() => {
-                      setEditingSimulationId(null);
-                      setEditingSimulationName("");
-                    }}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : null}
           </div>
         </ModalOverlay>
       ) : null}
@@ -2675,6 +2718,48 @@ export function Sidebar() {
                   <span className="library-row-label">
                     {entry.name} ({entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)})
                   </span>
+                  <span className="library-row-meta">
+                    <span className="access-badge">{normalizeAccessVisibility((entry as { visibility?: unknown }).visibility)}</span>
+                    <button
+                      className="row-avatar owner-avatar"
+                      onClick={() => void openUserProfilePopup((entry as { ownerUserId?: string }).ownerUserId)}
+                      title={`Owner: ${(entry as { createdByName?: string }).createdByName ?? "Unknown"}`}
+                      type="button"
+                    >
+                      {(entry as { createdByAvatarUrl?: string }).createdByAvatarUrl ? (
+                        <img
+                          alt={(entry as { createdByName?: string }).createdByName ?? "Owner"}
+                          className="row-avatar-image"
+                          src={(entry as { createdByAvatarUrl?: string }).createdByAvatarUrl}
+                        />
+                      ) : (
+                        initialsForUser((entry as { createdByName?: string }).createdByName ?? "Owner")
+                      )}
+                    </button>
+                    {((entry.sharedWith ?? [])
+                      .filter((grant) => grant.userId !== (entry as { ownerUserId?: string }).ownerUserId)
+                      .slice(0, 3)
+                      .map((grant) => {
+                        const user = collaboratorDirectoryById.get(grant.userId);
+                        const name = user?.username ?? grant.userId;
+                        const avatarUrl = user?.avatarUrl ?? "";
+                        return (
+                          <button
+                            className="row-avatar"
+                            key={grant.userId}
+                            onClick={() => void openUserProfilePopup(grant.userId)}
+                            title={name}
+                            type="button"
+                          >
+                            {avatarUrl ? (
+                              <img alt={name} className="row-avatar-image" src={avatarUrl} />
+                            ) : (
+                              initialsForUser(name)
+                            )}
+                          </button>
+                        );
+                      }))}
+                  </span>
                   <div className="library-row-actions">
                     <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
                       Add
@@ -2700,10 +2785,10 @@ export function Sidebar() {
                       }
                       type="button"
                     >
-                      Collaborators
+                      Edit
                     </button>
                     <button className="inline-action" onClick={() => startLibraryEdit(entry.id)} type="button">
-                      Edit
+                      Edit Location
                     </button>
                     <button className="inline-action" onClick={() => deleteSiteLibraryEntry(entry.id)} type="button">
                       Delete
@@ -2713,104 +2798,111 @@ export function Sidebar() {
               ))}
               {!filteredSiteLibrary.length ? <p className="field-help">No matching sites.</p> : null}
             </div>
-            {editingLibraryId ? (
-              <div className="library-editor">
-                <h3>Edit Library Site</h3>
-                <div className="library-editor-split">
-                  <div className="library-editor-form">
-                    <label className="field-grid">
-                      <span>Name</span>
-                      <input
-                        onChange={(event) => setEditingLibraryName(event.target.value)}
-                        type="text"
-                        value={editingLibraryName}
-                      />
-                    </label>
-                    <label className="field-grid">
-                      <span>Latitude</span>
-                      <input
-                        onChange={(event) => setEditingLibraryLat(parseNumber(event.target.value))}
-                        step="0.000001"
-                        type="number"
-                        value={editingLibraryLat}
-                      />
-                    </label>
-                    <label className="field-grid">
-                      <span>Longitude</span>
-                      <input
-                        onChange={(event) => setEditingLibraryLon(parseNumber(event.target.value))}
-                        step="0.000001"
-                        type="number"
-                        value={editingLibraryLon}
-                      />
-                    </label>
-                    <label className="field-grid">
-                      <span>Ground elev (m)</span>
-                      <div className="field-inline">
-                        <input
-                          onChange={(event) => setEditingLibraryGroundM(parseNumber(event.target.value))}
-                          type="number"
-                          value={editingLibraryGroundM}
-                        />
-                        <button
-                          className="inline-action field-inline-btn"
-                          onClick={fetchEditingLibraryGroundFromTerrain}
-                          type="button"
-                        >
-                          Fetch
-                        </button>
-                      </div>
-                    </label>
-                    <label className="field-grid">
-                      <span>Antenna (m)</span>
-                      <input
-                        onChange={(event) => setEditingLibraryAntennaM(parseNumber(event.target.value))}
-                        type="number"
-                        value={editingLibraryAntennaM}
-                      />
-                    </label>
-                    {editingLibraryStatus ? <p className="field-help">{editingLibraryStatus}</p> : null}
-                  </div>
-                  <div className="library-editor-map">
-                    <Map
-                      initialViewState={{
-                        longitude: editingLibraryLon,
-                        latitude: editingLibraryLat,
-                        zoom: 12,
-                      }}
-                      mapStyle={styleByTheme[theme]}
-                      onClick={(event) => {
-                        setEditingLibraryLat(event.lngLat.lat);
-                        setEditingLibraryLon(event.lngLat.lng);
-                      }}
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {editingLibraryId ? (
+        <ModalOverlay aria-label="Edit Site" onClose={() => setEditingLibraryId(null)} tier="raised">
+          <div className="library-manager-card">
+            <div className="library-manager-header">
+              <h2>Edit Site</h2>
+              <button className="inline-action" onClick={() => setEditingLibraryId(null)} type="button">
+                Close
+              </button>
+            </div>
+            <div className="library-editor-split">
+              <div className="library-editor-form">
+                <label className="field-grid">
+                  <span>Name</span>
+                  <input
+                    onChange={(event) => setEditingLibraryName(event.target.value)}
+                    type="text"
+                    value={editingLibraryName}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Latitude</span>
+                  <input
+                    onChange={(event) => setEditingLibraryLat(parseNumber(event.target.value))}
+                    step="0.000001"
+                    type="number"
+                    value={editingLibraryLat}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Longitude</span>
+                  <input
+                    onChange={(event) => setEditingLibraryLon(parseNumber(event.target.value))}
+                    step="0.000001"
+                    type="number"
+                    value={editingLibraryLon}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground elev (m)</span>
+                  <div className="field-inline">
+                    <input
+                      onChange={(event) => setEditingLibraryGroundM(parseNumber(event.target.value))}
+                      type="number"
+                      value={editingLibraryGroundM}
+                    />
+                    <button
+                      className="inline-action field-inline-btn"
+                      onClick={fetchEditingLibraryGroundFromTerrain}
+                      type="button"
                     >
-                      <Marker
-                        anchor="bottom"
-                        draggable
-                        latitude={editingLibraryLat}
-                        longitude={editingLibraryLon}
-                        onDragEnd={(event: MarkerDragEvent) => {
-                          setEditingLibraryLat(event.lngLat.lat);
-                          setEditingLibraryLon(event.lngLat.lng);
-                        }}
-                      >
-                        <div className="site-pin library-edit-pin">
-                          <span>{editingLibraryName.trim() || "Site"}</span>
-                        </div>
-                      </Marker>
-                    </Map>
+                      Fetch
+                    </button>
                   </div>
-                </div>
-                <div className="chip-group">
-                  <button className="inline-action" onClick={saveLibraryEdit} type="button">
-                    Save
-                  </button>
-                  <button className="inline-action" onClick={() => setEditingLibraryId(null)} type="button">
-                    Cancel
-                  </button>
-                </div>
+                </label>
+                <label className="field-grid">
+                  <span>Antenna (m)</span>
+                  <input
+                    onChange={(event) => setEditingLibraryAntennaM(parseNumber(event.target.value))}
+                    type="number"
+                    value={editingLibraryAntennaM}
+                  />
+                </label>
+                {editingLibraryStatus ? <p className="field-help">{editingLibraryStatus}</p> : null}
               </div>
-            ) : null}
+              <div className="library-editor-map">
+                <Map
+                  initialViewState={{
+                    longitude: editingLibraryLon,
+                    latitude: editingLibraryLat,
+                    zoom: 12,
+                  }}
+                  mapStyle={styleByTheme[theme]}
+                  onClick={(event) => {
+                    setEditingLibraryLat(event.lngLat.lat);
+                    setEditingLibraryLon(event.lngLat.lng);
+                  }}
+                >
+                  <Marker
+                    anchor="bottom"
+                    draggable
+                    latitude={editingLibraryLat}
+                    longitude={editingLibraryLon}
+                    onDragEnd={(event: MarkerDragEvent) => {
+                      setEditingLibraryLat(event.lngLat.lat);
+                      setEditingLibraryLon(event.lngLat.lng);
+                    }}
+                  >
+                    <div className="site-pin library-edit-pin">
+                      <span>{editingLibraryName.trim() || "Site"}</span>
+                    </div>
+                  </Marker>
+                </Map>
+              </div>
+            </div>
+            <div className="chip-group">
+              <button className="inline-action" onClick={saveLibraryEdit} type="button">
+                Save
+              </button>
+              <button className="inline-action" onClick={() => setEditingLibraryId(null)} type="button">
+                Cancel
+              </button>
+            </div>
           </div>
         </ModalOverlay>
       ) : null}

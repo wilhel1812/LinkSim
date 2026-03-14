@@ -179,6 +179,7 @@ type AppState = {
   deleteSiteLibraryEntry: (entryId: string) => void;
   deleteSiteLibraryEntries: (entryIds: string[]) => void;
   saveCurrentSimulationPreset: (name: string) => string | null;
+  createBlankSimulationPreset: (name: string) => string | null;
   overwriteSimulationPreset: (presetId: string) => void;
   loadSimulationPreset: (presetId: string) => void;
   renameSimulationPreset: (presetId: string, name: string) => void;
@@ -939,6 +940,43 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     return get().simulationPresets[0]?.id ?? null;
   },
+  createBlankSimulationPreset: (name) => {
+    const presetName = name.trim();
+    if (!presetName) return null;
+    set((current) => {
+      const existing = current.simulationPresets.find((preset) => preset.name === presetName);
+      const snapshot: SimulationPreset["snapshot"] = {
+        sites: [],
+        links: [],
+        systems: current.systems.length ? current.systems : defaultScenario.systems,
+        networks: [],
+        selectedSiteId: "",
+        selectedLinkId: "",
+        selectedNetworkId: "",
+        selectedCoverageMode: current.selectedCoverageMode,
+        propagationModel: current.propagationModel,
+        selectedFrequencyPresetId: current.selectedFrequencyPresetId,
+        rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
+        environmentLossDb: current.environmentLossDb,
+        propagationEnvironment: current.propagationEnvironment,
+        autoPropagationEnvironment: current.autoPropagationEnvironment,
+        terrainDataset: current.terrainDataset,
+        mapViewport: current.mapViewport,
+      };
+      const nextPreset: SimulationPreset = {
+        id: existing?.id ?? makeId("sim"),
+        name: presetName,
+        visibility: existing?.visibility ?? "shared",
+        sharedWith: existing?.sharedWith ?? [],
+        updatedAt: new Date().toISOString(),
+        snapshot,
+      };
+      const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
+    });
+    return get().simulationPresets[0]?.id ?? null;
+  },
   overwriteSimulationPreset: (presetId) => {
     const state = get();
     const existing = state.simulationPresets.find((preset) => preset.id === presetId);
@@ -984,9 +1022,58 @@ export const useAppStore = create<AppState>((set, get) => ({
     const preset = get().simulationPresets.find((candidate) => candidate.id === presetId);
     if (!preset) return;
     const snap = preset.snapshot;
+    const rawSites = Array.isArray(snap.sites) ? snap.sites : [];
+    const rawLinks = Array.isArray(snap.links) ? snap.links : [];
+    const isBlankSnapshot = rawSites.length === 0 && rawLinks.length === 0;
+    if (isBlankSnapshot) {
+      const snapshotSystems = Array.isArray(snap.systems) && snap.systems.length ? snap.systems : defaultScenario.systems;
+      const snapshotNetworks = Array.isArray(snap.networks) ? snap.networks : [];
+      set({
+        sites: [],
+        links: [],
+        systems: snapshotSystems,
+        networks: snapshotNetworks,
+        selectedSiteId: "",
+        selectedLinkId: "",
+        temporaryDirectionReversed: false,
+        selectedNetworkId: "",
+        selectedCoverageMode:
+          snap.selectedCoverageMode === "BestSite" ||
+          snap.selectedCoverageMode === "Polar" ||
+          snap.selectedCoverageMode === "Cartesian" ||
+          snap.selectedCoverageMode === "Route"
+            ? snap.selectedCoverageMode
+            : "BestSite",
+        propagationModel:
+          snap.propagationModel === "FSPL" || snap.propagationModel === "TwoRay" || snap.propagationModel === "ITM"
+            ? snap.propagationModel
+            : "ITM",
+        selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
+        rxSensitivityTargetDbm: typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
+        environmentLossDb: typeof snap.environmentLossDb === "number" ? snap.environmentLossDb : 0,
+        propagationEnvironment: snap.propagationEnvironment ?? defaultPropagationEnvironment(),
+        autoPropagationEnvironment: snap.autoPropagationEnvironment ?? true,
+        propagationEnvironmentReason: (snap.autoPropagationEnvironment ?? true)
+          ? "Auto defaults active."
+          : "Manual override active.",
+        terrainDataset: normalizeTerrainDataset(snap.terrainDataset),
+        mapViewport:
+          snap.mapViewport &&
+          typeof snap.mapViewport.zoom === "number" &&
+          snap.mapViewport.center &&
+          typeof snap.mapViewport.center.lat === "number" &&
+          typeof snap.mapViewport.center.lon === "number"
+            ? snap.mapViewport
+            : defaultScenario.viewport,
+        siteDragPreview: {},
+        terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
+      });
+      get().recomputeCoverage();
+      return;
+    }
     const recovered = ensureMinimumTopology(
-      Array.isArray(snap.sites) ? snap.sites : [],
-      Array.isArray(snap.links) ? snap.links : [],
+      rawSites,
+      rawLinks,
       Array.isArray(snap.systems) ? snap.systems : [],
       Array.isArray(snap.networks) ? snap.networks : [],
     );

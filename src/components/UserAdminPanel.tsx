@@ -575,6 +575,9 @@ export function UserAdminPanel() {
       <button className="user-chip" onClick={() => setOpen(true)} type="button">
         <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
         <span className="user-chip-text">{me?.username ?? "Loading user..."}</span>
+        <span aria-hidden className="user-chip-settings-icon">
+          ⚙
+        </span>
         {canModerate && unreadNotifications.length > 0 ? (
           <span className="notification-badge">{unreadNotifications.length}</span>
         ) : null}
