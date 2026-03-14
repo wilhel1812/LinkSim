@@ -1298,22 +1298,24 @@ input {
   }
 
   .workspace-panel {
-    grid-template-rows: minmax(300px, 52vh) minmax(220px, 34vh);
+    grid-template-rows: minmax(420px, 62vh) minmax(190px, 30vh);
     gap: 12px;
     height: auto;
     min-height: 0;
   }
 
   .workspace-header-actions {
-    position: static;
-    inset: auto;
-    max-width: 100%;
-    margin: 0 0 4px;
-    z-index: auto;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    left: auto;
+    max-width: calc(100% - 20px);
+    margin: 0;
+    z-index: 20;
   }
 
   .workspace-header-actions .field-help {
-    max-width: none;
+    max-width: 68vw;
   }
 
   .workspace-panel.is-map-expanded {
