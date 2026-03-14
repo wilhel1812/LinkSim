@@ -148,6 +148,33 @@ export const analyzeLink = (
     0,
     Math.min(100, (geometricClearanceM / fresnelMidpointM) * 100),
   );
+  const clearanceProfile = buildProfile(
+    link,
+    fromSite,
+    toSite,
+    terrainSampler,
+    Math.max(48, Math.round(options?.terrainSamples ?? 96)),
+  );
+  const worstFresnelPoint = clearanceProfile.reduce<{
+    clearanceM: number;
+    clearancePercent: number;
+    distanceKm: number;
+  } | null>((worst, point) => {
+    const fresnelRadiusM = Math.max(0.001, point.fresnelTopM - point.losM);
+    const clearanceM = point.losM - point.terrainM;
+    const clearancePercent = (clearanceM / fresnelRadiusM) * 100;
+    if (!worst || clearancePercent < worst.clearancePercent) {
+      return {
+        clearanceM,
+        clearancePercent,
+        distanceKm: point.distanceKm,
+      };
+    }
+    return worst;
+  }, null);
+  const worstFresnelClearanceM = worstFresnelPoint?.clearanceM ?? geometricClearanceM;
+  const worstFresnelClearancePercent = worstFresnelPoint?.clearancePercent ?? estimatedFresnelClearancePercent;
+  const worstFresnelDistanceKm = worstFresnelPoint?.distanceKm ?? distanceKm * 0.5;
 
   return {
     linkId: link.id,
@@ -161,6 +188,9 @@ export const analyzeLink = (
     firstFresnelRadiusM: fresnelMidpointM,
     geometricClearanceM,
     estimatedFresnelClearancePercent,
+    worstFresnelClearanceM,
+    worstFresnelClearancePercent,
+    worstFresnelDistanceKm,
   };
 };
 

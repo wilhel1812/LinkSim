@@ -1024,9 +1024,9 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const cursorPoint = selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))];
 
   const overlayResolutionScale = useMemo(() => {
-    if (analysisBoundsDiagonalKm > 800) return 0.52;
-    if (analysisBoundsDiagonalKm > 500) return 0.64;
-    if (analysisBoundsDiagonalKm > 300) return 0.76;
+    if (analysisBoundsDiagonalKm > 600) return 0.52;
+    if (analysisBoundsDiagonalKm > 400) return 0.64;
+    if (analysisBoundsDiagonalKm > 250) return 0.76;
     return 1;
   }, [analysisBoundsDiagonalKm]);
   const largeAreaOptimizationActive = overlayResolutionScale < 1;
@@ -1156,12 +1156,12 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const isLikelyTerrainColdFetch =
     isTerrainFetching &&
     requiredTerrainTileKeys.length > 0 &&
-    missingRequiredTileCount === requiredTerrainTileKeys.length;
+    missingRequiredTileCount > 0;
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
   const backgroundBusyLabel = isTerrainFetching
     ? isLikelyTerrainColdFetch
-      ? "Fetching terrain data... first load for this area can take a few minutes, then it is cached."
-      : "Fetching terrain data..."
+      ? `Fetching terrain data... first load for this area can take a few minutes, then it is cached (${missingRequiredTileCount}/${requiredTerrainTileKeys.length} tile(s) missing).`
+      : "Fetching terrain data... first load for uncached tiles can take a few minutes."
     : isTerrainRecommending
       ? "Checking terrain dataset coverage..."
       : isElevationSyncing
@@ -1617,12 +1617,16 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               Resolution: {coverageResolutionMode === "high" ? "High quality (one-shot)" : "Auto"} ({overlayDimensions.width}x
               {overlayDimensions.height})
             </p>
+            <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
+            <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
             {largeAreaOptimizationActive ? (
               <p>
                 Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
                 Use HQ for one-shot higher detail.
               </p>
-            ) : null}
+            ) : (
+              <p>Large-area optimization inactive at this simulation extent.</p>
+            )}
             <p>
               Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
             </p>
@@ -1679,6 +1683,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                     <span>{fmtDbm(signalRange.max)}</span>
                   </div>
                 </div>
+                <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>
               </>
             ) : null}
             {coverageVizMode === "contours" ? (
@@ -1734,6 +1739,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                     <span>{fmtDbm(signalRange.max)}</span>
                   </div>
                 </div>
+                <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>
               </>
             ) : null}
             {coverageVizMode === "passfail" ? (
@@ -1772,6 +1778,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                     <span>{relayRange ? fmtDbm(relayRange.max) : "Better relay position"}</span>
                   </div>
                 </div>
+                <p className="overlay-scale-help">Left side is worse relay quality. Right side is better relay quality.</p>
               </>
             ) : null}
           </>
