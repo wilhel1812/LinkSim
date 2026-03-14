@@ -1295,18 +1295,21 @@ input {
   }
 
   .workspace-panel {
-    grid-template-rows: 360px 240px;
+    grid-template-rows: minmax(0, 1.15fr) minmax(180px, 0.85fr);
+    gap: 12px;
+    min-height: 0;
   }
 
   .workspace-header-actions {
-    top: 12px;
-    right: 12px;
-    left: 12px;
-    max-width: none;
+    position: static;
+    inset: auto;
+    max-width: 100%;
+    margin: 0 0 4px;
+    z-index: auto;
   }
 
   .workspace-header-actions .field-help {
-    max-width: 62vw;
+    max-width: none;
   }
 
   .workspace-panel.is-map-expanded {
