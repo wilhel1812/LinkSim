@@ -629,6 +629,46 @@ input {
   gap: 10px;
 }
 
+.map-controls-main {
+  top: 66px;
+}
+
+.map-controls-provider {
+  z-index: 7;
+}
+
+.map-controls-group-provider {
+  align-items: flex-end;
+}
+
+.map-provider-field {
+  display: grid;
+  gap: 4px;
+}
+
+.map-provider-field > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.map-provider-field .locale-select {
+  min-width: 170px;
+  height: 30px;
+  font-size: 0.76rem;
+  padding: 2px 8px;
+}
+
+.map-provider-regional {
+  margin: 0;
+}
+
+.map-provider-regional > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
 .map-controls-group {
   display: flex;
   flex-wrap: wrap;
@@ -641,7 +681,7 @@ input {
 
 .map-control-note {
   position: absolute;
-  top: 96px;
+  top: 148px;
   right: 12px;
   z-index: 5;
   padding: 6px 9px;
@@ -661,16 +701,16 @@ input {
 }
 
 .map-control-note-secondary {
-  top: 140px;
+  top: 192px;
 }
 
 .map-control-note-tertiary {
-  top: 184px;
+  top: 236px;
 }
 
 .map-progress {
   position: absolute;
-  top: 56px;
+  top: 108px;
   right: 12px;
   z-index: 6;
   width: min(320px, calc(100% - 24px));
@@ -1233,6 +1273,14 @@ input {
     left: 8px;
     right: 8px;
     gap: 8px;
+  }
+
+  .map-controls-main {
+    top: 78px;
+  }
+
+  .map-provider-field .locale-select {
+    min-width: 100%;
   }
 
   .map-controls-group,

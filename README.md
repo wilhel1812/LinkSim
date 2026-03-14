@@ -137,6 +137,13 @@ Primary configs:
 - Production: [wrangler.toml](./wrangler.toml)
 - Staging: [wrangler.staging.toml](./wrangler.staging.toml)
 
+Optional basemap provider environment variables (admin-configured only):
+- `VITE_MAPTILER_KEY`
+- `VITE_STADIA_KEY`
+- `VITE_KARTVERKET_API_KEY`
+- `VITE_KARTVERKET_WMTS_BASE_URL` (optional override)
+- `VITE_KARTVERKET_TILE_TEMPLATE` (optional explicit template; overrides base URL)
+
 Detailed setup docs:
 - [docs/cloudflare-auth-setup.md](./docs/cloudflare-auth-setup.md)
 - [docs/access-policy-templates.md](./docs/access-policy-templates.md)
@@ -161,6 +168,7 @@ npm run refresh:staging:r2
 - Terrain data is fetched on demand and cached client-side.
 - API proxies and geocode endpoints include method/rate-limit safeguards.
 - In local runtimes without edge functions, some cloud behaviors are emulated/fallback.
+- Basemap provider failures auto-fallback to CARTO with a non-blocking warning.
 
 ## Project Structure
 

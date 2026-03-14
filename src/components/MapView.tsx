@@ -14,6 +14,7 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
+import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
 import { useAppStore } from "../store/appStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
@@ -53,11 +54,6 @@ const terrainRasterPaint = {
   "raster-opacity": 0.62,
   "raster-contrast": 0.16,
   "raster-saturation": -0.06,
-};
-
-const styleByTheme = {
-  light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-  dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
 };
 
 const fallbackStyle = {
@@ -823,6 +819,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const isElevationSyncing = useAppStore((state) => state.isElevationSyncing);
+  const basemapProvider = useAppStore((state) => state.basemapProvider);
+  const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
+  const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
+  const setBasemapStylePreset = useAppStore((state) => state.setBasemapStylePreset);
   const { theme, variant } = useThemeVariant();
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
@@ -838,6 +838,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const [pendingSiteMoves, setPendingSiteMoves] = useState<Record<string, PendingSiteMove>>({});
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
+  const [mapProviderWarning, setMapProviderWarning] = useState<string | null>(null);
   const [interactionViewState, setInteractionViewState] = useState<{
     longitude: number;
     latitude: number;
@@ -1321,9 +1322,87 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     );
   }
 
+  const providerCapabilities = useMemo(() => getBasemapProviderCapabilities(), []);
+  const selectedProviderConfig =
+    providerCapabilities.find((entry) => entry.provider === basemapProvider) ?? providerCapabilities[0];
+  const resolvedBasemap = useMemo(
+    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme),
+    [basemapProvider, basemapStylePreset, theme],
+  );
+  const resolvedPresetOptions = selectedProviderConfig?.presets ?? [];
+  const globalProviders = providerCapabilities.filter((entry) => entry.group === "global");
+  const regionalProviders = providerCapabilities.filter((entry) => entry.group === "regional");
+
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
-      <div className="map-controls">
+      <div className="map-controls map-controls-provider">
+        <div className="map-controls-group map-controls-group-provider">
+          <label className="map-provider-field">
+            <span>Basemap Provider</span>
+            <select
+              className="locale-select"
+              onChange={(event) => {
+                const nextProvider = event.target.value as typeof basemapProvider;
+                setBasemapProvider(nextProvider);
+                setBasemapStylePreset("auto");
+                setUseFallbackMapStyle(false);
+                setMapProviderWarning(null);
+              }}
+              value={basemapProvider}
+            >
+              {globalProviders.map((provider) => (
+                <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                  {provider.label}
+                  {!provider.available ? " (unavailable)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="map-provider-field">
+            <span>Style</span>
+            <select
+              className="locale-select"
+              onChange={(event) => {
+                setBasemapStylePreset(event.target.value);
+                setUseFallbackMapStyle(false);
+                setMapProviderWarning(null);
+              }}
+              value={basemapStylePreset}
+            >
+              <option value="auto">Auto ({theme === "dark" ? "Dark" : "Light"})</option>
+              {resolvedPresetOptions.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {regionalProviders.length ? (
+            <details className="compact-details map-provider-regional">
+              <summary>Regional providers</summary>
+              <div className="chip-group">
+                {regionalProviders.map((provider) => (
+                  <button
+                    className={`map-control-btn ${basemapProvider === provider.provider ? "is-selected" : ""}`}
+                    disabled={!provider.available}
+                    key={provider.provider}
+                    onClick={() => {
+                      setBasemapProvider(provider.provider);
+                      setBasemapStylePreset("auto");
+                      setUseFallbackMapStyle(false);
+                      setMapProviderWarning(null);
+                    }}
+                    type="button"
+                  >
+                    {provider.label}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      </div>
+      <div className="map-controls map-controls-main">
         <div className="map-controls-group">
           <button
             className={`map-control-btn ${showTerrainOverlay ? "is-selected" : ""}`}
@@ -1409,11 +1488,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         </div>
       ) : null}
       {!hasSimulationTerrain ? <div className="map-control-note">No SRTM loaded: simulation uses site elevations only.</div> : null}
+      {resolvedBasemap.fallbackReason && !useFallbackMapStyle ? (
+        <div className="map-control-note map-control-note-secondary">{resolvedBasemap.fallbackReason}</div>
+      ) : null}
       {useFallbackMapStyle ? (
         <div className="map-control-note map-control-note-secondary">
-          Base map fallback active (OSM raster style).
+          Base map provider failed. Auto-switched to CARTO fallback style.
         </div>
       ) : null}
+      {mapProviderWarning ? <div className="map-control-note map-control-note-secondary">{mapProviderWarning}</div> : null}
       {endpointPickTarget && endpointPickError ? (
         <div className="map-control-note map-control-note-tertiary">{endpointPickError}</div>
       ) : null}
@@ -1652,10 +1735,13 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           latitude: activeViewState.latitude,
           zoom: activeViewState.zoom,
         }}
-        mapStyle={useFallbackMapStyle ? (fallbackStyle as unknown as string) : styleByTheme[theme]}
+        mapStyle={useFallbackMapStyle ? (fallbackStyle as unknown as string) : resolvedBasemap.style}
         onError={() => {
           if (!useFallbackMapStyle) {
             setUseFallbackMapStyle(true);
+            setMapProviderWarning(
+              `${selectedProviderConfig?.label ?? "Selected provider"} failed (network, quota, or style error).`,
+            );
           }
         }}
         interactiveLayerIds={["link-lines"]}

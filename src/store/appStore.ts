@@ -13,6 +13,7 @@ import { analyzeLink, buildProfile } from "../lib/propagation";
 import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
+import type { BasemapProvider } from "../lib/basemaps";
 import {
   clearCopernicusCache,
   loadCopernicusTilesForArea,
@@ -117,6 +118,8 @@ type AppState = {
   locale: LocaleCode;
   uiThemePreference: "system" | "light" | "dark";
   uiColorTheme: UiColorTheme;
+  basemapProvider: BasemapProvider;
+  basemapStylePreset: string;
   selectedScenarioId: string;
   selectedFrequencyPresetId: string;
   rxSensitivityTargetDbm: number;
@@ -137,6 +140,8 @@ type AppState = {
   setLocale: (locale: LocaleCode) => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
   setUiColorTheme: (value: UiColorTheme) => void;
+  setBasemapProvider: (value: BasemapProvider) => void;
+  setBasemapStylePreset: (value: string) => void;
   selectScenario: (id: string) => void;
   setSelectedLinkId: (id: string) => void;
   setTemporaryDirectionReversed: (value: boolean) => void;
@@ -239,6 +244,8 @@ const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
+const BASEMAP_PROVIDER_KEY = "linksim-basemap-provider-v1";
+const BASEMAP_STYLE_PRESET_KEY = "linksim-basemap-style-preset-v1";
 const STORAGE_SNAPSHOT_LIMIT = 24;
 
 type StoredSnapshot<T> = {
@@ -554,6 +561,14 @@ const initialUiThemePreference = normalizeUiThemePreference(
 const normalizeUiColorTheme = (value: unknown): UiColorTheme =>
   value === "pink" || value === "blue" || value === "red" || value === "green" ? value : "blue";
 const initialUiColorTheme = normalizeUiColorTheme(readStorage<string>(UI_COLOR_THEME_KEY, "blue"));
+const normalizeBasemapProvider = (value: unknown): BasemapProvider =>
+  value === "carto" || value === "maptiler" || value === "stadia" || value === "kartverket" ? value : "carto";
+const normalizeBasemapStylePreset = (value: unknown): string =>
+  typeof value === "string" && value.trim().length ? value.trim() : "auto";
+const initialBasemapProvider = normalizeBasemapProvider(readStorage<string>(BASEMAP_PROVIDER_KEY, "carto"));
+const initialBasemapStylePreset = normalizeBasemapStylePreset(
+  readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "auto"),
+);
 
 export const useAppStore = create<AppState>((set, get) => ({
   sites: defaultScenario.sites,
@@ -580,6 +595,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   locale: "eng",
   uiThemePreference: initialUiThemePreference,
   uiColorTheme: initialUiColorTheme,
+  basemapProvider: initialBasemapProvider,
+  basemapStylePreset: initialBasemapStylePreset,
   selectedScenarioId: defaultScenario.id,
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
@@ -607,6 +624,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     const normalized = normalizeUiColorTheme(value);
     writeStorage(UI_COLOR_THEME_KEY, normalized, { snapshot: false });
     set({ uiColorTheme: normalized });
+  },
+  setBasemapProvider: (value) => {
+    const normalized = normalizeBasemapProvider(value);
+    writeStorage(BASEMAP_PROVIDER_KEY, normalized, { snapshot: false });
+    set({ basemapProvider: normalized });
+  },
+  setBasemapStylePreset: (value) => {
+    const normalized = normalizeBasemapStylePreset(value);
+    writeStorage(BASEMAP_STYLE_PRESET_KEY, normalized, { snapshot: false });
+    set({ basemapStylePreset: normalized });
   },
   selectScenario: (id) => {
     const scenario = getScenarioById(id);

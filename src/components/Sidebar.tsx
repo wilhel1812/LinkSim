@@ -17,6 +17,7 @@ import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
+import { resolveBasemapSelection } from "../lib/basemaps";
 import {
   fetchCollaboratorDirectory,
   fetchMe,
@@ -248,6 +249,8 @@ export function Sidebar() {
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
   const setRxSensitivityTargetDbm = useAppStore((state) => state.setRxSensitivityTargetDbm);
   const setEnvironmentLossDb = useAppStore((state) => state.setEnvironmentLossDb);
+  const basemapProvider = useAppStore((state) => state.basemapProvider);
+  const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
   const setAutoPropagationEnvironment = useAppStore((state) => state.setAutoPropagationEnvironment);
   const setPropagationEnvironment = useAppStore((state) => state.setPropagationEnvironment);
   const applyClimateDefaults = useAppStore((state) => state.applyClimateDefaults);
@@ -304,6 +307,10 @@ export function Sidebar() {
   const loraSensitivitySuggestionDbm = estimateLoRaSensitivityDbm(
     selectedNetwork.bandwidthKhz,
     selectedNetwork.spreadFactor,
+  );
+  const resolvedBasemap = useMemo(
+    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme),
+    [basemapProvider, basemapStylePreset, theme],
   );
   const effectivePropagationEnvironment = useMemo(() => {
     if (!autoPropagationEnvironment || !fromSite || !toSite) return propagationEnvironment;
@@ -994,16 +1001,20 @@ export function Sidebar() {
     setNewPresetName("");
   };
   const createBlankSimulation = () => {
+    if (!currentUser?.id) {
+      setSimulationSaveStatus("Cannot create simulation until current user profile is loaded.");
+      return;
+    }
     const trimmed = newSimulationName.trim() || `Untitled ${new Date().toLocaleString()}`;
     const createdId = createBlankSimulationPreset(trimmed, {
       visibility: newSimulationVisibility,
-      ownerUserId: currentUser?.id,
-      createdByUserId: currentUser?.id,
-      createdByName: currentUser?.username ?? "Unknown",
-      createdByAvatarUrl: currentUser?.avatarUrl ?? "",
-      lastEditedByUserId: currentUser?.id,
-      lastEditedByName: currentUser?.username ?? "Unknown",
-      lastEditedByAvatarUrl: currentUser?.avatarUrl ?? "",
+      ownerUserId: currentUser.id,
+      createdByUserId: currentUser.id,
+      createdByName: currentUser.username,
+      createdByAvatarUrl: currentUser.avatarUrl ?? "",
+      lastEditedByUserId: currentUser.id,
+      lastEditedByName: currentUser.username,
+      lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
     });
     if (!createdId) {
       setSimulationSaveStatus("Failed creating simulation.");
@@ -1329,11 +1340,28 @@ export function Sidebar() {
     });
   };
 
-  const saveResourceAccessSettings = () => {
-    if (!resourceDetailsPopup) return;
-    const normalizedVisibility = resourceAccessVisibility === "public" ? "shared" : resourceAccessVisibility;
-    const normalizedName = resourceNameDraft.trim() || resourceDetailsPopup.label;
-    const sharedWith = resourceCollaboratorUserIds
+  const persistResourceAccessSettings = (
+    overrides?: Partial<{
+      name: string;
+      lat: number;
+      lon: number;
+      groundM: number;
+      antennaM: number;
+      visibility: "private" | "public" | "shared";
+      collaboratorUserIds: string[];
+    }>,
+  ): boolean => {
+    if (!resourceDetailsPopup) return false;
+    const nextVisibility = overrides?.visibility ?? resourceAccessVisibility;
+    const nextName = overrides?.name ?? resourceNameDraft;
+    const nextLat = overrides?.lat ?? resourceLatDraft;
+    const nextLon = overrides?.lon ?? resourceLonDraft;
+    const nextGroundM = overrides?.groundM ?? resourceGroundDraft;
+    const nextAntennaM = overrides?.antennaM ?? resourceAntennaDraft;
+    const nextCollaboratorUserIds = overrides?.collaboratorUserIds ?? resourceCollaboratorUserIds;
+    const normalizedVisibility = nextVisibility === "public" ? "shared" : nextVisibility;
+    const normalizedName = nextName.trim() || resourceDetailsPopup.label;
+    const sharedWith = nextCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
       .map((userId) => ({ userId, role: "editor" as const }));
     const currentEntry =
@@ -1350,53 +1378,56 @@ export function Sidebar() {
     const removedCollaborators = [...currentSharedUserIds].filter((userId) => !nextSharedUserIds.has(userId));
     if (removedCollaborators.length > 0 && !["owner", "admin"].includes(effectiveRole)) {
       setResourceAccessStatus("Only owners/admins can remove existing collaborators.");
-      return;
+      return false;
     }
 
-    if (resourceDetailsPopup.kind === "site") {
-      updateSiteLibraryEntry(resourceDetailsPopup.resourceId, {
-        name: normalizedName,
-        position: { lat: resourceLatDraft, lon: resourceLonDraft },
-        groundElevationM: resourceGroundDraft,
-        antennaHeightM: resourceAntennaDraft,
-        visibility: normalizedVisibility,
-        sharedWith,
-      });
-    } else {
-      const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
-      const referencedPrivateSiteIds =
-        normalizedVisibility === "private"
-          ? []
-          : siteLibrary
-              .filter((entry) => {
-                if ((entry.visibility ?? "private") !== "private") return false;
-                const referencedIds = new Set(
-                  (simulationEntry?.snapshot.sites ?? [])
-                    .map((site) => site.libraryEntryId)
-                    .filter((value): value is string => typeof value === "string" && value.length > 0),
-                );
-                return referencedIds.has(entry.id);
-              })
-              .map((entry) => entry.id);
-      if (
-        referencedPrivateSiteIds.length > 0 &&
-        normalizedVisibility === "shared"
-      ) {
-        setPendingSimulationVisibilityPrompt({
-          simulationId: resourceDetailsPopup.resourceId,
-          targetVisibility: normalizedVisibility,
-          referencedPrivateSiteIds,
+    try {
+      if (resourceDetailsPopup.kind === "site") {
+        updateSiteLibraryEntry(resourceDetailsPopup.resourceId, {
+          name: normalizedName,
+          position: { lat: nextLat, lon: nextLon },
+          groundElevationM: nextGroundM,
+          antennaHeightM: nextAntennaM,
+          visibility: normalizedVisibility,
+          sharedWith,
         });
-        return;
+      } else {
+        const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+        const referencedPrivateSiteIds =
+          normalizedVisibility === "private"
+            ? []
+            : siteLibrary
+                .filter((entry) => {
+                  if ((entry.visibility ?? "private") !== "private") return false;
+                  const referencedIds = new Set(
+                    (simulationEntry?.snapshot.sites ?? [])
+                      .map((site) => site.libraryEntryId)
+                      .filter((value): value is string => typeof value === "string" && value.length > 0),
+                  );
+                  return referencedIds.has(entry.id);
+                })
+                .map((entry) => entry.id);
+        if (referencedPrivateSiteIds.length > 0 && normalizedVisibility === "shared") {
+          setPendingSimulationVisibilityPrompt({
+            simulationId: resourceDetailsPopup.resourceId,
+            targetVisibility: normalizedVisibility,
+            referencedPrivateSiteIds,
+          });
+          return false;
+        }
+        updateSimulationPresetEntry(resourceDetailsPopup.resourceId, {
+          name: normalizedName,
+          visibility: normalizedVisibility,
+          sharedWith,
+        });
       }
-      updateSimulationPresetEntry(resourceDetailsPopup.resourceId, {
-        name: normalizedName,
-        visibility: normalizedVisibility,
-        sharedWith,
-      });
+      setResourceDetailsPopup((current) => (current ? { ...current, label: normalizedName } : current));
+      setResourceAccessStatus("Saved");
+      return true;
+    } catch (error) {
+      setResourceAccessStatus(`Save failed: ${getUiErrorMessage(error)}`);
+      return false;
     }
-    setResourceDetailsPopup((current) => (current ? { ...current, label: normalizedName } : current));
-    setResourceAccessStatus("Access settings saved.");
   };
 
   const applyPendingSimulationVisibilityChange = () => {
@@ -1413,7 +1444,7 @@ export function Sidebar() {
       sharedWith,
     });
     setPendingSimulationVisibilityPrompt(null);
-    setResourceAccessStatus("Updated referenced private sites and saved access settings.");
+    setResourceAccessStatus("Saved");
   };
 
   const addCollaborator = (userId: string) => {
@@ -1422,9 +1453,12 @@ export function Sidebar() {
       setResourceAccessStatus("Owner is implicit and cannot be added as collaborator.");
       return;
     }
-    setResourceCollaboratorUserIds((current) => (current.includes(userId) ? current : [...current, userId]));
+    const nextCollaborators = resourceCollaboratorUserIds.includes(userId)
+      ? resourceCollaboratorUserIds
+      : [...resourceCollaboratorUserIds, userId];
+    setResourceCollaboratorUserIds(nextCollaborators);
+    void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
     setResourceCollaboratorQuery("");
-    setResourceAccessStatus("");
   };
 
   const removeCollaborator = (userId: string) => {
@@ -1443,8 +1477,9 @@ export function Sidebar() {
       setResourceAccessStatus("Only owners/admins can remove existing collaborators.");
       return;
     }
-    setResourceCollaboratorUserIds((current) => current.filter((id) => id !== userId));
-    setResourceAccessStatus("");
+    const nextCollaborators = resourceCollaboratorUserIds.filter((id) => id !== userId);
+    setResourceCollaboratorUserIds(nextCollaborators);
+    void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
   };
 
   const changeProfileRole = async (nextRole: "admin" | "moderator" | "user" | "pending") => {
@@ -2085,7 +2120,7 @@ export function Sidebar() {
               by {PRIMARY_ATTRIBUTION.authorName}
             </p>
             <p className="field-help subtle-note">
-              Basemap style: {theme === "dark" ? "Carto Dark Matter" : "Carto Positron"} (provider attribution applies).
+              Basemap: {resolvedBasemap.providerLabel} · {resolvedBasemap.presetLabel} (provider attribution applies).
             </p>
           </details>
         </details>
@@ -2229,6 +2264,9 @@ export function Sidebar() {
               <span>Name</span>
               <input
                 onChange={(event) => setResourceNameDraft(event.target.value)}
+                onBlur={() => {
+                  void persistResourceAccessSettings();
+                }}
                 type="text"
                 value={resourceNameDraft}
               />
@@ -2240,6 +2278,9 @@ export function Sidebar() {
                     <span>Latitude</span>
                     <input
                       onChange={(event) => setResourceLatDraft(parseNumber(event.target.value))}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
                       step="0.000001"
                       type="number"
                       value={resourceLatDraft}
@@ -2249,6 +2290,9 @@ export function Sidebar() {
                     <span>Longitude</span>
                     <input
                       onChange={(event) => setResourceLonDraft(parseNumber(event.target.value))}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
                       step="0.000001"
                       type="number"
                       value={resourceLonDraft}
@@ -2259,6 +2303,9 @@ export function Sidebar() {
                     <div className="field-inline">
                       <input
                         onChange={(event) => setResourceGroundDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
                         type="number"
                         value={resourceGroundDraft}
                       />
@@ -2273,7 +2320,8 @@ export function Sidebar() {
                             return;
                           }
                           setResourceGroundDraft(elevation);
-                          setResourceAccessStatus(`Ground elevation set from loaded terrain: ${elevation} m`);
+                          void persistResourceAccessSettings({ groundM: elevation });
+                          setResourceAccessStatus(`Saved (terrain elevation ${elevation} m)`);
                         }}
                         type="button"
                       >
@@ -2285,6 +2333,9 @@ export function Sidebar() {
                     <span>Antenna (m)</span>
                     <input
                       onChange={(event) => setResourceAntennaDraft(parseNumber(event.target.value))}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
                       type="number"
                       value={resourceAntennaDraft}
                     />
@@ -2299,8 +2350,11 @@ export function Sidebar() {
                     }}
                     mapStyle={styleByTheme[theme]}
                     onClick={(event) => {
-                      setResourceLatDraft(event.lngLat.lat);
-                      setResourceLonDraft(event.lngLat.lng);
+                      const nextLat = event.lngLat.lat;
+                      const nextLon = event.lngLat.lng;
+                      setResourceLatDraft(nextLat);
+                      setResourceLonDraft(nextLon);
+                      void persistResourceAccessSettings({ lat: nextLat, lon: nextLon });
                     }}
                   >
                     <Marker
@@ -2309,8 +2363,11 @@ export function Sidebar() {
                       latitude={resourceLatDraft}
                       longitude={resourceLonDraft}
                       onDragEnd={(event: MarkerDragEvent) => {
-                        setResourceLatDraft(event.lngLat.lat);
-                        setResourceLonDraft(event.lngLat.lng);
+                        const nextLat = event.lngLat.lat;
+                        const nextLon = event.lngLat.lng;
+                        setResourceLatDraft(nextLat);
+                        setResourceLonDraft(nextLon);
+                        void persistResourceAccessSettings({ lat: nextLat, lon: nextLon });
                       }}
                     >
                       <div className="site-pin library-edit-pin">
@@ -2360,8 +2417,12 @@ export function Sidebar() {
                 </span>
                 <select
                   className="locale-select"
-                  onChange={(event) =>
-                    setResourceAccessVisibility(event.target.value as "private" | "public" | "shared")
+                    onChange={(event) =>
+                    {
+                      const next = event.target.value as "private" | "public" | "shared";
+                      setResourceAccessVisibility(next);
+                      void persistResourceAccessSettings({ visibility: next });
+                    }
                   }
                   value={resourceAccessVisibility}
                 >
@@ -2426,10 +2487,7 @@ export function Sidebar() {
                 Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
                 collaborators/owner. Owners/moderators/admins can remove collaborators.
               </p>
-              <button className="inline-action" onClick={saveResourceAccessSettings} type="button">
-                Save Changes
-              </button>
-              {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : null}
+              {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
             </details>
           </div>
         </ModalOverlay>

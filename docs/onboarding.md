@@ -1,6 +1,6 @@
 # LinkSim Onboarding
 
-## Scenarios
+## Simulations
 - A **simulation** is a complete setup of sites, links, and radio/model settings.
 - Open an existing simulation from **Simulation Library** or create a new one.
 - Use clear names so teammates can find simulations quickly.
@@ -36,6 +36,12 @@
 | Relay | Best relay-candidate regions for selected From/To pair | Find where a third node could bridge weak links |
 | Terrain overlay | Terrain raster used by simulation in current area | Confirm what elevation input the model is actually using |
 | Path profile | Elevation profile + link geometry between selected endpoints | Validate LOS/Fresnel context and understand obstructions |
+
+- Basemap providers:
+  - **CARTO** is the global baseline and fallback.
+  - **MapTiler** and **Stadia** are available when admin-configured API keys are present.
+  - **Kartverket** is listed under regional providers and is optional.
+  - If a selected provider fails (network/quota/style error), LinkSim auto-falls back to CARTO and shows a warning banner.
 
 - Practical workflow:
   1. Start with **Pass/Fail** for decision clarity.
