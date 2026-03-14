@@ -14,6 +14,12 @@
 - When catching UI errors, use `getUiErrorMessage()` from `src/lib/uiError.ts` for consistent messaging.
 - Do not leave backlog tasks in ambiguous state. Use `[x]` only when code and verification are done.
 - Do not start user-added backlog items without explicit user confirmation in the current thread.
+- Batch size policy:
+  - Default to 3-4 backlog items per pass.
+  - If scope is stable and low risk, target larger passes (~10 items) to reduce deploy churn.
+- For user-added backlog items:
+  - Keep them marked `pending-discussion` until discussed.
+  - Do not move them to in-progress automatically.
 - After every live deploy, monitor Cloudflare Pages deployment status (`wrangler pages deployment list --project-name linksim`) and explicitly notify the user when deployment is complete.
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
 - Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
@@ -29,3 +35,18 @@
   - `npm run deploy:prod:main`
 - Never run raw `wrangler pages deploy` for release operations.
 - If a guarded deploy fails, fix the script/preflight issue and re-run the guarded script. Do not bypass with manual Wrangler deploys.
+- Promotion gate:
+  - Promote the exact same verified commit from local -> staging -> production.
+  - If code changes after staging verification, rerun local verification and redeploy staging before production.
+- Local run reliability:
+  - Restart local server whenever runtime/config/env changes can affect behavior.
+  - Re-verify affected flows after restart before marking work as done.
+- Production preflight checklist (required before `deploy:prod:main`):
+  - `npm run test`
+  - `npm run build:bundle`
+  - Confirm build label matches intended SemVer channel rules
+  - Confirm no unresolved backlog status drift for items in the current pass
+- Token-efficient execution:
+  - Lock scope for each pass before implementation.
+  - Define done criteria and no-touch areas at pass start.
+  - Avoid mid-pass feature pivots unless explicitly requested by the user.
