@@ -163,6 +163,14 @@ const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
+
+const hasDeepLinkSimulationInSearch = (search: string): boolean => {
+  const params = new URLSearchParams(search);
+  const sim = params.get("sim")?.trim();
+  if (!sim) return false;
+  const version = params.get("dl")?.trim();
+  return !version || version === "1";
+};
 const STORAGE_HEALTH_KEY = "rmw-storage-health-v1";
 
 type LibraryBackupPayload = {
@@ -411,8 +419,12 @@ export function Sidebar() {
     latitude: sourceSite?.position.lat ?? 59.9,
     zoom: 7.5,
   }));
+  const hasDeepLinkSimulation = useMemo(() => hasDeepLinkSimulationInSearch(window.location.search), []);
   const [selectedSimulationRef, setSelectedSimulationRef] = useState<string>(() => {
     const fallback = `builtin:${selectedScenarioId}`;
+    if (hasDeepLinkSimulationInSearch(window.location.search)) {
+      return fallback;
+    }
     try {
       const stored = localStorage.getItem(LAST_SIMULATION_REF_KEY);
       return stored && stored.trim() ? stored : fallback;
@@ -772,6 +784,10 @@ export function Sidebar() {
 
   useEffect(() => {
     if (startupSimulationApplied) return;
+    if (hasDeepLinkSimulation) {
+      setStartupSimulationApplied(true);
+      return;
+    }
     const defaultRef = `builtin:${selectedScenarioId}`;
     if (selectedSimulationRef !== defaultRef) {
       if (selectedSimulationRef.startsWith("builtin:")) {
@@ -781,7 +797,14 @@ export function Sidebar() {
       }
     }
     setStartupSimulationApplied(true);
-  }, [startupSimulationApplied, selectedSimulationRef, selectedScenarioId, selectScenario, loadSimulationPreset]);
+  }, [
+    hasDeepLinkSimulation,
+    startupSimulationApplied,
+    selectedSimulationRef,
+    selectedScenarioId,
+    selectScenario,
+    loadSimulationPreset,
+  ]);
 
   useEffect(() => {
     const origin = window.location.origin;
