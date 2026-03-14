@@ -1,4 +1,5 @@
 import { haversineDistanceKm, interpolateCoordinate } from "./geo";
+import { resolveLinkRadio } from "./linkRadio";
 import { fsplDb, getPathLossByModel } from "./rfModels";
 import { estimateTerrainExcessLossDb } from "./terrainLoss";
 import type {
@@ -133,8 +134,9 @@ export const analyzeLink = (
 
   const pathLossDb = basePathLossDb + terrainPenaltyDb;
   const pureFsplDb = fsplDb(distanceKm, link.frequencyMHz);
-  const eirpDbm = link.txPowerDbm + link.txGainDbi - link.cableLossDb;
-  const rxLevelDbm = eirpDbm + link.rxGainDbi - pathLossDb;
+  const radio = resolveLinkRadio(link, fromSite, toSite);
+  const eirpDbm = radio.txPowerDbm + radio.txGainDbi - radio.cableLossDb;
+  const rxLevelDbm = eirpDbm + radio.rxGainDbi - pathLossDb;
 
   const midpointLineM = (fromAntennaAbsM + toAntennaAbsM) / 2;
   const midpointTerrainM = (fromSite.groundElevationM + toSite.groundElevationM) / 2;

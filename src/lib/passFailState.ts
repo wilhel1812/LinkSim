@@ -31,6 +31,7 @@ export const computeSourceCentricRxMetrics = (
   fromSite: Site,
   effectiveLink: Link,
   receiverAntennaHeightM: number,
+  receiverRxGainDbi: number,
   propagationModel: PropagationModel,
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
@@ -69,9 +70,13 @@ export const computeSourceCentricRxMetrics = (
     }
   }
 
-  const eirpDbm = effectiveLink.txPowerDbm + effectiveLink.txGainDbi - effectiveLink.cableLossDb;
+  const txPowerDbm = effectiveLink.txPowerDbm ?? fromSite.txPowerDbm;
+  const txGainDbi = effectiveLink.txGainDbi ?? fromSite.txGainDbi;
+  const cableLossDb = effectiveLink.cableLossDb ?? fromSite.cableLossDb;
+  const rxGainDbi = effectiveLink.rxGainDbi ?? receiverRxGainDbi;
+  const eirpDbm = txPowerDbm + txGainDbi - cableLossDb;
   return {
-    rxDbm: eirpDbm + effectiveLink.rxGainDbi - (baseLoss + terrainPenaltyDb),
+    rxDbm: eirpDbm + rxGainDbi - (baseLoss + terrainPenaltyDb),
     terrainPenaltyDb,
     terrainObstructed,
   };

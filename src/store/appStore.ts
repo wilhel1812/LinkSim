@@ -5,6 +5,13 @@ import { findPresetById } from "../lib/frequencyPlans";
 import { haversineDistanceKm } from "../lib/geo";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
+  migrateSitesAndLinksToSiteRadioDefaults,
+  resolveLinkRadio,
+  STANDARD_SITE_RADIO,
+  stripRedundantLinkRadioOverrides,
+  withSiteRadioDefaults,
+} from "../lib/linkRadio";
+import {
   defaultPropagationEnvironment,
   deriveDynamicPropagationEnvironment,
   withClimateDefaults,
@@ -54,6 +61,10 @@ type SiteLibraryEntry = {
   position: { lat: number; lon: number };
   groundElevationM: number;
   antennaHeightM: number;
+  txPowerDbm: number;
+  txGainDbi: number;
+  rxGainDbi: number;
+  cableLossDb: number;
   createdAt: string;
   sourceMeta?: {
     provider: string;
@@ -171,6 +182,10 @@ type AppState = {
     lon: number,
     groundElevationM?: number,
     antennaHeightM?: number,
+    txPowerDbm?: number,
+    txGainDbi?: number,
+    rxGainDbi?: number,
+    cableLossDb?: number,
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
     visibility?: "private" | "public" | "shared",
   ) => string;
@@ -181,7 +196,16 @@ type AppState = {
     patch: Partial<
       Pick<
         SiteLibraryEntry,
-        "name" | "position" | "groundElevationM" | "antennaHeightM" | "visibility" | "sharedWith"
+        | "name"
+        | "position"
+        | "groundElevationM"
+        | "antennaHeightM"
+        | "txPowerDbm"
+        | "txGainDbi"
+        | "rxGainDbi"
+        | "cableLossDb"
+        | "visibility"
+        | "sharedWith"
       >
     >,
   ) => void;
@@ -345,7 +369,29 @@ const dedupeLibraryEntries = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =
 };
 
 const normalizeSiteLibrary = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =>
-  dedupeLibraryEntries(entries.filter((entry) => !isLegacyDemoSiteLibraryEntry(entry)));
+  dedupeLibraryEntries(
+    entries
+      .filter((entry) => !isLegacyDemoSiteLibraryEntry(entry))
+      .map((entry) => ({
+        ...entry,
+        txPowerDbm:
+          typeof entry.txPowerDbm === "number" && Number.isFinite(entry.txPowerDbm)
+            ? entry.txPowerDbm
+            : STANDARD_SITE_RADIO.txPowerDbm,
+        txGainDbi:
+          typeof entry.txGainDbi === "number" && Number.isFinite(entry.txGainDbi)
+            ? entry.txGainDbi
+            : STANDARD_SITE_RADIO.txGainDbi,
+        rxGainDbi:
+          typeof entry.rxGainDbi === "number" && Number.isFinite(entry.rxGainDbi)
+            ? entry.rxGainDbi
+            : STANDARD_SITE_RADIO.rxGainDbi,
+        cableLossDb:
+          typeof entry.cableLossDb === "number" && Number.isFinite(entry.cableLossDb)
+            ? entry.cableLossDb
+            : STANDARD_SITE_RADIO.cableLossDb,
+      })),
+  );
 
 const isLegacyDemoSimulationPreset = (preset: SimulationPreset): boolean => {
   const normalized = preset.name.trim().toLowerCase();
@@ -360,18 +406,33 @@ const isLegacyDemoSimulationPreset = (preset: SimulationPreset): boolean => {
 };
 
 const normalizeSimulationPresets = (presets: SimulationPreset[]): SimulationPreset[] =>
-  presets.filter(
-    (preset) =>
-      Boolean(
-        preset &&
-          typeof preset.id === "string" &&
-          preset.id &&
-          typeof preset.name === "string" &&
-          preset.name &&
-          preset.snapshot &&
-          !isLegacyDemoSimulationPreset(preset),
-      ),
-  );
+  presets
+    .filter(
+      (preset) =>
+        Boolean(
+          preset &&
+            typeof preset.id === "string" &&
+            preset.id &&
+            typeof preset.name === "string" &&
+            preset.name &&
+            preset.snapshot &&
+            !isLegacyDemoSimulationPreset(preset),
+        ),
+    )
+    .map((preset) => {
+      const migrated = migrateSitesAndLinksToSiteRadioDefaults(
+        Array.isArray(preset.snapshot?.sites) ? preset.snapshot.sites : [],
+        Array.isArray(preset.snapshot?.links) ? preset.snapshot.links : [],
+      );
+      return {
+        ...preset,
+        snapshot: {
+          ...preset.snapshot,
+          sites: migrated.sites,
+          links: migrated.links,
+        },
+      };
+    });
 
 const siteNamePosKey = (
   site: Pick<Site, "name" | "position"> | Pick<SiteLibraryEntry, "name" | "position">,
@@ -395,7 +456,7 @@ const pickClosestLibraryEntryByPosition = (
 };
 
 const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
-  if (!sites.length || !library.length) return sites;
+  if (!sites.length || !library.length) return sites.map((site) => withSiteRadioDefaults(site));
   const libraryByFingerprint = new Map<string, SiteLibraryEntry[]>();
   const libraryByName = new Map<string, SiteLibraryEntry[]>();
   for (const entry of library) {
@@ -407,18 +468,18 @@ const annotateSitesWithLibraryRefs = (sites: Site[], library: SiteLibraryEntry[]
     libraryByName.set(nameKey, [...currentByName, entry]);
   }
   return sites.map((site) => {
-    if (site.libraryEntryId) return site;
+    if (site.libraryEntryId) return withSiteRadioDefaults(site);
     const matchesByPos = libraryByFingerprint.get(siteNamePosKey(site)) ?? [];
-    if (matchesByPos.length === 1) return { ...site, libraryEntryId: matchesByPos[0].id };
+    if (matchesByPos.length === 1) return withSiteRadioDefaults({ ...site, libraryEntryId: matchesByPos[0].id });
     const matchesByName = libraryByName.get(siteNameKey(site.name)) ?? [];
     const closestByName = pickClosestLibraryEntryByPosition(site, matchesByName);
-    if (closestByName) return { ...site, libraryEntryId: closestByName.id };
-    return site;
+    if (closestByName) return withSiteRadioDefaults({ ...site, libraryEntryId: closestByName.id });
+    return withSiteRadioDefaults(site);
   });
 };
 
 const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[]): Site[] => {
-  if (!sites.length || !library.length) return sites;
+  if (!sites.length || !library.length) return sites.map((site) => withSiteRadioDefaults(site));
   const byId = new Map<string, SiteLibraryEntry>(library.map((entry) => [entry.id, entry]));
   const byNamePos = new Map<string, SiteLibraryEntry[]>();
   const byName = new Map<string, SiteLibraryEntry[]>();
@@ -437,13 +498,17 @@ const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[])
     const inferredMatchesByName = byName.get(siteNameKey(site.name)) ?? [];
     const inferredByName = pickClosestLibraryEntryByPosition(site, inferredMatchesByName);
     const entry = direct ?? inferredByPos ?? inferredByName;
-    if (!entry) return site;
+    if (!entry) return withSiteRadioDefaults(site);
     return {
-      ...site,
+      ...withSiteRadioDefaults(site),
       name: entry.name,
       position: entry.position,
       groundElevationM: entry.groundElevationM,
       antennaHeightM: entry.antennaHeightM,
+      txPowerDbm: entry.txPowerDbm,
+      txGainDbi: entry.txGainDbi,
+      rxGainDbi: entry.rxGainDbi,
+      cableLossDb: entry.cableLossDb,
       libraryEntryId: entry.id,
     };
   });
@@ -466,21 +531,26 @@ const ensureSitesBackedByLibrary = (
   }
   let addedCount = 0;
   const normalizedSites = sites.map((site) => {
-    const direct = site.libraryEntryId ? byId.get(site.libraryEntryId) : undefined;
-    const inferredMatchesByPos = byNamePos.get(siteNamePosKey(site)) ?? [];
+    const normalizedSite = withSiteRadioDefaults(site);
+    const direct = normalizedSite.libraryEntryId ? byId.get(normalizedSite.libraryEntryId) : undefined;
+    const inferredMatchesByPos = byNamePos.get(siteNamePosKey(normalizedSite)) ?? [];
     const inferredByPos = inferredMatchesByPos.length === 1 ? inferredMatchesByPos[0] : undefined;
-    const inferredMatchesByName = byName.get(siteNameKey(site.name)) ?? [];
-    const inferredByName = pickClosestLibraryEntryByPosition(site, inferredMatchesByName);
+    const inferredMatchesByName = byName.get(siteNameKey(normalizedSite.name)) ?? [];
+    const inferredByName = pickClosestLibraryEntryByPosition(normalizedSite, inferredMatchesByName);
     let entry = direct ?? inferredByPos ?? inferredByName;
     if (!entry) {
       entry = {
         id: makeId("libsite"),
-        name: site.name,
+        name: normalizedSite.name,
         visibility: "shared",
         sharedWith: [],
-        position: site.position,
-        groundElevationM: site.groundElevationM,
-        antennaHeightM: site.antennaHeightM,
+        position: normalizedSite.position,
+        groundElevationM: normalizedSite.groundElevationM,
+        antennaHeightM: normalizedSite.antennaHeightM,
+        txPowerDbm: normalizedSite.txPowerDbm,
+        txGainDbi: normalizedSite.txGainDbi,
+        rxGainDbi: normalizedSite.rxGainDbi,
+        cableLossDb: normalizedSite.cableLossDb,
         createdAt: new Date().toISOString(),
       };
       nextLibrary.unshift(entry);
@@ -492,11 +562,15 @@ const ensureSitesBackedByLibrary = (
       addedCount += 1;
     }
     return {
-      ...site,
+      ...normalizedSite,
       name: entry.name,
       position: entry.position,
       groundElevationM: entry.groundElevationM,
       antennaHeightM: entry.antennaHeightM,
+      txPowerDbm: entry.txPowerDbm,
+      txGainDbi: entry.txGainDbi,
+      rxGainDbi: entry.rxGainDbi,
+      cableLossDb: entry.cableLossDb,
       libraryEntryId: entry.id,
     };
   });
@@ -532,7 +606,10 @@ const ensureMinimumTopology = (
   systems: RadioSystem[];
   networks: Network[];
 } => {
-  const sites = inputSites.length > 0 ? inputSites : defaultScenario.sites;
+  const sites =
+    inputSites.length > 0
+      ? inputSites.map((site) => withSiteRadioDefaults(site))
+      : defaultScenario.sites.map((site) => withSiteRadioDefaults(site));
   const systems = inputSystems.length > 0 ? inputSystems : defaultScenario.systems;
   const siteIds = new Set(sites.map((site) => site.id));
   const systemIds = new Set(systems.map((system) => system.id));
@@ -548,10 +625,6 @@ const ensureMinimumTopology = (
               fromSiteId: sites[0].id,
               toSiteId: sites[1].id,
               frequencyMHz: 869.618,
-              txPowerDbm: 22,
-              txGainDbi: 2,
-              rxGainDbi: 2,
-              cableLossDb: 1,
               name: `${sites[0].name} -> ${sites[1].name}`,
             },
           ]
@@ -706,14 +779,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectScenario: (id) => {
     const scenario = getScenarioById(id);
     if (!scenario) return;
-    const libraryBacked = ensureSitesBackedByLibrary(scenario.sites, get().siteLibrary);
+    const migratedScenario = migrateSitesAndLinksToSiteRadioDefaults(scenario.sites, scenario.links);
+    const libraryBacked = ensureSitesBackedByLibrary(migratedScenario.sites, get().siteLibrary);
     if (libraryBacked.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
     }
     set({
       selectedScenarioId: scenario.id,
       sites: libraryBacked.sites,
-      links: scenario.links,
+      links: migratedScenario.links,
       systems: scenario.systems,
       networks: scenario.networks,
       selectedSiteId: scenario.defaultSiteId,
@@ -796,6 +870,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       position: { lat, lon },
       groundElevationM: 0,
       antennaHeightM: 2,
+      txPowerDbm: STANDARD_SITE_RADIO.txPowerDbm,
+      txGainDbi: STANDARD_SITE_RADIO.txGainDbi,
+      rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
+      cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
       libraryEntryId,
     };
     set((state) => {
@@ -807,6 +885,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         position: { lat, lon },
         groundElevationM: 0,
         antennaHeightM: 2,
+        txPowerDbm: STANDARD_SITE_RADIO.txPowerDbm,
+        txGainDbi: STANDARD_SITE_RADIO.txGainDbi,
+        rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
+        cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
         createdAt: new Date().toISOString(),
       };
       const nextLibrary = normalizeSiteLibrary([entry, ...state.siteLibrary]);
@@ -834,18 +916,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         const inheritedFrequencyMHz =
           selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? base?.frequencyMHz ?? 869.618;
         remainingLinks = [
-          {
-            id: makeId("lnk"),
-            name: "Auto Link",
-            fromSiteId: remainingSites[0].id,
-            toSiteId: remainingSites[1].id,
-            frequencyMHz: inheritedFrequencyMHz,
-            txPowerDbm: base?.txPowerDbm ?? 22,
-            txGainDbi: base?.txGainDbi ?? 2,
-            rxGainDbi: base?.rxGainDbi ?? 2,
-            cableLossDb: base?.cableLossDb ?? 1,
-          },
-        ];
+            {
+              id: makeId("lnk"),
+              name: "Auto Link",
+              fromSiteId: remainingSites[0].id,
+              toSiteId: remainingSites[1].id,
+              frequencyMHz: inheritedFrequencyMHz,
+              txPowerDbm: base?.txPowerDbm,
+              txGainDbi: base?.txGainDbi,
+              rxGainDbi: base?.rxGainDbi,
+              cableLossDb: base?.cableLossDb,
+            },
+          ];
       }
       const safeLinkId = remainingLinks[0]?.id ?? "";
       const safeSiteId =
@@ -881,10 +963,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       fromSiteId,
       toSiteId,
       frequencyMHz: inheritedFrequencyMHz,
-      txPowerDbm: base?.txPowerDbm ?? 22,
-      txGainDbi: base?.txGainDbi ?? 2,
-      rxGainDbi: base?.rxGainDbi ?? 2,
-      cableLossDb: base?.cableLossDb ?? 1,
+      txPowerDbm: base?.txPowerDbm,
+      txGainDbi: base?.txGainDbi,
+      rxGainDbi: base?.rxGainDbi,
+      cableLossDb: base?.cableLossDb,
     };
     set((state) => ({
       links: [...state.links, link],
@@ -899,6 +981,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     lon,
     groundElevationM = 0,
     antennaHeightM = 2,
+    txPowerDbm = STANDARD_SITE_RADIO.txPowerDbm,
+    txGainDbi = STANDARD_SITE_RADIO.txGainDbi,
+    rxGainDbi = STANDARD_SITE_RADIO.rxGainDbi,
+    cableLossDb = STANDARD_SITE_RADIO.cableLossDb,
     sourceMeta,
     visibility = "shared",
   ) => {
@@ -911,6 +997,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       position: { lat, lon },
       groundElevationM,
       antennaHeightM,
+      txPowerDbm,
+      txGainDbi,
+      rxGainDbi,
+      cableLossDb,
       createdAt: new Date().toISOString(),
       sourceMeta,
     };
@@ -936,10 +1026,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           fromSiteId: state.sites[0].id,
           toSiteId: state.sites[1].id,
           frequencyMHz: inheritedFrequencyMHz,
-          txPowerDbm: base?.txPowerDbm ?? 22,
-          txGainDbi: base?.txGainDbi ?? 2,
-          rxGainDbi: base?.rxGainDbi ?? 2,
-          cableLossDb: base?.cableLossDb ?? 1,
+          txPowerDbm: base?.txPowerDbm,
+          txGainDbi: base?.txGainDbi,
+          rxGainDbi: base?.rxGainDbi,
+          cableLossDb: base?.cableLossDb,
         };
         return {
           links: [fallbackLink],
@@ -975,6 +1065,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         position: entry.position,
         groundElevationM: entry.groundElevationM,
         antennaHeightM: entry.antennaHeightM,
+        txPowerDbm: entry.txPowerDbm,
+        txGainDbi: entry.txGainDbi,
+        rxGainDbi: entry.rxGainDbi,
+        cableLossDb: entry.cableLossDb,
         libraryEntryId: entry.id,
       };
     });
@@ -1021,10 +1115,10 @@ export const useAppStore = create<AppState>((set, get) => ({
                 fromSiteId: nextSites[0].id,
                 toSiteId: nextSites[1].id,
                 frequencyMHz: inheritedFrequencyMHz,
-                txPowerDbm: base?.txPowerDbm ?? 22,
-                txGainDbi: base?.txGainDbi ?? 2,
-                rxGainDbi: base?.rxGainDbi ?? 2,
-                cableLossDb: base?.cableLossDb ?? 1,
+                txPowerDbm: base?.txPowerDbm,
+                txGainDbi: base?.txGainDbi,
+                rxGainDbi: base?.rxGainDbi,
+                cableLossDb: base?.cableLossDb,
               },
             ]
           : state.links;
@@ -1061,7 +1155,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       writeStorage(SITE_LIBRARY_KEY, next);
       const nextSites = syncLibraryLinkedSiteValues(state.sites, next);
-      return { siteLibrary: next, sites: nextSites };
+      const nextSitesById = new Map(nextSites.map((site) => [site.id, site]));
+      const nextLinks = state.links.map((link) =>
+        stripRedundantLinkRadioOverrides(
+          link,
+          nextSitesById.get(link.fromSiteId),
+          nextSitesById.get(link.toSiteId),
+        ),
+      );
+      return { siteLibrary: next, sites: nextSites, links: nextLinks };
     });
     get().recomputeCoverage();
   },
@@ -1082,9 +1184,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!presetName) return null;
     const state = get();
     const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
+    const normalizedLinks = state.links.map((link) =>
+      stripRedundantLinkRadioOverrides(
+        link,
+        normalized.sites.find((site) => site.id === link.fromSiteId),
+        normalized.sites.find((site) => site.id === link.toSiteId),
+      ),
+    );
     const snapshot: SimulationPreset["snapshot"] = {
       sites: normalized.sites,
-      links: state.links,
+      links: normalizedLinks,
       systems: state.systems,
       networks: state.networks,
       selectedSiteId: state.selectedSiteId,
@@ -1182,9 +1291,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     const existing = state.simulationPresets.find((preset) => preset.id === presetId);
     if (!existing) return;
     const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
+    const normalizedLinks = state.links.map((link) =>
+      stripRedundantLinkRadioOverrides(
+        link,
+        normalized.sites.find((site) => site.id === link.fromSiteId),
+        normalized.sites.find((site) => site.id === link.toSiteId),
+      ),
+    );
     const snapshot: SimulationPreset["snapshot"] = {
       sites: normalized.sites,
-      links: state.links,
+      links: normalizedLinks,
       systems: state.systems,
       networks: state.networks,
       selectedSiteId: state.selectedSiteId,
@@ -1236,6 +1352,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const snap = preset.snapshot;
     const rawSites = Array.isArray(snap.sites) ? snap.sites : [];
     const rawLinks = Array.isArray(snap.links) ? snap.links : [];
+    const migratedSnap = migrateSitesAndLinksToSiteRadioDefaults(rawSites, rawLinks);
     const isBlankSnapshot = rawSites.length === 0 && rawLinks.length === 0;
     if (isBlankSnapshot) {
       const snapshotSystems = Array.isArray(snap.systems) && snap.systems.length ? snap.systems : defaultScenario.systems;
@@ -1285,8 +1402,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const recovered = ensureMinimumTopology(
-      rawSites,
-      rawLinks,
+      migratedSnap.sites,
+      migratedSnap.links,
       Array.isArray(snap.systems) ? snap.systems : [],
       Array.isArray(snap.networks) ? snap.networks : [],
     );
@@ -1510,7 +1627,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateSite: (id, patch) => {
     set((state) => {
-      const nextSites = state.sites.map((site) => (site.id === id ? { ...site, ...patch } : site));
+      const nextSites = state.sites.map((site) =>
+        site.id === id ? withSiteRadioDefaults({ ...site, ...patch }) : site,
+      );
       const updatedSite = nextSites.find((site) => site.id === id);
       if (!updatedSite?.libraryEntryId) {
         return { sites: nextSites };
@@ -1523,6 +1642,10 @@ export const useAppStore = create<AppState>((set, get) => ({
               position: updatedSite.position,
               groundElevationM: updatedSite.groundElevationM,
               antennaHeightM: updatedSite.antennaHeightM,
+              txPowerDbm: updatedSite.txPowerDbm,
+              txGainDbi: updatedSite.txGainDbi,
+              rxGainDbi: updatedSite.rxGainDbi,
+              cableLossDb: updatedSite.cableLossDb,
             }
           : entry,
       );
@@ -1560,7 +1683,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
 
-        return next;
+        const fromSite = state.sites.find((site) => site.id === next.fromSiteId) ?? null;
+        const toSite = state.sites.find((site) => site.id === next.toSiteId) ?? null;
+        return stripRedundantLinkRadioOverrides(next, fromSite, toSite);
       }),
     }));
     get().recomputeCoverage();
@@ -1857,8 +1982,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   getSelectedLink: () => {
     const { links, selectedLinkId, sites, networks, selectedNetworkId } = get();
     const link = links.find((candidate) => candidate.id === selectedLinkId);
-    if (link) return link;
-    if (links[0]) return links[0];
+    if (link) {
+      const fromSite = sites.find((site) => site.id === link.fromSiteId) ?? null;
+      const toSite = sites.find((site) => site.id === link.toSiteId) ?? null;
+      const radio = resolveLinkRadio(link, fromSite, toSite);
+      return { ...link, ...radio };
+    }
+    if (links[0]) {
+      const base = links[0];
+      const fromSite = sites.find((site) => site.id === base.fromSiteId) ?? null;
+      const toSite = sites.find((site) => site.id === base.toSiteId) ?? null;
+      const radio = resolveLinkRadio(base, fromSite, toSite);
+      return { ...base, ...radio };
+    }
     if (sites.length >= 2) {
       const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
       const inheritedFrequencyMHz =
@@ -1869,13 +2005,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         fromSiteId: sites[0].id,
         toSiteId: sites[1].id,
         frequencyMHz: inheritedFrequencyMHz,
-        txPowerDbm: 22,
-        txGainDbi: 2,
-        rxGainDbi: 2,
-        cableLossDb: 1,
+        txPowerDbm: sites[0]?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm,
+        txGainDbi: sites[0]?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi,
+        rxGainDbi: sites[1]?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi,
+        cableLossDb: sites[0]?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb,
       };
     }
-    return defaultScenario.links[0];
+    return {
+      ...defaultScenario.links[0],
+      txPowerDbm: STANDARD_SITE_RADIO.txPowerDbm,
+      txGainDbi: STANDARD_SITE_RADIO.txGainDbi,
+      rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
+      cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
+    };
   },
   getSelectedSite: () => {
     const { sites, selectedSiteId } = get();

@@ -10,6 +10,10 @@ const sites: Site[] = [
     position: { lat: 59.9, lon: 10.7 },
     groundElevationM: 100,
     antennaHeightM: 20,
+    txPowerDbm: 22,
+    txGainDbi: 2,
+    rxGainDbi: 2,
+    cableLossDb: 1,
   },
   {
     id: "s2",
@@ -17,6 +21,10 @@ const sites: Site[] = [
     position: { lat: 59.95, lon: 10.85 },
     groundElevationM: 130,
     antennaHeightM: 16,
+    txPowerDbm: 22,
+    txGainDbi: 2,
+    rxGainDbi: 2,
+    cableLossDb: 1,
   },
 ];
 

@@ -10,6 +10,7 @@ import Map, {
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
+import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -369,6 +370,7 @@ const computeSourceCentricRxDbm = (
   fromSite: Site,
   effectiveLink: Link,
   receiverAntennaHeightM: number,
+  receiverRxGainDbi: number,
   propagationModel: "FSPL" | "TwoRay" | "ITM",
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
@@ -379,6 +381,7 @@ const computeSourceCentricRxDbm = (
     fromSite,
     effectiveLink,
     receiverAntennaHeightM,
+    receiverRxGainDbi,
     propagationModel,
     terrainSampler,
     terrainSamples,
@@ -447,6 +450,7 @@ const buildSourcePassFailOverlay = (
   fromSite: Site,
   effectiveLink: Link,
   receiverAntennaHeightM: number,
+  receiverRxGainDbi: number,
   propagationModel: "FSPL" | "TwoRay" | "ITM",
   rxTargetDbm: number,
   environmentLossDb: number,
@@ -475,6 +479,7 @@ const buildSourcePassFailOverlay = (
         fromSite,
         effectiveLink,
         receiverAntennaHeightM,
+        receiverRxGainDbi,
         propagationModel,
         terrainSampler,
         terrainSamples,
@@ -552,6 +557,10 @@ const buildRelayCandidateOverlay = (
         position: { lat, lon },
         antennaHeightM: relayAntennaHeightM,
         groundElevationM: relayGround,
+        txPowerDbm: STANDARD_SITE_RADIO.txPowerDbm,
+        txGainDbi: STANDARD_SITE_RADIO.txGainDbi,
+        rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
+        cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
       };
       const fromToRelayRx = computeSourceCentricRxDbm(
         lat,
@@ -559,6 +568,7 @@ const buildRelayCandidateOverlay = (
         fromSite,
         effectiveLink,
         relayAntennaHeightM,
+        relaySite.rxGainDbi,
         propagationModel,
         terrainSampler,
         terrainSamples,
@@ -569,6 +579,7 @@ const buildRelayCandidateOverlay = (
         relaySite,
         effectiveLink,
         toSite.antennaHeightM,
+        toSite.rxGainDbi,
         propagationModel,
         terrainSampler,
         terrainSamples,
@@ -869,10 +880,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             selectedNetwork?.frequencyOverrideMHz ??
             selectedNetwork?.frequencyMHz ??
             869.618,
-          txPowerDbm: 22,
-          txGainDbi: 2,
-          rxGainDbi: 2,
-          cableLossDb: 1,
+          txPowerDbm: sites[0]?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm,
+          txGainDbi: sites[0]?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi,
+          rxGainDbi: sites[1]?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi,
+          cableLossDb: sites[0]?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb,
         }
       : null);
   const selectedFromSiteId = selectedLink
@@ -1039,11 +1050,13 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
         };
         const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? 2;
+        const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
         return buildSourcePassFailOverlay(
           bounds,
           selectedFromSite,
           effectiveLink,
           receiverAntennaHeightM,
+          receiverRxGainDbi,
           propagationModel,
           rxSensitivityTargetDbm,
           environmentLossDb,

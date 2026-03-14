@@ -38,6 +38,7 @@ import {
 } from "../lib/meshtasticMqtt";
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { analyzeLink } from "../lib/propagation";
+import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
@@ -301,6 +302,7 @@ export function Sidebar() {
   const model = useAppStore((state) => state.propagationModel);
   const analysis = getSelectedAnalysis();
   const selectedLink = getSelectedLink();
+  const selectedLinkRaw = links.find((link) => link.id === selectedLink.id) ?? null;
   const selectedSite = getSelectedSite();
   const selectedNetwork = getSelectedNetwork();
   const effectiveNetworkFrequencyMHz = selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz;
@@ -337,10 +339,11 @@ export function Sidebar() {
     antennaDeltaM = 0,
   ): number | null => {
     if (!sourceSite || !destinationSite) return null;
+    const effectiveRadio = resolveLinkRadio(selectedLink, sourceSite, destinationSite);
     const alt = analyzeLink(
       {
         ...selectedLink,
-        txPowerDbm: selectedLink.txPowerDbm + txPowerDeltaDbm,
+        txPowerDbm: effectiveRadio.txPowerDbm + txPowerDeltaDbm,
         frequencyMHz: effectiveNetworkFrequencyMHz * freqScale,
       },
       { ...sourceSite, antennaHeightM: sourceSite.antennaHeightM + antennaDeltaM },
@@ -387,6 +390,7 @@ export function Sidebar() {
     name: string;
     fromSiteId: string;
     toSiteId: string;
+    overrideRadio: boolean;
     txPowerDbm: number;
     txGainDbi: number;
     rxGainDbi: number;
@@ -403,6 +407,10 @@ export function Sidebar() {
   const [newLibraryLon, setNewLibraryLon] = useState(10.0);
   const [newLibraryGroundM, setNewLibraryGroundM] = useState(0);
   const [newLibraryAntennaM, setNewLibraryAntennaM] = useState(2);
+  const [newLibraryTxPowerDbm, setNewLibraryTxPowerDbm] = useState(STANDARD_SITE_RADIO.txPowerDbm);
+  const [newLibraryTxGainDbi, setNewLibraryTxGainDbi] = useState(STANDARD_SITE_RADIO.txGainDbi);
+  const [newLibraryRxGainDbi, setNewLibraryRxGainDbi] = useState(STANDARD_SITE_RADIO.rxGainDbi);
+  const [newLibraryCableLossDb, setNewLibraryCableLossDb] = useState(STANDARD_SITE_RADIO.cableLossDb);
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const [librarySearchStatus, setLibrarySearchStatus] = useState("");
   const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
@@ -472,6 +480,10 @@ export function Sidebar() {
   const [resourceLonDraft, setResourceLonDraft] = useState(0);
   const [resourceGroundDraft, setResourceGroundDraft] = useState(0);
   const [resourceAntennaDraft, setResourceAntennaDraft] = useState(2);
+  const [resourceTxPowerDraft, setResourceTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
+  const [resourceTxGainDraft, setResourceTxGainDraft] = useState(STANDARD_SITE_RADIO.txGainDbi);
+  const [resourceRxGainDraft, setResourceRxGainDraft] = useState(STANDARD_SITE_RADIO.rxGainDbi);
+  const [resourceCableLossDraft, setResourceCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
   const [resourceCollaboratorUserIds, setResourceCollaboratorUserIds] = useState<string[]>([]);
   const [resourceCollaboratorQuery, setResourceCollaboratorQuery] = useState("");
   const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
@@ -934,31 +946,46 @@ export function Sidebar() {
     const fallbackTo = hasToInSites
       ? selectedLink.toSiteId
       : sites.find((site) => site.id !== fallbackFrom)?.id || "";
+    const fallbackFromSite = sites.find((site) => site.id === fallbackFrom) ?? selectedSite;
+    const fallbackToSite = sites.find((site) => site.id === fallbackTo) ?? fallbackFromSite;
+    const baseRadio = resolveLinkRadio(selectedLink, fallbackFromSite, fallbackToSite);
     setLinkModal({
       mode: "add",
       linkId: null,
       name: "",
       fromSiteId: fallbackFrom,
       toSiteId: fallbackTo,
-      txPowerDbm: selectedLink.txPowerDbm,
-      txGainDbi: selectedLink.txGainDbi,
-      rxGainDbi: selectedLink.rxGainDbi,
-      cableLossDb: selectedLink.cableLossDb,
+      overrideRadio: false,
+      txPowerDbm: baseRadio.txPowerDbm,
+      txGainDbi: baseRadio.txGainDbi,
+      rxGainDbi: baseRadio.rxGainDbi,
+      cableLossDb: baseRadio.cableLossDb,
       status: "",
     });
   };
 
   const openEditLinkModal = () => {
+    const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId) ?? null;
+    const toSite = sites.find((site) => site.id === selectedLink.toSiteId) ?? null;
+    const baseRadio = resolveLinkRadio(selectedLink, fromSite, toSite);
+    const hasOverrides = Boolean(
+      selectedLinkRaw &&
+        (typeof selectedLinkRaw.txPowerDbm === "number" ||
+          typeof selectedLinkRaw.txGainDbi === "number" ||
+          typeof selectedLinkRaw.rxGainDbi === "number" ||
+          typeof selectedLinkRaw.cableLossDb === "number"),
+    );
     setLinkModal({
       mode: "edit",
       linkId: selectedLink.id,
       name: selectedLink.name ?? "",
       fromSiteId: selectedLink.fromSiteId,
       toSiteId: selectedLink.toSiteId,
-      txPowerDbm: selectedLink.txPowerDbm,
-      txGainDbi: selectedLink.txGainDbi,
-      rxGainDbi: selectedLink.rxGainDbi,
-      cableLossDb: selectedLink.cableLossDb,
+      overrideRadio: hasOverrides,
+      txPowerDbm: baseRadio.txPowerDbm,
+      txGainDbi: baseRadio.txGainDbi,
+      rxGainDbi: baseRadio.rxGainDbi,
+      cableLossDb: baseRadio.cableLossDb,
       status: "",
     });
   };
@@ -997,10 +1024,10 @@ export function Sidebar() {
           name: linkModal.name.trim() || undefined,
           fromSiteId: linkModal.fromSiteId,
           toSiteId: linkModal.toSiteId,
-          txPowerDbm: linkModal.txPowerDbm,
-          txGainDbi: linkModal.txGainDbi,
-          rxGainDbi: linkModal.rxGainDbi,
-          cableLossDb: linkModal.cableLossDb,
+          txPowerDbm: linkModal.overrideRadio ? linkModal.txPowerDbm : undefined,
+          txGainDbi: linkModal.overrideRadio ? linkModal.txGainDbi : undefined,
+          rxGainDbi: linkModal.overrideRadio ? linkModal.rxGainDbi : undefined,
+          cableLossDb: linkModal.overrideRadio ? linkModal.cableLossDb : undefined,
         });
       }
       setLinkModal(null);
@@ -1011,10 +1038,10 @@ export function Sidebar() {
       name: linkModal.name.trim() || undefined,
       fromSiteId: linkModal.fromSiteId,
       toSiteId: linkModal.toSiteId,
-      txPowerDbm: linkModal.txPowerDbm,
-      txGainDbi: linkModal.txGainDbi,
-      rxGainDbi: linkModal.rxGainDbi,
-      cableLossDb: linkModal.cableLossDb,
+      txPowerDbm: linkModal.overrideRadio ? linkModal.txPowerDbm : undefined,
+      txGainDbi: linkModal.overrideRadio ? linkModal.txGainDbi : undefined,
+      rxGainDbi: linkModal.overrideRadio ? linkModal.rxGainDbi : undefined,
+      cableLossDb: linkModal.overrideRadio ? linkModal.cableLossDb : undefined,
     });
     setLinkModal(null);
   };
@@ -1108,6 +1135,10 @@ export function Sidebar() {
     setNewLibraryLon(selectedSite.position.lon);
     setNewLibraryGroundM(selectedSite.groundElevationM);
     setNewLibraryAntennaM(selectedSite.antennaHeightM);
+    setNewLibraryTxPowerDbm(selectedSite.txPowerDbm);
+    setNewLibraryTxGainDbi(selectedSite.txGainDbi);
+    setNewLibraryRxGainDbi(selectedSite.rxGainDbi);
+    setNewLibraryCableLossDb(selectedSite.cableLossDb);
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
   };
   const addLibraryEntryNow = () => {
@@ -1117,6 +1148,10 @@ export function Sidebar() {
       newLibraryLon,
       newLibraryGroundM,
       newLibraryAntennaM,
+      newLibraryTxPowerDbm,
+      newLibraryTxGainDbi,
+      newLibraryRxGainDbi,
+      newLibraryCableLossDb,
       undefined,
       pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
     );
@@ -1125,6 +1160,10 @@ export function Sidebar() {
       setPendingDraftAutoInsert(false);
     }
     setNewLibraryName("");
+    setNewLibraryTxPowerDbm(STANDARD_SITE_RADIO.txPowerDbm);
+    setNewLibraryTxGainDbi(STANDARD_SITE_RADIO.txGainDbi);
+    setNewLibraryRxGainDbi(STANDARD_SITE_RADIO.rxGainDbi);
+    setNewLibraryCableLossDb(STANDARD_SITE_RADIO.cableLossDb);
     setShowAddLibraryForm(false);
   };
   const fetchGroundFromLoadedTerrain = (lat: number, lon: number): number | null => {
@@ -1237,6 +1276,10 @@ export function Sidebar() {
       selectedMeshmapNode.lon,
       groundM,
       2,
+      STANDARD_SITE_RADIO.txPowerDbm,
+      STANDARD_SITE_RADIO.txGainDbi,
+      STANDARD_SITE_RADIO.rxGainDbi,
+      STANDARD_SITE_RADIO.cableLossDb,
       {
         provider: "Meshtastic MQTT",
         sourceType: "mqtt-feed",
@@ -1323,6 +1366,10 @@ export function Sidebar() {
       setResourceLonDraft(site?.position.lon ?? 0);
       setResourceGroundDraft(site?.groundElevationM ?? 0);
       setResourceAntennaDraft(site?.antennaHeightM ?? 2);
+      setResourceTxPowerDraft(site?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm);
+      setResourceTxGainDraft(site?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi);
+      setResourceRxGainDraft(site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi);
+      setResourceCableLossDraft(site?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(normalizeAccessVisibility(site?.visibility));
       setResourceCollaboratorUserIds(
         (site?.sharedWith ?? [])
@@ -1336,6 +1383,10 @@ export function Sidebar() {
       setResourceLonDraft(0);
       setResourceGroundDraft(0);
       setResourceAntennaDraft(2);
+      setResourceTxPowerDraft(STANDARD_SITE_RADIO.txPowerDbm);
+      setResourceTxGainDraft(STANDARD_SITE_RADIO.txGainDbi);
+      setResourceRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
+      setResourceCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(normalizeAccessVisibility(simulation?.visibility));
       setResourceCollaboratorUserIds(
         (simulation?.sharedWith ?? [])
@@ -1379,6 +1430,10 @@ export function Sidebar() {
       lon: number;
       groundM: number;
       antennaM: number;
+      txPowerDbm: number;
+      txGainDbi: number;
+      rxGainDbi: number;
+      cableLossDb: number;
       visibility: "private" | "public" | "shared";
       collaboratorUserIds: string[];
     }>,
@@ -1390,6 +1445,10 @@ export function Sidebar() {
     const nextLon = overrides?.lon ?? resourceLonDraft;
     const nextGroundM = overrides?.groundM ?? resourceGroundDraft;
     const nextAntennaM = overrides?.antennaM ?? resourceAntennaDraft;
+    const nextTxPowerDbm = overrides?.txPowerDbm ?? resourceTxPowerDraft;
+    const nextTxGainDbi = overrides?.txGainDbi ?? resourceTxGainDraft;
+    const nextRxGainDbi = overrides?.rxGainDbi ?? resourceRxGainDraft;
+    const nextCableLossDb = overrides?.cableLossDb ?? resourceCableLossDraft;
     const nextCollaboratorUserIds = overrides?.collaboratorUserIds ?? resourceCollaboratorUserIds;
     const normalizedVisibility = nextVisibility === "public" ? "shared" : nextVisibility;
     const normalizedName = nextName.trim() || resourceDetailsPopup.label;
@@ -1420,6 +1479,10 @@ export function Sidebar() {
           position: { lat: nextLat, lon: nextLon },
           groundElevationM: nextGroundM,
           antennaHeightM: nextAntennaM,
+          txPowerDbm: nextTxPowerDbm,
+          txGainDbi: nextTxGainDbi,
+          rxGainDbi: nextRxGainDbi,
+          cableLossDb: nextCableLossDb,
           visibility: normalizedVisibility,
           sharedWith,
         });
@@ -1893,7 +1956,26 @@ export function Sidebar() {
               </select>
             </label>
             <details className="compact-details" open>
-              <summary>Radio</summary>
+              <summary>Link Radio Overrides</summary>
+              <label className="field-grid">
+                <span>Use site radio defaults</span>
+                <input
+                  checked={!linkModal.overrideRadio}
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, overrideRadio: !event.target.checked, status: "" } : current,
+                    )
+                  }
+                  type="checkbox"
+                />
+              </label>
+              {!linkModal.overrideRadio ? (
+                <p className="field-help">
+                  This link uses the selected From/To site radio settings.
+                </p>
+              ) : null}
+              {linkModal.overrideRadio ? (
+                <>
               <label className="field-grid">
                 <span>Tx power (dBm)</span>
                 <input
@@ -1942,6 +2024,8 @@ export function Sidebar() {
                   value={linkModal.cableLossDb}
                 />
               </label>
+                </>
+              ) : null}
             </details>
             <div className="chip-group">
               <button className="inline-action" onClick={saveLinkModal} type="button">
@@ -2370,6 +2454,50 @@ export function Sidebar() {
                       }}
                       type="number"
                       value={resourceAntennaDraft}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Tx power (dBm)</span>
+                    <input
+                      onChange={(event) => setResourceTxPowerDraft(parseNumber(event.target.value))}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
+                      type="number"
+                      value={resourceTxPowerDraft}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Tx gain (dBi)</span>
+                    <input
+                      onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
+                      type="number"
+                      value={resourceTxGainDraft}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Rx gain (dBi)</span>
+                    <input
+                      onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
+                      type="number"
+                      value={resourceRxGainDraft}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Cable loss (dB)</span>
+                    <input
+                      onChange={(event) => setResourceCableLossDraft(parseNumber(event.target.value))}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
+                      type="number"
+                      value={resourceCableLossDraft}
                     />
                   </label>
                 </div>
@@ -2874,6 +3002,38 @@ export function Sidebar() {
                     onChange={(event) => setNewLibraryAntennaM(parseNumber(event.target.value))}
                     type="number"
                     value={newLibraryAntennaM}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Tx power (dBm)</span>
+                  <input
+                    onChange={(event) => setNewLibraryTxPowerDbm(parseNumber(event.target.value))}
+                    type="number"
+                    value={newLibraryTxPowerDbm}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Tx gain (dBi)</span>
+                  <input
+                    onChange={(event) => setNewLibraryTxGainDbi(parseNumber(event.target.value))}
+                    type="number"
+                    value={newLibraryTxGainDbi}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Rx gain (dBi)</span>
+                  <input
+                    onChange={(event) => setNewLibraryRxGainDbi(parseNumber(event.target.value))}
+                    type="number"
+                    value={newLibraryRxGainDbi}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Cable loss (dB)</span>
+                  <input
+                    onChange={(event) => setNewLibraryCableLossDb(parseNumber(event.target.value))}
+                    type="number"
+                    value={newLibraryCableLossDb}
                   />
                 </label>
                 <label className="field-grid">

@@ -8,6 +8,10 @@ const a: Site = {
   position: { lat: 59.9, lon: 10.7 },
   groundElevationM: 100,
   antennaHeightM: 30,
+  txPowerDbm: 22,
+  txGainDbi: 2,
+  rxGainDbi: 2,
+  cableLossDb: 1,
 };
 
 const b: Site = {
@@ -16,6 +20,10 @@ const b: Site = {
   position: { lat: 59.92, lon: 10.82 },
   groundElevationM: 120,
   antennaHeightM: 25,
+  txPowerDbm: 22,
+  txGainDbi: 2,
+  rxGainDbi: 2,
+  cableLossDb: 1,
 };
 
 const link: Link = {

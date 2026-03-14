@@ -9,6 +9,10 @@ export type Site = {
   position: Coordinates;
   groundElevationM: number;
   antennaHeightM: number;
+  txPowerDbm: number;
+  txGainDbi: number;
+  rxGainDbi: number;
+  cableLossDb: number;
   libraryEntryId?: string;
 };
 
@@ -18,10 +22,10 @@ export type Link = {
   fromSiteId: string;
   toSiteId: string;
   frequencyMHz: number;
-  txPowerDbm: number;
-  txGainDbi: number;
-  rxGainDbi: number;
-  cableLossDb: number;
+  txPowerDbm?: number;
+  txGainDbi?: number;
+  rxGainDbi?: number;
+  cableLossDb?: number;
 };
 
 export type PropagationModel = "FSPL" | "TwoRay" | "ITM";
