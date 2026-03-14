@@ -1087,7 +1087,8 @@ const canEditResource = (
   if (actor.isAdmin) return true;
   if (ownerUserId === actor.id) return true;
   if (explicitRole === "admin" || explicitRole === "editor") return true;
-  if (actor.isModerator && (visibility === "public" || visibility === "shared")) return true;
+  // Moderators must be explicit collaborators (or owners) to edit resources they do not own.
+  if (actor.isModerator) return false;
   return visibility === "shared";
 };
 
@@ -1256,8 +1257,11 @@ export const upsertLibrarySnapshot = async (
   return { upsertedSites, upsertedSimulations, conflicts };
 };
 
-const canEditByRole = (role: string | null, visibility: Visibility): boolean =>
-  role === "admin" || role === "editor" || visibility === "shared";
+const canEditByRole = (role: string | null, visibility: Visibility, actorIsModerator: boolean): boolean => {
+  if (role === "admin" || role === "editor") return true;
+  if (actorIsModerator) return false;
+  return visibility === "shared";
+};
 
 type LibraryRow = {
   payload_json: string;
@@ -1289,6 +1293,7 @@ export const fetchLibraryForUser = async (
   await ensureSchema(env);
   const me = await fetchUserProfile(env, userId);
   const canReadAllResources = Boolean(me?.isAdmin);
+  const actorIsModerator = Boolean(me?.isModerator);
   const siteRows = await env.DB
     .prepare(
       `SELECT s.payload_json, s.owner_user_id, s.visibility, r.role,
@@ -1381,7 +1386,10 @@ export const fetchLibraryForUser = async (
                 ? "admin"
                 : row.owner_user_id === userId
                 ? "owner"
-                : row.role ?? (canEditByRole(null, visibilityFromDbVisibility(row.visibility)) ? "editor" : "viewer"),
+                : row.role ??
+                  (canEditByRole(null, visibilityFromDbVisibility(row.visibility), actorIsModerator)
+                    ? "editor"
+                    : "viewer"),
           };
         } catch {
           return null;
