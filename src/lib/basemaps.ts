@@ -62,6 +62,7 @@ const maptilerPresets: BasemapStylePreset[] = [
   { id: "normal", label: "Streets" },
   { id: "topographic", label: "Topo" },
   { id: "satellite", label: "Satellite" },
+  { id: "satellite-hybrid", label: "Satellite Hybrid" },
 ];
 
 const stadiaPresets: BasemapStylePreset[] = [
@@ -79,6 +80,8 @@ const maptilerStyle = (preset: string, theme: BasemapTheme): string => {
       ? "topo-v2"
       : preset === "satellite"
         ? "satellite"
+        : preset === "satellite-hybrid"
+          ? "hybrid"
         : theme === "dark"
           ? "streets-v2-dark"
           : "streets-v2";
