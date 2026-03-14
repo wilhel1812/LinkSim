@@ -11,6 +11,7 @@ import Map, {
 import type { LayerProps } from "react-map-gl/maplibre";
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
 import { sampleSrtmElevation } from "../lib/srtm";
+import { tilesForBounds } from "../lib/terrainTiles";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
@@ -915,6 +916,28 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     () => srtmTiles.filter((tile) => (tile.sourceId ?? "") === terrainDataset).length,
     [srtmTiles, terrainDataset],
   );
+  const requiredTerrainTileKeys = useMemo(() => {
+    if (!analysisBounds) return [] as string[];
+    return tilesForBounds(
+      analysisBounds.minLat,
+      analysisBounds.maxLat,
+      analysisBounds.minLon,
+      analysisBounds.maxLon,
+    );
+  }, [analysisBounds]);
+  const loadedDatasetTileKeys = useMemo(
+    () =>
+      new Set(
+        srtmTiles
+          .filter((tile) => (tile.sourceId ?? "") === terrainDataset)
+          .map((tile) => tile.key),
+      ),
+    [srtmTiles, terrainDataset],
+  );
+  const missingRequiredTileCount = useMemo(
+    () => requiredTerrainTileKeys.filter((key) => !loadedDatasetTileKeys.has(key)).length,
+    [requiredTerrainTileKeys, loadedDatasetTileKeys],
+  );
   const boundedCoverageSamples = useMemo(() => {
     if (!analysisBounds) return coverageSamples;
     return coverageSamples.filter(
@@ -1075,9 +1098,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
+  const isLikelyTerrainColdFetch =
+    isTerrainFetching &&
+    requiredTerrainTileKeys.length > 0 &&
+    missingRequiredTileCount === requiredTerrainTileKeys.length;
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
   const backgroundBusyLabel = isTerrainFetching
-    ? "Fetching terrain data..."
+    ? isLikelyTerrainColdFetch
+      ? "Fetching terrain data... first load for this area can take a few minutes, then it is cached."
+      : "Fetching terrain data..."
     : isTerrainRecommending
       ? "Checking terrain dataset coverage..."
       : isElevationSyncing
