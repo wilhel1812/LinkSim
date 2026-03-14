@@ -623,10 +623,14 @@ const initialUiColorTheme = normalizeUiColorTheme(readStorage<string>(UI_COLOR_T
 const normalizeBasemapProvider = (value: unknown): BasemapProvider =>
   value === "carto" || value === "maptiler" || value === "stadia" || value === "kartverket" ? value : "carto";
 const normalizeBasemapStylePreset = (value: unknown): string =>
-  typeof value === "string" && value.trim().length ? value.trim() : "auto";
+  typeof value === "string" && value.trim().length
+    ? value.trim() === "auto"
+      ? "normal"
+      : value.trim()
+    : "normal";
 const initialBasemapProvider = normalizeBasemapProvider(readStorage<string>(BASEMAP_PROVIDER_KEY, "carto"));
 const initialBasemapStylePreset = normalizeBasemapStylePreset(
-  readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "auto"),
+  readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "normal"),
 );
 
 export const useAppStore = create<AppState>((set, get) => ({

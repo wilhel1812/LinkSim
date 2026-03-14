@@ -5,7 +5,6 @@ export type BasemapTheme = "light" | "dark";
 export type BasemapStylePreset = {
   id: string;
   label: string;
-  theme: BasemapTheme | "any";
 };
 
 export type BasemapProviderCapability = {
@@ -48,39 +47,40 @@ const defaultKartverketTileTemplate =
 
 const kartverketTileTemplate = (() => {
   const base = KARTVERKET_TILE_TEMPLATE ||
-    (KARTVERKET_BASE_URL ? `${KARTVERKET_BASE_URL.replace(/\/$/, "")}/{z}/{y}/{x}.png` : defaultKartverketTileTemplate);
+    (KARTVERKET_BASE_URL ? `${KARTVERKET_BASE_URL.replace(/\/$/, "")}/{z}/{x}/{y}.png` : defaultKartverketTileTemplate);
   if (!KARTVERKET_KEY) return base;
   const glue = base.includes("?") ? "&" : "?";
   return `${base}${glue}api_key=${encodeURIComponent(KARTVERKET_KEY)}`;
 })();
 
 const cartoPresets: BasemapStylePreset[] = [
-  { id: "dark-matter", label: "Normal (Dark)", theme: "dark" },
-  { id: "positron", label: "Normal (Light)", theme: "light" },
-  { id: "voyager", label: "Topographic", theme: "light" },
+  { id: "normal", label: "Normal" },
+  { id: "topographic", label: "Topographic" },
 ];
 
 const maptilerPresets: BasemapStylePreset[] = [
-  { id: "streets-v2-dark", label: "Streets Dark", theme: "dark" },
-  { id: "streets-v2", label: "Streets", theme: "light" },
-  { id: "outdoor-v2", label: "Outdoor", theme: "light" },
+  { id: "streets", label: "Normal" },
+  { id: "outdoor", label: "Topographic" },
 ];
 
 const stadiaPresets: BasemapStylePreset[] = [
-  { id: "alidade_smooth_dark", label: "Alidade Smooth Dark", theme: "dark" },
-  { id: "alidade_smooth", label: "Alidade Smooth", theme: "light" },
-  { id: "stamen_toner", label: "Stamen Toner", theme: "any" },
+  { id: "smooth", label: "Normal" },
+  { id: "outdoors", label: "Topographic" },
 ];
 
 const kartverketPresets: BasemapStylePreset[] = [
-  { id: "topo", label: "Topographic", theme: "light" },
+  { id: "topographic", label: "Topographic" },
 ];
 
-const maptilerStyle = (preset: string): string =>
-  `https://api.maptiler.com/maps/${encodeURIComponent(preset)}/style.json?key=${encodeURIComponent(MAPTILER_KEY)}`;
+const maptilerStyle = (preset: string, theme: BasemapTheme): string => {
+  const mapId = preset === "topographic" ? "outdoor-v2" : theme === "dark" ? "streets-v2-dark" : "streets-v2";
+  return `https://api.maptiler.com/maps/${encodeURIComponent(mapId)}/style.json?key=${encodeURIComponent(MAPTILER_KEY)}`;
+};
 
-const stadiaStyle = (preset: string): string =>
-  `https://tiles.stadiamaps.com/styles/${encodeURIComponent(preset)}.json?api_key=${encodeURIComponent(STADIA_KEY)}`;
+const stadiaStyle = (preset: string, theme: BasemapTheme): string => {
+  const styleId = preset === "topographic" ? "outdoors" : theme === "dark" ? "alidade_smooth_dark" : "alidade_smooth";
+  return `https://tiles.stadiamaps.com/styles/${encodeURIComponent(styleId)}.json?api_key=${encodeURIComponent(STADIA_KEY)}`;
+};
 
 const kartverketStyleObject = {
   version: 8,
@@ -150,31 +150,23 @@ const providerCapabilities: BasemapProviderCapability[] = [
 const styleForPreset = (
   provider: BasemapProvider,
   presetId: string,
+  theme: BasemapTheme,
 ): string | StyleSpecification => {
   if (provider === "carto") {
-    if (presetId === "dark-matter") return CARTO_DARK;
-    if (presetId === "voyager") return CARTO_VOYAGER;
-    return CARTO_LIGHT;
+    if (presetId === "topographic") return CARTO_VOYAGER;
+    return theme === "dark" ? CARTO_DARK : CARTO_LIGHT;
   }
   if (provider === "maptiler") {
-    return maptilerStyle(presetId || "streets-v2");
+    return maptilerStyle(presetId || "normal", theme);
   }
   if (provider === "stadia") {
-    return stadiaStyle(presetId || "alidade_smooth");
+    return stadiaStyle(presetId || "normal", theme);
   }
   return kartverketStyleObject as unknown as StyleSpecification;
 };
 
-const pickThemePreset = (
-  presets: BasemapStylePreset[],
-  theme: BasemapTheme,
-): BasemapStylePreset => {
-  return (
-    presets.find((preset) => preset.theme === theme) ||
-    presets.find((preset) => preset.theme === "any") ||
-    presets[0]
-  );
-};
+const pickDefaultPreset = (presets: BasemapStylePreset[]): BasemapStylePreset =>
+  presets.find((preset) => preset.id === "normal") ?? presets[0];
 
 export const getBasemapProviderCapabilities = (): BasemapProviderCapability[] => providerCapabilities;
 
@@ -190,13 +182,10 @@ export const resolveBasemapSelection = (
     ? null
     : `${requested.label} unavailable (${requested.unavailableReason ?? "configuration missing"}). Switched to CARTO.`;
 
-  const preset =
-    requestedPreset === "auto"
-      ? pickThemePreset(provider.presets, theme)
-      : provider.presets.find((entry) => entry.id === requestedPreset) ?? pickThemePreset(provider.presets, theme);
+  const preset = provider.presets.find((entry) => entry.id === requestedPreset) ?? pickDefaultPreset(provider.presets);
 
   return {
-    style: styleForPreset(provider.provider, preset.id),
+    style: styleForPreset(provider.provider, preset.id, theme),
     attribution: provider.attribution,
     provider: provider.provider,
     providerLabel: provider.label,
@@ -206,8 +195,8 @@ export const resolveBasemapSelection = (
   };
 };
 
-export const defaultPresetIdForTheme = (provider: BasemapProvider, theme: BasemapTheme): string => {
+export const defaultPresetIdForTheme = (provider: BasemapProvider, _theme: BasemapTheme): string => {
   const providerConfig = providerCapabilities.find((entry) => entry.provider === provider);
-  if (!providerConfig) return "auto";
-  return pickThemePreset(providerConfig.presets, theme).id;
+  if (!providerConfig) return "normal";
+  return pickDefaultPreset(providerConfig.presets).id;
 };

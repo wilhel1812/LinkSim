@@ -1352,7 +1352,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                 const nextProviderConfig =
                   providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
                 setBasemapProvider(nextProvider);
-                setBasemapStylePreset(nextProviderConfig.presets.length <= 1 ? nextProviderConfig.presets[0]?.id ?? "auto" : "auto");
+                setBasemapStylePreset(nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ?? nextProviderConfig.presets[0]?.id ?? "normal");
                 setUseFallbackMapStyle(false);
                 setMapProviderWarning(null);
               }}
@@ -1388,9 +1388,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               }}
               value={styleSelectValue}
             >
-              {resolvedPresetOptions.length > 1 ? (
-                <option value="auto">Auto ({theme === "dark" ? "Dark" : "Light"})</option>
-              ) : null}
               {resolvedPresetOptions.map((preset) => (
                 <option key={preset.id} value={preset.id}>
                   {preset.label}
