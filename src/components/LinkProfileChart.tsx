@@ -424,7 +424,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
   }
 
   return (
-    <section className="chart-panel" data-profile-revision={profileRevision}>
+    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`} data-profile-revision={profileRevision}>
       {terrainIsStaleForCurrentArea ? (
         <div className="terrain-alert" role="status">
           <p>
@@ -534,13 +534,13 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
           Flip Direction
         </button>
         <button
-          aria-label={isExpanded ? "Restore split view" : "Expand path profile"}
+          aria-label={isExpanded ? "Exit profile fullscreen" : "Profile fullscreen"}
           className={`chart-endpoint-swap ${isExpanded ? "is-active" : ""}`}
           onClick={onToggleExpanded}
-          title={isExpanded ? "Restore split view" : "Expand profile"}
+          title={isExpanded ? "Exit fullscreen" : "Fullscreen"}
           type="button"
         >
-          {isExpanded ? "Show Split" : "Expand"}
+          {isExpanded ? "Exit Fullscreen" : "Fullscreen"}
         </button>
         <div className="chart-hover-state">
           {cursorPoint && cursorState ? (

@@ -1446,7 +1446,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             Render HQ
           </button>
           <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
-            {isMapExpanded ? "Show UI" : "Expand"}
+            {isMapExpanded ? "Exit Fullscreen" : "Fullscreen"}
           </button>
           <button className="map-control-btn" onClick={fitToNodes} type="button">
             Fit

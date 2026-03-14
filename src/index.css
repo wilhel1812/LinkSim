@@ -1092,6 +1092,15 @@ input {
   max-height: 240px;
 }
 
+.chart-panel.is-expanded .chart-svg-wrap {
+  min-height: clamp(280px, 62vh, 760px);
+}
+
+.chart-panel.is-expanded svg {
+  max-height: none;
+  min-height: clamp(280px, 62vh, 760px);
+}
+
 .chart-endpoint-swap {
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);

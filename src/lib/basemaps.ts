@@ -55,9 +55,9 @@ const kartverketTileTemplate = (() => {
 })();
 
 const cartoPresets: BasemapStylePreset[] = [
-  { id: "dark-matter", label: "Dark Matter", theme: "dark" },
-  { id: "positron", label: "Positron", theme: "light" },
-  { id: "voyager", label: "Voyager", theme: "light" },
+  { id: "dark-matter", label: "Normal (Dark)", theme: "dark" },
+  { id: "positron", label: "Normal (Light)", theme: "light" },
+  { id: "voyager", label: "Topographic", theme: "light" },
 ];
 
 const maptilerPresets: BasemapStylePreset[] = [

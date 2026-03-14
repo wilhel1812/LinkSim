@@ -169,6 +169,7 @@ type AppState = {
     groundElevationM?: number,
     antennaHeightM?: number,
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
+    visibility?: "private" | "public" | "shared",
   ) => string;
   insertSiteFromLibrary: (entryId: string) => void;
   insertSitesFromLibrary: (entryIds: string[]) => void;
@@ -883,12 +884,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     get().recomputeCoverage();
   },
-  addSiteLibraryEntry: (name, lat, lon, groundElevationM = 0, antennaHeightM = 2, sourceMeta) => {
+  addSiteLibraryEntry: (
+    name,
+    lat,
+    lon,
+    groundElevationM = 0,
+    antennaHeightM = 2,
+    sourceMeta,
+    visibility = "shared",
+  ) => {
     const label = name.trim() || `Library Site ${get().siteLibrary.length + 1}`;
     const entry: SiteLibraryEntry = {
       id: makeId("libsite"),
       name: label,
-      visibility: "shared",
+      visibility: visibility === "public" ? "shared" : visibility,
       sharedWith: [],
       position: { lat, lon },
       groundElevationM,

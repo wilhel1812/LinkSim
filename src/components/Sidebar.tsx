@@ -514,6 +514,12 @@ export function Sidebar() {
     const simulation = scenarioOptions.find((candidate) => candidate.id === simulationId);
     return simulation ? `${simulation.name} (starter)` : "Starter simulation";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
+  const activeSimulationVisibility = useMemo<"private" | "public" | "shared">(() => {
+    if (!selectedSimulationRef.startsWith("saved:")) return "shared";
+    const presetId = selectedSimulationRef.replace("saved:", "");
+    const preset = simulationPresets.find((candidate) => candidate.id === presetId);
+    return normalizeAccessVisibility(preset?.visibility);
+  }, [selectedSimulationRef, simulationPresets]);
   const collaboratorDirectoryById = useMemo(
     () => new globalThis.Map(resourceCollaboratorDirectory.map((user) => [user.id, user])),
     [resourceCollaboratorDirectory],
@@ -1088,6 +1094,8 @@ export function Sidebar() {
       newLibraryLon,
       newLibraryGroundM,
       newLibraryAntennaM,
+      undefined,
+      pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
     );
     if (pendingDraftAutoInsert && createdId) {
       insertSiteFromLibrary(createdId);
@@ -1221,6 +1229,7 @@ export function Sidebar() {
           precisionBits: selectedMeshmapNode.precisionBits,
         },
       },
+      pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
     );
     setMeshmapStatus(`Added ${fallbackName} to site library.`);
   };
