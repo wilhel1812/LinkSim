@@ -66,8 +66,13 @@ const maptilerPresets: BasemapStylePreset[] = [
 ];
 
 const stadiaPresets: BasemapStylePreset[] = [
-  { id: "smooth", label: "Normal" },
-  { id: "outdoors", label: "Topographic" },
+  { id: "normal", label: "Alidade Smooth (Normal)" },
+  { id: "outdoors", label: "Outdoors (Topographic)" },
+  { id: "alidade-satellite", label: "Alidade Satellite" },
+  { id: "osm-bright", label: "OSM Bright" },
+  { id: "stamen-toner", label: "Stamen Toner (High Contrast)" },
+  { id: "stamen-terrain", label: "Stamen Terrain (Relief)" },
+  { id: "stamen-watercolor", label: "Stamen Watercolor (Artistic)" },
 ];
 
 const kartverketPresets: BasemapStylePreset[] = [
@@ -89,8 +94,25 @@ const maptilerStyle = (preset: string, theme: BasemapTheme): string => {
 };
 
 const stadiaStyle = (preset: string, theme: BasemapTheme): string => {
-  const styleId = preset === "topographic" ? "outdoors" : theme === "dark" ? "alidade_smooth_dark" : "alidade_smooth";
-  return `https://tiles.stadiamaps.com/styles/${encodeURIComponent(styleId)}.json?api_key=${encodeURIComponent(STADIA_KEY)}`;
+  const styleId =
+    preset === "outdoors"
+      ? "outdoors"
+      : preset === "alidade-satellite"
+        ? "alidade_satellite"
+        : preset === "osm-bright"
+          ? "osm_bright"
+          : preset === "stamen-toner"
+            ? "stamen_toner"
+            : preset === "stamen-terrain"
+              ? "stamen_terrain"
+              : preset === "stamen-watercolor"
+                ? "stamen_watercolor"
+                : theme === "dark"
+                  ? "alidade_smooth_dark"
+                  : "alidade_smooth";
+  const base = `https://tiles.stadiamaps.com/styles/${encodeURIComponent(styleId)}.json`;
+  if (!STADIA_KEY) return base;
+  return `${base}?api_key=${encodeURIComponent(STADIA_KEY)}`;
 };
 
 const kartverketStyleObject = {
@@ -141,11 +163,10 @@ const providerCapabilities: BasemapProviderCapability[] = [
     provider: "stadia",
     label: "Stadia",
     group: "global",
-    attribution: "© OpenMapTiles © OpenStreetMap contributors © Stadia Maps",
-    requiresKey: true,
+    attribution: "© Stadia Maps © OpenMapTiles © OpenStreetMap contributors © Stamen Design",
+    requiresKey: false,
     keyEnvVar: "VITE_STADIA_KEY",
-    available: STADIA_KEY.length > 0,
-    unavailableReason: STADIA_KEY.length ? undefined : "Missing Stadia key",
+    available: true,
     presets: stadiaPresets,
   },
   {

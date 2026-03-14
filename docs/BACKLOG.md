@@ -18,6 +18,8 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Rehaul of dockumentation (readme.md)
 - [ ] Set up a compehensive testing plan
 - [ ] Branding
+- [ ] Created by / Last edited by sometimes show as `Unknown` (fix attribution resolution)
+- [ ] Deep linking support (shareable URLs for selected simulation/site/link/view state)
 - [x] Elevation plot visibility toggle
 - [x] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
 - [x] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
