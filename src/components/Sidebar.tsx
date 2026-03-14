@@ -2090,9 +2090,12 @@ export function Sidebar() {
           {metric("F1 radius", `${analysis.firstFresnelRadiusM.toFixed(2)} m`)}
           {metric("Clearance", `${analysis.geometricClearanceM.toFixed(2)} m`)}
           {metric(
-            "Fresnel clearance",
+            "Fresnel clearance (midpoint est.)",
             `${analysis.estimatedFresnelClearancePercent.toFixed(0)}%`,
           )}
+          {metric("Worst Fresnel clearance", `${analysis.worstFresnelClearancePercent.toFixed(0)}%`)}
+          {metric("Worst Fresnel gap", `${analysis.worstFresnelClearanceM.toFixed(2)} m`)}
+          {metric("Worst Fresnel point", `${analysis.worstFresnelDistanceKm.toFixed(2)} km`)}
         </div>
         <label className="field-grid">
           <span>RX target (dBm)</span>

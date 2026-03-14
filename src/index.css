@@ -887,6 +887,12 @@ input {
   font-size: 0.72rem;
 }
 
+.overlay-scale-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
 .map-sim-summary h3 {
   margin: 0 0 6px;
   font-size: 0.82rem;
@@ -1267,6 +1273,13 @@ input {
 
 .terrain-state-fail_blocked {
   stroke: #cd574f;
+}
+
+.earth-curvature-horizon {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 38%, transparent);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
 }
 
 .los-path {

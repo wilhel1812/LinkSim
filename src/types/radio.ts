@@ -108,6 +108,9 @@ export type LinkAnalysis = {
   firstFresnelRadiusM: number;
   geometricClearanceM: number;
   estimatedFresnelClearancePercent: number;
+  worstFresnelClearanceM: number;
+  worstFresnelClearancePercent: number;
+  worstFresnelDistanceKm: number;
 };
 
 export type ProfilePoint = {

@@ -39,6 +39,12 @@ const firstFresnelRadiusM = (distanceKm: number, frequencyMHz: number, t: number
   const wavelengthM = 300 / Math.max(1, frequencyMHz);
   return Math.sqrt((wavelengthM * d1 * d2) / dTotalM);
 };
+const earthBulgeM = (distanceKm: number, t: number): number => {
+  const earthRadiusM = 6_371_000;
+  const dTotalM = Math.max(1, distanceKm * 1000);
+  const x = dTotalM * t;
+  return (x * (dTotalM - x)) / (2 * earthRadiusM);
+};
 
 type LinkProfileChartProps = {
   isExpanded: boolean;
@@ -313,12 +319,15 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     if (!activeProfileSlice.length) return [] as number[];
     const sourceAntennaM = profile[0]?.losM ?? activeProfileSlice[0]?.losM ?? 0;
     const targetTerrainM = activeProfileSlice[activeProfileSlice.length - 1]?.terrainM ?? sourceAntennaM;
+    const targetAntennaAbsM = selectedToSiteEffective
+      ? targetTerrainM + selectedToSiteEffective.antennaHeightM
+      : targetTerrainM;
     const totalDistanceKm = Math.max(0.001, activeProfileSlice[activeProfileSlice.length - 1]?.distanceKm ?? 0.001);
     return activeProfileSlice.map((point) => {
       const t = clamp(point.distanceKm / totalDistanceKm, 0, 1);
-      return sourceAntennaM + (targetTerrainM - sourceAntennaM) * t;
+      return sourceAntennaM + (targetAntennaAbsM - sourceAntennaM) * t;
     });
-  }, [activeProfileSlice, profile]);
+  }, [activeProfileSlice, profile, selectedToSiteEffective]);
 
   const activeFresnel = useMemo(() => {
     if (!activeProfileSlice.length || !effectiveLink) return [] as Array<{ top: number; bottom: number }>;
@@ -358,6 +367,19 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     }));
     return areaPath(top, bottom);
   }, [activeProfileSlice, activeFresnel, geometry]);
+  const earthCurvatureHorizonPath = useMemo(() => {
+    if (profile.length < 2) return "";
+    const totalDistanceKm = Math.max(0.001, profile[profile.length - 1]?.distanceKm ?? 0.001);
+    const points = profile.map((point) => {
+      const t = clamp(point.distanceKm / totalDistanceKm, 0, 1);
+      const curvedSeaLevelM = earthBulgeM(totalDistanceKm, t);
+      return {
+        x: geometry.xForDistance(point.distanceKm),
+        y: geometry.yForElevation(curvedSeaLevelM),
+      };
+    });
+    return linePath(points);
+  }, [profile, geometry]);
   const cursorState = useMemo(() => {
     if (!cursorPoint || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink) return null;
     const metrics = computeSourceCentricRxMetrics(
@@ -497,6 +519,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
               key={`terrain-segment-${index}`}
             />
           ))}
+          <path className="earth-curvature-horizon" d={earthCurvatureHorizonPath} />
           <path className="los-path" d={activeLosPath} />
           {cursorPoint ? (
             <g className="profile-cursor">
