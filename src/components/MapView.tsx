@@ -1725,6 +1725,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         longitude={activeViewState.longitude}
         latitude={activeViewState.latitude}
         zoom={activeViewState.zoom}
+        renderWorldCopies={resolvedBasemap.provider !== "kartverket"}
         initialViewState={{
           longitude: activeViewState.longitude,
           latitude: activeViewState.latitude,

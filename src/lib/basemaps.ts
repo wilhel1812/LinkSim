@@ -43,11 +43,11 @@ const KARTVERKET_TILE_TEMPLATE = String(import.meta.env.VITE_KARTVERKET_TILE_TEM
 const KARTVERKET_BASE_URL = String(import.meta.env.VITE_KARTVERKET_WMTS_BASE_URL ?? "").trim();
 
 const defaultKartverketTileTemplate =
-  "https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{x}/{y}.png";
+  "https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png";
 
 const kartverketTileTemplate = (() => {
   const base = KARTVERKET_TILE_TEMPLATE ||
-    (KARTVERKET_BASE_URL ? `${KARTVERKET_BASE_URL.replace(/\/$/, "")}/{z}/{x}/{y}.png` : defaultKartverketTileTemplate);
+    (KARTVERKET_BASE_URL ? `${KARTVERKET_BASE_URL.replace(/\/$/, "")}/{z}/{y}/{x}.png` : defaultKartverketTileTemplate);
   if (!KARTVERKET_KEY) return base;
   const glue = base.includes("?") ? "&" : "?";
   return `${base}${glue}api_key=${encodeURIComponent(KARTVERKET_KEY)}`;
@@ -90,6 +90,7 @@ const kartverketStyleObject = {
       tiles: [kartverketTileTemplate],
       tileSize: 256,
       attribution: '© Kartverket',
+      bounds: [3.5, 57.7, 32.0, 71.5],
       maxzoom: 20,
     },
   },
