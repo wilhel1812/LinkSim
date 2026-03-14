@@ -8,7 +8,7 @@
     "build:meta": "node scripts/generate-build-info.mjs",
     "dev": "vite --config config/vite.config.ts",
     "build:client": "npm run build:meta && vite build --config config/vite.config.ts",
-    "build:bundle": "tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",
+    "build:bundle": "npm run build:meta && tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",
     "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --local --persist-to .wrangler/state",
     "build": "npm run build:meta && npm run build:bundle",
     "lint": "eslint .",

@@ -149,7 +149,7 @@ type TerrainBounds = {
   minLon: number;
   maxLon: number;
 };
-type CoverageVizMode = "heatmap" | "contours" | "passfail" | "relay";
+type CoverageVizMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
 type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
 type BandStepMode = "auto" | 3 | 5 | 8 | 10;
 
@@ -1012,6 +1012,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       if (!bounds) return null;
       const effectiveBandStepDb =
         bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
+      if (coverageVizMode === "none") return null;
       if (coverageVizMode === "relay") {
         if (!selectedLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
         const effectiveLink: Link = {
@@ -1083,7 +1084,9 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
   }, [analysisBounds, samplesForOverlay, bandStepMode]);
   const overlayGuideTitle =
-    coverageVizMode === "heatmap"
+    coverageVizMode === "none"
+      ? "Hidden"
+      : coverageVizMode === "heatmap"
       ? "Heatmap"
       : coverageVizMode === "contours"
         ? "Bands"
@@ -1332,7 +1335,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
           <button
             className={`map-control-btn ${coverageVizMode === "heatmap" || coverageVizMode === "contours" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode("heatmap")}
+            onClick={() => setCoverageVizMode((current) => (current === "heatmap" || current === "contours" ? "none" : "heatmap"))}
             title="Coverage strength overlay"
             type="button"
           >
@@ -1340,7 +1343,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
           <button
             className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode("passfail")}
+            onClick={() => setCoverageVizMode((current) => (current === "passfail" ? "none" : "passfail"))}
             title="Coverage pass/fail against RX target"
             type="button"
           >
@@ -1348,7 +1351,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
           <button
             className={`map-control-btn ${coverageVizMode === "relay" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode("relay")}
+            onClick={() => setCoverageVizMode((current) => (current === "relay" ? "none" : "relay"))}
             title="Relay candidate quality between selected From/To endpoints"
             type="button"
           >
@@ -1379,9 +1382,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
         </div>
       </div>
-      {(!hasHeatTopology ||
+      {(coverageVizMode !== "none" &&
+        (!hasHeatTopology ||
         (coverageVizMode === "relay" && !hasRelayTopology) ||
-        ((coverageVizMode === "passfail" || coverageVizMode === "relay") && !hasPassFailTopology)) ? (
+        ((coverageVizMode === "passfail" || coverageVizMode === "relay") && !hasPassFailTopology))) ? (
         <div className="map-empty-state" role="status">
           {coverageVizMode === "heatmap" || coverageVizMode === "contours"
             ? "Add at least one site to start coverage mapping."
@@ -1507,6 +1511,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             <p>
               Mode: <strong>{overlayGuideTitle}</strong>
             </p>
+            {coverageVizMode === "none" ? <p>Overlay is hidden. Click Heat, Pass/Fail, or Relay to show it again.</p> : null}
             {coverageVizMode === "heatmap" ? (
               <>
                 <p>
