@@ -54,13 +54,13 @@ const kartverketTileTemplate = (() => {
 })();
 
 const cartoPresets: BasemapStylePreset[] = [
-  { id: "normal", label: "Normal" },
-  { id: "topographic", label: "Topographic" },
+  { id: "normal", label: "Positron / Dark Matter (Auto)" },
+  { id: "topographic", label: "Voyager (Topographic)" },
 ];
 
 const maptilerPresets: BasemapStylePreset[] = [
-  { id: "streets", label: "Normal" },
-  { id: "outdoor", label: "Topographic" },
+  { id: "normal", label: "Streets (Auto dark/light)" },
+  { id: "topographic", label: "Topo" },
 ];
 
 const stadiaPresets: BasemapStylePreset[] = [
@@ -73,7 +73,7 @@ const kartverketPresets: BasemapStylePreset[] = [
 ];
 
 const maptilerStyle = (preset: string, theme: BasemapTheme): string => {
-  const mapId = preset === "topographic" ? "outdoor-v2" : theme === "dark" ? "streets-v2-dark" : "streets-v2";
+  const mapId = preset === "topographic" ? "topo-v2" : theme === "dark" ? "streets-v2-dark" : "streets-v2";
   return `https://api.maptiler.com/maps/${encodeURIComponent(mapId)}/style.json?key=${encodeURIComponent(MAPTILER_KEY)}`;
 };
 
@@ -166,8 +166,17 @@ const styleForPreset = (
   return kartverketStyleObject as unknown as StyleSpecification;
 };
 
-const pickDefaultPreset = (presets: BasemapStylePreset[]): BasemapStylePreset =>
-  presets.find((preset) => preset.id === "normal") ?? presets[0];
+const pickDefaultPreset = (
+  provider: BasemapProvider,
+  presets: BasemapStylePreset[],
+  theme: BasemapTheme,
+): BasemapStylePreset => {
+  if (provider === "carto") {
+    const preferred = theme === "dark" ? "dark-matter" : "positron";
+    return presets.find((preset) => preset.id === preferred) ?? presets[0];
+  }
+  return presets.find((preset) => preset.id === "normal") ?? presets[0];
+};
 
 export const getBasemapProviderCapabilities = (): BasemapProviderCapability[] => providerCapabilities;
 
@@ -183,7 +192,9 @@ export const resolveBasemapSelection = (
     ? null
     : `${requested.label} unavailable (${requested.unavailableReason ?? "configuration missing"}). Switched to CARTO.`;
 
-  const preset = provider.presets.find((entry) => entry.id === requestedPreset) ?? pickDefaultPreset(provider.presets);
+  const preset =
+    provider.presets.find((entry) => entry.id === requestedPreset) ??
+    pickDefaultPreset(provider.provider, provider.presets, theme);
 
   return {
     style: styleForPreset(provider.provider, preset.id, theme),
@@ -196,8 +207,8 @@ export const resolveBasemapSelection = (
   };
 };
 
-export const defaultPresetIdForTheme = (provider: BasemapProvider, _theme: BasemapTheme): string => {
+export const defaultPresetIdForTheme = (provider: BasemapProvider, theme: BasemapTheme): string => {
   const providerConfig = providerCapabilities.find((entry) => entry.provider === provider);
   if (!providerConfig) return "normal";
-  return pickDefaultPreset(providerConfig.presets).id;
+  return pickDefaultPreset(provider, providerConfig.presets, theme).id;
 };
