@@ -54,13 +54,14 @@ const kartverketTileTemplate = (() => {
 })();
 
 const cartoPresets: BasemapStylePreset[] = [
-  { id: "normal", label: "Positron / Dark Matter (Auto)" },
+  { id: "normal", label: "Positron / Dark Matter" },
   { id: "topographic", label: "Voyager (Topographic)" },
 ];
 
 const maptilerPresets: BasemapStylePreset[] = [
-  { id: "normal", label: "Streets (Auto dark/light)" },
+  { id: "normal", label: "Streets" },
   { id: "topographic", label: "Topo" },
+  { id: "satellite", label: "Satellite" },
 ];
 
 const stadiaPresets: BasemapStylePreset[] = [
@@ -73,7 +74,14 @@ const kartverketPresets: BasemapStylePreset[] = [
 ];
 
 const maptilerStyle = (preset: string, theme: BasemapTheme): string => {
-  const mapId = preset === "topographic" ? "topo-v2" : theme === "dark" ? "streets-v2-dark" : "streets-v2";
+  const mapId =
+    preset === "topographic"
+      ? "topo-v2"
+      : preset === "satellite"
+        ? "satellite"
+        : theme === "dark"
+          ? "streets-v2-dark"
+          : "streets-v2";
   return `https://api.maptiler.com/maps/${encodeURIComponent(mapId)}/style.json?key=${encodeURIComponent(MAPTILER_KEY)}`;
 };
 
