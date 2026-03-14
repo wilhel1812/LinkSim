@@ -1,5 +1,16 @@
 # LinkSim Agent Rules
 
+## Mandatory Startup (No Exceptions)
+- Treat this file as the single handoff entrypoint.
+- Before any code changes, read these files in order:
+  1. `docs/BACKLOG.md`
+  2. `docs/release-flow.md`
+- If instructions conflict, precedence is:
+  1. explicit user instruction in current thread
+  2. this `AGENTS.md`
+  3. `docs/BACKLOG.md`
+  4. `docs/release-flow.md`
+
 - Always update `docs/BACKLOG.md` before and after implementation batches.
 - Default environment workflow:
   - Unless the user explicitly says otherwise, work in local test environment.
@@ -50,3 +61,7 @@
   - Lock scope for each pass before implementation.
   - Define done criteria and no-touch areas at pass start.
   - Avoid mid-pass feature pivots unless explicitly requested by the user.
+
+## Handoff Guarantee
+- A new agent should be able to continue by being pointed only to this file.
+- Do not rely on undocumented tribal knowledge; if a rule is repeated in chat, add it here (or in the linked source-of-truth docs) before ending the pass.
