@@ -31,6 +31,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Temporary nodes
 - [x] Color theming pass (user-configurable themes)
 - [x] Environment distinction redesign for test/staging (must not rely on theme colors)
+- [ ] Explore basemap theming so map styles can align with LinkSim UI theme colors
 
 ## Active stabilization backlog
 
