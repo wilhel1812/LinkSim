@@ -68,15 +68,24 @@ const grepArgs = [
   ".",
 ];
 
+const sanitizeMatches = (stdout) =>
+  stdout
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .filter((line) => !line.includes("scripts/security-scan.mjs:"))
+    .join("\n");
+
 const interpretResult = (result, label) => {
+  const filtered = sanitizeMatches(result.stdout || "");
   // ripgrep/grep return 1 when no matches are found.
-  if (result.code === 1) {
+  if (result.code === 1 || (result.code === 0 && !filtered)) {
     console.log(`[security-scan] No high-risk secret patterns found (${label}).`);
     process.exit(0);
   }
   if (result.code === 0) {
     console.error("[security-scan] Potential secret material found:");
-    process.stderr.write(result.stdout || "");
+    process.stderr.write(filtered);
+    process.stderr.write("\n");
     process.exit(1);
   }
   console.error(`[security-scan] Scan failed (${label}, ${result.code ?? "unknown"}): ${result.stderr || result.stdout}`);
