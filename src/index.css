@@ -1279,11 +1279,11 @@ input {
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(220px, 46dvh) minmax(0, 1fr);
+    grid-template-rows: auto auto;
     padding: 12px;
-    height: 100dvh;
+    height: auto;
     min-height: 100dvh;
-    overflow: hidden;
+    overflow: auto;
   }
 
   .app-shell.is-map-expanded {
@@ -1291,16 +1291,16 @@ input {
   }
 
   .sidebar-panel {
-    height: 100%;
-    max-height: 100%;
-    min-height: 0;
-    overflow: auto;
+    height: auto;
+    max-height: none;
+    min-height: auto;
+    overflow: visible;
   }
 
   .workspace-panel {
-    grid-template-rows: minmax(0, 1.15fr) minmax(180px, 0.85fr);
+    grid-template-rows: minmax(300px, 52vh) minmax(220px, 34vh);
     gap: 12px;
-    height: 100%;
+    height: auto;
     min-height: 0;
   }
 
