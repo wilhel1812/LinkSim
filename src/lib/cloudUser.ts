@@ -118,6 +118,8 @@ export type CollaboratorDirectoryUser = {
   avatarUrl: string;
 };
 
+export type DeepLinkStatus = "ok" | "forbidden" | "missing";
+
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
     ...init,
@@ -314,3 +316,10 @@ export const uploadAvatar = async (originalDataUrl: string, thumbDataUrl: string
       thumbDataUrl,
     }),
   });
+
+export const fetchDeepLinkStatus = async (simulationId: string): Promise<DeepLinkStatus> => {
+  const params = new URLSearchParams({ sim: simulationId });
+  const data = await apiCall<{ status?: unknown }>(`/api/deep-link-status?${params.toString()}`, { method: "GET" });
+  const status = data.status;
+  return status === "ok" || status === "forbidden" || status === "missing" ? status : "missing";
+};

@@ -1650,3 +1650,38 @@ export const fetchResourceChanges = async (
     actorAvatarUrl: row.actor_avatar_url,
   }));
 };
+
+export const resolveSimulationAccessForUser = async (
+  env: Env,
+  actor: { id: string; isAdmin: boolean; isModerator?: boolean },
+  simulationId: string,
+): Promise<"ok" | "forbidden" | "missing"> => {
+  await ensureSchema(env);
+  const id = simulationId.trim();
+  if (!id) return "missing";
+
+  const row = await env.DB
+    .prepare(
+      `SELECT s.owner_user_id, s.visibility, r.role AS actor_role
+       FROM simulations s
+       LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
+       WHERE s.id = ?`,
+    )
+    .bind(actor.id, id)
+    .first<{ owner_user_id: string; visibility: DbVisibility; actor_role?: string | null }>();
+
+  if (!row) return "missing";
+
+  const canRead = canReadResource(
+    {
+      id: actor.id,
+      isAdmin: actor.isAdmin,
+      isModerator: Boolean(actor.isModerator),
+    },
+    row.owner_user_id,
+    visibilityFromDbVisibility(row.visibility),
+    typeof row.actor_role === "string" ? row.actor_role : null,
+  );
+
+  return canRead ? "ok" : "forbidden";
+};

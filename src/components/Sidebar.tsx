@@ -217,7 +217,7 @@ const getSnapshotCount = (key: string): number => {
 };
 
 export function Sidebar() {
-  const { theme, variant } = useThemeVariant();
+  const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const buildChannel = runtimeEnvironment === "production" ? "stable" : runtimeEnvironment === "staging" ? "beta" : "alpha";
   const buildLabel = buildLabelForChannel(buildChannel);
@@ -309,8 +309,8 @@ export function Sidebar() {
     selectedNetwork.spreadFactor,
   );
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme),
-    [basemapProvider, basemapStylePreset, theme],
+    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
+    [basemapProvider, basemapStylePreset, theme, colorTheme],
   );
   const effectivePropagationEnvironment = useMemo(() => {
     if (!autoPropagationEnvironment || !fromSite || !toSite) return propagationEnvironment;

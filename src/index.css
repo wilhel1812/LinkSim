@@ -528,10 +528,32 @@ input {
 }
 
 .workspace-panel {
+  position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(220px, 32vh);
   gap: 18px;
   min-height: 0;
+}
+
+.workspace-header-actions {
+  position: absolute;
+  top: 26px;
+  right: 26px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(62vw, 760px);
+}
+
+.workspace-header-actions .field-help {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workspace-panel.is-map-expanded {
@@ -1274,6 +1296,17 @@ input {
 
   .workspace-panel {
     grid-template-rows: 360px 240px;
+  }
+
+  .workspace-header-actions {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    max-width: none;
+  }
+
+  .workspace-header-actions .field-help {
+    max-width: 62vw;
   }
 
   .workspace-panel.is-map-expanded {

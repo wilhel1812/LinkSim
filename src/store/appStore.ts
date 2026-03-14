@@ -42,6 +42,8 @@ import type {
   SrtmTile,
 } from "../types/radio";
 
+export type MapOverlayMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
+
 type SiteLibraryEntry = {
   id: string;
   name: string;
@@ -137,6 +139,7 @@ type AppState = {
   endpointPickTarget: "from" | "to" | null;
   pendingSiteLibraryDraft: { lat: number; lon: number; token: string; suggestedName?: string } | null;
   scenarioOptions: { id: string; name: string }[];
+  mapOverlayMode: MapOverlayMode;
   setLocale: (locale: LocaleCode) => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
   setUiColorTheme: (value: UiColorTheme) => void;
@@ -218,6 +221,7 @@ type AppState = {
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
   requestSiteLibraryDraftAt: (lat: number, lon: number, suggestedName?: string) => void;
   clearPendingSiteLibraryDraft: () => void;
+  setMapOverlayMode: (mode: MapOverlayMode) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
   setPropagationModel: (model: PropagationModel) => void;
   updateSite: (id: string, patch: Partial<Site>) => void;
@@ -677,6 +681,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
+  mapOverlayMode: "heatmap",
   setLocale: (locale) => set({ locale }),
   setUiThemePreference: (value) => {
     const normalized = normalizeUiThemePreference(value);
@@ -1236,6 +1241,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const snapshotSystems = Array.isArray(snap.systems) && snap.systems.length ? snap.systems : defaultScenario.systems;
       const snapshotNetworks = Array.isArray(snap.networks) ? snap.networks : [];
       set({
+        selectedScenarioId: preset.id,
         sites: [],
         links: [],
         systems: snapshotSystems,
@@ -1296,6 +1302,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? snap.selectedNetworkId
       : recovered.networks[0].id;
     set({
+      selectedScenarioId: preset.id,
       sites: recoveredSites,
       links: recovered.links,
       systems: recovered.systems,
@@ -1473,6 +1480,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }),
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
+  setMapOverlayMode: (mode) => set({ mapOverlayMode: mode }),
   applyFrequencyPresetToSelectedNetwork: () => {
     const { selectedFrequencyPresetId, selectedNetworkId } = get();
     const preset = findPresetById(selectedFrequencyPresetId);

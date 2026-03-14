@@ -1,4 +1,5 @@
 import type { StyleSpecification } from "maplibre-gl";
+import type { UiColorTheme } from "../themes/types";
 
 export type BasemapProvider = "carto" | "maptiler" | "stadia" | "kartverket";
 export type BasemapTheme = "light" | "dark";
@@ -54,6 +55,7 @@ const kartverketTileTemplate = (() => {
 })();
 
 const cartoPresets: BasemapStylePreset[] = [
+  { id: "normal-themed", label: "Normal" },
   { id: "normal", label: "Positron / Dark Matter" },
   { id: "topographic", label: "Voyager" },
 ];
@@ -78,6 +80,77 @@ const stadiaPresets: BasemapStylePreset[] = [
 const kartverketPresets: BasemapStylePreset[] = [
   { id: "topographic", label: "Topographic" },
 ];
+
+const cartoRasterTilesForTheme = (theme: BasemapTheme): string[] =>
+  theme === "dark"
+    ? [
+        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+      ]
+    : [
+        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+      ];
+
+const cartoThemedTint = (
+  colorTheme: UiColorTheme,
+  theme: BasemapTheme,
+): { color: string; opacity: number } => {
+  if (theme === "dark") {
+    if (colorTheme === "pink") return { color: "#8f5678", opacity: 0.1 };
+    if (colorTheme === "red") return { color: "#8d4b4b", opacity: 0.1 };
+    if (colorTheme === "green") return { color: "#4d7f62", opacity: 0.1 };
+    return { color: "#4f6f9a", opacity: 0.1 };
+  }
+  if (colorTheme === "pink") return { color: "#d379ab", opacity: 0.08 };
+  if (colorTheme === "red") return { color: "#db8a8a", opacity: 0.08 };
+  if (colorTheme === "green") return { color: "#76b28d", opacity: 0.08 };
+  return { color: "#7fa7d8", opacity: 0.08 };
+};
+
+const themedCartoStyle = (theme: BasemapTheme, colorTheme: UiColorTheme): StyleSpecification => {
+  const tint = cartoThemedTint(colorTheme, theme);
+  return {
+    version: 8,
+    sources: {
+      cartoRaster: {
+        type: "raster",
+        tiles: cartoRasterTilesForTheme(theme),
+        tileSize: 256,
+        attribution: CARTO_ATTRIBUTION,
+      },
+      tintMask: {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          geometry: {
+            type: "Polygon",
+            coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]],
+          },
+          properties: {},
+        },
+      },
+    },
+    layers: [
+      {
+        id: "carto-raster-base",
+        type: "raster",
+        source: "cartoRaster",
+        minzoom: 0,
+        maxzoom: 22,
+      },
+      {
+        id: "theme-tint-overlay",
+        type: "fill",
+        source: "tintMask",
+        paint: {
+          "fill-color": tint.color,
+          "fill-opacity": tint.opacity,
+        },
+      },
+    ],
+  } as StyleSpecification;
+};
 
 const maptilerStyle = (preset: string, theme: BasemapTheme): string => {
   const mapId =
@@ -184,8 +257,10 @@ const styleForPreset = (
   provider: BasemapProvider,
   presetId: string,
   theme: BasemapTheme,
+  colorTheme: UiColorTheme,
 ): string | StyleSpecification => {
   if (provider === "carto") {
+    if (presetId === "normal-themed") return themedCartoStyle(theme, colorTheme);
     if (presetId === "topographic") return CARTO_VOYAGER;
     return theme === "dark" ? CARTO_DARK : CARTO_LIGHT;
   }
@@ -201,10 +276,10 @@ const styleForPreset = (
 const pickDefaultPreset = (
   provider: BasemapProvider,
   presets: BasemapStylePreset[],
-  theme: BasemapTheme,
+  _theme: BasemapTheme,
 ): BasemapStylePreset => {
   if (provider === "carto") {
-    const preferred = theme === "dark" ? "dark-matter" : "positron";
+    const preferred = "normal";
     return presets.find((preset) => preset.id === preferred) ?? presets[0];
   }
   return presets.find((preset) => preset.id === "normal") ?? presets[0];
@@ -216,6 +291,7 @@ export const resolveBasemapSelection = (
   requestedProvider: BasemapProvider,
   requestedPreset: string,
   theme: BasemapTheme,
+  colorTheme: UiColorTheme = "blue",
 ): BasemapSelectionResolved => {
   const capabilities = getBasemapProviderCapabilities();
   const requested = capabilities.find((entry) => entry.provider === requestedProvider) ?? capabilities[0];
@@ -229,7 +305,7 @@ export const resolveBasemapSelection = (
     pickDefaultPreset(provider.provider, provider.presets, theme);
 
   return {
-    style: styleForPreset(provider.provider, preset.id, theme),
+    style: styleForPreset(provider.provider, preset.id, theme, colorTheme),
     attribution: provider.attribution,
     provider: provider.provider,
     providerLabel: provider.label,

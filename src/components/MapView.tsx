@@ -145,7 +145,6 @@ type TerrainBounds = {
   minLon: number;
   maxLon: number;
 };
-type CoverageVizMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
 type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
 type BandStepMode = "auto" | 3 | 5 | 8 | 10;
 
@@ -823,12 +822,13 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
   const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
   const setBasemapStylePreset = useAppStore((state) => state.setBasemapStylePreset);
-  const { theme, variant } = useThemeVariant();
+  const { theme, colorTheme, variant } = useThemeVariant();
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
   const profileColor = variant.map.profileLineColor;
   const selectedProfile = getSelectedProfile();
-  const [coverageVizMode, setCoverageVizMode] = useState<CoverageVizMode>("heatmap");
+  const coverageVizMode = useAppStore((state) => state.mapOverlayMode);
+  const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(true);
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
@@ -1324,8 +1324,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
   const providerCapabilities = useMemo(() => getBasemapProviderCapabilities(), []);
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme),
-    [basemapProvider, basemapStylePreset, theme],
+    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
+    [basemapProvider, basemapStylePreset, theme, colorTheme],
   );
   const requestedProviderConfig =
     providerCapabilities.find((entry) => entry.provider === basemapProvider) ?? providerCapabilities[0];
@@ -1409,7 +1409,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
           <button
             className={`map-control-btn ${coverageVizMode === "heatmap" || coverageVizMode === "contours" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode((current) => (current === "heatmap" || current === "contours" ? "none" : "heatmap"))}
+            onClick={() => setCoverageVizMode(coverageVizMode === "heatmap" || coverageVizMode === "contours" ? "none" : "heatmap")}
             title="Coverage strength overlay"
             type="button"
           >
@@ -1417,7 +1417,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
           <button
             className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode((current) => (current === "passfail" ? "none" : "passfail"))}
+            onClick={() => setCoverageVizMode(coverageVizMode === "passfail" ? "none" : "passfail")}
             title="Coverage pass/fail against RX target"
             type="button"
           >
@@ -1425,7 +1425,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           </button>
           <button
             className={`map-control-btn ${coverageVizMode === "relay" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode((current) => (current === "relay" ? "none" : "relay"))}
+            onClick={() => setCoverageVizMode(coverageVizMode === "relay" ? "none" : "relay")}
             title="Relay candidate quality between selected From/To endpoints"
             type="button"
           >
