@@ -97,6 +97,7 @@ const supportsWebgl = (): boolean => {
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
+const fmtDbm = (value: number): string => `${value.toFixed(1)} dBm`;
 
 const guessSiteNameForPosition = async (lat: number, lon: number): Promise<string> => {
   const fallback = `Site ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
@@ -148,6 +149,10 @@ type TerrainBounds = {
 };
 type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
 type BandStepMode = "auto" | 3 | 5 | 8 | 10;
+type OverlayRaster = {
+  url: string;
+  coordinates: [[number, number], [number, number], [number, number], [number, number]];
+};
 
 const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[]): TerrainBounds => {
   const lats = sites.map((site) => site.position.lat);
@@ -184,6 +189,16 @@ const computeCoverageBounds = (samples: CoverageSampleLite[]): TerrainBounds | n
     minLon: minLon - lonPad,
     maxLon: maxLon + lonPad,
   };
+};
+
+const boundsDiagonalKm = (bounds: TerrainBounds): number => {
+  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+  const latSpanKm = Math.abs(bounds.maxLat - bounds.minLat) * 111.32;
+  const lonSpanKm =
+    Math.abs(bounds.maxLon - bounds.minLon) *
+    111.32 *
+    Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  return Math.hypot(latSpanKm, lonSpanKm);
 };
 
 const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
@@ -343,6 +358,7 @@ const makeGridInterpolator = (
 const computeOverlayDimensions = (
   bounds: TerrainBounds,
   quality: "auto" | "high",
+  resolutionScale = 1,
 ): { width: number; height: number } => {
   const centerLat = (bounds.minLat + bounds.maxLat) / 2;
   const latSpanKm = Math.max(0.5, Math.abs(bounds.maxLat - bounds.minLat) * 111.32);
@@ -358,9 +374,11 @@ const computeOverlayDimensions = (
   } else {
     height = Math.round(shortSidePx * Math.min(2.6, 1 / Math.max(0.01, aspect)));
   }
+  const scaledWidth = Math.round(width * resolutionScale);
+  const scaledHeight = Math.round(height * resolutionScale);
   return {
-    width: clamp(width, 220, maxSidePx),
-    height: clamp(height, 220, maxSidePx),
+    width: clamp(scaledWidth, 200, maxSidePx),
+    height: clamp(scaledHeight, 200, maxSidePx),
   };
 };
 
@@ -393,7 +411,7 @@ const buildCoverageOverlay = (
   mode: "heatmap" | "contours",
   bandStepDb: number,
   dimensions: { width: number; height: number },
-): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
+): OverlayRaster | null => {
   if (!samples.length) return null;
   const gridInterpolator = makeGridInterpolator(samples);
   const width = dimensions.width;
@@ -457,7 +475,7 @@ const buildSourcePassFailOverlay = (
   terrainSampler: (lat: number, lon: number) => number | null,
   dimensions: { width: number; height: number },
   terrainSamples: number,
-): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
+): OverlayRaster | null => {
   const width = dimensions.width;
   const height = dimensions.height;
   const canvas = document.createElement("canvas");
@@ -531,7 +549,7 @@ const buildRelayCandidateOverlay = (
   terrainSampler: (lat: number, lon: number) => number | null,
   dimensions: { width: number; height: number },
   terrainSamples: number,
-): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
+): (OverlayRaster & { minDbm: number; maxDbm: number }) | null => {
   const width = dimensions.width;
   const height = dimensions.height;
   const relayAntennaHeightM = Math.max(2, (fromSite.antennaHeightM + toSite.antennaHeightM) / 2);
@@ -542,6 +560,9 @@ const buildRelayCandidateOverlay = (
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   const image = ctx.createImageData(width, height);
+  const bottleneck = new Float32Array(width * height);
+  let minDbm = Number.POSITIVE_INFINITY;
+  let maxDbm = Number.NEGATIVE_INFINITY;
 
   for (let y = 0; y < height; y += 1) {
     const tY = y / Math.max(1, height - 1);
@@ -585,8 +606,20 @@ const buildRelayCandidateOverlay = (
         terrainSamples,
       );
       const bottleneckDbm = Math.min(fromToRelayRx, relayToTargetRx) - environmentLossDb;
-      const [r, g, b] = coverageColorForDbm(clamp(bottleneckDbm, -125, -62));
+      const i = y * width + x;
+      bottleneck[i] = bottleneckDbm;
+      minDbm = Math.min(minDbm, bottleneckDbm);
+      maxDbm = Math.max(maxDbm, bottleneckDbm);
+    }
+  }
+  const dynamicRange = Math.max(6, maxDbm - minDbm);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
       const px = (y * width + x) * 4;
+      const i = y * width + x;
+      const normalized = -125 + ((bottleneck[i] - minDbm) / dynamicRange) * 63;
+      const [r, g, b] = coverageColorForDbm(clamp(normalized, -125, -62));
       image.data[px] = r;
       image.data[px + 1] = g;
       image.data[px + 2] = b;
@@ -603,6 +636,8 @@ const buildRelayCandidateOverlay = (
       [bounds.maxLon, bounds.minLat],
       [bounds.minLon, bounds.minLat],
     ],
+    minDbm,
+    maxDbm,
   };
 };
 
@@ -610,7 +645,7 @@ const buildTerrainShadeOverlay = (
   bounds: TerrainBounds,
   sampler: (lat: number, lon: number) => number | null,
   dimensions: { width: number; height: number },
-): { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] } | null => {
+): OverlayRaster | null => {
   const width = dimensions.width;
   const height = dimensions.height;
   const elevations = new Float32Array(width * height);
@@ -755,26 +790,6 @@ const computeFitViewport = (
   return { lat: centerLat, lon: centerLon, zoom };
 };
 
-const computeLinkAnalysisBounds = (
-  from: { lat: number; lon: number },
-  to: { lat: number; lon: number },
-  marginKmPerSide = 4,
-): TerrainBounds => {
-  const minLat = Math.min(from.lat, to.lat);
-  const maxLat = Math.max(from.lat, to.lat);
-  const minLon = Math.min(from.lon, to.lon);
-  const maxLon = Math.max(from.lon, to.lon);
-  const centerLat = (minLat + maxLat) / 2;
-  const latPadDeg = marginKmPerSide / 111.32;
-  const lonPadDeg = marginKmPerSide / (111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)));
-  return {
-    minLat: minLat - latPadDeg,
-    maxLat: maxLat + latPadDeg,
-    minLon: minLon - lonPadDeg,
-    maxLon: maxLon + lonPadDeg,
-  };
-};
-
 type MapViewProps = {
   isMapExpanded: boolean;
   onToggleMapExpanded: () => void;
@@ -906,14 +921,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const hasPassFailTopology = sites.length >= 1;
   const hasRelayTopology = sites.length >= 2;
   const hasMinimumTopology = hasHeatTopology;
-  const analysisBounds = useMemo(
-    () =>
-      selectedFromSite && selectedToSite
-        ? computeLinkAnalysisBounds(selectedFromSite.position, selectedToSite.position, 4)
-        : sites.length
-          ? computeTerrainBounds(sites)
-          : null,
-    [selectedFromSite, selectedToSite, sites],
+  const analysisBounds = useMemo(() => (sites.length ? computeTerrainBounds(sites) : null), [sites]);
+  const analysisBoundsDiagonalKm = useMemo(
+    () => (analysisBounds ? boundsDiagonalKm(analysisBounds) : 0),
+    [analysisBounds],
   );
   const terrainSourceSummary = useMemo<Array<{ label: string; count: number }>>(() => {
     const breakdown = new globalThis.Map<string, { label: string; count: number }>();
@@ -1012,13 +1023,23 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
 
   const cursorPoint = selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))];
 
+  const overlayResolutionScale = useMemo(() => {
+    if (analysisBoundsDiagonalKm > 800) return 0.52;
+    if (analysisBoundsDiagonalKm > 500) return 0.64;
+    if (analysisBoundsDiagonalKm > 300) return 0.76;
+    return 1;
+  }, [analysisBoundsDiagonalKm]);
+  const largeAreaOptimizationActive = overlayResolutionScale < 1;
+
   const overlayDimensions = useMemo(() => {
     const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
     if (!bounds) return { width: 320, height: 320 };
-    return computeOverlayDimensions(bounds, coverageResolutionMode);
-  }, [analysisBounds, samplesForOverlay, coverageResolutionMode]);
+    return computeOverlayDimensions(bounds, coverageResolutionMode, overlayResolutionScale);
+  }, [analysisBounds, samplesForOverlay, coverageResolutionMode, overlayResolutionScale]);
 
-  const coverageOverlay = useMemo(
+  const coverageOverlay = useMemo<
+    (OverlayRaster & { minDbm?: number; maxDbm?: number }) | null
+  >(
     () => {
       const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
       if (!bounds) return null;
@@ -1097,6 +1118,23 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     if (!bounds) return 5;
     return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
   }, [analysisBounds, samplesForOverlay, bandStepMode]);
+
+  const signalRange = useMemo(() => {
+    if (!samplesForOverlay.length) return { min: -125, max: -62 };
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const sample of samplesForOverlay) {
+      min = Math.min(min, sample.valueDbm);
+      max = Math.max(max, sample.valueDbm);
+    }
+    return { min, max };
+  }, [samplesForOverlay]);
+
+  const relayRange = useMemo(() => {
+    if (!coverageOverlay || coverageVizMode !== "relay") return null;
+    if (typeof coverageOverlay.minDbm !== "number" || typeof coverageOverlay.maxDbm !== "number") return null;
+    return { min: coverageOverlay.minDbm, max: coverageOverlay.maxDbm };
+  }, [coverageOverlay, coverageVizMode]);
   const overlayGuideTitle =
     coverageVizMode === "none"
       ? "Hidden"
@@ -1579,6 +1617,12 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               Resolution: {coverageResolutionMode === "high" ? "High quality (one-shot)" : "Auto"} ({overlayDimensions.width}x
               {overlayDimensions.height})
             </p>
+            {largeAreaOptimizationActive ? (
+              <p>
+                Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
+                Use HQ for one-shot higher detail.
+              </p>
+            ) : null}
             <p>
               Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
             </p>
@@ -1631,8 +1675,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>Weaker signal</span>
-                    <span>Stronger signal</span>
+                    <span>{fmtDbm(signalRange.min)}</span>
+                    <span>{fmtDbm(signalRange.max)}</span>
                   </div>
                 </div>
               </>
@@ -1686,8 +1730,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>Weaker signal</span>
-                    <span>Stronger signal</span>
+                    <span>{fmtDbm(signalRange.min)}</span>
+                    <span>{fmtDbm(signalRange.max)}</span>
                   </div>
                 </div>
               </>
@@ -1724,8 +1768,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>Worse relay position</span>
-                    <span>Better relay position</span>
+                    <span>{relayRange ? fmtDbm(relayRange.min) : "Worse relay position"}</span>
+                    <span>{relayRange ? fmtDbm(relayRange.max) : "Better relay position"}</span>
                   </div>
                 </div>
               </>
