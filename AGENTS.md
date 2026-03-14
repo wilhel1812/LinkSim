@@ -28,3 +28,4 @@
   - `npm run deploy:staging:main`
   - `npm run deploy:prod:main`
 - Never run raw `wrangler pages deploy` for release operations.
+- If a guarded deploy fails, fix the script/preflight issue and re-run the guarded script. Do not bypass with manual Wrangler deploys.

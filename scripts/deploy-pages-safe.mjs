@@ -8,6 +8,7 @@ const wranglerStaging = path.join(root, "wrangler.staging.toml");
 const wranglerBackup = path.join(root, "wrangler.toml.__deploy_backup__");
 const distDir = path.join(root, "dist");
 const releaseManifestPath = path.join(distDir, "release.json");
+const ALLOWED_DIRTY_PATHS = new Set(["src/lib/buildInfo.ts", "functions/_lib/buildInfo.ts"]);
 
 const TARGETS = {
   "staging-preview": {
@@ -112,9 +113,23 @@ async function preflight(targetName, target) {
   const branch = await getGitRef();
   const commit = await getGitRef(["rev-parse", "--short", "HEAD"]);
   const status = await run("git", ["status", "--porcelain"], { capture: true });
-  const dirty = status.stdout.trim().length > 0;
-
-  assert(!dirty, "Preflight failed: git working tree must be clean before deploy.");
+  const dirtyLines = status.stdout.split("\n").filter((line) => line.trim().length > 0);
+  const dirtyPaths = dirtyLines
+    .map((line) => {
+      const payload = line.length >= 4 ? line.slice(3).trim() : line.trim();
+      const renameIdx = payload.indexOf(" -> ");
+      if (renameIdx >= 0) return payload.slice(renameIdx + 4).trim();
+      return payload;
+    })
+    .filter(Boolean);
+  const unexpectedDirty = dirtyPaths.filter((file) => !ALLOWED_DIRTY_PATHS.has(file));
+  assert(
+    unexpectedDirty.length === 0,
+    `Preflight failed: unexpected dirty files before deploy: ${unexpectedDirty.join(", ")}`,
+  );
+  if (dirtyPaths.length > 0) {
+    console.log(`[deploy-pages-safe] Allowing expected dirty files: ${dirtyPaths.join(", ")}`);
+  }
   if (target.requireMainBranch) {
     assert(branch === "main", `Preflight failed: target ${targetName} requires current branch 'main'.`);
   }

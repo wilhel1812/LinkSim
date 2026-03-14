@@ -183,6 +183,6 @@ npm run refresh:staging:r2
 
 ## Contributor Notes
 
-- Keep working tree clean before deploy commands.
+- Keep working tree clean before deploy commands, except expected build metadata updates in `src/lib/buildInfo.ts` and `functions/_lib/buildInfo.ts`.
 - Prefer `npm run release:prod` over manual production deploy.
 - When changing auth/permissions, add or update tests in the same pass.
