@@ -9,18 +9,26 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - Prefer cleanup, consistency, and hardening over new feature scope.
 
 ## User-provided backlog (seed)
-- [x] Clean up sidebar
 - [ ] Report to admins/mods
-- [x] Report types: feedback
 - [ ] Report types: spam/misuse
 - [ ] Banning users
 - [ ] E-mail notifications (starting with account approval)
-- [ ] Rehaul of dockumentation (readme.md)
 - [ ] Set up a compehensive testing plan
 - [ ] Branding
 - [ ] Created by / Last edited by sometimes show as `Unknown` (fix attribution resolution)
-- [ ] Deep linking support (shareable URLs for selected simulation/site/link/view state)
+- [ ] Improve deep linking with human readable URls. Use xx/simulation-name/yy
 - [ ] Improve site/simulation changelog detail (show what changed, not only that update happened)
+- [ ] Add toggle to view shared/public sites  on the map. Option to add selected node to simulation.
+- [ ] Add toggle to view all MQTT nodes on the map. Option to add selcted node to simulation
+- [ ] Make "pretty" graphic (PDF or image) for a simulation with path profiles, maps with overlays and simulation results.
+- [ ] Add dismissable warning about mobile support (or lack thereof) in the UI
+- [ ] Make mobile UI more usable (at least for viewing, if not editing)
+- [ ] Make adding names obligatory and don't prefill them. This applies to user names, sites and simulations. Might apply to other entities as well.
+- [ ] Allow read only view of all shared/public simulations and sites for pending and not signed in users.
+- [x] Clean up sidebar
+- [x] Report types: feedback
+- [x] Rehaul of dockumentation (readme.md)
+- [x] Deep linking support (shareable URLs for selected simulation/site/link/view state)
 - [x] Elevation plot visibility toggle
 - [x] Instead of showing actions on the users in the admin panel, show a simple list of users and make open the profile popover when clicking the names. This should be the same popover that appears anywhere else. Admin gets extra moderation buttons.
 - [x] Access request note should be a one time thing for the users. Admins should still be able to see it even after approval, but it shouldn't be an editable field.
@@ -28,13 +36,13 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [x] Show profile pictures to other users when you click open the user popover. Also show a small one next to any user name in the UI
 - [x] User should be able to select if e-mail should be visible to everyone or only admins
 - [x] access rights on sites and simulations. private, public, shared (+ collaborator edit grants)
-- [ ] explore if the route option actually makes sense anymore
-- [ ] explore if we can take buildings into account
-- [ ] Explore if we can make ourselves completely independent of VE2DBE data for SRTM
+- [x] explore if the route option actually makes sense anymore
+- [x] explore if we can take buildings into account
+- [x] Explore if we can make ourselves completely independent of VE2DBE data for SRTM
 - [x] Temporary nodes
 - [x] Color theming pass (user-configurable themes)
 - [x] Environment distinction redesign for test/staging (must not rely on theme colors)
-- [ ] Explore basemap theming so map styles can align with LinkSim UI theme colors
+- [x] Explore basemap theming so map styles can align with LinkSim UI theme colors
 
 ## Active stabilization backlog
 
