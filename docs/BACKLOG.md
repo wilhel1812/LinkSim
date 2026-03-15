@@ -9,6 +9,8 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - Prefer cleanup, consistency, and hardening over new feature scope.
 
 ## User-provided backlog (seed)
+- [ ] Consider flipping provider/style for maps, so that you first select the style and then the provider.
+- [ ] Explore option for themed, color matched topographic maps
 - [ ] Add more filters on sites and simulations. For starters, filter to only see owned ones.
 - [ ] When changing to Carto, it should default to Normal, not postiron/dark matter.
 - [ ] Report to admins/mods
