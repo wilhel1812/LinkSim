@@ -44,16 +44,16 @@ const decodeIssuerFromJwt = (token: string): string => {
 };
 
 const normalizeUserId = (request: Request): string => {
-  const byEmail =
-    request.headers.get("cf-access-authenticated-user-email") ??
-    request.headers.get("Cf-Access-Authenticated-User-Email") ??
-    "";
-  if (byEmail.trim()) return byEmail.trim().toLowerCase();
   const bySub =
     request.headers.get("cf-access-authenticated-user-id") ??
     request.headers.get("Cf-Access-Authenticated-User-Id") ??
     "";
-  return bySub.trim();
+  if (bySub.trim()) return bySub.trim();
+  const byEmail =
+    request.headers.get("cf-access-authenticated-user-email") ??
+    request.headers.get("Cf-Access-Authenticated-User-Email") ??
+    "";
+  return byEmail.trim().toLowerCase();
 };
 
 const readHeaderEmail = (request: Request): string => {
