@@ -12,8 +12,9 @@
 - Push code and deploy to staging.
 - Verify the same commit in the live test environment.
 - Use explicit guarded commands only:
-  - Branch preview deploy: `npm run deploy:staging:preview`
-  - Staging main deploy: `npm run deploy:staging:main`
+  - Default staging deploy: `npm run deploy:staging` (aliases to `staging-main`)
+  - Explicit staging main deploy: `npm run deploy:staging:main`
+  - Branch preview deploy: `npm run deploy:staging:preview` (only when explicitly requested)
 
 3. Production
 - Promote only after explicit user approval.
