@@ -9,6 +9,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - Prefer cleanup, consistency, and hardening over new feature scope.
 
 ## User-provided backlog (seed)
+- [ ] When changing to Carto, it should default to Normal, not postiron/dark matter.
 - [ ] Report to admins/mods
 - [ ] Report types: spam/misuse
 - [ ] Banning users
@@ -25,6 +26,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - [ ] Make mobile UI more usable (at least for viewing, if not editing)
 - [ ] Make adding names obligatory and don't prefill them. This applies to user names, sites and simulations. Might apply to other entities as well.
 - [ ] Allow read only view of all shared/public simulations and sites for pending and not signed in users.
+- [ ] Multi link planning and simulation, specialized for relay/mesh planning
 - [x] Clean up sidebar
 - [x] Report types: feedback
 - [x] Rehaul of dockumentation (readme.md)
