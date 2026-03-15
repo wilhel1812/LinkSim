@@ -72,11 +72,32 @@ const readHeaderUserName = (request: Request): string => {
   return name.trim();
 };
 
+const readAccessJwtFromCookie = (request: Request): string => {
+  const cookieHeader = request.headers.get("cookie") ?? request.headers.get("Cookie") ?? "";
+  if (!cookieHeader.trim()) return "";
+  const parts = cookieHeader.split(";").map((part) => part.trim());
+  for (const part of parts) {
+    const eq = part.indexOf("=");
+    if (eq <= 0) continue;
+    const key = part.slice(0, eq).trim();
+    if (!key.startsWith("CF_Authorization")) continue;
+    const value = part.slice(eq + 1).trim();
+    if (!value) continue;
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  return "";
+};
+
 export const inspectAuthRequest = (request: Request) => {
   const jwt =
     request.headers.get("cf-access-jwt-assertion") ??
     request.headers.get("Cf-Access-Jwt-Assertion") ??
     "";
+  const cookieJwt = readAccessJwtFromCookie(request);
   const email =
     request.headers.get("cf-access-authenticated-user-email") ??
     request.headers.get("Cf-Access-Authenticated-User-Email") ??
@@ -91,6 +112,7 @@ export const inspectAuthRequest = (request: Request) => {
     "";
   return {
     hasJwtAssertion: Boolean(jwt.trim()),
+    hasJwtCookie: Boolean(cookieJwt.trim()),
     hasEmailHeader: Boolean(email.trim()),
     hasUserIdHeader: Boolean(userId.trim()),
     hasUserNameHeader: Boolean(userName.trim()),
@@ -200,6 +222,7 @@ export const verifyAuth = async (request: Request, env: Env): Promise<AuthContex
     const token =
       request.headers.get("cf-access-jwt-assertion") ??
       request.headers.get("Cf-Access-Jwt-Assertion") ??
+      readAccessJwtFromCookie(request) ??
       "";
 
     if (token.trim()) {
