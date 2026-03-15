@@ -45,6 +45,9 @@
   - `npm run deploy:staging:preview`
   - `npm run deploy:staging:main`
   - `npm run deploy:prod:main`
+- Staging deploy default:
+  - Use `npm run deploy:staging:main` and share only the canonical staging URL (`https://linksim-staging.pages.dev`).
+  - Use `npm run deploy:staging:preview` only when the user explicitly asks for preview/branch deployments.
 - Never run raw `wrangler pages deploy` for release operations.
 - If a guarded deploy fails, fix the script/preflight issue and re-run the guarded script. Do not bypass with manual Wrangler deploys.
 - Promotion gate:
