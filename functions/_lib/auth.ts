@@ -22,6 +22,12 @@ const normalizeTeamDomain = (raw: string): string => {
   }
 };
 
+const parseAudiences = (raw: string): string[] =>
+  raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
 const decodeIssuerFromJwt = (token: string): string => {
   try {
     const [, payload] = token.split(".");
@@ -103,8 +109,8 @@ const verifyCloudflareAccessJwt = async (
   env: Env,
 ): Promise<AuthContext | null> => {
   const teamDomain = normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? "");
-  const audience = (env.ACCESS_AUD ?? "").trim();
-  if (!audience) return null;
+  const audiences = parseAudiences(env.ACCESS_AUD ?? "");
+  if (!audiences.length) return null;
 
   const tokenIssuer = decodeIssuerFromJwt(token);
   const issuerCandidates = [
@@ -117,12 +123,19 @@ const verifyCloudflareAccessJwt = async (
     try {
       const jwksUrl = `${issuer}/cdn-cgi/access/certs`;
       const jwks = remoteJwksFor(jwksUrl);
-      const { payload } = await jwtVerify(token, jwks, {
-        issuer,
-        audience,
-      });
-      lastPayload = payload as Record<string, unknown>;
-      break;
+      for (const audience of audiences) {
+        try {
+          const { payload } = await jwtVerify(token, jwks, {
+            issuer,
+            audience,
+          });
+          lastPayload = payload as Record<string, unknown>;
+          break;
+        } catch {
+          // Try next audience for this issuer candidate.
+        }
+      }
+      if (lastPayload) break;
     } catch {
       // Try next issuer candidate.
     }
