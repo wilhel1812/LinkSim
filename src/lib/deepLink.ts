@@ -2,8 +2,10 @@ import type { MapOverlayMode } from "../store/appStore";
 
 export type DeepLinkPayloadV1 = {
   version: 1;
-  simulationId: string;
+  simulationId?: string;
+  simulationSlug?: string;
   selectedLinkId?: string;
+  selectedLinkSlug?: string;
   overlayMode?: MapOverlayMode;
   mapViewport?: {
     lat: number;
@@ -16,7 +18,7 @@ export type DeepLinkPayloadV1 = {
 
 export type DeepLinkParseResult =
   | { ok: true; payload: DeepLinkPayloadV1 }
-  | { ok: false; reason: "missing_sim" | "invalid_sim" | "invalid_version" };
+  | { ok: false; reason: "missing_sim" | "invalid_sim" | "invalid_version" | "invalid_slug" };
 
 const isOverlayMode = (value: string): value is MapOverlayMode =>
   value === "none" ||
@@ -37,20 +39,58 @@ const trimToUndefined = (value: string | null): string | undefined => {
   return trimmed.length ? trimmed : undefined;
 };
 
-export const parseDeepLinkFromLocation = (locationLike: Pick<Location, "search">): DeepLinkParseResult => {
+const isReservedPathHead = (head: string): boolean => {
+  const value = head.toLowerCase();
+  return value === "api" || value === "cdn-cgi" || value === "assets" || value === "meshmap";
+};
+
+const normalizeSlugSegment = (value: string): string => value.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
+
+export const slugifyName = (value: string): string =>
+  value
+    .trim()
+    .toLocaleLowerCase()
+    .normalize("NFKC")
+    .replace(/ß/g, "ss")
+    .replace(/æ/g, "ae")
+    .replace(/ø/g, "o")
+    .replace(/å/g, "a")
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+type DeepLinkLocationLike = Pick<Location, "search"> & { pathname?: string };
+
+export const parseDeepLinkFromLocation = (locationLike: DeepLinkLocationLike): DeepLinkParseResult => {
   const params = new URLSearchParams(locationLike.search ?? "");
   const versionRaw = trimToUndefined(params.get("dl"));
   if (versionRaw && versionRaw !== "1") {
     return { ok: false, reason: "invalid_version" };
   }
 
+  const pathSegments = (locationLike.pathname ?? "/")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const pathSimulationSlugRaw = pathSegments[0] ?? "";
+  const pathSimulationSlug =
+    pathSimulationSlugRaw && !isReservedPathHead(pathSimulationSlugRaw)
+      ? normalizeSlugSegment(pathSimulationSlugRaw)
+      : undefined;
+  const pathLinkSlug = pathSegments[1] ? normalizeSlugSegment(pathSegments[1]) : undefined;
+
   const simulationId = trimToUndefined(params.get("sim"));
-  if (!simulationId) {
+  const simulationSlug = trimToUndefined(params.get("sim_slug")) ?? pathSimulationSlug;
+  if (!simulationId && !simulationSlug) {
     if (params.has("sim")) return { ok: false, reason: "invalid_sim" };
     return { ok: false, reason: "missing_sim" };
   }
+  if (simulationSlug !== undefined && !simulationSlug.length) return { ok: false, reason: "invalid_slug" };
 
   const selectedLinkId = trimToUndefined(params.get("link"));
+  const selectedLinkSlug = trimToUndefined(params.get("link_slug")) ?? pathLinkSlug;
   const overlayRaw = trimToUndefined(params.get("ov"));
   const overlayMode = overlayRaw && isOverlayMode(overlayRaw) ? overlayRaw : undefined;
 
@@ -75,8 +115,10 @@ export const parseDeepLinkFromLocation = (locationLike: Pick<Location, "search">
     ok: true,
     payload: {
       version: 1,
-      simulationId,
+      ...(simulationId ? { simulationId } : {}),
+      ...(simulationSlug ? { simulationSlug } : {}),
       ...(selectedLinkId ? { selectedLinkId } : {}),
+      ...(selectedLinkSlug ? { selectedLinkSlug } : {}),
       ...(overlayMode ? { overlayMode } : {}),
       ...(mapViewport ? { mapViewport } : {}),
     },
@@ -88,11 +130,16 @@ export const buildDeepLinkUrl = (
   origin: string,
   pathname = "/",
 ): string => {
-  const url = new URL(pathname, origin);
+  const simulationPathSlug = payload.simulationSlug ? slugifyName(payload.simulationSlug) : "";
+  const linkPathSlug = payload.selectedLinkSlug ? slugifyName(payload.selectedLinkSlug) : "";
+  const pathPrefix = simulationPathSlug ? `/${simulationPathSlug}${linkPathSlug ? `/${linkPathSlug}` : ""}` : pathname;
+  const url = new URL(pathPrefix, origin);
   const params = new URLSearchParams();
   params.set("dl", String(payload.version));
-  params.set("sim", payload.simulationId);
+  if (payload.simulationId) params.set("sim", payload.simulationId);
+  if (!simulationPathSlug && payload.simulationSlug) params.set("sim_slug", payload.simulationSlug);
   if (payload.selectedLinkId) params.set("link", payload.selectedLinkId);
+  if (!linkPathSlug && payload.selectedLinkSlug) params.set("link_slug", payload.selectedLinkSlug);
   if (payload.overlayMode) params.set("ov", payload.overlayMode);
   if (payload.mapViewport) {
     params.set("lat", payload.mapViewport.lat.toFixed(6));

@@ -18,10 +18,12 @@ import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
 import { resolveBasemapSelection } from "../lib/basemaps";
+import { parseDeepLinkFromLocation } from "../lib/deepLink";
 import {
   fetchCollaboratorDirectory,
   fetchMe,
   fetchResourceChanges,
+  revertResourceChangeCopy,
   fetchUserById,
   updateUserRole,
   type CollaboratorDirectoryUser,
@@ -165,13 +167,8 @@ const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
 
-const hasDeepLinkSimulationInSearch = (search: string): boolean => {
-  const params = new URLSearchParams(search);
-  const sim = params.get("sim")?.trim();
-  if (!sim) return false;
-  const version = params.get("dl")?.trim();
-  return !version || version === "1";
-};
+const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
+  parseDeepLinkFromLocation({ search, pathname }).ok;
 const STORAGE_HEALTH_KEY = "rmw-storage-health-v1";
 
 type LibraryBackupPayload = {
@@ -212,6 +209,39 @@ const formatChangeSummary = (action: string, note: string | null): string => {
   if (action === "created") return "Created record.";
   if (action === "updated") return "Updated record.";
   return "Change recorded.";
+};
+
+const formatChangeDetailValue = (value: unknown): string => {
+  if (value === null) return "null";
+  if (value === undefined) return "—";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const isMeaningfulChangeField = (field: string): boolean => {
+  const normalized = field.trim();
+  if (!normalized) return false;
+  const ignored = new Set([
+    "content",
+    "updatedAt",
+    "updated_at",
+    "lastEditedAt",
+    "last_edited_at",
+    "lastEditedByUserId",
+    "last_edited_by_user_id",
+    "lastEditedByName",
+    "lastEditedByAvatarUrl",
+    "createdAt",
+    "created_at",
+    "slugAliases",
+    "slug_aliases",
+  ]);
+  return !ignored.has(normalized);
 };
 
 const getSnapshotCount = (key: string): number => {
@@ -378,9 +408,11 @@ export function Sidebar() {
     [hasNonAutoLinks, links],
   );
   const [newPresetName, setNewPresetName] = useState("");
+  const [newPresetNameError, setNewPresetNameError] = useState("");
   const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showNewSimulationModal, setShowNewSimulationModal] = useState(false);
   const [newSimulationName, setNewSimulationName] = useState("");
+  const [newSimulationNameError, setNewSimulationNameError] = useState("");
   const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("shared");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
   const [simulationLibraryQuery, setSimulationLibraryQuery] = useState("");
@@ -403,6 +435,8 @@ export function Sidebar() {
   const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
   const [pendingDraftAutoInsert, setPendingDraftAutoInsert] = useState(false);
   const [newLibraryName, setNewLibraryName] = useState("");
+  const [newLibraryNameError, setNewLibraryNameError] = useState("");
+  const [newLibrarySourceMeta, setNewLibrarySourceMeta] = useState<unknown>(undefined);
   const [newLibraryLat, setNewLibraryLat] = useState(60.0);
   const [newLibraryLon, setNewLibraryLon] = useState(10.0);
   const [newLibraryGroundM, setNewLibraryGroundM] = useState(0);
@@ -427,10 +461,13 @@ export function Sidebar() {
     latitude: sourceSite?.position.lat ?? 59.9,
     zoom: 7.5,
   }));
-  const hasDeepLinkSimulation = useMemo(() => hasDeepLinkSimulationInSearch(window.location.search), []);
+  const hasDeepLinkSimulation = useMemo(
+    () => hasDeepLinkSimulationInSearch(window.location.search, window.location.pathname),
+    [],
+  );
   const [selectedSimulationRef, setSelectedSimulationRef] = useState<string>(() => {
     const fallback = `builtin:${selectedScenarioId}`;
-    if (hasDeepLinkSimulationInSearch(window.location.search)) {
+    if (hasDeepLinkSimulationInSearch(window.location.search, window.location.pathname)) {
       return fallback;
     }
     try {
@@ -586,6 +623,15 @@ export function Sidebar() {
       simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId)?.ownerUserId ?? ""
     );
   }, [resourceDetailsPopup, siteLibrary, simulationPresets]);
+  const canWriteResource = (kind: "site" | "simulation", resourceId: string): boolean => {
+    const entry =
+      kind === "site"
+        ? siteLibrary.find((candidate) => candidate.id === resourceId)
+        : simulationPresets.find((candidate) => candidate.id === resourceId);
+    if (!entry) return false;
+    const role = (entry as { effectiveRole?: unknown }).effectiveRole;
+    return role === "owner" || role === "admin" || role === "editor";
+  };
   const collaboratorCandidates = useMemo(() => {
     const q = resourceCollaboratorQuery.trim().toLowerCase();
     const selectedIds = new Set(resourceCollaboratorUserIds);
@@ -696,7 +742,6 @@ export function Sidebar() {
           shortName: node.shortName ?? "",
           label: node.longName ?? node.nodeId,
           hwModel: node.hwModel ?? "",
-          lastSeenUnix: node.lastSeenUnix ?? 0,
         },
         geometry: {
           type: "Point" as const,
@@ -715,6 +760,8 @@ export function Sidebar() {
     if (!pendingSiteLibraryDraft) return;
     setShowSiteLibraryManager(true);
     setShowAddLibraryForm(true);
+    setNewLibraryNameError("");
+    setNewLibrarySourceMeta(pendingSiteLibraryDraft.sourceMeta);
     setPendingDraftAutoInsert(true);
     setNewLibraryName(pendingSiteLibraryDraft.suggestedName ?? "");
     setNewLibraryLat(pendingSiteLibraryDraft.lat);
@@ -725,11 +772,11 @@ export function Sidebar() {
     if (Number.isFinite(terrainElev)) {
       setNewLibraryGroundM(Math.round(terrainElev));
       setLibrarySearchStatus(
-        `Draft from map click at ${pendingSiteLibraryDraft.lat.toFixed(5)}, ${pendingSiteLibraryDraft.lon.toFixed(5)} (terrain ${Math.round(terrainElev)} m)`,
+        `Draft opened at ${pendingSiteLibraryDraft.lat.toFixed(5)}, ${pendingSiteLibraryDraft.lon.toFixed(5)} (terrain ${Math.round(terrainElev)} m).`,
       );
     } else {
       setLibrarySearchStatus(
-        `Draft from map click at ${pendingSiteLibraryDraft.lat.toFixed(5)}, ${pendingSiteLibraryDraft.lon.toFixed(5)}.`,
+        `Draft opened at ${pendingSiteLibraryDraft.lat.toFixed(5)}, ${pendingSiteLibraryDraft.lon.toFixed(5)}.`,
       );
     }
     clearPendingSiteLibraryDraft();
@@ -1046,8 +1093,13 @@ export function Sidebar() {
     setLinkModal(null);
   };
   const saveSimulationAsNew = () => {
-    const fallbackName = `${activeSimulationLabel.replace(/\s+\(.*\)$/, "")} Copy ${new Date().toLocaleString()}`;
-    const trimmed = newPresetName.trim() || fallbackName;
+    const trimmed = newPresetName.trim();
+    if (!trimmed) {
+      setNewPresetNameError("A name is required.");
+      setSimulationSaveStatus("");
+      return;
+    }
+    setNewPresetNameError("");
     const savedId = saveCurrentSimulationPreset(trimmed);
     if (savedId) {
       const ref = `saved:${savedId}`;
@@ -1061,7 +1113,13 @@ export function Sidebar() {
       setSimulationSaveStatus("Cannot create simulation until current user profile is loaded.");
       return;
     }
-    const trimmed = newSimulationName.trim() || `Untitled ${new Date().toLocaleString()}`;
+    const trimmed = newSimulationName.trim();
+    if (!trimmed) {
+      setNewSimulationNameError("A name is required.");
+      setSimulationSaveStatus("");
+      return;
+    }
+    setNewSimulationNameError("");
     const createdId = createBlankSimulationPreset(trimmed, {
       visibility: newSimulationVisibility,
       ownerUserId: currentUser.id,
@@ -1130,7 +1188,8 @@ export function Sidebar() {
       return;
     }
     setShowAddLibraryForm(true);
-    setNewLibraryName(selectedSite.name);
+    setNewLibraryName("");
+    setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(selectedSite.position.lat);
     setNewLibraryLon(selectedSite.position.lon);
     setNewLibraryGroundM(selectedSite.groundElevationM);
@@ -1142,6 +1201,12 @@ export function Sidebar() {
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
   };
   const addLibraryEntryNow = () => {
+    if (!newLibraryName.trim()) {
+      setNewLibraryNameError("A name is required.");
+      setLibrarySearchStatus("");
+      return;
+    }
+    setNewLibraryNameError("");
     const createdId = addSiteLibraryEntry(
       newLibraryName,
       newLibraryLat,
@@ -1152,14 +1217,29 @@ export function Sidebar() {
       newLibraryTxGainDbi,
       newLibraryRxGainDbi,
       newLibraryCableLossDb,
-      undefined,
+      (newLibrarySourceMeta as Parameters<typeof addSiteLibraryEntry>[9]) ?? undefined,
       pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
+      undefined,
+      currentUser
+        ? {
+            userId: currentUser.id,
+            name: currentUser.username,
+            avatarUrl: currentUser.avatarUrl ?? "",
+          }
+        : undefined,
     );
+    if (!createdId) {
+      setNewLibraryNameError("A name is required.");
+      setLibrarySearchStatus("");
+      return;
+    }
     if (pendingDraftAutoInsert && createdId) {
       insertSiteFromLibrary(createdId);
       setPendingDraftAutoInsert(false);
     }
+    setNewLibraryNameError("");
     setNewLibraryName("");
+    setNewLibrarySourceMeta(undefined);
     setNewLibraryTxPowerDbm(STANDARD_SITE_RADIO.txPowerDbm);
     setNewLibraryTxGainDbi(STANDARD_SITE_RADIO.txGainDbi);
     setNewLibraryRxGainDbi(STANDARD_SITE_RADIO.rxGainDbi);
@@ -1199,7 +1279,8 @@ export function Sidebar() {
   const selectLibrarySearchResult = async (result: GeocodeResult) => {
     setLibrarySearchPickBusyId(result.id);
     setLibrarySearchStatus("Resolving elevation for selected result...");
-    setNewLibraryName(result.label.split(",")[0] ?? "New Site");
+    setNewLibraryName("");
+    setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(result.lat);
     setNewLibraryLon(result.lon);
     try {
@@ -1281,21 +1362,23 @@ export function Sidebar() {
       STANDARD_SITE_RADIO.rxGainDbi,
       STANDARD_SITE_RADIO.cableLossDb,
       {
-        provider: "Meshtastic MQTT",
         sourceType: "mqtt-feed",
+        sourceUrl: meshmapSourceUrl.trim() || getDefaultMeshmapFeedUrl(),
         nodeId: selectedMeshmapNode.nodeId,
         shortName: selectedMeshmapNode.shortName,
         longName: selectedMeshmapNode.longName,
         hwModel: selectedMeshmapNode.hwModel,
-        lastSeenUnix: selectedMeshmapNode.lastSeenUnix,
-        raw: {
-          sourceUrl: meshmapSourceUrl.trim() || getDefaultMeshmapFeedUrl(),
-          seenByTopics: selectedMeshmapNode.seenByTopics,
-          role: selectedMeshmapNode.role,
-          precisionBits: selectedMeshmapNode.precisionBits,
-        },
+        role: selectedMeshmapNode.role,
       },
       pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
+      undefined,
+      currentUser
+        ? {
+            userId: currentUser.id,
+            name: currentUser.username,
+            avatarUrl: currentUser.avatarUrl ?? "",
+          }
+        : undefined,
     );
     setMeshmapStatus(`Added ${fallbackName} to site library.`);
   };
@@ -1335,6 +1418,40 @@ export function Sidebar() {
         busy: false,
         status: `Failed loading change log: ${message}`,
       });
+    }
+  };
+
+  const revertChangeAsCopy = async (kind: "site" | "simulation", resourceId: string, changeId: number) => {
+    try {
+      await revertResourceChangeCopy(kind, resourceId, changeId);
+      setChangeLogPopup((current) =>
+        current
+          ? {
+              ...current,
+              status: `Reverted from change #${changeId} as a new copy revision.`,
+            }
+          : current,
+      );
+      const refreshed = await fetchResourceChanges(kind, resourceId);
+      setChangeLogPopup((current) =>
+        current
+          ? {
+              ...current,
+              changes: refreshed,
+              busy: false,
+            }
+          : current,
+      );
+    } catch (error) {
+      const message = getUiErrorMessage(error);
+      setChangeLogPopup((current) =>
+        current
+          ? {
+              ...current,
+              status: `Revert failed: ${message}`,
+            }
+          : current,
+      );
     }
   };
 
@@ -1451,7 +1568,11 @@ export function Sidebar() {
     const nextCableLossDb = overrides?.cableLossDb ?? resourceCableLossDraft;
     const nextCollaboratorUserIds = overrides?.collaboratorUserIds ?? resourceCollaboratorUserIds;
     const normalizedVisibility = nextVisibility === "public" ? "shared" : nextVisibility;
-    const normalizedName = nextName.trim() || resourceDetailsPopup.label;
+    const normalizedName = nextName.trim();
+    if (!normalizedName) {
+      setResourceAccessStatus("Name is required.");
+      return false;
+    }
     const sharedWith = nextCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
       .map((userId) => ({ userId, role: "editor" as const }));
@@ -2358,6 +2479,44 @@ export function Sidebar() {
                     <UserBadge avatarUrl={change.actorAvatarUrl} name={change.actorName ?? change.actorUserId} />
                   </button>
                   <p className="field-help">{formatChangeSummary(change.action, change.note)}</p>
+                  {change.details && typeof change.details === "object" ? (
+                    (() => {
+                      const changedFields = (
+                        Array.isArray((change.details as { changedFields?: unknown }).changedFields)
+                          ? ((change.details as { changedFields?: string[] }).changedFields ?? [])
+                          : []
+                      )
+                        .map((field) => String(field))
+                        .filter(isMeaningfulChangeField);
+                      const diffEntries = Object.entries(
+                        ((change.details as { diff?: Record<string, { before: unknown; after: unknown }> }).diff ??
+                          {}) as Record<string, { before: unknown; after: unknown }>,
+                      ).filter(([field]) => isMeaningfulChangeField(field));
+                      if (!changedFields.length && !diffEntries.length) return null;
+                      return (
+                        <div className="field-help">
+                          {diffEntries.map(([field, values]) => (
+                            <p key={`${change.id}-${field}`}>
+                              {field}: {formatChangeDetailValue(values.before)} {"->"} {formatChangeDetailValue(values.after)}
+                            </p>
+                          ))}
+                        </div>
+                      );
+                    })()
+                  ) : null}
+                  {canWriteResource(changeLogPopup.kind, changeLogPopup.resourceId) ? (
+                    <div className="chip-group">
+                      <button
+                        className="inline-action"
+                        onClick={() =>
+                          void revertChangeAsCopy(changeLogPopup.kind, changeLogPopup.resourceId, change.id)
+                        }
+                        type="button"
+                      >
+                        Revert
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               {!changeLogPopup.busy && !changeLogPopup.changes.length ? (
@@ -2576,7 +2735,7 @@ export function Sidebar() {
               <label className="field-grid">
                 <span>
                   Access level{" "}
-                  <InfoTip text="Private: only owner/admin can view and edit. Shared: everyone can view and edit; only owner/mod/admin can delete. Access levels are for collaboration/clutter control, not secret storage." />
+                  <InfoTip text="Private: visible to owner/admin. Public/Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
                 </span>
                 <select
                   className="locale-select"
@@ -2603,7 +2762,7 @@ export function Sidebar() {
               <div className="field-grid user-bio-field collaborator-picker-grid">
                 <span>
                   Collaborators{" "}
-                  <InfoTip text="Collaborators get edit rights on this resource. Editors can add collaborators but cannot remove existing collaborators. Owners/moderators/admins can remove." />
+                  <InfoTip text="Collaborators grant edit rights. Editors can add collaborators but cannot remove existing collaborators. Owners/admins can remove." />
                 </span>
                 <div className="collaborator-picker">
                   <div className="chip-group collaborator-selected-list">
@@ -2648,7 +2807,7 @@ export function Sidebar() {
               </div>
               <p className="field-help">
                 Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
-                collaborators/owner. Owners/moderators/admins can remove collaborators.
+                collaborators/owner. Owners/admins can remove collaborators.
               </p>
               {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
             </details>
@@ -2667,16 +2826,21 @@ export function Sidebar() {
             <label className="field-grid">
               <span>Name</span>
               <input
-                onChange={(event) => setNewSimulationName(event.target.value)}
+                className={newSimulationNameError ? "input-error" : ""}
+                onChange={(event) => {
+                  setNewSimulationName(event.target.value);
+                  if (newSimulationNameError) setNewSimulationNameError("");
+                }}
                 placeholder="My simulation"
                 type="text"
                 value={newSimulationName}
               />
             </label>
+            {newSimulationNameError ? <p className="field-help field-help-error">{newSimulationNameError}</p> : null}
             <label className="field-grid">
               <span>
                 Access level{" "}
-                <InfoTip text="Private: only owner/admin can view and edit. Shared: everyone can view and edit; only owner/mod/admin can delete." />
+                <InfoTip text="Private: visible to owner/admin. Public/Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
               </span>
               <select
                 className="locale-select"
@@ -2720,17 +2884,29 @@ export function Sidebar() {
             <label className="field-grid">
               <span>Save a copy</span>
               <input
-                onChange={(event) => setNewPresetName(event.target.value)}
+                className={newPresetNameError ? "input-error" : ""}
+                onChange={(event) => {
+                  setNewPresetName(event.target.value);
+                  if (newPresetNameError) setNewPresetNameError("");
+                }}
                 placeholder="My simulation"
                 type="text"
                 value={newPresetName}
               />
             </label>
+            {newPresetNameError ? <p className="field-help field-help-error">{newPresetNameError}</p> : null}
             <div className="chip-group">
               <button className="inline-action" onClick={saveSimulationAsNew} type="button">
                 Save Copy
               </button>
-              <button className="inline-action" onClick={() => setShowNewSimulationModal(true)} type="button">
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setNewSimulationNameError("");
+                  setShowNewSimulationModal(true);
+                }}
+                type="button"
+              >
                 New Simulation
               </button>
             </div>
@@ -2962,12 +3138,17 @@ export function Sidebar() {
                 <label className="field-grid">
                   <span>Name</span>
                   <input
-                    onChange={(event) => setNewLibraryName(event.target.value)}
+                    className={newLibraryNameError ? "input-error" : ""}
+                    onChange={(event) => {
+                      setNewLibraryName(event.target.value);
+                      if (newLibraryNameError) setNewLibraryNameError("");
+                    }}
                     placeholder="My site"
                     type="text"
                     value={newLibraryName}
                   />
                 </label>
+                {newLibraryNameError ? <p className="field-help field-help-error">{newLibraryNameError}</p> : null}
                 <label className="field-grid">
                   <span>Latitude</span>
                   <input
@@ -3139,9 +3320,6 @@ export function Sidebar() {
                           <p className="field-help">
                             Short: {selectedMeshmapNode.shortName ?? "n/a"} | Node ID: {selectedMeshmapNode.nodeId}
                             {selectedMeshmapNode.hwModel ? ` | HW: ${selectedMeshmapNode.hwModel}` : ""}
-                            {selectedMeshmapNode.lastSeenUnix
-                              ? ` | Last seen ${new Date(selectedMeshmapNode.lastSeenUnix * 1000).toLocaleString()}`
-                              : ""}
                           </p>
                           <button className="inline-action" onClick={() => void addSelectedMeshmapNodeToLibrary()} type="button">
                             Add Selected MQTT Node To Library
@@ -3161,6 +3339,8 @@ export function Sidebar() {
                     className="inline-action"
                     onClick={() => {
                       setShowAddLibraryForm(false);
+                      setNewLibraryNameError("");
+                      setNewLibrarySourceMeta(undefined);
                       setPendingDraftAutoInsert(false);
                     }}
                     type="button"

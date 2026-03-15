@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Map, {
   Layer,
   type MapRef,
@@ -19,6 +19,7 @@ import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/
 import { useAppStore } from "../store/appStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
+import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
@@ -355,18 +356,14 @@ const makeGridInterpolator = (
   };
 };
 
-const computeOverlayDimensions = (
-  bounds: TerrainBounds,
-  quality: "auto" | "high",
-  resolutionScale = 1,
-): { width: number; height: number } => {
+const computeOverlayDimensions = (bounds: TerrainBounds, resolutionScale = 1): { width: number; height: number } => {
   const centerLat = (bounds.minLat + bounds.maxLat) / 2;
   const latSpanKm = Math.max(0.5, Math.abs(bounds.maxLat - bounds.minLat) * 111.32);
   const lonSpanKm =
     Math.max(0.5, Math.abs(bounds.maxLon - bounds.minLon) * 111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)));
   const aspect = lonSpanKm / latSpanKm;
-  const shortSidePx = quality === "high" ? 880 : 320;
-  const maxSidePx = quality === "high" ? 1400 : 540;
+  const shortSidePx = 320;
+  const maxSidePx = 540;
   let width = shortSidePx;
   let height = shortSidePx;
   if (aspect >= 1) {
@@ -792,7 +789,10 @@ const computeFitViewport = (
 
 type MapViewProps = {
   isMapExpanded: boolean;
+  readOnly?: boolean;
+  canPersist?: boolean;
   onToggleMapExpanded: () => void;
+  onShare?: () => void;
 };
 
 type PendingNewSiteDraft = {
@@ -808,8 +808,15 @@ type PendingSiteMove = {
   currentGroundElevationM: number;
 };
 
-export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
+export function MapView({
+  isMapExpanded,
+  readOnly = false,
+  canPersist = true,
+  onToggleMapExpanded,
+  onShare,
+}: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
+  const siteLibrary = useAppStore((state) => state.siteLibrary);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
@@ -823,6 +830,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
   const updateLink = useAppStore((state) => state.updateLink);
   const updateSite = useAppStore((state) => state.updateSite);
+  const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const setSiteDragPreview = useAppStore((state) => state.setSiteDragPreview);
   const clearSiteDragPreview = useAppStore((state) => state.clearSiteDragPreview);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
@@ -837,8 +845,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const hasOnlineElevationSync = useAppStore((state) => state.hasOnlineElevationSync);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
-  const coverageResolutionMode = useAppStore((state) => state.coverageResolutionMode);
-  const runHighQualitySimulation = useAppStore((state) => state.runHighQualitySimulation);
   const isSimulationRecomputing = useAppStore((state) => state.isSimulationRecomputing);
   const simulationProgress = useAppStore((state) => state.simulationProgress);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
@@ -863,6 +869,16 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
   const [pendingSiteMoves, setPendingSiteMoves] = useState<Record<string, PendingSiteMove>>({});
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
+  const [showDiscoverySites, setShowDiscoverySites] = useState(false);
+  const [showDiscoveryMqtt, setShowDiscoveryMqtt] = useState(false);
+  const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
+  const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
+  const [overlayHoverInfo, setOverlayHoverInfo] = useState<string | null>(null);
+  const [mqttDuplicatePrompt, setMqttDuplicatePrompt] = useState<{
+    node: MeshmapNode;
+    existingId: string;
+    existingName: string;
+  } | null>(null);
   const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
   const [mapProviderWarning, setMapProviderWarning] = useState<string | null>(null);
   const [interactionViewState, setInteractionViewState] = useState<{
@@ -918,6 +934,44 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     ? sites.find((site) => site.id === selectedToSiteId) ?? null
     : null;
   const hasHeatTopology = sites.length >= 1;
+  const simulationLibrarySiteIds = useMemo(
+    () =>
+      new Set(
+        sites
+          .map((site) => site.libraryEntryId)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      ),
+    [sites],
+  );
+  const sharedOrPublicLibrarySites = useMemo(
+    () =>
+      siteLibrary.filter(
+        (entry) =>
+          (entry.visibility === "shared" || entry.visibility === "public") &&
+          !simulationLibrarySiteIds.has(entry.id),
+      ),
+    [siteLibrary, simulationLibrarySiteIds],
+  );
+
+  useEffect(() => {
+    if (!showDiscoveryMqtt) return;
+    if (mqttNodes.length) return;
+    let canceled = false;
+    setMqttLoadStatus("Loading MQTT nodes...");
+    void fetchMeshmapNodes()
+      .then((result) => {
+        if (canceled) return;
+        setMqttNodes(result.nodes.slice(0, 3000));
+        setMqttLoadStatus(null);
+      })
+      .catch((error) => {
+        if (canceled) return;
+        setMqttLoadStatus(`MQTT load failed: ${getUiErrorMessage(error)}`);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [showDiscoveryMqtt, mqttNodes.length]);
   const hasPassFailTopology = sites.length >= 1;
   const hasRelayTopology = sites.length >= 2;
   const hasMinimumTopology = hasHeatTopology;
@@ -1034,8 +1088,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   const overlayDimensions = useMemo(() => {
     const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
     if (!bounds) return { width: 320, height: 320 };
-    return computeOverlayDimensions(bounds, coverageResolutionMode, overlayResolutionScale);
-  }, [analysisBounds, samplesForOverlay, coverageResolutionMode, overlayResolutionScale]);
+    return computeOverlayDimensions(bounds, overlayResolutionScale);
+  }, [analysisBounds, samplesForOverlay, overlayResolutionScale]);
 
   const coverageOverlay = useMemo<
     (OverlayRaster & { minDbm?: number; maxDbm?: number }) | null
@@ -1061,7 +1115,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           environmentLossDb,
           (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
           overlayDimensions,
-          coverageResolutionMode === "high" ? 80 : 24,
+          24,
         );
       }
       if (coverageVizMode === "passfail") {
@@ -1083,7 +1137,7 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           environmentLossDb,
           (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
           overlayDimensions,
-          coverageResolutionMode === "high" ? 80 : 24,
+          24,
         );
       }
       return buildCoverageOverlay(
@@ -1108,7 +1162,6 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       srtmTiles,
       analysisBounds,
       overlayDimensions,
-      coverageResolutionMode,
       hasPassFailTopology,
       hasRelayTopology,
     ],
@@ -1229,6 +1282,10 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   };
 
   const savePendingNewSiteDraft = async () => {
+    if (!canPersist) {
+      setSiteDraftStatus("Read-only mode: cannot save to library.");
+      return;
+    }
     if (!pendingNewSiteDraft) return;
     setSiteDraftStatus("Preparing site draft...");
     try {
@@ -1333,6 +1390,8 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
   };
 
   const onMapClick = (event: MapLayerMouseEvent) => {
+    const rawTarget = event.originalEvent?.target;
+    if (rawTarget instanceof Element && rawTarget.closest(".site-pin")) return;
     if (endpointPickTarget) return;
     const interactiveFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
     let id = interactiveFeature?.properties ? String(interactiveFeature.properties.id ?? "") : "";
@@ -1364,6 +1423,80 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
     setSiteDraftStatus(null);
   };
 
+  const addDiscoveryLibrarySiteToSimulation = (entryId: string) => {
+    if (!canPersist) {
+      setSiteDraftStatus("Read-only mode: cannot add library sites to this simulation.");
+      return;
+    }
+    if (sites.some((site) => site.libraryEntryId === entryId)) {
+      setSiteDraftStatus("That site is already in this simulation.");
+      return;
+    }
+    insertSiteFromLibrary(entryId);
+    setSiteDraftStatus("Added selected library site to the current simulation.");
+  };
+
+  const addDiscoveryMqttNodeToSimulation = (node: MeshmapNode) => {
+    if (!canPersist) {
+      setSiteDraftStatus("Read-only mode: cannot save MQTT nodes.");
+      return;
+    }
+    const existing = siteLibrary.find((entry) => {
+      const meta = entry.sourceMeta;
+      if (meta?.sourceType === "mqtt-feed" && meta.nodeId === node.nodeId) return true;
+      const latClose = Math.abs(entry.position.lat - node.lat) < 0.00001;
+      const lonClose = Math.abs(entry.position.lon - node.lon) < 0.00001;
+      return latClose && lonClose;
+    });
+    if (existing) {
+      setMqttDuplicatePrompt({
+        node,
+        existingId: existing.id,
+        existingName: existing.name,
+      });
+      setSiteDraftStatus(`Node already exists as "${existing.name}". Choose add existing or create a copy.`);
+      return;
+    }
+    requestSiteLibraryDraftAt(node.lat, node.lon, node.longName ?? node.shortName ?? node.nodeId, {
+      sourceType: "mqtt-feed",
+      sourceUrl: "/meshmap/nodes.json",
+      nodeId: node.nodeId,
+      longName: node.longName,
+      shortName: node.shortName,
+      hwModel: node.hwModel,
+      role: node.role,
+    });
+    setSiteDraftStatus("Opened MQTT node in Add Site form. Review and save to add it.");
+  };
+
+  const addExistingDuplicateMqttNode = () => {
+    if (!mqttDuplicatePrompt) return;
+    insertSiteFromLibrary(mqttDuplicatePrompt.existingId);
+    setSiteDraftStatus(`Added existing site "${mqttDuplicatePrompt.existingName}" to this simulation.`);
+    setMqttDuplicatePrompt(null);
+  };
+
+  const createDuplicateMqttCopy = () => {
+    if (!mqttDuplicatePrompt) return;
+    const node = mqttDuplicatePrompt.node;
+    requestSiteLibraryDraftAt(node.lat, node.lon, node.longName ?? node.shortName ?? node.nodeId, {
+      sourceType: "mqtt-feed",
+      sourceUrl: "/meshmap/nodes.json",
+      nodeId: node.nodeId,
+      longName: node.longName,
+      shortName: node.shortName,
+      hwModel: node.hwModel,
+      role: node.role,
+    });
+    setSiteDraftStatus(`Opened copy draft for "${mqttDuplicatePrompt.existingName}".`);
+    setMqttDuplicatePrompt(null);
+  };
+
+  const stopMapClickBubbling = (event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+  };
+
   if (!webglAvailable) {
     return (
       <div className="map-panel map-fallback">
@@ -1389,13 +1522,16 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       : basemapStylePreset;
   const globalProviders = providerCapabilities.filter((entry) => entry.group === "global");
   const regionalProviders = providerCapabilities.filter((entry) => entry.group === "regional");
+  const simulationOverlaySelectValue = coverageVizMode === "contours" ? "heatmap" : coverageVizMode;
+  const siteVisibilityMode: "simulation" | "library" | "mqtt" =
+    showDiscoveryMqtt ? "mqtt" : showDiscoverySites ? "library" : "simulation";
 
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
-      <div className="map-controls map-controls-provider">
+      <div className="map-controls map-controls-unified">
         <div className="map-controls-group map-controls-group-provider">
           <label className="map-provider-field">
-            <span>Basemap Provider</span>
+            <span>Provider</span>
             <select
               className="locale-select"
               onChange={(event) => {
@@ -1403,7 +1539,12 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                 const nextProviderConfig =
                   providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
                 setBasemapProvider(nextProvider);
-                setBasemapStylePreset(nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ?? nextProviderConfig.presets[0]?.id ?? "normal");
+                setBasemapStylePreset(
+                  nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
+                    nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
+                    nextProviderConfig.presets[0]?.id ??
+                    "normal",
+                );
                 setUseFallbackMapStyle(false);
                 setMapProviderWarning(null);
               }}
@@ -1446,53 +1587,65 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
               ))}
             </select>
           </label>
-        </div>
-      </div>
-      <div className="map-controls map-controls-main">
-        <div className="map-controls-group">
-          <button
-            className={`map-control-btn ${showTerrainOverlay ? "is-selected" : ""}`}
-            onClick={() => setShowTerrainOverlay((current) => !current)}
-            title="Toggle terrain overlay (visual only)"
-            type="button"
-          >
-            Terrain
-          </button>
-          <button
-            className={`map-control-btn ${coverageVizMode === "heatmap" || coverageVizMode === "contours" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode(coverageVizMode === "heatmap" || coverageVizMode === "contours" ? "none" : "heatmap")}
-            title="Coverage strength overlay"
-            type="button"
-          >
-            Heat
-          </button>
-          <button
-            className={`map-control-btn ${coverageVizMode === "passfail" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode(coverageVizMode === "passfail" ? "none" : "passfail")}
-            title="Coverage pass/fail against RX target"
-            type="button"
-          >
-            Pass/Fail
-          </button>
-          <button
-            className={`map-control-btn ${coverageVizMode === "relay" ? "is-selected" : ""}`}
-            onClick={() => setCoverageVizMode(coverageVizMode === "relay" ? "none" : "relay")}
-            title="Relay candidate quality between selected From/To endpoints"
-            type="button"
-          >
-            Relay
-          </button>
+          <label className="map-provider-field">
+            <span>Terrain</span>
+            <select
+              className="locale-select"
+              onChange={(event) => setShowTerrainOverlay(event.target.value === "on")}
+              value={showTerrainOverlay ? "on" : "off"}
+            >
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <label className="map-provider-field">
+            <span>Overlay</span>
+            <select
+              className="locale-select"
+              onChange={(event) => {
+                const mode = event.target.value as "none" | "heatmap" | "passfail" | "relay";
+                if (mode === "heatmap") {
+                  setCoverageVizMode("heatmap");
+                  return;
+                }
+                setCoverageVizMode(mode);
+              }}
+              value={simulationOverlaySelectValue}
+            >
+              <option value="none">Hidden</option>
+              <option value="heatmap">Heatmap</option>
+              <option value="passfail">Pass/Fail</option>
+              <option value="relay">Relay</option>
+            </select>
+          </label>
+          <label className="map-provider-field">
+            <span>Sites</span>
+            <select
+              className="locale-select"
+              onChange={(event) => {
+                const mode = event.target.value as "simulation" | "library" | "mqtt";
+                if (mode === "simulation") {
+                  setShowDiscoverySites(false);
+                  setShowDiscoveryMqtt(false);
+                  return;
+                }
+                if (mode === "library") {
+                  setShowDiscoverySites(true);
+                  setShowDiscoveryMqtt(false);
+                  return;
+                }
+                setShowDiscoverySites(false);
+                setShowDiscoveryMqtt(true);
+              }}
+              value={siteVisibilityMode}
+            >
+              <option value="simulation">Only Simulation</option>
+              <option value="library">Simulation + Library</option>
+              <option value="mqtt">Simulation + MQTT</option>
+            </select>
+          </label>
         </div>
         <div className="map-controls-group map-controls-group-utility">
-          <button
-            className="map-control-btn"
-            disabled={isSimulationRecomputing}
-            onClick={() => runHighQualitySimulation()}
-            title="Run one high-quality simulation pass"
-            type="button"
-          >
-            Render HQ
-          </button>
           <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
             {isMapExpanded ? "Exit Fullscreen" : "Fullscreen"}
           </button>
@@ -1505,6 +1658,11 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
           <button className="map-control-btn" onClick={() => zoomBy(-1)} type="button">
             -
           </button>
+          {onShare ? (
+            <button className="map-control-btn" onClick={onShare} type="button">
+              Share
+            </button>
+          ) : null}
         </div>
       </div>
       {(coverageVizMode !== "none" &&
@@ -1543,6 +1701,35 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         </div>
       ) : null}
       {mapProviderWarning ? <div className="map-control-note map-control-note-secondary">{mapProviderWarning}</div> : null}
+      {showDiscoverySites ? (
+        <div className="map-control-note map-control-note-secondary">
+          Shared/public library sites visible: {sharedOrPublicLibrarySites.length}. Click a marker to add it to this simulation.
+        </div>
+      ) : null}
+      {showDiscoveryMqtt ? (
+        <div className="map-control-note map-control-note-secondary">
+          {mqttLoadStatus ?? `MQTT nodes visible: ${mqttNodes.length}. Click a marker to open an Add Site draft.`}
+        </div>
+      ) : null}
+      {overlayHoverInfo ? <div className="map-control-note map-control-note-secondary">{overlayHoverInfo}</div> : null}
+      {mqttDuplicatePrompt ? (
+        <div className="map-control-note map-control-note-tertiary">
+          <div>
+            This MQTT node is already in your library as <strong>{mqttDuplicatePrompt.existingName}</strong>.
+          </div>
+          <span className="map-inline-actions">
+            <button className="map-control-btn" onClick={addExistingDuplicateMqttNode} type="button">
+              Add Existing
+            </button>
+            <button className="map-control-btn" onClick={createDuplicateMqttCopy} type="button">
+              Create Copy
+            </button>
+            <button className="map-control-btn" onClick={() => setMqttDuplicatePrompt(null)} type="button">
+              Cancel
+            </button>
+          </span>
+        </div>
+      ) : null}
       {endpointPickTarget && endpointPickError ? (
         <div className="map-control-note map-control-note-tertiary">{endpointPickError}</div>
       ) : null}
@@ -1550,9 +1737,11 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
         <div className="map-control-note map-control-note-tertiary">
           New site at {pendingNewSiteDraft.lat.toFixed(5)}, {pendingNewSiteDraft.lon.toFixed(5)}. Drag it, then save or dismiss.
           <span className="map-inline-actions">
-            <button className="map-control-btn" onClick={() => void savePendingNewSiteDraft()} type="button">
-              Save To Library
-            </button>
+            {canPersist ? (
+              <button className="map-control-btn" onClick={() => void savePendingNewSiteDraft()} type="button">
+                Save To Library
+              </button>
+            ) : null}
             <button className="map-control-btn" onClick={dismissPendingNewSiteDraft} type="button">
               Dismiss
             </button>
@@ -1561,15 +1750,18 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
       ) : null}
       {pendingMoveCount > 0 && pendingMovePreview ? (
         <div className="map-control-note map-control-note-tertiary">
-          {pendingMoveCount === 1
+          {(pendingMoveCount === 1
             ? `Unsaved move for ${sites.find((site) => site.id === pendingMovePreview.siteId)?.name ?? "site"} to ${pendingMovePreview.currentPosition.lat.toFixed(5)}, ${pendingMovePreview.currentPosition.lon.toFixed(5)}.`
-            : `${pendingMoveCount} sites have unsaved position changes.`}
+            : `${pendingMoveCount} sites have unsaved position changes.`) +
+            (readOnly && !canPersist ? " Read-only mode: changes are temporary." : "")}
           <span className="map-inline-actions">
-            <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
-              Save Positions
-            </button>
+            {canPersist ? (
+              <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
+                Save Positions
+              </button>
+            ) : null}
             <button className="map-control-btn" onClick={dismissPendingSiteMove} type="button">
-              Dismiss
+              {canPersist ? "Dismiss" : "Revert"}
             </button>
           </span>
         </div>
@@ -1613,16 +1805,13 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             <p>
               Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + simulation values" : "Simulation values"}
             </p>
-            <p>
-              Resolution: {coverageResolutionMode === "high" ? "High quality (one-shot)" : "Auto"} ({overlayDimensions.width}x
-              {overlayDimensions.height})
-            </p>
+            <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
             <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
             <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
             {largeAreaOptimizationActive ? (
               <p>
                 Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
-                Use HQ for one-shot higher detail.
+                Zoom in or narrow site spread for higher detail.
               </p>
             ) : (
               <p>Large-area optimization inactive at this simulation extent.</p>
@@ -1878,9 +2067,15 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
                 className={`site-pin ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""} ${
                   isFocusNode ? "is-mode-focus" : "is-dimmed"
                 }`}
-                onClick={() => onSiteClick(site.id)}
+                onClick={(event) => {
+                  stopMapClickBubbling(event);
+                  onSiteClick(site.id);
+                }}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") onSiteClick(site.id);
+                  if (event.key === "Enter" || event.key === " ") {
+                    stopMapClickBubbling(event);
+                    onSiteClick(site.id);
+                  }
                 }}
                 role="button"
                 tabIndex={0}
@@ -1890,6 +2085,73 @@ export function MapView({ isMapExpanded, onToggleMapExpanded }: MapViewProps) {
             </Marker>
           );
         })}
+
+        {showDiscoverySites
+          ? sharedOrPublicLibrarySites.map((entry) => (
+              <Marker
+                anchor="bottom"
+                key={`discover-site-${entry.id}`}
+                latitude={entry.position.lat}
+                longitude={entry.position.lon}
+              >
+                <div
+                  className="site-pin is-temporary"
+                  onMouseEnter={() =>
+                    setOverlayHoverInfo(
+                      `${entry.name} · ${entry.position.lat.toFixed(5)}, ${entry.position.lon.toFixed(5)}`,
+                    )
+                  }
+                  onMouseLeave={() => setOverlayHoverInfo(null)}
+                  onClick={(event) => {
+                    stopMapClickBubbling(event);
+                    addDiscoveryLibrarySiteToSimulation(entry.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      stopMapClickBubbling(event);
+                      addDiscoveryLibrarySiteToSimulation(entry.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <span>+ {entry.name}</span>
+                </div>
+              </Marker>
+            ))
+          : null}
+
+        {showDiscoveryMqtt
+          ? mqttNodes.map((node) => (
+              <Marker anchor="bottom" key={`discover-mqtt-${node.nodeId}`} latitude={node.lat} longitude={node.lon}>
+                <div
+                  className="site-pin is-temporary"
+                  onMouseEnter={() =>
+                    setOverlayHoverInfo(
+                      `${node.longName ?? node.shortName ?? node.nodeId} · ${node.nodeId}${
+                        node.shortName ? ` · ${node.shortName}` : ""
+                      }${node.hwModel ? ` · ${node.hwModel}` : ""}`,
+                    )
+                  }
+                  onMouseLeave={() => setOverlayHoverInfo(null)}
+                  onClick={(event) => {
+                    stopMapClickBubbling(event);
+                    addDiscoveryMqttNodeToSimulation(node);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      stopMapClickBubbling(event);
+                      addDiscoveryMqttNodeToSimulation(node);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <span>+ {node.longName ?? node.shortName ?? node.nodeId}</span>
+                </div>
+              </Marker>
+            ))
+          : null}
 
         {pendingNewSiteDraft ? (
           <Marker

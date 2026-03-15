@@ -279,7 +279,7 @@ const pickDefaultPreset = (
   _theme: BasemapTheme,
 ): BasemapStylePreset => {
   if (provider === "carto") {
-    const preferred = "normal";
+    const preferred = "normal-themed";
     return presets.find((preset) => preset.id === preferred) ?? presets[0];
   }
   return presets.find((preset) => preset.id === "normal") ?? presets[0];

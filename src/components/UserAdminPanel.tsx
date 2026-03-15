@@ -22,6 +22,7 @@ import {
   type SchemaDiagnostics,
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
+import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
@@ -43,6 +44,7 @@ const fmtDate = (iso: string | null | undefined): string => {
 
 const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;
+const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 
 const readDismissedNotificationIds = (): Set<string> => {
   try {
@@ -116,6 +118,8 @@ const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl:
 };
 
 export function UserAdminPanel() {
+  const runtimeEnvironment = getCurrentRuntimeEnvironment();
+  const isLocalRuntime = runtimeEnvironment === "local";
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
   const uiColorTheme = useAppStore((state) => state.uiColorTheme);
@@ -131,6 +135,8 @@ export function UserAdminPanel() {
 
   const [nameDraft, setNameDraft] = useState("");
   const [emailDraft, setEmailDraft] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [bioDraft, setBioDraft] = useState("");
   const [accessRequestNoteDraft, setAccessRequestNoteDraft] = useState("");
   const [avatarDraft, setAvatarDraft] = useState("");
@@ -150,6 +156,8 @@ export function UserAdminPanel() {
   const [managedUser, setManagedUser] = useState<CloudUser | null>(null);
   const [managedNameDraft, setManagedNameDraft] = useState("");
   const [managedEmailDraft, setManagedEmailDraft] = useState("");
+  const [managedNameError, setManagedNameError] = useState("");
+  const [managedEmailError, setManagedEmailError] = useState("");
   const [userFilter, setUserFilter] = useState<"all" | "pending" | "approved" | "revoked">("all");
   const [userSearch, setUserSearch] = useState("");
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(() =>
@@ -256,6 +264,8 @@ export function UserAdminPanel() {
       setMe(current);
       setNameDraft(current.username);
       setEmailDraft(current.email ?? "");
+      setNameError("");
+      setEmailError("");
       setBioDraft(current.bio ?? "");
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
@@ -344,12 +354,31 @@ export function UserAdminPanel() {
   );
 
   const saveMyProfile = async () => {
+    const trimmedName = nameDraft.trim();
+    const trimmedEmail = emailDraft.trim();
+    let hasError = false;
+    if (!trimmedName) {
+      setNameError("A name is required.");
+      hasError = true;
+    } else {
+      setNameError("");
+    }
+    if (!trimmedEmail) {
+      setEmailError("A valid email is required.");
+      hasError = true;
+    } else {
+      setEmailError("");
+    }
+    if (hasError) {
+      setStatus("Fix highlighted fields.");
+      return;
+    }
     setBusy(true);
     setStatus("");
     try {
       const updated = await updateMyProfile({
-        username: nameDraft,
-        email: emailDraft,
+        username: trimmedName,
+        email: trimmedEmail,
         bio: bioDraft,
         accessRequestNote: accessRequestNoteDraft,
         emailPublic: emailPublicDraft,
@@ -428,10 +457,29 @@ export function UserAdminPanel() {
   };
 
   const saveManagedProfile = async (user: CloudUser, patch: { username: string; email: string }) => {
+    const trimmedName = patch.username.trim();
+    const trimmedEmail = patch.email.trim();
+    let hasError = false;
+    if (!trimmedName) {
+      setManagedNameError("A name is required.");
+      hasError = true;
+    } else {
+      setManagedNameError("");
+    }
+    if (!trimmedEmail) {
+      setManagedEmailError("A valid email is required.");
+      hasError = true;
+    } else {
+      setManagedEmailError("");
+    }
+    if (hasError) {
+      setStatus("Fix highlighted fields.");
+      return;
+    }
     setBusy(true);
     setStatus("");
     try {
-      await updateUserProfile(user.id, patch);
+      await updateUserProfile(user.id, { username: trimmedName, email: trimmedEmail });
       await refreshAdminData();
       setStatus(`Profile updated for ${user.id}.`);
     } catch (error) {
@@ -541,6 +589,8 @@ export function UserAdminPanel() {
     if (!managedUser) return;
     setManagedNameDraft(managedUser.username);
     setManagedEmailDraft(managedUser.email ?? "");
+    setManagedNameError("");
+    setManagedEmailError("");
   }, [managedUser]);
 
   const openManagedUser = (user: CloudUser) => {
@@ -551,6 +601,8 @@ export function UserAdminPanel() {
     setManagedUser(null);
     setManagedNameDraft("");
     setManagedEmailDraft("");
+    setManagedNameError("");
+    setManagedEmailError("");
   };
 
   const resolveRole = (user: CloudUser): "admin" | "moderator" | "user" | "pending" =>
@@ -569,6 +621,19 @@ export function UserAdminPanel() {
     if (targetRole === "user") return nextRole === "pending";
     return false;
   };
+
+  const handleSignOut = useCallback(() => {
+    if (isLocalRuntime) {
+      try {
+        localStorage.setItem(LOCAL_FORCE_READONLY_KEY, "1");
+      } catch {
+        // ignore storage errors
+      }
+      window.location.reload();
+      return;
+    }
+    window.location.href = "/cdn-cgi/access/logout";
+  }, [isLocalRuntime]);
 
   return (
     <>
@@ -589,7 +654,7 @@ export function UserAdminPanel() {
             <div className="library-manager-header">
               <h2>User Settings</h2>
               <div className="chip-group">
-                <button className="inline-action" onClick={() => (window.location.href = "/cdn-cgi/access/logout")} type="button">
+                <button className="inline-action" onClick={handleSignOut} type="button">
                   Sign Out
                 </button>
                 <button className="inline-action" onClick={() => setOpen(false)} type="button">
@@ -622,12 +687,30 @@ export function UserAdminPanel() {
               <div className="user-settings-form-column">
                 <label className="field-grid user-field-grid">
                   <span>Name</span>
-                  <input onChange={(event) => setNameDraft(event.target.value)} type="text" value={nameDraft} />
+                  <input
+                    className={nameError ? "input-error" : ""}
+                    onChange={(event) => {
+                      setNameDraft(event.target.value);
+                      if (nameError) setNameError("");
+                    }}
+                    type="text"
+                    value={nameDraft}
+                  />
                 </label>
+                {nameError ? <p className="field-help field-help-error">{nameError}</p> : null}
                 <label className="field-grid user-field-grid">
                   <span>Email</span>
-                  <input onChange={(event) => setEmailDraft(event.target.value)} type="email" value={emailDraft} />
+                  <input
+                    className={emailError ? "input-error" : ""}
+                    onChange={(event) => {
+                      setEmailDraft(event.target.value);
+                      if (emailError) setEmailError("");
+                    }}
+                    type="email"
+                    value={emailDraft}
+                  />
                 </label>
+                {emailError ? <p className="field-help field-help-error">{emailError}</p> : null}
                 <div className="field-grid user-field-grid">
                   <span>
                     UI theme <InfoTip text="Choose whether LinkSim follows your system theme, or force light/dark mode." />
@@ -988,12 +1071,30 @@ export function UserAdminPanel() {
                   </div>
                   <label className="field-grid user-field-grid">
                     <span>Name</span>
-                    <input onChange={(event) => setManagedNameDraft(event.target.value)} type="text" value={managedNameDraft} />
+                    <input
+                      className={managedNameError ? "input-error" : ""}
+                      onChange={(event) => {
+                        setManagedNameDraft(event.target.value);
+                        if (managedNameError) setManagedNameError("");
+                      }}
+                      type="text"
+                      value={managedNameDraft}
+                    />
                   </label>
+                  {managedNameError ? <p className="field-help field-help-error">{managedNameError}</p> : null}
                   <label className="field-grid user-field-grid">
                     <span>Email</span>
-                    <input onChange={(event) => setManagedEmailDraft(event.target.value)} type="email" value={managedEmailDraft} />
+                    <input
+                      className={managedEmailError ? "input-error" : ""}
+                      onChange={(event) => {
+                        setManagedEmailDraft(event.target.value);
+                        if (managedEmailError) setManagedEmailError("");
+                      }}
+                      type="email"
+                      value={managedEmailDraft}
+                    />
                   </label>
+                  {managedEmailError ? <p className="field-help field-help-error">{managedEmailError}</p> : null}
                   {managedUser.accessRequestNote ? (
                     <p className="field-help">Access request note: {managedUser.accessRequestNote}</p>
                   ) : (

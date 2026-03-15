@@ -25,6 +25,7 @@
 - When catching UI errors, use `getUiErrorMessage()` from `src/lib/uiError.ts` for consistent messaging.
 - Do not leave backlog tasks in ambiguous state. Use `[x]` only when code and verification are done.
 - Do not start user-added backlog items without explicit user confirmation in the current thread.
+- Maintain `docs/BACKLOG.md` in close dialogue with the user: confirm wording/scope before starting newly added user items, and confirm completion criteria before checking them off.
 - Batch size policy:
   - Default to 3-4 backlog items per pass.
   - If scope is stable and low risk, target larger passes (~10 items) to reduce deploy churn.

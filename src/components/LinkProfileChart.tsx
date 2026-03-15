@@ -76,7 +76,6 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
   const propagationModel = useAppStore((state) => state.propagationModel);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
-  const coverageResolutionMode = useAppStore((state) => state.coverageResolutionMode);
   const profileRevision = useAppStore(
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
@@ -134,7 +133,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       selectedFromSiteEffective,
       selectedToSiteEffective,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-      coverageResolutionMode === "high" ? 320 : 120,
+      120,
     );
   }, [
     baseProfile,
@@ -143,7 +142,6 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     selectedToSiteEffective,
     siteDragPreview,
     srtmTiles,
-    coverageResolutionMode,
   ]);
   const fromSiteName = selectedFromSite?.name ?? "From";
   const toSiteName = selectedToSite?.name ?? "To";
@@ -285,7 +283,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
         selectedToSiteEffective.rxGainDbi,
         propagationModel,
         (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-        coverageResolutionMode === "high" ? 80 : 24,
+        24,
       );
       const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
       const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
@@ -304,7 +302,6 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     effectiveLink,
     propagationModel,
     srtmTiles,
-    coverageResolutionMode,
     environmentLossDb,
     rxSensitivityTargetDbm,
   ]);
@@ -391,7 +388,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       selectedToSiteEffective.rxGainDbi,
       propagationModel,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-      coverageResolutionMode === "high" ? 80 : 24,
+      24,
     );
     const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
     const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
@@ -408,7 +405,6 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     effectiveLink,
     propagationModel,
     srtmTiles,
-    coverageResolutionMode,
     environmentLossDb,
     rxSensitivityTargetDbm,
   ]);

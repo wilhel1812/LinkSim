@@ -35,6 +35,26 @@ export const fetchCloudLibrary = async (): Promise<CloudLibraryPayload> => {
   };
 };
 
+export const fetchPublicSimulationLibrary = async (params: {
+  simulationId?: string;
+  simulationSlug?: string;
+}): Promise<CloudLibraryPayload & { simulationId?: string }> => {
+  const query = new URLSearchParams();
+  if (params.simulationId?.trim()) query.set("sim", params.simulationId.trim());
+  if (params.simulationSlug?.trim()) query.set("slug", params.simulationSlug.trim());
+  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; simulationId?: unknown }>(
+    `/api/public-simulation?${query.toString()}`,
+    {
+      method: "GET",
+    },
+  );
+  return {
+    siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
+    simulationPresets: Array.isArray(data.simulationPresets) ? data.simulationPresets : [],
+    simulationId: typeof data.simulationId === "string" ? data.simulationId : undefined,
+  };
+};
+
 export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<void> => {
   const result = await apiCall<CloudPushResult>("/api/library", {
     method: "PUT",
@@ -46,6 +66,9 @@ export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<vo
     throw new Error(
       "Cannot publish/shared a simulation that references private library sites. Set simulation to Private or use non-private site entries.",
     );
+  }
+  if (conflicts.includes("simulation_name_taken")) {
+    throw new Error("Simulation name already exists. Use a unique simulation name.");
   }
   throw new Error(`Cloud rejected ${conflicts.length} item(s): ${conflicts.join(", ")}`);
 };

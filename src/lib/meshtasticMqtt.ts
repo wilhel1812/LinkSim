@@ -7,9 +7,6 @@ export type MeshmapNode = {
   lat: number;
   lon: number;
   altitudeM?: number;
-  precisionBits?: number;
-  lastSeenUnix?: number;
-  seenByTopics?: string[];
 };
 
 type MeshmapNodeRaw = {
@@ -46,6 +43,7 @@ export type MeshmapFetchResult = {
 };
 
 const DEFAULT_MESHMAP_FEED_URL = "/meshmap/nodes.json";
+const DIRECT_MESHMAP_FEED_URL = "https://meshmap.net/nodes.json";
 const MESHMAP_CACHE_KEY = "rmw-meshmap-cache-v1";
 const MESHMAP_SOURCE_URL_KEY = "rmw-meshmap-source-url-v1";
 
@@ -93,20 +91,6 @@ const parseNode = (nodeId: string, node: MeshmapNodeRaw): MeshmapNode | null => 
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
 
-  const seenByEntries =
-    node.seenBy && typeof node.seenBy === "object" ? Object.entries(node.seenBy as Record<string, unknown>) : [];
-  const seenByTopics = seenByEntries.map(([topic]) => topic);
-  const seenByMax = seenByEntries.reduce((max, [, ts]) => {
-    const n = toNumber(ts);
-    return n !== null ? Math.max(max, n) : max;
-  }, 0);
-  const lastSeenUnix = Math.max(
-    seenByMax,
-    toNumber(node.lastMapReport) ?? 0,
-    toNumber(node.lastDeviceMetrics) ?? 0,
-    toNumber(node.lastEnvironmentMetrics) ?? 0,
-  );
-
   return {
     nodeId,
     longName: toStringOrUndefined(node.longName),
@@ -116,9 +100,6 @@ const parseNode = (nodeId: string, node: MeshmapNodeRaw): MeshmapNode | null => 
     lat,
     lon,
     altitudeM: toNumber(node.altitude) ?? undefined,
-    precisionBits: toNumber(node.precision) ?? undefined,
-    lastSeenUnix: lastSeenUnix > 0 ? Math.round(lastSeenUnix) : undefined,
-    seenByTopics: seenByTopics.length ? seenByTopics : undefined,
   };
 };
 
@@ -139,7 +120,7 @@ const parseMeshmapLikeFeed = (payload: unknown): MeshmapNode[] => {
       if (parsed) out.push(parsed);
     }
   }
-  return out.sort((a, b) => (b.lastSeenUnix ?? 0) - (a.lastSeenUnix ?? 0));
+  return out.sort((a, b) => a.nodeId.localeCompare(b.nodeId));
 };
 
 export const getDefaultMeshmapFeedUrl = (): string => DEFAULT_MESHMAP_FEED_URL;
@@ -177,6 +158,7 @@ export const fetchMeshmapNodes = async (options: MeshmapFetchOptions = {}): Prom
   const sourceUrl = options.sourceUrl?.trim() || readPreferredMeshmapSourceUrl();
   const cacheTtlMs = options.cacheTtlMs ?? 12 * 60 * 60 * 1000;
   const cached = readCache();
+  const fallbackUrls = Array.from(new Set([DEFAULT_MESHMAP_FEED_URL, DIRECT_MESHMAP_FEED_URL]));
   try {
     const response = await fetch(sourceUrl, { cache: "no-store" });
     if (!response.ok) {
@@ -194,23 +176,22 @@ export const fetchMeshmapNodes = async (options: MeshmapFetchOptions = {}): Prom
       fromCache: false,
     };
   } catch (error) {
-    if (sourceUrl !== DEFAULT_MESHMAP_FEED_URL) {
+    for (const fallbackUrl of fallbackUrls) {
+      if (fallbackUrl === sourceUrl) continue;
       try {
-        const fallback = await fetch(DEFAULT_MESHMAP_FEED_URL, { cache: "no-store" });
-        if (fallback.ok) {
-          const payload = (await fallback.json()) as unknown;
-          const nodes = parseMeshmapLikeFeed(payload);
-          if (nodes.length) {
-            writeCache(DEFAULT_MESHMAP_FEED_URL, nodes);
-            return {
-              nodes,
-              sourceUrl: DEFAULT_MESHMAP_FEED_URL,
-              fromCache: false,
-            };
-          }
-        }
+        const fallback = await fetch(fallbackUrl, { cache: "no-store" });
+        if (!fallback.ok) continue;
+        const payload = (await fallback.json()) as unknown;
+        const nodes = parseMeshmapLikeFeed(payload);
+        if (!nodes.length) continue;
+        writeCache(fallbackUrl, nodes);
+        return {
+          nodes,
+          sourceUrl: fallbackUrl,
+          fromCache: false,
+        };
       } catch {
-        // Continue to cache fallback / throw.
+        // Try next fallback URL.
       }
     }
     if (

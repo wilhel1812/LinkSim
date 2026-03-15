@@ -54,6 +54,7 @@ export type MapOverlayMode = "none" | "heatmap" | "contours" | "passfail" | "rel
 type SiteLibraryEntry = {
   id: string;
   name: string;
+  description?: string;
   visibility?: "private" | "public" | "shared";
   sharedWith?: Array<{ userId: string; role: "viewer" | "editor" | "admin" }>;
   ownerUserId?: string;
@@ -67,20 +68,23 @@ type SiteLibraryEntry = {
   cableLossDb: number;
   createdAt: string;
   sourceMeta?: {
-    provider: string;
     sourceType: string;
+    sourceUrl?: string;
     nodeId?: string;
     shortName?: string;
     longName?: string;
     hwModel?: string;
-    lastSeenUnix?: number;
-    raw?: Record<string, unknown>;
+    role?: string;
+    importedAt?: string;
+    syncedAt?: string;
   };
 };
 
 type SimulationPreset = {
   id: string;
   name: string;
+  slug?: string;
+  slugAliases?: string[];
   visibility?: "private" | "public" | "shared";
   sharedWith?: Array<{ userId: string; role: "viewer" | "editor" | "admin" }>;
   ownerUserId?: string;
@@ -116,7 +120,6 @@ type AppState = {
   isSimulationRecomputing: boolean;
   simulationProgress: number;
   simulationRunToken: string;
-  coverageResolutionMode: "auto" | "high";
   isTerrainFetching: boolean;
   isTerrainRecommending: boolean;
   isElevationSyncing: boolean;
@@ -148,7 +151,9 @@ type AppState = {
   simulationPresets: SimulationPreset[];
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
   endpointPickTarget: "from" | "to" | null;
-  pendingSiteLibraryDraft: { lat: number; lon: number; token: string; suggestedName?: string } | null;
+  pendingSiteLibraryDraft:
+    | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
+    | null;
   scenarioOptions: { id: string; name: string }[];
   mapOverlayMode: MapOverlayMode;
   setLocale: (locale: LocaleCode) => void;
@@ -164,7 +169,6 @@ type AppState = {
   setSelectedSiteId: (id: string) => void;
   setSelectedNetworkId: (id: string) => void;
   setSelectedCoverageMode: (mode: CoverageMode) => void;
-  runHighQualitySimulation: () => void;
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
   setEnvironmentLossDb: (value: number) => void;
@@ -188,6 +192,12 @@ type AppState = {
     cableLossDb?: number,
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
     visibility?: "private" | "public" | "shared",
+    description?: string,
+    createdBy?: {
+      userId: string;
+      name: string;
+      avatarUrl?: string;
+    },
   ) => string;
   insertSiteFromLibrary: (entryId: string) => void;
   insertSitesFromLibrary: (entryIds: string[]) => void;
@@ -243,7 +253,12 @@ type AppState = {
     simulationCount: number;
   };
   setEndpointPickTarget: (target: "from" | "to" | null) => void;
-  requestSiteLibraryDraftAt: (lat: number, lon: number, suggestedName?: string) => void;
+  requestSiteLibraryDraftAt: (
+    lat: number,
+    lon: number,
+    suggestedName?: string,
+    sourceMeta?: SiteLibraryEntry["sourceMeta"],
+  ) => void;
   clearPendingSiteLibraryDraft: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
@@ -260,7 +275,7 @@ type AppState = {
   clearTerrainCache: () => Promise<void>;
   syncSiteElevationsOnline: () => Promise<void>;
   syncSiteElevationOnline: (siteId: string) => Promise<void>;
-  recomputeCoverage: (qualityOverride?: "auto" | "high") => void;
+  recomputeCoverage: () => void;
   getSelectedLink: () => Link;
   getSelectedSite: () => Site;
   getSelectedNetwork: () => Network;
@@ -341,6 +356,31 @@ const writeStorage = (key: string, value: unknown, options?: { snapshot?: boolea
 
 const makeId = (prefix: string): string =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const slugifyValue = (value: string): string =>
+  value
+    .trim()
+    .toLocaleLowerCase()
+    .normalize("NFKC")
+    .replace(/ß/g, "ss")
+    .replace(/æ/g, "ae")
+    .replace(/ø/g, "o")
+    .replace(/å/g, "a")
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+const hasDuplicateSimulationName = (
+  presets: SimulationPreset[],
+  name: string,
+  ignorePresetId?: string,
+): boolean => {
+  const target = name.trim().toLowerCase();
+  if (!target) return false;
+  return presets.some((preset) => preset.id !== ignorePresetId && preset.name.trim().toLowerCase() === target);
+};
 
 const legacyDemoSiteFingerprint = new Set([
   "bislett|59.925000|10.732000",
@@ -424,8 +464,15 @@ const normalizeSimulationPresets = (presets: SimulationPreset[]): SimulationPres
         Array.isArray(preset.snapshot?.sites) ? preset.snapshot.sites : [],
         Array.isArray(preset.snapshot?.links) ? preset.snapshot.links : [],
       );
+      const slug = slugifyValue(typeof preset.slug === "string" && preset.slug.trim() ? preset.slug : preset.name);
+      const aliasSet = new Set(
+        Array.isArray(preset.slugAliases) ? preset.slugAliases.map((entry) => slugifyValue(String(entry))) : [],
+      );
+      aliasSet.delete(slug);
       return {
         ...preset,
+        slug,
+        slugAliases: Array.from(aliasSet).filter(Boolean),
         snapshot: {
           ...preset.snapshot,
           sites: migrated.sites,
@@ -720,7 +767,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   isSimulationRecomputing: false,
   simulationProgress: 0,
   simulationRunToken: "",
-  coverageResolutionMode: "auto",
   isTerrainFetching: false,
   isTerrainRecommending: false,
   isElevationSyncing: false,
@@ -830,9 +876,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedCoverageMode: mode });
     get().recomputeCoverage();
   },
-  runHighQualitySimulation: () => {
-    get().recomputeCoverage("high");
-  },
   setSelectedFrequencyPresetId: (id) => set({ selectedFrequencyPresetId: id }),
   setRxSensitivityTargetDbm: (value) => set({ rxSensitivityTargetDbm: value }),
   setEnvironmentLossDb: (value) => set({ environmentLossDb: Math.max(0, value) }),
@@ -861,7 +904,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setTerrainDataset: (dataset) => set({ terrainDataset: dataset }),
   addSiteByCoordinates: (name, lat, lon) => {
-    const label = name.trim() || `Site ${get().sites.length + 1}`;
+    const label = name.trim();
+    if (!label) return;
     const id = makeId("site");
     const libraryEntryId = makeId("libsite");
     const newSite: Site = {
@@ -987,11 +1031,43 @@ export const useAppStore = create<AppState>((set, get) => ({
     cableLossDb = STANDARD_SITE_RADIO.cableLossDb,
     sourceMeta,
     visibility = "shared",
+    description,
+    createdBy,
   ) => {
-    const label = name.trim() || `Library Site ${get().siteLibrary.length + 1}`;
+    const label = name.trim();
+    if (!label) return "";
+    const nowIso = new Date().toISOString();
+    const normalizedMeta =
+      sourceMeta && sourceMeta.sourceType === "mqtt-feed"
+        ? {
+            ...sourceMeta,
+            sourceType: "mqtt-feed",
+            importedAt: sourceMeta.importedAt ?? nowIso,
+            syncedAt: nowIso,
+          }
+        : sourceMeta;
+    const descriptionText = description?.trim() ?? "";
+    const metadataDescription =
+      normalizedMeta?.sourceType === "mqtt-feed"
+        ? [
+            normalizedMeta.longName ? `Long name: ${normalizedMeta.longName}` : null,
+            normalizedMeta.shortName ? `Short name: ${normalizedMeta.shortName}` : null,
+            normalizedMeta.nodeId ? `Node ID: ${normalizedMeta.nodeId}` : null,
+            normalizedMeta.hwModel ? `HW model: ${normalizedMeta.hwModel}` : null,
+            normalizedMeta.role ? `Role: ${normalizedMeta.role}` : null,
+            normalizedMeta.sourceUrl ? `Source: ${normalizedMeta.sourceUrl}` : null,
+          ]
+            .filter((item): item is string => Boolean(item))
+            .join("\n")
+        : "";
     const entry: SiteLibraryEntry = {
       id: makeId("libsite"),
       name: label,
+      ...(descriptionText || metadataDescription
+        ? {
+            description: [descriptionText, metadataDescription].filter(Boolean).join("\n\n"),
+          }
+        : {}),
       visibility: visibility === "public" ? "shared" : visibility,
       sharedWith: [],
       position: { lat, lon },
@@ -1001,8 +1077,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       txGainDbi,
       rxGainDbi,
       cableLossDb,
-      createdAt: new Date().toISOString(),
-      sourceMeta,
+      createdAt: nowIso,
+      sourceMeta: normalizedMeta,
+      ...(createdBy?.userId
+        ? {
+            ownerUserId: createdBy.userId,
+            createdByUserId: createdBy.userId,
+            createdByName: createdBy.name,
+            createdByAvatarUrl: createdBy.avatarUrl ?? "",
+            lastEditedByUserId: createdBy.userId,
+            lastEditedByName: createdBy.name,
+            lastEditedByAvatarUrl: createdBy.avatarUrl ?? "",
+          }
+        : {}),
     };
     set((state) => {
       const next = normalizeSiteLibrary([entry, ...state.siteLibrary]);
@@ -1053,7 +1140,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   insertSitesFromLibrary: (entryIds) => {
     const requested = new Set(entryIds);
     if (!requested.size) return;
-    const entries = get().siteLibrary.filter((candidate) => requested.has(candidate.id));
+    const current = get();
+    const existingLibraryEntryIds = new Set(
+      current.sites.map((site) => site.libraryEntryId).filter((value): value is string => Boolean(value)),
+    );
+    const entries = current.siteLibrary.filter(
+      (candidate) => requested.has(candidate.id) && !existingLibraryEntryIds.has(candidate.id),
+    );
     if (!entries.length) return;
     const createdSiteIds: string[] = [];
     const addedSites: Site[] = entries.map((entry) => {
@@ -1224,6 +1317,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextPreset: SimulationPreset = {
         id: existing?.id ?? makeId("sim"),
         name: presetName,
+        slug: slugifyValue(presetName),
+        slugAliases: Array.from(
+          new Set([
+            ...((existing?.slugAliases ?? []).map((entry) => slugifyValue(entry))),
+            ...(existing?.slug ? [slugifyValue(existing.slug)] : []),
+          ]),
+        ).filter((entry) => Boolean(entry) && entry !== slugifyValue(presetName)),
         visibility: visibilitySafe,
         sharedWith: existing?.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
@@ -1245,8 +1345,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   createBlankSimulationPreset: (name, options) => {
     const presetName = name.trim();
     if (!presetName) return null;
+    if (hasDuplicateSimulationName(get().simulationPresets, presetName)) return null;
     set((current) => {
-      const existing = current.simulationPresets.find((preset) => preset.name === presetName);
       const snapshot: SimulationPreset["snapshot"] = {
         sites: [],
         links: [],
@@ -1266,13 +1366,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         mapViewport: current.mapViewport,
       };
       const nextPreset = {
-        id: existing?.id ?? makeId("sim"),
+        id: makeId("sim"),
         name: presetName,
-        visibility: options?.visibility ?? existing?.visibility ?? "shared",
-        sharedWith: existing?.sharedWith ?? [],
+        slug: slugifyValue(presetName),
+        slugAliases: [],
+        visibility: options?.visibility ?? "shared",
+        sharedWith: [],
         updatedAt: new Date().toISOString(),
         snapshot,
-        ownerUserId: options?.ownerUserId ?? existing?.ownerUserId,
+        ownerUserId: options?.ownerUserId,
         ...(options?.createdByUserId ? { createdByUserId: options.createdByUserId } : {}),
         ...(options?.createdByName ? { createdByName: options.createdByName } : {}),
         ...(options?.createdByAvatarUrl ? { createdByAvatarUrl: options.createdByAvatarUrl } : {}),
@@ -1280,7 +1382,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(options?.lastEditedByName ? { lastEditedByName: options.lastEditedByName } : {}),
         ...(options?.lastEditedByAvatarUrl ? { lastEditedByAvatarUrl: options.lastEditedByAvatarUrl } : {}),
       } as SimulationPreset;
-      const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
+      const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);
       return { simulationPresets: next };
     });
@@ -1329,6 +1431,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextPreset: SimulationPreset = {
         id: existing.id,
         name: existing.name,
+        slug: existing.slug ?? slugifyValue(existing.name),
+        slugAliases: existing.slugAliases ?? [],
         visibility: visibilitySafe,
         sharedWith: existing.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
@@ -1470,14 +1574,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   renameSimulationPreset: (presetId, name) => {
     const nextName = name.trim();
     if (!nextName) return;
+    if (hasDuplicateSimulationName(get().simulationPresets, nextName, presetId)) return;
     set((state) => {
       const next = state.simulationPresets.map((preset) =>
         preset.id === presetId
-          ? {
-              ...preset,
-              name: nextName,
-              updatedAt: new Date().toISOString(),
-            }
+          ? (() => {
+              const nextSlug = slugifyValue(nextName);
+              const aliasSet = new Set([
+                ...(preset.slug ? [slugifyValue(preset.slug)] : []),
+                ...((preset.slugAliases ?? []).map((entry) => slugifyValue(entry))),
+              ]);
+              aliasSet.delete(nextSlug);
+              return {
+                ...preset,
+                name: nextName,
+                slug: nextSlug,
+                slugAliases: Array.from(aliasSet).filter(Boolean),
+                updatedAt: new Date().toISOString(),
+              };
+            })()
           : preset,
       );
       writeStorage(SIM_PRESETS_KEY, next);
@@ -1485,9 +1600,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   updateSimulationPresetEntry: (presetId, patch) => {
+    if (typeof patch.name === "string") {
+      const candidate = patch.name.trim();
+      if (!candidate) return;
+      if (hasDuplicateSimulationName(get().simulationPresets, candidate, presetId)) return;
+    }
     set((state) => {
       const next = state.simulationPresets.map((preset) => {
         if (preset.id !== presetId) return preset;
+        const nextName = typeof patch.name === "string" ? patch.name.trim() : preset.name;
+        const nextSlug = slugifyValue(nextName || preset.name);
+        const aliasSet = new Set([
+          ...(preset.slug ? [slugifyValue(preset.slug)] : []),
+          ...((preset.slugAliases ?? []).map((entry) => slugifyValue(entry))),
+        ]);
+        aliasSet.delete(nextSlug);
         const nextVisibilityRaw = patch.visibility ?? preset.visibility ?? "shared";
         const nextVisibility =
           nextVisibilityRaw !== "private" && hasPrivateLibrarySiteReferences(preset.snapshot.sites, state.siteLibrary)
@@ -1496,6 +1623,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         return {
           ...preset,
           ...patch,
+          name: nextName,
+          slug: nextSlug,
+          slugAliases: Array.from(aliasSet).filter(Boolean),
           visibility: nextVisibility,
           updatedAt: new Date().toISOString(),
         };
@@ -1587,13 +1717,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   },
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
-  requestSiteLibraryDraftAt: (lat, lon, suggestedName) =>
+  requestSiteLibraryDraftAt: (lat, lon, suggestedName, sourceMeta) =>
     set({
       pendingSiteLibraryDraft: {
         lat,
         lon,
         token: makeId("draft"),
         suggestedName: typeof suggestedName === "string" ? suggestedName : undefined,
+        sourceMeta:
+          sourceMeta && sourceMeta.sourceType === "mqtt-feed"
+            ? {
+                ...sourceMeta,
+                sourceType: "mqtt-feed",
+              }
+            : undefined,
       },
     }),
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
@@ -1863,15 +2000,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ isElevationSyncing: false });
     }
   },
-  recomputeCoverage: (qualityOverride = "auto") => {
-    const runQuality = qualityOverride;
+  recomputeCoverage: () => {
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const startedAt = Date.now();
     set({
       simulationRunToken: runId,
       isSimulationRecomputing: true,
       simulationProgress: 3,
-      coverageResolutionMode: runQuality,
     });
 
     const runComputation = () => {
@@ -1899,7 +2034,6 @@ export const useAppStore = create<AppState>((set, get) => ({
             coverageSamples: [],
             isSimulationRecomputing: false,
             simulationProgress: 100,
-            coverageResolutionMode: "auto",
           });
           window.setTimeout(() => {
             if (get().simulationRunToken === runId) {
@@ -1943,8 +2077,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         effectiveEnvironment,
         ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
         {
-          sampleMultiplier: runQuality === "high" ? 4 : 1,
-          terrainSamples: runQuality === "high" ? 72 : 20,
+          sampleMultiplier: 1,
+          terrainSamples: 20,
           onProgress: (progress) => {
             if (get().simulationRunToken !== runId) return;
             set({ simulationProgress: Math.round(8 + progress * 84) });
@@ -1958,7 +2092,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           coverageSamples,
           isSimulationRecomputing: false,
           simulationProgress: 100,
-          coverageResolutionMode: "auto",
         });
         window.setTimeout(() => {
           if (get().simulationRunToken === runId) {
@@ -2048,7 +2181,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       getSelectedSites,
       propagationModel,
       srtmTiles,
-      coverageResolutionMode,
       autoPropagationEnvironment,
       propagationEnvironment,
     } = get();
@@ -2075,13 +2207,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationModel,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
       {
-        terrainSamples: coverageResolutionMode === "high" ? 80 : 32,
+        terrainSamples: 32,
         environment: autoDerived?.environment ?? propagationEnvironment,
       },
     );
   },
   getSelectedProfile: () => {
-    const { getSelectedLink, getSelectedNetwork, getSelectedSites, srtmTiles, coverageResolutionMode } = get();
+    const { getSelectedLink, getSelectedNetwork, getSelectedSites, srtmTiles } = get();
     const link = getSelectedLink();
     const selectedNetwork = getSelectedNetwork();
     const effectiveLink = {
@@ -2095,7 +2227,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       fromSite,
       toSite,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-      coverageResolutionMode === "high" ? 320 : 120,
+      120,
     );
   },
 }));

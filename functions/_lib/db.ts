@@ -5,7 +5,7 @@ const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
-const SCHEMA_VERSION = "2026-03-12c";
+const SCHEMA_VERSION = "2026-03-15a";
 type AccountState = "pending" | "approved" | "revoked";
 
 const dbVisibilityFromVisibility = (value: Visibility): DbVisibility => {
@@ -51,6 +51,56 @@ const sanitizeName = (value: unknown): string | null => {
   const name = value.trim().replace(/\s+/g, " ");
   if (name.length < 2 || name.length > 80) return null;
   return name;
+};
+
+const slugifyName = (value: string): string =>
+  value
+    .trim()
+    .toLocaleLowerCase()
+    .normalize("NFKC")
+    .replace(/ß/g, "ss")
+    .replace(/æ/g, "ae")
+    .replace(/ø/g, "o")
+    .replace(/å/g, "a")
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+const sanitizeSlugAliasList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const slug = slugifyName(item);
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    out.push(slug);
+  }
+  return out;
+};
+
+const isMeaningfulChangeField = (field: string): boolean => {
+  const normalized = field.trim();
+  if (!normalized) return false;
+  const ignored = new Set([
+    "content",
+    "updatedAt",
+    "updated_at",
+    "lastEditedAt",
+    "last_edited_at",
+    "lastEditedByUserId",
+    "last_edited_by_user_id",
+    "lastEditedByName",
+    "lastEditedByAvatarUrl",
+    "createdAt",
+    "created_at",
+    "slugAliases",
+    "slug_aliases",
+  ]);
+  return !ignored.has(normalized);
 };
 
 const sanitizeEmail = (value: unknown): string | null => {
@@ -197,7 +247,17 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
   deleted_users: ["id", "deleted_at", "deleted_by_user_id"],
   site_roles: ["site_id", "user_id", "role", "created_at"],
   simulation_roles: ["simulation_id", "user_id", "role", "created_at"],
-  resource_changes: ["id", "resource_kind", "resource_id", "action", "actor_user_id", "changed_at", "note"],
+  resource_changes: [
+    "id",
+    "resource_kind",
+    "resource_id",
+    "action",
+    "actor_user_id",
+    "changed_at",
+    "note",
+    "details_json",
+    "snapshot_json",
+  ],
   user_identity_audit: [
     "id",
     "event_type",
@@ -321,7 +381,9 @@ const ensureSchema = async (env: Env): Promise<void> => {
             action TEXT NOT NULL CHECK (action IN ('created','updated')),
             actor_user_id TEXT NOT NULL,
             changed_at TEXT NOT NULL,
-            note TEXT
+            note TEXT,
+            details_json TEXT,
+            snapshot_json TEXT
           )`,
         ),
         env.DB.prepare(
@@ -999,13 +1061,26 @@ const createResourceChange = async (
   action: "created" | "updated",
   actorUserId: string,
   note: string,
+  options?: {
+    details?: Record<string, unknown>;
+    snapshot?: Record<string, unknown>;
+  },
 ) => {
   await env.DB
     .prepare(
-      `INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at, note)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO resource_changes (resource_kind, resource_id, action, actor_user_id, changed_at, note, details_json, snapshot_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(kind, id, action, actorUserId, new Date().toISOString(), note)
+    .bind(
+      kind,
+      id,
+      action,
+      actorUserId,
+      new Date().toISOString(),
+      note,
+      options?.details ? JSON.stringify(options.details) : null,
+      options?.snapshot ? JSON.stringify(options.snapshot) : null,
+    )
     .run();
 };
 
@@ -1081,7 +1156,7 @@ const canReadResource = (
 const canEditResource = (
   actor: ActorPolicy,
   ownerUserId: string,
-  visibility: Visibility,
+  _visibility: Visibility,
   explicitRole: string | null,
 ): boolean => {
   if (actor.isAdmin) return true;
@@ -1089,7 +1164,7 @@ const canEditResource = (
   if (explicitRole === "admin" || explicitRole === "editor") return true;
   // Moderators must be explicit collaborators (or owners) to edit resources they do not own.
   if (actor.isModerator) return false;
-  return visibility === "shared";
+  return false;
 };
 
 const upsertOwnedResource = async (
@@ -1102,7 +1177,7 @@ const upsertOwnedResource = async (
   const rolesTable = kind === "site" ? "site_roles" : "simulation_roles";
 
   const id = typeof item.id === "string" ? item.id.trim() : "";
-  const name = typeof item.name === "string" ? item.name.trim() : "";
+  const name = sanitizeName(item.name);
   if (!id || !name) return { ok: false, reason: `invalid_${kind}` };
 
   const visibility = sanitizeVisibility(item.visibility);
@@ -1130,7 +1205,41 @@ const upsertOwnedResource = async (
 
   const ownerId = existing?.owner_user_id ?? actor.id;
   const sharedWith = requestedSharedWith.filter((grant) => grant.userId !== ownerId);
-  const payload = JSON.stringify({ ...item, visibility, sharedWith });
+
+  if (kind === "simulation") {
+    const duplicate = await env.DB
+      .prepare(
+        `SELECT id
+         FROM simulations
+         WHERE lower(name) = lower(?)
+           AND id != ?
+         LIMIT 1`,
+      )
+      .bind(name, id)
+      .first<{ id: string }>();
+    if (duplicate?.id) {
+      return { ok: false, reason: "simulation_name_taken" };
+    }
+  }
+
+  const existingPayload = existing ? (JSON.parse(existing.payload_json) as CloudResourceRecord) : null;
+  const simulationSlug = kind === "simulation" ? slugifyName(name) : "";
+  const previousSlug =
+    kind === "simulation" && existingPayload && typeof existingPayload.slug === "string"
+      ? slugifyName(existingPayload.slug)
+      : "";
+  const aliasSeed = kind === "simulation" ? sanitizeSlugAliasList(existingPayload?.slugAliases) : [];
+  const slugAliases =
+    kind === "simulation"
+      ? Array.from(new Set([...(previousSlug ? [previousSlug] : []), ...aliasSeed].filter((entry) => entry && entry !== simulationSlug)))
+      : [];
+  const nextRecord: CloudResourceRecord = {
+    ...item,
+    visibility,
+    sharedWith,
+    ...(kind === "simulation" ? { slug: simulationSlug, slugAliases } : {}),
+  };
+  const payload = JSON.stringify(nextRecord);
 
   if (kind === "simulation" && visibility !== "private") {
     const referencedSiteIds = referencedLibrarySiteIdsFromSimulation(item);
@@ -1161,8 +1270,8 @@ const upsertOwnedResource = async (
   if (!changed) return { ok: true };
 
   if (existing) {
-    const existingPayload = JSON.parse(existing.payload_json) as CloudResourceRecord;
-    const existingGrants = sanitizeGrants(existingPayload.sharedWith).filter((grant) => grant.userId !== ownerId);
+    const existingPayloadForGrants = JSON.parse(existing.payload_json) as CloudResourceRecord;
+    const existingGrants = sanitizeGrants(existingPayloadForGrants.sharedWith).filter((grant) => grant.userId !== ownerId);
     const existingGrantUsers = new Set(existingGrants.map((grant) => grant.userId));
     const nextGrantUsers = new Set(sharedWith.map((grant) => grant.userId));
     const removedCollaborators = [...existingGrantUsers].filter((userId) => !nextGrantUsers.has(userId));
@@ -1217,17 +1326,47 @@ const upsertOwnedResource = async (
   }
 
   const changeDetails: string[] = [];
+  const diff: Record<string, { before: unknown; after: unknown }> = {};
   if (isCreate) {
     changeDetails.push("initial record");
   } else {
-    if (existing && existing.name !== name) changeDetails.push("name");
-    if (existing && visibilityFromDbVisibility(existing.visibility) !== visibility) changeDetails.push("visibility");
-    if (existing && existing.payload_json !== payload) changeDetails.push("content");
+    if (existing && existing.name !== name) {
+      changeDetails.push("name");
+      diff.name = { before: existing.name, after: name };
+    }
+    if (existing && visibilityFromDbVisibility(existing.visibility) !== visibility) {
+      changeDetails.push("visibility");
+      diff.visibility = { before: visibilityFromDbVisibility(existing.visibility), after: visibility };
+    }
+    if (existing && existing.payload_json !== payload) {
+      const beforePayload = JSON.parse(existing.payload_json) as Record<string, unknown>;
+      const afterPayload = nextRecord as Record<string, unknown>;
+      const keys = new Set([...Object.keys(beforePayload), ...Object.keys(afterPayload)]);
+      for (const key of keys) {
+        if (key === "updatedAt") continue;
+        const before = beforePayload[key];
+        const after = afterPayload[key];
+        if (JSON.stringify(before) !== JSON.stringify(after)) {
+          diff[key] = { before, after };
+        }
+      }
+      if (Object.keys(diff).some((key) => isMeaningfulChangeField(key))) {
+        changeDetails.push("content");
+      }
+    }
   }
+  const meaningfulChangedFields = Object.keys(diff).filter(isMeaningfulChangeField);
+  const summaryDetails = changeDetails.filter((detail) => detail !== "content" || meaningfulChangedFields.length > 0);
   const note = isCreate
-    ? `Created "${name}" (${changeDetails.join(", ")})`
-    : `Updated "${name}" (${changeDetails.join(", ") || "content"})`;
-  await createResourceChange(env, kind, id, isCreate ? "created" : "updated", actor.id, note);
+    ? `Created "${name}" (${summaryDetails.join(", ") || "initial record"})`
+    : `Updated "${name}" (${summaryDetails.join(", ") || "record"})`;
+  await createResourceChange(env, kind, id, isCreate ? "created" : "updated", actor.id, note, {
+    details: {
+      changedFields: meaningfulChangedFields,
+      diff,
+    },
+    snapshot: nextRecord as Record<string, unknown>,
+  });
 
   return { ok: true };
 };
@@ -1259,8 +1398,17 @@ export const upsertLibrarySnapshot = async (
 
 const canEditByRole = (role: string | null, visibility: Visibility, actorIsModerator: boolean): boolean => {
   if (role === "admin" || role === "editor") return true;
+  if (visibility === "private") return false;
   if (actorIsModerator) return false;
-  return visibility === "shared";
+  return false;
+};
+
+const userDisplayFallback = (name: string | null | undefined, userId: string | null | undefined): string => {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (trimmed.length) return trimmed;
+  const id = typeof userId === "string" ? userId.trim() : "";
+  if (!id) return "Unknown";
+  return `User ${id.slice(0, 8)}`;
 };
 
 type LibraryRow = {
@@ -1360,13 +1508,18 @@ export const fetchLibraryForUser = async (
         try {
           const parsed = JSON.parse(row.payload_json) as CloudResourceRecord;
           const createdByUserId = row.created_by_user_id ?? row.first_actor_user_id ?? row.owner_user_id;
-          const createdByName = row.created_by_name ?? row.first_actor_name ?? row.owner_name ?? "Unknown";
+          const createdByName = userDisplayFallback(
+            row.created_by_name ?? row.first_actor_name ?? row.owner_name,
+            createdByUserId ?? row.owner_user_id,
+          );
           const createdByAvatarUrl =
             row.created_by_avatar_url ?? row.first_actor_avatar_url ?? row.owner_avatar_url ?? "";
           const lastEditedByUserId =
             row.last_edited_by_user_id ?? row.last_actor_user_id ?? createdByUserId ?? row.owner_user_id;
-          const lastEditedByName =
-            row.last_edited_by_name ?? row.last_actor_name ?? createdByName ?? row.owner_name ?? "Unknown";
+          const lastEditedByName = userDisplayFallback(
+            row.last_edited_by_name ?? row.last_actor_name ?? createdByName ?? row.owner_name,
+            lastEditedByUserId ?? createdByUserId ?? row.owner_user_id,
+          );
           const lastEditedByAvatarUrl =
             row.last_edited_by_avatar_url ?? row.last_actor_avatar_url ?? createdByAvatarUrl ?? row.owner_avatar_url ?? "";
           return {
@@ -1623,12 +1776,14 @@ export const fetchResourceChanges = async (
     actorUserId: string;
     actorName: string | null;
     actorAvatarUrl: string | null;
+    details: Record<string, unknown> | null;
+    snapshot: Record<string, unknown> | null;
   }>
 > => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      `SELECT c.id, c.action, c.changed_at, c.note, c.actor_user_id,
+      `SELECT c.id, c.action, c.changed_at, c.note, c.actor_user_id, c.details_json, c.snapshot_json,
               u.username AS actor_name,
               u.avatar_url AS actor_avatar_url
        FROM resource_changes c
@@ -1644,6 +1799,8 @@ export const fetchResourceChanges = async (
       changed_at: string;
       note: string | null;
       actor_user_id: string;
+      details_json: string | null;
+      snapshot_json: string | null;
       actor_name: string | null;
       actor_avatar_url: string | null;
     }>();
@@ -1656,7 +1813,61 @@ export const fetchResourceChanges = async (
     actorUserId: row.actor_user_id,
     actorName: row.actor_name,
     actorAvatarUrl: row.actor_avatar_url,
+    details: row.details_json ? (JSON.parse(row.details_json) as Record<string, unknown>) : null,
+    snapshot: row.snapshot_json ? (JSON.parse(row.snapshot_json) as Record<string, unknown>) : null,
   }));
+};
+
+export const revertResourceFromChangeCopy = async (
+  env: Env,
+  kind: "site" | "simulation",
+  resourceId: string,
+  changeId: number,
+  actor: { id: string; isAdmin: boolean; isModerator?: boolean },
+): Promise<{ ok: boolean; reason?: string }> => {
+  await ensureSchema(env);
+  const snapshotRow = await env.DB
+    .prepare(
+      `SELECT snapshot_json
+       FROM resource_changes
+       WHERE id = ? AND resource_kind = ? AND resource_id = ?
+       LIMIT 1`,
+    )
+    .bind(changeId, kind, resourceId)
+    .first<{ snapshot_json: string | null }>();
+  if (!snapshotRow?.snapshot_json) return { ok: false, reason: "snapshot_missing" };
+
+  let snapshot: CloudResourceRecord;
+  try {
+    snapshot = JSON.parse(snapshotRow.snapshot_json) as CloudResourceRecord;
+  } catch {
+    return { ok: false, reason: "snapshot_invalid" };
+  }
+  snapshot.id = resourceId;
+
+  const result = await upsertOwnedResource(env, kind, {
+    id: actor.id,
+    isAdmin: actor.isAdmin,
+    isModerator: Boolean(actor.isModerator),
+  }, snapshot);
+  if (!result.ok) return result;
+
+  await createResourceChange(
+    env,
+    kind,
+    resourceId,
+    "updated",
+    actor.id,
+    `Revert copy from change #${changeId}`,
+    {
+      details: {
+        revertedFromChangeId: changeId,
+        mode: "copy",
+      },
+      snapshot: snapshot as Record<string, unknown>,
+    },
+  );
+  return { ok: true };
 };
 
 export const resolveSimulationAccessForUser = async (
@@ -1692,4 +1903,102 @@ export const resolveSimulationAccessForUser = async (
   );
 
   return canRead ? "ok" : "forbidden";
+};
+
+export const resolveSimulationIdBySlug = async (
+  env: Env,
+  simulationSlug: string,
+): Promise<string | null> => {
+  await ensureSchema(env);
+  const slug = slugifyName(simulationSlug);
+  if (!slug) return null;
+  const rows = await env.DB
+    .prepare("SELECT id, name, payload_json FROM simulations LIMIT 8000")
+    .all<{ id: string; name: string; payload_json: string }>();
+  for (const row of rows.results) {
+    const nameSlug = slugifyName(row.name);
+    if (nameSlug === slug) return row.id;
+    try {
+      const payload = JSON.parse(row.payload_json) as { slug?: unknown; slugAliases?: unknown };
+      const payloadSlug = typeof payload.slug === "string" ? slugifyName(payload.slug) : "";
+      if (payloadSlug && payloadSlug === slug) return row.id;
+      const aliases = sanitizeSlugAliasList(payload.slugAliases);
+      if (aliases.includes(slug)) return row.id;
+    } catch {
+      // ignore invalid payload rows
+    }
+  }
+  return null;
+};
+
+export const fetchPublicSimulationBundle = async (
+  env: Env,
+  options: { simulationId?: string; simulationSlug?: string },
+): Promise<
+  | { status: "missing" | "forbidden" }
+  | {
+      status: "ok";
+      simulationId: string;
+      simulation: CloudResourceRecord;
+      sites: CloudResourceRecord[];
+    }
+> => {
+  await ensureSchema(env);
+  const resolvedId =
+    (options.simulationId && options.simulationId.trim()) ||
+    (options.simulationSlug ? await resolveSimulationIdBySlug(env, options.simulationSlug) : null);
+  if (!resolvedId) return { status: "missing" };
+
+  const simulationRow = await env.DB
+    .prepare("SELECT id, payload_json, visibility FROM simulations WHERE id = ? LIMIT 1")
+    .bind(resolvedId)
+    .first<{ id: string; payload_json: string; visibility: DbVisibility }>();
+  if (!simulationRow) return { status: "missing" };
+  const visibility = visibilityFromDbVisibility(simulationRow.visibility);
+  if (visibility === "private") return { status: "forbidden" };
+
+  let simulation: CloudResourceRecord;
+  try {
+    simulation = JSON.parse(simulationRow.payload_json) as CloudResourceRecord;
+  } catch {
+    return { status: "missing" };
+  }
+  simulation.id = simulationRow.id;
+  simulation.visibility = visibility;
+  simulation.effectiveRole = "viewer";
+
+  const referencedSiteIds = referencedLibrarySiteIdsFromSimulation(simulation);
+  if (!referencedSiteIds.length) {
+    return {
+      status: "ok",
+      simulationId: simulationRow.id,
+      simulation,
+      sites: [],
+    };
+  }
+
+  const placeholders = referencedSiteIds.map(() => "?").join(",");
+  const rows = await env.DB
+    .prepare(`SELECT id, payload_json, visibility FROM sites WHERE id IN (${placeholders})`)
+    .bind(...referencedSiteIds)
+    .all<{ id: string; payload_json: string; visibility: DbVisibility }>();
+  const sites: CloudResourceRecord[] = [];
+  for (const row of rows.results) {
+    if (visibilityFromDbVisibility(row.visibility) === "private") continue;
+    try {
+      const site = JSON.parse(row.payload_json) as CloudResourceRecord;
+      site.id = row.id;
+      site.visibility = visibilityFromDbVisibility(row.visibility);
+      site.effectiveRole = "viewer";
+      sites.push(site);
+    } catch {
+      // ignore invalid row
+    }
+  }
+  return {
+    status: "ok",
+    simulationId: simulationRow.id,
+    simulation,
+    sites,
+  };
 };

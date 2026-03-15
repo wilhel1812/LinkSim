@@ -27,6 +27,8 @@ export type ResourceChange = {
   actorUserId: string;
   actorName: string | null;
   actorAvatarUrl: string | null;
+  details?: Record<string, unknown> | null;
+  snapshot?: Record<string, unknown> | null;
 };
 
 export type DeletedCloudUser = {
@@ -119,6 +121,7 @@ export type CollaboratorDirectoryUser = {
 };
 
 export type DeepLinkStatus = "ok" | "forbidden" | "missing";
+export type DeepLinkStatusResult = { status: DeepLinkStatus; simulationId?: string };
 
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, {
@@ -243,6 +246,17 @@ export const fetchResourceChanges = async (
   return Array.isArray(data.changes) ? data.changes : [];
 };
 
+export const revertResourceChangeCopy = async (
+  kind: "site" | "simulation",
+  id: string,
+  changeId: number,
+): Promise<void> => {
+  await apiCall<{ ok: boolean }>("/api/changes", {
+    method: "POST",
+    body: JSON.stringify({ kind, id, changeId }),
+  });
+};
+
 export const fetchDeletedUsers = async (): Promise<DeletedCloudUser[]> => {
   const data = await apiCall<{ users: DeletedCloudUser[] }>("/api/deleted-users", { method: "GET" });
   return Array.isArray(data.users) ? data.users : [];
@@ -317,9 +331,30 @@ export const uploadAvatar = async (originalDataUrl: string, thumbDataUrl: string
     }),
   });
 
-export const fetchDeepLinkStatus = async (simulationId: string): Promise<DeepLinkStatus> => {
-  const params = new URLSearchParams({ sim: simulationId });
-  const data = await apiCall<{ status?: unknown }>(`/api/deep-link-status?${params.toString()}`, { method: "GET" });
+export const fetchDeepLinkStatus = async (input: {
+  simulationId?: string;
+  simulationSlug?: string;
+}): Promise<DeepLinkStatusResult> => {
+  const params = new URLSearchParams();
+  if (input.simulationId?.trim()) params.set("sim", input.simulationId.trim());
+  if (input.simulationSlug?.trim()) params.set("slug", input.simulationSlug.trim());
+  const data = await apiCall<{ status?: unknown; simulationId?: unknown }>(
+    `/api/deep-link-status?${params.toString()}`,
+    { method: "GET" },
+  );
   const status = data.status;
-  return status === "ok" || status === "forbidden" || status === "missing" ? status : "missing";
+  const normalized: DeepLinkStatus =
+    status === "ok" || status === "forbidden" || status === "missing" ? status : "missing";
+  return {
+    status: normalized,
+    simulationId: typeof data.simulationId === "string" && data.simulationId.trim() ? data.simulationId : undefined,
+  };
+};
+
+export const setLocalDevRole = async (role: "admin" | "moderator" | "user" | "pending"): Promise<CloudUser> => {
+  const data = await apiCall<{ ok: boolean; user: CloudUser }>("/api/dev-role", {
+    method: "POST",
+    body: JSON.stringify({ role }),
+  });
+  return data.user;
 };

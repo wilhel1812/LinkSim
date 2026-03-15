@@ -22,7 +22,7 @@ services:
     build:
       context: .
       target: development
-    command: sh -lc "npm run build:client && npx wrangler pages dev dist --ip 0.0.0.0 --port 8788 --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --local --persist-to .wrangler/state"
+    command: sh -lc "npm run build:client && npx wrangler pages dev dist --ip 0.0.0.0 --port 8788 --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --binding ADMIN_USER_IDS=local-dev-user --local --persist-to .wrangler/state"
     ports:
       - "8788:8788"
     volumes:

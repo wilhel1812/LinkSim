@@ -85,7 +85,9 @@ CREATE TABLE IF NOT EXISTS resource_changes (
   action TEXT NOT NULL CHECK (action IN ('created','updated')),
   actor_user_id TEXT NOT NULL,
   changed_at TEXT NOT NULL,
-  note TEXT
+  note TEXT,
+  details_json TEXT,
+  snapshot_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sites_owner ON sites(owner_user_id);

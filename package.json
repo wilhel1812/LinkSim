@@ -10,7 +10,7 @@
     "dev": "vite --config config/vite.config.ts",
     "build:client": "npm run build:meta && vite build --config config/vite.config.ts",
     "build:bundle": "npm run build:meta && tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",
-    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --local --persist-to .wrangler/state",
+    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --binding ADMIN_USER_IDS=local-dev-user --local --persist-to .wrangler/state",
     "build": "npm run build:meta && npm run build:bundle",
     "lint": "eslint .",
     "security:scan": "node scripts/security-scan.mjs",
@@ -68,6 +68,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
     "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "wrangler": "^4.73.0"
   }
 }
