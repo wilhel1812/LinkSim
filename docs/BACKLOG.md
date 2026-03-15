@@ -9,6 +9,7 @@ State: stabilization pass (no net-new product features unless explicitly approve
 - Prefer cleanup, consistency, and hardening over new feature scope.
 
 ## User-provided backlog (seed)
+- [ ] Add more filters on sites and simulations. For starters, filter to only see owned ones.
 - [ ] When changing to Carto, it should default to Normal, not postiron/dark matter.
 - [ ] Report to admins/mods
 - [ ] Report types: spam/misuse
