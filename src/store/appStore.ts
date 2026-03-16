@@ -83,6 +83,7 @@ type SiteLibraryEntry = {
 type SimulationPreset = {
   id: string;
   name: string;
+  description?: string;
   slug?: string;
   slugAliases?: string[];
   visibility?: "private" | "public" | "shared";
@@ -154,6 +155,7 @@ type AppState = {
   pendingSiteLibraryDraft:
     | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
     | null;
+  pendingSiteLibraryOpenEntryId: string | null;
   scenarioOptions: { id: string; name: string }[];
   mapOverlayMode: MapOverlayMode;
   setLocale: (locale: LocaleCode) => void;
@@ -207,6 +209,7 @@ type AppState = {
       Pick<
         SiteLibraryEntry,
         | "name"
+        | "description"
         | "position"
         | "groundElevationM"
         | "antennaHeightM"
@@ -225,6 +228,7 @@ type AppState = {
   createBlankSimulationPreset: (
     name: string,
     options?: {
+      description?: string;
       visibility?: "private" | "public" | "shared";
       ownerUserId?: string;
       createdByUserId?: string;
@@ -240,7 +244,7 @@ type AppState = {
   renameSimulationPreset: (presetId: string, name: string) => void;
   updateSimulationPresetEntry: (
     presetId: string,
-    patch: Partial<Pick<SimulationPreset, "name" | "visibility" | "sharedWith">>,
+    patch: Partial<Pick<SimulationPreset, "name" | "description" | "visibility" | "sharedWith">>,
   ) => void;
   deleteSimulationPreset: (presetId: string) => void;
   importLibraryData: (
@@ -260,6 +264,8 @@ type AppState = {
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
   ) => void;
   clearPendingSiteLibraryDraft: () => void;
+  requestOpenSiteLibraryEntry: (entryId: string) => void;
+  clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
   setPropagationModel: (model: PropagationModel) => void;
@@ -799,6 +805,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   siteDragPreview: {},
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
+  pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
   setLocale: (locale) => set({ locale }),
@@ -1047,27 +1054,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         : sourceMeta;
     const descriptionText = description?.trim() ?? "";
-    const metadataDescription =
-      normalizedMeta?.sourceType === "mqtt-feed"
-        ? [
-            normalizedMeta.longName ? `Long name: ${normalizedMeta.longName}` : null,
-            normalizedMeta.shortName ? `Short name: ${normalizedMeta.shortName}` : null,
-            normalizedMeta.nodeId ? `Node ID: ${normalizedMeta.nodeId}` : null,
-            normalizedMeta.hwModel ? `HW model: ${normalizedMeta.hwModel}` : null,
-            normalizedMeta.role ? `Role: ${normalizedMeta.role}` : null,
-            normalizedMeta.sourceUrl ? `Source: ${normalizedMeta.sourceUrl}` : null,
-          ]
-            .filter((item): item is string => Boolean(item))
-            .join("\n")
-        : "";
     const entry: SiteLibraryEntry = {
       id: makeId("libsite"),
       name: label,
-      ...(descriptionText || metadataDescription
-        ? {
-            description: [descriptionText, metadataDescription].filter(Boolean).join("\n\n"),
-          }
-        : {}),
+      ...(descriptionText ? { description: descriptionText } : {}),
       visibility: visibility === "public" ? "shared" : visibility,
       sharedWith: [],
       position: { lat, lon },
@@ -1309,6 +1299,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
           : current.siteLibrary;
       const existing = current.simulationPresets.find((preset) => preset.name === presetName);
+      const currentSelectionDescription = current.simulationPresets.find(
+        (preset) => preset.id === current.selectedScenarioId,
+      )?.description;
       const visibilityBase = existing?.visibility ?? "shared";
       const visibilitySafe =
         visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
@@ -1317,6 +1310,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextPreset: SimulationPreset = {
         id: existing?.id ?? makeId("sim"),
         name: presetName,
+        description: existing?.description ?? currentSelectionDescription,
         slug: slugifyValue(presetName),
         slugAliases: Array.from(
           new Set([
@@ -1368,6 +1362,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextPreset = {
         id: makeId("sim"),
         name: presetName,
+        ...(options?.description?.trim() ? { description: options.description.trim() } : {}),
         slug: slugifyValue(presetName),
         slugAliases: [],
         visibility: options?.visibility ?? "shared",
@@ -1431,6 +1426,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextPreset: SimulationPreset = {
         id: existing.id,
         name: existing.name,
+        description: existing.description,
         slug: existing.slug ?? slugifyValue(existing.name),
         slugAliases: existing.slugAliases ?? [],
         visibility: visibilitySafe,
@@ -1609,6 +1605,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const next = state.simulationPresets.map((preset) => {
         if (preset.id !== presetId) return preset;
         const nextName = typeof patch.name === "string" ? patch.name.trim() : preset.name;
+        const nextDescription =
+          typeof patch.description === "string" ? patch.description.trim() || undefined : preset.description;
         const nextSlug = slugifyValue(nextName || preset.name);
         const aliasSet = new Set([
           ...(preset.slug ? [slugifyValue(preset.slug)] : []),
@@ -1624,6 +1622,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...preset,
           ...patch,
           name: nextName,
+          description: nextDescription,
           slug: nextSlug,
           slugAliases: Array.from(aliasSet).filter(Boolean),
           visibility: nextVisibility,
@@ -1734,6 +1733,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }),
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
+  requestOpenSiteLibraryEntry: (entryId) =>
+    set({
+      pendingSiteLibraryOpenEntryId: entryId.trim() ? entryId : null,
+    }),
+  clearOpenSiteLibraryEntryRequest: () => set({ pendingSiteLibraryOpenEntryId: null }),
   setMapOverlayMode: (mode) => set({ mapOverlayMode: mode }),
   applyFrequencyPresetToSelectedNetwork: () => {
     const { selectedFrequencyPresetId, selectedNetworkId } = get();

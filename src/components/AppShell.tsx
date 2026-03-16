@@ -667,29 +667,6 @@ export function AppShell() {
     >
       {!isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
-        {showMobileWarning ? (
-          <div className="panel-section compact-panel">
-            <p className="field-help">
-              Mobile support is currently limited. Use desktop for the most reliable planning workflow.
-            </p>
-            <div className="chip-group">
-              <button
-                className="inline-action"
-                onClick={() => {
-                  setShowMobileWarning(false);
-                  try {
-                    localStorage.setItem(MOBILE_WARNING_DISMISS_KEY, "1");
-                  } catch {
-                    // ignore storage errors
-                  }
-                }}
-                type="button"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        ) : null}
         {accessState === "readonly" ? <p className="field-help">Read-only shared view.</p> : null}
         <div className="workspace-header-actions">
           {accessState === "readonly" && isLocalRuntime ? (
@@ -764,6 +741,43 @@ export function AppShell() {
         </button>
       </div>
       <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+      {showMobileWarning ? (
+        <ModalOverlay aria-label="Mobile support notice" onClose={() => setShowMobileWarning(false)} tier="raised">
+          <div className="library-manager-card mobile-warning-modal-card">
+            <div className="library-manager-header">
+              <h2>Mobile Support Notice</h2>
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setShowMobileWarning(false);
+                }}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              LinkSim is currently designed to work best in a desktop environment. Mobile should work, but is not a delightful experience at the moment.
+            </p>
+            <div className="chip-group">
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setShowMobileWarning(false);
+                  try {
+                    localStorage.setItem(MOBILE_WARNING_DISMISS_KEY, "1");
+                  } catch {
+                    // ignore storage errors
+                  }
+                }}
+                type="button"
+              >
+                Don&apos;t show again
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
       {copyToast ? <div className="copy-toast">{copyToast}</div> : null}
       {showShareModal ? (
         <ModalOverlay aria-label="Share simulation" onClose={() => setShowShareModal(false)}>

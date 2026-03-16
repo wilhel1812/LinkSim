@@ -17,7 +17,7 @@ import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
-import { resolveBasemapSelection } from "../lib/basemaps";
+import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
 import { parseDeepLinkFromLocation } from "../lib/deepLink";
 import {
   fetchCollaboratorDirectory,
@@ -87,11 +87,6 @@ const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | nul
     <span>{name}</span>
   </span>
 );
-
-const styleByTheme = {
-  light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-  dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-};
 
 const RADIO_CLIMATE_OPTIONS: RadioClimate[] = [
   "Equatorial",
@@ -244,6 +239,34 @@ const isMeaningfulChangeField = (field: string): boolean => {
   return !ignored.has(normalized);
 };
 
+const formatMqttSourceMeta = (value: unknown): string[] => {
+  if (!value || typeof value !== "object") return [];
+  const meta = value as {
+    sourceType?: unknown;
+    sourceUrl?: unknown;
+    nodeId?: unknown;
+    longName?: unknown;
+    shortName?: unknown;
+    hwModel?: unknown;
+    role?: unknown;
+    importedAt?: unknown;
+    syncedAt?: unknown;
+  };
+  if (meta.sourceType !== "mqtt-feed") return [];
+  const asString = (input: unknown): string => (typeof input === "string" ? input.trim() : "");
+  const lines = [
+    asString(meta.longName) ? `Long name: ${asString(meta.longName)}` : "",
+    asString(meta.shortName) ? `Short name: ${asString(meta.shortName)}` : "",
+    asString(meta.nodeId) ? `Node ID: ${asString(meta.nodeId)}` : "",
+    asString(meta.hwModel) ? `HW model: ${asString(meta.hwModel)}` : "",
+    asString(meta.role) ? `Role: ${asString(meta.role)}` : "",
+    asString(meta.sourceUrl) ? `Source URL: ${asString(meta.sourceUrl)}` : "",
+    asString(meta.importedAt) ? `Imported: ${new Date(asString(meta.importedAt)).toLocaleString()}` : "",
+    asString(meta.syncedAt) ? `Synced: ${new Date(asString(meta.syncedAt)).toLocaleString()}` : "",
+  ].filter(Boolean);
+  return lines;
+};
+
 const getSnapshotCount = (key: string): number => {
   try {
     const raw = localStorage.getItem(`${key}-snapshots-v1`);
@@ -290,11 +313,15 @@ export function Sidebar() {
   const setEnvironmentLossDb = useAppStore((state) => state.setEnvironmentLossDb);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
   const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
+  const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
+  const setBasemapStylePreset = useAppStore((state) => state.setBasemapStylePreset);
   const setAutoPropagationEnvironment = useAppStore((state) => state.setAutoPropagationEnvironment);
   const setPropagationEnvironment = useAppStore((state) => state.setPropagationEnvironment);
   const applyClimateDefaults = useAppStore((state) => state.applyClimateDefaults);
   const pendingSiteLibraryDraft = useAppStore((state) => state.pendingSiteLibraryDraft);
   const clearPendingSiteLibraryDraft = useAppStore((state) => state.clearPendingSiteLibraryDraft);
+  const pendingSiteLibraryOpenEntryId = useAppStore((state) => state.pendingSiteLibraryOpenEntryId);
+  const clearOpenSiteLibraryEntryRequest = useAppStore((state) => state.clearOpenSiteLibraryEntryRequest);
   const applyFrequencyPresetToSelectedNetwork = useAppStore(
     (state) => state.applyFrequencyPresetToSelectedNetwork,
   );
@@ -308,8 +335,8 @@ export function Sidebar() {
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
-  const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
   const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
+  const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const deleteSite = useAppStore((state) => state.deleteSite);
   const createLink = useAppStore((state) => state.createLink);
   const deleteLink = useAppStore((state) => state.deleteLink);
@@ -319,7 +346,6 @@ export function Sidebar() {
   const overwriteSimulationPreset = useAppStore((state) => state.overwriteSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
-  const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const importLibraryData = useAppStore((state) => state.importLibraryData);
   const restoreLibrariesFromSnapshots = useAppStore((state) => state.restoreLibrariesFromSnapshots);
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
@@ -352,6 +378,22 @@ export function Sidebar() {
     () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
     [basemapProvider, basemapStylePreset, theme, colorTheme],
   );
+  const providerCapabilities = useMemo(() => getBasemapProviderCapabilities(), []);
+  const globalProviders = useMemo(
+    () => providerCapabilities.filter((entry) => entry.group === "global"),
+    [providerCapabilities],
+  );
+  const regionalProviders = useMemo(
+    () => providerCapabilities.filter((entry) => entry.group === "regional"),
+    [providerCapabilities],
+  );
+  const activeProviderConfig =
+    providerCapabilities.find((entry) => entry.provider === resolvedBasemap.provider) ?? providerCapabilities[0];
+  const resolvedPresetOptions = activeProviderConfig?.presets ?? [];
+  const styleSelectValue =
+    resolvedPresetOptions.length <= 1
+      ? resolvedPresetOptions[0]?.id ?? basemapStylePreset
+      : basemapStylePreset;
   const effectivePropagationEnvironment = useMemo(() => {
     if (!autoPropagationEnvironment || !fromSite || !toSite) return propagationEnvironment;
     return deriveDynamicPropagationEnvironment({
@@ -412,6 +454,7 @@ export function Sidebar() {
   const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showNewSimulationModal, setShowNewSimulationModal] = useState(false);
   const [newSimulationName, setNewSimulationName] = useState("");
+  const [newSimulationDescription, setNewSimulationDescription] = useState("");
   const [newSimulationNameError, setNewSimulationNameError] = useState("");
   const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("shared");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
@@ -435,6 +478,7 @@ export function Sidebar() {
   const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
   const [pendingDraftAutoInsert, setPendingDraftAutoInsert] = useState(false);
   const [newLibraryName, setNewLibraryName] = useState("");
+  const [newLibraryDescription, setNewLibraryDescription] = useState("");
   const [newLibraryNameError, setNewLibraryNameError] = useState("");
   const [newLibrarySourceMeta, setNewLibrarySourceMeta] = useState<unknown>(undefined);
   const [newLibraryLat, setNewLibraryLat] = useState(60.0);
@@ -513,6 +557,7 @@ export function Sidebar() {
   } | null>(null);
   const [resourceAccessVisibility, setResourceAccessVisibility] = useState<"private" | "public" | "shared">("shared");
   const [resourceNameDraft, setResourceNameDraft] = useState("");
+  const [resourceDescriptionDraft, setResourceDescriptionDraft] = useState("");
   const [resourceLatDraft, setResourceLatDraft] = useState(0);
   const [resourceLonDraft, setResourceLonDraft] = useState(0);
   const [resourceGroundDraft, setResourceGroundDraft] = useState(0);
@@ -538,6 +583,12 @@ export function Sidebar() {
     siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
     simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
   }));
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
   const hasLocalLibraryData = siteLibrary.length > 0 || simulationPresets.length > 0;
   const filteredSiteLibrary = useMemo(() => {
     const q = siteLibraryQuery.trim().toLowerCase();
@@ -623,6 +674,14 @@ export function Sidebar() {
       simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId)?.ownerUserId ?? ""
     );
   }, [resourceDetailsPopup, siteLibrary, simulationPresets]);
+  const currentResourceSiteEntry = useMemo(() => {
+    if (!resourceDetailsPopup || resourceDetailsPopup.kind !== "site") return null;
+    return siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId) ?? null;
+  }, [resourceDetailsPopup, siteLibrary]);
+  const currentResourceMqttMetaLines = useMemo(
+    () => formatMqttSourceMeta((currentResourceSiteEntry as { sourceMeta?: unknown } | null)?.sourceMeta),
+    [currentResourceSiteEntry],
+  );
   const canWriteResource = (kind: "site" | "simulation", resourceId: string): boolean => {
     const entry =
       kind === "site"
@@ -764,6 +823,7 @@ export function Sidebar() {
     setNewLibrarySourceMeta(pendingSiteLibraryDraft.sourceMeta);
     setPendingDraftAutoInsert(true);
     setNewLibraryName(pendingSiteLibraryDraft.suggestedName ?? "");
+    setNewLibraryDescription("");
     setNewLibraryLat(pendingSiteLibraryDraft.lat);
     setNewLibraryLon(pendingSiteLibraryDraft.lon);
     const terrainElev = Number(
@@ -781,6 +841,25 @@ export function Sidebar() {
     }
     clearPendingSiteLibraryDraft();
   }, [pendingSiteLibraryDraft, srtmTiles, clearPendingSiteLibraryDraft]);
+  useEffect(() => {
+    if (!pendingSiteLibraryOpenEntryId) return;
+    const entry = siteLibrary.find((candidate) => candidate.id === pendingSiteLibraryOpenEntryId);
+    setShowSiteLibraryManager(true);
+    if (entry) {
+      openResourceDetailsPopup({
+        kind: "site",
+        resourceId: entry.id,
+        label: entry.name,
+        createdByUserId: (entry as unknown as { createdByUserId?: string }).createdByUserId ?? null,
+        createdByName: (entry as unknown as { createdByName?: string }).createdByName ?? "Unknown",
+        createdByAvatarUrl: (entry as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
+        lastEditedByUserId: (entry as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
+        lastEditedByName: (entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
+        lastEditedByAvatarUrl: (entry as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
+      });
+    }
+    clearOpenSiteLibraryEntryRequest();
+  }, [pendingSiteLibraryOpenEntryId, siteLibrary, clearOpenSiteLibraryEntryRequest]);
 
   const onModelChange = (next: PropagationModel) => {
     setPropagationModel(next);
@@ -897,6 +976,15 @@ export function Sidebar() {
       siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
       simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
     });
+  };
+
+  const requestDeleteConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    confirmLabel = "Delete",
+  ) => {
+    setDeleteConfirm({ title, message, confirmLabel, onConfirm });
   };
 
   const exportLocalLibraries = () => {
@@ -1121,6 +1209,7 @@ export function Sidebar() {
     }
     setNewSimulationNameError("");
     const createdId = createBlankSimulationPreset(trimmed, {
+      description: newSimulationDescription.trim() || undefined,
       visibility: newSimulationVisibility,
       ownerUserId: currentUser.id,
       createdByUserId: currentUser.id,
@@ -1138,6 +1227,7 @@ export function Sidebar() {
     persistSelectedSimulationRef(`saved:${createdId}`);
     setSimulationSaveStatus(`Created simulation: ${trimmed}`);
     setNewSimulationName("");
+    setNewSimulationDescription("");
     setShowNewSimulationModal(false);
   };
   const displayLinkName = (linkId: string, linkName?: string) => {
@@ -1189,6 +1279,7 @@ export function Sidebar() {
     }
     setShowAddLibraryForm(true);
     setNewLibraryName("");
+    setNewLibraryDescription("");
     setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(selectedSite.position.lat);
     setNewLibraryLon(selectedSite.position.lon);
@@ -1219,7 +1310,7 @@ export function Sidebar() {
       newLibraryCableLossDb,
       (newLibrarySourceMeta as Parameters<typeof addSiteLibraryEntry>[9]) ?? undefined,
       pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
-      undefined,
+      newLibraryDescription,
       currentUser
         ? {
             userId: currentUser.id,
@@ -1239,6 +1330,7 @@ export function Sidebar() {
     }
     setNewLibraryNameError("");
     setNewLibraryName("");
+    setNewLibraryDescription("");
     setNewLibrarySourceMeta(undefined);
     setNewLibraryTxPowerDbm(STANDARD_SITE_RADIO.txPowerDbm);
     setNewLibraryTxGainDbi(STANDARD_SITE_RADIO.txGainDbi);
@@ -1280,6 +1372,7 @@ export function Sidebar() {
     setLibrarySearchPickBusyId(result.id);
     setLibrarySearchStatus("Resolving elevation for selected result...");
     setNewLibraryName("");
+    setNewLibraryDescription("");
     setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(result.lat);
     setNewLibraryLon(result.lon);
@@ -1305,7 +1398,7 @@ export function Sidebar() {
     setMeshmapSelectedNodeId(null);
     try {
       savePreferredMeshmapSourceUrl(sourceUrl);
-      const result = await fetchMeshmapNodes({ sourceUrl });
+      const result = await fetchMeshmapNodes({ sourceUrl, cacheTtlMs: 30 * 60 * 1000 });
       setMeshmapNodes(result.nodes);
       setMeshmapCachedSummary(getCachedMeshmapSnapshotInfo());
       if (result.fromCache) {
@@ -1479,6 +1572,7 @@ export function Sidebar() {
     setResourceNameDraft(label);
     if (kind === "site") {
       const site = siteLibrary.find((entry) => entry.id === resourceId);
+      setResourceDescriptionDraft(site?.description ?? "");
       setResourceLatDraft(site?.position.lat ?? 0);
       setResourceLonDraft(site?.position.lon ?? 0);
       setResourceGroundDraft(site?.groundElevationM ?? 0);
@@ -1496,6 +1590,7 @@ export function Sidebar() {
       );
     } else {
       const simulation = simulationPresets.find((entry) => entry.id === resourceId);
+      setResourceDescriptionDraft(simulation?.description ?? "");
       setResourceLatDraft(0);
       setResourceLonDraft(0);
       setResourceGroundDraft(0);
@@ -1543,6 +1638,7 @@ export function Sidebar() {
   const persistResourceAccessSettings = (
     overrides?: Partial<{
       name: string;
+      description: string;
       lat: number;
       lon: number;
       groundM: number;
@@ -1558,6 +1654,7 @@ export function Sidebar() {
     if (!resourceDetailsPopup) return false;
     const nextVisibility = overrides?.visibility ?? resourceAccessVisibility;
     const nextName = overrides?.name ?? resourceNameDraft;
+    const nextDescription = overrides?.description ?? resourceDescriptionDraft;
     const nextLat = overrides?.lat ?? resourceLatDraft;
     const nextLon = overrides?.lon ?? resourceLonDraft;
     const nextGroundM = overrides?.groundM ?? resourceGroundDraft;
@@ -1597,6 +1694,7 @@ export function Sidebar() {
       if (resourceDetailsPopup.kind === "site") {
         updateSiteLibraryEntry(resourceDetailsPopup.resourceId, {
           name: normalizedName,
+          description: nextDescription.trim() || undefined,
           position: { lat: nextLat, lon: nextLon },
           groundElevationM: nextGroundM,
           antennaHeightM: nextAntennaM,
@@ -1633,6 +1731,7 @@ export function Sidebar() {
         }
         updateSimulationPresetEntry(resourceDetailsPopup.resourceId, {
           name: normalizedName,
+          description: nextDescription.trim() || undefined,
           visibility: normalizedVisibility,
           sharedWith,
         });
@@ -1737,7 +1836,16 @@ export function Sidebar() {
           >
             Open Simulation Library
           </button>
-          <button className="inline-action" onClick={() => setShowNewSimulationModal(true)} type="button">
+          <button
+            className="inline-action"
+            onClick={() => {
+              setNewSimulationName("");
+              setNewSimulationDescription("");
+              setNewSimulationNameError("");
+              setShowNewSimulationModal(true);
+            }}
+            type="button"
+          >
             New Simulation
           </button>
           <button className="inline-action" onClick={saveSimulationAsNew} type="button">
@@ -1793,9 +1901,16 @@ export function Sidebar() {
           Edit Selected Site
         </button>
         <button
-          className="inline-action"
+          className="inline-action danger"
           disabled={sites.length <= 1}
-          onClick={() => deleteSite(selectedSite.id)}
+          onClick={() =>
+            requestDeleteConfirm(
+              "Remove Site",
+              `Remove ${selectedSite.name} from the current simulation?`,
+              () => deleteSite(selectedSite.id),
+              "Remove",
+            )
+          }
           type="button"
         >
           Remove Selected From Simulation
@@ -1803,7 +1918,7 @@ export function Sidebar() {
       </section>
 
       <section className="panel-section section-radio">
-        <details className="compact-details" open>
+        <details className="compact-details">
           <summary>Radio & Model (Advanced)</summary>
           <p className="field-help">
             Shared channel profile for all links in this simulation.
@@ -2004,9 +2119,15 @@ export function Sidebar() {
             Edit Link
           </button>
           <button
-            className="inline-action"
+            className="inline-action danger"
             disabled={!links.length}
-            onClick={() => deleteLink(selectedLink.id)}
+            onClick={() =>
+              requestDeleteConfirm(
+                "Delete Link",
+                `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
+                () => deleteLink(selectedLink.id),
+              )
+            }
             type="button"
           >
             Delete Selected Link
@@ -2076,7 +2197,7 @@ export function Sidebar() {
                   ))}
               </select>
             </label>
-            <details className="compact-details" open>
+            <details className="compact-details">
               <summary>Link Radio Overrides</summary>
               <label className="field-grid">
                 <span>Use site radio defaults</span>
@@ -2538,20 +2659,59 @@ export function Sidebar() {
             </div>
             <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
             <p className="field-help">ID: {resourceDetailsPopup.resourceId}</p>
-            <label className="field-grid">
-              <span>Name</span>
-              <input
-                onChange={(event) => setResourceNameDraft(event.target.value)}
-                onBlur={() => {
-                  void persistResourceAccessSettings();
-                }}
-                type="text"
-                value={resourceNameDraft}
-              />
-            </label>
+            {resourceDetailsPopup.kind !== "site" ? (
+              <>
+                <label className="field-grid">
+                  <span>Name</span>
+                  <input
+                    onChange={(event) => setResourceNameDraft(event.target.value)}
+                    onBlur={() => {
+                      void persistResourceAccessSettings();
+                    }}
+                    type="text"
+                    value={resourceNameDraft}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Description</span>
+                  <textarea
+                    onChange={(event) => setResourceDescriptionDraft(event.target.value)}
+                    onBlur={() => {
+                      void persistResourceAccessSettings();
+                    }}
+                    placeholder="Optional simulation notes"
+                    rows={3}
+                    value={resourceDescriptionDraft}
+                  />
+                </label>
+              </>
+            ) : null}
             {resourceDetailsPopup.kind === "site" ? (
               <div className="library-editor-split">
-                <div className="library-editor-form">
+                <div className="library-editor-form resource-site-editor-form">
+                  <label className="field-grid">
+                    <span>Name</span>
+                    <input
+                      onChange={(event) => setResourceNameDraft(event.target.value)}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
+                      type="text"
+                      value={resourceNameDraft}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Description</span>
+                    <textarea
+                      onChange={(event) => setResourceDescriptionDraft(event.target.value)}
+                      onBlur={() => {
+                        void persistResourceAccessSettings();
+                      }}
+                      placeholder="Optional site notes (equipment, placement, access notes)"
+                      rows={3}
+                      value={resourceDescriptionDraft}
+                    />
+                  </label>
                   <label className="field-grid">
                     <span>Latitude</span>
                     <input
@@ -2664,13 +2824,67 @@ export function Sidebar() {
                   </label>
                 </div>
                 <div className="library-editor-map">
+                  <div className="library-editor-map-controls">
+                    <label className="map-provider-field">
+                      <span>Map Provider</span>
+                      <select
+                        className="locale-select"
+                        onChange={(event) => {
+                          const nextProvider = event.target.value as typeof basemapProvider;
+                          const nextProviderConfig =
+                            providerCapabilities.find((entry) => entry.provider === nextProvider) ??
+                            providerCapabilities[0];
+                          setBasemapProvider(nextProvider);
+                          setBasemapStylePreset(
+                            nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
+                              nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
+                              nextProviderConfig.presets[0]?.id ??
+                              "normal",
+                          );
+                        }}
+                        value={basemapProvider}
+                      >
+                        <optgroup label="Global">
+                          {globalProviders.map((provider) => (
+                            <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                              {provider.label}
+                              {!provider.available ? " (unavailable)" : ""}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Regional">
+                          {regionalProviders.map((provider) => (
+                            <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                              {provider.label}
+                              {!provider.available ? " (unavailable)" : ""}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    </label>
+                    <label className="map-provider-field">
+                      <span>Map Style</span>
+                      <select
+                        className="locale-select"
+                        disabled={resolvedPresetOptions.length <= 1}
+                        onChange={(event) => setBasemapStylePreset(event.target.value)}
+                        value={styleSelectValue}
+                      >
+                        {resolvedPresetOptions.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   <Map
                     initialViewState={{
                       longitude: resourceLonDraft,
                       latitude: resourceLatDraft,
                       zoom: 12,
                     }}
-                    mapStyle={styleByTheme[theme]}
+                    mapStyle={resolvedBasemap.style}
                     onClick={(event) => {
                       const nextLat = event.lngLat.lat;
                       const nextLon = event.lngLat.lng;
@@ -2730,7 +2944,17 @@ export function Sidebar() {
                 Open change log
               </button>
             </div>
-            <details className="compact-details" open>
+            {resourceDetailsPopup.kind === "site" && currentResourceMqttMetaLines.length ? (
+              <details className="compact-details">
+                <summary>MQTT Metadata</summary>
+                <div className="field-help">
+                  {currentResourceMqttMetaLines.map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+            <details className="compact-details">
               <summary>Access</summary>
               <label className="field-grid">
                 <span>
@@ -2811,15 +3035,59 @@ export function Sidebar() {
               </p>
               {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
             </details>
+            {canWriteResource(resourceDetailsPopup.kind, resourceDetailsPopup.resourceId) ? (
+              <div className="chip-group">
+                <button
+                  className="inline-action danger"
+                  onClick={() =>
+                    requestDeleteConfirm(
+                      resourceDetailsPopup.kind === "site" ? "Delete Site" : "Delete Simulation",
+                      resourceDetailsPopup.kind === "site"
+                        ? `Delete "${resourceDetailsPopup.label}" from the site library?`
+                        : `Delete simulation "${resourceDetailsPopup.label}"?`,
+                      () => {
+                        if (resourceDetailsPopup.kind === "site") {
+                          deleteSiteLibraryEntries([resourceDetailsPopup.resourceId]);
+                        } else {
+                          deleteSimulationPreset(resourceDetailsPopup.resourceId);
+                          if (selectedSimulationRef === `saved:${resourceDetailsPopup.resourceId}`) {
+                            persistSelectedSimulationRef(`builtin:${selectedScenarioId}`);
+                            selectScenario(selectedScenarioId);
+                          }
+                        }
+                        setResourceDetailsPopup(null);
+                      },
+                    )
+                  }
+                  type="button"
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
           </div>
         </ModalOverlay>
       ) : null}
       {showNewSimulationModal ? (
-        <ModalOverlay aria-label="New Simulation" onClose={() => setShowNewSimulationModal(false)} tier="raised">
+        <ModalOverlay
+          aria-label="New Simulation"
+          onClose={() => {
+            setShowNewSimulationModal(false);
+            setNewSimulationNameError("");
+          }}
+          tier="raised"
+        >
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>New Simulation</h2>
-              <button className="inline-action" onClick={() => setShowNewSimulationModal(false)} type="button">
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setShowNewSimulationModal(false);
+                  setNewSimulationNameError("");
+                }}
+                type="button"
+              >
                 Close
               </button>
             </div>
@@ -2837,6 +3105,15 @@ export function Sidebar() {
               />
             </label>
             {newSimulationNameError ? <p className="field-help field-help-error">{newSimulationNameError}</p> : null}
+            <label className="field-grid">
+              <span>Description</span>
+              <textarea
+                onChange={(event) => setNewSimulationDescription(event.target.value)}
+                placeholder="Optional simulation notes"
+                rows={3}
+                value={newSimulationDescription}
+              />
+            </label>
             <label className="field-grid">
               <span>
                 Access level{" "}
@@ -2902,6 +3179,8 @@ export function Sidebar() {
               <button
                 className="inline-action"
                 onClick={() => {
+                  setNewSimulationName("");
+                  setNewSimulationDescription("");
                   setNewSimulationNameError("");
                   setShowNewSimulationModal(true);
                 }}
@@ -3006,10 +3285,7 @@ export function Sidebar() {
                       }
                       type="button"
                     >
-                      Edit
-                    </button>
-                    <button className="inline-action" onClick={() => deleteSimulationPreset(preset.id)} type="button">
-                      Delete
+                      Open
                     </button>
                   </div>
                 </div>
@@ -3093,7 +3369,10 @@ export function Sidebar() {
                 className="inline-action"
                 onClick={() => {
                   setShowAddLibraryForm((current) => !current);
-                  if (showAddLibraryForm) setPendingDraftAutoInsert(false);
+                  if (showAddLibraryForm) {
+                    setPendingDraftAutoInsert(false);
+                    setNewLibraryDescription("");
+                  }
                 }}
                 type="button"
               >
@@ -3121,12 +3400,18 @@ export function Sidebar() {
                 Add Selected To Simulation ({selectedLibraryCount})
               </button>
               <button
-                className="inline-action"
+                className="inline-action danger"
                 disabled={!selectedLibraryCount}
-                onClick={() => {
-                  deleteSiteLibraryEntries(Array.from(selectedLibraryIds));
-                  setSelectedLibraryIds(new Set());
-                }}
+                onClick={() =>
+                  requestDeleteConfirm(
+                    "Delete Sites",
+                    `Delete ${selectedLibraryCount} selected site(s) from the library? This cannot be undone.`,
+                    () => {
+                      deleteSiteLibraryEntries(Array.from(selectedLibraryIds));
+                      setSelectedLibraryIds(new Set());
+                    },
+                  )
+                }
                 type="button"
               >
                 Delete Selected ({selectedLibraryCount})
@@ -3135,6 +3420,8 @@ export function Sidebar() {
             {showAddLibraryForm ? (
               <div className="library-editor">
                 <h3>Add Site</h3>
+                <div className="library-editor-split">
+                  <div className="library-editor-form resource-site-editor-form">
                 <label className="field-grid">
                   <span>Name</span>
                   <input
@@ -3149,6 +3436,15 @@ export function Sidebar() {
                   />
                 </label>
                 {newLibraryNameError ? <p className="field-help field-help-error">{newLibraryNameError}</p> : null}
+                <label className="field-grid">
+                  <span>Description</span>
+                  <textarea
+                    onChange={(event) => setNewLibraryDescription(event.target.value)}
+                    placeholder="Optional site notes"
+                    rows={3}
+                    value={newLibraryDescription}
+                  />
+                </label>
                 <label className="field-grid">
                   <span>Latitude</span>
                   <input
@@ -3288,7 +3584,7 @@ export function Sidebar() {
                         <Map
                           initialViewState={meshmapView}
                           interactiveLayerIds={["meshmap-nodes-layer"]}
-                          mapStyle={styleByTheme[theme]}
+                          mapStyle={resolvedBasemap.style}
                           onClick={onMeshmapClick}
                           onMove={onMeshmapMove}
                         >
@@ -3331,6 +3627,99 @@ export function Sidebar() {
                     </div>
                   ) : null}
                 </details>
+                  </div>
+                  <div className="library-editor-map">
+                    <div className="library-editor-map-controls">
+                      <label className="map-provider-field">
+                        <span>Map Provider</span>
+                        <select
+                          className="locale-select"
+                          onChange={(event) => {
+                            const nextProvider = event.target.value as typeof basemapProvider;
+                            const nextProviderConfig =
+                              providerCapabilities.find((entry) => entry.provider === nextProvider) ??
+                              providerCapabilities[0];
+                            setBasemapProvider(nextProvider);
+                            setBasemapStylePreset(
+                              nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
+                                nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
+                                nextProviderConfig.presets[0]?.id ??
+                                "normal",
+                            );
+                          }}
+                          value={basemapProvider}
+                        >
+                          <optgroup label="Global">
+                            {globalProviders.map((provider) => (
+                              <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                                {provider.label}
+                                {!provider.available ? " (unavailable)" : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Regional">
+                            {regionalProviders.map((provider) => (
+                              <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                                {provider.label}
+                                {!provider.available ? " (unavailable)" : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </label>
+                      <label className="map-provider-field">
+                        <span>Map Style</span>
+                        <select
+                          className="locale-select"
+                          disabled={resolvedPresetOptions.length <= 1}
+                          onChange={(event) => setBasemapStylePreset(event.target.value)}
+                          value={styleSelectValue}
+                        >
+                          {resolvedPresetOptions.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <Map
+                      initialViewState={{
+                        longitude: newLibraryLon,
+                        latitude: newLibraryLat,
+                        zoom: 12,
+                      }}
+                      mapStyle={resolvedBasemap.style}
+                      onClick={(event) => {
+                        const nextLat = event.lngLat.lat;
+                        const nextLon = event.lngLat.lng;
+                        setNewLibraryLat(nextLat);
+                        setNewLibraryLon(nextLon);
+                        const elevation = fetchGroundFromLoadedTerrain(nextLat, nextLon);
+                        if (elevation !== null) setNewLibraryGroundM(elevation);
+                      }}
+                    >
+                      <Marker
+                        anchor="bottom"
+                        draggable
+                        latitude={newLibraryLat}
+                        longitude={newLibraryLon}
+                        onDragEnd={(event: MarkerDragEvent) => {
+                          const nextLat = event.lngLat.lat;
+                          const nextLon = event.lngLat.lng;
+                          setNewLibraryLat(nextLat);
+                          setNewLibraryLon(nextLon);
+                          const elevation = fetchGroundFromLoadedTerrain(nextLat, nextLon);
+                          if (elevation !== null) setNewLibraryGroundM(elevation);
+                        }}
+                      >
+                        <div className="site-pin library-edit-pin">
+                          <span>{newLibraryName.trim() || "Site"}</span>
+                        </div>
+                      </Marker>
+                    </Map>
+                  </div>
+                </div>
                 <div className="chip-group">
                   <button className="inline-action" onClick={addLibraryEntryNow} type="button">
                     Add To Library
@@ -3340,6 +3729,7 @@ export function Sidebar() {
                     onClick={() => {
                       setShowAddLibraryForm(false);
                       setNewLibraryNameError("");
+                      setNewLibraryDescription("");
                       setNewLibrarySourceMeta(undefined);
                       setPendingDraftAutoInsert(false);
                     }}
@@ -3371,6 +3761,9 @@ export function Sidebar() {
                   </span>
                   <span className="library-row-meta">
                     <span className="access-badge">{normalizeAccessVisibility((entry as { visibility?: unknown }).visibility)}</span>
+                    {(entry as { sourceMeta?: { sourceType?: string } }).sourceMeta?.sourceType === "mqtt-feed" ? (
+                      <span className="access-badge mqtt-source-badge">MQTT</span>
+                    ) : null}
                     <button
                       className="row-avatar owner-avatar"
                       onClick={() => void openUserProfilePopup((entry as { ownerUserId?: string }).ownerUserId)}
@@ -3416,7 +3809,7 @@ export function Sidebar() {
                   })()}
                   <div className="library-row-actions">
                     <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
-                      Add
+                      Add to simulation
                     </button>
                     <button
                       className="inline-action"
@@ -3439,15 +3832,41 @@ export function Sidebar() {
                       }
                       type="button"
                     >
-                      Edit
-                    </button>
-                    <button className="inline-action" onClick={() => deleteSiteLibraryEntry(entry.id)} type="button">
-                      Delete
+                      Open
                     </button>
                   </div>
                 </div>
               ))}
               {!filteredSiteLibrary.length ? <p className="field-help">No matching sites.</p> : null}
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {deleteConfirm ? (
+        <ModalOverlay aria-label="Confirm Delete" onClose={() => setDeleteConfirm(null)} tier="raised">
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>{deleteConfirm.title}</h2>
+              <button className="inline-action" onClick={() => setDeleteConfirm(null)} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">{deleteConfirm.message}</p>
+            <div className="chip-group">
+              <button className="inline-action" onClick={() => setDeleteConfirm(null)} type="button">
+                Cancel
+              </button>
+              <button
+                className="inline-action danger"
+                onClick={() => {
+                  const action = deleteConfirm.onConfirm;
+                  setDeleteConfirm(null);
+                  action();
+                }}
+                type="button"
+              >
+                {deleteConfirm.confirmLabel}
+              </button>
             </div>
           </div>
         </ModalOverlay>

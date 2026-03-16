@@ -1148,7 +1148,7 @@ export function UserAdminPanel() {
                     ) : null}
                     {canAdmin ? (
                       <button
-                        className="inline-action"
+                        className="inline-action danger"
                         disabled={managedUser.id === me?.id || resolveRole(managedUser) === "admin"}
                         onClick={() => void deleteUserAccount(managedUser)}
                         type="button"

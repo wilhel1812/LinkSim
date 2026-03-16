@@ -669,6 +669,8 @@ input {
   justify-content: space-between;
   align-items: flex-start;
   gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .map-controls-unified {
@@ -678,6 +680,8 @@ input {
 .map-controls-group-provider {
   align-items: flex-start;
   flex-wrap: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .map-provider-field {
@@ -693,12 +697,13 @@ input {
 }
 
 .map-provider-field .locale-select {
-  min-width: 0;
-  max-width: 110px;
-  width: auto;
+  min-width: 68px;
+  max-width: 98px;
+  width: max-content;
   height: 30px;
   font-size: 0.74rem;
-  padding: 2px 7px;
+  padding: 2px 6px;
+  text-overflow: ellipsis;
 }
 
 .map-provider-regional {
@@ -719,13 +724,14 @@ input {
 
 .map-controls-group-utility {
   justify-content: flex-end;
+  flex: 0 0 auto;
 }
 
 .map-control-note {
   position: absolute;
   top: 66px;
   right: 12px;
-  z-index: 10020;
+  z-index: 30;
   padding: 6px 9px;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--selection) 45%, var(--border));
@@ -750,17 +756,48 @@ input {
   top: 154px;
 }
 
-.map-progress {
+.map-inspector {
   position: absolute;
-  top: 108px;
+  top: 66px;
   right: 12px;
-  z-index: 10030;
-  width: min(320px, calc(100% - 24px));
+  z-index: 6;
+  width: min(420px, calc(100% - 24px));
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
-  box-shadow: var(--shadow-elev-1);
-  padding: 6px 8px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 95%, transparent);
+  box-shadow: var(--shadow-elev-2);
+  padding: 8px 10px 9px;
+  display: grid;
+  gap: 0;
+  font-size: 0.76rem;
+}
+
+.map-inspector-primary {
+  margin: 0 0 2px;
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.map-inspector-line {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.76rem;
+}
+
+.map-inspector-section {
+  display: grid;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.map-inspector-section + .map-inspector-section {
+  border-top: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+}
+
+.map-progress {
+  width: 100%;
+  padding: 0;
 }
 
 .map-progress-label {
@@ -1400,6 +1437,12 @@ input {
   cursor: pointer;
 }
 
+.inline-action.danger {
+  border-color: color-mix(in srgb, var(--danger) 78%, var(--border));
+  background: var(--danger);
+  color: var(--danger-on, #fff);
+}
+
 .user-admin-panel {
   display: grid;
   gap: 8px;
@@ -1818,6 +1861,11 @@ input {
   overflow: hidden;
 }
 
+.mobile-warning-modal-card {
+  width: min(640px, 96vw);
+  max-height: min(60vh, 520px);
+}
+
 .tutorial-markdown {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1917,6 +1965,11 @@ input {
   letter-spacing: 0.02em;
 }
 
+.mqtt-source-badge {
+  border-color: color-mix(in srgb, var(--selection) 55%, var(--border));
+  color: color-mix(in srgb, var(--selection) 86%, var(--text));
+}
+
 .row-avatar {
   width: 22px;
   height: 22px;
@@ -1978,6 +2031,31 @@ input {
   overflow: hidden;
   min-height: 320px;
   height: 100%;
+  position: relative;
+}
+
+.library-editor-map-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 8;
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  box-shadow: var(--shadow-elev-1);
+}
+
+.library-editor-map-controls .map-provider-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.resource-site-editor-form .field-grid {
+  grid-template-columns: minmax(150px, 1fr) minmax(200px, 1fr);
 }
 
 .library-editor-map .maplibregl-map {

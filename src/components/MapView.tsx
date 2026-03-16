@@ -808,6 +808,11 @@ type PendingSiteMove = {
   currentGroundElevationM: number;
 };
 
+type MapInspectorHoverInfo = {
+  text: string;
+  libraryEntryId?: string;
+};
+
 export function MapView({
   isMapExpanded,
   readOnly = false,
@@ -830,11 +835,13 @@ export function MapView({
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
   const updateLink = useAppStore((state) => state.updateLink);
   const updateSite = useAppStore((state) => state.updateSite);
+  const deleteSite = useAppStore((state) => state.deleteSite);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const setSiteDragPreview = useAppStore((state) => state.setSiteDragPreview);
   const clearSiteDragPreview = useAppStore((state) => state.clearSiteDragPreview);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
+  const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
   const coverageSamples = useAppStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
@@ -873,7 +880,7 @@ export function MapView({
   const [showDiscoveryMqtt, setShowDiscoveryMqtt] = useState(false);
   const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
   const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
-  const [overlayHoverInfo, setOverlayHoverInfo] = useState<string | null>(null);
+  const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
   const [mqttDuplicatePrompt, setMqttDuplicatePrompt] = useState<{
     node: MeshmapNode;
     existingId: string;
@@ -958,10 +965,10 @@ export function MapView({
     if (mqttNodes.length) return;
     let canceled = false;
     setMqttLoadStatus("Loading MQTT nodes...");
-    void fetchMeshmapNodes()
+    void fetchMeshmapNodes({ cacheTtlMs: 30 * 60 * 1000 })
       .then((result) => {
         if (canceled) return;
-        setMqttNodes(result.nodes.slice(0, 3000));
+        setMqttNodes(result.nodes);
         setMqttLoadStatus(null);
       })
       .catch((error) => {
@@ -1225,6 +1232,19 @@ export function MapView({
     latitude: viewport.center.lat,
     zoom: viewport.zoom,
   };
+  const mqttNodesInView = useMemo(() => {
+    const lonSpan = Math.max(0.12, 360 / Math.pow(2, activeViewState.zoom) * 2.2);
+    const latSpan = Math.max(0.12, 170 / Math.pow(2, activeViewState.zoom) * 1.8);
+    const minLon = activeViewState.longitude - lonSpan / 2;
+    const maxLon = activeViewState.longitude + lonSpan / 2;
+    const minLat = activeViewState.latitude - latSpan / 2;
+    const maxLat = activeViewState.latitude + latSpan / 2;
+    return mqttNodes.filter(
+      (node) => node.lon >= minLon && node.lon <= maxLon && node.lat >= minLat && node.lat <= maxLat,
+    );
+  }, [mqttNodes, activeViewState.latitude, activeViewState.longitude, activeViewState.zoom]);
+  const mqttInViewLimit = 1000;
+  const mqttTooDenseInView = mqttNodesInView.length > mqttInViewLimit;
 
   const onMoveEnd = (event: ViewStateChangeEvent) => {
     setInteractionViewState(null);
@@ -1325,6 +1345,14 @@ export function MapView({
     setPendingSiteMoves({});
     clearSiteDragPreview();
     setSiteDraftStatus(null);
+  };
+
+  const removeSelectedSiteFromSimulation = () => {
+    if (!selectedSite || !canPersist || sites.length <= 1) return;
+    const confirmed = window.confirm(`Remove ${selectedSite.name} from this simulation?`);
+    if (!confirmed) return;
+    deleteSite(selectedSite.id);
+    setSiteDraftStatus(`${selectedSite.name} removed from the simulation.`);
   };
 
   const onSiteDrag = (siteId: string, event: MarkerDragEvent) => {
@@ -1525,13 +1553,52 @@ export function MapView({
   const simulationOverlaySelectValue = coverageVizMode === "contours" ? "heatmap" : coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
     showDiscoveryMqtt ? "mqtt" : showDiscoverySites ? "library" : "simulation";
+  const selectedSite = sites.find((site) => site.id === selectedSiteId) ?? null;
+  const selectedLibraryEntry =
+    selectedSite?.libraryEntryId
+      ? siteLibrary.find((entry) => entry.id === selectedSite.libraryEntryId) ?? null
+      : null;
+  const selectedSiteInspectorText = selectedSite
+    ? `${selectedSite.name} · ${selectedSite.position.lat.toFixed(5)}, ${selectedSite.position.lon.toFixed(5)} · ${
+        selectedSite.groundElevationM
+      } m ASL`
+    : null;
+  const inspectorPrimary = overlayHoverInfo?.text ?? selectedSiteInspectorText;
+  const inspectorPrimaryLibraryEntryId = overlayHoverInfo?.libraryEntryId ?? selectedLibraryEntry?.id;
+  const inspectorLines: string[] = [];
+  if (!hasSimulationTerrain) inspectorLines.push("No terrain loaded: simulation currently uses site elevations only.");
+  if (resolvedBasemap.fallbackReason && !useFallbackMapStyle) inspectorLines.push(resolvedBasemap.fallbackReason);
+  if (useFallbackMapStyle) inspectorLines.push("Base map provider failed. Auto-switched to CARTO fallback style.");
+  if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
+  if (showDiscoverySites) {
+    inspectorLines.push(
+      `Shared/public library sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to add it to this simulation.`,
+    );
+  }
+  if (showDiscoveryMqtt) {
+    inspectorLines.push(
+      mqttLoadStatus ??
+        (mqttTooDenseInView
+          ? `MQTT nodes in view: ${mqttNodesInView.length}. Zoom in to show markers (limit ${mqttInViewLimit}).`
+          : `MQTT nodes in view: ${mqttNodesInView.length}. Click a marker to open an Add Site draft.`),
+    );
+  }
+  if (endpointPickTarget && endpointPickError) inspectorLines.push(endpointPickError);
+  if (siteDraftStatus) inspectorLines.push(siteDraftStatus);
+  const showInspector =
+    Boolean(inspectorPrimary) ||
+    inspectorLines.length > 0 ||
+    Boolean(pendingNewSiteDraft) ||
+    Boolean(mqttDuplicatePrompt) ||
+    isSimulationRecomputing ||
+    isBackgroundBusy;
 
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
       <div className="map-controls map-controls-unified">
         <div className="map-controls-group map-controls-group-provider">
           <label className="map-provider-field">
-            <span>Provider</span>
+            <span>Map Provider</span>
             <select
               className="locale-select"
               onChange={(event) => {
@@ -1569,7 +1636,7 @@ export function MapView({
             </select>
           </label>
           <label className="map-provider-field">
-            <span>Style</span>
+            <span>Map Style</span>
             <select
               className="locale-select"
               disabled={resolvedPresetOptions.length <= 1}
@@ -1594,12 +1661,12 @@ export function MapView({
               onChange={(event) => setShowTerrainOverlay(event.target.value === "on")}
               value={showTerrainOverlay ? "on" : "off"}
             >
-              <option value="on">On</option>
+              <option value="on">Copernicus</option>
               <option value="off">Off</option>
             </select>
           </label>
           <label className="map-provider-field">
-            <span>Overlay</span>
+            <span>Simulation Overlay</span>
             <select
               className="locale-select"
               onChange={(event) => {
@@ -1619,7 +1686,7 @@ export function MapView({
             </select>
           </label>
           <label className="map-provider-field">
-            <span>Sites</span>
+            <span>Visible Sites</span>
             <select
               className="locale-select"
               onChange={(event) => {
@@ -1677,96 +1744,112 @@ export function MapView({
               : "Add at least two sites to run relay analysis."}
         </div>
       ) : null}
-      {isSimulationRecomputing || isBackgroundBusy ? (
-        <div className="map-progress" aria-live="polite" aria-label="Simulation recalculation progress">
-          <div className="map-progress-label">
-            {isSimulationRecomputing ? `Recalculating simulation... ${simulationProgress}%` : backgroundBusyLabel}
-          </div>
-          <div className="map-progress-track">
-            {isSimulationRecomputing ? (
-              <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
-            ) : (
-              <div className="map-progress-fill map-progress-fill-indeterminate" />
-            )}
-          </div>
-        </div>
+      {showInspector ? (
+        <aside className="map-inspector" aria-live="polite">
+          {(isSimulationRecomputing || isBackgroundBusy) && backgroundBusyLabel ? (
+            <div className="map-inspector-section">
+              <p className="map-inspector-line">
+                {isSimulationRecomputing ? `Recalculating simulation... ${simulationProgress}%` : backgroundBusyLabel}
+              </p>
+              <div className="map-progress-track">
+                {isSimulationRecomputing ? (
+                  <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
+                ) : (
+                  <div className="map-progress-fill map-progress-fill-indeterminate" />
+                )}
+              </div>
+            </div>
+          ) : null}
+          {inspectorPrimary ? (
+            <div className="map-inspector-section">
+              <p className="map-inspector-primary">{inspectorPrimary}</p>
+              {inspectorPrimaryLibraryEntryId || (selectedSite && canPersist && sites.length > 1) ? (
+                <div className="chip-group">
+                  {inspectorPrimaryLibraryEntryId ? (
+                    <button
+                      className="inline-action"
+                      onClick={() => requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId)}
+                      type="button"
+                    >
+                      Open
+                    </button>
+                  ) : null}
+                  {selectedSite && canPersist && sites.length > 1 ? (
+                    <button className="inline-action danger" onClick={removeSelectedSiteFromSimulation} type="button">
+                      Remove From Simulation
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {inspectorLines.length ? (
+            <div className="map-inspector-section">
+              {inspectorLines.map((line) => (
+                <p className="map-inspector-line" key={line}>
+                  {line}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          {mqttDuplicatePrompt ? (
+            <div className="map-inspector-section">
+              <p className="map-inspector-line">
+                This MQTT node is already in your library as <strong>{mqttDuplicatePrompt.existingName}</strong>.
+              </p>
+              <span className="map-inline-actions">
+                <button className="map-control-btn" onClick={addExistingDuplicateMqttNode} type="button">
+                  Add Existing
+                </button>
+                <button className="map-control-btn" onClick={createDuplicateMqttCopy} type="button">
+                  Create Copy
+                </button>
+                <button className="map-control-btn" onClick={() => setMqttDuplicatePrompt(null)} type="button">
+                  Cancel
+                </button>
+              </span>
+            </div>
+          ) : null}
+          {pendingNewSiteDraft ? (
+            <div className="map-inspector-section">
+              <p className="map-inspector-line">
+                New site at {pendingNewSiteDraft.lat.toFixed(5)}, {pendingNewSiteDraft.lon.toFixed(5)}. Drag it, then
+                save or dismiss.
+              </p>
+              <span className="map-inline-actions">
+                {canPersist ? (
+                  <button className="map-control-btn" onClick={() => void savePendingNewSiteDraft()} type="button">
+                    Save To Library
+                  </button>
+                ) : null}
+                <button className="map-control-btn" onClick={dismissPendingNewSiteDraft} type="button">
+                  Dismiss
+                </button>
+              </span>
+            </div>
+          ) : null}
+          {pendingMoveCount > 0 && pendingMovePreview ? (
+            <div className="map-inspector-section">
+              <p className="map-inspector-line">
+                {(pendingMoveCount === 1
+                  ? `Unsaved move for ${sites.find((site) => site.id === pendingMovePreview.siteId)?.name ?? "site"} to ${pendingMovePreview.currentPosition.lat.toFixed(5)}, ${pendingMovePreview.currentPosition.lon.toFixed(5)}.`
+                  : `${pendingMoveCount} sites have unsaved position changes.`) +
+                  (readOnly && !canPersist ? " Read-only mode: changes are temporary." : "")}
+              </p>
+              <span className="map-inline-actions">
+                {canPersist ? (
+                  <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
+                    Save Positions
+                  </button>
+                ) : null}
+                <button className="map-control-btn" onClick={dismissPendingSiteMove} type="button">
+                  {canPersist ? "Dismiss" : "Revert"}
+                </button>
+              </span>
+            </div>
+          ) : null}
+        </aside>
       ) : null}
-      {!hasSimulationTerrain ? <div className="map-control-note">No SRTM loaded: simulation uses site elevations only.</div> : null}
-      {resolvedBasemap.fallbackReason && !useFallbackMapStyle ? (
-        <div className="map-control-note map-control-note-secondary">{resolvedBasemap.fallbackReason}</div>
-      ) : null}
-      {useFallbackMapStyle ? (
-        <div className="map-control-note map-control-note-secondary">
-          Base map provider failed. Auto-switched to CARTO fallback style.
-        </div>
-      ) : null}
-      {mapProviderWarning ? <div className="map-control-note map-control-note-secondary">{mapProviderWarning}</div> : null}
-      {showDiscoverySites ? (
-        <div className="map-control-note map-control-note-secondary">
-          Shared/public library sites visible: {sharedOrPublicLibrarySites.length}. Click a marker to add it to this simulation.
-        </div>
-      ) : null}
-      {showDiscoveryMqtt ? (
-        <div className="map-control-note map-control-note-secondary">
-          {mqttLoadStatus ?? `MQTT nodes visible: ${mqttNodes.length}. Click a marker to open an Add Site draft.`}
-        </div>
-      ) : null}
-      {overlayHoverInfo ? <div className="map-control-note map-control-note-secondary">{overlayHoverInfo}</div> : null}
-      {mqttDuplicatePrompt ? (
-        <div className="map-control-note map-control-note-tertiary">
-          <div>
-            This MQTT node is already in your library as <strong>{mqttDuplicatePrompt.existingName}</strong>.
-          </div>
-          <span className="map-inline-actions">
-            <button className="map-control-btn" onClick={addExistingDuplicateMqttNode} type="button">
-              Add Existing
-            </button>
-            <button className="map-control-btn" onClick={createDuplicateMqttCopy} type="button">
-              Create Copy
-            </button>
-            <button className="map-control-btn" onClick={() => setMqttDuplicatePrompt(null)} type="button">
-              Cancel
-            </button>
-          </span>
-        </div>
-      ) : null}
-      {endpointPickTarget && endpointPickError ? (
-        <div className="map-control-note map-control-note-tertiary">{endpointPickError}</div>
-      ) : null}
-      {pendingNewSiteDraft ? (
-        <div className="map-control-note map-control-note-tertiary">
-          New site at {pendingNewSiteDraft.lat.toFixed(5)}, {pendingNewSiteDraft.lon.toFixed(5)}. Drag it, then save or dismiss.
-          <span className="map-inline-actions">
-            {canPersist ? (
-              <button className="map-control-btn" onClick={() => void savePendingNewSiteDraft()} type="button">
-                Save To Library
-              </button>
-            ) : null}
-            <button className="map-control-btn" onClick={dismissPendingNewSiteDraft} type="button">
-              Dismiss
-            </button>
-          </span>
-        </div>
-      ) : null}
-      {pendingMoveCount > 0 && pendingMovePreview ? (
-        <div className="map-control-note map-control-note-tertiary">
-          {(pendingMoveCount === 1
-            ? `Unsaved move for ${sites.find((site) => site.id === pendingMovePreview.siteId)?.name ?? "site"} to ${pendingMovePreview.currentPosition.lat.toFixed(5)}, ${pendingMovePreview.currentPosition.lon.toFixed(5)}.`
-            : `${pendingMoveCount} sites have unsaved position changes.`) +
-            (readOnly && !canPersist ? " Read-only mode: changes are temporary." : "")}
-          <span className="map-inline-actions">
-            {canPersist ? (
-              <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
-                Save Positions
-              </button>
-            ) : null}
-            <button className="map-control-btn" onClick={dismissPendingSiteMove} type="button">
-              {canPersist ? "Dismiss" : "Revert"}
-            </button>
-          </span>
-        </div>
-      ) : null}
-      {siteDraftStatus ? <div className="map-control-note map-control-note-secondary">{siteDraftStatus}</div> : null}
       <aside className="map-sim-summary" aria-live="polite">
         <div className="map-sim-summary-header">
           <h3>Simulation Sources</h3>
@@ -2067,6 +2150,15 @@ export function MapView({
                 className={`site-pin ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""} ${
                   isFocusNode ? "is-mode-focus" : "is-dimmed"
                 }`}
+                onMouseEnter={() =>
+                  setOverlayHoverInfo({
+                    text: `${site.name} · ${markerPosition.lat.toFixed(5)}, ${markerPosition.lon.toFixed(5)} · ${
+                      site.groundElevationM
+                    } m ASL`,
+                    ...(site.libraryEntryId ? { libraryEntryId: site.libraryEntryId } : {}),
+                  })
+                }
+                onMouseLeave={() => setOverlayHoverInfo(null)}
                 onClick={(event) => {
                   stopMapClickBubbling(event);
                   onSiteClick(site.id);
@@ -2097,9 +2189,10 @@ export function MapView({
                 <div
                   className="site-pin is-temporary"
                   onMouseEnter={() =>
-                    setOverlayHoverInfo(
-                      `${entry.name} · ${entry.position.lat.toFixed(5)}, ${entry.position.lon.toFixed(5)}`,
-                    )
+                    setOverlayHoverInfo({
+                      text: `${entry.name} · ${entry.position.lat.toFixed(5)}, ${entry.position.lon.toFixed(5)}`,
+                      libraryEntryId: entry.id,
+                    })
                   }
                   onMouseLeave={() => setOverlayHoverInfo(null)}
                   onClick={(event) => {
@@ -2122,16 +2215,16 @@ export function MapView({
           : null}
 
         {showDiscoveryMqtt
-          ? mqttNodes.map((node) => (
+          ? (mqttTooDenseInView ? [] : mqttNodesInView).map((node) => (
               <Marker anchor="bottom" key={`discover-mqtt-${node.nodeId}`} latitude={node.lat} longitude={node.lon}>
                 <div
                   className="site-pin is-temporary"
                   onMouseEnter={() =>
-                    setOverlayHoverInfo(
-                      `${node.longName ?? node.shortName ?? node.nodeId} · ${node.nodeId}${
+                    setOverlayHoverInfo({
+                      text: `${node.longName ?? node.shortName ?? node.nodeId} · ${node.nodeId}${
                         node.shortName ? ` · ${node.shortName}` : ""
                       }${node.hwModel ? ` · ${node.hwModel}` : ""}`,
-                    )
+                    })
                   }
                   onMouseLeave={() => setOverlayHoverInfo(null)}
                   onClick={(event) => {
