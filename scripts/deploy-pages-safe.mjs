@@ -104,6 +104,40 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+const parseWranglerJsonPayload = (stdout) => {
+  const start = stdout.indexOf("[");
+  const end = stdout.lastIndexOf("]");
+  if (start < 0 || end < start) return null;
+  const payload = stdout.slice(start, end + 1);
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+};
+
+async function verifyRemoteSchema(targetName, databaseName) {
+  if (targetName !== "staging-main" && targetName !== "prod-main") return;
+  const { stdout } = await run(
+    "npx",
+    ["wrangler", "d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(resource_changes);"],
+    { capture: true },
+  );
+  const parsed = parseWranglerJsonPayload(stdout);
+  assert(Array.isArray(parsed) && parsed.length > 0, "Preflight failed: unable to parse D1 schema output.");
+  const first = parsed[0];
+  const rows = Array.isArray(first?.results) ? first.results : [];
+  const columns = new Set(rows.map((row) => String(row?.name ?? "")).filter(Boolean));
+  const required = ["details_json", "snapshot_json"];
+  const missing = required.filter((column) => !columns.has(column));
+  assert(
+    missing.length === 0,
+    `Preflight failed: D1 schema missing columns in resource_changes: ${missing.join(
+      ", ",
+    )}. Apply migration db/migrations/2026-03-15_changelog_details.sql before deploy.`,
+  );
+}
+
 async function getGitRef(args = ["rev-parse", "--abbrev-ref", "HEAD"]) {
   const { stdout } = await run("git", args, { capture: true });
   return stdout.trim();
@@ -149,6 +183,8 @@ async function preflight(targetName, target) {
     bucketName === target.expected.bucketName,
     `Preflight failed: bucket_name '${bucketName}' != '${target.expected.bucketName}'.`,
   );
+
+  await verifyRemoteSchema(targetName, databaseName);
 
   if (targetName === "prod-main") {
     await run("node", ["scripts/validate-prod-release.mjs"]);

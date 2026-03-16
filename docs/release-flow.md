@@ -30,6 +30,7 @@
   - clean git tree
   - valid target config (project/bindings)
   - branch policy (`main` required for `staging-main` and `prod-main`)
+  - remote D1 schema gate for required columns (deploy aborts if migrations are missing)
 - All deploys must pass scripted post-deploy verification against Cloudflare deployment list.
 
 ## Versioning Policy
