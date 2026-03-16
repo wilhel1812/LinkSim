@@ -2,16 +2,15 @@
 
 ## Mandatory Startup (No Exceptions)
 - Treat this file as the single handoff entrypoint.
-- Before any code changes, read these files in order:
-  1. `docs/BACKLOG.md`
-  2. `docs/release-flow.md`
+- Before any code changes, review open GitHub Issues for the repo and then read:
+  1. `docs/release-flow.md`
 - If instructions conflict, precedence is:
   1. explicit user instruction in current thread
   2. this `AGENTS.md`
-  3. `docs/BACKLOG.md`
+  3. GitHub Issues / GitHub Projects state for the repo
   4. `docs/release-flow.md`
 
-- Always update `docs/BACKLOG.md` before and after implementation batches.
+- Always update the relevant GitHub Issue(s) before and after implementation batches.
 - Default environment workflow:
   - Unless the user explicitly says otherwise, work in local test environment.
   - After local verification, deploy to live test/staging for verification.
@@ -23,14 +22,14 @@
 - Keep terminology consistent: use `Simulation`, `Site`, `Library`, `Path`, and `Channel` terms across UI and docs.
 - Any modal/popover that can open on top of another dialog must use `tier="raised"` in `ModalOverlay`.
 - When catching UI errors, use `getUiErrorMessage()` from `src/lib/uiError.ts` for consistent messaging.
-- Do not leave backlog tasks in ambiguous state. Use `[x]` only when code and verification are done.
-- Do not start user-added backlog items without explicit user confirmation in the current thread.
-- Maintain `docs/BACKLOG.md` in close dialogue with the user: confirm wording/scope before starting newly added user items, and confirm completion criteria before checking them off.
+- Do not leave issue status in an ambiguous state. Close issues only when code and verification are done.
+- Do not start newly created or newly requested issues without explicit user confirmation in the current thread.
+- Maintain GitHub Issues in close dialogue with the user: confirm wording/scope before starting newly added user items, and confirm completion criteria before closing them.
 - Batch size policy:
   - Default to 3-4 backlog items per pass.
   - If scope is stable and low risk, target larger passes (~10 items) to reduce deploy churn.
-- For user-added backlog items:
-  - Keep them marked `pending-discussion` until discussed.
+- For user-added issues:
+  - Keep them labeled `pending-discussion` until discussed.
   - Do not move them to in-progress automatically.
 - After every live deploy, monitor Cloudflare Pages deployment status (`wrangler pages deployment list --project-name linksim`) and explicitly notify the user when deployment is complete.
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
@@ -60,11 +59,16 @@
   - `npm run test`
   - `npm run build:bundle`
   - Confirm build label matches intended SemVer channel rules
-  - Confirm no unresolved backlog status drift for items in the current pass
+  - Confirm no unresolved issue/project status drift for items in the current pass
 - Token-efficient execution:
   - Lock scope for each pass before implementation.
   - Define done criteria and no-touch areas at pass start.
   - Avoid mid-pass feature pivots unless explicitly requested by the user.
+- GitHub Issue workflow:
+  - Treat GitHub Issues as the canonical backlog for open and completed work.
+  - Use issue titles as the default source of task naming.
+  - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
+  - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
 
 ## Handoff Guarantee
 - A new agent should be able to continue by being pointed only to this file.
