@@ -332,7 +332,7 @@ const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
 const BASEMAP_PROVIDER_KEY = "linksim-basemap-provider-v1";
 const BASEMAP_STYLE_PRESET_KEY = "linksim-basemap-style-preset-v1";
-const STORAGE_SNAPSHOT_LIMIT = 24;
+const STORAGE_SNAPSHOT_LIMIT = 5;
 
 type StoredSnapshot<T> = {
   savedAtIso: string;
@@ -392,44 +392,46 @@ const appendSnapshot = (key: string, value: unknown) => {
 };
 
 const writeStorage = (key: string, value: unknown, options?: { snapshot?: boolean }): boolean => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    if (options?.snapshot !== false) appendSnapshot(key, value);
-    return true;
-  } catch (error) {
-    const isQuotaExceeded = error instanceof DOMException && error.name === "QuotaExceededError";
-    if (isQuotaExceeded) {
-      console.error(`[appStore] localStorage QUOTA EXCEEDED for key "${key}". Clearing old snapshots and retrying...`);
-      clearOldSnapshots();
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-        if (options?.snapshot !== false) appendSnapshot(key, value);
-        console.log(`[appStore] Retry after clearing snapshots succeeded`);
-        return true;
-      } catch (retryErr) {
-        console.error(`[appStore] localStorage QUOTA EXCEEDED (retry failed) for key "${key}":`, retryErr);
-        return false;
-      }
-    }
-    console.warn(`[appStore] Failed to write to localStorage (${key}):`, error);
-    return false;
-  }
-};
-
-const clearOldSnapshots = (): void => {
-  const keys = [SITE_LIBRARY_KEY, SIM_PRESETS_KEY];
-  for (const key of keys) {
+  const tryWriteWithSnapshot = (): boolean => {
     try {
-      const history = readSnapshotHistory(key);
-      if (history.length > 2) {
-        const reduced = history.slice(-2);
-        localStorage.setItem(snapshotKeyFor(key), JSON.stringify(reduced));
-        console.log(`[appStore] Cleared old snapshots for "${key}", kept last 2`);
-      }
+      localStorage.setItem(key, JSON.stringify(value));
+      if (options?.snapshot !== false) appendSnapshot(key, value);
+      return true;
     } catch {
-      // Best effort
+      return false;
     }
+  };
+
+  const clearAllSnapshots = (): void => {
+    const keys = [SITE_LIBRARY_KEY, SIM_PRESETS_KEY];
+    for (const k of keys) {
+      try {
+        const snapshotKey = snapshotKeyFor(k);
+        const existing = localStorage.getItem(snapshotKey);
+        if (existing) {
+          localStorage.setItem(snapshotKey, "[]");
+          console.log(`[appStore] Cleared ALL snapshots for "${k}" due to quota`);
+        }
+      } catch {
+        // Best effort
+      }
+    }
+  };
+
+  if (tryWriteWithSnapshot()) {
+    return true;
   }
+
+  console.error(`[appStore] localStorage QUOTA EXCEEDED for key "${key}". Clearing snapshots and retrying...`);
+  clearAllSnapshots();
+
+  if (tryWriteWithSnapshot()) {
+    console.log(`[appStore] Retry after clearing snapshots succeeded`);
+    return true;
+  }
+
+  console.error(`[appStore] localStorage QUOTA EXCEEDED (retry failed) for key "${key}"`);
+  return false;
 };
 
 const makeId = (prefix: string): string =>
@@ -1022,11 +1024,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   performCloudSyncPush: () => {
-    if (!hydrated) return;
+    if (!hydrated) {
+      console.log("[appStore] performCloudSyncPush skipped - not hydrated yet");
+      return;
+    }
     if (syncTimer !== null) {
       window.clearTimeout(syncTimer);
     }
     console.log("[appStore] Changes detected, scheduling sync in", SYNC_DEBOUNCE_MS, "ms");
+    console.log("[appStore] Setting syncPending: true");
     set({ syncPending: true, syncStatus: "synced" });
     const timerId = window.setTimeout(async () => {
       console.log("[appStore] Auto-sync timer fired, pushing to cloud...");
