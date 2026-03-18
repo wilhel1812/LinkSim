@@ -31,12 +31,32 @@ vi.mock("../lib/coverage", () => ({
   buildCoverage: vi.fn(() => []),
 }));
 
+vi.mock("../lib/elevationService", () => ({
+  fetchElevations: vi.fn(),
+}));
+
+import { fetchElevations } from "../lib/elevationService";
 import { useAppStore } from "./appStore";
+
+const mockedFetchElevations = vi.mocked(fetchElevations);
+
+const makeSite = (id: string, lat: number, lon: number, groundElevationM: number) => ({
+  id,
+  name: id,
+  position: { lat, lon },
+  groundElevationM,
+  antennaHeightM: 2,
+  txPowerDbm: 20,
+  txGainDbi: 2,
+  rxGainDbi: 2,
+  cableLossDb: 1,
+});
 
 describe("appStore auth guards", () => {
   beforeEach(() => {
     storage.mock.clear();
     vi.restoreAllMocks();
+    mockedFetchElevations.mockReset();
     useAppStore.setState({
       currentUser: null,
       siteLibrary: [
@@ -351,5 +371,62 @@ describe("appStore auth guards", () => {
     useAppStore.getState().insertSitesFromLibrary(["lib-3"]);
     expect(useAppStore.getState().sites.length).toBe(beforeSiteCount);
     expect(warnSpy).toHaveBeenCalled();
+  });
+});
+
+describe("appStore elevation sync", () => {
+  beforeEach(() => {
+    mockedFetchElevations.mockReset();
+    useAppStore.setState({
+      hasOnlineElevationSync: false,
+      sites: [makeSite("site-1", 1, 1, 100), makeSite("site-2", 2, 2, 120)],
+    });
+  });
+
+  it("applies fetched elevations by site id when site order changes mid-request", async () => {
+    let resolveFetch: (values: number[]) => void = () => undefined;
+    mockedFetchElevations.mockImplementationOnce(
+      () =>
+        new Promise<number[]>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const syncPromise = useAppStore.getState().syncSiteElevationsOnline();
+    useAppStore.setState({
+      sites: [makeSite("site-2", 2, 2, 120), makeSite("site-1", 1, 1, 100)],
+    });
+
+    resolveFetch([111.2, 222.7]);
+    await syncPromise;
+
+    const sites = useAppStore.getState().sites;
+    expect(sites.find((site) => site.id === "site-1")?.groundElevationM).toBe(111);
+    expect(sites.find((site) => site.id === "site-2")?.groundElevationM).toBe(223);
+    expect(useAppStore.getState().hasOnlineElevationSync).toBe(true);
+  });
+
+  it("ignores stale responses when the sites list is replaced", async () => {
+    let resolveFetch: (values: number[]) => void = () => undefined;
+    mockedFetchElevations.mockImplementationOnce(
+      () =>
+        new Promise<number[]>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const syncPromise = useAppStore.getState().syncSiteElevationsOnline();
+    useAppStore.setState({
+      hasOnlineElevationSync: false,
+      sites: [makeSite("site-a", 59.92, 10.75, 100), makeSite("site-b", 59.95, 10.82, 120)],
+    });
+
+    resolveFetch([501.4, 502.4]);
+    await syncPromise;
+
+    const sites = useAppStore.getState().sites;
+    expect(sites.find((site) => site.id === "site-a")?.groundElevationM).toBe(100);
+    expect(sites.find((site) => site.id === "site-b")?.groundElevationM).toBe(120);
+    expect(useAppStore.getState().hasOnlineElevationSync).toBe(false);
   });
 });
