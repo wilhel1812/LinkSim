@@ -21,7 +21,6 @@ import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/
 import { parseDeepLinkFromLocation } from "../lib/deepLink";
 import {
   fetchCollaboratorDirectory,
-  fetchMe,
   fetchResourceChanges,
   revertResourceChangeCopy,
   fetchUserById,
@@ -568,7 +567,7 @@ export function Sidebar() {
   const [resourceCollaboratorDirectoryBusy, setResourceCollaboratorDirectoryBusy] = useState(false);
   const [resourceCollaboratorDirectoryStatus, setResourceCollaboratorDirectoryStatus] = useState("");
   const [resourceAccessStatus, setResourceAccessStatus] = useState("");
-  const [currentUser, setCurrentUser] = useState<CloudUser | null>(null);
+  const currentUser = useAppStore((state) => state.currentUser);
   const [pendingSimulationVisibilityPrompt, setPendingSimulationVisibilityPrompt] = useState<{
     simulationId: string;
     targetVisibility: "public" | "shared";
@@ -723,20 +722,6 @@ export function Sidebar() {
     if (stillVisible) return;
     setSelectedLinkId(visibleLinks[0].id);
   }, [selectedLinkId, setSelectedLinkId, visibleLinks]);
-  useEffect(() => {
-    let canceled = false;
-    void fetchMe()
-      .then((me) => {
-        if (canceled) return;
-        setCurrentUser(me);
-      })
-      .catch(() => {
-        // Best effort only.
-      });
-    return () => {
-      canceled = true;
-    };
-  }, []);
   useEffect(() => {
     let canceled = false;
     void fetchCollaboratorDirectory()

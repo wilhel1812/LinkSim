@@ -65,6 +65,7 @@ export function AppShell() {
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
+  const setCurrentUser = useAppStore((state) => state.setCurrentUser);
 
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
@@ -171,6 +172,7 @@ export function AppShell() {
         }
         const profile = await fetchMe();
         setMe(profile);
+        setCurrentUser(profile);
         setActiveUserId(profile.id);
         try {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);

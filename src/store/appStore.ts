@@ -35,6 +35,7 @@ import {
 } from "../lib/terrainDataset";
 import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
+import type { CloudUser } from "../lib/cloudUser";
 import type {
   CoverageMode,
   CoverageSample,
@@ -55,6 +56,17 @@ const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 
 let hydrated = false;
 let syncTimer: number | null = null;
+
+const canEditLibraryItem = (
+  item: { ownerUserId?: string; effectiveRole?: string },
+  currentUser: CloudUser | null,
+): boolean => {
+  if (!currentUser) return false;
+  if (item.ownerUserId === currentUser.id) return true;
+  return (
+    item.effectiveRole === "owner" || item.effectiveRole === "admin" || item.effectiveRole === "editor"
+  );
+};
 
 export type MapOverlayMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
 
@@ -171,6 +183,7 @@ type AppState = {
   syncTrigger: number;
   syncBusy: boolean;
   syncStatusMessage: string;
+  currentUser: CloudUser | null;
   initializeCloudSync: () => Promise<void>;
   performCloudSyncPush: () => void;
   performManualCloudSync: () => Promise<void>;
@@ -178,6 +191,7 @@ type AppState = {
   setSyncStatus: (status: "syncing" | "synced" | "error") => void;
   setLastSyncedAt: (iso: string | null) => void;
   setSyncErrorMessage: (message: string | null) => void;
+  setCurrentUser: (user: CloudUser | null) => void;
   triggerSync: () => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
   setUiColorTheme: (value: UiColorTheme) => void;
@@ -868,10 +882,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncTrigger: 0,
   syncBusy: false,
   syncStatusMessage: "",
+  currentUser: null,
   setLocale: (locale) => set({ locale }),
   setSyncStatus: (status: "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
+  setCurrentUser: (user) => set({ currentUser: user }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   initializeCloudSync: async () => {
     const applyStartupSelection = !hydrated;
@@ -942,11 +958,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log("[appStore] Auto-sync timer fired, pushing to cloud...");
       set({ syncStatus: "syncing", syncStatusMessage: "Saving changes..." });
       try {
-        const { siteLibrary, simulationPresets } = get();
-        const payload = { siteLibrary, simulationPresets };
+        const { siteLibrary, simulationPresets, currentUser } = get();
+        const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
+        const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
+        const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
+        const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
         console.log("[appStore] Pushing payload:", {
-          sites: payload.siteLibrary.length,
-          simulations: payload.simulationPresets.length,
+          sites: editableSites.length,
+          simulations: editableSims.length,
+          skipped: skippedCount,
         });
         await pushCloudLibrary(payload);
         console.log("[appStore] Push SUCCESS");
@@ -972,11 +992,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     console.log("[appStore] performManualCloudSync START");
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing..." });
     try {
-      const { siteLibrary, simulationPresets, importLibraryData } = get();
-      const payload = { siteLibrary, simulationPresets };
+      const { siteLibrary, simulationPresets, currentUser, importLibraryData } = get();
+      const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
+      const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
+      const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
+      const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
       console.log("[appStore] Pushing local data to cloud:", {
-        sites: payload.siteLibrary.length,
-        simulations: payload.simulationPresets.length,
+        sites: editableSites.length,
+        simulations: editableSims.length,
+        skipped: skippedCount,
       });
       await pushCloudLibrary(payload);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
