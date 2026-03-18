@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchDeepLinkStatus, fetchMe, setLocalDevRole, type CloudUser } from "../lib/cloudUser";
+import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
@@ -68,6 +68,7 @@ export function AppShell() {
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const currentUser = useAppStore((state) => state.currentUser);
   const isOnline = useAppStore((state) => state.isOnline);
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
@@ -84,7 +85,6 @@ export function AppShell() {
   const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
   const [showMobileWarning, setShowMobileWarning] = useState(false);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
-  const [me, setMe] = useState<CloudUser | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const deepLinkAppliedRef = useRef(false);
 
@@ -206,7 +206,6 @@ export function AppShell() {
           return;
         }
         const profile = await fetchMe();
-        setMe(profile);
         setCurrentUser(profile);
         setActiveUserId(profile.id);
         try {
@@ -553,7 +552,7 @@ export function AppShell() {
   }, [copyToast]);
 
   const runUpgradeAndShare = useCallback(async () => {
-    if (!activeSimulation || !me) {
+    if (!activeSimulation || !currentUser) {
       setShareStatus("No active saved simulation.");
       return;
     }
@@ -596,7 +595,7 @@ export function AppShell() {
     } finally {
       setShareBusy(false);
     }
-  }, [activeSimulation, copyCurrentLink, me, referencedPrivateSites, updateSimulationPresetEntry, updateSiteLibraryEntry]);
+  }, [activeSimulation, copyCurrentLink, currentUser, referencedPrivateSites, updateSimulationPresetEntry, updateSiteLibraryEntry]);
 
   if (accessState === "checking") {
     return (

@@ -386,15 +386,22 @@ export function UserAdminPanel() {
     setBusy(true);
     setStatus("");
     try {
-      const updated = await updateMyProfile({
+      await updateMyProfile({
         username: trimmedName,
         email: trimmedEmail,
         bio: bioDraft,
         accessRequestNote: accessRequestNoteDraft,
         emailPublic: emailPublicDraft,
       });
-      setMe(updated);
-      setCurrentUser(updated);
+      const reloaded = await fetchMe();
+      setMe(reloaded);
+      setCurrentUser(reloaded);
+      setNameDraft(reloaded.username);
+      setEmailDraft(reloaded.email ?? "");
+      setBioDraft(reloaded.bio ?? "");
+      setAccessRequestNoteDraft(reloaded.accessRequestNote ?? "");
+      setAvatarDraft(reloaded.avatarUrl ?? "");
+      setEmailPublicDraft(reloaded.emailPublic ?? true);
       setStatus("Profile updated.");
       if (canModerate) {
         await refreshAdminData();
@@ -417,10 +424,11 @@ export function UserAdminPanel() {
       setAvatarStatus("Processing image…");
       const resized = await resizeAvatarFileToDataUrl(file);
       setAvatarStatus("Uploading avatar…");
-      const uploaded = await uploadAvatar(resized.originalDataUrl, resized.thumbDataUrl);
-      setAvatarDraft(uploaded.user.avatarUrl ?? "");
-      setMe(uploaded.user);
-      setCurrentUser(uploaded.user);
+      await uploadAvatar(resized.originalDataUrl, resized.thumbDataUrl);
+      const reloaded = await fetchMe();
+      setAvatarDraft(reloaded.avatarUrl ?? "");
+      setMe(reloaded);
+      setCurrentUser(reloaded);
       setAvatarStatus("Avatar uploaded and saved.");
       setStatus("Avatar uploaded and saved.");
     } catch (error) {
