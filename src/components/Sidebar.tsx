@@ -47,7 +47,6 @@ import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
-import { AuthSyncPanel } from "./AuthSyncPanel";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import { UserAdminPanel } from "./UserAdminPanel";
@@ -2399,15 +2398,6 @@ export function Sidebar() {
       <section className="panel-section section-more">
         <details className="compact-details">
           <summary>More</summary>
-          <div className="section-heading">
-            <p className="field-help">Cloud Sync</p>
-            <InfoTip text="Sync Site Library and Simulation Library through Cloudflare D1. Access is enforced by Cloudflare Access at the edge, and ownership/sharing metadata is persisted server-side." />
-          </div>
-          <p className="field-help warning-text">
-            Do not store secrets in LinkSim content. Treat uploaded/synced data as potentially visible to other users
-            and operators.
-          </p>
-          <AuthSyncPanel />
           <div className="section-heading">
             <p className="field-help">Local Storage Safety</p>
             <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly, and use Restore Snapshot if data looks missing after refresh." />

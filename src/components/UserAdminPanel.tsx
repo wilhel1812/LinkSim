@@ -124,6 +124,9 @@ export function UserAdminPanel() {
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
   const uiColorTheme = useAppStore((state) => state.uiColorTheme);
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
+  const syncStatus = useAppStore((state) => state.syncStatus);
+  const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
+  const triggerSync = useAppStore((state) => state.triggerSync);
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
@@ -635,11 +638,61 @@ export function UserAdminPanel() {
     window.location.href = "/cdn-cgi/access/logout";
   }, [isLocalRuntime]);
 
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+
+  const getSyncIndicator = () => {
+    const timeLabel = lastSyncedAt
+      ? `Last synced: ${new Date(lastSyncedAt).toLocaleTimeString()}`
+      : "Not synced yet";
+
+    if (isLocalRuntime) {
+      return { icon: "🏠", class: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
+    }
+
+    switch (syncStatus) {
+      case "syncing":
+        return { icon: "↻", class: "sync-syncing", label: "Syncing to cloud...", title: timeLabel };
+      case "synced":
+        return { icon: "●", class: "sync-synced", label: "Synced to cloud", title: `${timeLabel}. Click for details.` };
+      case "error":
+        return { icon: "⚠", class: "sync-error", label: "Sync failed", title: `${timeLabel}. Click to retry.` };
+      default:
+        return { icon: "○", class: "sync-idle", label: "Sync idle", title: `${timeLabel}. Click for details.` };
+    }
+  };
+
+  const syncIndicator = getSyncIndicator();
+
+  const handleSyncIndicatorClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isLocalRuntime) {
+      setSyncModalOpen(true);
+    } else {
+      setSyncModalOpen(true);
+    }
+  };
+
   return (
     <>
       <button className="user-chip" onClick={() => setOpen(true)} type="button">
         <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
         <span className="user-chip-text">{me?.username ?? "Loading user..."}</span>
+        <span
+          aria-label={syncIndicator.label}
+          className={`sync-indicator ${syncIndicator.class}`}
+          title={syncIndicator.title}
+          onClick={handleSyncIndicatorClick}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              setSyncModalOpen(true);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
+          {syncIndicator.icon}
+        </span>
         <span aria-hidden className="user-chip-settings-icon">
           ⚙
         </span>
@@ -647,6 +700,45 @@ export function UserAdminPanel() {
           <span className="notification-badge">{unreadNotifications.length}</span>
         ) : null}
       </button>
+
+      {syncModalOpen ? (
+        <ModalOverlay aria-label="Sync Status" onClose={() => setSyncModalOpen(false)}>
+          <div className="library-manager-card sync-modal">
+            <div className="library-manager-header">
+              <h2>Cloud Sync</h2>
+              <button className="inline-action" onClick={() => setSyncModalOpen(false)} type="button">
+                Close
+              </button>
+            </div>
+            <div className="sync-modal-content">
+              <div className="sync-status-display">
+                <span className={`sync-indicator-large ${syncIndicator.class}`}>{syncIndicator.icon}</span>
+                <div>
+                  <p className="field-help">{syncIndicator.label}</p>
+                  {lastSyncedAt && (
+                    <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                  )}
+                </div>
+              </div>
+              <div className="chip-group">
+                <button
+                  className="inline-action"
+                  onClick={() => {
+                    triggerSync();
+                    setSyncModalOpen(false);
+                  }}
+                  type="button"
+                >
+                  Sync Now
+                </button>
+              </div>
+              <p className="field-help warning-text">
+                Do not store secrets in LinkSim content. Data may be visible to other users and operators.
+              </p>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
 
       {open ? (
         <ModalOverlay aria-label="User Settings" onClose={() => setOpen(false)}>

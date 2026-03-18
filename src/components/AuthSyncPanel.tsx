@@ -12,10 +12,14 @@ export function AuthSyncPanel() {
   const importLibraryData = useAppStore((state) => state.importLibraryData);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const selectScenario = useAppStore((state) => state.selectScenario);
+  const setSyncStatus = useAppStore((state) => state.setSyncStatus);
+  const setLastSyncedAt = useAppStore((state) => state.setLastSyncedAt);
+  const syncTrigger = useAppStore((state) => state.syncTrigger);
   const [status, setStatus] = useState("");
   const [syncBusy, setSyncBusy] = useState(false);
   const hydrated = useRef(false);
   const syncTimer = useRef<number | null>(null);
+  const triggerRef = useRef(syncTrigger);
 
   const cloudPayload = useMemo(
     () => ({
@@ -28,6 +32,7 @@ export function AuthSyncPanel() {
   const refreshFromCloud = async () => {
     const applyStartupSelection = !hydrated.current;
     setSyncBusy(true);
+    setSyncStatus("syncing");
     try {
       const cloud = await fetchCloudLibrary();
       const cloudPresets =
@@ -55,7 +60,13 @@ export function AuthSyncPanel() {
       setStatus(
         `Cloud sync loaded (replace). Delta: ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
       );
+      setSyncStatus("synced");
+      setLastSyncedAt(new Date().toISOString());
       hydrated.current = true;
+    } catch (error) {
+      setSyncStatus("error");
+      const message = getUiErrorMessage(error);
+      setStatus(`Cloud load failed: ${message}`);
     } finally {
       setSyncBusy(false);
     }
@@ -77,11 +88,15 @@ export function AuthSyncPanel() {
       window.clearTimeout(syncTimer.current);
     }
     syncTimer.current = window.setTimeout(() => {
+      setSyncStatus("syncing");
       void (async () => {
         try {
           await pushCloudLibrary(cloudPayload);
+          setSyncStatus("synced");
+          setLastSyncedAt(new Date().toISOString());
           setStatus(`Cloud sync updated at ${new Date().toLocaleTimeString()}.`);
         } catch (error) {
+          setSyncStatus("error");
           const message = getUiErrorMessage(error);
           setStatus(`Cloud save failed: ${message}`);
         }
@@ -95,6 +110,14 @@ export function AuthSyncPanel() {
       }
     };
   }, [cloudPayload]);
+
+  useEffect(() => {
+    if (syncTrigger === triggerRef.current) return;
+    triggerRef.current = syncTrigger;
+    if (hydrated.current) {
+      void refreshFromCloud();
+    }
+  }, [syncTrigger]);
 
   return (
     <div className="auth-sync-panel">

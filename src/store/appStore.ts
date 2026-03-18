@@ -158,7 +158,13 @@ type AppState = {
   pendingSiteLibraryOpenEntryId: string | null;
   scenarioOptions: { id: string; name: string }[];
   mapOverlayMode: MapOverlayMode;
+  syncStatus: "idle" | "syncing" | "synced" | "error";
+  lastSyncedAt: string | null;
+  syncTrigger: number;
   setLocale: (locale: LocaleCode) => void;
+  setSyncStatus: (status: "idle" | "syncing" | "synced" | "error") => void;
+  setLastSyncedAt: (iso: string | null) => void;
+  triggerSync: () => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
   setUiColorTheme: (value: UiColorTheme) => void;
   setBasemapProvider: (value: BasemapProvider) => void;
@@ -292,6 +298,7 @@ type AppState = {
 
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
+const LAST_SESSION_KEY = "linksim-last-session-v1";
 const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
 const BASEMAP_PROVIDER_KEY = "linksim-basemap-provider-v1";
@@ -355,9 +362,15 @@ const appendSnapshot = (key: string, value: unknown) => {
   localStorage.setItem(snapshotKeyFor(key), JSON.stringify(next));
 };
 
-const writeStorage = (key: string, value: unknown, options?: { snapshot?: boolean }) => {
-  localStorage.setItem(key, JSON.stringify(value));
-  if (options?.snapshot !== false) appendSnapshot(key, value);
+const writeStorage = (key: string, value: unknown, options?: { snapshot?: boolean }): boolean => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    if (options?.snapshot !== false) appendSnapshot(key, value);
+    return true;
+  } catch (error) {
+    console.warn(`[appStore] Failed to write to localStorage (${key}):`, error);
+    return false;
+  }
 };
 
 const makeId = (prefix: string): string =>
@@ -742,6 +755,33 @@ if (
   writeStorage(SIM_PRESETS_KEY, initialSimulationPresets);
 }
 
+type LastSession = {
+  selectedScenarioId: string;
+  savedAtIso: string;
+};
+
+const readLastSession = (): LastSession | null => {
+  try {
+    const raw = localStorage.getItem(LAST_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.selectedScenarioId !== "string") return null;
+    return parsed as LastSession;
+  } catch {
+    return null;
+  }
+};
+
+const getInitialScenarioId = (): string => {
+  const lastSession = readLastSession();
+  if (lastSession && initialSimulationPresets.some((p) => p.id === lastSession.selectedScenarioId)) {
+    return lastSession.selectedScenarioId;
+  }
+  return defaultScenario.id;
+};
+
+const initialSelectedScenarioId = getInitialScenarioId();
+
 const normalizeUiThemePreference = (value: unknown): "system" | "light" | "dark" =>
   value === "light" || value === "dark" || value === "system" ? value : "system";
 const initialUiThemePreference = normalizeUiThemePreference(
@@ -789,7 +829,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   uiColorTheme: initialUiColorTheme,
   basemapProvider: initialBasemapProvider,
   basemapStylePreset: initialBasemapStylePreset,
-  selectedScenarioId: defaultScenario.id,
+  selectedScenarioId: initialSelectedScenarioId,
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
   environmentLossDb: 0,
@@ -808,7 +848,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
+  syncStatus: "idle",
+  lastSyncedAt: null,
+  syncTrigger: 0,
   setLocale: (locale) => set({ locale }),
+  setSyncStatus: (status: "idle" | "syncing" | "synced" | "error") => set({ syncStatus: status }),
+  setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
+  triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   setUiThemePreference: (value) => {
     const normalized = normalizeUiThemePreference(value);
     writeStorage(UI_THEME_PREFERENCE_KEY, normalized, { snapshot: false });
@@ -863,6 +909,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       mapViewport: scenario.viewport,
       siteLibrary: libraryBacked.siteLibrary,
     });
+    writeStorage(LAST_SESSION_KEY, { selectedScenarioId: scenario.id, savedAtIso: new Date().toISOString() }, { snapshot: false });
     get().recomputeCoverage();
   },
   setSelectedLinkId: (id) =>
@@ -1565,6 +1612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (libraryBacked.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
     }
+    writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: new Date().toISOString() }, { snapshot: false });
     get().recomputeCoverage();
   },
   renameSimulationPreset: (presetId, name) => {

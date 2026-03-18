@@ -1501,6 +1501,65 @@ input {
   margin-left: 8px;
 }
 
+.sync-indicator {
+  margin-left: 4px;
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sync-synced {
+  color: var(--success, #22c55e);
+}
+
+.sync-syncing {
+  color: var(--accent, #3b82f6);
+  animation: spin 1s linear infinite;
+}
+
+.sync-error {
+  color: var(--error, #ef4444);
+}
+
+.sync-idle {
+  color: var(--text-dim, #9ca3af);
+}
+
+.sync-local {
+  color: var(--text-dim, #9ca3af);
+}
+
+.sync-indicator-large {
+  font-size: 2rem;
+  display: block;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.sync-modal {
+  max-width: 360px;
+}
+
+.sync-modal-content {
+  padding: 1rem;
+}
+
+.sync-status-display {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .profile-avatar {
   width: 30px;
   height: 30px;
