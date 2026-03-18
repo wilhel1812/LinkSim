@@ -645,7 +645,7 @@ export function UserAdminPanel() {
   const getSyncIndicator = () => {
     const timeLabel = lastSyncedAt
       ? `Last synced: ${new Date(lastSyncedAt).toLocaleTimeString()}`
-      : "Up to date";
+      : "Not yet synced";
 
     if (isLocalRuntime) {
       return { icon: "🏠", class: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
@@ -726,6 +726,9 @@ export function UserAdminPanel() {
                     <span className="sync-indicator-large sync-syncing">↻</span>
                     <div>
                       <p className="field-help">Syncing to cloud...</p>
+                      {lastSyncedAt && (
+                        <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                      )}
                     </div>
                   </>
                 ) : modalSyncStatus === "synced" ? (
@@ -788,9 +791,6 @@ export function UserAdminPanel() {
                   </button>
                 ) : null}
               </div>
-              <p className="field-help warning-text">
-                Do not store secrets in LinkSim content. Data may be visible to other users and operators.
-              </p>
             </div>
           </div>
         </ModalOverlay>

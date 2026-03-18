@@ -46,7 +46,7 @@ export function AuthSyncPanel() {
           siteLibrary: cloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
           simulationPresets: cloudPresets,
         },
-        "replace",
+        "merge",
       );
       if (applyStartupSelection && typeof window !== "undefined") {
         const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
@@ -62,7 +62,7 @@ export function AuthSyncPanel() {
         }
       }
       setStatus(
-        `Cloud sync loaded (replace). Delta: ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
+        `Cloud sync loaded (merge). Delta: ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
       );
       setSyncStatus("synced");
       setLastSyncedAt(new Date().toISOString());
@@ -75,6 +75,42 @@ export function AuthSyncPanel() {
       const message = getUiErrorMessage(error);
       setSyncErrorMessage(message);
       setStatus(`Cloud load failed: ${message}`);
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  const manualSync = async () => {
+    setSyncBusy(true);
+    setSyncStatus("syncing");
+    console.log("[AuthSyncPanel] Manual sync: pushing local changes to cloud...");
+    try {
+      await pushCloudLibrary(cloudPayload);
+      console.log("[AuthSyncPanel] Push successful, fetching cloud data...");
+      const cloud = await fetchCloudLibrary();
+      console.log("[AuthSyncPanel] Cloud data received:", cloud.siteLibrary.length, "sites,", cloud.simulationPresets.length, "simulations");
+      const cloudPresets =
+        (cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"] | undefined) ?? [];
+      const result = importLibraryData(
+        {
+          siteLibrary: cloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
+          simulationPresets: cloudPresets,
+        },
+        "merge",
+      );
+      setStatus(
+        `Sync complete. Delta: ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
+      );
+      setSyncStatus("synced");
+      setLastSyncedAt(new Date().toISOString());
+      setSyncErrorMessage(null);
+      console.log("[AuthSyncPanel] Manual sync completed successfully");
+    } catch (error) {
+      console.error("[AuthSyncPanel] Manual sync failed:", error);
+      setSyncStatus("error");
+      const message = getUiErrorMessage(error);
+      setSyncErrorMessage(message);
+      setStatus(`Sync failed: ${message}`);
     } finally {
       setSyncBusy(false);
     }
@@ -133,13 +169,13 @@ export function AuthSyncPanel() {
     if (syncTrigger === triggerRef.current) return;
     triggerRef.current = syncTrigger;
     console.log("[AuthSyncPanel] Manual sync triggered");
-    void refreshFromCloud();
+    void manualSync();
   }, [syncTrigger]);
 
   return (
     <div className="auth-sync-panel">
       <div className="chip-group">
-        <button className="inline-action" disabled={syncBusy} onClick={() => void refreshFromCloud()} type="button">
+        <button className="inline-action" disabled={syncBusy} onClick={() => void manualSync()} type="button">
           {syncBusy ? "Syncing..." : "Sync From Cloud"}
         </button>
       </div>
