@@ -9,12 +9,12 @@
 - Run verification (`npm test`, `npm run build`, and manual local checks).
 
 2. Live test (staging)
-- Push code and deploy to staging.
-- Verify the same commit in the live test environment.
+- Deploy code to staging using `npm run deploy:staging` (or `npm run deploy:staging:feature`).
+- Verify the same commit in the live test environment at https://linksim-staging.pages.dev
 - Use explicit guarded commands only:
-  - Default staging deploy: `npm run deploy:staging` (aliases to `staging-main`)
-  - Explicit staging main deploy: `npm run deploy:staging:main`
-  - Branch preview deploy: `npm run deploy:staging:preview` (only when explicitly requested)
+  - Default staging deploy (recommended): `npm run deploy:staging` or `npm run deploy:staging:feature`
+  - Main branch to staging: `npm run deploy:staging:main` (requires `main` branch)
+  - Preview URL only: `npm run deploy:staging:preview` (separate URL, not recommended)
 
 3. Production
 - Promote only after explicit user approval.
@@ -35,9 +35,9 @@
 
 ## Versioning Policy
 - SemVer is mandatory (`MAJOR.MINOR.PATCH`).
-- Current baseline: `0.8.0`.
+- Current baseline: `0.9.14`.
 - Bump level decision rules:
-  - `PATCH` (`0.8.x`): bug fixes, polish, performance tuning, and non-breaking UX behavior fixes.
+  - `PATCH` (`0.9.x`): bug fixes, polish, performance tuning, and non-breaking UX behavior fixes.
   - `MINOR` (`0.x.0`): new user-facing features or meaningful workflow additions that are backward-compatible.
   - `MAJOR` (`x.0.0`): breaking changes (data model incompatibility, removed/renamed API behavior, auth/permission model breaks), or first stable `1.0.0` declaration.
 - Environment bump rules:
@@ -47,19 +47,15 @@
     - Staging: `vX.Y.Z-beta+<commit>`
     - Production: `vX.Y.Z`
   - Live production: SemVer bump is required before release.
-- Production release checklist:
-  1. Decide bump level (`PATCH`/`MINOR`/`MAJOR`) from rules above.
-  2. Update `package.json` version.
-  3. Commit with `release: vX.Y.Z`.
-  4. Deploy and verify.
-  5. Tag `vX.Y.Z`.
+- Version bump required for `staging:main` and `prod:main` deploys (release candidates).
+- Version bump optional for `staging:feature` deploys (can use current version for testing).
 
 ## Iteration Rules
 - Default loop for every task:
   1. Implement in local test.
   2. Verify (`npm test`, `npm run build`, manual QA).
   3. Commit and push.
-  4. Deploy to staging and verify.
+  4. Deploy to staging using `npm run deploy:staging` and verify.
   5. Promote to production only with explicit approval.
 - No hidden scope changes during promotion; if code changes after staging verification, restart the loop.
 
@@ -69,3 +65,11 @@
   - `prod-main`
 - `prod-main` job runs in the `production` GitHub environment (configure required reviewers in repo settings).
 - `staging-main` runs in `staging` environment.
+
+## Deploy Targets Reference
+| Target | Branch Required | URL | Use Case |
+|--------|----------------|-----|----------|
+| `deploy:staging` / `deploy:staging:feature` | Any | https://linksim-staging.pages.dev | Testing feature branches |
+| `deploy:staging:main` | `main` | https://linksim-staging.pages.dev | Release candidates |
+| `deploy:staging:preview` | Any | Preview URL | Side-by-side comparison |
+| `deploy:prod:main` | `main` | https://linksim.pages.dev | Production release |

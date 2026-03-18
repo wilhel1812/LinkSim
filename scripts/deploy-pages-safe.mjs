@@ -11,6 +11,18 @@ const releaseManifestPath = path.join(distDir, "release.json");
 const ALLOWED_DIRTY_PATHS = new Set(["src/lib/buildInfo.ts", "functions/_lib/buildInfo.ts"]);
 
 const TARGETS = {
+  "staging-feature": {
+    projectName: "linksim-staging",
+    branch: "CURRENT",
+    requireMainBranch: false,
+    configPath: wranglerStaging,
+    environmentLabel: "staging-feature",
+    expected: {
+      name: "linksim-staging",
+      databaseName: "linksim_staging",
+      bucketName: "linksim-avatars-staging",
+    },
+  },
   "staging-preview": {
     projectName: "linksim-staging",
     branch: "CURRENT",
@@ -243,6 +255,43 @@ async function main() {
         .map((key) => `'${key}'`)
         .join(", ")}`,
     );
+  }
+
+  if (targetName === "staging-feature") {
+    const { branch: currentBranch, commit } = await preflight(targetName, target);
+    console.log(`\n⚠️  Warning: You are about to deploy to canonical staging.`);
+    console.log(`   Branch: ${currentBranch}`);
+    console.log(`   Commit: ${commit}`);
+    console.log(`   URL: https://linksim-staging.pages.dev\n`);
+    const readline = await import("node:readline");
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await new Promise((resolve) => {
+      rl.question("Continue? (y/N) ", resolve);
+    });
+    rl.close();
+    if (answer.toLowerCase() !== "y") {
+      console.log("Aborted.");
+      process.exit(0);
+    }
+    const deployBranch = currentBranch;
+    await writeReleaseManifest(targetName, target.projectName, deployBranch, commit);
+    await withWranglerConfig(target.configPath, async () => {
+      await run("npx", [
+        "wrangler",
+        "pages",
+        "deploy",
+        "dist",
+        "--project-name",
+        target.projectName,
+        "--branch",
+        deployBranch,
+      ]);
+    });
+    await verifyDeployment(target.projectName, commit);
+    console.log(
+      `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
+    );
+    return;
   }
 
   const { branch: currentBranch, commit } = await preflight(targetName, target);

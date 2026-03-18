@@ -41,12 +41,14 @@
   - Same commit must use the same base version `X.Y.Z` in all environments.
 - Require a SemVer bump before every production release.
 - Deploys must use guarded npm scripts only:
-  - `npm run deploy:staging:preview`
-  - `npm run deploy:staging:main`
+  - `npm run deploy:staging` (or `npm run deploy:staging:feature` for feature branches)
+  - `npm run deploy:staging:main` (requires `main` branch)
+  - `npm run deploy:staging:preview` (separate preview URL)
   - `npm run deploy:prod:main`
 - Staging deploy default:
-  - Use `npm run deploy:staging:main` and share only the canonical staging URL (`https://linksim-staging.pages.dev`).
-  - Use `npm run deploy:staging:preview` only when the user explicitly asks for preview/branch deployments.
+  - Use `npm run deploy:staging` (feature branches) or `npm run deploy:staging:main` (`main` branch)
+  - Both deploy to canonical staging URL: `https://linksim-staging.pages.dev` (works with Access)
+  - Use `npm run deploy:staging:preview` only for side-by-side comparisons with preview URL
 - Never run raw `wrangler pages deploy` for release operations.
 - If a guarded deploy fails, fix the script/preflight issue and re-run the guarded script. Do not bypass with manual Wrangler deploys.
 - Promotion gate:
