@@ -397,8 +397,38 @@ const writeStorage = (key: string, value: unknown, options?: { snapshot?: boolea
     if (options?.snapshot !== false) appendSnapshot(key, value);
     return true;
   } catch (error) {
+    const isQuotaExceeded = error instanceof DOMException && error.name === "QuotaExceededError";
+    if (isQuotaExceeded) {
+      console.error(`[appStore] localStorage QUOTA EXCEEDED for key "${key}". Clearing old snapshots and retrying...`);
+      clearOldSnapshots();
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+        if (options?.snapshot !== false) appendSnapshot(key, value);
+        console.log(`[appStore] Retry after clearing snapshots succeeded`);
+        return true;
+      } catch (retryErr) {
+        console.error(`[appStore] localStorage QUOTA EXCEEDED (retry failed) for key "${key}":`, retryErr);
+        return false;
+      }
+    }
     console.warn(`[appStore] Failed to write to localStorage (${key}):`, error);
     return false;
+  }
+};
+
+const clearOldSnapshots = (): void => {
+  const keys = [SITE_LIBRARY_KEY, SIM_PRESETS_KEY];
+  for (const key of keys) {
+    try {
+      const history = readSnapshotHistory(key);
+      if (history.length > 2) {
+        const reduced = history.slice(-2);
+        localStorage.setItem(snapshotKeyFor(key), JSON.stringify(reduced));
+        console.log(`[appStore] Cleared old snapshots for "${key}", kept last 2`);
+      }
+    } catch {
+      // Best effort
+    }
   }
 };
 
@@ -940,7 +970,45 @@ export const useAppStore = create<AppState>((set, get) => ({
         syncBusy: false,
         syncStatusMessage: `Synced: ${result.siteCount} sites, ${result.simulationCount} simulations`,
       });
-      console.log("[appStore] initializeCloudSync SUCCESS - hydrated: true");
+      console.log("[appStore] initializeCloudSync SUCCESS - hydrated: true, scheduling sync...");
+      if (syncTimer !== null) {
+        window.clearTimeout(syncTimer);
+      }
+      set({ syncPending: true });
+      syncTimer = window.setTimeout(async () => {
+        console.log("[appStore] Post-init sync timer fired, checking for changes...");
+        set({ syncStatus: "syncing", syncStatusMessage: "Checking for changes..." });
+        try {
+          const { siteLibrary, simulationPresets, currentUser } = get();
+          const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
+          const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
+          const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
+          const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+          console.log("[appStore] Post-init pushing payload:", {
+            sites: editableSites.length,
+            simulations: editableSims.length,
+            skipped: skippedCount,
+          });
+          await pushCloudLibrary(payload);
+          console.log("[appStore] Post-init Push SUCCESS");
+          set({
+            syncPending: false,
+            syncStatus: "synced",
+            lastSyncedAt: new Date().toISOString(),
+            syncErrorMessage: null,
+            syncStatusMessage: "Changes saved",
+          });
+        } catch (error) {
+          console.error("[appStore] Post-init sync FAILED:", error);
+          const message = getUiErrorMessage(error);
+          set({
+            syncPending: false,
+            syncStatus: "error",
+            syncErrorMessage: message,
+            syncStatusMessage: `Save failed: ${message}`,
+          });
+        }
+      }, SYNC_DEBOUNCE_MS);
     } catch (error) {
       console.error("[appStore] initializeCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
