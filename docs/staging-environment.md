@@ -1,51 +1,34 @@
 # Staging Environment
 
-This project now supports a separate staging stack with production-like data.
+This project supports a separate staging stack with production-like data.
 
 ## What is configured
 
 - Staging Worker environment in [`wrangler.staging.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.staging.toml)
 - Staging avatar fallback to production origin while staging R2 catches up
 - Staging scripts in [`package.json`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/package.json)
+- Custom domain: https://staging.linksim.wilhelmfrancke.com
 - Refresh scripts:
   - [`scripts/refresh-staging-d1.sh`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/scripts/refresh-staging-d1.sh)
   - [`scripts/refresh-staging-r2.sh`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/scripts/refresh-staging-r2.sh)
 
-## One-time setup
-
-1. Create staging D1:
-
-```bash
-npx wrangler d1 create linksim_staging
-```
-
-2. Create staging R2 bucket:
-
-```bash
-npx wrangler r2 bucket create linksim-avatars-staging
-```
-
-3. Confirm [`wrangler.staging.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.staging.toml) has:
-- Staging D1 database ID
-- Staging Access AUD
-
-4. Create a Cloudflare Pages project for staging (recommended name: `linksim-staging`).
-
 ## Routine workflows
 
-### Deploy staging code only (fast)
+### Deploy to staging (test environment)
 
 ```bash
 npm run deploy:staging
 ```
 
-(Uses `wrangler.staging.toml` during deploy, then restores `wrangler.toml`.)
+This deploys the current branch to `main` branch in Cloudflare Pages, which is served by https://staging.linksim.wilhelmfrancke.com
 
-Optional custom staging project name:
+### Deploy to preview (side-by-side comparison)
 
 ```bash
-CF_PAGES_STAGING_PROJECT=my-staging-project npm run deploy:staging
+npm run deploy:staging:preview
 ```
+
+This creates a separate preview URL for side-by-side comparisons.
 
 ### Refresh staging DB from production D1
 
@@ -60,12 +43,6 @@ To skip anonymization explicitly:
 ANONYMIZE_STAGING=0 npm run refresh:staging:d1
 ```
 
-Optional DB names:
-
-```bash
-PROD_DB_NAME=linksim STAGING_DB_NAME=linksim_staging npm run refresh:staging:d1
-```
-
 ### Refresh staging avatars bucket from production R2
 
 Requires AWS CLI and R2 S3 credentials in your environment.
@@ -77,12 +54,6 @@ export AWS_SECRET_ACCESS_KEY=<r2-secret-access-key>
 npm run refresh:staging:r2
 ```
 
-Optional bucket names:
-
-```bash
-PROD_R2_BUCKET=linksim-avatars STAGING_R2_BUCKET=linksim-avatars-staging npm run refresh:staging:r2
-```
-
 ### Full refresh + deploy
 
 ```bash
@@ -91,7 +62,7 @@ npm run refresh-and-deploy:staging
 
 ## Recommended cadence
 
-- Every commit/PR: `npm run deploy:staging`
+- Every commit/PR: `npm run deploy:staging` → test at https://staging.linksim.wilhelmfrancke.com
 - Before acceptance/regression testing: `npm run refresh-and-deploy:staging`
 
 ## Safety notes
@@ -100,3 +71,11 @@ npm run refresh-and-deploy:staging
 - Do not point staging bindings at production resources
 - Keep staging Access policy restricted (admin/mod only)
 - Keep `ANONYMIZE_STAGING=1` unless you have a documented operational need otherwise
+
+## URLs
+
+| Environment | URL | Access |
+|------------|-----|--------|
+| Staging (test) | https://staging.linksim.wilhelmfrancke.com | ✅ Works with Access |
+| Preview | Preview URL (shown after deploy) | May require configuration |
+| Production | https://linksim.wilhelmfrancke.com | ✅ Works with Access |
