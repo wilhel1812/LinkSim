@@ -132,6 +132,7 @@ export function UserAdminPanel() {
   const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
+  const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
@@ -270,6 +271,7 @@ export function UserAdminPanel() {
     try {
       const current = await fetchMe();
       setMe(current);
+      setCurrentUser(current);
       setNameDraft(current.username);
       setEmailDraft(current.email ?? "");
       setNameError("");
@@ -392,6 +394,7 @@ export function UserAdminPanel() {
         emailPublic: emailPublicDraft,
       });
       setMe(updated);
+      setCurrentUser(updated);
       setStatus("Profile updated.");
       if (canModerate) {
         await refreshAdminData();
@@ -417,6 +420,7 @@ export function UserAdminPanel() {
       const uploaded = await uploadAvatar(resized.originalDataUrl, resized.thumbDataUrl);
       setAvatarDraft(uploaded.user.avatarUrl ?? "");
       setMe(uploaded.user);
+      setCurrentUser(uploaded.user);
       setAvatarStatus("Avatar uploaded and saved.");
       setStatus("Avatar uploaded and saved.");
     } catch (error) {

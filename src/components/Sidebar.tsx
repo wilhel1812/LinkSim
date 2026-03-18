@@ -676,6 +676,10 @@ export function Sidebar() {
     const role = (entry as { effectiveRole?: unknown }).effectiveRole;
     return role === "owner" || role === "admin" || role === "editor";
   };
+  const resourceCanWrite = useMemo(() => {
+    if (!resourceDetailsPopup) return false;
+    return canWriteResource(resourceDetailsPopup.kind, resourceDetailsPopup.resourceId);
+  }, [resourceDetailsPopup, siteLibrary, simulationPresets]);
   const collaboratorCandidates = useMemo(() => {
     const q = resourceCollaboratorQuery.trim().toLowerCase();
     const selectedIds = new Set(resourceCollaboratorUserIds);
@@ -1548,6 +1552,10 @@ export function Sidebar() {
     }>,
   ): boolean => {
     if (!resourceDetailsPopup) return false;
+    if (!resourceCanWrite) {
+      setResourceAccessStatus("Read-only: you do not have edit permission for this resource.");
+      return false;
+    }
     const nextVisibility = overrides?.visibility ?? resourceAccessVisibility;
     const nextName = overrides?.name ?? resourceNameDraft;
     const nextDescription = overrides?.description ?? resourceDescriptionDraft;
@@ -1659,6 +1667,10 @@ export function Sidebar() {
   };
 
   const addCollaborator = (userId: string) => {
+    if (!resourceCanWrite) {
+      setResourceAccessStatus("Read-only: you do not have edit permission for this resource.");
+      return;
+    }
     if (!userId.trim()) return;
     if (currentResourceOwnerId && userId === currentResourceOwnerId) {
       setResourceAccessStatus("Owner is implicit and cannot be added as collaborator.");
@@ -1673,6 +1685,10 @@ export function Sidebar() {
   };
 
   const removeCollaborator = (userId: string) => {
+    if (!resourceCanWrite) {
+      setResourceAccessStatus("Read-only: you do not have edit permission for this resource.");
+      return;
+    }
     if (!resourceDetailsPopup) return;
     const currentEntry =
       resourceDetailsPopup.kind === "site"
@@ -2519,6 +2535,10 @@ export function Sidebar() {
             </div>
             <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
             <p className="field-help">ID: {resourceDetailsPopup.resourceId}</p>
+            {!resourceCanWrite ? (
+              <p className="field-help warning-text">Read-only: you can view this resource but cannot edit it.</p>
+            ) : null}
+            <fieldset className="resource-edit-fieldset" disabled={!resourceCanWrite}>
             {resourceDetailsPopup.kind !== "site" ? (
               <>
                 <label className="field-grid">
@@ -2746,6 +2766,7 @@ export function Sidebar() {
                     }}
                     mapStyle={resolvedBasemap.style}
                     onClick={(event) => {
+                      if (!resourceCanWrite) return;
                       const nextLat = event.lngLat.lat;
                       const nextLon = event.lngLat.lng;
                       setResourceLatDraft(nextLat);
@@ -2755,10 +2776,11 @@ export function Sidebar() {
                   >
                     <Marker
                       anchor="bottom"
-                      draggable
+                      draggable={resourceCanWrite}
                       latitude={resourceLatDraft}
                       longitude={resourceLonDraft}
                       onDragEnd={(event: MarkerDragEvent) => {
+                        if (!resourceCanWrite) return;
                         const nextLat = event.lngLat.lat;
                         const nextLon = event.lngLat.lng;
                         setResourceLatDraft(nextLat);
@@ -2895,7 +2917,8 @@ export function Sidebar() {
               </p>
               {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
             </details>
-            {canWriteResource(resourceDetailsPopup.kind, resourceDetailsPopup.resourceId) ? (
+            </fieldset>
+            {resourceCanWrite ? (
               <div className="chip-group">
                 <button
                   className="inline-action danger"

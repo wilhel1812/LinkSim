@@ -107,6 +107,16 @@ const canEditItem = (
   );
 };
 
+const canEditActiveSavedSimulation = (
+  currentUser: CloudUser | null,
+  selectedScenarioId: string,
+  simulationPresets: SimulationPreset[],
+): boolean => {
+  const selectedPreset = simulationPresets.find((preset) => preset.id === selectedScenarioId);
+  if (!selectedPreset) return true;
+  return canEditItem(selectedPreset, currentUser);
+};
+
 const adoptOrphanedEntries = (
   entries: SiteLibraryEntry[],
   userId: string,
@@ -1386,13 +1396,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedCoverageMode: (mode) => {
     set({ selectedCoverageMode: mode });
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
-  setSelectedFrequencyPresetId: (id) => set({ selectedFrequencyPresetId: id }),
-  setRxSensitivityTargetDbm: (value) => set({ rxSensitivityTargetDbm: value }),
-  setEnvironmentLossDb: (value) => set({ environmentLossDb: Math.max(0, value) }),
+  setSelectedFrequencyPresetId: (id) => {
+    set({ selectedFrequencyPresetId: id });
+    get().updateCurrentSimulationSnapshot();
+  },
+  setRxSensitivityTargetDbm: (value) => {
+    set({ rxSensitivityTargetDbm: value });
+    get().updateCurrentSimulationSnapshot();
+  },
+  setEnvironmentLossDb: (value) => {
+    set({ environmentLossDb: Math.max(0, value) });
+    get().updateCurrentSimulationSnapshot();
+  },
   setAutoPropagationEnvironment: (value) => {
     set({ autoPropagationEnvironment: value });
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   setPropagationEnvironment: (patch) => {
     set((state) => ({
@@ -1404,6 +1425,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationEnvironmentReason: "Manual override active.",
     }));
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   applyClimateDefaults: (climate) => {
     set((state) => ({
@@ -1412,8 +1434,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationEnvironmentReason: "Manual climate defaults applied.",
     }));
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
-  setTerrainDataset: (dataset) => set({ terrainDataset: dataset }),
+  setTerrainDataset: (dataset) => {
+    set({ terrainDataset: dataset });
+    get().updateCurrentSimulationSnapshot();
+  },
   addSiteByCoordinates: (name, lat, lon) => {
     const { currentUser } = get();
     if (!currentUser?.id) {
@@ -1467,9 +1493,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
     void get().syncSiteElevationOnline(id);
   },
   deleteSite: (siteId) => {
+    const { currentUser, selectedScenarioId, simulationPresets } = get();
+    const user = requireAuth(currentUser, "deleteSite");
+    if (!user) return;
+    if (!canEditActiveSavedSimulation(user, selectedScenarioId, simulationPresets)) {
+      console.warn(`[appStore] deleteSite: User ${user.id} cannot edit active simulation ${selectedScenarioId}`);
+      return;
+    }
     set((state) => {
       const remainingSites = state.sites.filter((site) => site.id !== siteId);
       if (!remainingSites.length) return state;
@@ -1512,8 +1546,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   createLink: (fromSiteId, toSiteId, name) => {
+    const { currentUser, selectedScenarioId, simulationPresets } = get();
+    const user = requireAuth(currentUser, "createLink");
+    if (!user) return;
+    if (!canEditActiveSavedSimulation(user, selectedScenarioId, simulationPresets)) {
+      console.warn(`[appStore] createLink: User ${user.id} cannot edit active simulation ${selectedScenarioId}`);
+      return;
+    }
     if (fromSiteId === toSiteId) return;
     const state = get();
     const fromSite = state.sites.find((site) => site.id === fromSiteId);
@@ -1541,6 +1583,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       temporaryDirectionReversed: false,
     }));
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   addSiteLibraryEntry: (
     name,
@@ -1605,6 +1648,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     return entry.id;
   },
   deleteLink: (linkId) => {
+    const { currentUser, selectedScenarioId, simulationPresets } = get();
+    const user = requireAuth(currentUser, "deleteLink");
+    if (!user) return;
+    if (!canEditActiveSavedSimulation(user, selectedScenarioId, simulationPresets)) {
+      console.warn(`[appStore] deleteLink: User ${user.id} cannot edit active simulation ${selectedScenarioId}`);
+      return;
+    }
     set((state) => {
       const remaining = state.links.filter((link) => link.id !== linkId);
       if (!remaining.length) {
@@ -1639,6 +1689,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   insertSiteFromLibrary: (entryId) => {
     get().insertSitesFromLibrary([entryId]);
@@ -2070,8 +2121,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     
     const newPresets = [...simulationPresets];
     newPresets[presetIndex] = updatedPreset;
+    const nextSiteLibrary =
+      normalizedSites.addedCount > 0
+        ? normalizeSiteLibrary([...normalizedSites.siteLibrary, ...get().siteLibrary])
+        : get().siteLibrary;
+    if (normalizedSites.addedCount > 0) {
+      writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
+    }
     writeStorage(SIM_PRESETS_KEY, newPresets);
-    set({ simulationPresets: newPresets });
+    set({ simulationPresets: newPresets, siteLibrary: nextSiteLibrary, sites: normalizedSites.sites });
     console.log("[appStore] Updated current simulation snapshot");
   },
   loadSimulationPreset: (presetId) => {
@@ -2399,6 +2457,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearOpenSiteLibraryEntryRequest: () => set({ pendingSiteLibraryOpenEntryId: null }),
   setMapOverlayMode: (mode) => set({ mapOverlayMode: mode }),
   applyFrequencyPresetToSelectedNetwork: () => {
+    const { currentUser, selectedScenarioId, simulationPresets } = get();
+    const user = requireAuth(currentUser, "applyFrequencyPresetToSelectedNetwork");
+    if (!user) return;
+    if (!canEditActiveSavedSimulation(user, selectedScenarioId, simulationPresets)) {
+      console.warn(
+        `[appStore] applyFrequencyPresetToSelectedNetwork: User ${user.id} cannot edit active simulation ${selectedScenarioId}`,
+      );
+      return;
+    }
     const { selectedFrequencyPresetId, selectedNetworkId } = get();
     const preset = findPresetById(selectedFrequencyPresetId);
     if (!preset) return;
@@ -2420,15 +2487,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       links: state.links.map((link) => ({ ...link, frequencyMHz: preset.frequencyMHz })),
     }));
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   setPropagationModel: (model) => {
     set({ propagationModel: model });
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   updateSite: (id, patch) => {
-    const { currentUser, sites, siteLibrary } = get();
+    const { currentUser, sites, siteLibrary, selectedScenarioId, simulationPresets } = get();
     const user = requireAuth(currentUser, "updateSite");
     if (!user) return;
+    if (!canEditActiveSavedSimulation(user, selectedScenarioId, simulationPresets)) {
+      console.warn(`[appStore] updateSite: User ${user.id} cannot edit active simulation ${selectedScenarioId}`);
+      return;
+    }
     const existingSite = sites.find((site) => site.id === id);
     if (existingSite?.libraryEntryId) {
       const linkedEntry = siteLibrary.find((entry) => entry.id === existingSite.libraryEntryId);
@@ -2464,6 +2537,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { sites: nextSites, siteLibrary: nextLibrary };
     });
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   setSiteDragPreview: (id, preview) =>
     set((state) => ({
@@ -2478,6 +2552,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { siteDragPreview: next };
     }),
   updateLink: (id, patch) => {
+    const { currentUser, selectedScenarioId, simulationPresets } = get();
+    const user = requireAuth(currentUser, "updateLink");
+    if (!user) return;
+    if (!canEditActiveSavedSimulation(user, selectedScenarioId, simulationPresets)) {
+      console.warn(`[appStore] updateLink: User ${user.id} cannot edit active simulation ${selectedScenarioId}`);
+      return;
+    }
     set((state) => ({
       links: state.links.map((link) => {
         if (link.id !== id) return link;
@@ -2500,18 +2581,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       }),
     }));
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   updateMapViewport: (patch) =>
-    set((state) => ({
-      mapViewport: {
-        ...state.mapViewport,
-        ...patch,
-        center: {
-          ...state.mapViewport.center,
-          ...(patch.center ?? {}),
+    {
+      set((state) => ({
+        mapViewport: {
+          ...state.mapViewport,
+          ...patch,
+          center: {
+            ...state.mapViewport.center,
+            ...(patch.center ?? {}),
+          },
         },
-      },
-    })),
+      }));
+      get().updateCurrentSimulationSnapshot();
+    },
   ingestSrtmFiles: async (files) => {
     set({ isTerrainFetching: true });
     try {

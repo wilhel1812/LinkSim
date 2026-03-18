@@ -56,6 +56,22 @@ describe("appStore auth guards", () => {
           rxGainDbi: 2,
           cableLossDb: 1,
         },
+        {
+          id: "lib-2",
+          name: "Beta",
+          visibility: "shared",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 2, lon: 2 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
       ],
       sites: [
         {
@@ -70,6 +86,27 @@ describe("appStore auth guards", () => {
           rxGainDbi: 2,
           cableLossDb: 1,
         },
+        {
+          id: "site-2",
+          name: "Beta",
+          libraryEntryId: "lib-2",
+          position: { lat: 2, lon: 2 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+      links: [
+        {
+          id: "lnk-1",
+          name: "Alpha-Beta",
+          fromSiteId: "site-1",
+          toSiteId: "site-2",
+          frequencyMHz: 869.618,
+        },
       ],
       selectedScenarioId: "sim-1",
       simulationPresets: [
@@ -82,8 +119,41 @@ describe("appStore auth guards", () => {
           effectiveRole: "viewer",
           updatedAt: "2026-01-01T00:00:00.000Z",
           snapshot: {
-            sites: [],
-            links: [],
+            sites: [
+              {
+                id: "site-1",
+                name: "Alpha",
+                libraryEntryId: "lib-1",
+                position: { lat: 1, lon: 1 },
+                groundElevationM: 100,
+                antennaHeightM: 2,
+                txPowerDbm: 20,
+                txGainDbi: 2,
+                rxGainDbi: 2,
+                cableLossDb: 1,
+              },
+              {
+                id: "site-2",
+                name: "Beta",
+                libraryEntryId: "lib-2",
+                position: { lat: 2, lon: 2 },
+                groundElevationM: 120,
+                antennaHeightM: 2,
+                txPowerDbm: 20,
+                txGainDbi: 2,
+                rxGainDbi: 2,
+                cableLossDb: 1,
+              },
+            ],
+            links: [
+              {
+                id: "lnk-1",
+                name: "Alpha-Beta",
+                fromSiteId: "site-1",
+                toSiteId: "site-2",
+                frequencyMHz: 869.618,
+              },
+            ],
             systems: [],
             networks: [],
             selectedSiteId: "",
@@ -155,6 +225,59 @@ describe("appStore auth guards", () => {
     useAppStore.getState().updateCurrentSimulationSnapshot();
 
     expect(useAppStore.getState().simulationPresets[0]?.updatedAt).toBe(beforeUpdatedAt);
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("updates active simulation snapshot when deleting a site from simulation", () => {
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    useAppStore.getState().updateSimulationPresetEntry("sim-1", { name: "Simulation One" });
+    useAppStore.getState().deleteSite("site-1");
+
+    const state = useAppStore.getState();
+    expect(state.sites.some((site) => site.id === "site-1")).toBe(false);
+    expect(state.simulationPresets[0]?.snapshot.sites.some((site) => site.id === "site-1")).toBe(false);
+  });
+
+  it("blocks deleteSite when current user cannot edit selected simulation", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    useAppStore.getState().setCurrentUser({
+      id: "user-2",
+      username: "viewer",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    const beforeSiteCount = useAppStore.getState().sites.length;
+    useAppStore.getState().deleteSite("site-1");
+    expect(useAppStore.getState().sites.length).toBe(beforeSiteCount);
     expect(warnSpy).toHaveBeenCalled();
   });
 });
