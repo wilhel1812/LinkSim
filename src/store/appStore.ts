@@ -178,6 +178,7 @@ type AppState = {
   scenarioOptions: { id: string; name: string }[];
   mapOverlayMode: MapOverlayMode;
   syncStatus: "syncing" | "synced" | "error";
+  syncPending: boolean;
   lastSyncedAt: string | null;
   syncErrorMessage: string | null;
   syncTrigger: number;
@@ -877,6 +878,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
   syncStatus: "synced",
+  syncPending: false,
   lastSyncedAt: null,
   syncErrorMessage: null,
   syncTrigger: 0,
@@ -931,6 +933,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       hydrated = true;
       set({
+        syncPending: false,
         syncStatus: "synced",
         lastSyncedAt: new Date().toISOString(),
         syncErrorMessage: null,
@@ -942,6 +945,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error("[appStore] initializeCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       set({
+        syncPending: false,
         syncStatus: "error",
         syncErrorMessage: message,
         syncBusy: false,
@@ -954,6 +958,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (syncTimer !== null) {
       window.clearTimeout(syncTimer);
     }
+    console.log("[appStore] Changes detected, scheduling sync in", SYNC_DEBOUNCE_MS, "ms");
+    set({ syncPending: true, syncStatus: "synced" });
     const timerId = window.setTimeout(async () => {
       console.log("[appStore] Auto-sync timer fired, pushing to cloud...");
       set({ syncStatus: "syncing", syncStatusMessage: "Saving changes..." });
@@ -971,6 +977,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         await pushCloudLibrary(payload);
         console.log("[appStore] Push SUCCESS");
         set({
+          syncPending: false,
           syncStatus: "synced",
           lastSyncedAt: new Date().toISOString(),
           syncErrorMessage: null,
@@ -979,11 +986,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (error) {
         console.error("[appStore] Auto-push FAILED:", error);
         const message = getUiErrorMessage(error);
-        set({
-          syncStatus: "error",
-          syncErrorMessage: message,
-          syncStatusMessage: `Save failed: ${message}`,
-        });
+        const isAuthError = message.includes("401") || message.includes("Unauthorized") || message.includes("Access denied");
+        if (isAuthError) {
+          console.log("[appStore] Auth error - clearing pending state without showing error");
+          set({ syncPending: false });
+        } else {
+          set({
+            syncPending: false,
+            syncStatus: "error",
+            syncErrorMessage: message,
+            syncStatusMessage: `Save failed: ${message}`,
+          });
+        }
       }
     }, SYNC_DEBOUNCE_MS);
     syncTimer = timerId;
@@ -1022,6 +1036,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log("[appStore] Merge result:", result);
       hydrated = true;
       set({
+        syncPending: false,
         syncStatus: "synced",
         lastSyncedAt: new Date().toISOString(),
         syncErrorMessage: null,
@@ -1033,6 +1048,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error("[appStore] performManualCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       set({
+        syncPending: false,
         syncStatus: "error",
         syncErrorMessage: message,
         syncBusy: false,

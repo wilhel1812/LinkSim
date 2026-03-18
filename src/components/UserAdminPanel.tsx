@@ -125,6 +125,7 @@ export function UserAdminPanel() {
   const uiColorTheme = useAppStore((state) => state.uiColorTheme);
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const syncStatus = useAppStore((state) => state.syncStatus);
+  const syncPending = useAppStore((state) => state.syncPending);
   const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
@@ -650,6 +651,10 @@ export function UserAdminPanel() {
       return { icon: "🏠", class: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
     }
 
+    if (syncPending) {
+      return { icon: "◐", class: "sync-pending", label: "Sync pending", title: `${timeLabel}. Changes will sync shortly.` };
+    }
+
     switch (syncStatus) {
       case "syncing":
         return { icon: "↻", class: "sync-syncing", label: "Syncing...", title: timeLabel };
@@ -709,7 +714,18 @@ export function UserAdminPanel() {
             </div>
             <div className="sync-modal-content">
               <div className="sync-status-display">
-                {syncStatus === "syncing" ? (
+                {syncPending ? (
+                  <>
+                    <span className="sync-indicator-large sync-pending">◐</span>
+                    <div>
+                      <p className="field-help">Sync pending</p>
+                      <p className="field-help">Changes will sync shortly...</p>
+                      {lastSyncedAt && (
+                        <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                      )}
+                    </div>
+                  </>
+                ) : syncStatus === "syncing" ? (
                   <>
                     <span className="sync-indicator-large sync-syncing">↻</span>
                     <div>

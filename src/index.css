@@ -1522,6 +1522,11 @@ input {
   animation: sync-spin 0.8s linear infinite;
 }
 
+.sync-pending {
+  color: var(--warning);
+  text-shadow: 0 0 0 1px var(--bg), 0 0 0 2px color-mix(in srgb, var(--warning) 50%, transparent);
+}
+
 .sync-error {
   color: var(--danger);
   text-shadow: 0 0 0 1px var(--bg), 0 0 0 2px color-mix(in srgb, var(--danger) 50%, transparent);
