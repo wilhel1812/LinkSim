@@ -1194,6 +1194,10 @@ export function Sidebar() {
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
   };
   const addLibraryEntryNow = () => {
+    if (!currentUser?.id) {
+      setLibrarySearchStatus("Please log in to add sites to your library.");
+      return;
+    }
     if (!newLibraryName.trim()) {
       setNewLibraryNameError("A name is required.");
       setLibrarySearchStatus("");
@@ -1213,13 +1217,6 @@ export function Sidebar() {
       (newLibrarySourceMeta as Parameters<typeof addSiteLibraryEntry>[9]) ?? undefined,
       pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
       newLibraryDescription,
-      currentUser
-        ? {
-            userId: currentUser.id,
-            name: currentUser.username,
-            avatarUrl: currentUser.avatarUrl ?? "",
-          }
-        : undefined,
     );
     if (!createdId) {
       setNewLibraryNameError("A name is required.");
@@ -1346,6 +1343,10 @@ export function Sidebar() {
     } catch {
       // Keep fallback altitude.
     }
+    if (!currentUser?.id) {
+      setMeshmapStatus("Please log in to add mesh nodes to your library.");
+      return;
+    }
     addSiteLibraryEntry(
       fallbackName,
       selectedMeshmapNode.lat,
@@ -1367,13 +1368,6 @@ export function Sidebar() {
       },
       pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
       undefined,
-      currentUser
-        ? {
-            userId: currentUser.id,
-            name: currentUser.username,
-            avatarUrl: currentUser.avatarUrl ?? "",
-          }
-        : undefined,
     );
     setMeshmapStatus(`Added ${fallbackName} to site library.`);
   };

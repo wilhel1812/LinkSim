@@ -68,6 +68,81 @@ const canEditLibraryItem = (
   );
 };
 
+const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser | null => {
+  if (!currentUser?.id) {
+    console.warn(`[appStore] ${action}: Auth required - user not logged in`);
+    return null;
+  }
+  return currentUser;
+};
+
+const canEditItem = (
+  item: { ownerUserId?: string; effectiveRole?: string },
+  currentUser: CloudUser | null,
+): boolean => {
+  if (!currentUser) return false;
+  if (item.ownerUserId === currentUser.id) return true;
+  return (
+    item.effectiveRole === "owner" ||
+    item.effectiveRole === "admin" ||
+    item.effectiveRole === "editor"
+  );
+};
+
+const adoptOrphanedEntries = (
+  entries: SiteLibraryEntry[],
+  userId: string,
+  username: string,
+  avatarUrl: string,
+): SiteLibraryEntry[] => {
+  let adoptedCount = 0;
+  const fixed = entries.map((entry) => {
+    if (entry.ownerUserId) return entry;
+    adoptedCount++;
+    return {
+      ...entry,
+      ownerUserId: userId,
+      createdByUserId: userId,
+      createdByName: username,
+      createdByAvatarUrl: avatarUrl,
+      lastEditedByUserId: userId,
+      lastEditedByName: username,
+      lastEditedByAvatarUrl: avatarUrl,
+    };
+  });
+  if (adoptedCount > 0) {
+    console.log(`[appStore] Adopted ${adoptedCount} orphaned library entries for user ${userId}`);
+  }
+  return fixed;
+};
+
+const adoptOrphanedSimulations = (
+  simulations: SimulationPreset[],
+  userId: string,
+  username: string,
+  avatarUrl: string,
+): SimulationPreset[] => {
+  let adoptedCount = 0;
+  const fixed = simulations.map((sim) => {
+    if (sim.ownerUserId) return sim;
+    adoptedCount++;
+    return {
+      ...sim,
+      ownerUserId: userId,
+      createdByUserId: userId,
+      createdByName: username,
+      createdByAvatarUrl: avatarUrl,
+      lastEditedByUserId: userId,
+      lastEditedByName: username,
+      lastEditedByAvatarUrl: avatarUrl,
+    };
+  });
+  if (adoptedCount > 0) {
+    console.log(`[appStore] Adopted ${adoptedCount} orphaned simulation presets for user ${userId}`);
+  }
+  return fixed;
+};
+
 export type MapOverlayMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
 
 type SiteLibraryEntry = {
@@ -78,6 +153,12 @@ type SiteLibraryEntry = {
   sharedWith?: Array<{ userId: string; role: "viewer" | "editor" | "admin" }>;
   ownerUserId?: string;
   effectiveRole?: "owner" | "admin" | "editor" | "viewer";
+  createdByUserId?: string;
+  createdByName?: string;
+  createdByAvatarUrl?: string;
+  lastEditedByUserId?: string;
+  lastEditedByName?: string;
+  lastEditedByAvatarUrl?: string;
   position: { lat: number; lon: number };
   groundElevationM: number;
   antennaHeightM: number;
@@ -109,6 +190,12 @@ type SimulationPreset = {
   sharedWith?: Array<{ userId: string; role: "viewer" | "editor" | "admin" }>;
   ownerUserId?: string;
   effectiveRole?: "owner" | "admin" | "editor" | "viewer";
+  createdByUserId?: string;
+  createdByName?: string;
+  createdByAvatarUrl?: string;
+  lastEditedByUserId?: string;
+  lastEditedByName?: string;
+  lastEditedByAvatarUrl?: string;
   updatedAt: string;
   snapshot: {
     sites: Site[];
@@ -867,44 +954,77 @@ export const useAppStore = create<AppState>((set, get) => ({
         sites: cloud.siteLibrary.length,
         simulations: cloud.simulationPresets.length,
       });
-      const cloudPresets =
-        (cloud.simulationPresets as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["simulationPresets"] | undefined) ?? [];
-      console.log("[appStore] Merging cloud data with local...");
-      const { importLibraryData, loadSimulationPreset, selectScenario } = get();
-      const result = importLibraryData(
-        {
-          siteLibrary: cloud.siteLibrary as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["siteLibrary"],
-          simulationPresets: cloudPresets,
-        },
-        "merge",
-      );
-      console.log("[appStore] Merge result:", result);
-      if (applyStartupSelection && typeof window !== "undefined") {
-        const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
-        const lastRef = (lastRefRaw ?? "").trim();
-        if (lastRef.startsWith("saved:")) {
-          const presetId = lastRef.slice("saved:".length);
-          if (presetId && cloudPresets.some((preset) => preset.id === presetId)) {
-            console.log("[appStore] Restoring last simulation:", presetId);
-            loadSimulationPreset(presetId);
-          }
-        } else if (lastRef.startsWith("builtin:")) {
-          const scenarioId = lastRef.slice("builtin:".length);
-          if (scenarioId) {
-            console.log("[appStore] Restoring last scenario:", scenarioId);
-            selectScenario(scenarioId);
+
+      const { currentUser, importLibraryData, loadSimulationPreset, selectScenario } = get();
+
+      const cloudSites = Array.isArray(cloud.siteLibrary) ? cloud.siteLibrary as SiteLibraryEntry[] : [];
+      const cloudSims = Array.isArray(cloud.simulationPresets) ? cloud.simulationPresets as SimulationPreset[] : [];
+
+      if (currentUser?.id) {
+        const fixedCloudSites = adoptOrphanedEntries(
+          cloudSites,
+          currentUser.id,
+          currentUser.username,
+          currentUser.avatarUrl ?? "",
+        );
+        const fixedCloudSims = adoptOrphanedSimulations(
+          cloudSims as SimulationPreset[],
+          currentUser.id,
+          currentUser.username,
+          currentUser.avatarUrl ?? "",
+        );
+
+        const cloudPresets = fixedCloudSims as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["simulationPresets"];
+
+        console.log("[appStore] Merging cloud data with local (with ownership fixes)...");
+        const result = importLibraryData(
+          {
+            siteLibrary: fixedCloudSites as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["siteLibrary"],
+            simulationPresets: cloudPresets,
+          },
+          "merge",
+        );
+        console.log("[appStore] Merge result:", result);
+        if (applyStartupSelection && typeof window !== "undefined") {
+          const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
+          const lastRef = (lastRefRaw ?? "").trim();
+          if (lastRef.startsWith("saved:")) {
+            const presetId = lastRef.slice("saved:".length);
+            if (presetId && fixedCloudSims.some((preset) => preset.id === presetId)) {
+              console.log("[appStore] Restoring last simulation:", presetId);
+              loadSimulationPreset(presetId);
+            }
+          } else if (lastRef.startsWith("builtin:")) {
+            const scenarioId = lastRef.slice("builtin:".length);
+            if (scenarioId) {
+              console.log("[appStore] Restoring last scenario:", scenarioId);
+              selectScenario(scenarioId);
+            }
           }
         }
+      } else {
+        const cloudPresets =
+          (cloud.simulationPresets as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["simulationPresets"] | undefined) ?? [];
+
+        console.log("[appStore] Merging cloud data with local...");
+        const result = importLibraryData(
+          {
+            siteLibrary: cloudSites as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["siteLibrary"],
+            simulationPresets: cloudPresets,
+          },
+          "merge",
+        );
+        console.log("[appStore] Merge result:", result);
+        hydrated = true;
+        set({
+          syncPending: false,
+          syncStatus: "synced",
+          lastSyncedAt: new Date().toISOString(),
+          syncErrorMessage: null,
+          syncBusy: false,
+          syncStatusMessage: `Synced: ${result.siteCount} sites, ${result.simulationCount} simulations`,
+        });
       }
-      hydrated = true;
-      set({
-        syncPending: false,
-        syncStatus: "synced",
-        lastSyncedAt: new Date().toISOString(),
-        syncErrorMessage: null,
-        syncBusy: false,
-        syncStatusMessage: `Synced: ${result.siteCount} sites, ${result.simulationCount} simulations`,
-      });
       console.log("[appStore] initializeCloudSync SUCCESS - hydrated: true, scheduling sync...");
       if (syncTimer !== null) {
         window.clearTimeout(syncTimer);
@@ -1166,6 +1286,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setTerrainDataset: (dataset) => set({ terrainDataset: dataset }),
   addSiteByCoordinates: (name, lat, lon) => {
+    const { currentUser } = get();
+    if (!currentUser?.id) {
+      console.warn("[appStore] addSiteByCoordinates: Auth required - user not logged in");
+      return;
+    }
     const label = name.trim();
     if (!label) return;
     const id = makeId("site");
@@ -1196,6 +1321,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
         cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
         createdAt: new Date().toISOString(),
+        ownerUserId: currentUser.id,
+        createdByUserId: currentUser.id,
+        createdByName: currentUser.username,
+        createdByAvatarUrl: currentUser.avatarUrl ?? "",
+        lastEditedByUserId: currentUser.id,
+        lastEditedByName: currentUser.username,
+        lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
       };
       const nextLibrary = normalizeSiteLibrary([entry, ...state.siteLibrary]);
       writeStorage(SITE_LIBRARY_KEY, nextLibrary);
@@ -1294,8 +1426,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     sourceMeta,
     visibility = "shared",
     description,
-    createdBy,
   ) => {
+    const { currentUser } = get();
+    if (!currentUser?.id) {
+      console.warn("[appStore] addSiteLibraryEntry: Auth required - user not logged in");
+      return "";
+    }
     const label = name.trim();
     if (!label) return "";
     const nowIso = new Date().toISOString();
@@ -1324,17 +1460,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       cableLossDb,
       createdAt: nowIso,
       sourceMeta: normalizedMeta,
-      ...(createdBy?.userId
-        ? {
-            ownerUserId: createdBy.userId,
-            createdByUserId: createdBy.userId,
-            createdByName: createdBy.name,
-            createdByAvatarUrl: createdBy.avatarUrl ?? "",
-            lastEditedByUserId: createdBy.userId,
-            lastEditedByName: createdBy.name,
-            lastEditedByAvatarUrl: createdBy.avatarUrl ?? "",
-          }
-        : {}),
+      ownerUserId: currentUser.id,
+      createdByUserId: currentUser.id,
+      createdByName: currentUser.username,
+      createdByAvatarUrl: currentUser.avatarUrl ?? "",
+      lastEditedByUserId: currentUser.id,
+      lastEditedByName: currentUser.username,
+      lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
     };
     set((state) => {
       const next = normalizeSiteLibrary([entry, ...state.siteLibrary]);
@@ -1477,6 +1609,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   updateSiteLibraryEntry: (entryId, patch) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "updateSiteLibraryEntry");
+    if (!user) return;
+    const entry = get().siteLibrary.find((e) => e.id === entryId);
+    if (entry && !canEditItem(entry, user)) {
+      console.warn(`[appStore] updateSiteLibraryEntry: User ${user.id} cannot edit entry ${entryId}`);
+      return;
+    }
     set((state) => {
       const next = dedupeLibraryEntries(
         state.siteLibrary.map((entry) => {
@@ -1488,6 +1628,11 @@ export const useAppStore = create<AppState>((set, get) => ({
               ...entry.position,
               ...(patch.position ?? {}),
             },
+            ...(user ? {
+              lastEditedByUserId: user.id,
+              lastEditedByName: user.username,
+              lastEditedByAvatarUrl: user.avatarUrl ?? "",
+            } : {}),
           };
         }),
       );
@@ -1509,8 +1654,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().deleteSiteLibraryEntries([entryId]);
   },
   deleteSiteLibraryEntries: (entryIds) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "deleteSiteLibraryEntries");
+    if (!user) return;
     const requested = new Set(entryIds);
     if (!requested.size) return;
+    const state = get();
+    for (const entryId of entryIds) {
+      const entry = state.siteLibrary.find((e) => e.id === entryId);
+      if (entry && !canEditItem(entry, user)) {
+        console.warn(`[appStore] deleteSiteLibraryEntries: User ${user.id} cannot delete entry ${entryId}`);
+        return;
+      }
+    }
     set((state) => {
       const next = state.siteLibrary.filter((entry) => !requested.has(entry.id));
       writeStorage(SITE_LIBRARY_KEY, next);
@@ -1518,9 +1674,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   saveCurrentSimulationPreset: (name) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "saveCurrentSimulationPreset");
+    if (!user) return null;
     const presetName = name.trim();
     if (!presetName) return null;
     const state = get();
+    const existing = state.simulationPresets.find((preset) => preset.name === presetName);
+    if (existing && !canEditItem(existing, user)) {
+      console.warn(`[appStore] saveCurrentSimulationPreset: User ${user.id} cannot edit simulation ${presetName}`);
+      return null;
+    }
     const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
     const normalizedLinks = state.links.map((link) =>
       stripRedundantLinkRadioOverrides(
@@ -1553,7 +1717,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         normalized.addedCount > 0
           ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
           : current.siteLibrary;
-      const existing = current.simulationPresets.find((preset) => preset.name === presetName);
       const currentSelectionDescription = current.simulationPresets.find(
         (preset) => preset.id === current.selectedScenarioId,
       )?.description;
@@ -1577,6 +1740,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         sharedWith: existing?.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
+        ownerUserId: existing?.ownerUserId ?? user.id,
+        createdByUserId: existing?.createdByUserId ?? user.id,
+        createdByName: existing?.createdByName ?? user.username,
+        createdByAvatarUrl: existing?.createdByAvatarUrl ?? user.avatarUrl ?? "",
+        lastEditedByUserId: user.id,
+        lastEditedByName: user.username,
+        lastEditedByAvatarUrl: user.avatarUrl ?? "",
       };
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
@@ -1592,6 +1762,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     return get().simulationPresets[0]?.id ?? null;
   },
   createBlankSimulationPreset: (name, options) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "createBlankSimulationPreset");
+    if (!user) return null;
     const presetName = name.trim();
     if (!presetName) return null;
     if (hasDuplicateSimulationName(get().simulationPresets, presetName)) return null;
@@ -1614,7 +1787,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         terrainDataset: current.terrainDataset,
         mapViewport: current.mapViewport,
       };
-      const nextPreset = {
+      const nextPreset: SimulationPreset = {
         id: makeId("sim"),
         name: presetName,
         ...(options?.description?.trim() ? { description: options.description.trim() } : {}),
@@ -1624,14 +1797,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         sharedWith: [],
         updatedAt: new Date().toISOString(),
         snapshot,
-        ownerUserId: options?.ownerUserId,
-        ...(options?.createdByUserId ? { createdByUserId: options.createdByUserId } : {}),
-        ...(options?.createdByName ? { createdByName: options.createdByName } : {}),
-        ...(options?.createdByAvatarUrl ? { createdByAvatarUrl: options.createdByAvatarUrl } : {}),
-        ...(options?.lastEditedByUserId ? { lastEditedByUserId: options.lastEditedByUserId } : {}),
-        ...(options?.lastEditedByName ? { lastEditedByName: options.lastEditedByName } : {}),
-        ...(options?.lastEditedByAvatarUrl ? { lastEditedByAvatarUrl: options.lastEditedByAvatarUrl } : {}),
-      } as SimulationPreset;
+        ownerUserId: options?.ownerUserId ?? user.id,
+        createdByUserId: user.id,
+        createdByName: user.username,
+        createdByAvatarUrl: user.avatarUrl ?? "",
+        lastEditedByUserId: user.id,
+        lastEditedByName: user.username,
+        lastEditedByAvatarUrl: user.avatarUrl ?? "",
+      };
       const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);
       return { simulationPresets: next };
@@ -1639,9 +1812,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     return get().simulationPresets[0]?.id ?? null;
   },
   overwriteSimulationPreset: (presetId) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "overwriteSimulationPreset");
+    if (!user) return;
     const state = get();
     const existing = state.simulationPresets.find((preset) => preset.id === presetId);
     if (!existing) return;
+    if (!canEditItem(existing, user)) {
+      console.warn(`[appStore] overwriteSimulationPreset: User ${user.id} cannot edit simulation ${presetId}`);
+      return;
+    }
     const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
     const normalizedLinks = state.links.map((link) =>
       stripRedundantLinkRadioOverrides(
@@ -1688,6 +1868,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         sharedWith: existing.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
+        ownerUserId: existing.ownerUserId,
+        createdByUserId: existing.createdByUserId,
+        createdByName: existing.createdByName,
+        createdByAvatarUrl: existing.createdByAvatarUrl,
+        lastEditedByUserId: user.id,
+        lastEditedByName: user.username,
+        lastEditedByAvatarUrl: user.avatarUrl ?? "",
       };
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
@@ -1824,6 +2011,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCoverage();
   },
   renameSimulationPreset: (presetId, name) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "renameSimulationPreset");
+    if (!user) return;
+    const existing = get().simulationPresets.find((preset) => preset.id === presetId);
+    if (existing && !canEditItem(existing, user)) {
+      console.warn(`[appStore] renameSimulationPreset: User ${user.id} cannot edit simulation ${presetId}`);
+      return;
+    }
     const nextName = name.trim();
     if (!nextName) return;
     if (hasDuplicateSimulationName(get().simulationPresets, nextName, presetId)) return;
@@ -1843,6 +2038,9 @@ export const useAppStore = create<AppState>((set, get) => ({
                 slug: nextSlug,
                 slugAliases: Array.from(aliasSet).filter(Boolean),
                 updatedAt: new Date().toISOString(),
+                lastEditedByUserId: user.id,
+                lastEditedByName: user.username,
+                lastEditedByAvatarUrl: user.avatarUrl ?? "",
               };
             })()
           : preset,
@@ -1852,6 +2050,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   updateSimulationPresetEntry: (presetId, patch) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "updateSimulationPresetEntry");
+    if (!user) return;
+    const existing = get().simulationPresets.find((preset) => preset.id === presetId);
+    if (existing && !canEditItem(existing, user)) {
+      console.warn(`[appStore] updateSimulationPresetEntry: User ${user.id} cannot edit simulation ${presetId}`);
+      return;
+    }
     if (typeof patch.name === "string") {
       const candidate = patch.name.trim();
       if (!candidate) return;
@@ -1883,6 +2089,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           slugAliases: Array.from(aliasSet).filter(Boolean),
           visibility: nextVisibility,
           updatedAt: new Date().toISOString(),
+          lastEditedByUserId: user.id,
+          lastEditedByName: user.username,
+          lastEditedByAvatarUrl: user.avatarUrl ?? "",
         };
       });
       writeStorage(SIM_PRESETS_KEY, next);
@@ -1890,6 +2099,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   deleteSimulationPreset: (presetId) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "deleteSimulationPreset");
+    if (!user) return;
+    const existing = get().simulationPresets.find((preset) => preset.id === presetId);
+    if (existing && !canEditItem(existing, user)) {
+      console.warn(`[appStore] deleteSimulationPreset: User ${user.id} cannot delete simulation ${presetId}`);
+      return;
+    }
     set((state) => {
       const next = state.simulationPresets.filter((preset) => preset.id !== presetId);
       writeStorage(SIM_PRESETS_KEY, next);
