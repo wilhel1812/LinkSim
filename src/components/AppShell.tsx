@@ -63,6 +63,7 @@ export function AppShell() {
   const links = useAppStore((state) => state.links);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
+  const sites = useAppStore((state) => state.sites);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
@@ -150,8 +151,10 @@ export function AppShell() {
   }, [recommendAndFetchTerrainForCurrentArea, srtmTilesCount]);
 
   useEffect(() => {
+    console.log("[AppShell] siteLibrary/simulationPresets/sites changed, calling performCloudSyncPush");
+    console.log("[AppShell] siteLibrary length:", siteLibrary.length, "simulationPresets length:", simulationPresets.length, "sites length:", sites.length);
     void performCloudSyncPush();
-  }, [performCloudSyncPush, siteLibrary, simulationPresets]);
+  }, [performCloudSyncPush, siteLibrary, simulationPresets, sites]);
 
   useEffect(() => {
     void (async () => {
