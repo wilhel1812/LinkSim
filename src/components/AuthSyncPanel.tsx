@@ -6,6 +6,14 @@ import { useAppStore } from "../store/appStore";
 const SYNC_DEBOUNCE_MS = 1200;
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 
+const logPayload = (label: string, payload: { siteLibrary: unknown[]; simulationPresets: unknown[] }) => {
+  console.log(`[AuthSyncPanel] ${label}:`, {
+    sites: payload.siteLibrary.length,
+    simulations: payload.simulationPresets.length,
+    payloadSize: JSON.stringify(payload).length,
+  });
+};
+
 export function AuthSyncPanel() {
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
@@ -32,15 +40,16 @@ export function AuthSyncPanel() {
 
   const refreshFromCloud = async () => {
     const applyStartupSelection = !hydrated.current;
-    console.log("[AuthSyncPanel] refreshFromCloud called, applyStartupSelection:", applyStartupSelection);
+    console.log("[AuthSyncPanel] refreshFromCloud START - applyStartupSelection:", applyStartupSelection);
     setSyncBusy(true);
     setSyncStatus("syncing");
     try {
-      console.log("[AuthSyncPanel] Fetching from cloud...");
+      console.log("[AuthSyncPanel] Fetching cloud library...");
       const cloud = await fetchCloudLibrary();
-      console.log("[AuthSyncPanel] Cloud data received:", cloud.siteLibrary.length, "sites,", cloud.simulationPresets.length, "simulations");
+      logPayload("[AuthSyncPanel] Cloud data received", cloud);
       const cloudPresets =
         (cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"] | undefined) ?? [];
+      console.log("[AuthSyncPanel] Merging cloud data with local...");
       const result = importLibraryData(
         {
           siteLibrary: cloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
@@ -48,17 +57,22 @@ export function AuthSyncPanel() {
         },
         "merge",
       );
+      console.log("[AuthSyncPanel] Merge result:", result);
       if (applyStartupSelection && typeof window !== "undefined") {
         const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
         const lastRef = (lastRefRaw ?? "").trim();
         if (lastRef.startsWith("saved:")) {
           const presetId = lastRef.slice("saved:".length);
           if (presetId && cloudPresets.some((preset) => preset.id === presetId)) {
+            console.log("[AuthSyncPanel] Restoring last simulation:", presetId);
             loadSimulationPreset(presetId);
           }
         } else if (lastRef.startsWith("builtin:")) {
           const scenarioId = lastRef.slice("builtin:".length);
-          if (scenarioId) selectScenario(scenarioId);
+          if (scenarioId) {
+            console.log("[AuthSyncPanel] Restoring last scenario:", scenarioId);
+            selectScenario(scenarioId);
+          }
         }
       }
       setStatus(
@@ -68,9 +82,9 @@ export function AuthSyncPanel() {
       setLastSyncedAt(new Date().toISOString());
       setSyncErrorMessage(null);
       hydrated.current = true;
-      console.log("[AuthSyncPanel] Sync completed successfully");
+      console.log("[AuthSyncPanel] refreshFromCloud SUCCESS - status: synced, hydrated: true");
     } catch (error) {
-      console.error("[AuthSyncPanel] Sync failed:", error);
+      console.error("[AuthSyncPanel] refreshFromCloud FAILED:", error);
       setSyncStatus("error");
       const message = getUiErrorMessage(error);
       setSyncErrorMessage(message);
@@ -81,16 +95,18 @@ export function AuthSyncPanel() {
   };
 
   const manualSync = async () => {
+    console.log("[AuthSyncPanel] manualSync START");
     setSyncBusy(true);
     setSyncStatus("syncing");
-    console.log("[AuthSyncPanel] Manual sync: pushing local changes to cloud...");
     try {
+      logPayload("[AuthSyncPanel] Pushing local data to cloud", cloudPayload);
       await pushCloudLibrary(cloudPayload);
-      console.log("[AuthSyncPanel] Push successful, fetching cloud data...");
+      console.log("[AuthSyncPanel] Push SUCCESS, fetching cloud data...");
       const cloud = await fetchCloudLibrary();
-      console.log("[AuthSyncPanel] Cloud data received:", cloud.siteLibrary.length, "sites,", cloud.simulationPresets.length, "simulations");
+      logPayload("[AuthSyncPanel] Cloud data received", cloud);
       const cloudPresets =
         (cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"] | undefined) ?? [];
+      console.log("[AuthSyncPanel] Merging cloud data with local...");
       const result = importLibraryData(
         {
           siteLibrary: cloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
@@ -98,15 +114,16 @@ export function AuthSyncPanel() {
         },
         "merge",
       );
+      console.log("[AuthSyncPanel] Merge result:", result);
       setStatus(
         `Sync complete. Delta: ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
       );
       setSyncStatus("synced");
       setLastSyncedAt(new Date().toISOString());
       setSyncErrorMessage(null);
-      console.log("[AuthSyncPanel] Manual sync completed successfully");
+      console.log("[AuthSyncPanel] manualSync SUCCESS - status: synced");
     } catch (error) {
-      console.error("[AuthSyncPanel] Manual sync failed:", error);
+      console.error("[AuthSyncPanel] manualSync FAILED:", error);
       setSyncStatus("error");
       const message = getUiErrorMessage(error);
       setSyncErrorMessage(message);
@@ -121,10 +138,10 @@ export function AuthSyncPanel() {
       console.log("[AuthSyncPanel] Already hydrated, skipping initial fetch");
       return;
     }
-    console.log("[AuthSyncPanel] Initial cloud fetch on mount");
+    console.log("[AuthSyncPanel] Running initial fetch from cloud...");
     void refreshFromCloud().catch((error) => {
       const message = getUiErrorMessage(error);
-      console.error("[AuthSyncPanel] Initial fetch failed:", message);
+      console.error("[AuthSyncPanel] Initial fetch catch block:", message);
       setStatus(`Cloud load failed: ${message}`);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,14 +158,15 @@ export function AuthSyncPanel() {
       setSyncStatus("syncing");
       void (async () => {
         try {
+          logPayload("[AuthSyncPanel] Auto-push payload", cloudPayload);
           await pushCloudLibrary(cloudPayload);
-          console.log("[AuthSyncPanel] Push to cloud successful");
+          console.log("[AuthSyncPanel] Auto-push SUCCESS");
           setSyncStatus("synced");
           setLastSyncedAt(new Date().toISOString());
           setSyncErrorMessage(null);
           setStatus(`Cloud sync updated at ${new Date().toLocaleTimeString()}.`);
         } catch (error) {
-          console.error("[AuthSyncPanel] Push to cloud failed:", error);
+          console.error("[AuthSyncPanel] Auto-push FAILED:", error);
           setSyncStatus("error");
           const message = getUiErrorMessage(error);
           setSyncErrorMessage(message);
@@ -168,7 +186,7 @@ export function AuthSyncPanel() {
   useEffect(() => {
     if (syncTrigger === triggerRef.current) return;
     triggerRef.current = syncTrigger;
-    console.log("[AuthSyncPanel] Manual sync triggered");
+    console.log("[AuthSyncPanel] Manual sync trigger detected, calling manualSync()");
     void manualSync();
   }, [syncTrigger]);
 

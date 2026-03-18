@@ -644,8 +644,8 @@ export function UserAdminPanel() {
 
   const getSyncIndicator = () => {
     const timeLabel = lastSyncedAt
-      ? `Last synced: ${new Date(lastSyncedAt).toLocaleTimeString()}`
-      : "Not yet synced";
+      ? `Up to date (synced ${new Date(lastSyncedAt).toLocaleTimeString()})`
+      : "Up to date";
 
     if (isLocalRuntime) {
       return { icon: "🏠", class: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
@@ -729,6 +729,7 @@ export function UserAdminPanel() {
                       {lastSyncedAt && (
                         <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
                       )}
+                      {!lastSyncedAt && <p className="field-help">Initial sync in progress...</p>}
                     </div>
                   </>
                 ) : modalSyncStatus === "synced" ? (
@@ -736,8 +737,10 @@ export function UserAdminPanel() {
                     <span className="sync-indicator-large sync-synced">●</span>
                     <div>
                       <p className="field-help">Up to date</p>
-                      {lastSyncedAt && (
+                      {lastSyncedAt ? (
                         <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                      ) : (
+                        <p className="field-help">No sync data yet</p>
                       )}
                     </div>
                   </>
@@ -751,6 +754,9 @@ export function UserAdminPanel() {
                           <summary>Error details</summary>
                           <p className="field-help">{syncErrorMessage}</p>
                         </details>
+                      )}
+                      {lastSyncedAt && (
+                        <p className="field-help">Last successful sync: {new Date(lastSyncedAt).toLocaleString()}</p>
                       )}
                     </div>
                   </>
