@@ -989,6 +989,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           "merge",
         );
         console.log("[appStore] Merge result:", result);
+        hydrated = true;
         if (applyStartupSelection && typeof window !== "undefined") {
           const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
           const lastRef = (lastRefRaw ?? "").trim();
