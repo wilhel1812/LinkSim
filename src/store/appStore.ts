@@ -332,15 +332,6 @@ const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
 const BASEMAP_PROVIDER_KEY = "linksim-basemap-provider-v1";
 const BASEMAP_STYLE_PRESET_KEY = "linksim-basemap-style-preset-v1";
-const STORAGE_SNAPSHOT_LIMIT = 5;
-
-type StoredSnapshot<T> = {
-  savedAtIso: string;
-  value: T;
-};
-
-const snapshotKeyFor = (key: string): string => `${key}-snapshots-v1`;
-const isSnapshotTrackedKey = (key: string): boolean => key === SITE_LIBRARY_KEY || key === SIM_PRESETS_KEY;
 
 const readStorage = <T,>(key: string, fallback: T): T => {
   try {
@@ -362,77 +353,19 @@ const readStorageRawState = <T,>(key: string): { status: "ok" | "missing" | "inv
   }
 };
 
-const readSnapshotHistory = <T,>(key: string): StoredSnapshot<T>[] => {
-  const parsed = readStorage<StoredSnapshot<T>[]>(snapshotKeyFor(key), []);
-  return Array.isArray(parsed) ? parsed : [];
-};
-
-const getLatestSnapshotValue = <T,>(key: string): T | null => {
-  const history = readSnapshotHistory<T>(key);
-  for (let i = history.length - 1; i >= 0; i -= 1) {
-    const item = history[i];
-    if (item && typeof item === "object" && "value" in item) {
-      return item.value;
-    }
-  }
-  return null;
-};
-
-const appendSnapshot = (key: string, value: unknown) => {
-  if (!isSnapshotTrackedKey(key)) return;
-  const history = readSnapshotHistory<unknown>(key);
-  const next: StoredSnapshot<unknown>[] = [
-    ...history,
-    {
-      savedAtIso: new Date().toISOString(),
-      value,
-    },
-  ].slice(-STORAGE_SNAPSHOT_LIMIT);
-  localStorage.setItem(snapshotKeyFor(key), JSON.stringify(next));
-};
-
-const writeStorage = (key: string, value: unknown, options?: { snapshot?: boolean }): boolean => {
-  const tryWriteWithSnapshot = (): boolean => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      if (options?.snapshot !== false) appendSnapshot(key, value);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  const clearAllSnapshots = (): void => {
-    const keys = [SITE_LIBRARY_KEY, SIM_PRESETS_KEY];
-    for (const k of keys) {
-      try {
-        const snapshotKey = snapshotKeyFor(k);
-        const existing = localStorage.getItem(snapshotKey);
-        if (existing) {
-          localStorage.setItem(snapshotKey, "[]");
-          console.log(`[appStore] Cleared ALL snapshots for "${k}" due to quota`);
-        }
-      } catch {
-        // Best effort
-      }
-    }
-  };
-
-  if (tryWriteWithSnapshot()) {
+const writeStorage = (key: string, value: unknown): boolean => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
     return true;
+  } catch (error) {
+    console.error(`[appStore] Failed to write to localStorage (${key}):`, error);
+    return false;
   }
-
-  console.error(`[appStore] localStorage QUOTA EXCEEDED for key "${key}". Clearing snapshots and retrying...`);
-  clearAllSnapshots();
-
-  if (tryWriteWithSnapshot()) {
-    console.log(`[appStore] Retry after clearing snapshots succeeded`);
-    return true;
-  }
-
-  console.error(`[appStore] localStorage QUOTA EXCEEDED (retry failed) for key "${key}"`);
-  return false;
 };
+
+const getLatestSnapshotValue = <T,>(_key: string): T | null => null;
+
+
 
 const makeId = (prefix: string): string =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1132,22 +1065,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setUiThemePreference: (value) => {
     const normalized = normalizeUiThemePreference(value);
-    writeStorage(UI_THEME_PREFERENCE_KEY, normalized, { snapshot: false });
+    writeStorage(UI_THEME_PREFERENCE_KEY, normalized);
     set({ uiThemePreference: normalized });
   },
   setUiColorTheme: (value) => {
     const normalized = normalizeUiColorTheme(value);
-    writeStorage(UI_COLOR_THEME_KEY, normalized, { snapshot: false });
+    writeStorage(UI_COLOR_THEME_KEY, normalized);
     set({ uiColorTheme: normalized });
   },
   setBasemapProvider: (value) => {
     const normalized = normalizeBasemapProvider(value);
-    writeStorage(BASEMAP_PROVIDER_KEY, normalized, { snapshot: false });
+    writeStorage(BASEMAP_PROVIDER_KEY, normalized);
     set({ basemapProvider: normalized });
   },
   setBasemapStylePreset: (value) => {
     const normalized = normalizeBasemapStylePreset(value);
-    writeStorage(BASEMAP_STYLE_PRESET_KEY, normalized, { snapshot: false });
+    writeStorage(BASEMAP_STYLE_PRESET_KEY, normalized);
     set({ basemapStylePreset: normalized });
   },
   selectScenario: (id) => {
@@ -1184,7 +1117,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       mapViewport: scenario.viewport,
       siteLibrary: libraryBacked.siteLibrary,
     });
-    writeStorage(LAST_SESSION_KEY, { selectedScenarioId: scenario.id, savedAtIso: new Date().toISOString() }, { snapshot: false });
+    writeStorage(LAST_SESSION_KEY, { selectedScenarioId: scenario.id, savedAtIso: new Date().toISOString() });
     get().recomputeCoverage();
   },
   setSelectedLinkId: (id) =>
@@ -1887,7 +1820,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (libraryBacked.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
     }
-    writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: new Date().toISOString() }, { snapshot: false });
+    writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: new Date().toISOString() });
     get().recomputeCoverage();
   },
   renameSimulationPreset: (presetId, name) => {

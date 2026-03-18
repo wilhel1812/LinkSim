@@ -265,16 +265,7 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
   return lines;
 };
 
-const getSnapshotCount = (key: string): number => {
-  try {
-    const raw = localStorage.getItem(`${key}-snapshots-v1`);
-    if (!raw) return 0;
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
-};
+const getSnapshotCount = (_key: string): number => 0;
 
 export function Sidebar() {
   const { theme, colorTheme, variant } = useThemeVariant();
@@ -343,7 +334,6 @@ export function Sidebar() {
   const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
-  const restoreLibrariesFromSnapshots = useAppStore((state) => state.restoreLibrariesFromSnapshots);
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
   );
@@ -983,29 +973,6 @@ export function Sidebar() {
     writeStorageHealth(nextHealth);
     setStorageStatus(
       `Exported backup (${siteLibrary.length} site(s), ${simulationPresets.length} simulation(s)) for ${payload.origin}.`,
-    );
-  };
-
-  const restoreLocalLibraries = () => {
-    const confirmed = window.confirm(
-      "Restore latest snapshot for local site/simulation libraries? This can overwrite recent unsaved local edits.",
-    );
-    if (!confirmed) {
-      setStorageStatus("Restore cancelled.");
-      return;
-    }
-    const result = restoreLibrariesFromSnapshots();
-    refreshSnapshotInfo();
-    if (!result.restored) {
-      setStorageStatus("No snapshots available to restore.");
-      return;
-    }
-    const now = new Date().toISOString();
-    const nextHealth = { ...storageHealth, lastRestoreIso: now };
-    setStorageHealth(nextHealth);
-    writeStorageHealth(nextHealth);
-    setStorageStatus(
-      `Restored from snapshots: ${result.siteCount} site(s), ${result.simulationCount} simulation(s).`,
     );
   };
 
@@ -2339,11 +2306,6 @@ export function Sidebar() {
             <button className="inline-action" onClick={exportLocalLibraries} type="button">
               Export Library Backup
             </button>
-            {currentUser?.isAdmin && (
-              <button className="inline-action" onClick={restoreLocalLibraries} type="button">
-                Restore Latest Snapshot
-              </button>
-            )}
           </div>
           {storageStatus ? <p className="field-help">{storageStatus}</p> : null}
           <label className="field-grid">
