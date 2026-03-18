@@ -1551,6 +1551,28 @@ input {
   margin-bottom: 1rem;
 }
 
+.sync-indicator-large.sync-syncing {
+  animation: spin 1s linear infinite;
+}
+
+.sync-error-details {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.sync-error-details summary {
+  cursor: pointer;
+  color: var(--text-dim, #9ca3af);
+}
+
+.sync-error-details p {
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  background: color-mix(in srgb, var(--error, #ef4444) 10%, transparent);
+  border-radius: 4px;
+  word-break: break-word;
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);

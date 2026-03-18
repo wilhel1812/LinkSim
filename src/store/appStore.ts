@@ -160,10 +160,12 @@ type AppState = {
   mapOverlayMode: MapOverlayMode;
   syncStatus: "idle" | "syncing" | "synced" | "error";
   lastSyncedAt: string | null;
+  syncErrorMessage: string | null;
   syncTrigger: number;
   setLocale: (locale: LocaleCode) => void;
   setSyncStatus: (status: "idle" | "syncing" | "synced" | "error") => void;
   setLastSyncedAt: (iso: string | null) => void;
+  setSyncErrorMessage: (message: string | null) => void;
   triggerSync: () => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
   setUiColorTheme: (value: UiColorTheme) => void;
@@ -850,10 +852,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   mapOverlayMode: "heatmap",
   syncStatus: "idle",
   lastSyncedAt: null,
+  syncErrorMessage: null,
   syncTrigger: 0,
   setLocale: (locale) => set({ locale }),
   setSyncStatus: (status: "idle" | "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
+  setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   setUiThemePreference: (value) => {
     const normalized = normalizeUiThemePreference(value);

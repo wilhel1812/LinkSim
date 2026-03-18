@@ -14,6 +14,7 @@ export function AuthSyncPanel() {
   const selectScenario = useAppStore((state) => state.selectScenario);
   const setSyncStatus = useAppStore((state) => state.setSyncStatus);
   const setLastSyncedAt = useAppStore((state) => state.setLastSyncedAt);
+  const setSyncErrorMessage = useAppStore((state) => state.setSyncErrorMessage);
   const syncTrigger = useAppStore((state) => state.syncTrigger);
   const [status, setStatus] = useState("");
   const [syncBusy, setSyncBusy] = useState(false);
@@ -62,10 +63,12 @@ export function AuthSyncPanel() {
       );
       setSyncStatus("synced");
       setLastSyncedAt(new Date().toISOString());
+      setSyncErrorMessage(null);
       hydrated.current = true;
     } catch (error) {
       setSyncStatus("error");
       const message = getUiErrorMessage(error);
+      setSyncErrorMessage(message);
       setStatus(`Cloud load failed: ${message}`);
     } finally {
       setSyncBusy(false);
@@ -94,10 +97,12 @@ export function AuthSyncPanel() {
           await pushCloudLibrary(cloudPayload);
           setSyncStatus("synced");
           setLastSyncedAt(new Date().toISOString());
+          setSyncErrorMessage(null);
           setStatus(`Cloud sync updated at ${new Date().toLocaleTimeString()}.`);
         } catch (error) {
           setSyncStatus("error");
           const message = getUiErrorMessage(error);
+          setSyncErrorMessage(message);
           setStatus(`Cloud save failed: ${message}`);
         }
       })();

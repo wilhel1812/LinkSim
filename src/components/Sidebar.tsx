@@ -345,7 +345,6 @@ export function Sidebar() {
   const overwriteSimulationPreset = useAppStore((state) => state.overwriteSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
-  const importLibraryData = useAppStore((state) => state.importLibraryData);
   const restoreLibrariesFromSnapshots = useAppStore((state) => state.restoreLibrariesFromSnapshots);
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
     (state) => state.recommendAndFetchTerrainForCurrentArea,
@@ -529,7 +528,6 @@ export function Sidebar() {
     }
   };
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
-  const [storageImportMode, setStorageImportMode] = useState<"merge" | "replace">("merge");
   const [storageStatus, setStorageStatus] = useState("");
   const [storageHealth, setStorageHealth] = useState<StorageHealth>(() => readStorageHealth());
   const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
@@ -1002,52 +1000,6 @@ export function Sidebar() {
     setStorageStatus(
       `Exported backup (${siteLibrary.length} site(s), ${simulationPresets.length} simulation(s)) for ${payload.origin}.`,
     );
-  };
-
-  const importLocalLibraries = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (storageImportMode === "replace") {
-      const confirmed = window.confirm(
-        "Replace mode will overwrite current local site/simulation libraries with imported data. Continue?",
-      );
-      if (!confirmed) {
-        event.target.value = "";
-        setStorageStatus("Import cancelled.");
-        return;
-      }
-    }
-    setStorageStatus("Importing backup...");
-    try {
-      const raw = await file.text();
-      const parsed = JSON.parse(raw) as LibraryBackupPayload | Record<string, unknown>;
-      const siteItems = Array.isArray((parsed as LibraryBackupPayload).siteLibrary)
-        ? ((parsed as LibraryBackupPayload).siteLibrary as unknown[])
-        : [];
-      const simulationItems = Array.isArray((parsed as LibraryBackupPayload).simulationPresets)
-        ? ((parsed as LibraryBackupPayload).simulationPresets as unknown[])
-        : [];
-      const result = importLibraryData(
-        {
-          siteLibrary: siteItems as Parameters<typeof importLibraryData>[0]["siteLibrary"],
-          simulationPresets: simulationItems as Parameters<typeof importLibraryData>[0]["simulationPresets"],
-        },
-        storageImportMode,
-      );
-      refreshSnapshotInfo();
-      const now = new Date().toISOString();
-      const nextHealth = { ...storageHealth, lastImportIso: now };
-      setStorageHealth(nextHealth);
-      writeStorageHealth(nextHealth);
-      setStorageStatus(
-        `Import complete (${storageImportMode}): ${result.siteCount >= 0 ? "+" : ""}${result.siteCount} site(s), ${result.simulationCount >= 0 ? "+" : ""}${result.simulationCount} simulation(s).`,
-      );
-    } catch (error) {
-      const message = getUiErrorMessage(error);
-      setStorageStatus(`Import failed: ${message}`);
-    } finally {
-      event.target.value = "";
-    }
   };
 
   const restoreLocalLibraries = () => {
@@ -2400,7 +2352,7 @@ export function Sidebar() {
           <summary>More</summary>
           <div className="section-heading">
             <p className="field-help">Local Storage Safety</p>
-            <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly, and use Restore Snapshot if data looks missing after refresh." />
+            <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly." />
           </div>
           {storageOriginWarning ? <p className="field-help warning-text">{storageOriginWarning}</p> : null}
           <p className="field-help">{lastStorageActionLabel}</p>
@@ -2412,25 +2364,12 @@ export function Sidebar() {
             <button className="inline-action" onClick={exportLocalLibraries} type="button">
               Export Library Backup
             </button>
-            <button className="inline-action" onClick={restoreLocalLibraries} type="button">
-              Restore Latest Snapshot
-            </button>
+            {currentUser?.isAdmin && (
+              <button className="inline-action" onClick={restoreLocalLibraries} type="button">
+                Restore Latest Snapshot
+              </button>
+            )}
           </div>
-          <label className="field-grid">
-            <span>Import mode</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setStorageImportMode(event.target.value as "merge" | "replace")}
-              value={storageImportMode}
-            >
-              <option value="merge">Merge with current data</option>
-              <option value="replace">Replace current data</option>
-            </select>
-          </label>
-          <label className="upload-button">
-            Import Library Backup
-            <input accept=".json,application/json" onChange={(event) => void importLocalLibraries(event)} type="file" />
-          </label>
           {storageStatus ? <p className="field-help">{storageStatus}</p> : null}
           <label className="field-grid">
             <span>Language</span>

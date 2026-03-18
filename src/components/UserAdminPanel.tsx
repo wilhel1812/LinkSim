@@ -126,6 +126,7 @@ export function UserAdminPanel() {
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const syncStatus = useAppStore((state) => state.syncStatus);
   const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
+  const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const triggerSync = useAppStore((state) => state.triggerSync);
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
@@ -639,6 +640,7 @@ export function UserAdminPanel() {
   }, [isLocalRuntime]);
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [modalSyncStatus, setModalSyncStatus] = useState<"idle" | "syncing" | "success" | "error">("idle");
 
   const getSyncIndicator = () => {
     const timeLabel = lastSyncedAt
@@ -663,13 +665,20 @@ export function UserAdminPanel() {
 
   const syncIndicator = getSyncIndicator();
 
+  useEffect(() => {
+    if (!syncModalOpen) return;
+    if (syncStatus === "syncing") {
+      setModalSyncStatus("syncing");
+    } else if (syncStatus === "synced") {
+      setModalSyncStatus("success");
+    } else if (syncStatus === "error") {
+      setModalSyncStatus("error");
+    }
+  }, [syncStatus, syncModalOpen]);
+
   const handleSyncIndicatorClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isLocalRuntime) {
-      setSyncModalOpen(true);
-    } else {
-      setSyncModalOpen(true);
-    }
+    setSyncModalOpen(true);
   };
 
   return (
@@ -712,25 +721,70 @@ export function UserAdminPanel() {
             </div>
             <div className="sync-modal-content">
               <div className="sync-status-display">
-                <span className={`sync-indicator-large ${syncIndicator.class}`}>{syncIndicator.icon}</span>
-                <div>
-                  <p className="field-help">{syncIndicator.label}</p>
-                  {lastSyncedAt && (
-                    <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
-                  )}
-                </div>
+                {modalSyncStatus === "syncing" ? (
+                  <>
+                    <span className="sync-indicator-large sync-syncing">↻</span>
+                    <div>
+                      <p className="field-help">Syncing to cloud...</p>
+                    </div>
+                  </>
+                ) : modalSyncStatus === "success" ? (
+                  <>
+                    <span className="sync-indicator-large sync-synced">●</span>
+                    <div>
+                      <p className="field-help">Sync complete</p>
+                      <p className="field-help">Last synced: {new Date().toLocaleString()}</p>
+                    </div>
+                  </>
+                ) : modalSyncStatus === "error" ? (
+                  <>
+                    <span className="sync-indicator-large sync-error">⚠</span>
+                    <div>
+                      <p className="field-help">Sync failed</p>
+                      {syncErrorMessage && (
+                        <details className="sync-error-details">
+                          <summary>Error details</summary>
+                          <p className="field-help">{syncErrorMessage}</p>
+                        </details>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className={`sync-indicator-large ${syncIndicator.class}`}>{syncIndicator.icon}</span>
+                    <div>
+                      <p className="field-help">{syncIndicator.label}</p>
+                      {lastSyncedAt && (
+                        <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
               <div className="chip-group">
-                <button
-                  className="inline-action"
-                  onClick={() => {
-                    triggerSync();
-                    setSyncModalOpen(false);
-                  }}
-                  type="button"
-                >
-                  Sync Now
-                </button>
+                {modalSyncStatus === "error" ? (
+                  <button
+                    className="inline-action"
+                    onClick={() => {
+                      setModalSyncStatus("syncing");
+                      triggerSync();
+                    }}
+                    type="button"
+                  >
+                    Retry
+                  </button>
+                ) : modalSyncStatus !== "syncing" ? (
+                  <button
+                    className="inline-action"
+                    onClick={() => {
+                      setModalSyncStatus("syncing");
+                      triggerSync();
+                    }}
+                    type="button"
+                  >
+                    Sync Now
+                  </button>
+                ) : null}
               </div>
               <p className="field-help warning-text">
                 Do not store secrets in LinkSim content. Data may be visible to other users and operators.
