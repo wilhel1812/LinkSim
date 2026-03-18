@@ -342,7 +342,6 @@ export function Sidebar() {
   const addSiteLibraryEntry = useAppStore((state) => state.addSiteLibraryEntry);
   const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
   const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
-  const overwriteSimulationPreset = useAppStore((state) => state.overwriteSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const restoreLibrariesFromSnapshots = useAppStore((state) => state.restoreLibrariesFromSnapshots);
@@ -1802,15 +1801,6 @@ export function Sidebar() {
           <button className="inline-action" onClick={saveSimulationAsNew} type="button">
             Save a Copy
           </button>
-          {selectedSimulationRef.startsWith("saved:") ? (
-            <button
-              className="inline-action"
-              onClick={() => overwriteSimulationPreset(selectedSimulationRef.replace("saved:", ""))}
-              type="button"
-            >
-              Save Changes
-            </button>
-          ) : null}
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
       </section>
