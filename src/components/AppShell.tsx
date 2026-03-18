@@ -16,6 +16,7 @@ import { UserAdminPanel } from "./UserAdminPanel";
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
+const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
@@ -67,6 +68,8 @@ export function AppShell() {
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const isOnline = useAppStore((state) => state.isOnline);
+  const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
 
   const [isMapExpanded, setIsMapExpanded] = useState(false);
@@ -82,6 +85,7 @@ export function AppShell() {
   const [showMobileWarning, setShowMobileWarning] = useState(false);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [me, setMe] = useState<CloudUser | null>(null);
+  const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const deepLinkAppliedRef = useRef(false);
 
   const { theme, variant } = useThemeVariant();
@@ -160,6 +164,29 @@ export function AppShell() {
     console.log("[AppShell] siteLibrary length:", siteLibrary.length, "simulationPresets length:", simulationPresets.length, "sites length:", sites.length);
     void performCloudSyncPush();
   }, [performCloudSyncPush, isInitializing, siteLibrary, simulationPresets, sites]);
+
+  useEffect(() => {
+    const onOnline = () => {
+      setIsOnline(true);
+      void performCloudSyncPush();
+    };
+    const onOffline = () => {
+      setIsOnline(false);
+    };
+    setIsOnline(typeof navigator === "undefined" ? true : navigator.onLine);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [performCloudSyncPush, setIsOnline]);
+
+  useEffect(() => {
+    if (isOnline) {
+      setOfflineBannerDismissed(false);
+    }
+  }, [isOnline]);
 
   useEffect(() => {
     void (async () => {
@@ -690,6 +717,25 @@ export function AppShell() {
     >
       {!isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
+        {!isOnline && !offlineBannerDismissed ? (
+          <div className="offline-banner" role="status">
+            <span>Offline. Changes are saved locally and will sync when connection returns.</span>
+            <div className="chip-group">
+              <button
+                className="inline-action"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent(OPEN_SYNC_MODAL_EVENT));
+                }}
+                type="button"
+              >
+                Open Sync Status
+              </button>
+              <button className="inline-action" onClick={() => setOfflineBannerDismissed(true)} type="button">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
         {accessState === "readonly" ? <p className="field-help">Read-only shared view.</p> : null}
         <div className="workspace-header-actions">
           {accessState === "readonly" && isLocalRuntime ? (

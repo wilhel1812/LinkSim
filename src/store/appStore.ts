@@ -56,6 +56,24 @@ const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 
 let hydrated = false;
 let syncTimer: number | null = null;
+let syncInFlight = false;
+let localMutationRevision = 0;
+let syncedMutationRevision = 0;
+
+const recordLocalMutation = (): number => {
+  localMutationRevision += 1;
+  return Math.max(0, localMutationRevision - syncedMutationRevision);
+};
+
+const markSyncedThrough = (revision: number = localMutationRevision): number => {
+  syncedMutationRevision = Math.max(syncedMutationRevision, revision);
+  return Math.max(0, localMutationRevision - syncedMutationRevision);
+};
+
+const resetSyncRevisions = (): void => {
+  localMutationRevision = 0;
+  syncedMutationRevision = 0;
+};
 
 const canEditLibraryItem = (
   item: { ownerUserId?: string; effectiveRole?: string },
@@ -266,6 +284,8 @@ type AppState = {
   mapOverlayMode: MapOverlayMode;
   syncStatus: "syncing" | "synced" | "error";
   syncPending: boolean;
+  pendingChangesCount: number;
+  isOnline: boolean;
   lastSyncedAt: string | null;
   syncErrorMessage: string | null;
   syncTrigger: number;
@@ -281,6 +301,7 @@ type AppState = {
   setLastSyncedAt: (iso: string | null) => void;
   setSyncErrorMessage: (message: string | null) => void;
   setCurrentUser: (user: CloudUser | null) => void;
+  setIsOnline: (value: boolean) => void;
   triggerSync: () => void;
   setIsInitializing: (value: boolean) => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
@@ -934,6 +955,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   mapOverlayMode: "heatmap",
   syncStatus: "synced",
   syncPending: false,
+  pendingChangesCount: 0,
+  isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
   lastSyncedAt: null,
   syncErrorMessage: null,
   syncTrigger: 0,
@@ -946,6 +969,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
   setCurrentUser: (user) => set({ currentUser: user }),
+  setIsOnline: (value) => set({ isOnline: value }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   setIsInitializing: (value: boolean) => set({ isInitializing: value }),
   initializeCloudSync: async () => {
@@ -1022,8 +1046,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         );
         console.log("[appStore] Merge result:", result);
         hydrated = true;
+        resetSyncRevisions();
         set({
           syncPending: false,
+          pendingChangesCount: 0,
           syncStatus: "synced",
           lastSyncedAt: new Date().toISOString(),
           syncErrorMessage: null,
@@ -1035,10 +1061,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (syncTimer !== null) {
         window.clearTimeout(syncTimer);
       }
-      set({ syncPending: true });
+      set({ syncPending: true, syncBusy: true });
       syncTimer = window.setTimeout(async () => {
+        if (!get().isOnline) {
+          set({
+            syncBusy: false,
+            syncPending: true,
+            syncStatus: "error",
+            syncStatusMessage: "Offline. Changes are saved locally and will sync when reconnected.",
+            syncErrorMessage: null,
+            isInitializing: false,
+          });
+          return;
+        }
+        if (syncInFlight) {
+          set({ syncPending: true, syncStatusMessage: "Waiting for active sync to finish..." });
+          return;
+        }
         console.log("[appStore] Post-init sync timer fired, checking for changes...");
         set({ syncStatus: "syncing", syncStatusMessage: "Checking for changes..." });
+        const revisionAtStart = localMutationRevision;
+        syncInFlight = true;
         try {
           const { siteLibrary, simulationPresets, currentUser } = get();
           const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
@@ -1052,42 +1095,58 @@ export const useAppStore = create<AppState>((set, get) => ({
           });
           await pushCloudLibrary(payload);
           console.log("[appStore] Post-init Push SUCCESS");
+          const remaining = markSyncedThrough(revisionAtStart);
           set({
             syncPending: false,
-        syncStatus: "synced",
-        lastSyncedAt: new Date().toISOString(),
-        syncErrorMessage: null,
-        syncStatusMessage: "Changes saved",
-        isInitializing: false,
-      });
+            pendingChangesCount: remaining,
+            syncStatus: "synced",
+            lastSyncedAt: new Date().toISOString(),
+            syncErrorMessage: null,
+            syncStatusMessage: "Changes saved",
+            isInitializing: false,
+          });
+        } catch (error) {
+          console.error("[appStore] Post-init sync FAILED:", error);
+          const message = getUiErrorMessage(error);
+          set({
+            syncPending: true,
+            syncStatus: "error",
+            syncErrorMessage: message,
+            syncStatusMessage: `Save failed: ${message}`,
+            isInitializing: false,
+          });
+        } finally {
+          syncInFlight = false;
+          set({ syncBusy: false, isInitializing: false });
+        }
+      }, SYNC_DEBOUNCE_MS);
     } catch (error) {
-      console.error("[appStore] Post-init sync FAILED:", error);
+      console.error("[appStore] initializeCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       set({
-        syncPending: false,
+        syncPending: true,
         syncStatus: "error",
         syncErrorMessage: message,
-        syncStatusMessage: `Save failed: ${message}`,
+        syncBusy: false,
+        syncStatusMessage: `Sync failed: ${message}`,
         isInitializing: false,
       });
     }
-  }, SYNC_DEBOUNCE_MS);
-} catch (error) {
-  console.error("[appStore] initializeCloudSync FAILED:", error);
-  const message = getUiErrorMessage(error);
-  set({
-    syncPending: false,
-    syncStatus: "error",
-    syncErrorMessage: message,
-    syncBusy: false,
-    syncStatusMessage: `Sync failed: ${message}`,
-    isInitializing: false,
-  });
-}
   },
   performCloudSyncPush: () => {
     if (!hydrated) {
       console.log("[appStore] performCloudSyncPush skipped - not hydrated yet");
+      return;
+    }
+    const pendingChangesCount = recordLocalMutation();
+    if (!get().isOnline) {
+      set({
+        syncPending: true,
+        syncStatus: "error",
+        syncErrorMessage: null,
+        syncStatusMessage: "Offline. Changes are saved locally and will sync when reconnected.",
+        pendingChangesCount,
+      });
       return;
     }
     if (syncTimer !== null) {
@@ -1095,10 +1154,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     console.log("[appStore] Changes detected, scheduling sync in", SYNC_DEBOUNCE_MS, "ms");
     console.log("[appStore] Setting syncPending: true");
-    set({ syncPending: true, syncStatus: "synced" });
+    set({
+      syncPending: true,
+      syncStatus: "synced",
+      pendingChangesCount,
+      syncErrorMessage: null,
+      syncStatusMessage: `${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}`,
+    });
     const timerId = window.setTimeout(async () => {
+      if (!get().isOnline) {
+        set({
+          syncBusy: false,
+          syncPending: true,
+          syncStatus: "error",
+          syncErrorMessage: null,
+          syncStatusMessage: "Offline. Changes are saved locally and will sync when reconnected.",
+        });
+        return;
+      }
+      if (syncInFlight) {
+        set({ syncPending: true, syncStatusMessage: "Waiting for active sync to finish..." });
+        return;
+      }
       console.log("[appStore] Auto-sync timer fired, pushing to cloud...");
-      set({ syncStatus: "syncing", syncStatusMessage: "Saving changes..." });
+      set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Saving changes..." });
+      const revisionAtStart = localMutationRevision;
+      syncInFlight = true;
       try {
         const { siteLibrary, simulationPresets, currentUser } = get();
         const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
@@ -1112,8 +1193,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         await pushCloudLibrary(payload);
         console.log("[appStore] Push SUCCESS");
+        const remaining = markSyncedThrough(revisionAtStart);
         set({
-          syncPending: false,
+          syncPending: remaining > 0,
+          pendingChangesCount: remaining,
           syncStatus: "synced",
           lastSyncedAt: new Date().toISOString(),
           syncErrorMessage: null,
@@ -1124,22 +1207,55 @@ export const useAppStore = create<AppState>((set, get) => ({
         const message = getUiErrorMessage(error);
         const isAuthError = message.includes("401") || message.includes("Unauthorized") || message.includes("Access denied");
         if (isAuthError) {
-          console.log("[appStore] Auth error - clearing pending state without showing error");
-          set({ syncPending: false });
+          console.log("[appStore] Auth error - keeping pending changes until auth is restored");
+          set({
+            syncPending: true,
+            syncStatus: "error",
+            syncErrorMessage: message,
+            syncStatusMessage: "Authentication error while syncing. Re-authenticate and open Sync Status.",
+          });
         } else {
           set({
-            syncPending: false,
+            syncPending: true,
             syncStatus: "error",
             syncErrorMessage: message,
             syncStatusMessage: `Save failed: ${message}`,
           });
         }
+      } finally {
+        syncInFlight = false;
+        set({ syncBusy: false });
       }
     }, SYNC_DEBOUNCE_MS);
     syncTimer = timerId;
   },
   performManualCloudSync: async () => {
     console.log("[appStore] performManualCloudSync START");
+    if (!hydrated) {
+      set({
+        syncStatus: "error",
+        syncErrorMessage: null,
+        syncStatusMessage: "Sync not ready yet. Please wait for initialization.",
+      });
+      return;
+    }
+    if (!get().isOnline) {
+      set({
+        syncPending: true,
+        syncStatus: "error",
+        syncErrorMessage: null,
+        syncStatusMessage: "Offline. Changes are saved locally and will sync when reconnected.",
+      });
+      return;
+    }
+    if (syncInFlight) {
+      set({
+        syncStatus: "syncing",
+        syncStatusMessage: "Sync already in progress.",
+      });
+      return;
+    }
+    syncInFlight = true;
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing..." });
     try {
       const { siteLibrary, simulationPresets, currentUser, importLibraryData } = get();
@@ -1171,8 +1287,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       console.log("[appStore] Merge result:", result);
       hydrated = true;
+      const remaining = markSyncedThrough();
       set({
-        syncPending: false,
+        syncPending: remaining > 0,
+        pendingChangesCount: remaining,
         syncStatus: "synced",
         lastSyncedAt: new Date().toISOString(),
         syncErrorMessage: null,
@@ -1184,12 +1302,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error("[appStore] performManualCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
       set({
-        syncPending: false,
+        syncPending: true,
         syncStatus: "error",
         syncErrorMessage: message,
-        syncBusy: false,
         syncStatusMessage: `Sync failed: ${message}`,
       });
+    } finally {
+      syncInFlight = false;
+      set({ syncBusy: false });
     }
   },
   setUiThemePreference: (value) => {
@@ -1900,11 +2020,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateCurrentSimulationSnapshot: () => {
     const { currentUser, selectedScenarioId, simulationPresets, sites, links, systems, networks } = get();
+    const user = requireAuth(currentUser, "updateCurrentSimulationSnapshot");
+    if (!user) return;
     if (!selectedScenarioId) return;
     const presetIndex = simulationPresets.findIndex((p) => p.id === selectedScenarioId);
     if (presetIndex === -1) return;
-    
+
     const preset = simulationPresets[presetIndex];
+    if (!canEditItem(preset, user)) {
+      console.warn(
+        `[appStore] updateCurrentSimulationSnapshot: User ${user.id} cannot edit simulation ${selectedScenarioId}`,
+      );
+      return;
+    }
     const normalizedSites = ensureSitesBackedByLibrary(sites, get().siteLibrary);
     const normalizedLinks = links.map((link) =>
       stripRedundantLinkRadioOverrides(
@@ -1935,11 +2063,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         mapViewport: get().mapViewport,
       },
       updatedAt: new Date().toISOString(),
-      ...(currentUser ? {
-        lastEditedByUserId: currentUser.id,
-        lastEditedByName: currentUser.username,
-        lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
-      } : {}),
+      lastEditedByUserId: user.id,
+      lastEditedByName: user.username,
+      lastEditedByAvatarUrl: user.avatarUrl ?? "",
     };
     
     const newPresets = [...simulationPresets];
@@ -2300,6 +2426,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCoverage();
   },
   updateSite: (id, patch) => {
+    const { currentUser, sites, siteLibrary } = get();
+    const user = requireAuth(currentUser, "updateSite");
+    if (!user) return;
+    const existingSite = sites.find((site) => site.id === id);
+    if (existingSite?.libraryEntryId) {
+      const linkedEntry = siteLibrary.find((entry) => entry.id === existingSite.libraryEntryId);
+      if (linkedEntry && !canEditItem(linkedEntry, user)) {
+        console.warn(`[appStore] updateSite: User ${user.id} cannot edit linked site library entry ${linkedEntry.id}`);
+        return;
+      }
+    }
     set((state) => {
       const nextSites = state.sites.map((site) =>
         site.id === id ? withSiteRadioDefaults({ ...site, ...patch }) : site,

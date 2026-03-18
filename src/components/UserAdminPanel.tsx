@@ -45,6 +45,7 @@ const fmtDate = (iso: string | null | undefined): string => {
 const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
+const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 
 const readDismissedNotificationIds = (): Set<string> => {
   try {
@@ -126,6 +127,8 @@ export function UserAdminPanel() {
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const syncStatus = useAppStore((state) => state.syncStatus);
   const syncPending = useAppStore((state) => state.syncPending);
+  const pendingChangesCount = useAppStore((state) => state.pendingChangesCount);
+  const isOnline = useAppStore((state) => state.isOnline);
   const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
@@ -642,6 +645,14 @@ export function UserAdminPanel() {
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
 
+  useEffect(() => {
+    const openSyncModal = () => setSyncModalOpen(true);
+    window.addEventListener(OPEN_SYNC_MODAL_EVENT, openSyncModal);
+    return () => {
+      window.removeEventListener(OPEN_SYNC_MODAL_EVENT, openSyncModal);
+    };
+  }, []);
+
   const getSyncIndicator = () => {
     const timeLabel = lastSyncedAt
       ? `Up to date (synced ${new Date(lastSyncedAt).toLocaleTimeString()})`
@@ -651,8 +662,22 @@ export function UserAdminPanel() {
       return { icon: "🏠", class: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
     }
 
+    if (!isOnline) {
+      return {
+        icon: "⚠",
+        class: "sync-offline",
+        label: "Offline",
+        title: `Offline. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}. Open Sync Status for details.`,
+      };
+    }
+
     if (syncPending) {
-      return { icon: "◐", class: "sync-pending", label: "Sync pending", title: `${timeLabel}. Changes will sync shortly.` };
+      return {
+        icon: "◐",
+        class: "sync-pending",
+        label: "Sync pending",
+        title: `${timeLabel}. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}.`,
+      };
     }
 
     switch (syncStatus) {
@@ -661,7 +686,12 @@ export function UserAdminPanel() {
       case "synced":
         return { icon: "●", class: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
       case "error":
-        return { icon: "⚠", class: "sync-error", label: "Sync failed", title: `${timeLabel}. Click to retry.` };
+        return {
+          icon: "⚠",
+          class: "sync-error",
+          label: "Sync failed",
+          title: `${timeLabel}. ${syncErrorMessage ?? "Open Sync Status for details."}`,
+        };
       default:
         return { icon: "●", class: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
     }
@@ -713,16 +743,29 @@ export function UserAdminPanel() {
               </button>
             </div>
             <div className="sync-modal-content">
+              <div className="sync-info-grid">
+                <p className="field-help">
+                  Connection: {isOnline ? "Online" : "Offline"}
+                </p>
+                <p className="field-help">
+                  Pending changes: {pendingChangesCount}
+                </p>
+                {lastSyncedAt ? (
+                  <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                ) : (
+                  <p className="field-help">Last synced: Never</p>
+                )}
+                {!isOnline ? (
+                  <p className="field-help">Changes stay local until your connection returns.</p>
+                ) : null}
+              </div>
               <div className="sync-status-display">
                 {syncPending ? (
                   <>
                     <span className="sync-indicator-large sync-pending">◐</span>
                     <div>
                       <p className="field-help">Sync pending</p>
-                      <p className="field-help">Changes will sync shortly...</p>
-                      {lastSyncedAt && (
-                        <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
-                      )}
+                      <p className="field-help">{pendingChangesCount} change(s) queued for sync.</p>
                     </div>
                   </>
                 ) : syncStatus === "syncing" ? (
@@ -730,9 +773,6 @@ export function UserAdminPanel() {
                     <span className="sync-indicator-large sync-syncing">↻</span>
                     <div>
                       <p className="field-help">Syncing to cloud...</p>
-                      {lastSyncedAt && (
-                        <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
-                      )}
                       {!lastSyncedAt && <p className="field-help">Initial sync in progress...</p>}
                     </div>
                   </>
@@ -741,11 +781,7 @@ export function UserAdminPanel() {
                     <span className="sync-indicator-large sync-synced">●</span>
                     <div>
                       <p className="field-help">Up to date</p>
-                      {lastSyncedAt ? (
-                        <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
-                      ) : (
-                        <p className="field-help">No sync data yet</p>
-                      )}
+                      {pendingChangesCount > 0 ? <p className="field-help">{pendingChangesCount} changes still pending.</p> : null}
                     </div>
                   </>
                 ) : syncStatus === "error" ? (
@@ -759,9 +795,6 @@ export function UserAdminPanel() {
                           <p className="field-help">{syncErrorMessage}</p>
                         </details>
                       )}
-                      {lastSyncedAt && (
-                        <p className="field-help">Last successful sync: {new Date(lastSyncedAt).toLocaleString()}</p>
-                      )}
                     </div>
                   </>
                 ) : (
@@ -769,27 +802,15 @@ export function UserAdminPanel() {
                     <span className={`sync-indicator-large ${syncIndicator.class}`}>{syncIndicator.icon}</span>
                     <div>
                       <p className="field-help">{syncIndicator.label}</p>
-                      {lastSyncedAt && (
-                        <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
-                      )}
                     </div>
                   </>
                 )}
               </div>
               <div className="chip-group">
-                {syncStatus === "error" ? (
+                {syncStatus !== "syncing" ? (
                   <button
                     className="inline-action"
-                    onClick={() => {
-                      void performManualCloudSync();
-                    }}
-                    type="button"
-                  >
-                    Retry
-                  </button>
-                ) : syncStatus !== "syncing" ? (
-                  <button
-                    className="inline-action"
+                    disabled={!isOnline}
                     onClick={() => {
                       void performManualCloudSync();
                     }}
