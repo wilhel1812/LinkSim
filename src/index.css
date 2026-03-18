@@ -1509,24 +1509,27 @@ input {
 }
 
 .sync-synced {
-  color: var(--success, #22c55e);
+  color: var(--success);
+  text-shadow: 0 0 0 1px var(--bg), 0 0 0 2px color-mix(in srgb, var(--success) 50%, transparent);
 }
 
 .sync-syncing {
-  color: var(--accent, #3b82f6);
-  animation: spin 1s linear infinite;
+  color: var(--accent);
+  text-shadow: 0 0 0 1px var(--bg), 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent);
+  animation: sync-spin 1s linear infinite;
 }
 
 .sync-error {
-  color: var(--error, #ef4444);
+  color: var(--danger);
+  text-shadow: 0 0 0 1px var(--bg), 0 0 0 2px color-mix(in srgb, var(--danger) 50%, transparent);
 }
 
 .sync-idle {
-  color: var(--text-dim, #9ca3af);
+  color: var(--muted);
 }
 
 .sync-local {
-  color: var(--text-dim, #9ca3af);
+  color: var(--muted);
 }
 
 .sync-indicator-large {
@@ -1552,7 +1555,7 @@ input {
 }
 
 .sync-indicator-large.sync-syncing {
-  animation: spin 1s linear infinite;
+  animation: sync-spin 1s linear infinite;
 }
 
 .sync-error-details {
@@ -1562,18 +1565,18 @@ input {
 
 .sync-error-details summary {
   cursor: pointer;
-  color: var(--text-dim, #9ca3af);
+  color: var(--muted);
 }
 
 .sync-error-details p {
   margin-top: 0.25rem;
   padding: 0.5rem;
-  background: color-mix(in srgb, var(--error, #ef4444) 10%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   border-radius: 4px;
   word-break: break-word;
 }
 
-@keyframes spin {
+@keyframes sync-spin {
   from {
     transform: rotate(0deg);
   }
