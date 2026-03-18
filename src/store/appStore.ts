@@ -4,6 +4,7 @@ import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
 import { haversineDistanceKm } from "../lib/geo";
 import { getUiErrorMessage } from "../lib/uiError";
+import { fetchCloudLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import {
   migrateSitesAndLinksToSiteRadioDefaults,
   resolveLinkRadio,
@@ -48,6 +49,12 @@ import type {
   Site,
   SrtmTile,
 } from "../types/radio";
+
+const SYNC_DEBOUNCE_MS = 2500;
+const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
+
+let hydrated = false;
+let syncTimer: number | null = null;
 
 export type MapOverlayMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
 
@@ -158,12 +165,17 @@ type AppState = {
   pendingSiteLibraryOpenEntryId: string | null;
   scenarioOptions: { id: string; name: string }[];
   mapOverlayMode: MapOverlayMode;
-  syncStatus: "idle" | "syncing" | "synced" | "error";
+  syncStatus: "syncing" | "synced" | "error";
   lastSyncedAt: string | null;
   syncErrorMessage: string | null;
   syncTrigger: number;
+  syncBusy: boolean;
+  syncStatusMessage: string;
+  initializeCloudSync: () => Promise<void>;
+  performCloudSyncPush: () => void;
+  performManualCloudSync: () => Promise<void>;
   setLocale: (locale: LocaleCode) => void;
-  setSyncStatus: (status: "idle" | "syncing" | "synced" | "error") => void;
+  setSyncStatus: (status: "syncing" | "synced" | "error") => void;
   setLastSyncedAt: (iso: string | null) => void;
   setSyncErrorMessage: (message: string | null) => void;
   triggerSync: () => void;
@@ -850,15 +862,160 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
-  syncStatus: "idle",
+  syncStatus: "synced",
   lastSyncedAt: null,
   syncErrorMessage: null,
   syncTrigger: 0,
+  syncBusy: false,
+  syncStatusMessage: "",
   setLocale: (locale) => set({ locale }),
-  setSyncStatus: (status: "idle" | "syncing" | "synced" | "error") => set({ syncStatus: status }),
+  setSyncStatus: (status: "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
+  initializeCloudSync: async () => {
+    const applyStartupSelection = !hydrated;
+    console.log("[appStore] initializeCloudSync START - applyStartupSelection:", applyStartupSelection);
+    set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing..." });
+    try {
+      console.log("[appStore] Fetching cloud library...");
+      const cloud = await fetchCloudLibrary();
+      console.log("[appStore] Cloud data received:", {
+        sites: cloud.siteLibrary.length,
+        simulations: cloud.simulationPresets.length,
+      });
+      const cloudPresets =
+        (cloud.simulationPresets as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["simulationPresets"] | undefined) ?? [];
+      console.log("[appStore] Merging cloud data with local...");
+      const { importLibraryData, loadSimulationPreset, selectScenario } = get();
+      const result = importLibraryData(
+        {
+          siteLibrary: cloud.siteLibrary as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["siteLibrary"],
+          simulationPresets: cloudPresets,
+        },
+        "merge",
+      );
+      console.log("[appStore] Merge result:", result);
+      if (applyStartupSelection && typeof window !== "undefined") {
+        const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
+        const lastRef = (lastRefRaw ?? "").trim();
+        if (lastRef.startsWith("saved:")) {
+          const presetId = lastRef.slice("saved:".length);
+          if (presetId && cloudPresets.some((preset) => preset.id === presetId)) {
+            console.log("[appStore] Restoring last simulation:", presetId);
+            loadSimulationPreset(presetId);
+          }
+        } else if (lastRef.startsWith("builtin:")) {
+          const scenarioId = lastRef.slice("builtin:".length);
+          if (scenarioId) {
+            console.log("[appStore] Restoring last scenario:", scenarioId);
+            selectScenario(scenarioId);
+          }
+        }
+      }
+      hydrated = true;
+      set({
+        syncStatus: "synced",
+        lastSyncedAt: new Date().toISOString(),
+        syncErrorMessage: null,
+        syncBusy: false,
+        syncStatusMessage: `Synced: ${result.siteCount} sites, ${result.simulationCount} simulations`,
+      });
+      console.log("[appStore] initializeCloudSync SUCCESS - hydrated: true");
+    } catch (error) {
+      console.error("[appStore] initializeCloudSync FAILED:", error);
+      const message = getUiErrorMessage(error);
+      set({
+        syncStatus: "error",
+        syncErrorMessage: message,
+        syncBusy: false,
+        syncStatusMessage: `Sync failed: ${message}`,
+      });
+    }
+  },
+  performCloudSyncPush: () => {
+    if (!hydrated) return;
+    if (syncTimer !== null) {
+      window.clearTimeout(syncTimer);
+    }
+    const timerId = window.setTimeout(async () => {
+      console.log("[appStore] Auto-sync timer fired, pushing to cloud...");
+      set({ syncStatus: "syncing", syncStatusMessage: "Saving changes..." });
+      try {
+        const { siteLibrary, simulationPresets } = get();
+        const payload = { siteLibrary, simulationPresets };
+        console.log("[appStore] Pushing payload:", {
+          sites: payload.siteLibrary.length,
+          simulations: payload.simulationPresets.length,
+        });
+        await pushCloudLibrary(payload);
+        console.log("[appStore] Push SUCCESS");
+        set({
+          syncStatus: "synced",
+          lastSyncedAt: new Date().toISOString(),
+          syncErrorMessage: null,
+          syncStatusMessage: "Changes saved",
+        });
+      } catch (error) {
+        console.error("[appStore] Auto-push FAILED:", error);
+        const message = getUiErrorMessage(error);
+        set({
+          syncStatus: "error",
+          syncErrorMessage: message,
+          syncStatusMessage: `Save failed: ${message}`,
+        });
+      }
+    }, SYNC_DEBOUNCE_MS);
+    syncTimer = timerId;
+  },
+  performManualCloudSync: async () => {
+    console.log("[appStore] performManualCloudSync START");
+    set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing..." });
+    try {
+      const { siteLibrary, simulationPresets, importLibraryData } = get();
+      const payload = { siteLibrary, simulationPresets };
+      console.log("[appStore] Pushing local data to cloud:", {
+        sites: payload.siteLibrary.length,
+        simulations: payload.simulationPresets.length,
+      });
+      await pushCloudLibrary(payload);
+      console.log("[appStore] Push SUCCESS, fetching cloud data...");
+      const cloud = await fetchCloudLibrary();
+      console.log("[appStore] Cloud data received:", {
+        sites: cloud.siteLibrary.length,
+        simulations: cloud.simulationPresets.length,
+      });
+      const cloudPresets =
+        (cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"] | undefined) ?? [];
+      console.log("[appStore] Merging cloud data with local...");
+      const result = importLibraryData(
+        {
+          siteLibrary: cloud.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
+          simulationPresets: cloudPresets,
+        },
+        "merge",
+      );
+      console.log("[appStore] Merge result:", result);
+      hydrated = true;
+      set({
+        syncStatus: "synced",
+        lastSyncedAt: new Date().toISOString(),
+        syncErrorMessage: null,
+        syncBusy: false,
+        syncStatusMessage: `Synced: ${result.siteCount} sites, ${result.simulationCount} simulations`,
+      });
+      console.log("[appStore] performManualCloudSync SUCCESS");
+    } catch (error) {
+      console.error("[appStore] performManualCloudSync FAILED:", error);
+      const message = getUiErrorMessage(error);
+      set({
+        syncStatus: "error",
+        syncErrorMessage: message,
+        syncBusy: false,
+        syncStatusMessage: `Sync failed: ${message}`,
+      });
+    }
+  },
   setUiThemePreference: (value) => {
     const normalized = normalizeUiThemePreference(value);
     writeStorage(UI_THEME_PREFERENCE_KEY, normalized, { snapshot: false });

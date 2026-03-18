@@ -127,7 +127,7 @@ export function UserAdminPanel() {
   const syncStatus = useAppStore((state) => state.syncStatus);
   const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
-  const triggerSync = useAppStore((state) => state.triggerSync);
+  const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
@@ -640,7 +640,6 @@ export function UserAdminPanel() {
   }, [isLocalRuntime]);
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
-  const [modalSyncStatus, setModalSyncStatus] = useState<"syncing" | "synced" | "error">("synced");
 
   const getSyncIndicator = () => {
     const timeLabel = lastSyncedAt
@@ -664,17 +663,6 @@ export function UserAdminPanel() {
   };
 
   const syncIndicator = getSyncIndicator();
-
-  useEffect(() => {
-    if (!syncModalOpen) return;
-    if (syncStatus === "syncing") {
-      setModalSyncStatus("syncing");
-    } else if (syncStatus === "synced") {
-      setModalSyncStatus("synced");
-    } else if (syncStatus === "error") {
-      setModalSyncStatus("error");
-    }
-  }, [syncStatus, syncModalOpen]);
 
   const handleSyncIndicatorClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -721,7 +709,7 @@ export function UserAdminPanel() {
             </div>
             <div className="sync-modal-content">
               <div className="sync-status-display">
-                {modalSyncStatus === "syncing" ? (
+                {syncStatus === "syncing" ? (
                   <>
                     <span className="sync-indicator-large sync-syncing">↻</span>
                     <div>
@@ -732,7 +720,7 @@ export function UserAdminPanel() {
                       {!lastSyncedAt && <p className="field-help">Initial sync in progress...</p>}
                     </div>
                   </>
-                ) : modalSyncStatus === "synced" ? (
+                ) : syncStatus === "synced" ? (
                   <>
                     <span className="sync-indicator-large sync-synced">●</span>
                     <div>
@@ -744,7 +732,7 @@ export function UserAdminPanel() {
                       )}
                     </div>
                   </>
-                ) : modalSyncStatus === "error" ? (
+                ) : syncStatus === "error" ? (
                   <>
                     <span className="sync-indicator-large sync-error">⚠</span>
                     <div>
@@ -773,23 +761,21 @@ export function UserAdminPanel() {
                 )}
               </div>
               <div className="chip-group">
-                {modalSyncStatus === "error" ? (
+                {syncStatus === "error" ? (
                   <button
                     className="inline-action"
                     onClick={() => {
-                      setModalSyncStatus("syncing");
-                      triggerSync();
+                      void performManualCloudSync();
                     }}
                     type="button"
                   >
                     Retry
                   </button>
-                ) : modalSyncStatus !== "syncing" ? (
+                ) : syncStatus !== "syncing" ? (
                   <button
                     className="inline-action"
                     onClick={() => {
-                      setModalSyncStatus("syncing");
-                      triggerSync();
+                      void performManualCloudSync();
                     }}
                     type="button"
                   >

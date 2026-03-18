@@ -63,6 +63,8 @@ export function AppShell() {
   const links = useAppStore((state) => state.links);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
+  const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
+  const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
 
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
@@ -147,6 +149,10 @@ export function AppShell() {
   }, [recommendAndFetchTerrainForCurrentArea, srtmTilesCount]);
 
   useEffect(() => {
+    void performCloudSyncPush();
+  }, [performCloudSyncPush, siteLibrary, simulationPresets]);
+
+  useEffect(() => {
     void (async () => {
       try {
         const localForceReadonly =
@@ -201,6 +207,13 @@ export function AppShell() {
       }
     })();
   }, [deepLinkParse.ok, isLocalRuntime]);
+
+  useEffect(() => {
+    if (accessState === "granted") {
+      console.log("[AppShell] Access granted, initializing cloud sync...");
+      void initializeCloudSync();
+    }
+  }, [accessState, initializeCloudSync]);
 
   const signOutOrReadonly = useCallback(() => {
     if (isLocalRuntime) {
