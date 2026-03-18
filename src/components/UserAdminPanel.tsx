@@ -386,23 +386,22 @@ export function UserAdminPanel() {
     setBusy(true);
     setStatus("");
     try {
-      await updateMyProfile({
+      const updated = await updateMyProfile({
         username: trimmedName,
         email: trimmedEmail,
         bio: bioDraft,
         accessRequestNote: accessRequestNoteDraft,
         emailPublic: emailPublicDraft,
       });
-      const reloaded = await fetchMe();
-      setMe(reloaded);
-      setCurrentUser(reloaded);
-      setNameDraft(reloaded.username);
-      setEmailDraft(reloaded.email ?? "");
-      setBioDraft(reloaded.bio ?? "");
-      setAccessRequestNoteDraft(reloaded.accessRequestNote ?? "");
-      setAvatarDraft(reloaded.avatarUrl ?? "");
-      setEmailPublicDraft(reloaded.emailPublic ?? true);
-      setStatus("Profile updated.");
+      setMe(updated);
+      setCurrentUser(updated);
+      setNameDraft(updated.username);
+      setEmailDraft(updated.email ?? "");
+      setBioDraft(updated.bio ?? "");
+      setAccessRequestNoteDraft(updated.accessRequestNote ?? "");
+      setAvatarDraft(updated.avatarUrl ?? "");
+      setEmailPublicDraft(updated.emailPublic ?? true);
+      setStatus("Profile updated. Account settings save immediately (separate from simulation sync).");
       if (canModerate) {
         await refreshAdminData();
       }
@@ -424,11 +423,10 @@ export function UserAdminPanel() {
       setAvatarStatus("Processing image…");
       const resized = await resizeAvatarFileToDataUrl(file);
       setAvatarStatus("Uploading avatar…");
-      await uploadAvatar(resized.originalDataUrl, resized.thumbDataUrl);
-      const reloaded = await fetchMe();
-      setAvatarDraft(reloaded.avatarUrl ?? "");
-      setMe(reloaded);
-      setCurrentUser(reloaded);
+      const uploaded = await uploadAvatar(resized.originalDataUrl, resized.thumbDataUrl);
+      setAvatarDraft(uploaded.user.avatarUrl ?? "");
+      setMe(uploaded.user);
+      setCurrentUser(uploaded.user);
       setAvatarStatus("Avatar uploaded and saved.");
       setStatus("Avatar uploaded and saved.");
     } catch (error) {
