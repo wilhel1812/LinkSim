@@ -32,10 +32,13 @@ export function AuthSyncPanel() {
 
   const refreshFromCloud = async () => {
     const applyStartupSelection = !hydrated.current;
+    console.log("[AuthSyncPanel] refreshFromCloud called, applyStartupSelection:", applyStartupSelection);
     setSyncBusy(true);
     setSyncStatus("syncing");
     try {
+      console.log("[AuthSyncPanel] Fetching from cloud...");
       const cloud = await fetchCloudLibrary();
+      console.log("[AuthSyncPanel] Cloud data received:", cloud.siteLibrary.length, "sites,", cloud.simulationPresets.length, "simulations");
       const cloudPresets =
         (cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"] | undefined) ?? [];
       const result = importLibraryData(
@@ -65,7 +68,9 @@ export function AuthSyncPanel() {
       setLastSyncedAt(new Date().toISOString());
       setSyncErrorMessage(null);
       hydrated.current = true;
+      console.log("[AuthSyncPanel] Sync completed successfully");
     } catch (error) {
+      console.error("[AuthSyncPanel] Sync failed:", error);
       setSyncStatus("error");
       const message = getUiErrorMessage(error);
       setSyncErrorMessage(message);
@@ -76,9 +81,14 @@ export function AuthSyncPanel() {
   };
 
   useEffect(() => {
-    if (hydrated.current) return;
+    if (hydrated.current) {
+      console.log("[AuthSyncPanel] Already hydrated, skipping initial fetch");
+      return;
+    }
+    console.log("[AuthSyncPanel] Initial cloud fetch on mount");
     void refreshFromCloud().catch((error) => {
       const message = getUiErrorMessage(error);
+      console.error("[AuthSyncPanel] Initial fetch failed:", message);
       setStatus(`Cloud load failed: ${message}`);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,15 +101,18 @@ export function AuthSyncPanel() {
       window.clearTimeout(syncTimer.current);
     }
     syncTimer.current = window.setTimeout(() => {
+      console.log("[AuthSyncPanel] Auto-sync timer fired, pushing to cloud...");
       setSyncStatus("syncing");
       void (async () => {
         try {
           await pushCloudLibrary(cloudPayload);
+          console.log("[AuthSyncPanel] Push to cloud successful");
           setSyncStatus("synced");
           setLastSyncedAt(new Date().toISOString());
           setSyncErrorMessage(null);
           setStatus(`Cloud sync updated at ${new Date().toLocaleTimeString()}.`);
         } catch (error) {
+          console.error("[AuthSyncPanel] Push to cloud failed:", error);
           setSyncStatus("error");
           const message = getUiErrorMessage(error);
           setSyncErrorMessage(message);
@@ -119,9 +132,8 @@ export function AuthSyncPanel() {
   useEffect(() => {
     if (syncTrigger === triggerRef.current) return;
     triggerRef.current = syncTrigger;
-    if (hydrated.current) {
-      void refreshFromCloud();
-    }
+    console.log("[AuthSyncPanel] Manual sync triggered");
+    void refreshFromCloud();
   }, [syncTrigger]);
 
   return (

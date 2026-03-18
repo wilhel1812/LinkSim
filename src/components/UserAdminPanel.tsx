@@ -640,12 +640,12 @@ export function UserAdminPanel() {
   }, [isLocalRuntime]);
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
-  const [modalSyncStatus, setModalSyncStatus] = useState<"idle" | "syncing" | "success" | "error">("idle");
+  const [modalSyncStatus, setModalSyncStatus] = useState<"syncing" | "synced" | "error">("synced");
 
   const getSyncIndicator = () => {
     const timeLabel = lastSyncedAt
       ? `Last synced: ${new Date(lastSyncedAt).toLocaleTimeString()}`
-      : "Not synced yet";
+      : "Up to date";
 
     if (isLocalRuntime) {
       return { icon: "🏠", class: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
@@ -653,13 +653,13 @@ export function UserAdminPanel() {
 
     switch (syncStatus) {
       case "syncing":
-        return { icon: "↻", class: "sync-syncing", label: "Syncing to cloud...", title: timeLabel };
+        return { icon: "↻", class: "sync-syncing", label: "Syncing...", title: timeLabel };
       case "synced":
-        return { icon: "●", class: "sync-synced", label: "Synced to cloud", title: `${timeLabel}. Click for details.` };
+        return { icon: "●", class: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
       case "error":
         return { icon: "⚠", class: "sync-error", label: "Sync failed", title: `${timeLabel}. Click to retry.` };
       default:
-        return { icon: "○", class: "sync-idle", label: "Sync idle", title: `${timeLabel}. Click for details.` };
+        return { icon: "●", class: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
     }
   };
 
@@ -670,7 +670,7 @@ export function UserAdminPanel() {
     if (syncStatus === "syncing") {
       setModalSyncStatus("syncing");
     } else if (syncStatus === "synced") {
-      setModalSyncStatus("success");
+      setModalSyncStatus("synced");
     } else if (syncStatus === "error") {
       setModalSyncStatus("error");
     }
@@ -728,12 +728,14 @@ export function UserAdminPanel() {
                       <p className="field-help">Syncing to cloud...</p>
                     </div>
                   </>
-                ) : modalSyncStatus === "success" ? (
+                ) : modalSyncStatus === "synced" ? (
                   <>
                     <span className="sync-indicator-large sync-synced">●</span>
                     <div>
-                      <p className="field-help">Sync complete</p>
-                      <p className="field-help">Last synced: {new Date().toLocaleString()}</p>
+                      <p className="field-help">Up to date</p>
+                      {lastSyncedAt && (
+                        <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                      )}
                     </div>
                   </>
                 ) : modalSyncStatus === "error" ? (
