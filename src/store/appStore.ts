@@ -364,6 +364,7 @@ type AppState = {
     },
   ) => string | null;
   overwriteSimulationPreset: (presetId: string) => void;
+  updateCurrentSimulationSnapshot: () => void;
   loadSimulationPreset: (presetId: string) => void;
   renameSimulationPreset: (presetId: string, name: string) => void;
   updateSimulationPresetEntry: (
@@ -1612,6 +1613,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
     get().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
     for (const siteId of createdSiteIds) {
       void get().syncSiteElevationOnline(siteId);
     }
@@ -1895,6 +1897,56 @@ export const useAppStore = create<AppState>((set, get) => ({
         sites: normalized.sites,
       };
     });
+  },
+  updateCurrentSimulationSnapshot: () => {
+    const { currentUser, selectedScenarioId, simulationPresets, sites, links, systems, networks } = get();
+    if (!selectedScenarioId) return;
+    const presetIndex = simulationPresets.findIndex((p) => p.id === selectedScenarioId);
+    if (presetIndex === -1) return;
+    
+    const preset = simulationPresets[presetIndex];
+    const normalizedSites = ensureSitesBackedByLibrary(sites, get().siteLibrary);
+    const normalizedLinks = links.map((link) =>
+      stripRedundantLinkRadioOverrides(
+        link,
+        normalizedSites.sites.find((site) => site.id === link.fromSiteId),
+        normalizedSites.sites.find((site) => site.id === link.toSiteId),
+      ),
+    );
+    
+    const updatedPreset: SimulationPreset = {
+      ...preset,
+      snapshot: {
+        sites: normalizedSites.sites,
+        links: normalizedLinks,
+        systems,
+        networks,
+        selectedSiteId: get().selectedSiteId,
+        selectedLinkId: get().selectedLinkId,
+        selectedNetworkId: get().selectedNetworkId,
+        selectedCoverageMode: get().selectedCoverageMode,
+        propagationModel: get().propagationModel,
+        selectedFrequencyPresetId: get().selectedFrequencyPresetId,
+        rxSensitivityTargetDbm: get().rxSensitivityTargetDbm,
+        environmentLossDb: get().environmentLossDb,
+        propagationEnvironment: get().propagationEnvironment,
+        autoPropagationEnvironment: get().autoPropagationEnvironment,
+        terrainDataset: get().terrainDataset,
+        mapViewport: get().mapViewport,
+      },
+      updatedAt: new Date().toISOString(),
+      ...(currentUser ? {
+        lastEditedByUserId: currentUser.id,
+        lastEditedByName: currentUser.username,
+        lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
+      } : {}),
+    };
+    
+    const newPresets = [...simulationPresets];
+    newPresets[presetIndex] = updatedPreset;
+    writeStorage(SIM_PRESETS_KEY, newPresets);
+    set({ simulationPresets: newPresets });
+    console.log("[appStore] Updated current simulation snapshot");
   },
   loadSimulationPreset: (presetId) => {
     const preset = get().simulationPresets.find((candidate) => candidate.id === presetId);
