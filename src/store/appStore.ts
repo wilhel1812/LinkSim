@@ -112,8 +112,10 @@ const canEditActiveSavedSimulation = (
   selectedScenarioId: string,
   simulationPresets: SimulationPreset[],
 ): boolean => {
+  if (!selectedScenarioId) return true;
+  if (BUILTIN_SCENARIOS.some((scenario) => scenario.id === selectedScenarioId)) return true;
   const selectedPreset = simulationPresets.find((preset) => preset.id === selectedScenarioId);
-  if (!selectedPreset) return true;
+  if (!selectedPreset) return false;
   return canEditItem(selectedPreset, currentUser);
 };
 
@@ -1441,9 +1443,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().updateCurrentSimulationSnapshot();
   },
   addSiteByCoordinates: (name, lat, lon) => {
-    const { currentUser } = get();
+    const { currentUser, selectedScenarioId, simulationPresets } = get();
     if (!currentUser?.id) {
       console.warn("[appStore] addSiteByCoordinates: Auth required - user not logged in");
+      return;
+    }
+    if (!canEditActiveSavedSimulation(currentUser, selectedScenarioId, simulationPresets)) {
+      console.warn(
+        `[appStore] addSiteByCoordinates: User ${currentUser.id} cannot edit active simulation ${selectedScenarioId}`,
+      );
       return;
     }
     const label = name.trim();
@@ -1695,6 +1703,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().insertSitesFromLibrary([entryId]);
   },
   insertSitesFromLibrary: (entryIds) => {
+    const { currentUser, selectedScenarioId, simulationPresets } = get();
+    const user = requireAuth(currentUser, "insertSitesFromLibrary");
+    if (!user) return;
+    if (!canEditActiveSavedSimulation(user, selectedScenarioId, simulationPresets)) {
+      console.warn(
+        `[appStore] insertSitesFromLibrary: User ${user.id} cannot edit active simulation ${selectedScenarioId}`,
+      );
+      return;
+    }
     const requested = new Set(entryIds);
     if (!requested.size) return;
     const current = get();

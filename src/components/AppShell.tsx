@@ -98,6 +98,8 @@ export function AppShell() {
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
     [simulationPresets, selectedScenarioId],
   );
+  const canPersistWorkspace =
+    accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const selectedLink = useMemo(
     () => links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null,
     [links, selectedLinkId],
@@ -759,7 +761,7 @@ export function AppShell() {
         {!isProfileExpanded ? (
           <MapView
             isMapExpanded={isMapExpanded}
-            canPersist={accessState === "granted"}
+            canPersist={canPersistWorkspace}
             onShare={
               accessState === "granted"
                 ? () => {
@@ -780,7 +782,7 @@ export function AppShell() {
                   }
                 : undefined
             }
-            readOnly={accessState !== "granted"}
+            readOnly={!canPersistWorkspace}
             onToggleMapExpanded={() => {
               setIsProfileExpanded(false);
               setIsMapExpanded((prev) => !prev);

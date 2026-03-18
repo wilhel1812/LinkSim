@@ -280,4 +280,76 @@ describe("appStore auth guards", () => {
     expect(useAppStore.getState().sites.length).toBe(beforeSiteCount);
     expect(warnSpy).toHaveBeenCalled();
   });
+
+  it("blocks updateLink when current user cannot edit selected simulation", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    useAppStore.getState().setCurrentUser({
+      id: "user-2",
+      username: "viewer",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    useAppStore.getState().updateLink("lnk-1", { name: "Blocked Rename" });
+    expect(useAppStore.getState().links.find((link) => link.id === "lnk-1")?.name).toBe("Alpha-Beta");
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("blocks insertSitesFromLibrary when current user cannot edit selected simulation", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    useAppStore.setState((state) => ({
+      siteLibrary: [
+        ...state.siteLibrary,
+        {
+          id: "lib-3",
+          name: "Gamma",
+          visibility: "shared",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "viewer",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 3, lon: 3 },
+          groundElevationM: 130,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    }));
+    useAppStore.getState().setCurrentUser({
+      id: "user-2",
+      username: "viewer",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    const beforeSiteCount = useAppStore.getState().sites.length;
+    useAppStore.getState().insertSitesFromLibrary(["lib-3"]);
+    expect(useAppStore.getState().sites.length).toBe(beforeSiteCount);
+    expect(warnSpy).toHaveBeenCalled();
+  });
 });
