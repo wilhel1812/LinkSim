@@ -272,6 +272,7 @@ type AppState = {
   syncBusy: boolean;
   syncStatusMessage: string;
   currentUser: CloudUser | null;
+  isInitializing: boolean;
   initializeCloudSync: () => Promise<void>;
   performCloudSyncPush: () => void;
   performManualCloudSync: () => Promise<void>;
@@ -281,6 +282,7 @@ type AppState = {
   setSyncErrorMessage: (message: string | null) => void;
   setCurrentUser: (user: CloudUser | null) => void;
   triggerSync: () => void;
+  setIsInitializing: (value: boolean) => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
   setUiColorTheme: (value: UiColorTheme) => void;
   setBasemapProvider: (value: BasemapProvider) => void;
@@ -937,16 +939,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncBusy: false,
   syncStatusMessage: "",
   currentUser: null,
+  isInitializing: false,
   setLocale: (locale) => set({ locale }),
   setSyncStatus: (status: "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
   setCurrentUser: (user) => set({ currentUser: user }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
+  setIsInitializing: (value: boolean) => set({ isInitializing: value }),
   initializeCloudSync: async () => {
     const applyStartupSelection = !hydrated;
     console.log("[appStore] initializeCloudSync START - applyStartupSelection:", applyStartupSelection);
-    set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing..." });
+    set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing...", isInitializing: true });
     try {
       console.log("[appStore] Fetching cloud library...");
       const cloud = await fetchCloudLibrary();
@@ -1048,33 +1052,36 @@ export const useAppStore = create<AppState>((set, get) => ({
           console.log("[appStore] Post-init Push SUCCESS");
           set({
             syncPending: false,
-            syncStatus: "synced",
-            lastSyncedAt: new Date().toISOString(),
-            syncErrorMessage: null,
-            syncStatusMessage: "Changes saved",
-          });
-        } catch (error) {
-          console.error("[appStore] Post-init sync FAILED:", error);
-          const message = getUiErrorMessage(error);
-          set({
-            syncPending: false,
-            syncStatus: "error",
-            syncErrorMessage: message,
-            syncStatusMessage: `Save failed: ${message}`,
-          });
-        }
-      }, SYNC_DEBOUNCE_MS);
+        syncStatus: "synced",
+        lastSyncedAt: new Date().toISOString(),
+        syncErrorMessage: null,
+        syncStatusMessage: "Changes saved",
+        isInitializing: false,
+      });
     } catch (error) {
-      console.error("[appStore] initializeCloudSync FAILED:", error);
+      console.error("[appStore] Post-init sync FAILED:", error);
       const message = getUiErrorMessage(error);
       set({
         syncPending: false,
         syncStatus: "error",
         syncErrorMessage: message,
-        syncBusy: false,
-        syncStatusMessage: `Sync failed: ${message}`,
+        syncStatusMessage: `Save failed: ${message}`,
+        isInitializing: false,
       });
     }
+  }, SYNC_DEBOUNCE_MS);
+} catch (error) {
+  console.error("[appStore] initializeCloudSync FAILED:", error);
+  const message = getUiErrorMessage(error);
+  set({
+    syncPending: false,
+    syncStatus: "error",
+    syncErrorMessage: message,
+    syncBusy: false,
+    syncStatusMessage: `Sync failed: ${message}`,
+    isInitializing: false,
+  });
+}
   },
   performCloudSyncPush: () => {
     if (!hydrated) {

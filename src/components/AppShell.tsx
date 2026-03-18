@@ -67,6 +67,7 @@ export function AppShell() {
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const isInitializing = useAppStore((state) => state.isInitializing);
 
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
@@ -151,10 +152,14 @@ export function AppShell() {
   }, [recommendAndFetchTerrainForCurrentArea, srtmTilesCount]);
 
   useEffect(() => {
+    if (isInitializing) {
+      console.log("[AppShell] Skipping sync - initialization in progress");
+      return;
+    }
     console.log("[AppShell] siteLibrary/simulationPresets/sites changed, calling performCloudSyncPush");
     console.log("[AppShell] siteLibrary length:", siteLibrary.length, "simulationPresets length:", simulationPresets.length, "sites length:", sites.length);
     void performCloudSyncPush();
-  }, [performCloudSyncPush, siteLibrary, simulationPresets, sites]);
+  }, [performCloudSyncPush, isInitializing, siteLibrary, simulationPresets, sites]);
 
   useEffect(() => {
     void (async () => {
