@@ -642,6 +642,14 @@ export function Sidebar() {
       }),
     [collaboratorDirectoryById, resourceCollaboratorUserIds],
   );
+  const pendingSimulationPrivateSiteNames = useMemo(() => {
+    if (!pendingSimulationVisibilityPrompt) return [];
+    const byId = new globalThis.Map(siteLibrary.map((entry) => [entry.id, entry.name]));
+    return pendingSimulationVisibilityPrompt.referencedPrivateSiteIds.map((siteId) => ({
+      id: siteId,
+      name: byId.get(siteId) ?? siteId,
+    }));
+  }, [pendingSimulationVisibilityPrompt, siteLibrary]);
   const resolveOwnerDisplay = (
     ownerUserId: string | undefined,
     fallbackName: string | undefined,
@@ -3282,8 +3290,15 @@ export function Sidebar() {
             <p className="field-help">
               You are setting this simulation to{" "}
               <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong>, but it references{" "}
-              <strong>{pendingSimulationVisibilityPrompt.referencedPrivateSiteIds.length}</strong> private site(s).
+              <strong>{pendingSimulationPrivateSiteNames.length}</strong> private site{pendingSimulationPrivateSiteNames.length === 1 ? "" : "s"}.
             </p>
+            {pendingSimulationPrivateSiteNames.length ? (
+              <ul className="field-help access-pending-list">
+                {pendingSimulationPrivateSiteNames.map((site) => (
+                  <li key={site.id}>{site.name}</li>
+                ))}
+              </ul>
+            ) : null}
             <p className="field-help">
               Do you want to change those referenced sites to{" "}
               <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong> as well?
