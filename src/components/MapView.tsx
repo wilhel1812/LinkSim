@@ -2078,7 +2078,7 @@ export function MapView({
         }}
         mapStyle={useFallbackMapStyle ? (fallbackStyle as unknown as string) : resolvedBasemap.style}
         onError={() => {
-          if (!useFallbackMapStyle) {
+          if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket") {
             setUseFallbackMapStyle(true);
             setBasemapProvider("carto");
             setInteractionViewState({
