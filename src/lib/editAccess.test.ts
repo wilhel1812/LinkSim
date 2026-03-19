@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  getMutationPermissionMessage,
   canMutateActiveSimulation,
   countNonEditableResourceIds,
+  getMutationPermissionMessage,
+  getPendingSiteDraftInstruction,
+  getPendingSiteMoveConflictMessage,
   type EditableResource,
 } from "./editAccess";
 
@@ -61,6 +63,19 @@ describe("getMutationPermissionMessage", () => {
     );
     expect(getMutationPermissionMessage("library-site", "delete")).toBe(
       "Cannot delete site: you do not have edit access to one or more selected Site Library entries.",
+    );
+  });
+});
+
+describe("pending site draft/move messaging", () => {
+  it("uses read-only-safe wording when save is unavailable", () => {
+    expect(getPendingSiteDraftInstruction(true)).toBe("Drag it, then save or dismiss.");
+    expect(getPendingSiteDraftInstruction(false)).toBe("Drag it, then dismiss.");
+    expect(getPendingSiteMoveConflictMessage(true)).toBe(
+      "Save or dismiss the current site move before creating another new site.",
+    );
+    expect(getPendingSiteMoveConflictMessage(false)).toBe(
+      "Dismiss the current site move before creating another new site.",
     );
   });
 });

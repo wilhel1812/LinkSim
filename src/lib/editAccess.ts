@@ -56,3 +56,11 @@ export const getMutationPermissionMessage = (resource: MutationResource, action:
   }
   return `Cannot ${action} link: you do not have edit access to this simulation.`;
 };
+
+export const getPendingSiteDraftInstruction = (canPersist: boolean): string =>
+  canPersist ? "Drag it, then save or dismiss." : "Drag it, then dismiss.";
+
+export const getPendingSiteMoveConflictMessage = (canPersist: boolean): string =>
+  canPersist
+    ? "Save or dismiss the current site move before creating another new site."
+    : "Dismiss the current site move before creating another new site.";

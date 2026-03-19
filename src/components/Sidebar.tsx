@@ -67,6 +67,23 @@ const parseNumber = (value: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const formatReadOnlyText = (value: string | undefined, fallback = "—"): string => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+};
+
+const formatReadOnlyValue = (value: number, unit: string): string => `${value.toFixed(1)} ${unit}`;
+
+const formatLatitudeLabel = (value: number): string => {
+  const hemisphere = value >= 0 ? "N" : "S";
+  return `${Math.abs(value).toFixed(6)}${hemisphere}`;
+};
+
+const formatLongitudeLabel = (value: number): string => {
+  const hemisphere = value >= 0 ? "E" : "W";
+  return `${Math.abs(value).toFixed(6)}${hemisphere}`;
+};
+
 const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
   if (value === "shared" || value === "public_write") return "shared";
   if (value === "public" || value === "public_read") return "public";
@@ -444,10 +461,9 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
         : links,
     [hasNonAutoLinks, links],
   );
-  const [newPresetName, setNewPresetName] = useState("");
-  const [newPresetNameError, setNewPresetNameError] = useState("");
   const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showNewSimulationModal, setShowNewSimulationModal] = useState(false);
+  const [isCreatingSimulationCopy, setIsCreatingSimulationCopy] = useState(false);
   const [newSimulationName, setNewSimulationName] = useState("");
   const [newSimulationDescription, setNewSimulationDescription] = useState("");
   const [newSimulationNameError, setNewSimulationNameError] = useState("");
@@ -1149,27 +1165,15 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
     });
     setLinkModal(null);
   };
-  const saveSimulationAsNew = () => {
-    if (!canCreateOwnedResources) {
-      setSimulationSaveStatus("Create access pending: your account must be approved to save a simulation copy.");
-      return;
-    }
-    const trimmed = newPresetName.trim();
-    if (!trimmed) {
-      setNewPresetNameError("A name is required.");
-      setSimulationSaveStatus("");
-      return;
-    }
-    setNewPresetNameError("");
-    const savedId = saveCurrentSimulationPreset(trimmed);
-    if (savedId) {
-      const ref = `saved:${savedId}`;
-      persistSelectedSimulationRef(ref);
-      setSimulationSaveStatus(`Saved copy: ${trimmed}`);
-    }
-    setNewPresetName("");
+  const openNewSimulationModal = (mode: "blank" | "copy") => {
+    setNewSimulationName("");
+    setNewSimulationDescription("");
+    setNewSimulationNameError("");
+    setIsCreatingSimulationCopy(mode === "copy");
+    setShowNewSimulationModal(true);
   };
-  const createBlankSimulation = () => {
+
+  const createSimulationFromModal = () => {
     if (!canCreateOwnedResources || !currentUser?.id) {
       setSimulationSaveStatus("Cannot create simulation until current user profile is loaded.");
       return;
@@ -1181,8 +1185,28 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
       return;
     }
     setNewSimulationNameError("");
+    const description = newSimulationDescription.trim() || undefined;
+    if (isCreatingSimulationCopy) {
+      const copiedId = saveCurrentSimulationPreset(trimmed);
+      if (!copiedId) {
+        setSimulationSaveStatus("Failed creating simulation copy.");
+        return;
+      }
+      updateSimulationPresetEntry(copiedId, {
+        description,
+        visibility: newSimulationVisibility,
+      });
+      loadSimulationPreset(copiedId);
+      persistSelectedSimulationRef(`saved:${copiedId}`);
+      setSimulationSaveStatus(`Created simulation copy: ${trimmed}`);
+      setNewSimulationName("");
+      setNewSimulationDescription("");
+      setIsCreatingSimulationCopy(false);
+      setShowNewSimulationModal(false);
+      return;
+    }
     const createdId = createBlankSimulationPreset(trimmed, {
-      description: newSimulationDescription.trim() || undefined,
+      description,
       visibility: newSimulationVisibility,
       ownerUserId: currentUser.id,
       createdByUserId: currentUser.id,
@@ -1201,6 +1225,7 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
     setSimulationSaveStatus(`Created simulation: ${trimmed}`);
     setNewSimulationName("");
     setNewSimulationDescription("");
+    setIsCreatingSimulationCopy(false);
     setShowNewSimulationModal(false);
   };
   const displayLinkName = (linkId: string, linkName?: string) => {
@@ -2013,16 +2038,18 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
           <button
             className="inline-action"
             onClick={() => {
-              setNewSimulationName("");
-              setNewSimulationDescription("");
-              setNewSimulationNameError("");
-              setShowNewSimulationModal(true);
+              openNewSimulationModal("blank");
             }}
             type="button"
           >
             New Simulation
           </button>
-          <button className="inline-action" disabled={!canCreateOwnedResources} onClick={saveSimulationAsNew} type="button">
+          <button
+            className="inline-action"
+            disabled={!canCreateOwnedResources}
+            onClick={() => openNewSimulationModal("copy")}
+            type="button"
+          >
             Save a Copy
           </button>
         </div>
@@ -2938,34 +2965,7 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
               <>
                 <label className="field-grid">
                   <span>Name</span>
-                  <input
-                    onChange={(event) => setResourceNameDraft(event.target.value)}
-                    onBlur={() => {
-                      void persistResourceAccessSettings();
-                    }}
-                    type="text"
-                    value={resourceNameDraft}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Description</span>
-                  <textarea
-                    onChange={(event) => setResourceDescriptionDraft(event.target.value)}
-                    onBlur={() => {
-                      void persistResourceAccessSettings();
-                    }}
-                    placeholder="Optional simulation notes"
-                    rows={3}
-                    value={resourceDescriptionDraft}
-                  />
-                </label>
-              </>
-            ) : null}
-            {resourceDetailsPopup.kind === "site" ? (
-              <div className="library-editor-split">
-                <div className="library-editor-form resource-site-editor-form">
-                  <label className="field-grid">
-                    <span>Name</span>
+                  {resourceCanWrite ? (
                     <input
                       onChange={(event) => setResourceNameDraft(event.target.value)}
                       onBlur={() => {
@@ -2974,128 +2974,227 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                       type="text"
                       value={resourceNameDraft}
                     />
-                  </label>
-                  <label className="field-grid">
-                    <span>Description</span>
+                  ) : (
+                    <p className="field-help">
+                      <strong>{formatReadOnlyText(resourceNameDraft)}</strong>
+                    </p>
+                  )}
+                </label>
+                <label className="field-grid">
+                  <span>Description</span>
+                  {resourceCanWrite ? (
                     <textarea
                       onChange={(event) => setResourceDescriptionDraft(event.target.value)}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
-                      placeholder="Optional site notes (equipment, placement, access notes)"
+                      placeholder="Optional simulation notes"
                       rows={3}
                       value={resourceDescriptionDraft}
                     />
+                  ) : (
+                    <p className="field-help">
+                      <strong>{formatReadOnlyText(resourceDescriptionDraft)}</strong>
+                    </p>
+                  )}
+                </label>
+              </>
+            ) : null}
+            {resourceDetailsPopup.kind === "site" ? (
+              <div className="library-editor-split">
+                <div className="library-editor-form resource-site-editor-form">
+                  <label className="field-grid">
+                    <span>Name</span>
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceNameDraft(event.target.value)}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="text"
+                        value={resourceNameDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyText(resourceNameDraft)}</strong>
+                      </p>
+                    )}
+                  </label>
+                  <label className="field-grid">
+                    <span>Description</span>
+                    {resourceCanWrite ? (
+                      <textarea
+                        onChange={(event) => setResourceDescriptionDraft(event.target.value)}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        placeholder="Optional site notes (equipment, placement, access notes)"
+                        rows={3}
+                        value={resourceDescriptionDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyText(resourceDescriptionDraft)}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Latitude</span>
-                    <input
-                      onChange={(event) => setResourceLatDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      step="0.000001"
-                      type="number"
-                      value={resourceLatDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceLatDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        step="0.000001"
+                        type="number"
+                        value={resourceLatDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatLatitudeLabel(resourceLatDraft)}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Longitude</span>
-                    <input
-                      onChange={(event) => setResourceLonDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      step="0.000001"
-                      type="number"
-                      value={resourceLonDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceLonDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        step="0.000001"
+                        type="number"
+                        value={resourceLonDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatLongitudeLabel(resourceLonDraft)}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Ground elev (m)</span>
-                    <div className="field-inline">
+                    {resourceCanWrite ? (
+                      <div className="field-inline">
+                        <input
+                          onChange={(event) => setResourceGroundDraft(parseNumber(event.target.value))}
+                          onBlur={() => {
+                            void persistResourceAccessSettings();
+                          }}
+                          type="number"
+                          value={resourceGroundDraft}
+                        />
+                        <button
+                          className="inline-action field-inline-btn"
+                          onClick={() => {
+                            const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
+                            if (elevation === null) {
+                              setResourceAccessStatus(
+                                "No loaded terrain value at these coordinates. Fetch terrain data for this area first.",
+                              );
+                              return;
+                            }
+                            setResourceGroundDraft(elevation);
+                            void persistResourceAccessSettings({ groundM: elevation });
+                            setResourceAccessStatus(`Saved (terrain elevation ${elevation} m)`);
+                          }}
+                          type="button"
+                        >
+                          Fetch
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceGroundDraft, "m")}</strong>
+                      </p>
+                    )}
+                  </label>
+                  <label className="field-grid">
+                    <span>Antenna (m)</span>
+                    {resourceCanWrite ? (
                       <input
-                        onChange={(event) => setResourceGroundDraft(parseNumber(event.target.value))}
+                        onChange={(event) => setResourceAntennaDraft(parseNumber(event.target.value))}
                         onBlur={() => {
                           void persistResourceAccessSettings();
                         }}
                         type="number"
-                        value={resourceGroundDraft}
+                        value={resourceAntennaDraft}
                       />
-                      <button
-                        className="inline-action field-inline-btn"
-                        onClick={() => {
-                          const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
-                          if (elevation === null) {
-                            setResourceAccessStatus(
-                              "No loaded terrain value at these coordinates. Fetch terrain data for this area first.",
-                            );
-                            return;
-                          }
-                          setResourceGroundDraft(elevation);
-                          void persistResourceAccessSettings({ groundM: elevation });
-                          setResourceAccessStatus(`Saved (terrain elevation ${elevation} m)`);
-                        }}
-                        type="button"
-                      >
-                        Fetch
-                      </button>
-                    </div>
-                  </label>
-                  <label className="field-grid">
-                    <span>Antenna (m)</span>
-                    <input
-                      onChange={(event) => setResourceAntennaDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceAntennaDraft}
-                    />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceAntennaDraft, "m")}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Tx power (dBm)</span>
-                    <input
-                      onChange={(event) => setResourceTxPowerDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceTxPowerDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceTxPowerDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceTxPowerDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceTxPowerDraft, "dBm")}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Tx gain (dBi)</span>
-                    <input
-                      onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceTxGainDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceTxGainDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceTxGainDraft, "dBi")}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Rx gain (dBi)</span>
-                    <input
-                      onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceRxGainDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceRxGainDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceRxGainDraft, "dBi")}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Cable loss (dB)</span>
-                    <input
-                      onChange={(event) => setResourceCableLossDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceCableLossDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceCableLossDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceCableLossDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceCableLossDraft, "dB")}</strong>
+                      </p>
+                    )}
                   </label>
                 </div>
                 <div className="library-editor-map">
@@ -3207,19 +3306,21 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                 Last edited by{" "}
                 <UserBadge avatarUrl={resourceDetailsPopup.lastEditedByAvatarUrl} name={resourceDetailsPopup.lastEditedByName} />
               </button>
-              <button
-                className="inline-action"
-                onClick={() =>
-                  void openChangeLogPopup(
-                    resourceDetailsPopup.kind,
-                    resourceDetailsPopup.resourceId,
-                    resourceDetailsPopup.label,
-                  )
-                }
-                type="button"
-              >
-                Open change log
-              </button>
+              {resourceCanWrite ? (
+                <button
+                  className="inline-action"
+                  onClick={() =>
+                    void openChangeLogPopup(
+                      resourceDetailsPopup.kind,
+                      resourceDetailsPopup.resourceId,
+                      resourceDetailsPopup.label,
+                    )
+                  }
+                  type="button"
+                >
+                  Open change log
+                </button>
+              ) : null}
             </div>
             {resourceDetailsPopup.kind === "site" && currentResourceMqttMetaLines.length ? (
               <details className="compact-details">
@@ -3368,17 +3469,19 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
           onClose={() => {
             setShowNewSimulationModal(false);
             setNewSimulationNameError("");
+            setIsCreatingSimulationCopy(false);
           }}
           tier="raised"
         >
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
-              <h2>New Simulation</h2>
+              <h2>{isCreatingSimulationCopy ? "Save Simulation Copy" : "New Simulation"}</h2>
               <button
                 className="inline-action"
                 onClick={() => {
                   setShowNewSimulationModal(false);
                   setNewSimulationNameError("");
+                  setIsCreatingSimulationCopy(false);
                 }}
                 type="button"
               >
@@ -3426,8 +3529,13 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
               <p className="field-help warning-text">Create access pending: your account must be approved.</p>
             ) : null}
             <div className="chip-group">
-              <button className="inline-action" disabled={!canCreateOwnedResources} onClick={createBlankSimulation} type="button">
-                Create
+              <button
+                className="inline-action"
+                disabled={!canCreateOwnedResources}
+                onClick={createSimulationFromModal}
+                type="button"
+              >
+                {isCreatingSimulationCopy ? "Save Copy" : "Create"}
               </button>
             </div>
           </div>
@@ -3455,32 +3563,20 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                 value={simulationLibraryQuery}
               />
             </label>
-            <label className="field-grid">
-              <span>Save a copy</span>
-              <input
-                className={newPresetNameError ? "input-error" : ""}
-                onChange={(event) => {
-                  setNewPresetName(event.target.value);
-                  if (newPresetNameError) setNewPresetNameError("");
-                }}
-                placeholder="My simulation"
-                type="text"
-                value={newPresetName}
-              />
-            </label>
-            {newPresetNameError ? <p className="field-help field-help-error">{newPresetNameError}</p> : null}
             <div className="chip-group">
-              <button className="inline-action" disabled={!canCreateOwnedResources} onClick={saveSimulationAsNew} type="button">
+              <button
+                className="inline-action"
+                disabled={!canCreateOwnedResources}
+                onClick={() => openNewSimulationModal("copy")}
+                type="button"
+              >
                 Save Copy
               </button>
               <button
                 className="inline-action"
                 disabled={!canCreateOwnedResources}
                 onClick={() => {
-                  setNewSimulationName("");
-                  setNewSimulationDescription("");
-                  setNewSimulationNameError("");
-                  setShowNewSimulationModal(true);
+                  openNewSimulationModal("blank");
                 }}
                 type="button"
               >

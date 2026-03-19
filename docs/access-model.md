@@ -36,6 +36,8 @@ Reference implementation: `canEditItem()` in `src/store/appStore.ts`.
 Mutation controls must not appear actionable when the user lacks edit access.
 
 - For active `Simulation` mutations (for example add/edit/delete `Link`, remove `Site`, apply channel/radio updates), gate controls with active simulation edit access before opening modals or dispatching mutations.
+- In read-only resource edit modals (`Site`/`Simulation`), render informational text instead of disabled form inputs for mutation fields (name, description, coordinates, radio parameters).
+- Hide mutation-only buttons in read-only resource edit modals (for example terrain `Fetch` and `Open change log`) so the dialog reads as view-only.
 - Fork/create actions that produce independent owner-scoped resources stay available for approved users even in read-only simulation contexts:
   - create new `Simulation`
   - save a copy of `Simulation`
@@ -55,6 +57,7 @@ Primary UI touchpoints:
 
 - `src/components/AppShell.tsx` (passes workspace write state)
 - `src/components/Sidebar.tsx` (mutation action visibility/disabled state + permission-aware messaging)
+- `src/components/MapView.tsx` (temporary site draft messaging aligns with available actions in read-only mode)
 
 ## Visibility transition rules
 

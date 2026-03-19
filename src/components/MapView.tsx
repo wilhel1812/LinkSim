@@ -14,6 +14,7 @@ import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { getUiErrorMessage } from "../lib/uiError";
+import { getPendingSiteDraftInstruction, getPendingSiteMoveConflictMessage } from "../lib/editAccess";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
 import { useAppStore } from "../store/appStore";
@@ -1449,7 +1450,7 @@ export function MapView({
       return;
     }
     if (pendingMoveCount > 0) {
-      setSiteDraftStatus("Save or dismiss the current site move before creating another new site.");
+      setSiteDraftStatus(getPendingSiteMoveConflictMessage(canPersist));
       return;
     }
     setPendingNewSiteDraft({
@@ -1833,8 +1834,7 @@ export function MapView({
           {pendingNewSiteDraft ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">
-                New site at {pendingNewSiteDraft.lat.toFixed(5)}, {pendingNewSiteDraft.lon.toFixed(5)}. Drag it, then
-                save or dismiss.
+                New site at {pendingNewSiteDraft.lat.toFixed(5)}, {pendingNewSiteDraft.lon.toFixed(5)}. {getPendingSiteDraftInstruction(canPersist)}
               </p>
               <span className="map-inline-actions">
                 {canPersist ? (
