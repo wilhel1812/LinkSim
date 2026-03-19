@@ -70,6 +70,23 @@
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
 
+## Branch Discipline
+- Default model: one branch per GitHub issue.
+- Do not start work for a new issue on a branch created for a different issue.
+- Branch names should include the issue number and short slug (example: `issue/99-share-permissions` or `fix/99-share-permissions`).
+- Before implementation, verify the current branch matches the issue being worked on.
+- If branch and issue do not match, create/switch to a new branch before editing code unless the user explicitly requests an exception.
+- Allowed exceptions:
+  - user explicitly requests grouped multi-issue work on one branch
+  - follow-up fixes for the same issue before merge/release
+  - release-only chores required to ship the current branch
+- If work has already started on the wrong branch, stop and ask the user whether to:
+  - continue temporarily on current branch
+  - move commits to a new branch
+  - finish current batch and document exception
+- When creating staging/production inventory, map each branch to issue number(s) covered.
+- Document any branch-scope exception in the related GitHub issue comment.
+
 ## Production Release Batch
 
 When the user requests a production release:

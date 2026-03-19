@@ -23,6 +23,7 @@ import {
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
+import { toFriendlySyncError } from "../lib/syncError";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
@@ -660,6 +661,8 @@ export function UserAdminPanel() {
     };
   }, []);
 
+  const friendlySyncError = useMemo(() => toFriendlySyncError(syncErrorMessage), [syncErrorMessage]);
+
   const getSyncIndicator = () => {
     const timeLabel = lastSyncedAt
       ? `Up to date (synced ${new Date(lastSyncedAt).toLocaleTimeString()})`
@@ -697,7 +700,7 @@ export function UserAdminPanel() {
           icon: "⚠",
           class: "sync-error",
           label: "Sync failed",
-          title: `${timeLabel}. ${syncErrorMessage ?? "Open Sync Status for details."}`,
+          title: `${timeLabel}. ${friendlySyncError?.summary ?? syncErrorMessage ?? "Open Sync Status for details."}`,
         };
       default:
         return { icon: "●", class: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
@@ -796,9 +799,19 @@ export function UserAdminPanel() {
                     <span className="sync-indicator-large sync-error">⚠</span>
                     <div>
                       <p className="field-help">Sync failed</p>
+                      {friendlySyncError ? (
+                        <>
+                          <p className="field-help warning-text">{friendlySyncError.summary}</p>
+                          <ul className="field-help access-pending-list">
+                            {friendlySyncError.steps.map((step) => (
+                              <li key={step}>{step}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
                       {syncErrorMessage && (
                         <details className="sync-error-details">
-                          <summary>Error details</summary>
+                          <summary>{friendlySyncError ? "Technical details" : "Error details"}</summary>
                           <p className="field-help">{syncErrorMessage}</p>
                         </details>
                       )}
