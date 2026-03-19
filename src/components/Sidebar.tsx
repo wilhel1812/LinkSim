@@ -44,7 +44,7 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import { getUiErrorMessage } from "../lib/uiError";
-import { useAppStore } from "../store/appStore";
+import { canEditItem, useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
@@ -672,14 +672,13 @@ export function Sidebar() {
       kind === "site"
         ? siteLibrary.find((candidate) => candidate.id === resourceId)
         : simulationPresets.find((candidate) => candidate.id === resourceId);
-    if (!entry) return false;
-    const role = (entry as { effectiveRole?: unknown }).effectiveRole;
-    return role === "owner" || role === "admin" || role === "editor";
+    if (!entry || !currentUser) return false;
+    return canEditItem(entry as { ownerUserId?: string; effectiveRole?: string }, currentUser);
   };
   const resourceCanWrite = useMemo(() => {
     if (!resourceDetailsPopup) return false;
     return canWriteResource(resourceDetailsPopup.kind, resourceDetailsPopup.resourceId);
-  }, [resourceDetailsPopup, siteLibrary, simulationPresets]);
+  }, [resourceDetailsPopup, siteLibrary, simulationPresets, currentUser]);
   const collaboratorCandidates = useMemo(() => {
     const q = resourceCollaboratorQuery.trim().toLowerCase();
     const selectedIds = new Set(resourceCollaboratorUserIds);
@@ -1582,6 +1581,7 @@ export function Sidebar() {
         ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
         : simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
     const effectiveRole = (currentEntry as { effectiveRole?: string } | undefined)?.effectiveRole ?? "owner";
+    const isResourceOwner = Boolean(currentUser?.id) && currentUser?.id === currentResourceOwnerId;
     const currentSharedUserIds = new Set(
       ((currentEntry as { sharedWith?: Array<{ userId: string }> } | undefined)?.sharedWith ?? []).map(
         (grant) => grant.userId,
@@ -1589,7 +1589,7 @@ export function Sidebar() {
     );
     const nextSharedUserIds = new Set(sharedWith.map((grant) => grant.userId));
     const removedCollaborators = [...currentSharedUserIds].filter((userId) => !nextSharedUserIds.has(userId));
-    if (removedCollaborators.length > 0 && !["owner", "admin"].includes(effectiveRole)) {
+    if (removedCollaborators.length > 0 && !(isResourceOwner || ["owner", "admin"].includes(effectiveRole))) {
       setResourceAccessStatus("Only owners/admins can remove existing collaborators.");
       return false;
     }
@@ -1695,12 +1695,13 @@ export function Sidebar() {
         ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
         : simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
     const effectiveRole = (currentEntry as { effectiveRole?: string } | undefined)?.effectiveRole ?? "owner";
+    const isResourceOwner = Boolean(currentUser?.id) && currentUser?.id === currentResourceOwnerId;
     const currentSharedUserIds = new Set(
       ((currentEntry as { sharedWith?: Array<{ userId: string }> } | undefined)?.sharedWith ?? []).map(
         (grant) => grant.userId,
       ),
     );
-    if (currentSharedUserIds.has(userId) && !["owner", "admin"].includes(effectiveRole)) {
+    if (currentSharedUserIds.has(userId) && !(isResourceOwner || ["owner", "admin"].includes(effectiveRole))) {
       setResourceAccessStatus("Only owners/admins can remove existing collaborators.");
       return;
     }

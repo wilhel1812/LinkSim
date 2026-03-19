@@ -3,9 +3,10 @@ import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser"
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
+import { shouldOpenShareModal } from "../lib/shareAccess";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
-import { useAppStore } from "../store/appStore";
+import { canEditItem, useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
@@ -20,14 +21,6 @@ const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
-
-const canEditResource = (value: unknown): boolean => {
-  if (!value || typeof value !== "object") return false;
-  const resource = value as { effectiveRole?: unknown };
-  const role = resource.effectiveRole;
-  if (role === "owner" || role === "admin" || role === "editor") return true;
-  return false;
-};
 
 const copyToClipboard = async (text: string): Promise<void> => {
   if (navigator.clipboard?.writeText) {
@@ -97,6 +90,13 @@ export function AppShell() {
   const activeSimulation = useMemo(
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
     [simulationPresets, selectedScenarioId],
+  );
+  const canEditResource = useCallback(
+    (value: unknown): boolean => {
+      if (!value || typeof value !== "object" || !currentUser) return false;
+      return canEditItem(value as { ownerUserId?: string; effectiveRole?: string }, currentUser);
+    },
+    [currentUser],
   );
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
@@ -576,7 +576,9 @@ export function AppShell() {
       for (const site of referencedPrivateSites) {
         updateSiteLibraryEntry(site.id, { visibility: "shared" });
       }
-      updateSimulationPresetEntry(activeSimulation.id, { visibility: "shared" });
+      if (toVisibility(activeSimulation.visibility) === "private") {
+        updateSimulationPresetEntry(activeSimulation.id, { visibility: "shared" });
+      }
 
       const latest = useAppStore.getState();
       const latestSimulation = latest.simulationPresets.find((preset) => preset.id === activeSimulation.id);
@@ -590,14 +592,26 @@ export function AppShell() {
         siteLibrary: latestSites,
       });
 
-      await copyCurrentLink();
-      setShareStatus("Simulation and referenced sites are now Shared. Link copied.");
+      try {
+        await copyCurrentLink();
+        setShareStatus("Visibility updated and synced. Link copied.");
+      } catch (error) {
+        setShareStatus(`Visibility updated and synced, but link copy failed: ${getUiErrorMessage(error)}`);
+      }
     } catch (error) {
       setShareStatus(`Upgrade failed: ${getUiErrorMessage(error)}`);
     } finally {
       setShareBusy(false);
     }
-  }, [activeSimulation, copyCurrentLink, currentUser, referencedPrivateSites, updateSimulationPresetEntry, updateSiteLibraryEntry]);
+  }, [
+    activeSimulation,
+    canEditResource,
+    copyCurrentLink,
+    currentUser,
+    referencedPrivateSites,
+    updateSimulationPresetEntry,
+    updateSiteLibraryEntry,
+  ]);
 
   if (accessState === "checking") {
     return (
@@ -772,7 +786,7 @@ export function AppShell() {
                       );
                       return;
                     }
-                    if (toVisibility(activeSimulation.visibility) === "private") {
+                    if (shouldOpenShareModal(toVisibility(activeSimulation.visibility), referencedPrivateSites.length)) {
                       setShowShareModal(true);
                       return;
                     }
@@ -864,11 +878,15 @@ export function AppShell() {
               <>
                 <p className="field-help">This link opens the same simulation, selected path, map view, and overlay mode.</p>
                 <input className="locale-select" readOnly value={currentShareLink} />
-                {toVisibility(activeSimulation.visibility) === "private" ? (
+                {shouldOpenShareModal(toVisibility(activeSimulation.visibility), referencedPrivateSites.length) ? (
                   <div className="panel-section compact-panel">
-                    <h4>Private Simulation</h4>
+                    <h4>
+                      {toVisibility(activeSimulation.visibility) === "private" ? "Private Simulation" : "Private Sites Referenced"}
+                    </h4>
                     <p className="field-help">
-                      This simulation is private. To make the share link broadly accessible, set this simulation and its referenced private sites to Shared.
+                      {toVisibility(activeSimulation.visibility) === "private"
+                        ? "This simulation is private. To make the share link broadly accessible, set this simulation and its referenced private sites to Shared."
+                        : "This simulation references private sites. To make the share link broadly accessible, set the referenced private sites to Shared."}
                     </p>
                     <p className="field-help">
                       Referenced private sites: {referencedPrivateSites.length}

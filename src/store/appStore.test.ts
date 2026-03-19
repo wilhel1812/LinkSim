@@ -36,9 +36,30 @@ vi.mock("../lib/elevationService", () => ({
 }));
 
 import { fetchElevations } from "../lib/elevationService";
-import { useAppStore } from "./appStore";
+import { canEditItem, useAppStore } from "./appStore";
 
 const mockedFetchElevations = vi.mocked(fetchElevations);
+
+describe("canEditItem", () => {
+  it("returns true when current user owns the item", () => {
+    const user = { id: "owner-1" } as Parameters<typeof canEditItem>[1];
+    expect(canEditItem({ ownerUserId: "owner-1", effectiveRole: "viewer" }, user)).toBe(true);
+  });
+
+  it("returns true when current user has editor role", () => {
+    const user = { id: "user-2" } as Parameters<typeof canEditItem>[1];
+    expect(canEditItem({ ownerUserId: "owner-1", effectiveRole: "editor" }, user)).toBe(true);
+  });
+
+  it("returns false when current user is neither owner nor collaborator with write role", () => {
+    const user = { id: "user-2" } as Parameters<typeof canEditItem>[1];
+    expect(canEditItem({ ownerUserId: "owner-1", effectiveRole: "viewer" }, user)).toBe(false);
+  });
+
+  it("returns false when no user is signed in", () => {
+    expect(canEditItem({ ownerUserId: "owner-1", effectiveRole: "owner" }, null)).toBe(false);
+  });
+});
 
 const makeSite = (id: string, lat: number, lon: number, groundElevationM: number) => ({
   id,

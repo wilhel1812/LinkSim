@@ -94,7 +94,7 @@ const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser |
   return currentUser;
 };
 
-const canEditItem = (
+export const canEditItem = (
   item: { ownerUserId?: string; effectiveRole?: string },
   currentUser: CloudUser | null,
 ): boolean => {
