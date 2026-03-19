@@ -571,7 +571,15 @@ export function Sidebar() {
     previousVisibility: "private" | "public" | "shared";
     editableSimulationIds: string[];
     editableSimulations: Array<{ id: string; name: string }>;
-    blockedSimulations: Array<{ id: string; name: string }>;
+    visibleBlockedSimulations: Array<{ id: string; name: string }>;
+    hiddenBlockedPrivateSimulationCount: number;
+  } | null>(null);
+  const [pendingSimulationCollaboratorSitePrompt, setPendingSimulationCollaboratorSitePrompt] = useState<{
+    simulationName: string;
+    collaboratorUserId: string;
+    collaboratorLabel: string;
+    editablePrivateSites: Array<{ id: string; name: string }>;
+    blockedPrivateSites: Array<{ id: string; name: string }>;
   } | null>(null);
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
@@ -696,6 +704,17 @@ export function Sidebar() {
         : simulationPresets.find((candidate) => candidate.id === resourceId);
     if (!entry || !currentUser) return false;
     return canEditItem(entry as { ownerUserId?: string; effectiveRole?: string }, currentUser);
+  };
+  const canReadResource = (
+    item: { ownerUserId?: string; effectiveRole?: string; visibility?: "private" | "public" | "shared" },
+  ): boolean => {
+    if (!currentUser) return false;
+    if (item.ownerUserId === currentUser.id) return true;
+    if (item.effectiveRole === "owner" || item.effectiveRole === "admin" || item.effectiveRole === "editor" || item.effectiveRole === "viewer") {
+      return true;
+    }
+    const visibility = normalizeAccessVisibility(item.visibility);
+    return visibility !== "private";
   };
   const resourceCanWrite = useMemo(() => {
     if (!resourceDetailsPopup) return false;
@@ -1621,25 +1640,41 @@ export function Sidebar() {
         const currentSiteEntry = siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId);
         const currentSiteVisibility = normalizeAccessVisibility(currentSiteEntry?.visibility);
         if (currentSiteVisibility !== "private" && normalizedVisibility === "private") {
-          const affectedSharedSimulations = simulationPresets.filter((preset) => {
-            const visibility = normalizeAccessVisibility(preset.visibility);
-            if (visibility === "private") return false;
+          const affectedSimulations = simulationPresets.filter((preset) => {
             return (preset.snapshot.sites ?? []).some((site) => site.libraryEntryId === resourceDetailsPopup.resourceId);
           });
-          if (affectedSharedSimulations.length > 0) {
-            const editableSimulations = affectedSharedSimulations
-              .filter((preset) => canEditItem(preset, currentUser))
+          if (affectedSimulations.length > 0) {
+            const editableSimulations = affectedSimulations
+              .filter(
+                (preset) =>
+                  canEditItem(preset, currentUser) && normalizeAccessVisibility(preset.visibility) !== "private",
+              )
               .map((preset) => ({ id: preset.id, name: preset.name }));
-            const blockedSimulations = affectedSharedSimulations
+            const blockedSimulations = affectedSimulations
               .filter((preset) => !canEditItem(preset, currentUser))
-              .map((preset) => ({ id: preset.id, name: preset.name }));
+              .map((preset) => ({
+                id: preset.id,
+                name: preset.name,
+                visibility: normalizeAccessVisibility(preset.visibility),
+                canRead: canReadResource(preset),
+              }));
+            const visibleBlockedSimulations = blockedSimulations
+              .filter((simulation) => simulation.canRead)
+              .map((simulation) => ({ id: simulation.id, name: simulation.name }));
+            const hiddenBlockedPrivateSimulationCount = blockedSimulations.filter(
+              (simulation) => !simulation.canRead && simulation.visibility === "private",
+            ).length;
+            if (!editableSimulations.length && !visibleBlockedSimulations.length && hiddenBlockedPrivateSimulationCount === 0) {
+              return false;
+            }
             setPendingSiteVisibilityDowngradePrompt({
               siteId: resourceDetailsPopup.resourceId,
               siteName: normalizedName,
               previousVisibility: currentSiteVisibility,
               editableSimulationIds: editableSimulations.map((simulation) => simulation.id),
               editableSimulations,
-              blockedSimulations,
+              visibleBlockedSimulations,
+              hiddenBlockedPrivateSimulationCount,
             });
             return false;
           }
@@ -1735,9 +1770,13 @@ export function Sidebar() {
     }
     setResourceAccessVisibility("private");
     setPendingSiteVisibilityDowngradePrompt(null);
-    if (pending.blockedSimulations.length > 0) {
+    if (pending.visibleBlockedSimulations.length > 0 || pending.hiddenBlockedPrivateSimulationCount > 0) {
+      const hiddenNote =
+        pending.hiddenBlockedPrivateSimulationCount > 0
+          ? ` and ${pending.hiddenBlockedPrivateSimulationCount} other private simulation(s)`
+          : "";
       setResourceAccessStatus(
-        `Saved. ${pending.editableSimulationIds.length} editable simulation(s) were set to Private. ${pending.blockedSimulations.length} non-editable simulation(s) still reference this site and need owner/collaborator action.`,
+        `Saved. ${pending.editableSimulationIds.length} editable simulation(s) were set to Private. ${pending.visibleBlockedSimulations.length} non-editable simulation(s) still reference this site${hiddenNote} and need owner/collaborator action.`,
       );
       return;
     }
@@ -1756,6 +1795,49 @@ export function Sidebar() {
     setResourceAccessStatus("Visibility change canceled.");
   };
 
+  const applySimulationCollaborator = (collaboratorUserId: string) => {
+    const nextCollaborators = resourceCollaboratorUserIds.includes(collaboratorUserId)
+      ? resourceCollaboratorUserIds
+      : [...resourceCollaboratorUserIds, collaboratorUserId];
+    setResourceCollaboratorUserIds(nextCollaborators);
+    void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
+    setResourceCollaboratorQuery("");
+  };
+
+  const resolvePendingSimulationCollaboratorSitePrompt = (mode: "grant-and-add" | "add-only" | "cancel") => {
+    const pending = pendingSimulationCollaboratorSitePrompt;
+    if (!pending) return;
+    setPendingSimulationCollaboratorSitePrompt(null);
+    if (mode === "cancel") {
+      setResourceAccessStatus("Collaborator add canceled.");
+      return;
+    }
+    if (mode === "grant-and-add") {
+      for (const site of pending.editablePrivateSites) {
+        const entry = siteLibrary.find((candidate) => candidate.id === site.id);
+        if (!entry) continue;
+        const existing = (entry.sharedWith ?? []).filter((grant) => grant.userId !== pending.collaboratorUserId);
+        updateSiteLibraryEntry(site.id, {
+          sharedWith: [...existing, { userId: pending.collaboratorUserId, role: "editor" }],
+        });
+      }
+    }
+    applySimulationCollaborator(pending.collaboratorUserId);
+    if (mode === "grant-and-add") {
+      if (pending.blockedPrivateSites.length > 0) {
+        setResourceAccessStatus(
+          `Collaborator added. Access was granted for ${pending.editablePrivateSites.length} private site(s). ${pending.blockedPrivateSites.length} private site(s) still require owner/editor action.`,
+        );
+        return;
+      }
+      setResourceAccessStatus(
+        `Collaborator added. Access was granted for ${pending.editablePrivateSites.length} private site(s).`,
+      );
+      return;
+    }
+    setResourceAccessStatus("Collaborator added to simulation only.");
+  };
+
   const addCollaborator = (userId: string) => {
     if (!resourceCanWrite) {
       setResourceAccessStatus("Read-only: you do not have edit permission for this resource.");
@@ -1766,12 +1848,38 @@ export function Sidebar() {
       setResourceAccessStatus("Owner is implicit and cannot be added as collaborator.");
       return;
     }
-    const nextCollaborators = resourceCollaboratorUserIds.includes(userId)
-      ? resourceCollaboratorUserIds
-      : [...resourceCollaboratorUserIds, userId];
-    setResourceCollaboratorUserIds(nextCollaborators);
-    void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
-    setResourceCollaboratorQuery("");
+    if (resourceDetailsPopup?.kind === "simulation") {
+      const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+      const referencedIds = new Set(
+        (simulationEntry?.snapshot.sites ?? [])
+          .map((site) => site.libraryEntryId)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      );
+      const privateSitesNeedingAccess = siteLibrary.filter((entry) => {
+        if ((entry.visibility ?? "private") !== "private") return false;
+        if (!referencedIds.has(entry.id)) return false;
+        if (entry.ownerUserId === userId) return false;
+        return !(entry.sharedWith ?? []).some((grant) => grant.userId === userId);
+      });
+      if (privateSitesNeedingAccess.length > 0) {
+        const editablePrivateSites = privateSitesNeedingAccess
+          .filter((entry) => canEditItem(entry, currentUser))
+          .map((entry) => ({ id: entry.id, name: entry.name }));
+        const blockedPrivateSites = privateSitesNeedingAccess
+          .filter((entry) => !canEditItem(entry, currentUser))
+          .map((entry) => ({ id: entry.id, name: entry.name }));
+        const collaborator = collaboratorDirectoryById.get(userId);
+        setPendingSimulationCollaboratorSitePrompt({
+          simulationName: simulationEntry?.name ?? resourceDetailsPopup.label,
+          collaboratorUserId: userId,
+          collaboratorLabel: collaborator?.username ?? collaborator?.email ?? userId,
+          editablePrivateSites,
+          blockedPrivateSites,
+        });
+        return;
+      }
+    }
+    applySimulationCollaborator(userId);
   };
 
   const removeCollaborator = (userId: string) => {
@@ -2622,6 +2730,7 @@ export function Sidebar() {
             setResourceDetailsPopup(null);
             setPendingSimulationVisibilityPrompt(null);
             setPendingSiteVisibilityDowngradePrompt(null);
+            setPendingSimulationCollaboratorSitePrompt(null);
           }}
           tier="raised"
         >
@@ -2634,6 +2743,7 @@ export function Sidebar() {
                   setResourceDetailsPopup(null);
                   setPendingSimulationVisibilityPrompt(null);
                   setPendingSiteVisibilityDowngradePrompt(null);
+                  setPendingSimulationCollaboratorSitePrompt(null);
                 }}
                 type="button"
               >
@@ -3370,16 +3480,24 @@ export function Sidebar() {
                 </ul>
               </>
             ) : null}
-            {pendingSiteVisibilityDowngradePrompt.blockedSimulations.length ? (
+            {pendingSiteVisibilityDowngradePrompt.visibleBlockedSimulations.length ||
+            pendingSiteVisibilityDowngradePrompt.hiddenBlockedPrivateSimulationCount ? (
               <>
                 <p className="field-help warning-text">
                   Other shared simulation(s) reference this site, but you do not have edit access to those simulation visibility settings:
                 </p>
-                <ul className="field-help access-pending-list">
-                  {pendingSiteVisibilityDowngradePrompt.blockedSimulations.map((simulation) => (
-                    <li key={`external-${simulation.id}`}>{simulation.name}</li>
-                  ))}
-                </ul>
+                {pendingSiteVisibilityDowngradePrompt.visibleBlockedSimulations.length ? (
+                  <ul className="field-help access-pending-list">
+                    {pendingSiteVisibilityDowngradePrompt.visibleBlockedSimulations.map((simulation) => (
+                      <li key={`external-${simulation.id}`}>{simulation.name}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {pendingSiteVisibilityDowngradePrompt.hiddenBlockedPrivateSimulationCount > 0 ? (
+                  <p className="field-help">
+                    and {pendingSiteVisibilityDowngradePrompt.hiddenBlockedPrivateSimulationCount} other private simulation(s).
+                  </p>
+                ) : null}
               </>
             ) : null}
             <div className="chip-group">
@@ -3387,6 +3505,63 @@ export function Sidebar() {
                 Make Private
               </button>
               <button className="inline-action" onClick={cancelPendingSiteVisibilityDowngrade} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {pendingSimulationCollaboratorSitePrompt ? (
+        <ModalOverlay
+          aria-label="Confirm collaborator site access"
+          onClose={() => resolvePendingSimulationCollaboratorSitePrompt("cancel")}
+          tier="raised"
+        >
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>Collaborator Access Confirmation</h2>
+              <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("cancel")} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              You are adding <strong>{pendingSimulationCollaboratorSitePrompt.collaboratorLabel}</strong> to simulation <strong>{pendingSimulationCollaboratorSitePrompt.simulationName}</strong>.
+            </p>
+            <p className="field-help">
+              They currently do not have access to {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length + pendingSimulationCollaboratorSitePrompt.blockedPrivateSites.length} private referenced site(s).
+            </p>
+            {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length ? (
+              <>
+                <p className="field-help">You can grant access to these private sites now:</p>
+                <ul className="field-help access-pending-list">
+                  {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.map((site) => (
+                    <li key={`grant-${site.id}`}>{site.name}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {pendingSimulationCollaboratorSitePrompt.blockedPrivateSites.length ? (
+              <>
+                <p className="field-help warning-text">
+                  You cannot grant access to these private sites because you do not have edit access:
+                </p>
+                <ul className="field-help access-pending-list">
+                  {pendingSimulationCollaboratorSitePrompt.blockedPrivateSites.map((site) => (
+                    <li key={`blocked-${site.id}`}>{site.name}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            <div className="chip-group">
+              {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length ? (
+                <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("grant-and-add")} type="button">
+                  Add Collaborator + Grant Site Access
+                </button>
+              ) : null}
+              <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("add-only")} type="button">
+                Add Collaborator Only
+              </button>
+              <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("cancel")} type="button">
                 Cancel
               </button>
             </div>
