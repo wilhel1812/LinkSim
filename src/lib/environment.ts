@@ -1,6 +1,6 @@
 export type RuntimeEnvironment = "local" | "staging" | "production";
 
-const PROD_HOSTS = new Set(["linksim.wilhelmfrancke.com", "linksim.pages.dev"]);
+const PROD_HOSTS = new Set(["linksim.link", "linksim.wilhelmfrancke.com", "linksim.pages.dev"]);
 
 const normalizeHost = (host: string): string => host.trim().toLowerCase();
 

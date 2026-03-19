@@ -10,9 +10,9 @@
 
 2. Live test (staging)
 - Deploy code to staging using `npm run deploy:staging`.
-- Verify at https://staging.linksim.wilhelmfrancke.com
+- Verify at https://staging.linksim.link
 - Use explicit guarded commands only:
-  - Staging deploy: `npm run deploy:staging` (deploys current branch to main → served by staging.linksim.wilhelmfrancke.com)
+  - Staging deploy: `npm run deploy:staging` (deploys current branch to main → served by staging.linksim.link)
   - Preview URL: `npm run deploy:staging:preview` (separate preview URL for side-by-side comparison)
 
 3. Production
@@ -53,7 +53,7 @@
   1. Implement in local test.
   2. Verify (`npm test`, `npm run build`, manual QA).
   3. Commit and push.
-  4. Deploy to staging using `npm run deploy:staging` and verify at https://staging.linksim.wilhelmfrancke.com.
+  4. Deploy to staging using `npm run deploy:staging` and verify at https://staging.linksim.link.
   5. Promote to production only with explicit approval.
 - No hidden scope changes during promotion; if code changes after staging verification, restart the loop.
 
@@ -67,6 +67,6 @@
 ## Deploy Targets Reference
 | Target | URL | Description |
 |--------|-----|-------------|
-| `deploy:staging` | https://staging.linksim.wilhelmfrancke.com | Test environment (main branch) |
+| `deploy:staging` | https://staging.linksim.link | Test environment (main branch) |
 | `deploy:staging:preview` | Preview URL | Side-by-side comparison |
-| `deploy:prod:main` | https://linksim.wilhelmfrancke.com | Production release |
+| `deploy:prod:main` | https://linksim.link | Production release |
