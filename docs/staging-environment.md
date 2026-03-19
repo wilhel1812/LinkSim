@@ -7,7 +7,7 @@ This project supports a separate staging stack with production-like data.
 - Staging Worker environment in [`wrangler.staging.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.staging.toml)
 - Staging avatar fallback to production origin while staging R2 catches up
 - Staging scripts in [`package.json`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/package.json)
-- Custom domain: https://staging.linksim.wilhelmfrancke.com
+- Custom domain: https://staging.linksim.link
 - Refresh scripts:
   - [`scripts/refresh-staging-d1.sh`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/scripts/refresh-staging-d1.sh)
   - [`scripts/refresh-staging-r2.sh`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/scripts/refresh-staging-r2.sh)
@@ -20,7 +20,7 @@ This project supports a separate staging stack with production-like data.
 npm run deploy:staging
 ```
 
-This deploys the current branch to `main` branch in Cloudflare Pages, which is served by https://staging.linksim.wilhelmfrancke.com
+This deploys the current branch to `main` branch in Cloudflare Pages, which is served by https://staging.linksim.link
 
 ### Deploy to preview (side-by-side comparison)
 
@@ -62,7 +62,7 @@ npm run refresh-and-deploy:staging
 
 ## Recommended cadence
 
-- Every commit/PR: `npm run deploy:staging` → test at https://staging.linksim.wilhelmfrancke.com
+- Every commit/PR: `npm run deploy:staging` → test at https://staging.linksim.link
 - Before acceptance/regression testing: `npm run refresh-and-deploy:staging`
 
 ## Safety notes
@@ -76,6 +76,6 @@ npm run refresh-and-deploy:staging
 
 | Environment | URL | Access |
 |------------|-----|--------|
-| Staging (test) | https://staging.linksim.wilhelmfrancke.com | ✅ Works with Access |
+| Staging (test) | https://staging.linksim.link | ✅ Works with Access |
 | Preview | Preview URL (shown after deploy) | May require configuration |
-| Production | https://linksim.wilhelmfrancke.com | ✅ Works with Access |
+| Production | https://linksim.link | ✅ Works with Access |
