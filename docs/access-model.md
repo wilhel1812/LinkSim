@@ -36,6 +36,11 @@ Reference implementation: `canEditItem()` in `src/store/appStore.ts`.
 Mutation controls must not appear actionable when the user lacks edit access.
 
 - For active `Simulation` mutations (for example add/edit/delete `Link`, remove `Site`, apply channel/radio updates), gate controls with active simulation edit access before opening modals or dispatching mutations.
+- Fork/create actions that produce independent owner-scoped resources stay available for approved users even in read-only simulation contexts:
+  - create new `Simulation`
+  - save a copy of `Simulation`
+  - create new `Site` in `Site Library`
+  These actions must not mutate the currently read-only simulation.
 - For `Site Library` batch delete, require edit access for every selected entry; if mixed editable/non-editable selection exists, keep delete disabled and show explicit reason text.
 - When a blocked mutation is attempted through a fallback path, show permission-specific copy instead of generic validation text.
 

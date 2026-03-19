@@ -109,6 +109,9 @@
   4. Tests: add/update tests that cover at least one denied path and one allowed path.
   5. Docs: update `docs/access-model.md` with any new touchpoints or invariants.
 - Treat missing any of the five items above as a failed done-criteria check for the batch.
+- Fork/create invariant:
+  - Approved users can always create independent resources (`New Simulation`, `Save Copy`, `Add Site` to `Site Library`) even while viewing read-only simulations.
+  - Simulation-scoped mutations (add/remove/update links/sites/channels in the active simulation) must remain permission-gated.
 
 ## Production Release Batch
 

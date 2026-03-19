@@ -961,6 +961,13 @@ export function MapView({
   );
 
   useEffect(() => {
+    if (canPersist) return;
+    if (!showDiscoverySites && !showDiscoveryMqtt) return;
+    setShowDiscoverySites(false);
+    setShowDiscoveryMqtt(false);
+  }, [canPersist, showDiscoveryMqtt, showDiscoverySites]);
+
+  useEffect(() => {
     if (!showDiscoveryMqtt) return;
     if (mqttNodes.length) return;
     let canceled = false;
@@ -1271,6 +1278,7 @@ export function MapView({
 
   const onSiteClick = (siteId: string) => {
     setSelectedSiteId(siteId);
+    if (!canPersist) return;
     if (coverageVizMode === "passfail" && selectedLink) {
       if (siteId === selectedLink.fromSiteId) return;
       if (siteId === selectedLink.toSiteId) {
@@ -1499,6 +1507,10 @@ export function MapView({
 
   const addExistingDuplicateMqttNode = () => {
     if (!mqttDuplicatePrompt) return;
+    if (!canPersist) {
+      setSiteDraftStatus("Read-only mode: cannot add existing MQTT sites to this simulation.");
+      return;
+    }
     insertSiteFromLibrary(mqttDuplicatePrompt.existingId);
     setSiteDraftStatus(`Added existing site "${mqttDuplicatePrompt.existingName}" to this simulation.`);
     setMqttDuplicatePrompt(null);
@@ -1506,6 +1518,10 @@ export function MapView({
 
   const createDuplicateMqttCopy = () => {
     if (!mqttDuplicatePrompt) return;
+    if (!canPersist) {
+      setSiteDraftStatus("Read-only mode: cannot create MQTT copies.");
+      return;
+    }
     const node = mqttDuplicatePrompt.node;
     requestSiteLibraryDraftAt(node.lat, node.lon, node.longName ?? node.shortName ?? node.nodeId, {
       sourceType: "mqtt-feed",
@@ -1570,12 +1586,12 @@ export function MapView({
   if (resolvedBasemap.fallbackReason && !useFallbackMapStyle) inspectorLines.push(resolvedBasemap.fallbackReason);
   if (useFallbackMapStyle) inspectorLines.push("Base map provider failed. Auto-switched to CARTO fallback style.");
   if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
-  if (showDiscoverySites) {
+  if (canPersist && showDiscoverySites) {
     inspectorLines.push(
       `Shared/public library sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to add it to this simulation.`,
     );
   }
-  if (showDiscoveryMqtt) {
+  if (canPersist && showDiscoveryMqtt) {
     inspectorLines.push(
       mqttLoadStatus ??
         (mqttTooDenseInView
@@ -1707,8 +1723,8 @@ export function MapView({
               value={siteVisibilityMode}
             >
               <option value="simulation">Only Simulation</option>
-              <option value="library">Simulation + Library</option>
-              <option value="mqtt">Simulation + MQTT</option>
+              {canPersist ? <option value="library">Simulation + Library</option> : null}
+              {canPersist ? <option value="mqtt">Simulation + MQTT</option> : null}
             </select>
           </label>
         </div>
@@ -1798,12 +1814,16 @@ export function MapView({
                 This MQTT node is already in your library as <strong>{mqttDuplicatePrompt.existingName}</strong>.
               </p>
               <span className="map-inline-actions">
-                <button className="map-control-btn" onClick={addExistingDuplicateMqttNode} type="button">
-                  Add Existing
-                </button>
-                <button className="map-control-btn" onClick={createDuplicateMqttCopy} type="button">
-                  Create Copy
-                </button>
+                {canPersist ? (
+                  <>
+                    <button className="map-control-btn" onClick={addExistingDuplicateMqttNode} type="button">
+                      Add Existing
+                    </button>
+                    <button className="map-control-btn" onClick={createDuplicateMqttCopy} type="button">
+                      Create Copy
+                    </button>
+                  </>
+                ) : null}
                 <button className="map-control-btn" onClick={() => setMqttDuplicatePrompt(null)} type="button">
                   Cancel
                 </button>
@@ -1843,7 +1863,7 @@ export function MapView({
                   </button>
                 ) : null}
                 <button className="map-control-btn" onClick={dismissPendingSiteMove} type="button">
-                  {canPersist ? "Dismiss" : "Revert"}
+                  Dismiss
                 </button>
               </span>
             </div>
@@ -2178,7 +2198,7 @@ export function MapView({
           );
         })}
 
-        {showDiscoverySites
+        {canPersist && showDiscoverySites
           ? sharedOrPublicLibrarySites.map((entry) => (
               <Marker
                 anchor="bottom"
@@ -2214,7 +2234,7 @@ export function MapView({
             ))
           : null}
 
-        {showDiscoveryMqtt
+        {canPersist && showDiscoveryMqtt
           ? (mqttTooDenseInView ? [] : mqttNodesInView).map((node) => (
               <Marker anchor="bottom" key={`discover-mqtt-${node.nodeId}`} latitude={node.lat} longitude={node.lon}>
                 <div

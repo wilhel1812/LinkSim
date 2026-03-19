@@ -1150,8 +1150,8 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
     setLinkModal(null);
   };
   const saveSimulationAsNew = () => {
-    if (!canMutateSimulation) {
-      setSimulationSaveStatus(getMutationPermissionMessage("simulation", "save"));
+    if (!canCreateOwnedResources) {
+      setSimulationSaveStatus("Create access pending: your account must be approved to save a simulation copy.");
       return;
     }
     const trimmed = newPresetName.trim();
@@ -1170,7 +1170,7 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
     setNewPresetName("");
   };
   const createBlankSimulation = () => {
-    if (!currentUser?.id) {
+    if (!canCreateOwnedResources || !currentUser?.id) {
       setSimulationSaveStatus("Cannot create simulation until current user profile is loaded.");
       return;
     }
@@ -1224,6 +1224,9 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
     });
   };
   const selectedLibraryCount = selectedLibraryIds.size;
+  const canCreateOwnedResources =
+    Boolean(currentUser?.id) &&
+    (currentUser?.isApproved === true || currentUser?.accountState === "approved");
   const selectedSiteLibraryEntry = useMemo(
     () =>
       selectedSite.libraryEntryId
@@ -1300,8 +1303,8 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
   };
   const addLibraryEntryNow = () => {
-    if (!currentUser?.id) {
-      setLibrarySearchStatus("Please log in to add sites to your library.");
+    if (!canCreateOwnedResources || !currentUser?.id) {
+      setLibrarySearchStatus("Create access pending: your account must be approved to add library sites.");
       return;
     }
     if (!newLibraryName.trim()) {
@@ -2019,7 +2022,7 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
           >
             New Simulation
           </button>
-          <button className="inline-action" disabled={!canMutateSimulation} onClick={saveSimulationAsNew} type="button">
+          <button className="inline-action" disabled={!canCreateOwnedResources} onClick={saveSimulationAsNew} type="button">
             Save a Copy
           </button>
         </div>
@@ -2036,17 +2039,10 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
           <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
             Open Site Library
           </button>
-          {newestSiteLibraryEntryId ? (
+          {canMutateSimulation && newestSiteLibraryEntryId ? (
             <button
               className="inline-action"
-              disabled={!canMutateSimulation}
-              onClick={() => {
-                if (!canMutateSimulation) {
-                  setSimulationSaveStatus(getMutationPermissionMessage("site", "insert"));
-                  return;
-                }
-                insertSiteFromLibrary(newestSiteLibraryEntryId);
-              }}
+              onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)}
               type="button"
             >
               Insert Newest
@@ -2070,29 +2066,28 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
             </button>
           ))}
         </div>
-        <button
-          className="inline-action"
-          disabled={!canEditSelectedSiteLibraryEntry}
-          onClick={openLibraryForSelectedSite}
-          type="button"
-        >
-          Edit Selected Site
-        </button>
-        <button
-          className="inline-action danger"
-          disabled={!canMutateSimulation || sites.length <= 1}
-          onClick={() =>
-            requestDeleteConfirm(
-              "Remove Site",
-              `Remove ${selectedSite.name} from the current simulation?`,
-              () => deleteSite(selectedSite.id),
-              "Remove",
-            )
-          }
-          type="button"
-        >
-          Remove Selected From Simulation
-        </button>
+        {canEditSelectedSiteLibraryEntry ? (
+          <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+            Edit Selected Site
+          </button>
+        ) : null}
+        {canMutateSimulation ? (
+          <button
+            className="inline-action danger"
+            disabled={sites.length <= 1}
+            onClick={() =>
+              requestDeleteConfirm(
+                "Remove Site",
+                `Remove ${selectedSite.name} from the current simulation?`,
+                () => deleteSite(selectedSite.id),
+                "Remove",
+              )
+            }
+            type="button"
+          >
+            Remove Selected From Simulation
+          </button>
+        ) : null}
       </section>
 
       <section className="panel-section section-radio">
@@ -2105,179 +2100,219 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
             <p className="field-help">Coverage mode</p>
             <InfoTip text="BestSite: computes strongest coverage from any site at each sample point. Polar: radial sampling around the selected From site. Cartesian: regular grid sampling over the current simulation area. Route: samples along the selected path corridor." />
           </div>
-          <div className="chip-group">
-            {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
-              <button
-                className={clsx("chip-button", selectedCoverageMode === mode && "is-selected")}
-                key={mode}
-                onClick={() => onCoverageModeChange(mode)}
-                type="button"
-              >
-                {mode}
+          {canMutateSimulation ? (
+            <>
+              <div className="chip-group">
+                {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
+                  <button
+                    className={clsx("chip-button", selectedCoverageMode === mode && "is-selected")}
+                    key={mode}
+                    onClick={() => onCoverageModeChange(mode)}
+                    type="button"
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+              {networks.length > 1 ? (
+                <select
+                  className="locale-select"
+                  onChange={(event) => setSelectedNetworkId(event.target.value)}
+                  value={selectedNetworkId}
+                >
+                  {networks.map((network) => (
+                    <option key={network.id} value={network.id}>
+                      {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="field-help">
+                  Active channel profile: <strong>{selectedNetwork.name}</strong>
+                </p>
+              )}
+              <label className="field-grid">
+                <span>Frequency Plan</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
+                  value={selectedFrequencyPresetId}
+                >
+                  {FREQUENCY_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
+                Apply Frequency Plan
               </button>
-            ))}
-          </div>
-          {networks.length > 1 ? (
-            <select
-              className="locale-select"
-              onChange={(event) => setSelectedNetworkId(event.target.value)}
-              value={selectedNetworkId}
-            >
-              {networks.map((network) => (
-                <option key={network.id} value={network.id}>
-                  {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
-                </option>
-              ))}
-            </select>
+            </>
           ) : (
-            <p className="field-help">
-              Active channel profile: <strong>{selectedNetwork.name}</strong>
-            </p>
+            <>
+              <p className="field-help">
+                Coverage mode: <strong>{selectedCoverageMode}</strong>
+              </p>
+              <p className="field-help">
+                Active channel profile: <strong>{selectedNetwork.name}</strong>
+              </p>
+              <p className="field-help">
+                Frequency plan: <strong>{selectedFrequencyPreset?.label ?? "Custom"}</strong>
+              </p>
+            </>
           )}
-          <label className="field-grid">
-            <span>Frequency Plan</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
-              value={selectedFrequencyPresetId}
-            >
-              {FREQUENCY_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="inline-action"
-            disabled={!canMutateSimulation}
-            onClick={() => {
-              if (!canMutateSimulation) {
-                setSimulationSaveStatus(getMutationPermissionMessage("simulation", "update"));
-                return;
-              }
-              applyFrequencyPresetToSelectedNetwork();
-            }}
-            type="button"
-          >
-            Apply Frequency Plan
-          </button>
           <div className="section-heading">
             <p className="field-help">Propagation model</p>
             <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: direct + ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: terrain-aware approximation using elevation diffraction penalty in this tool; generally the most realistic option here for hilly/mountain links." />
           </div>
-          <div className="chip-group">
-            {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
-              <button
-                className={clsx("chip-button", model === candidate && "is-selected")}
-                key={candidate}
-                onClick={() => onModelChange(candidate)}
-                type="button"
-              >
-                {candidate}
-              </button>
-            ))}
-          </div>
+          {canMutateSimulation ? (
+            <div className="chip-group">
+              {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
+                <button
+                  className={clsx("chip-button", model === candidate && "is-selected")}
+                  key={candidate}
+                  onClick={() => onModelChange(candidate)}
+                  type="button"
+                >
+                  {candidate}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="field-help">
+              Propagation model: <strong>{model}</strong>
+            </p>
+          )}
           <details className="compact-details">
             <summary>ITM Environment</summary>
           <p className="field-help">
             These parameters feed terrain-aware path loss. Auto mode derives defaults from current terrain/profile and
             you can override manually.
           </p>
-          <label className="field-grid">
-            <span>Auto environment defaults</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
-              value={autoPropagationEnvironment ? "auto" : "manual"}
-            >
-              <option value="auto">Auto (recommended)</option>
-              <option value="manual">Manual override</option>
-            </select>
-          </label>
-          <p className="field-help">{propagationEnvironmentReason}</p>
-          <label className="field-grid">
-            <span>Radio Climate</span>
-            <select
-              className="locale-select"
-              disabled={autoPropagationEnvironment}
-              onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
-              value={effectivePropagationEnvironment.radioClimate}
-            >
-              {RADIO_CLIMATE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-grid">
-            <span>Polarization</span>
-            <select
-              className="locale-select"
-              disabled={autoPropagationEnvironment}
-              onChange={(event) =>
-                setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
-              }
-              value={effectivePropagationEnvironment.polarization}
-            >
-              <option value="Vertical">Vertical</option>
-              <option value="Horizontal">Horizontal</option>
-            </select>
-          </label>
-          <label className="field-grid">
-            <span>Clutter Height (m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={0}
-              onChange={(event) =>
-                setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
-              }
-              type="number"
-              value={effectivePropagationEnvironment.clutterHeightM}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Ground Dielectric (V/m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={1}
-              onChange={(event) =>
-                setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
-              }
-              step="0.1"
-              type="number"
-              value={effectivePropagationEnvironment.groundDielectric}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Ground Conductivity (S/m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={0}
-              onChange={(event) =>
-                setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
-              }
-              step="0.001"
-              type="number"
-              value={effectivePropagationEnvironment.groundConductivity}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Atmospheric Bending (N-units)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={250}
-              onChange={(event) =>
-                setPropagationEnvironment({
-                  atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
-                })
-              }
-              step="1"
-              type="number"
-              value={effectivePropagationEnvironment.atmosphericBendingNUnits}
-            />
-          </label>
+          {canMutateSimulation ? (
+            <>
+              <label className="field-grid">
+                <span>Auto environment defaults</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
+                  value={autoPropagationEnvironment ? "auto" : "manual"}
+                >
+                  <option value="auto">Auto (recommended)</option>
+                  <option value="manual">Manual override</option>
+                </select>
+              </label>
+              <p className="field-help">{propagationEnvironmentReason}</p>
+              <label className="field-grid">
+                <span>Radio Climate</span>
+                <select
+                  className="locale-select"
+                  disabled={autoPropagationEnvironment}
+                  onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
+                  value={effectivePropagationEnvironment.radioClimate}
+                >
+                  {RADIO_CLIMATE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-grid">
+                <span>Polarization</span>
+                <select
+                  className="locale-select"
+                  disabled={autoPropagationEnvironment}
+                  onChange={(event) =>
+                    setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
+                  }
+                  value={effectivePropagationEnvironment.polarization}
+                >
+                  <option value="Vertical">Vertical</option>
+                  <option value="Horizontal">Horizontal</option>
+                </select>
+              </label>
+              <label className="field-grid">
+                <span>Clutter Height (m)</span>
+                <input
+                  disabled={autoPropagationEnvironment}
+                  min={0}
+                  onChange={(event) =>
+                    setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
+                  }
+                  type="number"
+                  value={effectivePropagationEnvironment.clutterHeightM}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Ground Dielectric (V/m)</span>
+                <input
+                  disabled={autoPropagationEnvironment}
+                  min={1}
+                  onChange={(event) =>
+                    setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
+                  }
+                  step="0.1"
+                  type="number"
+                  value={effectivePropagationEnvironment.groundDielectric}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Ground Conductivity (S/m)</span>
+                <input
+                  disabled={autoPropagationEnvironment}
+                  min={0}
+                  onChange={(event) =>
+                    setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
+                  }
+                  step="0.001"
+                  type="number"
+                  value={effectivePropagationEnvironment.groundConductivity}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Atmospheric Bending (N-units)</span>
+                <input
+                  disabled={autoPropagationEnvironment}
+                  min={250}
+                  onChange={(event) =>
+                    setPropagationEnvironment({
+                      atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
+                    })
+                  }
+                  step="1"
+                  type="number"
+                  value={effectivePropagationEnvironment.atmosphericBendingNUnits}
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <p className="field-help">
+                Auto environment defaults: <strong>{autoPropagationEnvironment ? "Auto" : "Manual"}</strong>
+              </p>
+              <p className="field-help">{propagationEnvironmentReason}</p>
+              <p className="field-help">
+                Radio Climate: <strong>{effectivePropagationEnvironment.radioClimate}</strong>
+              </p>
+              <p className="field-help">
+                Polarization: <strong>{effectivePropagationEnvironment.polarization}</strong>
+              </p>
+              <p className="field-help">
+                Clutter Height: <strong>{effectivePropagationEnvironment.clutterHeightM} m</strong>
+              </p>
+              <p className="field-help">
+                Ground Dielectric: <strong>{effectivePropagationEnvironment.groundDielectric} V/m</strong>
+              </p>
+              <p className="field-help">
+                Ground Conductivity: <strong>{effectivePropagationEnvironment.groundConductivity} S/m</strong>
+              </p>
+              <p className="field-help">
+                Atmospheric Bending: <strong>{effectivePropagationEnvironment.atmosphericBendingNUnits} N-units</strong>
+              </p>
+            </>
+          )}
           </details>
         </details>
       </section>
@@ -2300,33 +2335,30 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
             </button>
           ))}
         </div>
-        <div className="chip-group">
-          <button
-            className="inline-action"
-            disabled={!canMutateSimulation || sites.length < 2}
-            onClick={openAddLinkModal}
-            type="button"
-          >
-            Add Link
-          </button>
-          <button className="inline-action" disabled={!canMutateSimulation} onClick={openEditLinkModal} type="button">
-            Edit Link
-          </button>
-          <button
-            className="inline-action danger"
-            disabled={!canMutateSimulation || !links.length}
-            onClick={() =>
-              requestDeleteConfirm(
-                "Delete Link",
-                `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
-                () => deleteLink(selectedLink.id),
-              )
-            }
-            type="button"
-          >
-            Delete Selected Link
-          </button>
-        </div>
+        {canMutateSimulation ? (
+          <div className="chip-group">
+            <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+              Add Link
+            </button>
+            <button className="inline-action" onClick={openEditLinkModal} type="button">
+              Edit Link
+            </button>
+            <button
+              className="inline-action danger"
+              disabled={!links.length}
+              onClick={() =>
+                requestDeleteConfirm(
+                  "Delete Link",
+                  `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
+                  () => deleteLink(selectedLink.id),
+                )
+              }
+              type="button"
+            >
+              Delete Selected Link
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {linkModal ? (
@@ -2338,136 +2370,171 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                 Close
               </button>
             </div>
-            <label className="field-grid">
-              <span>Link name</span>
-              <input
-                onChange={(event) =>
-                  setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
-                }
-                placeholder="Backhaul A"
-                type="text"
-                value={linkModal.name}
-              />
-            </label>
+            {canMutateSimulation ? (
+              <label className="field-grid">
+                <span>Link name</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
+                  }
+                  placeholder="Backhaul A"
+                  type="text"
+                  value={linkModal.name}
+                />
+              </label>
+            ) : (
+              <p className="field-help">
+                Link name: <strong>{linkModal.name.trim() || "(auto)"}</strong>
+              </p>
+            )}
             <label className="field-grid endpoint-field">
               <span>From site</span>
-              <select
-                className="locale-select"
-                onChange={(event) =>
-                  setLinkModal((current) => {
-                    if (!current) return current;
-                    const nextFrom = event.target.value;
-                    const nextTo =
-                      current.toSiteId === nextFrom
-                        ? sites.find((site) => site.id !== nextFrom)?.id ?? ""
-                        : current.toSiteId;
-                    return { ...current, fromSiteId: nextFrom, toSiteId: nextTo, status: "" };
-                  })
-                }
-                value={linkModal.fromSiteId}
-              >
-                {sites.map((site) => (
-                  <option key={`modal-from-${site.id}`} value={site.id}>
-                    {site.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-grid endpoint-field">
-              <span>To site</span>
-              <select
-                className="locale-select"
-                onChange={(event) =>
-                  setLinkModal((current) => (current ? { ...current, toSiteId: event.target.value, status: "" } : current))
-                }
-                value={linkModal.toSiteId}
-              >
-                {sites
-                  .filter((site) => site.id !== linkModal.fromSiteId)
-                  .map((site) => (
-                    <option key={`modal-to-${site.id}`} value={site.id}>
+              {canMutateSimulation ? (
+                <select
+                  className="locale-select"
+                  onChange={(event) =>
+                    setLinkModal((current) => {
+                      if (!current) return current;
+                      const nextFrom = event.target.value;
+                      const nextTo =
+                        current.toSiteId === nextFrom
+                          ? sites.find((site) => site.id !== nextFrom)?.id ?? ""
+                          : current.toSiteId;
+                      return { ...current, fromSiteId: nextFrom, toSiteId: nextTo, status: "" };
+                    })
+                  }
+                  value={linkModal.fromSiteId}
+                >
+                  {sites.map((site) => (
+                    <option key={`modal-from-${site.id}`} value={site.id}>
                       {site.name}
                     </option>
                   ))}
-              </select>
+                </select>
+              ) : (
+                <span className="field-help">
+                  <strong>{sites.find((site) => site.id === linkModal.fromSiteId)?.name ?? "Unknown"}</strong>
+                </span>
+              )}
+            </label>
+            <label className="field-grid endpoint-field">
+              <span>To site</span>
+              {canMutateSimulation ? (
+                <select
+                  className="locale-select"
+                  onChange={(event) =>
+                    setLinkModal((current) => (current ? { ...current, toSiteId: event.target.value, status: "" } : current))
+                  }
+                  value={linkModal.toSiteId}
+                >
+                  {sites
+                    .filter((site) => site.id !== linkModal.fromSiteId)
+                    .map((site) => (
+                      <option key={`modal-to-${site.id}`} value={site.id}>
+                        {site.name}
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <span className="field-help">
+                  <strong>{sites.find((site) => site.id === linkModal.toSiteId)?.name ?? "Unknown"}</strong>
+                </span>
+              )}
             </label>
             <details className="compact-details">
               <summary>Link Radio Overrides</summary>
-              <label className="field-grid">
-                <span>Use site radio defaults</span>
-                <input
-                  checked={!linkModal.overrideRadio}
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, overrideRadio: !event.target.checked, status: "" } : current,
-                    )
-                  }
-                  type="checkbox"
-                />
-              </label>
-              {!linkModal.overrideRadio ? (
-                <p className="field-help">
-                  This link uses the selected From/To site radio settings.
-                </p>
-              ) : null}
-              {linkModal.overrideRadio ? (
+              {canMutateSimulation ? (
                 <>
-              <label className="field-grid">
-                <span>Tx power (dBm)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, txPowerDbm: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.txPowerDbm}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Tx gain (dBi)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, txGainDbi: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.txGainDbi}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Rx gain (dBi)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, rxGainDbi: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.rxGainDbi}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Cable loss (dB)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, cableLossDb: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.cableLossDb}
-                />
-              </label>
+                  <label className="field-grid">
+                    <span>Use site radio defaults</span>
+                    <input
+                      checked={!linkModal.overrideRadio}
+                      onChange={(event) =>
+                        setLinkModal((current) =>
+                          current ? { ...current, overrideRadio: !event.target.checked, status: "" } : current,
+                        )
+                      }
+                      type="checkbox"
+                    />
+                  </label>
+                  {!linkModal.overrideRadio ? (
+                    <p className="field-help">
+                      This link uses the selected From/To site radio settings.
+                    </p>
+                  ) : null}
+                  {linkModal.overrideRadio ? (
+                    <>
+                      <label className="field-grid">
+                        <span>Tx power (dBm)</span>
+                        <input
+                          onChange={(event) =>
+                            setLinkModal((current) =>
+                              current ? { ...current, txPowerDbm: parseNumber(event.target.value), status: "" } : current,
+                            )
+                          }
+                          type="number"
+                          value={linkModal.txPowerDbm}
+                        />
+                      </label>
+                      <label className="field-grid">
+                        <span>Tx gain (dBi)</span>
+                        <input
+                          onChange={(event) =>
+                            setLinkModal((current) =>
+                              current ? { ...current, txGainDbi: parseNumber(event.target.value), status: "" } : current,
+                            )
+                          }
+                          type="number"
+                          value={linkModal.txGainDbi}
+                        />
+                      </label>
+                      <label className="field-grid">
+                        <span>Rx gain (dBi)</span>
+                        <input
+                          onChange={(event) =>
+                            setLinkModal((current) =>
+                              current ? { ...current, rxGainDbi: parseNumber(event.target.value), status: "" } : current,
+                            )
+                          }
+                          type="number"
+                          value={linkModal.rxGainDbi}
+                        />
+                      </label>
+                      <label className="field-grid">
+                        <span>Cable loss (dB)</span>
+                        <input
+                          onChange={(event) =>
+                            setLinkModal((current) =>
+                              current ? { ...current, cableLossDb: parseNumber(event.target.value), status: "" } : current,
+                            )
+                          }
+                          type="number"
+                          value={linkModal.cableLossDb}
+                        />
+                      </label>
+                    </>
+                  ) : null}
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <p className="field-help">
+                    Radio override: <strong>{linkModal.overrideRadio ? "Custom" : "Site defaults"}</strong>
+                  </p>
+                  {linkModal.overrideRadio ? (
+                    <p className="field-help">
+                      Tx {linkModal.txPowerDbm} dBm · Tx gain {linkModal.txGainDbi} dBi · Rx gain {linkModal.rxGainDbi} dBi · Cable loss {linkModal.cableLossDb} dB
+                    </p>
+                  ) : null}
+                </>
+              )}
             </details>
-            <div className="chip-group">
-              <button className="inline-action" disabled={!canMutateSimulation} onClick={saveLinkModal} type="button">
-                {linkModal.mode === "add" ? "Create Link" : "Save Link"}
-              </button>
-            </div>
+            {canMutateSimulation ? (
+              <div className="chip-group">
+                <button className="inline-action" onClick={saveLinkModal} type="button">
+                  {linkModal.mode === "add" ? "Create Link" : "Save Link"}
+                </button>
+              </div>
+            ) : null}
             {linkModal.status ? <p className="field-help">{linkModal.status}</p> : null}
           </div>
         </ModalOverlay>
@@ -2491,20 +2558,11 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
             {t(locale, "loadHgt")}
             <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
           </label>
-          <button
-            className="inline-action"
-            disabled={!canMutateSimulation}
-            onClick={() => {
-              if (!canMutateSimulation) {
-                setSimulationSaveStatus(getMutationPermissionMessage("site", "update"));
-                return;
-              }
-              void syncSiteElevationsOnline();
-            }}
-            type="button"
-          >
-            {t(locale, "syncSiteElevations")}
-          </button>
+          {canMutateSimulation ? (
+            <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
+              {t(locale, "syncSiteElevations")}
+            </button>
+          ) : null}
           {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
           {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
           <div className="asset-list">
@@ -2544,39 +2602,49 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
           {metric("Worst Fresnel gap", `${analysis.worstFresnelClearanceM.toFixed(2)} m`)}
           {metric("Worst Fresnel point", `${analysis.worstFresnelDistanceKm.toFixed(2)} km`)}
         </div>
-        <label className="field-grid">
-          <span>RX target (dBm)</span>
-          <input
-            onChange={(event) => setRxSensitivityTargetDbm(parseNumber(event.target.value))}
-            type="number"
-            value={rxSensitivityTargetDbm}
-          />
-        </label>
-        <label className="field-grid">
-          <span>Env loss (dB)</span>
-          <input
-            min={0}
-            onChange={(event) => setEnvironmentLossDb(parseNumber(event.target.value))}
-            type="number"
-            value={environmentLossDb}
-          />
-        </label>
+        {canMutateSimulation ? (
+          <>
+            <label className="field-grid">
+              <span>RX target (dBm)</span>
+              <input
+                onChange={(event) => setRxSensitivityTargetDbm(parseNumber(event.target.value))}
+                type="number"
+                value={rxSensitivityTargetDbm}
+              />
+            </label>
+            <label className="field-grid">
+              <span>Env loss (dB)</span>
+              <input
+                min={0}
+                onChange={(event) => setEnvironmentLossDb(parseNumber(event.target.value))}
+                type="number"
+                value={environmentLossDb}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <p className="field-help">
+              RX target: <strong>{rxSensitivityTargetDbm} dBm</strong>
+            </p>
+            <p className="field-help">
+              Env loss: <strong>{environmentLossDb} dB</strong>
+            </p>
+          </>
+        )}
         {isLoraEstimateRelevant ? (
           <div className="section-heading">
-            <button
-              className="inline-action"
-              disabled={!canMutateSimulation}
-              onClick={() => {
-                if (!canMutateSimulation) {
-                  setSimulationSaveStatus(getMutationPermissionMessage("simulation", "update"));
-                  return;
-                }
-                setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm));
-              }}
-              type="button"
-            >
-              Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
-            </button>
+            {canMutateSimulation ? (
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm));
+                }}
+                type="button"
+              >
+                Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
+              </button>
+            ) : null}
             <InfoTip text="Sets RX target to a LoRa sensitivity estimate from current BW and SF (noise floor + NF + SF SNR limit). This is a helper target, not a measured receiver spec." />
           </div>
         ) : (
@@ -3199,46 +3267,60 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                   Collaborators{" "}
                   <InfoTip text="Collaborators grant edit rights. Editors can add collaborators but cannot remove existing collaborators. Owners/admins can remove." />
                 </span>
-                <div className="collaborator-picker">
+                {resourceCanWrite ? (
+                  <div className="collaborator-picker">
+                    <div className="chip-group collaborator-selected-list">
+                      {selectedCollaboratorUsers.length ? (
+                        selectedCollaboratorUsers.map((user) => (
+                          <span className="site-quick-item" key={user.id}>
+                            <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                            <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
+                              Remove
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span className="field-help">No collaborators yet.</span>
+                      )}
+                    </div>
+                    <input
+                      onChange={(event) => setResourceCollaboratorQuery(event.target.value)}
+                      placeholder="Search users by name or email"
+                      type="text"
+                      value={resourceCollaboratorQuery}
+                    />
+                    <div className="collaborator-candidate-list">
+                      {resourceCollaboratorDirectoryBusy ? (
+                        <p className="field-help">Loading users…</p>
+                      ) : collaboratorCandidates.length ? (
+                        collaboratorCandidates.map((user) => (
+                          <button className="site-quick-item" key={user.id} onClick={() => addCollaborator(user.id)} type="button">
+                            <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                            <span className="field-help">{user.email}</span>
+                            <span className="inline-action">Add</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="field-help">No matching users.</p>
+                      )}
+                    </div>
+                    {resourceCollaboratorDirectoryStatus ? (
+                      <p className="field-help">{resourceCollaboratorDirectoryStatus}</p>
+                    ) : null}
+                  </div>
+                ) : (
                   <div className="chip-group collaborator-selected-list">
                     {selectedCollaboratorUsers.length ? (
                       selectedCollaboratorUsers.map((user) => (
                         <span className="site-quick-item" key={user.id}>
                           <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
-                          <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
-                            Remove
-                          </button>
                         </span>
                       ))
                     ) : (
                       <span className="field-help">No collaborators yet.</span>
                     )}
                   </div>
-                  <input
-                    onChange={(event) => setResourceCollaboratorQuery(event.target.value)}
-                    placeholder="Search users by name or email"
-                    type="text"
-                    value={resourceCollaboratorQuery}
-                  />
-                  <div className="collaborator-candidate-list">
-                    {resourceCollaboratorDirectoryBusy ? (
-                      <p className="field-help">Loading users…</p>
-                    ) : collaboratorCandidates.length ? (
-                      collaboratorCandidates.map((user) => (
-                        <button className="site-quick-item" key={user.id} onClick={() => addCollaborator(user.id)} type="button">
-                          <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
-                          <span className="field-help">{user.email}</span>
-                          <span className="inline-action">Add</span>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="field-help">No matching users.</p>
-                    )}
-                  </div>
-                  {resourceCollaboratorDirectoryStatus ? (
-                    <p className="field-help">{resourceCollaboratorDirectoryStatus}</p>
-                  ) : null}
-                </div>
+                )}
               </div>
               <p className="field-help">
                 Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
@@ -3340,8 +3422,11 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                 <option value="shared">Shared</option>
               </select>
             </label>
+            {!canCreateOwnedResources ? (
+              <p className="field-help warning-text">Create access pending: your account must be approved.</p>
+            ) : null}
             <div className="chip-group">
-              <button className="inline-action" onClick={createBlankSimulation} type="button">
+              <button className="inline-action" disabled={!canCreateOwnedResources} onClick={createBlankSimulation} type="button">
                 Create
               </button>
             </div>
@@ -3385,11 +3470,12 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
             </label>
             {newPresetNameError ? <p className="field-help field-help-error">{newPresetNameError}</p> : null}
             <div className="chip-group">
-              <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+              <button className="inline-action" disabled={!canCreateOwnedResources} onClick={saveSimulationAsNew} type="button">
                 Save Copy
               </button>
               <button
                 className="inline-action"
+                disabled={!canCreateOwnedResources}
                 onClick={() => {
                   setNewSimulationName("");
                   setNewSimulationDescription("");
@@ -3401,6 +3487,9 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                 New Simulation
               </button>
             </div>
+            {!canCreateOwnedResources ? (
+              <p className="field-help warning-text">Create access pending: your account must be approved.</p>
+            ) : null}
             {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
             <div className="library-editor">
               <h3>Saved simulations</h3>
@@ -3714,7 +3803,9 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
             <div className="chip-group">
               <button
                 className="inline-action"
+                disabled={!canCreateOwnedResources}
                 onClick={() => {
+                  if (!canCreateOwnedResources) return;
                   setShowAddLibraryForm((current) => !current);
                   if (showAddLibraryForm) {
                     setPendingDraftAutoInsert(false);
@@ -3735,21 +3826,19 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
               <button className="inline-action" onClick={() => setSelectedLibraryIds(new Set())} type="button">
                 Clear Selection
               </button>
-              <button
-                className="inline-action"
-                disabled={!canMutateSimulation || !selectedLibraryCount}
-                onClick={() => {
-                  if (!canMutateSimulation) {
-                    setLibrarySearchStatus(getMutationPermissionMessage("site", "insert"));
-                    return;
-                  }
-                  insertSitesFromLibrary(Array.from(selectedLibraryIds));
-                  setSelectedLibraryIds(new Set());
-                }}
-                type="button"
-              >
-                Add Selected To Simulation ({selectedLibraryCount})
-              </button>
+              {canMutateSimulation ? (
+                <button
+                  className="inline-action"
+                  disabled={!selectedLibraryCount}
+                  onClick={() => {
+                    insertSitesFromLibrary(Array.from(selectedLibraryIds));
+                    setSelectedLibraryIds(new Set());
+                  }}
+                  type="button"
+                >
+                  Add Selected To Simulation ({selectedLibraryCount})
+                </button>
+              ) : null}
               <button
                 className="inline-action danger"
                 disabled={!canDeleteSelectedLibraryEntries}
@@ -3771,11 +3860,6 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
             {selectedNonEditableLibraryEntryCount > 0 ? (
               <p className="field-help warning-text">
                 {getMutationPermissionMessage("library-site", "delete")}
-              </p>
-            ) : null}
-            {!canMutateSimulation && selectedLibraryCount > 0 ? (
-              <p className="field-help warning-text">
-                {getMutationPermissionMessage("site", "insert")}
               </p>
             ) : null}
             {showAddLibraryForm ? (
@@ -4082,7 +4166,7 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                   </div>
                 </div>
                 <div className="chip-group">
-                  <button className="inline-action" disabled={!currentUser?.id} onClick={addLibraryEntryNow} type="button">
+                  <button className="inline-action" disabled={!canCreateOwnedResources} onClick={addLibraryEntryNow} type="button">
                     Add To Library
                   </button>
                   <button
@@ -4169,20 +4253,11 @@ export function Sidebar({ canPersistWorkspace }: SidebarProps) {
                     );
                   })()}
                   <div className="library-row-actions">
-                    <button
-                      className="inline-action"
-                      disabled={!canMutateSimulation}
-                      onClick={() => {
-                        if (!canMutateSimulation) {
-                          setLibrarySearchStatus(getMutationPermissionMessage("site", "insert"));
-                          return;
-                        }
-                        insertSiteFromLibrary(entry.id);
-                      }}
-                      type="button"
-                    >
-                      Add to simulation
-                    </button>
+                    {canMutateSimulation ? (
+                      <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                        Add to simulation
+                      </button>
+                    ) : null}
                     <button
                       className="inline-action"
                       onClick={() =>
