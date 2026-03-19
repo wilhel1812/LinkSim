@@ -70,6 +70,20 @@
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
 
+## Theme + Basemap Integration Checklist
+
+When adding a new UI color theme, cross-file wiring is required beyond the theme definition file itself. Missing any step will cause the theme to silently fall back to defaults.
+
+Required touchpoints:
+1. `src/themes/types.ts` — add the new value to the `UiColorTheme` union.
+2. `src/themes/<name>Theme.ts` — create the `ThemeDefinition` export with light/dark variants (`cssVars` + `map` colors).
+3. `src/themes/index.ts` — register in the `THEMES` record.
+4. `src/store/appStore.ts:normalizeUiColorTheme` — add the new value to the normalization whitelist so persisted selection round-trips correctly.
+5. `src/components/UserAdminPanel.tsx` — add an `<option>` to the color theme `<select>`.
+6. `src/lib/basemaps.ts:CARTO_THEME_TINTS` — add an entry to the exhaustive tint map. The `satisfies Record<UiColorTheme, ...>` guard will fail at compile time if this is missed.
+
+Basemap tinting (CARTO `normal-themed` preset only) uses a full-world overlay layer (`theme-tint-overlay`) with per-theme color/opacity. Other providers and CARTO presets (`normal`, `topographic`) use external style URLs unaffected by UI color theme.
+
 ## Handoff Guarantee
 - A new agent should be able to continue by being pointed only to this file.
 - Do not rely on undocumented tribal knowledge; if a rule is repeated in chat, add it here (or in the linked source-of-truth docs) before ending the pass.

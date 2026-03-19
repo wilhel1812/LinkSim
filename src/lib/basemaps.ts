@@ -92,21 +92,34 @@ const cartoRasterTilesForTheme = (theme: BasemapTheme): string[] =>
         "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
       ];
 
+const CARTO_THEME_TINTS: Record<UiColorTheme, { light: { color: string; opacity: number }; dark: { color: string; opacity: number } }> = {
+  blue: {
+    light: { color: "#7fa7d8", opacity: 0.08 },
+    dark: { color: "#4f6f9a", opacity: 0.1 },
+  },
+  pink: {
+    light: { color: "#d379ab", opacity: 0.08 },
+    dark: { color: "#8f5678", opacity: 0.1 },
+  },
+  red: {
+    light: { color: "#db8a8a", opacity: 0.08 },
+    dark: { color: "#8d4b4b", opacity: 0.1 },
+  },
+  green: {
+    light: { color: "#76b28d", opacity: 0.08 },
+    dark: { color: "#4d7f62", opacity: 0.1 },
+  },
+  yellow: {
+    light: { color: "#c48a2e", opacity: 0.08 },
+    dark: { color: "#7a5c22", opacity: 0.1 },
+  },
+} satisfies Record<UiColorTheme, { light: { color: string; opacity: number }; dark: { color: string; opacity: number } }>;
+
 const cartoThemedTint = (
   colorTheme: UiColorTheme,
   theme: BasemapTheme,
-): { color: string; opacity: number } => {
-  if (theme === "dark") {
-    if (colorTheme === "pink") return { color: "#8f5678", opacity: 0.1 };
-    if (colorTheme === "red") return { color: "#8d4b4b", opacity: 0.1 };
-    if (colorTheme === "green") return { color: "#4d7f62", opacity: 0.1 };
-    return { color: "#4f6f9a", opacity: 0.1 };
-  }
-  if (colorTheme === "pink") return { color: "#d379ab", opacity: 0.08 };
-  if (colorTheme === "red") return { color: "#db8a8a", opacity: 0.08 };
-  if (colorTheme === "green") return { color: "#76b28d", opacity: 0.08 };
-  return { color: "#7fa7d8", opacity: 0.08 };
-};
+): { color: string; opacity: number } =>
+  theme === "dark" ? CARTO_THEME_TINTS[colorTheme].dark : CARTO_THEME_TINTS[colorTheme].light;
 
 const themedCartoStyle = (theme: BasemapTheme, colorTheme: UiColorTheme): StyleSpecification => {
   const tint = cartoThemedTint(colorTheme, theme);
