@@ -44,6 +44,11 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import { getUiErrorMessage } from "../lib/uiError";
+import {
+  canMutateActiveSimulation,
+  countNonEditableResourceIds,
+  getMutationPermissionMessage,
+} from "../lib/editAccess";
 import { canEditItem, useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { InfoTip } from "./InfoTip";
@@ -267,7 +272,11 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
 
 const getSnapshotCount = (_key: string): number => 0;
 
-export function Sidebar() {
+type SidebarProps = {
+  canPersistWorkspace: boolean;
+};
+
+export function Sidebar({ canPersistWorkspace }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const buildChannel = runtimeEnvironment === "production" ? "stable" : runtimeEnvironment === "staging" ? "beta" : "alpha";
@@ -1021,6 +1030,10 @@ export function Sidebar() {
   };
 
   const openAddLinkModal = () => {
+    if (!canMutateSimulation) {
+      setSimulationSaveStatus(getMutationPermissionMessage("link", "create"));
+      return;
+    }
     const hasFromInSites = sites.some((site) => site.id === selectedLink.fromSiteId);
     const hasToInSites = sites.some((site) => site.id === selectedLink.toSiteId);
     const fallbackFrom = hasFromInSites ? selectedLink.fromSiteId : sites[0]?.id || "";
@@ -1046,6 +1059,10 @@ export function Sidebar() {
   };
 
   const openEditLinkModal = () => {
+    if (!canMutateSimulation) {
+      setSimulationSaveStatus(getMutationPermissionMessage("link", "update"));
+      return;
+    }
     const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId) ?? null;
     const toSite = sites.find((site) => site.id === selectedLink.toSiteId) ?? null;
     const baseRadio = resolveLinkRadio(selectedLink, fromSite, toSite);
@@ -1073,6 +1090,12 @@ export function Sidebar() {
 
   const saveLinkModal = () => {
     if (!linkModal) return;
+    if (!canMutateSimulation) {
+      setLinkModal((current) =>
+        current ? { ...current, status: getMutationPermissionMessage("link", "save") } : current,
+      );
+      return;
+    }
     const fromExists = sites.some((site) => site.id === linkModal.fromSiteId);
     const toExists = sites.some((site) => site.id === linkModal.toSiteId);
     if (!fromExists || !toExists) {
@@ -1127,6 +1150,10 @@ export function Sidebar() {
     setLinkModal(null);
   };
   const saveSimulationAsNew = () => {
+    if (!canMutateSimulation) {
+      setSimulationSaveStatus(getMutationPermissionMessage("simulation", "save"));
+      return;
+    }
     const trimmed = newPresetName.trim();
     if (!trimmed) {
       setNewPresetNameError("A name is required.");
@@ -1197,7 +1224,42 @@ export function Sidebar() {
     });
   };
   const selectedLibraryCount = selectedLibraryIds.size;
+  const selectedSiteLibraryEntry = useMemo(
+    () =>
+      selectedSite.libraryEntryId
+        ? siteLibrary.find((entry) => entry.id === selectedSite.libraryEntryId) ?? null
+        : null,
+    [selectedSite.libraryEntryId, siteLibrary],
+  );
+  const canEditSelectedSiteLibraryEntry =
+    selectedSiteLibraryEntry !== null
+      ? canEditItem(selectedSiteLibraryEntry as { ownerUserId?: string; effectiveRole?: string }, currentUser)
+      : Boolean(currentUser?.id);
+  const canMutateSimulation = useMemo(
+    () =>
+      canPersistWorkspace &&
+      canMutateActiveSimulation(
+        selectedSimulationRef,
+        simulationPresets as Array<{ id: string; ownerUserId?: string; effectiveRole?: string }>,
+        currentUser,
+      ),
+    [canPersistWorkspace, currentUser, selectedSimulationRef, simulationPresets],
+  );
+  const selectedNonEditableLibraryEntryCount = useMemo(
+    () =>
+      countNonEditableResourceIds(
+        selectedLibraryIds,
+        siteLibrary as Array<{ id: string; ownerUserId?: string; effectiveRole?: string }>,
+        currentUser,
+      ),
+    [currentUser, selectedLibraryIds, siteLibrary],
+  );
+  const canDeleteSelectedLibraryEntries = selectedLibraryCount > 0 && selectedNonEditableLibraryEntryCount === 0;
   const openLibraryForSelectedSite = () => {
+    if (!canEditSelectedSiteLibraryEntry) {
+      setLibrarySearchStatus(getMutationPermissionMessage("library-site", "save"));
+      return;
+    }
     setShowSiteLibraryManager(true);
     const matchedEntry = siteLibrary.find(
       (entry) =>
@@ -1957,7 +2019,7 @@ export function Sidebar() {
           >
             New Simulation
           </button>
-          <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+          <button className="inline-action" disabled={!canMutateSimulation} onClick={saveSimulationAsNew} type="button">
             Save a Copy
           </button>
         </div>
@@ -1975,7 +2037,18 @@ export function Sidebar() {
             Open Site Library
           </button>
           {newestSiteLibraryEntryId ? (
-            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
+            <button
+              className="inline-action"
+              disabled={!canMutateSimulation}
+              onClick={() => {
+                if (!canMutateSimulation) {
+                  setSimulationSaveStatus(getMutationPermissionMessage("site", "insert"));
+                  return;
+                }
+                insertSiteFromLibrary(newestSiteLibraryEntryId);
+              }}
+              type="button"
+            >
               Insert Newest
             </button>
           ) : null}
@@ -1997,12 +2070,17 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+        <button
+          className="inline-action"
+          disabled={!canEditSelectedSiteLibraryEntry}
+          onClick={openLibraryForSelectedSite}
+          type="button"
+        >
           Edit Selected Site
         </button>
         <button
           className="inline-action danger"
-          disabled={sites.length <= 1}
+          disabled={!canMutateSimulation || sites.length <= 1}
           onClick={() =>
             requestDeleteConfirm(
               "Remove Site",
@@ -2070,7 +2148,18 @@ export function Sidebar() {
               ))}
             </select>
           </label>
-          <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
+          <button
+            className="inline-action"
+            disabled={!canMutateSimulation}
+            onClick={() => {
+              if (!canMutateSimulation) {
+                setSimulationSaveStatus(getMutationPermissionMessage("simulation", "update"));
+                return;
+              }
+              applyFrequencyPresetToSelectedNetwork();
+            }}
+            type="button"
+          >
             Apply Frequency Plan
           </button>
           <div className="section-heading">
@@ -2212,15 +2301,20 @@ export function Sidebar() {
           ))}
         </div>
         <div className="chip-group">
-          <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+          <button
+            className="inline-action"
+            disabled={!canMutateSimulation || sites.length < 2}
+            onClick={openAddLinkModal}
+            type="button"
+          >
             Add Link
           </button>
-          <button className="inline-action" onClick={openEditLinkModal} type="button">
+          <button className="inline-action" disabled={!canMutateSimulation} onClick={openEditLinkModal} type="button">
             Edit Link
           </button>
           <button
             className="inline-action danger"
-            disabled={!links.length}
+            disabled={!canMutateSimulation || !links.length}
             onClick={() =>
               requestDeleteConfirm(
                 "Delete Link",
@@ -2370,7 +2464,7 @@ export function Sidebar() {
               ) : null}
             </details>
             <div className="chip-group">
-              <button className="inline-action" onClick={saveLinkModal} type="button">
+              <button className="inline-action" disabled={!canMutateSimulation} onClick={saveLinkModal} type="button">
                 {linkModal.mode === "add" ? "Create Link" : "Save Link"}
               </button>
             </div>
@@ -2397,7 +2491,18 @@ export function Sidebar() {
             {t(locale, "loadHgt")}
             <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
           </label>
-          <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
+          <button
+            className="inline-action"
+            disabled={!canMutateSimulation}
+            onClick={() => {
+              if (!canMutateSimulation) {
+                setSimulationSaveStatus(getMutationPermissionMessage("site", "update"));
+                return;
+              }
+              void syncSiteElevationsOnline();
+            }}
+            type="button"
+          >
             {t(locale, "syncSiteElevations")}
           </button>
           {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
@@ -2460,7 +2565,14 @@ export function Sidebar() {
           <div className="section-heading">
             <button
               className="inline-action"
-              onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
+              disabled={!canMutateSimulation}
+              onClick={() => {
+                if (!canMutateSimulation) {
+                  setSimulationSaveStatus(getMutationPermissionMessage("simulation", "update"));
+                  return;
+                }
+                setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm));
+              }}
               type="button"
             >
               Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
@@ -3625,8 +3737,12 @@ export function Sidebar() {
               </button>
               <button
                 className="inline-action"
-                disabled={!selectedLibraryCount}
+                disabled={!canMutateSimulation || !selectedLibraryCount}
                 onClick={() => {
+                  if (!canMutateSimulation) {
+                    setLibrarySearchStatus(getMutationPermissionMessage("site", "insert"));
+                    return;
+                  }
                   insertSitesFromLibrary(Array.from(selectedLibraryIds));
                   setSelectedLibraryIds(new Set());
                 }}
@@ -3636,7 +3752,7 @@ export function Sidebar() {
               </button>
               <button
                 className="inline-action danger"
-                disabled={!selectedLibraryCount}
+                disabled={!canDeleteSelectedLibraryEntries}
                 onClick={() =>
                   requestDeleteConfirm(
                     "Delete Sites",
@@ -3652,6 +3768,16 @@ export function Sidebar() {
                 Delete Selected ({selectedLibraryCount})
               </button>
             </div>
+            {selectedNonEditableLibraryEntryCount > 0 ? (
+              <p className="field-help warning-text">
+                {getMutationPermissionMessage("library-site", "delete")}
+              </p>
+            ) : null}
+            {!canMutateSimulation && selectedLibraryCount > 0 ? (
+              <p className="field-help warning-text">
+                {getMutationPermissionMessage("site", "insert")}
+              </p>
+            ) : null}
             {showAddLibraryForm ? (
               <div className="library-editor">
                 <h3>Add Site</h3>
@@ -3956,7 +4082,7 @@ export function Sidebar() {
                   </div>
                 </div>
                 <div className="chip-group">
-                  <button className="inline-action" onClick={addLibraryEntryNow} type="button">
+                  <button className="inline-action" disabled={!currentUser?.id} onClick={addLibraryEntryNow} type="button">
                     Add To Library
                   </button>
                   <button
@@ -4043,7 +4169,18 @@ export function Sidebar() {
                     );
                   })()}
                   <div className="library-row-actions">
-                    <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                    <button
+                      className="inline-action"
+                      disabled={!canMutateSimulation}
+                      onClick={() => {
+                        if (!canMutateSimulation) {
+                          setLibrarySearchStatus(getMutationPermissionMessage("site", "insert"));
+                          return;
+                        }
+                        insertSiteFromLibrary(entry.id);
+                      }}
+                      type="button"
+                    >
                       Add to simulation
                     </button>
                     <button

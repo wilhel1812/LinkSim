@@ -31,6 +31,26 @@ Any mutation path that changes resource content, collaborators, or visibility mu
 
 Reference implementation: `canEditItem()` in `src/store/appStore.ts`.
 
+## Read-only UI guardrails
+
+Mutation controls must not appear actionable when the user lacks edit access.
+
+- For active `Simulation` mutations (for example add/edit/delete `Link`, remove `Site`, apply channel/radio updates), gate controls with active simulation edit access before opening modals or dispatching mutations.
+- For `Site Library` batch delete, require edit access for every selected entry; if mixed editable/non-editable selection exists, keep delete disabled and show explicit reason text.
+- When a blocked mutation is attempted through a fallback path, show permission-specific copy instead of generic validation text.
+
+Shared utility touchpoints:
+
+- `src/lib/editAccess.ts`
+  - `canMutateActiveSimulation(...)`
+  - `countNonEditableResourceIds(...)`
+  - `getMutationPermissionMessage(...)`
+
+Primary UI touchpoints:
+
+- `src/components/AppShell.tsx` (passes workspace write state)
+- `src/components/Sidebar.tsx` (mutation action visibility/disabled state + permission-aware messaging)
+
 ## Visibility transition rules
 
 ### Simulation -> shared with private referenced sites

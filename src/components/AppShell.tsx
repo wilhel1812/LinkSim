@@ -740,7 +740,9 @@ export function AppShell() {
         accessState === "readonly" ? "is-readonly-shell" : ""
       }`}
     >
-      {!isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
+      {!isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? (
+        <Sidebar canPersistWorkspace={canPersistWorkspace} />
+      ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {!isOnline && !offlineBannerDismissed ? (
           <div className="offline-banner" role="status">

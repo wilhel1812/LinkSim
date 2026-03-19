@@ -101,6 +101,15 @@
   - avoid ambiguous wording
 - Before ending a pass, verify docs reflect shipped behavior and mention doc updates in the related GitHub issue comment.
 
+## Mutation Permission Enforcement (Required)
+- Any issue that adds/changes mutation UI for `Simulation`, `Site`, `Library`, `Path`, or `Channel` must include all of the following in the same batch:
+  1. UI gating: mutation controls are hidden/disabled when user cannot edit the target resource.
+  2. Permission-aware feedback: blocked mutation paths show explicit edit-access messages (not generic validation failures).
+  3. Shared helper usage: reuse `src/lib/editAccess.ts` for permission checks/message copy where applicable.
+  4. Tests: add/update tests that cover at least one denied path and one allowed path.
+  5. Docs: update `docs/access-model.md` with any new touchpoints or invariants.
+- Treat missing any of the five items above as a failed done-criteria check for the batch.
+
 ## Production Release Batch
 
 When the user requests a production release:
