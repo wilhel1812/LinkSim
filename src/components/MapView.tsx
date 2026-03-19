@@ -2081,6 +2081,11 @@ export function MapView({
           if (!useFallbackMapStyle) {
             setUseFallbackMapStyle(true);
             setBasemapProvider("carto");
+            setInteractionViewState({
+              longitude: activeViewState.longitude,
+              latitude: activeViewState.latitude,
+              zoom: Math.min(activeViewState.zoom, 20),
+            });
             setMapProviderWarning(
               `${requestedProviderConfig?.label ?? "Selected provider"} failed (network, quota, or style error).`,
             );
