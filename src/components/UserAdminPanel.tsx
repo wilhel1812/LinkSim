@@ -67,6 +67,8 @@ const writeDismissedNotificationIds = (ids: Set<string>) => {
   }
 };
 
+const NOTIFICATION_STATUS_NOTE = "Only notifications relevant to your role are shown.";
+
 const loadImageFromFile = async (file: File): Promise<HTMLImageElement> => {
   const objectUrl = URL.createObjectURL(file);
   try {
@@ -240,7 +242,6 @@ export function UserAdminPanel() {
   };
 
   const loadNotifications = useCallback(async () => {
-    if (!canModerate) return;
     setNotificationBusy(true);
     setNotificationStatus("");
     try {
@@ -252,7 +253,7 @@ export function UserAdminPanel() {
     } finally {
       setNotificationBusy(false);
     }
-  }, [canModerate]);
+  }, []);
 
   const loadAdminAudit = useCallback(async () => {
     if (!canAdmin) return;
@@ -320,14 +321,10 @@ export function UserAdminPanel() {
   }, []);
 
   useEffect(() => {
-    if (!canModerate) {
-      setNotificationFeed({ unreadCount: 0, items: [] });
-      return;
-    }
     void loadNotifications();
     const timer = window.setInterval(() => void loadNotifications(), NOTIFICATION_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [canModerate, loadNotifications]);
+  }, [loadNotifications]);
 
   useEffect(() => {
     if (!canModerate) return;
@@ -738,7 +735,7 @@ export function UserAdminPanel() {
         <span aria-hidden className="user-chip-settings-icon">
           ⚙
         </span>
-        {canModerate && unreadNotifications.length > 0 ? (
+        {unreadNotifications.length > 0 ? (
           <span className="notification-badge">{unreadNotifications.length}</span>
         ) : null}
       </button>
@@ -1109,58 +1106,57 @@ export function UserAdminPanel() {
               </div>
             ) : null}
 
-            {canModerate ? (
-              <div className="user-manager-list notifications-center">
-                {unreadNotifications.length > 0 ? (
-                  <div className="notification-banner" role="status">
-                    <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
-                  </div>
-                ) : null}
-                <div className="section-heading">
-                  <p className="field-help">Notification Center</p>
-                  <div className="chip-group">
-                    <button className="inline-action" onClick={() => setNotificationOpen((prev) => !prev)} type="button">
-                      {notificationOpen ? "Hide" : "Open"}
-                    </button>
-                    <button className="inline-action" onClick={() => void loadNotifications()} type="button">
-                      Refresh
-                    </button>
-                  </div>
+            <div className="user-manager-list notifications-center">
+              {unreadNotifications.length > 0 ? (
+                <div className="notification-banner" role="status">
+                  <strong>{unreadNotifications.length} notification(s)</strong> need your review.
                 </div>
-                {notificationOpen ? (
-                  <>
-                    {notificationBusy ? <p className="field-help">Loading notifications…</p> : null}
-                    {notificationStatus ? <p className="field-help">{notificationStatus}</p> : null}
-                    {notificationFeed.items.length ? (
-                      <div className="notifications-list">
-                        {notificationFeed.items.map((item) => {
-                          const isDismissed = dismissedNotifications.has(item.id);
-                          return (
-                            <div className="library-row" key={item.id}>
-                              <strong>{item.title}</strong>
-                              <p className="field-help">{item.message}</p>
-                              <p className="field-help">Updated: {fmtDate(item.createdAt)}</p>
-                              <div className="chip-group">
-                                <button
-                                  className="inline-action"
-                                  disabled={isDismissed}
-                                  onClick={() => dismissNotification(item.id)}
-                                  type="button"
-                                >
-                                  {isDismissed ? "Dismissed" : "Dismiss Badge"}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="field-help">No notifications yet.</p>
-                    )}
-                  </>
-                ) : null}
+              ) : null}
+              <div className="section-heading">
+                <p className="field-help">Notification Center</p>
+                <div className="chip-group">
+                  <button className="inline-action" onClick={() => setNotificationOpen((prev) => !prev)} type="button">
+                    {notificationOpen ? "Hide" : "Open"}
+                  </button>
+                  <button className="inline-action" onClick={() => void loadNotifications()} type="button">
+                    Refresh
+                  </button>
+                </div>
               </div>
-            ) : null}
+              <p className="field-help">{NOTIFICATION_STATUS_NOTE}</p>
+              {notificationOpen ? (
+                <>
+                  {notificationBusy ? <p className="field-help">Loading notifications…</p> : null}
+                  {notificationStatus ? <p className="field-help">{notificationStatus}</p> : null}
+                  {notificationFeed.items.length ? (
+                    <div className="notifications-list">
+                      {notificationFeed.items.map((item) => {
+                        const isDismissed = dismissedNotifications.has(item.id);
+                        return (
+                          <div className="library-row" key={item.id}>
+                            <strong>{item.title}</strong>
+                            <p className="field-help">{item.message}</p>
+                            <p className="field-help">Updated: {fmtDate(item.createdAt)}</p>
+                            <div className="chip-group">
+                              <button
+                                className="inline-action"
+                                disabled={isDismissed}
+                                onClick={() => dismissNotification(item.id)}
+                                type="button"
+                              >
+                                {isDismissed ? "Dismissed" : "Dismiss Badge"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="field-help">No notifications yet.</p>
+                  )}
+                </>
+              ) : null}
+            </div>
 
             {canModerate ? (
               <div className="user-manager-list">

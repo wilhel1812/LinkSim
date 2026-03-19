@@ -28,6 +28,7 @@ export type NotificationFeed = {
 export const fetchNotifications = async (): Promise<NotificationFeed> => {
   const response = await fetch("/api/notifications", {
     method: "GET",
+    credentials: "include",
     headers: { "content-type": "application/json" },
   });
   if (!response.ok) {
