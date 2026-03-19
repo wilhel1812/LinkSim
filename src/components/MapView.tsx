@@ -1255,7 +1255,7 @@ export function MapView({
   };
 
   const zoomBy = (delta: number) => {
-    const nextZoom = clamp(activeViewState.zoom + delta, 2, 17);
+    const nextZoom = clamp(activeViewState.zoom + delta, 2, providerMaxZoom);
     setInteractionViewState(null);
     updateMapViewport({ zoom: nextZoom });
   };
@@ -1550,6 +1550,14 @@ export function MapView({
       : basemapStylePreset;
   const globalProviders = providerCapabilities.filter((entry) => entry.group === "global");
   const regionalProviders = providerCapabilities.filter((entry) => entry.group === "regional");
+  const providerMaxZoom = useMemo(() => {
+    switch (resolvedBasemap.provider) {
+      case "kartverket":
+        return 20;
+      default:
+        return 22;
+    }
+  }, [resolvedBasemap.provider]);
   const simulationOverlaySelectValue = coverageVizMode === "contours" ? "heatmap" : coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
     showDiscoveryMqtt ? "mqtt" : showDiscoverySites ? "library" : "simulation";
@@ -2071,6 +2079,7 @@ export function MapView({
         onError={() => {
           if (!useFallbackMapStyle) {
             setUseFallbackMapStyle(true);
+            setBasemapProvider("carto");
             setMapProviderWarning(
               `${requestedProviderConfig?.label ?? "Selected provider"} failed (network, quota, or style error).`,
             );
@@ -2082,7 +2091,7 @@ export function MapView({
           setInteractionViewState({
             longitude: event.viewState.longitude,
             latitude: event.viewState.latitude,
-            zoom: event.viewState.zoom,
+            zoom: Math.min(event.viewState.zoom, providerMaxZoom),
           })
         }
         onMoveEnd={onMoveEnd}
