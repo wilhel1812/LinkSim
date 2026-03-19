@@ -70,6 +70,21 @@
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
 
+## Production Release Batch
+
+When the user requests a production release:
+
+1. Inventory branches available for release:
+   - Run `wrangler pages deployment list --project-name linksim-staging` to see which commits have been deployed to staging.
+   - Cross-reference with local/remote branches (`git branch -a` + recent `git log --oneline`).
+   - For each candidate branch, present: branch name, commit SHA, staging deploy status, and a brief summary from commit messages.
+   - Check GitHub Issues linked to each branch: show issue number, title, and open/closed status.
+2. Present the inventory as a numbered list and ask the user which branches to include. Do not assume all staged branches should ship.
+3. Merge selected branches into `main` in order.
+4. Run production preflight: `npm test`, `npm run build:bundle`, confirm build label matches SemVer channel rules, confirm no open issues drift for included items.
+5. Run `npm run deploy:prod:main`.
+6. Report deployed commit SHA and notify when Cloudflare Pages deployment completes (`wrangler pages deployment list --project-name linksim`).
+
 ## Theme + Basemap Integration Checklist
 
 When adding a new UI color theme, cross-file wiring is required beyond the theme definition file itself. Missing any step will cause the theme to silently fall back to defaults.
