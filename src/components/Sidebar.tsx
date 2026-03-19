@@ -1823,19 +1823,17 @@ export function Sidebar() {
       }
     }
     applySimulationCollaborator(pending.collaboratorUserId);
-    if (mode === "grant-and-add") {
-      if (pending.blockedPrivateSites.length > 0) {
-        setResourceAccessStatus(
-          `Collaborator added. Access was granted for ${pending.editablePrivateSites.length} private site(s). ${pending.blockedPrivateSites.length} private site(s) still require owner/editor action.`,
-        );
-        return;
-      }
+    if (pending.blockedPrivateSites.length > 0) {
       setResourceAccessStatus(
-        `Collaborator added. Access was granted for ${pending.editablePrivateSites.length} private site(s).`,
+        `Collaborator added. Access was granted for ${pending.editablePrivateSites.length} private site(s). ${pending.blockedPrivateSites.length} private site(s) still require owner/editor action.`,
       );
       return;
     }
-    setResourceAccessStatus("Collaborator added to simulation only.");
+    setResourceAccessStatus(
+      pending.editablePrivateSites.length > 0
+        ? `Collaborator added. Access was granted for ${pending.editablePrivateSites.length} private site(s).`
+        : "Collaborator added.",
+    );
   };
 
   const addCollaborator = (userId: string) => {
@@ -3528,11 +3526,11 @@ export function Sidebar() {
               You are adding <strong>{pendingSimulationCollaboratorSitePrompt.collaboratorLabel}</strong> to simulation <strong>{pendingSimulationCollaboratorSitePrompt.simulationName}</strong>.
             </p>
             <p className="field-help">
-              They currently do not have access to {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length + pendingSimulationCollaboratorSitePrompt.blockedPrivateSites.length} private referenced site(s).
+              They currently do not have access to {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length + pendingSimulationCollaboratorSitePrompt.blockedPrivateSites.length} private referenced site(s). Adding them will grant access to the ones below.
             </p>
             {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length ? (
               <>
-                <p className="field-help">You can grant access to these private sites now:</p>
+                <p className="field-help">Granting access to these private sites:</p>
                 <ul className="field-help access-pending-list">
                   {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.map((site) => (
                     <li key={`grant-${site.id}`}>{site.name}</li>
@@ -3555,12 +3553,11 @@ export function Sidebar() {
             <div className="chip-group">
               {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length ? (
                 <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("grant-and-add")} type="button">
-                  Add Collaborator + Grant Site Access
+                  Add Collaborator
                 </button>
-              ) : null}
-              <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("add-only")} type="button">
-                Add Collaborator Only
-              </button>
+              ) : (
+                <p className="field-help warning-text">You cannot grant site access. Cancel to abort.</p>
+              )}
               <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("cancel")} type="button">
                 Cancel
               </button>
