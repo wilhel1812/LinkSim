@@ -786,6 +786,33 @@ const hasPrivateLibrarySiteReferences = (
   return sites.some((site) => typeof site.libraryEntryId === "string" && privateIds.has(site.libraryEntryId));
 };
 
+const getPrivateSiteReferenceConflict = (
+  simulationPresets: SimulationPreset[],
+  siteLibrary: SiteLibraryEntry[],
+): { simulationName: string; siteName: string } | null => {
+  if (!simulationPresets.length || !siteLibrary.length) return null;
+  const privateSitesById = new globalThis.Map(
+    siteLibrary
+      .filter((entry) => (entry.visibility ?? "private") === "private")
+      .map((entry) => [entry.id, entry]),
+  );
+  if (!privateSitesById.size) return null;
+  for (const simulation of simulationPresets) {
+    const visibility = simulation.visibility ?? "shared";
+    if (visibility === "private") continue;
+    for (const site of simulation.snapshot.sites) {
+      if (!site.libraryEntryId) continue;
+      const privateSite = privateSitesById.get(site.libraryEntryId);
+      if (!privateSite) continue;
+      return {
+        simulationName: simulation.name,
+        siteName: privateSite.name,
+      };
+    }
+  }
+  return null;
+};
+
 const ensureMinimumTopology = (
   inputSites: Site[],
   inputLinks: Link[],
@@ -1207,6 +1234,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
         const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
         const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+        const privateReferenceConflict = getPrivateSiteReferenceConflict(editableSims, siteLibrary);
+        if (privateReferenceConflict) {
+          throw new Error(
+            `Cannot publish/shared simulation "${privateReferenceConflict.simulationName}" because it references private site "${privateReferenceConflict.siteName}". Set simulation to Private or use non-private site entries.`,
+          );
+        }
         console.log("[appStore] Pushing payload:", {
           sites: editableSites.length,
           simulations: editableSims.length,
@@ -1284,6 +1317,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
       const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
       const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+      const privateReferenceConflict = getPrivateSiteReferenceConflict(editableSims, siteLibrary);
+      if (privateReferenceConflict) {
+        throw new Error(
+          `Cannot publish/shared simulation "${privateReferenceConflict.simulationName}" because it references private site "${privateReferenceConflict.siteName}". Set simulation to Private or use non-private site entries.`,
+        );
+      }
       console.log("[appStore] Pushing local data to cloud:", {
         sites: editableSites.length,
         simulations: editableSims.length,

@@ -563,6 +563,14 @@ export function Sidebar() {
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
   } | null>(null);
+  const [pendingSiteVisibilityDowngradePrompt, setPendingSiteVisibilityDowngradePrompt] = useState<{
+    siteId: string;
+    siteName: string;
+    previousVisibility: "private" | "public" | "shared";
+    ownedSimulationIds: string[];
+    ownedSimulations: Array<{ id: string; name: string }>;
+    externalSimulations: Array<{ id: string; name: string }>;
+  } | null>(null);
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
     siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
@@ -1596,6 +1604,35 @@ export function Sidebar() {
 
     try {
       if (resourceDetailsPopup.kind === "site") {
+        const currentSiteEntry = siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+        const currentSiteVisibility = normalizeAccessVisibility(currentSiteEntry?.visibility);
+        if (currentSiteVisibility !== "private" && normalizedVisibility === "private") {
+          const affectedSharedSimulations = simulationPresets.filter((preset) => {
+            const visibility = normalizeAccessVisibility(preset.visibility);
+            if (visibility === "private") return false;
+            return (preset.snapshot.sites ?? []).some((site) => site.libraryEntryId === resourceDetailsPopup.resourceId);
+          });
+          if (affectedSharedSimulations.length > 0) {
+            const ownedSimulationIds = affectedSharedSimulations
+              .filter((preset) => Boolean(currentUser?.id) && preset.ownerUserId === currentUser?.id)
+              .map((preset) => preset.id);
+            const ownedSimulations = affectedSharedSimulations
+              .filter((preset) => Boolean(currentUser?.id) && preset.ownerUserId === currentUser?.id)
+              .map((preset) => ({ id: preset.id, name: preset.name }));
+            const externalSimulations = affectedSharedSimulations
+              .filter((preset) => !(Boolean(currentUser?.id) && preset.ownerUserId === currentUser?.id))
+              .map((preset) => ({ id: preset.id, name: preset.name }));
+            setPendingSiteVisibilityDowngradePrompt({
+              siteId: resourceDetailsPopup.resourceId,
+              siteName: normalizedName,
+              previousVisibility: currentSiteVisibility,
+              ownedSimulationIds,
+              ownedSimulations,
+              externalSimulations,
+            });
+            return false;
+          }
+        }
         updateSiteLibraryEntry(resourceDetailsPopup.resourceId, {
           name: normalizedName,
           description: nextDescription.trim() || undefined,
@@ -1664,6 +1701,36 @@ export function Sidebar() {
     });
     setPendingSimulationVisibilityPrompt(null);
     setResourceAccessStatus("Saved");
+  };
+
+  const applyPendingSiteVisibilityDowngrade = () => {
+    const pending = pendingSiteVisibilityDowngradePrompt;
+    if (!pending) return;
+    updateSiteLibraryEntry(pending.siteId, { visibility: "private" });
+    for (const simulationId of pending.ownedSimulationIds) {
+      updateSimulationPresetEntry(simulationId, { visibility: "private" });
+    }
+    setResourceAccessVisibility("private");
+    setPendingSiteVisibilityDowngradePrompt(null);
+    if (pending.externalSimulations.length > 0) {
+      setResourceAccessStatus(
+        `Saved. ${pending.ownedSimulationIds.length} owned simulation(s) were set to Private. ${pending.externalSimulations.length} external simulation(s) still reference this site and may need owner action.`,
+      );
+      return;
+    }
+    if (pending.ownedSimulationIds.length > 0) {
+      setResourceAccessStatus(`Saved. ${pending.ownedSimulationIds.length} owned simulation(s) were set to Private.`);
+      return;
+    }
+    setResourceAccessStatus("Saved.");
+  };
+
+  const cancelPendingSiteVisibilityDowngrade = () => {
+    const pending = pendingSiteVisibilityDowngradePrompt;
+    if (!pending) return;
+    setResourceAccessVisibility(pending.previousVisibility);
+    setPendingSiteVisibilityDowngradePrompt(null);
+    setResourceAccessStatus("Visibility change canceled.");
   };
 
   const addCollaborator = (userId: string) => {
@@ -2526,11 +2593,27 @@ export function Sidebar() {
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Edit" onClose={() => setResourceDetailsPopup(null)} tier="raised">
+        <ModalOverlay
+          aria-label="Resource Edit"
+          onClose={() => {
+            setResourceDetailsPopup(null);
+            setPendingSimulationVisibilityPrompt(null);
+            setPendingSiteVisibilityDowngradePrompt(null);
+          }}
+          tier="raised"
+        >
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
               <h2>Edit · {resourceDetailsPopup.label}</h2>
-              <button className="inline-action" onClick={() => setResourceDetailsPopup(null)} type="button">
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setResourceDetailsPopup(null);
+                  setPendingSimulationVisibilityPrompt(null);
+                  setPendingSiteVisibilityDowngradePrompt(null);
+                }}
+                type="button"
+              >
                 Close
               </button>
             </div>
@@ -2846,13 +2929,15 @@ export function Sidebar() {
                 </span>
                 <select
                   className="locale-select"
-                    onChange={(event) =>
-                    {
-                      const next = event.target.value as "private" | "public" | "shared";
-                      setResourceAccessVisibility(next);
-                      void persistResourceAccessSettings({ visibility: next });
+                  onChange={(event) => {
+                    const next = event.target.value as "private" | "public" | "shared";
+                    const previous = resourceAccessVisibility;
+                    setResourceAccessVisibility(next);
+                    const saved = persistResourceAccessSettings({ visibility: next });
+                    if (!saved) {
+                      setResourceAccessVisibility(previous);
                     }
-                  }
+                  }}
                   value={resourceAccessVisibility}
                 >
                   <option value="private">Private</option>
@@ -3208,6 +3293,57 @@ export function Sidebar() {
                 Change
               </button>
               <button className="inline-action" onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {pendingSiteVisibilityDowngradePrompt ? (
+        <ModalOverlay
+          aria-label="Confirm Site Visibility Change"
+          onClose={cancelPendingSiteVisibilityDowngrade}
+          tier="raised"
+        >
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>Visibility Change Confirmation</h2>
+              <button className="inline-action" onClick={cancelPendingSiteVisibilityDowngrade} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              You are setting site <strong>{pendingSiteVisibilityDowngradePrompt.siteName}</strong> to <strong>private</strong>.
+            </p>
+            {pendingSiteVisibilityDowngradePrompt.ownedSimulations.length ? (
+              <>
+                <p className="field-help">
+                  This site is used in your shared simulation(s). They will also be set to <strong>private</strong>:
+                </p>
+                <ul className="field-help access-pending-list">
+                  {pendingSiteVisibilityDowngradePrompt.ownedSimulations.map((simulation) => (
+                    <li key={`owned-${simulation.id}`}>{simulation.name}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {pendingSiteVisibilityDowngradePrompt.externalSimulations.length ? (
+              <>
+                <p className="field-help warning-text">
+                  Other users also reference this site. Their simulation visibility cannot be changed by you and those simulations may fail to sync until owners resolve the reference:
+                </p>
+                <ul className="field-help access-pending-list">
+                  {pendingSiteVisibilityDowngradePrompt.externalSimulations.map((simulation) => (
+                    <li key={`external-${simulation.id}`}>{simulation.name}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            <div className="chip-group">
+              <button className="inline-action" onClick={applyPendingSiteVisibilityDowngrade} type="button">
+                Make Private
+              </button>
+              <button className="inline-action" onClick={cancelPendingSiteVisibilityDowngrade} type="button">
                 Cancel
               </button>
             </div>
