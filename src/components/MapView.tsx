@@ -2069,6 +2069,7 @@ export function MapView({
         longitude={activeViewState.longitude}
         latitude={activeViewState.latitude}
         zoom={activeViewState.zoom}
+        maxZoom={providerMaxZoom}
         renderWorldCopies={resolvedBasemap.provider !== "kartverket"}
         initialViewState={{
           longitude: activeViewState.longitude,
