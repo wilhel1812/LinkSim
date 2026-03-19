@@ -573,8 +573,9 @@ export function AppShell() {
     }
     const blockedSites = referencedPrivateSites.filter((site) => !canEditResource(site));
     if (blockedSites.length) {
+      const blockedNames = blockedSites.map((site) => site.name).join(", ");
       setShareStatus(
-        `Cannot upgrade ${blockedSites.length} private site(s) because you do not have edit access to them.`,
+        `Cannot upgrade private sites without edit access: ${blockedNames}. Ask an owner/editor collaborator to change their visibility, or remove them from the simulation.`,
       );
       return;
     }

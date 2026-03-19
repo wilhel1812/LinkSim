@@ -87,6 +87,20 @@
 - When creating staging/production inventory, map each branch to issue number(s) covered.
 - Document any branch-scope exception in the related GitHub issue comment.
 
+## Documentation Discipline
+- Documentation updates are required in the same batch as implementation for any behavior, workflow, policy, or UX change.
+- Do not treat docs as post-work cleanup; docs are part of done criteria.
+- Update the nearest source-of-truth doc when changes are made:
+  - release/deploy behavior -> `docs/release-flow.md`
+  - access/permissions behavior -> `docs/access-model.md`
+  - testing strategy/process -> `docs/testing-plan.md` or `docs/tdd-workflow.md`
+- If no suitable doc exists, create one in `docs/` and reference it from this file when it becomes a recurring source of truth.
+- Keep docs implementation-oriented and LLM-friendly:
+  - include exact file touchpoints and invariants
+  - include failure modes and expected UX behavior
+  - avoid ambiguous wording
+- Before ending a pass, verify docs reflect shipped behavior and mention doc updates in the related GitHub issue comment.
+
 ## Production Release Batch
 
 When the user requests a production release:

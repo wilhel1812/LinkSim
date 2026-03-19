@@ -562,14 +562,16 @@ export function Sidebar() {
     simulationId: string;
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
+    editablePrivateSiteIds: string[];
+    blockedPrivateSites: Array<{ id: string; name: string }>;
   } | null>(null);
   const [pendingSiteVisibilityDowngradePrompt, setPendingSiteVisibilityDowngradePrompt] = useState<{
     siteId: string;
     siteName: string;
     previousVisibility: "private" | "public" | "shared";
-    ownedSimulationIds: string[];
-    ownedSimulations: Array<{ id: string; name: string }>;
-    externalSimulations: Array<{ id: string; name: string }>;
+    editableSimulationIds: string[];
+    editableSimulations: Array<{ id: string; name: string }>;
+    blockedSimulations: Array<{ id: string; name: string }>;
   } | null>(null);
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
@@ -642,13 +644,17 @@ export function Sidebar() {
       }),
     [collaboratorDirectoryById, resourceCollaboratorUserIds],
   );
-  const pendingSimulationPrivateSiteNames = useMemo(() => {
+  const pendingSimulationPrivateSites = useMemo(() => {
     if (!pendingSimulationVisibilityPrompt) return [];
-    const byId = new globalThis.Map(siteLibrary.map((entry) => [entry.id, entry.name]));
-    return pendingSimulationVisibilityPrompt.referencedPrivateSiteIds.map((siteId) => ({
-      id: siteId,
-      name: byId.get(siteId) ?? siteId,
-    }));
+    return pendingSimulationVisibilityPrompt.referencedPrivateSiteIds.map((siteId) => {
+      const entry = siteLibrary.find((candidate) => candidate.id === siteId);
+      const blocked = pendingSimulationVisibilityPrompt.blockedPrivateSites.some((site) => site.id === siteId);
+      return {
+        id: siteId,
+        name: entry?.name ?? siteId,
+        blocked,
+      };
+    });
   }, [pendingSimulationVisibilityPrompt, siteLibrary]);
   const resolveOwnerDisplay = (
     ownerUserId: string | undefined,
@@ -1621,22 +1627,19 @@ export function Sidebar() {
             return (preset.snapshot.sites ?? []).some((site) => site.libraryEntryId === resourceDetailsPopup.resourceId);
           });
           if (affectedSharedSimulations.length > 0) {
-            const ownedSimulationIds = affectedSharedSimulations
-              .filter((preset) => Boolean(currentUser?.id) && preset.ownerUserId === currentUser?.id)
-              .map((preset) => preset.id);
-            const ownedSimulations = affectedSharedSimulations
-              .filter((preset) => Boolean(currentUser?.id) && preset.ownerUserId === currentUser?.id)
+            const editableSimulations = affectedSharedSimulations
+              .filter((preset) => canEditItem(preset, currentUser))
               .map((preset) => ({ id: preset.id, name: preset.name }));
-            const externalSimulations = affectedSharedSimulations
-              .filter((preset) => !(Boolean(currentUser?.id) && preset.ownerUserId === currentUser?.id))
+            const blockedSimulations = affectedSharedSimulations
+              .filter((preset) => !canEditItem(preset, currentUser))
               .map((preset) => ({ id: preset.id, name: preset.name }));
             setPendingSiteVisibilityDowngradePrompt({
               siteId: resourceDetailsPopup.resourceId,
               siteName: normalizedName,
               previousVisibility: currentSiteVisibility,
-              ownedSimulationIds,
-              ownedSimulations,
-              externalSimulations,
+              editableSimulationIds: editableSimulations.map((simulation) => simulation.id),
+              editableSimulations,
+              blockedSimulations,
             });
             return false;
           }
@@ -1656,25 +1659,31 @@ export function Sidebar() {
         });
       } else {
         const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+        const referencedIds = new Set(
+          (simulationEntry?.snapshot.sites ?? [])
+            .map((site) => site.libraryEntryId)
+            .filter((value): value is string => typeof value === "string" && value.length > 0),
+        );
+        const referencedPrivateSites = siteLibrary.filter(
+          (entry) => (entry.visibility ?? "private") === "private" && referencedIds.has(entry.id),
+        );
         const referencedPrivateSiteIds =
           normalizedVisibility === "private"
             ? []
-            : siteLibrary
-                .filter((entry) => {
-                  if ((entry.visibility ?? "private") !== "private") return false;
-                  const referencedIds = new Set(
-                    (simulationEntry?.snapshot.sites ?? [])
-                      .map((site) => site.libraryEntryId)
-                      .filter((value): value is string => typeof value === "string" && value.length > 0),
-                  );
-                  return referencedIds.has(entry.id);
-                })
-                .map((entry) => entry.id);
+            : referencedPrivateSites.map((entry) => entry.id);
         if (referencedPrivateSiteIds.length > 0 && normalizedVisibility === "shared") {
+          const editablePrivateSiteIds = referencedPrivateSites
+            .filter((entry) => canEditItem(entry, currentUser))
+            .map((entry) => entry.id);
+          const blockedPrivateSites = referencedPrivateSites
+            .filter((entry) => !canEditItem(entry, currentUser))
+            .map((entry) => ({ id: entry.id, name: entry.name }));
           setPendingSimulationVisibilityPrompt({
             simulationId: resourceDetailsPopup.resourceId,
             targetVisibility: normalizedVisibility,
             referencedPrivateSiteIds,
+            editablePrivateSiteIds,
+            blockedPrivateSites,
           });
           return false;
         }
@@ -1697,7 +1706,13 @@ export function Sidebar() {
   const applyPendingSimulationVisibilityChange = () => {
     const pending = pendingSimulationVisibilityPrompt;
     if (!pending) return;
-    for (const siteId of pending.referencedPrivateSiteIds) {
+    if (pending.blockedPrivateSites.length > 0) {
+      setResourceAccessStatus(
+        `Cannot set simulation to ${pending.targetVisibility}: you do not have edit access to ${pending.blockedPrivateSites.length} referenced private site(s).`,
+      );
+      return;
+    }
+    for (const siteId of pending.editablePrivateSiteIds) {
       updateSiteLibraryEntry(siteId, { visibility: pending.targetVisibility });
     }
     const sharedWith = resourceCollaboratorUserIds
@@ -1715,19 +1730,19 @@ export function Sidebar() {
     const pending = pendingSiteVisibilityDowngradePrompt;
     if (!pending) return;
     updateSiteLibraryEntry(pending.siteId, { visibility: "private" });
-    for (const simulationId of pending.ownedSimulationIds) {
+    for (const simulationId of pending.editableSimulationIds) {
       updateSimulationPresetEntry(simulationId, { visibility: "private" });
     }
     setResourceAccessVisibility("private");
     setPendingSiteVisibilityDowngradePrompt(null);
-    if (pending.externalSimulations.length > 0) {
+    if (pending.blockedSimulations.length > 0) {
       setResourceAccessStatus(
-        `Saved. ${pending.ownedSimulationIds.length} owned simulation(s) were set to Private. ${pending.externalSimulations.length} external simulation(s) still reference this site and may need owner action.`,
+        `Saved. ${pending.editableSimulationIds.length} editable simulation(s) were set to Private. ${pending.blockedSimulations.length} non-editable simulation(s) still reference this site and need owner/collaborator action.`,
       );
       return;
     }
-    if (pending.ownedSimulationIds.length > 0) {
-      setResourceAccessStatus(`Saved. ${pending.ownedSimulationIds.length} owned simulation(s) were set to Private.`);
+    if (pending.editableSimulationIds.length > 0) {
+      setResourceAccessStatus(`Saved. ${pending.editableSimulationIds.length} editable simulation(s) were set to Private.`);
       return;
     }
     setResourceAccessStatus("Saved.");
@@ -2933,7 +2948,7 @@ export function Sidebar() {
               <label className="field-grid">
                 <span>
                   Access level{" "}
-                  <InfoTip text="Private: visible to owner/admin. Public/Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
+                  <InfoTip text="Private: visible to owner and explicit collaborators. Shared: readable by everyone. Editing is limited to owner plus editor/admin collaborators." />
                 </span>
                 <select
                   className="locale-select"
@@ -3094,7 +3109,7 @@ export function Sidebar() {
             <label className="field-grid">
               <span>
                 Access level{" "}
-                <InfoTip text="Private: visible to owner/admin. Public/Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
+                <InfoTip text="Private: visible to owner and explicit collaborators. Shared: readable by everyone. Editing is limited to owner plus editor/admin collaborators." />
               </span>
               <select
                 className="locale-select"
@@ -3290,12 +3305,15 @@ export function Sidebar() {
             <p className="field-help">
               You are setting this simulation to{" "}
               <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong>, but it references{" "}
-              <strong>{pendingSimulationPrivateSiteNames.length}</strong> private site{pendingSimulationPrivateSiteNames.length === 1 ? "" : "s"}.
+              <strong>{pendingSimulationPrivateSites.length}</strong> private site{pendingSimulationPrivateSites.length === 1 ? "" : "s"}.
             </p>
-            {pendingSimulationPrivateSiteNames.length ? (
+            {pendingSimulationPrivateSites.length ? (
               <ul className="field-help access-pending-list">
-                {pendingSimulationPrivateSiteNames.map((site) => (
-                  <li key={site.id}>{site.name}</li>
+                {pendingSimulationPrivateSites.map((site) => (
+                  <li key={site.id}>
+                    {site.name}
+                    {site.blocked ? " (no edit access)" : ""}
+                  </li>
                 ))}
               </ul>
             ) : null}
@@ -3303,8 +3321,18 @@ export function Sidebar() {
               Do you want to change those referenced sites to{" "}
               <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong> as well?
             </p>
+            {pendingSimulationVisibilityPrompt.blockedPrivateSites.length ? (
+              <p className="field-help warning-text">
+                You cannot continue until the listed no-edit-access private sites are changed by their owner or an editor/admin collaborator.
+              </p>
+            ) : null}
             <div className="chip-group">
-              <button className="inline-action" onClick={applyPendingSimulationVisibilityChange} type="button">
+              <button
+                className="inline-action"
+                disabled={pendingSimulationVisibilityPrompt.blockedPrivateSites.length > 0}
+                onClick={applyPendingSimulationVisibilityChange}
+                type="button"
+              >
                 Change
               </button>
               <button className="inline-action" onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
@@ -3330,25 +3358,25 @@ export function Sidebar() {
             <p className="field-help">
               You are setting site <strong>{pendingSiteVisibilityDowngradePrompt.siteName}</strong> to <strong>private</strong>.
             </p>
-            {pendingSiteVisibilityDowngradePrompt.ownedSimulations.length ? (
+            {pendingSiteVisibilityDowngradePrompt.editableSimulations.length ? (
               <>
                 <p className="field-help">
-                  This site is used in your shared simulation(s). They will also be set to <strong>private</strong>:
+                  This site is used in shared simulation(s) you can edit. They will also be set to <strong>private</strong>:
                 </p>
                 <ul className="field-help access-pending-list">
-                  {pendingSiteVisibilityDowngradePrompt.ownedSimulations.map((simulation) => (
+                  {pendingSiteVisibilityDowngradePrompt.editableSimulations.map((simulation) => (
                     <li key={`owned-${simulation.id}`}>{simulation.name}</li>
                   ))}
                 </ul>
               </>
             ) : null}
-            {pendingSiteVisibilityDowngradePrompt.externalSimulations.length ? (
+            {pendingSiteVisibilityDowngradePrompt.blockedSimulations.length ? (
               <>
                 <p className="field-help warning-text">
-                  Other users also reference this site. Their simulation visibility cannot be changed by you and those simulations may fail to sync until owners resolve the reference:
+                  Other shared simulation(s) reference this site, but you do not have edit access to those simulation visibility settings:
                 </p>
                 <ul className="field-help access-pending-list">
-                  {pendingSiteVisibilityDowngradePrompt.externalSimulations.map((simulation) => (
+                  {pendingSiteVisibilityDowngradePrompt.blockedSimulations.map((simulation) => (
                     <li key={`external-${simulation.id}`}>{simulation.name}</li>
                   ))}
                 </ul>
