@@ -44,7 +44,12 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import { getUiErrorMessage } from "../lib/uiError";
-import { useAppStore } from "../store/appStore";
+import {
+  canMutateActiveSimulation,
+  countNonEditableResourceIds,
+  getMutationPermissionMessage,
+} from "../lib/editAccess";
+import { canEditItem, useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
@@ -60,6 +65,23 @@ const metric = (label: string, value: string) => (
 const parseNumber = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatReadOnlyText = (value: string | undefined, fallback = "—"): string => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+};
+
+const formatReadOnlyValue = (value: number, unit: string): string => `${value.toFixed(1)} ${unit}`;
+
+const formatLatitudeLabel = (value: number): string => {
+  const hemisphere = value >= 0 ? "N" : "S";
+  return `${Math.abs(value).toFixed(6)}${hemisphere}`;
+};
+
+const formatLongitudeLabel = (value: number): string => {
+  const hemisphere = value >= 0 ? "E" : "W";
+  return `${Math.abs(value).toFixed(6)}${hemisphere}`;
 };
 
 const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
@@ -267,7 +289,11 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
 
 const getSnapshotCount = (_key: string): number => 0;
 
-export function Sidebar() {
+type SidebarProps = {
+  canPersistWorkspace: boolean;
+};
+
+export function Sidebar({ canPersistWorkspace }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const buildChannel = runtimeEnvironment === "production" ? "stable" : runtimeEnvironment === "staging" ? "beta" : "alpha";
@@ -435,10 +461,9 @@ export function Sidebar() {
         : links,
     [hasNonAutoLinks, links],
   );
-  const [newPresetName, setNewPresetName] = useState("");
-  const [newPresetNameError, setNewPresetNameError] = useState("");
   const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showNewSimulationModal, setShowNewSimulationModal] = useState(false);
+  const [isCreatingSimulationCopy, setIsCreatingSimulationCopy] = useState(false);
   const [newSimulationName, setNewSimulationName] = useState("");
   const [newSimulationDescription, setNewSimulationDescription] = useState("");
   const [newSimulationNameError, setNewSimulationNameError] = useState("");
@@ -562,6 +587,24 @@ export function Sidebar() {
     simulationId: string;
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
+    editablePrivateSiteIds: string[];
+    blockedPrivateSites: Array<{ id: string; name: string }>;
+  } | null>(null);
+  const [pendingSiteVisibilityDowngradePrompt, setPendingSiteVisibilityDowngradePrompt] = useState<{
+    siteId: string;
+    siteName: string;
+    previousVisibility: "private" | "public" | "shared";
+    editableSimulationIds: string[];
+    editableSimulations: Array<{ id: string; name: string }>;
+    visibleBlockedSimulations: Array<{ id: string; name: string }>;
+    hiddenBlockedPrivateSimulationCount: number;
+  } | null>(null);
+  const [pendingSimulationCollaboratorSitePrompt, setPendingSimulationCollaboratorSitePrompt] = useState<{
+    simulationName: string;
+    collaboratorUserId: string;
+    collaboratorLabel: string;
+    editablePrivateSites: Array<{ id: string; name: string }>;
+    blockedPrivateSites: Array<{ id: string; name: string }>;
   } | null>(null);
   const [storageOriginWarning, setStorageOriginWarning] = useState("");
   const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
@@ -634,6 +677,18 @@ export function Sidebar() {
       }),
     [collaboratorDirectoryById, resourceCollaboratorUserIds],
   );
+  const pendingSimulationPrivateSites = useMemo(() => {
+    if (!pendingSimulationVisibilityPrompt) return [];
+    return pendingSimulationVisibilityPrompt.referencedPrivateSiteIds.map((siteId) => {
+      const entry = siteLibrary.find((candidate) => candidate.id === siteId);
+      const blocked = pendingSimulationVisibilityPrompt.blockedPrivateSites.some((site) => site.id === siteId);
+      return {
+        id: siteId,
+        name: entry?.name ?? siteId,
+        blocked,
+      };
+    });
+  }, [pendingSimulationVisibilityPrompt, siteLibrary]);
   const resolveOwnerDisplay = (
     ownerUserId: string | undefined,
     fallbackName: string | undefined,
@@ -672,14 +727,24 @@ export function Sidebar() {
       kind === "site"
         ? siteLibrary.find((candidate) => candidate.id === resourceId)
         : simulationPresets.find((candidate) => candidate.id === resourceId);
-    if (!entry) return false;
-    const role = (entry as { effectiveRole?: unknown }).effectiveRole;
-    return role === "owner" || role === "admin" || role === "editor";
+    if (!entry || !currentUser) return false;
+    return canEditItem(entry as { ownerUserId?: string; effectiveRole?: string }, currentUser);
+  };
+  const canReadResource = (
+    item: { ownerUserId?: string; effectiveRole?: string; visibility?: "private" | "public" | "shared" },
+  ): boolean => {
+    if (!currentUser) return false;
+    if (item.ownerUserId === currentUser.id) return true;
+    if (item.effectiveRole === "owner" || item.effectiveRole === "admin" || item.effectiveRole === "editor" || item.effectiveRole === "viewer") {
+      return true;
+    }
+    const visibility = normalizeAccessVisibility(item.visibility);
+    return visibility !== "private";
   };
   const resourceCanWrite = useMemo(() => {
     if (!resourceDetailsPopup) return false;
     return canWriteResource(resourceDetailsPopup.kind, resourceDetailsPopup.resourceId);
-  }, [resourceDetailsPopup, siteLibrary, simulationPresets]);
+  }, [resourceDetailsPopup, siteLibrary, simulationPresets, currentUser]);
   const collaboratorCandidates = useMemo(() => {
     const q = resourceCollaboratorQuery.trim().toLowerCase();
     const selectedIds = new Set(resourceCollaboratorUserIds);
@@ -981,6 +1046,10 @@ export function Sidebar() {
   };
 
   const openAddLinkModal = () => {
+    if (!canMutateSimulation) {
+      setSimulationSaveStatus(getMutationPermissionMessage("link", "create"));
+      return;
+    }
     const hasFromInSites = sites.some((site) => site.id === selectedLink.fromSiteId);
     const hasToInSites = sites.some((site) => site.id === selectedLink.toSiteId);
     const fallbackFrom = hasFromInSites ? selectedLink.fromSiteId : sites[0]?.id || "";
@@ -1006,6 +1075,10 @@ export function Sidebar() {
   };
 
   const openEditLinkModal = () => {
+    if (!canMutateSimulation) {
+      setSimulationSaveStatus(getMutationPermissionMessage("link", "update"));
+      return;
+    }
     const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId) ?? null;
     const toSite = sites.find((site) => site.id === selectedLink.toSiteId) ?? null;
     const baseRadio = resolveLinkRadio(selectedLink, fromSite, toSite);
@@ -1033,6 +1106,12 @@ export function Sidebar() {
 
   const saveLinkModal = () => {
     if (!linkModal) return;
+    if (!canMutateSimulation) {
+      setLinkModal((current) =>
+        current ? { ...current, status: getMutationPermissionMessage("link", "save") } : current,
+      );
+      return;
+    }
     const fromExists = sites.some((site) => site.id === linkModal.fromSiteId);
     const toExists = sites.some((site) => site.id === linkModal.toSiteId);
     if (!fromExists || !toExists) {
@@ -1086,24 +1165,16 @@ export function Sidebar() {
     });
     setLinkModal(null);
   };
-  const saveSimulationAsNew = () => {
-    const trimmed = newPresetName.trim();
-    if (!trimmed) {
-      setNewPresetNameError("A name is required.");
-      setSimulationSaveStatus("");
-      return;
-    }
-    setNewPresetNameError("");
-    const savedId = saveCurrentSimulationPreset(trimmed);
-    if (savedId) {
-      const ref = `saved:${savedId}`;
-      persistSelectedSimulationRef(ref);
-      setSimulationSaveStatus(`Saved copy: ${trimmed}`);
-    }
-    setNewPresetName("");
+  const openNewSimulationModal = (mode: "blank" | "copy") => {
+    setNewSimulationName("");
+    setNewSimulationDescription("");
+    setNewSimulationNameError("");
+    setIsCreatingSimulationCopy(mode === "copy");
+    setShowNewSimulationModal(true);
   };
-  const createBlankSimulation = () => {
-    if (!currentUser?.id) {
+
+  const createSimulationFromModal = () => {
+    if (!canCreateOwnedResources || !currentUser?.id) {
       setSimulationSaveStatus("Cannot create simulation until current user profile is loaded.");
       return;
     }
@@ -1114,8 +1185,28 @@ export function Sidebar() {
       return;
     }
     setNewSimulationNameError("");
+    const description = newSimulationDescription.trim() || undefined;
+    if (isCreatingSimulationCopy) {
+      const copiedId = saveCurrentSimulationPreset(trimmed);
+      if (!copiedId) {
+        setSimulationSaveStatus("Failed creating simulation copy.");
+        return;
+      }
+      updateSimulationPresetEntry(copiedId, {
+        description,
+        visibility: newSimulationVisibility,
+      });
+      loadSimulationPreset(copiedId);
+      persistSelectedSimulationRef(`saved:${copiedId}`);
+      setSimulationSaveStatus(`Created simulation copy: ${trimmed}`);
+      setNewSimulationName("");
+      setNewSimulationDescription("");
+      setIsCreatingSimulationCopy(false);
+      setShowNewSimulationModal(false);
+      return;
+    }
     const createdId = createBlankSimulationPreset(trimmed, {
-      description: newSimulationDescription.trim() || undefined,
+      description,
       visibility: newSimulationVisibility,
       ownerUserId: currentUser.id,
       createdByUserId: currentUser.id,
@@ -1134,6 +1225,7 @@ export function Sidebar() {
     setSimulationSaveStatus(`Created simulation: ${trimmed}`);
     setNewSimulationName("");
     setNewSimulationDescription("");
+    setIsCreatingSimulationCopy(false);
     setShowNewSimulationModal(false);
   };
   const displayLinkName = (linkId: string, linkName?: string) => {
@@ -1157,7 +1249,45 @@ export function Sidebar() {
     });
   };
   const selectedLibraryCount = selectedLibraryIds.size;
+  const canCreateOwnedResources =
+    Boolean(currentUser?.id) &&
+    (currentUser?.isApproved === true || currentUser?.accountState === "approved");
+  const selectedSiteLibraryEntry = useMemo(
+    () =>
+      selectedSite.libraryEntryId
+        ? siteLibrary.find((entry) => entry.id === selectedSite.libraryEntryId) ?? null
+        : null,
+    [selectedSite.libraryEntryId, siteLibrary],
+  );
+  const canEditSelectedSiteLibraryEntry =
+    selectedSiteLibraryEntry !== null
+      ? canEditItem(selectedSiteLibraryEntry as { ownerUserId?: string; effectiveRole?: string }, currentUser)
+      : Boolean(currentUser?.id);
+  const canMutateSimulation = useMemo(
+    () =>
+      canPersistWorkspace &&
+      canMutateActiveSimulation(
+        selectedSimulationRef,
+        simulationPresets as Array<{ id: string; ownerUserId?: string; effectiveRole?: string }>,
+        currentUser,
+      ),
+    [canPersistWorkspace, currentUser, selectedSimulationRef, simulationPresets],
+  );
+  const selectedNonEditableLibraryEntryCount = useMemo(
+    () =>
+      countNonEditableResourceIds(
+        selectedLibraryIds,
+        siteLibrary as Array<{ id: string; ownerUserId?: string; effectiveRole?: string }>,
+        currentUser,
+      ),
+    [currentUser, selectedLibraryIds, siteLibrary],
+  );
+  const canDeleteSelectedLibraryEntries = selectedLibraryCount > 0 && selectedNonEditableLibraryEntryCount === 0;
   const openLibraryForSelectedSite = () => {
+    if (!canEditSelectedSiteLibraryEntry) {
+      setLibrarySearchStatus(getMutationPermissionMessage("library-site", "save"));
+      return;
+    }
     setShowSiteLibraryManager(true);
     const matchedEntry = siteLibrary.find(
       (entry) =>
@@ -1198,8 +1328,8 @@ export function Sidebar() {
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
   };
   const addLibraryEntryNow = () => {
-    if (!currentUser?.id) {
-      setLibrarySearchStatus("Please log in to add sites to your library.");
+    if (!canCreateOwnedResources || !currentUser?.id) {
+      setLibrarySearchStatus("Create access pending: your account must be approved to add library sites.");
       return;
     }
     if (!newLibraryName.trim()) {
@@ -1582,6 +1712,7 @@ export function Sidebar() {
         ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
         : simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
     const effectiveRole = (currentEntry as { effectiveRole?: string } | undefined)?.effectiveRole ?? "owner";
+    const isResourceOwner = Boolean(currentUser?.id) && currentUser?.id === currentResourceOwnerId;
     const currentSharedUserIds = new Set(
       ((currentEntry as { sharedWith?: Array<{ userId: string }> } | undefined)?.sharedWith ?? []).map(
         (grant) => grant.userId,
@@ -1589,13 +1720,55 @@ export function Sidebar() {
     );
     const nextSharedUserIds = new Set(sharedWith.map((grant) => grant.userId));
     const removedCollaborators = [...currentSharedUserIds].filter((userId) => !nextSharedUserIds.has(userId));
-    if (removedCollaborators.length > 0 && !["owner", "admin"].includes(effectiveRole)) {
+    if (removedCollaborators.length > 0 && !(isResourceOwner || ["owner", "admin"].includes(effectiveRole))) {
       setResourceAccessStatus("Only owners/admins can remove existing collaborators.");
       return false;
     }
 
     try {
       if (resourceDetailsPopup.kind === "site") {
+        const currentSiteEntry = siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+        const currentSiteVisibility = normalizeAccessVisibility(currentSiteEntry?.visibility);
+        if (currentSiteVisibility !== "private" && normalizedVisibility === "private") {
+          const affectedSimulations = simulationPresets.filter((preset) => {
+            return (preset.snapshot.sites ?? []).some((site) => site.libraryEntryId === resourceDetailsPopup.resourceId);
+          });
+          if (affectedSimulations.length > 0) {
+            const editableSimulations = affectedSimulations
+              .filter(
+                (preset) =>
+                  canEditItem(preset, currentUser) && normalizeAccessVisibility(preset.visibility) !== "private",
+              )
+              .map((preset) => ({ id: preset.id, name: preset.name }));
+            const blockedSimulations = affectedSimulations
+              .filter((preset) => !canEditItem(preset, currentUser))
+              .map((preset) => ({
+                id: preset.id,
+                name: preset.name,
+                visibility: normalizeAccessVisibility(preset.visibility),
+                canRead: canReadResource(preset),
+              }));
+            const visibleBlockedSimulations = blockedSimulations
+              .filter((simulation) => simulation.canRead)
+              .map((simulation) => ({ id: simulation.id, name: simulation.name }));
+            const hiddenBlockedPrivateSimulationCount = blockedSimulations.filter(
+              (simulation) => !simulation.canRead && simulation.visibility === "private",
+            ).length;
+            if (!editableSimulations.length && !visibleBlockedSimulations.length && hiddenBlockedPrivateSimulationCount === 0) {
+              return false;
+            }
+            setPendingSiteVisibilityDowngradePrompt({
+              siteId: resourceDetailsPopup.resourceId,
+              siteName: normalizedName,
+              previousVisibility: currentSiteVisibility,
+              editableSimulationIds: editableSimulations.map((simulation) => simulation.id),
+              editableSimulations,
+              visibleBlockedSimulations,
+              hiddenBlockedPrivateSimulationCount,
+            });
+            return false;
+          }
+        }
         updateSiteLibraryEntry(resourceDetailsPopup.resourceId, {
           name: normalizedName,
           description: nextDescription.trim() || undefined,
@@ -1611,25 +1784,31 @@ export function Sidebar() {
         });
       } else {
         const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+        const referencedIds = new Set(
+          (simulationEntry?.snapshot.sites ?? [])
+            .map((site) => site.libraryEntryId)
+            .filter((value): value is string => typeof value === "string" && value.length > 0),
+        );
+        const referencedPrivateSites = siteLibrary.filter(
+          (entry) => (entry.visibility ?? "private") === "private" && referencedIds.has(entry.id),
+        );
         const referencedPrivateSiteIds =
           normalizedVisibility === "private"
             ? []
-            : siteLibrary
-                .filter((entry) => {
-                  if ((entry.visibility ?? "private") !== "private") return false;
-                  const referencedIds = new Set(
-                    (simulationEntry?.snapshot.sites ?? [])
-                      .map((site) => site.libraryEntryId)
-                      .filter((value): value is string => typeof value === "string" && value.length > 0),
-                  );
-                  return referencedIds.has(entry.id);
-                })
-                .map((entry) => entry.id);
+            : referencedPrivateSites.map((entry) => entry.id);
         if (referencedPrivateSiteIds.length > 0 && normalizedVisibility === "shared") {
+          const editablePrivateSiteIds = referencedPrivateSites
+            .filter((entry) => canEditItem(entry, currentUser))
+            .map((entry) => entry.id);
+          const blockedPrivateSites = referencedPrivateSites
+            .filter((entry) => !canEditItem(entry, currentUser))
+            .map((entry) => ({ id: entry.id, name: entry.name }));
           setPendingSimulationVisibilityPrompt({
             simulationId: resourceDetailsPopup.resourceId,
             targetVisibility: normalizedVisibility,
             referencedPrivateSiteIds,
+            editablePrivateSiteIds,
+            blockedPrivateSites,
           });
           return false;
         }
@@ -1652,7 +1831,13 @@ export function Sidebar() {
   const applyPendingSimulationVisibilityChange = () => {
     const pending = pendingSimulationVisibilityPrompt;
     if (!pending) return;
-    for (const siteId of pending.referencedPrivateSiteIds) {
+    if (pending.blockedPrivateSites.length > 0) {
+      setResourceAccessStatus(
+        `Cannot set simulation to ${pending.targetVisibility}: you do not have edit access to ${pending.blockedPrivateSites.length} referenced private site(s).`,
+      );
+      return;
+    }
+    for (const siteId of pending.editablePrivateSiteIds) {
       updateSiteLibraryEntry(siteId, { visibility: pending.targetVisibility });
     }
     const sharedWith = resourceCollaboratorUserIds
@@ -1666,6 +1851,81 @@ export function Sidebar() {
     setResourceAccessStatus("Saved");
   };
 
+  const applyPendingSiteVisibilityDowngrade = () => {
+    const pending = pendingSiteVisibilityDowngradePrompt;
+    if (!pending) return;
+    updateSiteLibraryEntry(pending.siteId, { visibility: "private" });
+    for (const simulationId of pending.editableSimulationIds) {
+      updateSimulationPresetEntry(simulationId, { visibility: "private" });
+    }
+    setResourceAccessVisibility("private");
+    setPendingSiteVisibilityDowngradePrompt(null);
+    if (pending.visibleBlockedSimulations.length > 0 || pending.hiddenBlockedPrivateSimulationCount > 0) {
+      const hiddenNote =
+        pending.hiddenBlockedPrivateSimulationCount > 0
+          ? ` and ${pending.hiddenBlockedPrivateSimulationCount} other private simulation(s)`
+          : "";
+      setResourceAccessStatus(
+        `Saved. ${pending.editableSimulationIds.length} editable simulation(s) were set to Private. ${pending.visibleBlockedSimulations.length} non-editable simulation(s) still reference this site${hiddenNote} and need owner/collaborator action.`,
+      );
+      return;
+    }
+    if (pending.editableSimulationIds.length > 0) {
+      setResourceAccessStatus(`Saved. ${pending.editableSimulationIds.length} editable simulation(s) were set to Private.`);
+      return;
+    }
+    setResourceAccessStatus("Saved.");
+  };
+
+  const cancelPendingSiteVisibilityDowngrade = () => {
+    const pending = pendingSiteVisibilityDowngradePrompt;
+    if (!pending) return;
+    setResourceAccessVisibility(pending.previousVisibility);
+    setPendingSiteVisibilityDowngradePrompt(null);
+    setResourceAccessStatus("Visibility change canceled.");
+  };
+
+  const applySimulationCollaborator = (collaboratorUserId: string) => {
+    const nextCollaborators = resourceCollaboratorUserIds.includes(collaboratorUserId)
+      ? resourceCollaboratorUserIds
+      : [...resourceCollaboratorUserIds, collaboratorUserId];
+    setResourceCollaboratorUserIds(nextCollaborators);
+    void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
+    setResourceCollaboratorQuery("");
+  };
+
+  const resolvePendingSimulationCollaboratorSitePrompt = (mode: "grant-and-add" | "add-only" | "cancel") => {
+    const pending = pendingSimulationCollaboratorSitePrompt;
+    if (!pending) return;
+    setPendingSimulationCollaboratorSitePrompt(null);
+    if (mode === "cancel") {
+      setResourceAccessStatus("Collaborator add canceled.");
+      return;
+    }
+    if (mode === "grant-and-add") {
+      for (const site of pending.editablePrivateSites) {
+        const entry = siteLibrary.find((candidate) => candidate.id === site.id);
+        if (!entry) continue;
+        const existing = (entry.sharedWith ?? []).filter((grant) => grant.userId !== pending.collaboratorUserId);
+        updateSiteLibraryEntry(site.id, {
+          sharedWith: [...existing, { userId: pending.collaboratorUserId, role: "editor" }],
+        });
+      }
+    }
+    applySimulationCollaborator(pending.collaboratorUserId);
+    if (pending.blockedPrivateSites.length > 0) {
+      setResourceAccessStatus(
+        `Collaborator added. Access was granted for ${pending.editablePrivateSites.length} private site(s). ${pending.blockedPrivateSites.length} private site(s) still require owner/editor action.`,
+      );
+      return;
+    }
+    setResourceAccessStatus(
+      pending.editablePrivateSites.length > 0
+        ? `Collaborator added. Access was granted for ${pending.editablePrivateSites.length} private site(s).`
+        : "Collaborator added.",
+    );
+  };
+
   const addCollaborator = (userId: string) => {
     if (!resourceCanWrite) {
       setResourceAccessStatus("Read-only: you do not have edit permission for this resource.");
@@ -1676,12 +1936,38 @@ export function Sidebar() {
       setResourceAccessStatus("Owner is implicit and cannot be added as collaborator.");
       return;
     }
-    const nextCollaborators = resourceCollaboratorUserIds.includes(userId)
-      ? resourceCollaboratorUserIds
-      : [...resourceCollaboratorUserIds, userId];
-    setResourceCollaboratorUserIds(nextCollaborators);
-    void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
-    setResourceCollaboratorQuery("");
+    if (resourceDetailsPopup?.kind === "simulation") {
+      const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+      const referencedIds = new Set(
+        (simulationEntry?.snapshot.sites ?? [])
+          .map((site) => site.libraryEntryId)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      );
+      const privateSitesNeedingAccess = siteLibrary.filter((entry) => {
+        if ((entry.visibility ?? "private") !== "private") return false;
+        if (!referencedIds.has(entry.id)) return false;
+        if (entry.ownerUserId === userId) return false;
+        return !(entry.sharedWith ?? []).some((grant) => grant.userId === userId);
+      });
+      if (privateSitesNeedingAccess.length > 0) {
+        const editablePrivateSites = privateSitesNeedingAccess
+          .filter((entry) => canEditItem(entry, currentUser))
+          .map((entry) => ({ id: entry.id, name: entry.name }));
+        const blockedPrivateSites = privateSitesNeedingAccess
+          .filter((entry) => !canEditItem(entry, currentUser))
+          .map((entry) => ({ id: entry.id, name: entry.name }));
+        const collaborator = collaboratorDirectoryById.get(userId);
+        setPendingSimulationCollaboratorSitePrompt({
+          simulationName: simulationEntry?.name ?? resourceDetailsPopup.label,
+          collaboratorUserId: userId,
+          collaboratorLabel: collaborator?.username ?? collaborator?.email ?? userId,
+          editablePrivateSites,
+          blockedPrivateSites,
+        });
+        return;
+      }
+    }
+    applySimulationCollaborator(userId);
   };
 
   const removeCollaborator = (userId: string) => {
@@ -1695,12 +1981,13 @@ export function Sidebar() {
         ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
         : simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
     const effectiveRole = (currentEntry as { effectiveRole?: string } | undefined)?.effectiveRole ?? "owner";
+    const isResourceOwner = Boolean(currentUser?.id) && currentUser?.id === currentResourceOwnerId;
     const currentSharedUserIds = new Set(
       ((currentEntry as { sharedWith?: Array<{ userId: string }> } | undefined)?.sharedWith ?? []).map(
         (grant) => grant.userId,
       ),
     );
-    if (currentSharedUserIds.has(userId) && !["owner", "admin"].includes(effectiveRole)) {
+    if (currentSharedUserIds.has(userId) && !(isResourceOwner || ["owner", "admin"].includes(effectiveRole))) {
       setResourceAccessStatus("Only owners/admins can remove existing collaborators.");
       return;
     }
@@ -1751,16 +2038,18 @@ export function Sidebar() {
           <button
             className="inline-action"
             onClick={() => {
-              setNewSimulationName("");
-              setNewSimulationDescription("");
-              setNewSimulationNameError("");
-              setShowNewSimulationModal(true);
+              openNewSimulationModal("blank");
             }}
             type="button"
           >
             New Simulation
           </button>
-          <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+          <button
+            className="inline-action"
+            disabled={!canCreateOwnedResources}
+            onClick={() => openNewSimulationModal("copy")}
+            type="button"
+          >
             Save a Copy
           </button>
         </div>
@@ -1777,8 +2066,12 @@ export function Sidebar() {
           <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
             Open Site Library
           </button>
-          {newestSiteLibraryEntryId ? (
-            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
+          {canMutateSimulation && newestSiteLibraryEntryId ? (
+            <button
+              className="inline-action"
+              onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)}
+              type="button"
+            >
               Insert Newest
             </button>
           ) : null}
@@ -1800,24 +2093,28 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
-          Edit Selected Site
-        </button>
-        <button
-          className="inline-action danger"
-          disabled={sites.length <= 1}
-          onClick={() =>
-            requestDeleteConfirm(
-              "Remove Site",
-              `Remove ${selectedSite.name} from the current simulation?`,
-              () => deleteSite(selectedSite.id),
-              "Remove",
-            )
-          }
-          type="button"
-        >
-          Remove Selected From Simulation
-        </button>
+        {canEditSelectedSiteLibraryEntry ? (
+          <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+            Edit Selected Site
+          </button>
+        ) : null}
+        {canMutateSimulation ? (
+          <button
+            className="inline-action danger"
+            disabled={sites.length <= 1}
+            onClick={() =>
+              requestDeleteConfirm(
+                "Remove Site",
+                `Remove ${selectedSite.name} from the current simulation?`,
+                () => deleteSite(selectedSite.id),
+                "Remove",
+              )
+            }
+            type="button"
+          >
+            Remove Selected From Simulation
+          </button>
+        ) : null}
       </section>
 
       <section className="panel-section section-radio">
@@ -1830,168 +2127,219 @@ export function Sidebar() {
             <p className="field-help">Coverage mode</p>
             <InfoTip text="BestSite: computes strongest coverage from any site at each sample point. Polar: radial sampling around the selected From site. Cartesian: regular grid sampling over the current simulation area. Route: samples along the selected path corridor." />
           </div>
-          <div className="chip-group">
-            {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
-              <button
-                className={clsx("chip-button", selectedCoverageMode === mode && "is-selected")}
-                key={mode}
-                onClick={() => onCoverageModeChange(mode)}
-                type="button"
-              >
-                {mode}
+          {canMutateSimulation ? (
+            <>
+              <div className="chip-group">
+                {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
+                  <button
+                    className={clsx("chip-button", selectedCoverageMode === mode && "is-selected")}
+                    key={mode}
+                    onClick={() => onCoverageModeChange(mode)}
+                    type="button"
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+              {networks.length > 1 ? (
+                <select
+                  className="locale-select"
+                  onChange={(event) => setSelectedNetworkId(event.target.value)}
+                  value={selectedNetworkId}
+                >
+                  {networks.map((network) => (
+                    <option key={network.id} value={network.id}>
+                      {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="field-help">
+                  Active channel profile: <strong>{selectedNetwork.name}</strong>
+                </p>
+              )}
+              <label className="field-grid">
+                <span>Frequency Plan</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
+                  value={selectedFrequencyPresetId}
+                >
+                  {FREQUENCY_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
+                Apply Frequency Plan
               </button>
-            ))}
-          </div>
-          {networks.length > 1 ? (
-            <select
-              className="locale-select"
-              onChange={(event) => setSelectedNetworkId(event.target.value)}
-              value={selectedNetworkId}
-            >
-              {networks.map((network) => (
-                <option key={network.id} value={network.id}>
-                  {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
-                </option>
-              ))}
-            </select>
+            </>
           ) : (
-            <p className="field-help">
-              Active channel profile: <strong>{selectedNetwork.name}</strong>
-            </p>
+            <>
+              <p className="field-help">
+                Coverage mode: <strong>{selectedCoverageMode}</strong>
+              </p>
+              <p className="field-help">
+                Active channel profile: <strong>{selectedNetwork.name}</strong>
+              </p>
+              <p className="field-help">
+                Frequency plan: <strong>{selectedFrequencyPreset?.label ?? "Custom"}</strong>
+              </p>
+            </>
           )}
-          <label className="field-grid">
-            <span>Frequency Plan</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
-              value={selectedFrequencyPresetId}
-            >
-              {FREQUENCY_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
-            Apply Frequency Plan
-          </button>
           <div className="section-heading">
             <p className="field-help">Propagation model</p>
             <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: direct + ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: terrain-aware approximation using elevation diffraction penalty in this tool; generally the most realistic option here for hilly/mountain links." />
           </div>
-          <div className="chip-group">
-            {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
-              <button
-                className={clsx("chip-button", model === candidate && "is-selected")}
-                key={candidate}
-                onClick={() => onModelChange(candidate)}
-                type="button"
-              >
-                {candidate}
-              </button>
-            ))}
-          </div>
+          {canMutateSimulation ? (
+            <div className="chip-group">
+              {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
+                <button
+                  className={clsx("chip-button", model === candidate && "is-selected")}
+                  key={candidate}
+                  onClick={() => onModelChange(candidate)}
+                  type="button"
+                >
+                  {candidate}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="field-help">
+              Propagation model: <strong>{model}</strong>
+            </p>
+          )}
           <details className="compact-details">
             <summary>ITM Environment</summary>
           <p className="field-help">
             These parameters feed terrain-aware path loss. Auto mode derives defaults from current terrain/profile and
             you can override manually.
           </p>
-          <label className="field-grid">
-            <span>Auto environment defaults</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
-              value={autoPropagationEnvironment ? "auto" : "manual"}
-            >
-              <option value="auto">Auto (recommended)</option>
-              <option value="manual">Manual override</option>
-            </select>
-          </label>
-          <p className="field-help">{propagationEnvironmentReason}</p>
-          <label className="field-grid">
-            <span>Radio Climate</span>
-            <select
-              className="locale-select"
-              disabled={autoPropagationEnvironment}
-              onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
-              value={effectivePropagationEnvironment.radioClimate}
-            >
-              {RADIO_CLIMATE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-grid">
-            <span>Polarization</span>
-            <select
-              className="locale-select"
-              disabled={autoPropagationEnvironment}
-              onChange={(event) =>
-                setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
-              }
-              value={effectivePropagationEnvironment.polarization}
-            >
-              <option value="Vertical">Vertical</option>
-              <option value="Horizontal">Horizontal</option>
-            </select>
-          </label>
-          <label className="field-grid">
-            <span>Clutter Height (m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={0}
-              onChange={(event) =>
-                setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
-              }
-              type="number"
-              value={effectivePropagationEnvironment.clutterHeightM}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Ground Dielectric (V/m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={1}
-              onChange={(event) =>
-                setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
-              }
-              step="0.1"
-              type="number"
-              value={effectivePropagationEnvironment.groundDielectric}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Ground Conductivity (S/m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={0}
-              onChange={(event) =>
-                setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
-              }
-              step="0.001"
-              type="number"
-              value={effectivePropagationEnvironment.groundConductivity}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Atmospheric Bending (N-units)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={250}
-              onChange={(event) =>
-                setPropagationEnvironment({
-                  atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
-                })
-              }
-              step="1"
-              type="number"
-              value={effectivePropagationEnvironment.atmosphericBendingNUnits}
-            />
-          </label>
+          {canMutateSimulation ? (
+            <>
+              <label className="field-grid">
+                <span>Auto environment defaults</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
+                  value={autoPropagationEnvironment ? "auto" : "manual"}
+                >
+                  <option value="auto">Auto (recommended)</option>
+                  <option value="manual">Manual override</option>
+                </select>
+              </label>
+              <p className="field-help">{propagationEnvironmentReason}</p>
+              <label className="field-grid">
+                <span>Radio Climate</span>
+                <select
+                  className="locale-select"
+                  disabled={autoPropagationEnvironment}
+                  onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
+                  value={effectivePropagationEnvironment.radioClimate}
+                >
+                  {RADIO_CLIMATE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-grid">
+                <span>Polarization</span>
+                <select
+                  className="locale-select"
+                  disabled={autoPropagationEnvironment}
+                  onChange={(event) =>
+                    setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
+                  }
+                  value={effectivePropagationEnvironment.polarization}
+                >
+                  <option value="Vertical">Vertical</option>
+                  <option value="Horizontal">Horizontal</option>
+                </select>
+              </label>
+              <label className="field-grid">
+                <span>Clutter Height (m)</span>
+                <input
+                  disabled={autoPropagationEnvironment}
+                  min={0}
+                  onChange={(event) =>
+                    setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
+                  }
+                  type="number"
+                  value={effectivePropagationEnvironment.clutterHeightM}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Ground Dielectric (V/m)</span>
+                <input
+                  disabled={autoPropagationEnvironment}
+                  min={1}
+                  onChange={(event) =>
+                    setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
+                  }
+                  step="0.1"
+                  type="number"
+                  value={effectivePropagationEnvironment.groundDielectric}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Ground Conductivity (S/m)</span>
+                <input
+                  disabled={autoPropagationEnvironment}
+                  min={0}
+                  onChange={(event) =>
+                    setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
+                  }
+                  step="0.001"
+                  type="number"
+                  value={effectivePropagationEnvironment.groundConductivity}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Atmospheric Bending (N-units)</span>
+                <input
+                  disabled={autoPropagationEnvironment}
+                  min={250}
+                  onChange={(event) =>
+                    setPropagationEnvironment({
+                      atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
+                    })
+                  }
+                  step="1"
+                  type="number"
+                  value={effectivePropagationEnvironment.atmosphericBendingNUnits}
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <p className="field-help">
+                Auto environment defaults: <strong>{autoPropagationEnvironment ? "Auto" : "Manual"}</strong>
+              </p>
+              <p className="field-help">{propagationEnvironmentReason}</p>
+              <p className="field-help">
+                Radio Climate: <strong>{effectivePropagationEnvironment.radioClimate}</strong>
+              </p>
+              <p className="field-help">
+                Polarization: <strong>{effectivePropagationEnvironment.polarization}</strong>
+              </p>
+              <p className="field-help">
+                Clutter Height: <strong>{effectivePropagationEnvironment.clutterHeightM} m</strong>
+              </p>
+              <p className="field-help">
+                Ground Dielectric: <strong>{effectivePropagationEnvironment.groundDielectric} V/m</strong>
+              </p>
+              <p className="field-help">
+                Ground Conductivity: <strong>{effectivePropagationEnvironment.groundConductivity} S/m</strong>
+              </p>
+              <p className="field-help">
+                Atmospheric Bending: <strong>{effectivePropagationEnvironment.atmosphericBendingNUnits} N-units</strong>
+              </p>
+            </>
+          )}
           </details>
         </details>
       </section>
@@ -2014,28 +2362,30 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        <div className="chip-group">
-          <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
-            Add Link
-          </button>
-          <button className="inline-action" onClick={openEditLinkModal} type="button">
-            Edit Link
-          </button>
-          <button
-            className="inline-action danger"
-            disabled={!links.length}
-            onClick={() =>
-              requestDeleteConfirm(
-                "Delete Link",
-                `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
-                () => deleteLink(selectedLink.id),
-              )
-            }
-            type="button"
-          >
-            Delete Selected Link
-          </button>
-        </div>
+        {canMutateSimulation ? (
+          <div className="chip-group">
+            <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+              Add Link
+            </button>
+            <button className="inline-action" onClick={openEditLinkModal} type="button">
+              Edit Link
+            </button>
+            <button
+              className="inline-action danger"
+              disabled={!links.length}
+              onClick={() =>
+                requestDeleteConfirm(
+                  "Delete Link",
+                  `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
+                  () => deleteLink(selectedLink.id),
+                )
+              }
+              type="button"
+            >
+              Delete Selected Link
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {linkModal ? (
@@ -2047,136 +2397,171 @@ export function Sidebar() {
                 Close
               </button>
             </div>
-            <label className="field-grid">
-              <span>Link name</span>
-              <input
-                onChange={(event) =>
-                  setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
-                }
-                placeholder="Backhaul A"
-                type="text"
-                value={linkModal.name}
-              />
-            </label>
+            {canMutateSimulation ? (
+              <label className="field-grid">
+                <span>Link name</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
+                  }
+                  placeholder="Backhaul A"
+                  type="text"
+                  value={linkModal.name}
+                />
+              </label>
+            ) : (
+              <p className="field-help">
+                Link name: <strong>{linkModal.name.trim() || "(auto)"}</strong>
+              </p>
+            )}
             <label className="field-grid endpoint-field">
               <span>From site</span>
-              <select
-                className="locale-select"
-                onChange={(event) =>
-                  setLinkModal((current) => {
-                    if (!current) return current;
-                    const nextFrom = event.target.value;
-                    const nextTo =
-                      current.toSiteId === nextFrom
-                        ? sites.find((site) => site.id !== nextFrom)?.id ?? ""
-                        : current.toSiteId;
-                    return { ...current, fromSiteId: nextFrom, toSiteId: nextTo, status: "" };
-                  })
-                }
-                value={linkModal.fromSiteId}
-              >
-                {sites.map((site) => (
-                  <option key={`modal-from-${site.id}`} value={site.id}>
-                    {site.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-grid endpoint-field">
-              <span>To site</span>
-              <select
-                className="locale-select"
-                onChange={(event) =>
-                  setLinkModal((current) => (current ? { ...current, toSiteId: event.target.value, status: "" } : current))
-                }
-                value={linkModal.toSiteId}
-              >
-                {sites
-                  .filter((site) => site.id !== linkModal.fromSiteId)
-                  .map((site) => (
-                    <option key={`modal-to-${site.id}`} value={site.id}>
+              {canMutateSimulation ? (
+                <select
+                  className="locale-select"
+                  onChange={(event) =>
+                    setLinkModal((current) => {
+                      if (!current) return current;
+                      const nextFrom = event.target.value;
+                      const nextTo =
+                        current.toSiteId === nextFrom
+                          ? sites.find((site) => site.id !== nextFrom)?.id ?? ""
+                          : current.toSiteId;
+                      return { ...current, fromSiteId: nextFrom, toSiteId: nextTo, status: "" };
+                    })
+                  }
+                  value={linkModal.fromSiteId}
+                >
+                  {sites.map((site) => (
+                    <option key={`modal-from-${site.id}`} value={site.id}>
                       {site.name}
                     </option>
                   ))}
-              </select>
+                </select>
+              ) : (
+                <span className="field-help">
+                  <strong>{sites.find((site) => site.id === linkModal.fromSiteId)?.name ?? "Unknown"}</strong>
+                </span>
+              )}
+            </label>
+            <label className="field-grid endpoint-field">
+              <span>To site</span>
+              {canMutateSimulation ? (
+                <select
+                  className="locale-select"
+                  onChange={(event) =>
+                    setLinkModal((current) => (current ? { ...current, toSiteId: event.target.value, status: "" } : current))
+                  }
+                  value={linkModal.toSiteId}
+                >
+                  {sites
+                    .filter((site) => site.id !== linkModal.fromSiteId)
+                    .map((site) => (
+                      <option key={`modal-to-${site.id}`} value={site.id}>
+                        {site.name}
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <span className="field-help">
+                  <strong>{sites.find((site) => site.id === linkModal.toSiteId)?.name ?? "Unknown"}</strong>
+                </span>
+              )}
             </label>
             <details className="compact-details">
               <summary>Link Radio Overrides</summary>
-              <label className="field-grid">
-                <span>Use site radio defaults</span>
-                <input
-                  checked={!linkModal.overrideRadio}
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, overrideRadio: !event.target.checked, status: "" } : current,
-                    )
-                  }
-                  type="checkbox"
-                />
-              </label>
-              {!linkModal.overrideRadio ? (
-                <p className="field-help">
-                  This link uses the selected From/To site radio settings.
-                </p>
-              ) : null}
-              {linkModal.overrideRadio ? (
+              {canMutateSimulation ? (
                 <>
-              <label className="field-grid">
-                <span>Tx power (dBm)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, txPowerDbm: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.txPowerDbm}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Tx gain (dBi)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, txGainDbi: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.txGainDbi}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Rx gain (dBi)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, rxGainDbi: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.rxGainDbi}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Cable loss (dB)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, cableLossDb: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.cableLossDb}
-                />
-              </label>
+                  <label className="field-grid">
+                    <span>Use site radio defaults</span>
+                    <input
+                      checked={!linkModal.overrideRadio}
+                      onChange={(event) =>
+                        setLinkModal((current) =>
+                          current ? { ...current, overrideRadio: !event.target.checked, status: "" } : current,
+                        )
+                      }
+                      type="checkbox"
+                    />
+                  </label>
+                  {!linkModal.overrideRadio ? (
+                    <p className="field-help">
+                      This link uses the selected From/To site radio settings.
+                    </p>
+                  ) : null}
+                  {linkModal.overrideRadio ? (
+                    <>
+                      <label className="field-grid">
+                        <span>Tx power (dBm)</span>
+                        <input
+                          onChange={(event) =>
+                            setLinkModal((current) =>
+                              current ? { ...current, txPowerDbm: parseNumber(event.target.value), status: "" } : current,
+                            )
+                          }
+                          type="number"
+                          value={linkModal.txPowerDbm}
+                        />
+                      </label>
+                      <label className="field-grid">
+                        <span>Tx gain (dBi)</span>
+                        <input
+                          onChange={(event) =>
+                            setLinkModal((current) =>
+                              current ? { ...current, txGainDbi: parseNumber(event.target.value), status: "" } : current,
+                            )
+                          }
+                          type="number"
+                          value={linkModal.txGainDbi}
+                        />
+                      </label>
+                      <label className="field-grid">
+                        <span>Rx gain (dBi)</span>
+                        <input
+                          onChange={(event) =>
+                            setLinkModal((current) =>
+                              current ? { ...current, rxGainDbi: parseNumber(event.target.value), status: "" } : current,
+                            )
+                          }
+                          type="number"
+                          value={linkModal.rxGainDbi}
+                        />
+                      </label>
+                      <label className="field-grid">
+                        <span>Cable loss (dB)</span>
+                        <input
+                          onChange={(event) =>
+                            setLinkModal((current) =>
+                              current ? { ...current, cableLossDb: parseNumber(event.target.value), status: "" } : current,
+                            )
+                          }
+                          type="number"
+                          value={linkModal.cableLossDb}
+                        />
+                      </label>
+                    </>
+                  ) : null}
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <p className="field-help">
+                    Radio override: <strong>{linkModal.overrideRadio ? "Custom" : "Site defaults"}</strong>
+                  </p>
+                  {linkModal.overrideRadio ? (
+                    <p className="field-help">
+                      Tx {linkModal.txPowerDbm} dBm · Tx gain {linkModal.txGainDbi} dBi · Rx gain {linkModal.rxGainDbi} dBi · Cable loss {linkModal.cableLossDb} dB
+                    </p>
+                  ) : null}
+                </>
+              )}
             </details>
-            <div className="chip-group">
-              <button className="inline-action" onClick={saveLinkModal} type="button">
-                {linkModal.mode === "add" ? "Create Link" : "Save Link"}
-              </button>
-            </div>
+            {canMutateSimulation ? (
+              <div className="chip-group">
+                <button className="inline-action" onClick={saveLinkModal} type="button">
+                  {linkModal.mode === "add" ? "Create Link" : "Save Link"}
+                </button>
+              </div>
+            ) : null}
             {linkModal.status ? <p className="field-help">{linkModal.status}</p> : null}
           </div>
         </ModalOverlay>
@@ -2200,9 +2585,11 @@ export function Sidebar() {
             {t(locale, "loadHgt")}
             <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
           </label>
-          <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
-            {t(locale, "syncSiteElevations")}
-          </button>
+          {canMutateSimulation ? (
+            <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
+              {t(locale, "syncSiteElevations")}
+            </button>
+          ) : null}
           {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
           {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
           <div className="asset-list">
@@ -2242,32 +2629,49 @@ export function Sidebar() {
           {metric("Worst Fresnel gap", `${analysis.worstFresnelClearanceM.toFixed(2)} m`)}
           {metric("Worst Fresnel point", `${analysis.worstFresnelDistanceKm.toFixed(2)} km`)}
         </div>
-        <label className="field-grid">
-          <span>RX target (dBm)</span>
-          <input
-            onChange={(event) => setRxSensitivityTargetDbm(parseNumber(event.target.value))}
-            type="number"
-            value={rxSensitivityTargetDbm}
-          />
-        </label>
-        <label className="field-grid">
-          <span>Env loss (dB)</span>
-          <input
-            min={0}
-            onChange={(event) => setEnvironmentLossDb(parseNumber(event.target.value))}
-            type="number"
-            value={environmentLossDb}
-          />
-        </label>
+        {canMutateSimulation ? (
+          <>
+            <label className="field-grid">
+              <span>RX target (dBm)</span>
+              <input
+                onChange={(event) => setRxSensitivityTargetDbm(parseNumber(event.target.value))}
+                type="number"
+                value={rxSensitivityTargetDbm}
+              />
+            </label>
+            <label className="field-grid">
+              <span>Env loss (dB)</span>
+              <input
+                min={0}
+                onChange={(event) => setEnvironmentLossDb(parseNumber(event.target.value))}
+                type="number"
+                value={environmentLossDb}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <p className="field-help">
+              RX target: <strong>{rxSensitivityTargetDbm} dBm</strong>
+            </p>
+            <p className="field-help">
+              Env loss: <strong>{environmentLossDb} dB</strong>
+            </p>
+          </>
+        )}
         {isLoraEstimateRelevant ? (
           <div className="section-heading">
-            <button
-              className="inline-action"
-              onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
-              type="button"
-            >
-              Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
-            </button>
+            {canMutateSimulation ? (
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm));
+                }}
+                type="button"
+              >
+                Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
+              </button>
+            ) : null}
             <InfoTip text="Sets RX target to a LoRa sensitivity estimate from current BW and SF (noise floor + NF + SF SNR limit). This is a helper target, not a measured receiver spec." />
           </div>
         ) : (
@@ -2525,11 +2929,29 @@ export function Sidebar() {
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Edit" onClose={() => setResourceDetailsPopup(null)} tier="raised">
+        <ModalOverlay
+          aria-label="Resource Edit"
+          onClose={() => {
+            setResourceDetailsPopup(null);
+            setPendingSimulationVisibilityPrompt(null);
+            setPendingSiteVisibilityDowngradePrompt(null);
+            setPendingSimulationCollaboratorSitePrompt(null);
+          }}
+          tier="raised"
+        >
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
               <h2>Edit · {resourceDetailsPopup.label}</h2>
-              <button className="inline-action" onClick={() => setResourceDetailsPopup(null)} type="button">
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setResourceDetailsPopup(null);
+                  setPendingSimulationVisibilityPrompt(null);
+                  setPendingSiteVisibilityDowngradePrompt(null);
+                  setPendingSimulationCollaboratorSitePrompt(null);
+                }}
+                type="button"
+              >
                 Close
               </button>
             </div>
@@ -2543,34 +2965,7 @@ export function Sidebar() {
               <>
                 <label className="field-grid">
                   <span>Name</span>
-                  <input
-                    onChange={(event) => setResourceNameDraft(event.target.value)}
-                    onBlur={() => {
-                      void persistResourceAccessSettings();
-                    }}
-                    type="text"
-                    value={resourceNameDraft}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Description</span>
-                  <textarea
-                    onChange={(event) => setResourceDescriptionDraft(event.target.value)}
-                    onBlur={() => {
-                      void persistResourceAccessSettings();
-                    }}
-                    placeholder="Optional simulation notes"
-                    rows={3}
-                    value={resourceDescriptionDraft}
-                  />
-                </label>
-              </>
-            ) : null}
-            {resourceDetailsPopup.kind === "site" ? (
-              <div className="library-editor-split">
-                <div className="library-editor-form resource-site-editor-form">
-                  <label className="field-grid">
-                    <span>Name</span>
+                  {resourceCanWrite ? (
                     <input
                       onChange={(event) => setResourceNameDraft(event.target.value)}
                       onBlur={() => {
@@ -2579,128 +2974,227 @@ export function Sidebar() {
                       type="text"
                       value={resourceNameDraft}
                     />
-                  </label>
-                  <label className="field-grid">
-                    <span>Description</span>
+                  ) : (
+                    <p className="field-help">
+                      <strong>{formatReadOnlyText(resourceNameDraft)}</strong>
+                    </p>
+                  )}
+                </label>
+                <label className="field-grid">
+                  <span>Description</span>
+                  {resourceCanWrite ? (
                     <textarea
                       onChange={(event) => setResourceDescriptionDraft(event.target.value)}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
-                      placeholder="Optional site notes (equipment, placement, access notes)"
+                      placeholder="Optional simulation notes"
                       rows={3}
                       value={resourceDescriptionDraft}
                     />
+                  ) : (
+                    <p className="field-help">
+                      <strong>{formatReadOnlyText(resourceDescriptionDraft)}</strong>
+                    </p>
+                  )}
+                </label>
+              </>
+            ) : null}
+            {resourceDetailsPopup.kind === "site" ? (
+              <div className="library-editor-split">
+                <div className="library-editor-form resource-site-editor-form">
+                  <label className="field-grid">
+                    <span>Name</span>
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceNameDraft(event.target.value)}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="text"
+                        value={resourceNameDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyText(resourceNameDraft)}</strong>
+                      </p>
+                    )}
+                  </label>
+                  <label className="field-grid">
+                    <span>Description</span>
+                    {resourceCanWrite ? (
+                      <textarea
+                        onChange={(event) => setResourceDescriptionDraft(event.target.value)}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        placeholder="Optional site notes (equipment, placement, access notes)"
+                        rows={3}
+                        value={resourceDescriptionDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyText(resourceDescriptionDraft)}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Latitude</span>
-                    <input
-                      onChange={(event) => setResourceLatDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      step="0.000001"
-                      type="number"
-                      value={resourceLatDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceLatDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        step="0.000001"
+                        type="number"
+                        value={resourceLatDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatLatitudeLabel(resourceLatDraft)}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Longitude</span>
-                    <input
-                      onChange={(event) => setResourceLonDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      step="0.000001"
-                      type="number"
-                      value={resourceLonDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceLonDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        step="0.000001"
+                        type="number"
+                        value={resourceLonDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatLongitudeLabel(resourceLonDraft)}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Ground elev (m)</span>
-                    <div className="field-inline">
+                    {resourceCanWrite ? (
+                      <div className="field-inline">
+                        <input
+                          onChange={(event) => setResourceGroundDraft(parseNumber(event.target.value))}
+                          onBlur={() => {
+                            void persistResourceAccessSettings();
+                          }}
+                          type="number"
+                          value={resourceGroundDraft}
+                        />
+                        <button
+                          className="inline-action field-inline-btn"
+                          onClick={() => {
+                            const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
+                            if (elevation === null) {
+                              setResourceAccessStatus(
+                                "No loaded terrain value at these coordinates. Fetch terrain data for this area first.",
+                              );
+                              return;
+                            }
+                            setResourceGroundDraft(elevation);
+                            void persistResourceAccessSettings({ groundM: elevation });
+                            setResourceAccessStatus(`Saved (terrain elevation ${elevation} m)`);
+                          }}
+                          type="button"
+                        >
+                          Fetch
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceGroundDraft, "m")}</strong>
+                      </p>
+                    )}
+                  </label>
+                  <label className="field-grid">
+                    <span>Antenna (m)</span>
+                    {resourceCanWrite ? (
                       <input
-                        onChange={(event) => setResourceGroundDraft(parseNumber(event.target.value))}
+                        onChange={(event) => setResourceAntennaDraft(parseNumber(event.target.value))}
                         onBlur={() => {
                           void persistResourceAccessSettings();
                         }}
                         type="number"
-                        value={resourceGroundDraft}
+                        value={resourceAntennaDraft}
                       />
-                      <button
-                        className="inline-action field-inline-btn"
-                        onClick={() => {
-                          const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
-                          if (elevation === null) {
-                            setResourceAccessStatus(
-                              "No loaded terrain value at these coordinates. Fetch terrain data for this area first.",
-                            );
-                            return;
-                          }
-                          setResourceGroundDraft(elevation);
-                          void persistResourceAccessSettings({ groundM: elevation });
-                          setResourceAccessStatus(`Saved (terrain elevation ${elevation} m)`);
-                        }}
-                        type="button"
-                      >
-                        Fetch
-                      </button>
-                    </div>
-                  </label>
-                  <label className="field-grid">
-                    <span>Antenna (m)</span>
-                    <input
-                      onChange={(event) => setResourceAntennaDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceAntennaDraft}
-                    />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceAntennaDraft, "m")}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Tx power (dBm)</span>
-                    <input
-                      onChange={(event) => setResourceTxPowerDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceTxPowerDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceTxPowerDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceTxPowerDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceTxPowerDraft, "dBm")}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Tx gain (dBi)</span>
-                    <input
-                      onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceTxGainDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceTxGainDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceTxGainDraft, "dBi")}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Rx gain (dBi)</span>
-                    <input
-                      onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceRxGainDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceRxGainDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceRxGainDraft, "dBi")}</strong>
+                      </p>
+                    )}
                   </label>
                   <label className="field-grid">
                     <span>Cable loss (dB)</span>
-                    <input
-                      onChange={(event) => setResourceCableLossDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceCableLossDraft}
-                    />
+                    {resourceCanWrite ? (
+                      <input
+                        onChange={(event) => setResourceCableLossDraft(parseNumber(event.target.value))}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceCableLossDraft}
+                      />
+                    ) : (
+                      <p className="field-help">
+                        <strong>{formatReadOnlyValue(resourceCableLossDraft, "dB")}</strong>
+                      </p>
+                    )}
                   </label>
                 </div>
                 <div className="library-editor-map">
@@ -2812,19 +3306,21 @@ export function Sidebar() {
                 Last edited by{" "}
                 <UserBadge avatarUrl={resourceDetailsPopup.lastEditedByAvatarUrl} name={resourceDetailsPopup.lastEditedByName} />
               </button>
-              <button
-                className="inline-action"
-                onClick={() =>
-                  void openChangeLogPopup(
-                    resourceDetailsPopup.kind,
-                    resourceDetailsPopup.resourceId,
-                    resourceDetailsPopup.label,
-                  )
-                }
-                type="button"
-              >
-                Open change log
-              </button>
+              {resourceCanWrite ? (
+                <button
+                  className="inline-action"
+                  onClick={() =>
+                    void openChangeLogPopup(
+                      resourceDetailsPopup.kind,
+                      resourceDetailsPopup.resourceId,
+                      resourceDetailsPopup.label,
+                    )
+                  }
+                  type="button"
+                >
+                  Open change log
+                </button>
+              ) : null}
             </div>
             {resourceDetailsPopup.kind === "site" && currentResourceMqttMetaLines.length ? (
               <details className="compact-details">
@@ -2841,17 +3337,19 @@ export function Sidebar() {
               <label className="field-grid">
                 <span>
                   Access level{" "}
-                  <InfoTip text="Private: visible to owner/admin. Public/Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
+                  <InfoTip text="Private: visible to owner and explicit collaborators. Shared: readable by everyone. Editing is limited to owner plus editor/admin collaborators." />
                 </span>
                 <select
                   className="locale-select"
-                    onChange={(event) =>
-                    {
-                      const next = event.target.value as "private" | "public" | "shared";
-                      setResourceAccessVisibility(next);
-                      void persistResourceAccessSettings({ visibility: next });
+                  onChange={(event) => {
+                    const next = event.target.value as "private" | "public" | "shared";
+                    const previous = resourceAccessVisibility;
+                    setResourceAccessVisibility(next);
+                    const saved = persistResourceAccessSettings({ visibility: next });
+                    if (!saved) {
+                      setResourceAccessVisibility(previous);
                     }
-                  }
+                  }}
                   value={resourceAccessVisibility}
                 >
                   <option value="private">Private</option>
@@ -2870,46 +3368,60 @@ export function Sidebar() {
                   Collaborators{" "}
                   <InfoTip text="Collaborators grant edit rights. Editors can add collaborators but cannot remove existing collaborators. Owners/admins can remove." />
                 </span>
-                <div className="collaborator-picker">
+                {resourceCanWrite ? (
+                  <div className="collaborator-picker">
+                    <div className="chip-group collaborator-selected-list">
+                      {selectedCollaboratorUsers.length ? (
+                        selectedCollaboratorUsers.map((user) => (
+                          <span className="site-quick-item" key={user.id}>
+                            <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                            <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
+                              Remove
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span className="field-help">No collaborators yet.</span>
+                      )}
+                    </div>
+                    <input
+                      onChange={(event) => setResourceCollaboratorQuery(event.target.value)}
+                      placeholder="Search users by name or email"
+                      type="text"
+                      value={resourceCollaboratorQuery}
+                    />
+                    <div className="collaborator-candidate-list">
+                      {resourceCollaboratorDirectoryBusy ? (
+                        <p className="field-help">Loading users…</p>
+                      ) : collaboratorCandidates.length ? (
+                        collaboratorCandidates.map((user) => (
+                          <button className="site-quick-item" key={user.id} onClick={() => addCollaborator(user.id)} type="button">
+                            <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                            <span className="field-help">{user.email}</span>
+                            <span className="inline-action">Add</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="field-help">No matching users.</p>
+                      )}
+                    </div>
+                    {resourceCollaboratorDirectoryStatus ? (
+                      <p className="field-help">{resourceCollaboratorDirectoryStatus}</p>
+                    ) : null}
+                  </div>
+                ) : (
                   <div className="chip-group collaborator-selected-list">
                     {selectedCollaboratorUsers.length ? (
                       selectedCollaboratorUsers.map((user) => (
                         <span className="site-quick-item" key={user.id}>
                           <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
-                          <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
-                            Remove
-                          </button>
                         </span>
                       ))
                     ) : (
                       <span className="field-help">No collaborators yet.</span>
                     )}
                   </div>
-                  <input
-                    onChange={(event) => setResourceCollaboratorQuery(event.target.value)}
-                    placeholder="Search users by name or email"
-                    type="text"
-                    value={resourceCollaboratorQuery}
-                  />
-                  <div className="collaborator-candidate-list">
-                    {resourceCollaboratorDirectoryBusy ? (
-                      <p className="field-help">Loading users…</p>
-                    ) : collaboratorCandidates.length ? (
-                      collaboratorCandidates.map((user) => (
-                        <button className="site-quick-item" key={user.id} onClick={() => addCollaborator(user.id)} type="button">
-                          <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
-                          <span className="field-help">{user.email}</span>
-                          <span className="inline-action">Add</span>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="field-help">No matching users.</p>
-                    )}
-                  </div>
-                  {resourceCollaboratorDirectoryStatus ? (
-                    <p className="field-help">{resourceCollaboratorDirectoryStatus}</p>
-                  ) : null}
-                </div>
+                )}
               </div>
               <p className="field-help">
                 Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
@@ -2957,17 +3469,19 @@ export function Sidebar() {
           onClose={() => {
             setShowNewSimulationModal(false);
             setNewSimulationNameError("");
+            setIsCreatingSimulationCopy(false);
           }}
           tier="raised"
         >
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
-              <h2>New Simulation</h2>
+              <h2>{isCreatingSimulationCopy ? "Save Simulation Copy" : "New Simulation"}</h2>
               <button
                 className="inline-action"
                 onClick={() => {
                   setShowNewSimulationModal(false);
                   setNewSimulationNameError("");
+                  setIsCreatingSimulationCopy(false);
                 }}
                 type="button"
               >
@@ -3000,7 +3514,7 @@ export function Sidebar() {
             <label className="field-grid">
               <span>
                 Access level{" "}
-                <InfoTip text="Private: visible to owner/admin. Public/Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
+                <InfoTip text="Private: visible to owner and explicit collaborators. Shared: readable by everyone. Editing is limited to owner plus editor/admin collaborators." />
               </span>
               <select
                 className="locale-select"
@@ -3011,9 +3525,17 @@ export function Sidebar() {
                 <option value="shared">Shared</option>
               </select>
             </label>
+            {!canCreateOwnedResources ? (
+              <p className="field-help warning-text">Create access pending: your account must be approved.</p>
+            ) : null}
             <div className="chip-group">
-              <button className="inline-action" onClick={createBlankSimulation} type="button">
-                Create
+              <button
+                className="inline-action"
+                disabled={!canCreateOwnedResources}
+                onClick={createSimulationFromModal}
+                type="button"
+              >
+                {isCreatingSimulationCopy ? "Save Copy" : "Create"}
               </button>
             </div>
           </div>
@@ -3041,37 +3563,29 @@ export function Sidebar() {
                 value={simulationLibraryQuery}
               />
             </label>
-            <label className="field-grid">
-              <span>Save a copy</span>
-              <input
-                className={newPresetNameError ? "input-error" : ""}
-                onChange={(event) => {
-                  setNewPresetName(event.target.value);
-                  if (newPresetNameError) setNewPresetNameError("");
-                }}
-                placeholder="My simulation"
-                type="text"
-                value={newPresetName}
-              />
-            </label>
-            {newPresetNameError ? <p className="field-help field-help-error">{newPresetNameError}</p> : null}
             <div className="chip-group">
-              <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+              <button
+                className="inline-action"
+                disabled={!canCreateOwnedResources}
+                onClick={() => openNewSimulationModal("copy")}
+                type="button"
+              >
                 Save Copy
               </button>
               <button
                 className="inline-action"
+                disabled={!canCreateOwnedResources}
                 onClick={() => {
-                  setNewSimulationName("");
-                  setNewSimulationDescription("");
-                  setNewSimulationNameError("");
-                  setShowNewSimulationModal(true);
+                  openNewSimulationModal("blank");
                 }}
                 type="button"
               >
                 New Simulation
               </button>
             </div>
+            {!canCreateOwnedResources ? (
+              <p className="field-help warning-text">Create access pending: your account must be approved.</p>
+            ) : null}
             {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
             <div className="library-editor">
               <h3>Saved simulations</h3>
@@ -3196,17 +3710,152 @@ export function Sidebar() {
             <p className="field-help">
               You are setting this simulation to{" "}
               <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong>, but it references{" "}
-              <strong>{pendingSimulationVisibilityPrompt.referencedPrivateSiteIds.length}</strong> private site(s).
+              <strong>{pendingSimulationPrivateSites.length}</strong> private site{pendingSimulationPrivateSites.length === 1 ? "" : "s"}.
             </p>
+            {pendingSimulationPrivateSites.length ? (
+              <ul className="field-help access-pending-list">
+                {pendingSimulationPrivateSites.map((site) => (
+                  <li key={site.id}>
+                    {site.name}
+                    {site.blocked ? " (no edit access)" : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <p className="field-help">
               Do you want to change those referenced sites to{" "}
               <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong> as well?
             </p>
+            {pendingSimulationVisibilityPrompt.blockedPrivateSites.length ? (
+              <p className="field-help warning-text">
+                You cannot continue until the listed no-edit-access private sites are changed by their owner or an editor/admin collaborator.
+              </p>
+            ) : null}
             <div className="chip-group">
-              <button className="inline-action" onClick={applyPendingSimulationVisibilityChange} type="button">
+              <button
+                className="inline-action"
+                disabled={pendingSimulationVisibilityPrompt.blockedPrivateSites.length > 0}
+                onClick={applyPendingSimulationVisibilityChange}
+                type="button"
+              >
                 Change
               </button>
               <button className="inline-action" onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {pendingSiteVisibilityDowngradePrompt ? (
+        <ModalOverlay
+          aria-label="Confirm Site Visibility Change"
+          onClose={cancelPendingSiteVisibilityDowngrade}
+          tier="raised"
+        >
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>Visibility Change Confirmation</h2>
+              <button className="inline-action" onClick={cancelPendingSiteVisibilityDowngrade} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              You are setting site <strong>{pendingSiteVisibilityDowngradePrompt.siteName}</strong> to <strong>private</strong>.
+            </p>
+            {pendingSiteVisibilityDowngradePrompt.editableSimulations.length ? (
+              <>
+                <p className="field-help">
+                  This site is used in shared simulation(s) you can edit. They will also be set to <strong>private</strong>:
+                </p>
+                <ul className="field-help access-pending-list">
+                  {pendingSiteVisibilityDowngradePrompt.editableSimulations.map((simulation) => (
+                    <li key={`owned-${simulation.id}`}>{simulation.name}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {pendingSiteVisibilityDowngradePrompt.visibleBlockedSimulations.length ||
+            pendingSiteVisibilityDowngradePrompt.hiddenBlockedPrivateSimulationCount ? (
+              <>
+                <p className="field-help warning-text">
+                  Other shared simulation(s) reference this site, but you do not have edit access to those simulation visibility settings:
+                </p>
+                {pendingSiteVisibilityDowngradePrompt.visibleBlockedSimulations.length ? (
+                  <ul className="field-help access-pending-list">
+                    {pendingSiteVisibilityDowngradePrompt.visibleBlockedSimulations.map((simulation) => (
+                      <li key={`external-${simulation.id}`}>{simulation.name}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {pendingSiteVisibilityDowngradePrompt.hiddenBlockedPrivateSimulationCount > 0 ? (
+                  <p className="field-help">
+                    and {pendingSiteVisibilityDowngradePrompt.hiddenBlockedPrivateSimulationCount} other private simulation(s).
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+            <div className="chip-group">
+              <button className="inline-action" onClick={applyPendingSiteVisibilityDowngrade} type="button">
+                Make Private
+              </button>
+              <button className="inline-action" onClick={cancelPendingSiteVisibilityDowngrade} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {pendingSimulationCollaboratorSitePrompt ? (
+        <ModalOverlay
+          aria-label="Confirm collaborator site access"
+          onClose={() => resolvePendingSimulationCollaboratorSitePrompt("cancel")}
+          tier="raised"
+        >
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>Collaborator Access Confirmation</h2>
+              <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("cancel")} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              You are adding <strong>{pendingSimulationCollaboratorSitePrompt.collaboratorLabel}</strong> to simulation <strong>{pendingSimulationCollaboratorSitePrompt.simulationName}</strong>.
+            </p>
+            <p className="field-help">
+              They currently do not have access to {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length + pendingSimulationCollaboratorSitePrompt.blockedPrivateSites.length} private referenced site(s). Adding them will grant access to the ones below.
+            </p>
+            {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length ? (
+              <>
+                <p className="field-help">Granting access to these private sites:</p>
+                <ul className="field-help access-pending-list">
+                  {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.map((site) => (
+                    <li key={`grant-${site.id}`}>{site.name}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {pendingSimulationCollaboratorSitePrompt.blockedPrivateSites.length ? (
+              <>
+                <p className="field-help warning-text">
+                  You cannot grant access to these private sites because you do not have edit access:
+                </p>
+                <ul className="field-help access-pending-list">
+                  {pendingSimulationCollaboratorSitePrompt.blockedPrivateSites.map((site) => (
+                    <li key={`blocked-${site.id}`}>{site.name}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            <div className="chip-group">
+              {pendingSimulationCollaboratorSitePrompt.editablePrivateSites.length ? (
+                <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("grant-and-add")} type="button">
+                  Add Collaborator
+                </button>
+              ) : (
+                <p className="field-help warning-text">You cannot grant site access. Cancel to abort.</p>
+              )}
+              <button className="inline-action" onClick={() => resolvePendingSimulationCollaboratorSitePrompt("cancel")} type="button">
                 Cancel
               </button>
             </div>
@@ -3250,7 +3899,9 @@ export function Sidebar() {
             <div className="chip-group">
               <button
                 className="inline-action"
+                disabled={!canCreateOwnedResources}
                 onClick={() => {
+                  if (!canCreateOwnedResources) return;
                   setShowAddLibraryForm((current) => !current);
                   if (showAddLibraryForm) {
                     setPendingDraftAutoInsert(false);
@@ -3271,20 +3922,22 @@ export function Sidebar() {
               <button className="inline-action" onClick={() => setSelectedLibraryIds(new Set())} type="button">
                 Clear Selection
               </button>
-              <button
-                className="inline-action"
-                disabled={!selectedLibraryCount}
-                onClick={() => {
-                  insertSitesFromLibrary(Array.from(selectedLibraryIds));
-                  setSelectedLibraryIds(new Set());
-                }}
-                type="button"
-              >
-                Add Selected To Simulation ({selectedLibraryCount})
-              </button>
+              {canMutateSimulation ? (
+                <button
+                  className="inline-action"
+                  disabled={!selectedLibraryCount}
+                  onClick={() => {
+                    insertSitesFromLibrary(Array.from(selectedLibraryIds));
+                    setSelectedLibraryIds(new Set());
+                  }}
+                  type="button"
+                >
+                  Add Selected To Simulation ({selectedLibraryCount})
+                </button>
+              ) : null}
               <button
                 className="inline-action danger"
-                disabled={!selectedLibraryCount}
+                disabled={!canDeleteSelectedLibraryEntries}
                 onClick={() =>
                   requestDeleteConfirm(
                     "Delete Sites",
@@ -3300,6 +3953,11 @@ export function Sidebar() {
                 Delete Selected ({selectedLibraryCount})
               </button>
             </div>
+            {selectedNonEditableLibraryEntryCount > 0 ? (
+              <p className="field-help warning-text">
+                {getMutationPermissionMessage("library-site", "delete")}
+              </p>
+            ) : null}
             {showAddLibraryForm ? (
               <div className="library-editor">
                 <h3>Add Site</h3>
@@ -3604,7 +4262,7 @@ export function Sidebar() {
                   </div>
                 </div>
                 <div className="chip-group">
-                  <button className="inline-action" onClick={addLibraryEntryNow} type="button">
+                  <button className="inline-action" disabled={!canCreateOwnedResources} onClick={addLibraryEntryNow} type="button">
                     Add To Library
                   </button>
                   <button
@@ -3691,9 +4349,11 @@ export function Sidebar() {
                     );
                   })()}
                   <div className="library-row-actions">
-                    <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
-                      Add to simulation
-                    </button>
+                    {canMutateSimulation ? (
+                      <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                        Add to simulation
+                      </button>
+                    ) : null}
                     <button
                       className="inline-action"
                       onClick={() =>

@@ -31,12 +31,53 @@ vi.mock("../lib/coverage", () => ({
   buildCoverage: vi.fn(() => []),
 }));
 
-import { useAppStore } from "./appStore";
+vi.mock("../lib/elevationService", () => ({
+  fetchElevations: vi.fn(),
+}));
+
+import { fetchElevations } from "../lib/elevationService";
+import { canEditItem, useAppStore } from "./appStore";
+
+const mockedFetchElevations = vi.mocked(fetchElevations);
+
+describe("canEditItem", () => {
+  it("returns true when current user owns the item", () => {
+    const user = { id: "owner-1" } as Parameters<typeof canEditItem>[1];
+    expect(canEditItem({ ownerUserId: "owner-1", effectiveRole: "viewer" }, user)).toBe(true);
+  });
+
+  it("returns true when current user has editor role", () => {
+    const user = { id: "user-2" } as Parameters<typeof canEditItem>[1];
+    expect(canEditItem({ ownerUserId: "owner-1", effectiveRole: "editor" }, user)).toBe(true);
+  });
+
+  it("returns false when current user is neither owner nor collaborator with write role", () => {
+    const user = { id: "user-2" } as Parameters<typeof canEditItem>[1];
+    expect(canEditItem({ ownerUserId: "owner-1", effectiveRole: "viewer" }, user)).toBe(false);
+  });
+
+  it("returns false when no user is signed in", () => {
+    expect(canEditItem({ ownerUserId: "owner-1", effectiveRole: "owner" }, null)).toBe(false);
+  });
+});
+
+const makeSite = (id: string, lat: number, lon: number, groundElevationM: number) => ({
+  id,
+  name: id,
+  position: { lat, lon },
+  groundElevationM,
+  antennaHeightM: 2,
+  txPowerDbm: 20,
+  txGainDbi: 2,
+  rxGainDbi: 2,
+  cableLossDb: 1,
+});
 
 describe("appStore auth guards", () => {
   beforeEach(() => {
     storage.mock.clear();
     vi.restoreAllMocks();
+    mockedFetchElevations.mockReset();
     useAppStore.setState({
       currentUser: null,
       siteLibrary: [
@@ -351,5 +392,210 @@ describe("appStore auth guards", () => {
     useAppStore.getState().insertSitesFromLibrary(["lib-3"]);
     expect(useAppStore.getState().sites.length).toBe(beforeSiteCount);
     expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("queues private site elevation when adding private site to shared simulation", () => {
+    useAppStore.setState((state) => ({
+      siteLibrary: [
+        ...state.siteLibrary,
+        {
+          id: "lib-private",
+          name: "Private Site",
+          visibility: "private",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 4, lon: 4 },
+          groundElevationM: 140,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    }));
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    const beforeSiteCount = useAppStore.getState().sites.length;
+    useAppStore.getState().insertSitesFromLibrary(["lib-private"]);
+
+    const next = useAppStore.getState();
+    expect(next.sites.length).toBe(beforeSiteCount);
+    expect(next.pendingPrivateSiteElevation?.entryIds).toEqual(["lib-private"]);
+    expect(next.pendingPrivateSiteElevation?.simulationId).toBe("sim-1");
+  });
+
+  it("elevates pending private sites and inserts when confirmed", () => {
+    useAppStore.setState((state) => ({
+      siteLibrary: [
+        ...state.siteLibrary,
+        {
+          id: "lib-private",
+          name: "Private Site",
+          visibility: "private",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 4, lon: 4 },
+          groundElevationM: 140,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    }));
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    useAppStore.getState().insertSitesFromLibrary(["lib-private"]);
+    useAppStore.getState().resolvePendingPrivateSiteElevation(true);
+
+    const next = useAppStore.getState();
+    expect(next.pendingPrivateSiteElevation).toBeNull();
+    expect(next.siteLibrary.find((entry) => entry.id === "lib-private")?.visibility).toBe("shared");
+    expect(next.sites.some((site) => site.libraryEntryId === "lib-private")).toBe(true);
+  });
+
+  it("clears pending private site elevation when cancelled", () => {
+    useAppStore.setState((state) => ({
+      siteLibrary: [
+        ...state.siteLibrary,
+        {
+          id: "lib-private",
+          name: "Private Site",
+          visibility: "private",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 4, lon: 4 },
+          groundElevationM: 140,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    }));
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    const beforeSiteCount = useAppStore.getState().sites.length;
+    useAppStore.getState().insertSitesFromLibrary(["lib-private"]);
+    useAppStore.getState().resolvePendingPrivateSiteElevation(false);
+
+    const next = useAppStore.getState();
+    expect(next.pendingPrivateSiteElevation).toBeNull();
+    expect(next.sites.length).toBe(beforeSiteCount);
+    expect(next.siteLibrary.find((entry) => entry.id === "lib-private")?.visibility).toBe("private");
+  });
+});
+
+describe("appStore elevation sync", () => {
+  beforeEach(() => {
+    mockedFetchElevations.mockReset();
+    useAppStore.setState({
+      hasOnlineElevationSync: false,
+      sites: [makeSite("site-1", 1, 1, 100), makeSite("site-2", 2, 2, 120)],
+    });
+  });
+
+  it("applies fetched elevations by site id when site order changes mid-request", async () => {
+    let resolveFetch: (values: number[]) => void = () => undefined;
+    mockedFetchElevations.mockImplementationOnce(
+      () =>
+        new Promise<number[]>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const syncPromise = useAppStore.getState().syncSiteElevationsOnline();
+    useAppStore.setState({
+      sites: [makeSite("site-2", 2, 2, 120), makeSite("site-1", 1, 1, 100)],
+    });
+
+    resolveFetch([111.2, 222.7]);
+    await syncPromise;
+
+    const sites = useAppStore.getState().sites;
+    expect(sites.find((site) => site.id === "site-1")?.groundElevationM).toBe(111);
+    expect(sites.find((site) => site.id === "site-2")?.groundElevationM).toBe(223);
+    expect(useAppStore.getState().hasOnlineElevationSync).toBe(true);
+  });
+
+  it("ignores stale responses when the sites list is replaced", async () => {
+    let resolveFetch: (values: number[]) => void = () => undefined;
+    mockedFetchElevations.mockImplementationOnce(
+      () =>
+        new Promise<number[]>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const syncPromise = useAppStore.getState().syncSiteElevationsOnline();
+    useAppStore.setState({
+      hasOnlineElevationSync: false,
+      sites: [makeSite("site-a", 59.92, 10.75, 100), makeSite("site-b", 59.95, 10.82, 120)],
+    });
+
+    resolveFetch([501.4, 502.4]);
+    await syncPromise;
+
+    const sites = useAppStore.getState().sites;
+    expect(sites.find((site) => site.id === "site-a")?.groundElevationM).toBe(100);
+    expect(sites.find((site) => site.id === "site-b")?.groundElevationM).toBe(120);
+    expect(useAppStore.getState().hasOnlineElevationSync).toBe(false);
   });
 });

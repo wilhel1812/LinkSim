@@ -94,7 +94,7 @@ const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser |
   return currentUser;
 };
 
-const canEditItem = (
+export const canEditItem = (
   item: { ownerUserId?: string; effectiveRole?: string },
   currentUser: CloudUser | null,
 ): boolean => {
@@ -292,6 +292,13 @@ type AppState = {
     | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
     | null;
   pendingSiteLibraryOpenEntryId: string | null;
+  pendingPrivateSiteElevation:
+    | {
+        entryIds: string[];
+        simulationId: string;
+        simulationName: string;
+      }
+    | null;
   scenarioOptions: { id: string; name: string }[];
   mapOverlayMode: MapOverlayMode;
   syncStatus: "syncing" | "synced" | "error";
@@ -360,6 +367,7 @@ type AppState = {
   ) => string;
   insertSiteFromLibrary: (entryId: string) => void;
   insertSitesFromLibrary: (entryIds: string[]) => void;
+  resolvePendingPrivateSiteElevation: (elevate: boolean) => void;
   updateSiteLibraryEntry: (
     entryId: string,
     patch: Partial<
@@ -778,6 +786,33 @@ const hasPrivateLibrarySiteReferences = (
   return sites.some((site) => typeof site.libraryEntryId === "string" && privateIds.has(site.libraryEntryId));
 };
 
+const getPrivateSiteReferenceConflict = (
+  simulationPresets: SimulationPreset[],
+  siteLibrary: SiteLibraryEntry[],
+): { simulationName: string; siteName: string } | null => {
+  if (!simulationPresets.length || !siteLibrary.length) return null;
+  const privateSitesById = new globalThis.Map(
+    siteLibrary
+      .filter((entry) => (entry.visibility ?? "private") === "private")
+      .map((entry) => [entry.id, entry]),
+  );
+  if (!privateSitesById.size) return null;
+  for (const simulation of simulationPresets) {
+    const visibility = simulation.visibility ?? "shared";
+    if (visibility === "private") continue;
+    for (const site of simulation.snapshot.sites) {
+      if (!site.libraryEntryId) continue;
+      const privateSite = privateSitesById.get(site.libraryEntryId);
+      if (!privateSite) continue;
+      return {
+        simulationName: simulation.name,
+        siteName: privateSite.name,
+      };
+    }
+  }
+  return null;
+};
+
 const ensureMinimumTopology = (
   inputSites: Site[],
   inputLinks: Link[],
@@ -905,7 +940,7 @@ const initialUiThemePreference = normalizeUiThemePreference(
   readStorage<string>(UI_THEME_PREFERENCE_KEY, "system"),
 );
 const normalizeUiColorTheme = (value: unknown): UiColorTheme =>
-  value === "pink" || value === "blue" || value === "red" || value === "green" ? value : "blue";
+  value === "pink" || value === "blue" || value === "red" || value === "green" || value === "yellow" ? value : "blue";
 const initialUiColorTheme = normalizeUiColorTheme(readStorage<string>(UI_COLOR_THEME_KEY, "blue"));
 const normalizeBasemapProvider = (value: unknown): BasemapProvider =>
   value === "carto" || value === "maptiler" || value === "stadia" || value === "kartverket" ? value : "carto";
@@ -963,6 +998,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
   pendingSiteLibraryOpenEntryId: null,
+  pendingPrivateSiteElevation: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
   syncStatus: "synced",
@@ -1198,6 +1234,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
         const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
         const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+        const privateReferenceConflict = getPrivateSiteReferenceConflict(editableSims, siteLibrary);
+        if (privateReferenceConflict) {
+          throw new Error(
+            `Cannot publish/shared simulation "${privateReferenceConflict.simulationName}" because it references private site "${privateReferenceConflict.siteName}". Set simulation to Private or use non-private site entries.`,
+          );
+        }
         console.log("[appStore] Pushing payload:", {
           sites: editableSites.length,
           simulations: editableSims.length,
@@ -1275,6 +1317,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
       const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
       const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+      const privateReferenceConflict = getPrivateSiteReferenceConflict(editableSims, siteLibrary);
+      if (privateReferenceConflict) {
+        throw new Error(
+          `Cannot publish/shared simulation "${privateReferenceConflict.simulationName}" because it references private site "${privateReferenceConflict.siteName}". Set simulation to Private or use non-private site entries.`,
+        );
+      }
       console.log("[appStore] Pushing local data to cloud:", {
         sites: editableSites.length,
         simulations: editableSims.length,
@@ -1722,6 +1770,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       (candidate) => requested.has(candidate.id) && !existingLibraryEntryIds.has(candidate.id),
     );
     if (!entries.length) return;
+    const activeSimulation = current.simulationPresets.find((preset) => preset.id === current.selectedScenarioId);
+    if (activeSimulation && (activeSimulation.visibility ?? "shared") !== "private") {
+      const privateEntriesInSharedSimulation = entries.filter((entry) => (entry.visibility ?? "shared") === "private");
+      if (privateEntriesInSharedSimulation.length > 0) {
+        set({
+          pendingPrivateSiteElevation: {
+            entryIds: entries.map((entry) => entry.id),
+            simulationId: activeSimulation.id,
+            simulationName: activeSimulation.name,
+          },
+        });
+        return;
+      }
+    }
     const createdSiteIds: string[] = [];
     const addedSites: Site[] = entries.map((entry) => {
       const siteId = makeId("site");
@@ -1805,6 +1867,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const siteId of createdSiteIds) {
       void get().syncSiteElevationOnline(siteId);
     }
+  },
+  resolvePendingPrivateSiteElevation: (elevate) => {
+    const pending = get().pendingPrivateSiteElevation;
+    if (!pending) return;
+    set({ pendingPrivateSiteElevation: null });
+    if (!elevate) return;
+    for (const entryId of pending.entryIds) {
+      const entry = get().siteLibrary.find((candidate) => candidate.id === entryId);
+      if (!entry) continue;
+      if ((entry.visibility ?? "shared") !== "private") continue;
+      get().updateSiteLibraryEntry(entryId, { visibility: "shared" });
+    }
+    get().insertSitesFromLibrary(pending.entryIds);
   },
   updateSiteLibraryEntry: (entryId, patch) => {
     const { currentUser } = get();
@@ -2759,19 +2834,57 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   syncSiteElevationsOnline: async () => {
     const sites = get().sites;
+    const requestSites = sites.map((site) => ({
+      id: site.id,
+      position: site.position,
+    }));
+    const requestById = new Map(requestSites.map((site) => [site.id, site]));
     set({ isElevationSyncing: true });
     try {
-      const elevations = await fetchElevations(sites.map((site) => site.position));
+      const elevations = await fetchElevations(requestSites.map((site) => site.position));
+      const elevationById = new Map<string, number>();
+      requestSites.forEach((site, index) => {
+        const elevation = elevations[index];
+        if (Number.isFinite(elevation)) {
+          elevationById.set(site.id, Math.round(elevation));
+        }
+      });
 
-      set((state) => ({
-        sites: state.sites.map((site, index) => ({
-          ...site,
-          groundElevationM: Number.isFinite(elevations[index])
-            ? Math.round(elevations[index])
-            : site.groundElevationM,
-        })),
-        hasOnlineElevationSync: true,
-      }));
+      set((state) => {
+        const isStale =
+          state.sites.length !== requestSites.length ||
+          state.sites.some((site) => {
+            const requested = requestById.get(site.id);
+            return (
+              !requested ||
+              requested.position.lat !== site.position.lat ||
+              requested.position.lon !== site.position.lon
+            );
+          });
+        if (isStale) {
+          return {};
+        }
+
+        let appliedAny = false;
+        const nextSites = state.sites.map((site) => {
+          const nextElevation = elevationById.get(site.id);
+          if (typeof nextElevation !== "number") return site;
+          appliedAny = true;
+          return {
+            ...site,
+            groundElevationM: nextElevation,
+          };
+        });
+
+        if (!appliedAny) {
+          return {};
+        }
+
+        return {
+          sites: nextSites,
+          hasOnlineElevationSync: true,
+        };
+      });
     } finally {
       set({ isElevationSyncing: false });
     }

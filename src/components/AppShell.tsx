@@ -3,9 +3,10 @@ import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser"
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
+import { shouldOpenShareModal } from "../lib/shareAccess";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
-import { useAppStore } from "../store/appStore";
+import { canEditItem, useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
@@ -20,14 +21,6 @@ const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
-
-const canEditResource = (value: unknown): boolean => {
-  if (!value || typeof value !== "object") return false;
-  const resource = value as { effectiveRole?: unknown };
-  const role = resource.effectiveRole;
-  if (role === "owner" || role === "admin" || role === "editor") return true;
-  return false;
-};
 
 const copyToClipboard = async (text: string): Promise<void> => {
   if (navigator.clipboard?.writeText) {
@@ -57,6 +50,7 @@ export function AppShell() {
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
+  const resolvePendingPrivateSiteElevation = useAppStore((state) => state.resolvePendingPrivateSiteElevation);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const mapViewport = useAppStore((state) => state.mapViewport);
@@ -64,6 +58,7 @@ export function AppShell() {
   const links = useAppStore((state) => state.links);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
+  const pendingPrivateSiteElevation = useAppStore((state) => state.pendingPrivateSiteElevation);
   const sites = useAppStore((state) => state.sites);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
@@ -98,6 +93,13 @@ export function AppShell() {
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
     [simulationPresets, selectedScenarioId],
   );
+  const canEditResource = useCallback(
+    (value: unknown): boolean => {
+      if (!value || typeof value !== "object" || !currentUser) return false;
+      return canEditItem(value as { ownerUserId?: string; effectiveRole?: string }, currentUser);
+    },
+    [currentUser],
+  );
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const selectedLink = useMemo(
@@ -119,6 +121,13 @@ export function AppShell() {
     }
     return siteLibrary.filter((site) => ids.has(site.id) && toVisibility(site.visibility) === "private");
   }, [activeSimulation, siteLibrary]);
+  const pendingPrivateSiteElevationEntries = useMemo(() => {
+    if (!pendingPrivateSiteElevation) return [];
+    return pendingPrivateSiteElevation.entryIds
+      .map((entryId) => siteLibrary.find((entry) => entry.id === entryId))
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .filter((entry) => toVisibility(entry.visibility) === "private");
+  }, [pendingPrivateSiteElevation, siteLibrary]);
 
   const currentShareLink = useMemo(() => {
     if (!activeSimulation) return "";
@@ -564,8 +573,9 @@ export function AppShell() {
     }
     const blockedSites = referencedPrivateSites.filter((site) => !canEditResource(site));
     if (blockedSites.length) {
+      const blockedNames = blockedSites.map((site) => site.name).join(", ");
       setShareStatus(
-        `Cannot upgrade ${blockedSites.length} private site(s) because you do not have edit access to them.`,
+        `Cannot upgrade private sites without edit access: ${blockedNames}. Ask an owner/editor collaborator to change their visibility, or remove them from the simulation.`,
       );
       return;
     }
@@ -576,7 +586,9 @@ export function AppShell() {
       for (const site of referencedPrivateSites) {
         updateSiteLibraryEntry(site.id, { visibility: "shared" });
       }
-      updateSimulationPresetEntry(activeSimulation.id, { visibility: "shared" });
+      if (toVisibility(activeSimulation.visibility) === "private") {
+        updateSimulationPresetEntry(activeSimulation.id, { visibility: "shared" });
+      }
 
       const latest = useAppStore.getState();
       const latestSimulation = latest.simulationPresets.find((preset) => preset.id === activeSimulation.id);
@@ -590,14 +602,26 @@ export function AppShell() {
         siteLibrary: latestSites,
       });
 
-      await copyCurrentLink();
-      setShareStatus("Simulation and referenced sites are now Shared. Link copied.");
+      try {
+        await copyCurrentLink();
+        setShareStatus("Visibility updated and synced. Link copied.");
+      } catch (error) {
+        setShareStatus(`Visibility updated and synced, but link copy failed: ${getUiErrorMessage(error)}`);
+      }
     } catch (error) {
       setShareStatus(`Upgrade failed: ${getUiErrorMessage(error)}`);
     } finally {
       setShareBusy(false);
     }
-  }, [activeSimulation, copyCurrentLink, currentUser, referencedPrivateSites, updateSimulationPresetEntry, updateSiteLibraryEntry]);
+  }, [
+    activeSimulation,
+    canEditResource,
+    copyCurrentLink,
+    currentUser,
+    referencedPrivateSites,
+    updateSimulationPresetEntry,
+    updateSiteLibraryEntry,
+  ]);
 
   if (accessState === "checking") {
     return (
@@ -716,7 +740,9 @@ export function AppShell() {
         accessState === "readonly" ? "is-readonly-shell" : ""
       }`}
     >
-      {!isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
+      {!isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? (
+        <Sidebar canPersistWorkspace={canPersistWorkspace} />
+      ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {!isOnline && !offlineBannerDismissed ? (
           <div className="offline-banner" role="status">
@@ -772,7 +798,7 @@ export function AppShell() {
                       );
                       return;
                     }
-                    if (toVisibility(activeSimulation.visibility) === "private") {
+                    if (shouldOpenShareModal(toVisibility(activeSimulation.visibility), referencedPrivateSites.length)) {
                       setShowShareModal(true);
                       return;
                     }
@@ -864,11 +890,15 @@ export function AppShell() {
               <>
                 <p className="field-help">This link opens the same simulation, selected path, map view, and overlay mode.</p>
                 <input className="locale-select" readOnly value={currentShareLink} />
-                {toVisibility(activeSimulation.visibility) === "private" ? (
+                {shouldOpenShareModal(toVisibility(activeSimulation.visibility), referencedPrivateSites.length) ? (
                   <div className="panel-section compact-panel">
-                    <h4>Private Simulation</h4>
+                    <h4>
+                      {toVisibility(activeSimulation.visibility) === "private" ? "Private Simulation" : "Private Sites Referenced"}
+                    </h4>
                     <p className="field-help">
-                      This simulation is private. To make the share link broadly accessible, set this simulation and its referenced private sites to Shared.
+                      {toVisibility(activeSimulation.visibility) === "private"
+                        ? "This simulation is private. To make the share link broadly accessible, set this simulation and its referenced private sites to Shared."
+                        : "This simulation references private sites. To make the share link broadly accessible, set the referenced private sites to Shared."}
                     </p>
                     <p className="field-help">
                       Referenced private sites: {referencedPrivateSites.length}
@@ -892,6 +922,37 @@ export function AppShell() {
               </>
             )}
             {shareStatus ? <p className="field-help">{shareStatus}</p> : null}
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {pendingPrivateSiteElevation ? (
+        <ModalOverlay aria-label="Elevate private sites" onClose={() => resolvePendingPrivateSiteElevation(false)}>
+          <div className="library-manager-card">
+            <div className="library-manager-header">
+              <h2>Private Sites In Shared Simulation</h2>
+              <button className="inline-action" onClick={() => resolvePendingPrivateSiteElevation(false)} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              {pendingPrivateSiteElevation.simulationName} is shared. Private sites cannot be added unless they are elevated to Shared.
+            </p>
+            <p className="field-help">Private sites in this add operation: {pendingPrivateSiteElevationEntries.length}</p>
+            {pendingPrivateSiteElevationEntries.length ? (
+              <ul className="field-help access-pending-list">
+                {pendingPrivateSiteElevationEntries.map((site) => (
+                  <li key={site.id}>{site.name}</li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="chip-group">
+              <button className="inline-action" onClick={() => resolvePendingPrivateSiteElevation(false)} type="button">
+                Cancel
+              </button>
+              <button className="inline-action" onClick={() => resolvePendingPrivateSiteElevation(true)} type="button">
+                Elevate Sites And Add
+              </button>
+            </div>
           </div>
         </ModalOverlay>
       ) : null}
