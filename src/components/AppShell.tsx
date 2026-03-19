@@ -50,6 +50,7 @@ export function AppShell() {
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
+  const resolvePendingPrivateSiteElevation = useAppStore((state) => state.resolvePendingPrivateSiteElevation);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const mapViewport = useAppStore((state) => state.mapViewport);
@@ -57,6 +58,7 @@ export function AppShell() {
   const links = useAppStore((state) => state.links);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
+  const pendingPrivateSiteElevation = useAppStore((state) => state.pendingPrivateSiteElevation);
   const sites = useAppStore((state) => state.sites);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
@@ -119,6 +121,13 @@ export function AppShell() {
     }
     return siteLibrary.filter((site) => ids.has(site.id) && toVisibility(site.visibility) === "private");
   }, [activeSimulation, siteLibrary]);
+  const pendingPrivateSiteElevationEntries = useMemo(() => {
+    if (!pendingPrivateSiteElevation) return [];
+    return pendingPrivateSiteElevation.entryIds
+      .map((entryId) => siteLibrary.find((entry) => entry.id === entryId))
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .filter((entry) => toVisibility(entry.visibility) === "private");
+  }, [pendingPrivateSiteElevation, siteLibrary]);
 
   const currentShareLink = useMemo(() => {
     if (!activeSimulation) return "";
@@ -910,6 +919,37 @@ export function AppShell() {
               </>
             )}
             {shareStatus ? <p className="field-help">{shareStatus}</p> : null}
+          </div>
+        </ModalOverlay>
+      ) : null}
+      {pendingPrivateSiteElevation ? (
+        <ModalOverlay aria-label="Elevate private sites" onClose={() => resolvePendingPrivateSiteElevation(false)}>
+          <div className="library-manager-card">
+            <div className="library-manager-header">
+              <h2>Private Sites In Shared Simulation</h2>
+              <button className="inline-action" onClick={() => resolvePendingPrivateSiteElevation(false)} type="button">
+                Close
+              </button>
+            </div>
+            <p className="field-help">
+              {pendingPrivateSiteElevation.simulationName} is shared. Private sites cannot be added unless they are elevated to Shared.
+            </p>
+            <p className="field-help">Private sites in this add operation: {pendingPrivateSiteElevationEntries.length}</p>
+            {pendingPrivateSiteElevationEntries.length ? (
+              <ul className="field-help access-pending-list">
+                {pendingPrivateSiteElevationEntries.map((site) => (
+                  <li key={site.id}>{site.name}</li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="chip-group">
+              <button className="inline-action" onClick={() => resolvePendingPrivateSiteElevation(false)} type="button">
+                Cancel
+              </button>
+              <button className="inline-action" onClick={() => resolvePendingPrivateSiteElevation(true)} type="button">
+                Elevate Sites And Add
+              </button>
+            </div>
           </div>
         </ModalOverlay>
       ) : null}

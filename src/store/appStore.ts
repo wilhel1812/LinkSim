@@ -292,6 +292,13 @@ type AppState = {
     | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
     | null;
   pendingSiteLibraryOpenEntryId: string | null;
+  pendingPrivateSiteElevation:
+    | {
+        entryIds: string[];
+        simulationId: string;
+        simulationName: string;
+      }
+    | null;
   scenarioOptions: { id: string; name: string }[];
   mapOverlayMode: MapOverlayMode;
   syncStatus: "syncing" | "synced" | "error";
@@ -360,6 +367,7 @@ type AppState = {
   ) => string;
   insertSiteFromLibrary: (entryId: string) => void;
   insertSitesFromLibrary: (entryIds: string[]) => void;
+  resolvePendingPrivateSiteElevation: (elevate: boolean) => void;
   updateSiteLibraryEntry: (
     entryId: string,
     patch: Partial<
@@ -963,6 +971,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
   pendingSiteLibraryOpenEntryId: null,
+  pendingPrivateSiteElevation: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
   syncStatus: "synced",
@@ -1722,6 +1731,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       (candidate) => requested.has(candidate.id) && !existingLibraryEntryIds.has(candidate.id),
     );
     if (!entries.length) return;
+    const activeSimulation = current.simulationPresets.find((preset) => preset.id === current.selectedScenarioId);
+    if (activeSimulation && (activeSimulation.visibility ?? "shared") !== "private") {
+      const privateEntriesInSharedSimulation = entries.filter((entry) => (entry.visibility ?? "shared") === "private");
+      if (privateEntriesInSharedSimulation.length > 0) {
+        set({
+          pendingPrivateSiteElevation: {
+            entryIds: entries.map((entry) => entry.id),
+            simulationId: activeSimulation.id,
+            simulationName: activeSimulation.name,
+          },
+        });
+        return;
+      }
+    }
     const createdSiteIds: string[] = [];
     const addedSites: Site[] = entries.map((entry) => {
       const siteId = makeId("site");
@@ -1805,6 +1828,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const siteId of createdSiteIds) {
       void get().syncSiteElevationOnline(siteId);
     }
+  },
+  resolvePendingPrivateSiteElevation: (elevate) => {
+    const pending = get().pendingPrivateSiteElevation;
+    if (!pending) return;
+    set({ pendingPrivateSiteElevation: null });
+    if (!elevate) return;
+    for (const entryId of pending.entryIds) {
+      const entry = get().siteLibrary.find((candidate) => candidate.id === entryId);
+      if (!entry) continue;
+      if ((entry.visibility ?? "shared") !== "private") continue;
+      get().updateSiteLibraryEntry(entryId, { visibility: "shared" });
+    }
+    get().insertSitesFromLibrary(pending.entryIds);
   },
   updateSiteLibraryEntry: (entryId, patch) => {
     const { currentUser } = get();
