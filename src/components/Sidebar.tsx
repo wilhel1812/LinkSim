@@ -617,6 +617,23 @@ export function Sidebar() {
     const preset = simulationPresets.find((candidate) => candidate.id === presetId);
     return normalizeAccessVisibility(preset?.visibility);
   }, [selectedSimulationRef, simulationPresets]);
+  const openActiveSimulationDetails = () => {
+    if (!selectedSimulationRef.startsWith("saved:")) return;
+    const presetId = selectedSimulationRef.replace("saved:", "");
+    const preset = simulationPresets.find((p) => p.id === presetId);
+    if (!preset) return;
+    openResourceDetailsPopup({
+      kind: "simulation",
+      resourceId: preset.id,
+      label: preset.name,
+      createdByUserId: (preset as unknown as { createdByUserId?: string }).createdByUserId ?? null,
+      createdByName: (preset as unknown as { createdByName?: string }).createdByName ?? "Unknown",
+      createdByAvatarUrl: (preset as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
+      lastEditedByUserId: (preset as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
+      lastEditedByName: (preset as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
+      lastEditedByAvatarUrl: (preset as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
+    });
+  };
   const collaboratorDirectoryById = useMemo(
     () => new globalThis.Map(resourceCollaboratorDirectory.map((user) => [user.id, user])),
     [resourceCollaboratorDirectory],
@@ -1740,6 +1757,11 @@ export function Sidebar() {
         <p className="field-help">
           Active: <strong>{activeSimulationLabel}</strong>
         </p>
+        {selectedSimulationRef.startsWith("saved:") ? (
+          <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
+            Edit Simulation
+          </button>
+        ) : null}
         <div className="chip-group">
           <button
             className="inline-action"
