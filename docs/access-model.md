@@ -103,10 +103,13 @@ A non-private simulation referencing a private library site is invalid for cloud
 
 - Pre-push validation should detect this and report names for both simulation and site.
 - User-facing Sync Status should show friendly guidance and keep technical detail collapsible.
+- Sync Status modal rendering order must prioritize explicit sync failures over generic pending state.
+  - If `syncStatus === "error"` and `syncPending === true`, show failure guidance first and mention queued changes as secondary context.
+- Forbidden/auth-style sync responses (`403`, `Forbidden`, `Access denied`, `Unauthorized`) should map to friendly guidance (with technical details still available via disclosure).
 
 File touchpoints:
 - `src/store/appStore.ts` (pre-push conflict detection)
-- `src/components/UserAdminPanel.tsx` + `src/lib/syncError.ts` (friendly sync error UX)
+- `src/components/UserAdminPanel.tsx` + `src/lib/syncError.ts` (friendly sync error UX + error-first status rendering)
 
 ## Backend access retrieval requirements
 

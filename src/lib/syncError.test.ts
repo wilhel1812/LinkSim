@@ -15,4 +15,11 @@ describe("toFriendlySyncError", () => {
   it("returns null for unrelated errors", () => {
     expect(toFriendlySyncError("Network timeout while syncing")).toBeNull();
   });
+
+  it("returns friendly guidance for 403/forbidden sync failures", () => {
+    const result = toFriendlySyncError("403 Forbidden: Access denied");
+    expect(result).not.toBeNull();
+    expect(result?.summary).toContain("write one or more resources");
+    expect(result?.steps.length).toBe(3);
+  });
 });

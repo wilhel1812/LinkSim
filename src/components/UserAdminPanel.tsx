@@ -681,15 +681,6 @@ export function UserAdminPanel() {
       };
     }
 
-    if (syncPending) {
-      return {
-        icon: "◐",
-        class: "sync-pending",
-        label: "Sync pending",
-        title: `${timeLabel}. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}.`,
-      };
-    }
-
     switch (syncStatus) {
       case "syncing":
         return { icon: "↻", class: "sync-syncing", label: "Syncing...", title: timeLabel };
@@ -703,6 +694,14 @@ export function UserAdminPanel() {
           title: `${timeLabel}. ${friendlySyncError?.summary ?? syncErrorMessage ?? "Open Sync Status for details."}`,
         };
       default:
+        if (syncPending) {
+          return {
+            icon: "◐",
+            class: "sync-pending",
+            label: "Sync pending",
+            title: `${timeLabel}. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}.`,
+          };
+        }
         return { icon: "●", class: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
     }
   };
@@ -770,7 +769,31 @@ export function UserAdminPanel() {
                 ) : null}
               </div>
               <div className="sync-status-display">
-                {syncPending ? (
+                {syncStatus === "error" ? (
+                  <>
+                    <span className="sync-indicator-large sync-error">⚠</span>
+                    <div>
+                      <p className="field-help">Sync failed</p>
+                      {friendlySyncError ? (
+                        <>
+                          <p className="field-help warning-text">{friendlySyncError.summary}</p>
+                          <ul className="field-help access-pending-list">
+                            {friendlySyncError.steps.map((step) => (
+                              <li key={step}>{step}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
+                      {syncErrorMessage && (
+                        <details className="sync-error-details">
+                          <summary>{friendlySyncError ? "Technical details" : "Error details"}</summary>
+                          <p className="field-help">{syncErrorMessage}</p>
+                        </details>
+                      )}
+                      {syncPending ? <p className="field-help">{pendingChangesCount} change(s) still queued for retry.</p> : null}
+                    </div>
+                  </>
+                ) : syncPending ? (
                   <>
                     <span className="sync-indicator-large sync-pending">◐</span>
                     <div>
@@ -792,29 +815,6 @@ export function UserAdminPanel() {
                     <div>
                       <p className="field-help">Up to date</p>
                       {pendingChangesCount > 0 ? <p className="field-help">{pendingChangesCount} changes still pending.</p> : null}
-                    </div>
-                  </>
-                ) : syncStatus === "error" ? (
-                  <>
-                    <span className="sync-indicator-large sync-error">⚠</span>
-                    <div>
-                      <p className="field-help">Sync failed</p>
-                      {friendlySyncError ? (
-                        <>
-                          <p className="field-help warning-text">{friendlySyncError.summary}</p>
-                          <ul className="field-help access-pending-list">
-                            {friendlySyncError.steps.map((step) => (
-                              <li key={step}>{step}</li>
-                            ))}
-                          </ul>
-                        </>
-                      ) : null}
-                      {syncErrorMessage && (
-                        <details className="sync-error-details">
-                          <summary>{friendlySyncError ? "Technical details" : "Error details"}</summary>
-                          <p className="field-help">{syncErrorMessage}</p>
-                        </details>
-                      )}
                     </div>
                   </>
                 ) : (
