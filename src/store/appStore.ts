@@ -54,7 +54,7 @@ import type {
 const SYNC_DEBOUNCE_MS = 2500;
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SYNC_SIGNATURE_KEY = "linksim-sync-signature-v1";
-const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v1";
+const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v2";
 
 let hydrated = false;
 let syncTimer: number | null = null;
