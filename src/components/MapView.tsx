@@ -844,6 +844,7 @@ export function MapView({
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
   const coverageSamples = useAppStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
+  const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
@@ -1008,7 +1009,7 @@ export function MapView({
       analysisBounds.minLon,
       analysisBounds.maxLon,
     );
-  }, [analysisBounds]);
+  }, [analysisBounds, terrainDataset]);
   const loadedDatasetTileKeys = useMemo(
     () =>
       new Set(
@@ -1213,17 +1214,11 @@ export function MapView({
   }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
-  const isLikelyTerrainColdFetch =
-    isTerrainFetching &&
-    requiredTerrainTileKeys.length > 0 &&
-    missingRequiredTileCount > 0;
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
   const backgroundBusyLabel = isTerrainFetching
-    ? isLikelyTerrainColdFetch
-      ? `Fetching terrain data... first load for this area can take a few minutes, then it is cached (${missingRequiredTileCount}/${requiredTerrainTileKeys.length} tile(s) missing).`
-      : "Fetching terrain data... first load for uncached tiles can take a few minutes."
+    ? terrainFetchStatus ?? "Loading terrain data..."
     : isTerrainRecommending
-      ? "Checking terrain dataset coverage..."
+      ? terrainFetchStatus ?? "Checking terrain dataset coverage..."
       : isElevationSyncing
         ? "Syncing site elevations..."
         : "";

@@ -28,6 +28,7 @@ const DATASET_PATH: Record<CopernicusDataset, "30m" | "90m"> = {
 
 const CACHE_NAME = "linksim-copernicus-cog-v1";
 const TILELIST_CACHE_KEY = "linksim-copernicus-tilelist-v1";
+const TILE_INDEX_CACHE_KEY = "linksim-copernicus-tile-index-v1";
 const TILELIST_TTL_MS = 6 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 90000;
 const MAX_RETRIES = 5;
@@ -135,6 +136,32 @@ const loadTileList = async (
   return entries;
 };
 
+const readTileIndex = (dataset: CopernicusDataset): Set<string> => {
+  try {
+    const raw = localStorage.getItem(TILE_INDEX_CACHE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as Record<string, { fetchedAtMs: number; keys: string[] }>;
+    const entry = parsed[dataset];
+    if (!entry) return new Set();
+    return new Set(entry.keys);
+  } catch {
+    return new Set();
+  }
+};
+
+const writeTileIndex = (dataset: CopernicusDataset, keys: string[]): void => {
+  try {
+    const raw = localStorage.getItem(TILE_INDEX_CACHE_KEY);
+    const parsed = raw
+      ? (JSON.parse(raw) as Record<string, { fetchedAtMs: number; keys: string[] }>)
+      : {};
+    parsed[dataset] = { fetchedAtMs: Date.now(), keys };
+    localStorage.setItem(TILE_INDEX_CACHE_KEY, JSON.stringify(parsed));
+  } catch {
+    // Best effort.
+  }
+};
+
 const parseCopernicusTile = async (
   tileKey: string,
   dataset: CopernicusDataset,
@@ -174,11 +201,19 @@ const parseCopernicusTile = async (
   };
 };
 
-const getCachedOrFetchTile = async (pathPrefix: "30m" | "90m", path: string): Promise<{ buffer: ArrayBuffer; fromCache: boolean }> => {
+const getCachedOrFetchTile = async (
+  pathPrefix: "30m" | "90m",
+  path: string,
+  tileKey: string,
+): Promise<{ buffer: ArrayBuffer; fromCache: boolean }> => {
+  const dataset: CopernicusDataset = pathPrefix === "30m" ? "copernicus30" : "copernicus90";
   const cache = await caches.open(CACHE_NAME);
   const proxiedUrl = `/copernicus/${pathPrefix}/${path}`;
-  const cached = await cache.match(proxiedUrl);
-  if (cached) return { buffer: await cached.arrayBuffer(), fromCache: true };
+  const localIndex = readTileIndex(dataset);
+  if (localIndex.has(tileKey)) {
+    const cached = await cache.match(proxiedUrl);
+    if (cached) return { buffer: await cached.arrayBuffer(), fromCache: true };
+  }
   const response = await fetchWithRetry(proxiedUrl);
   await cache.put(proxiedUrl, response.clone());
   return { buffer: await response.arrayBuffer(), fromCache: false };
@@ -207,7 +242,7 @@ export const loadCopernicusTilesForArea = async (
       continue;
     }
     try {
-      const { buffer, fromCache } = await getCachedOrFetchTile(pathPrefix, item.path);
+      const { buffer, fromCache } = await getCachedOrFetchTile(pathPrefix, item.path, key);
       if (fromCache) cacheHits.push(key);
       else fetchedTiles.push(key);
       parsedTiles.push(await parseCopernicusTile(key, dataset, item.path, buffer));
@@ -223,7 +258,7 @@ export const loadCopernicusTilesForArea = async (
       const item = fallbackList[key];
       if (!item) continue;
       try {
-        const { buffer, fromCache } = await getCachedOrFetchTile(DATASET_PATH.copernicus90, item.path);
+        const { buffer, fromCache } = await getCachedOrFetchTile(DATASET_PATH.copernicus90, item.path, key);
         if (fromCache) cacheHits.push(key);
         else fetchedTiles.push(key);
         parsedTiles.push(await parseCopernicusTile(key, "copernicus90", item.path, buffer));
@@ -235,12 +270,20 @@ export const loadCopernicusTilesForArea = async (
     }
   }
 
+  const allLoadedKeys = [...cacheHits, ...fetchedTiles];
+  if (allLoadedKeys.length > 0) {
+    const existingIndex = readTileIndex(dataset);
+    const merged = new Set([...existingIndex, ...allLoadedKeys]);
+    writeTileIndex(dataset, Array.from(merged));
+  }
+
   return { tiles: parsedTiles, failedTiles: Array.from(failedTiles), fetchedTiles, cacheHits, fallbackTiles };
 };
 
 export const clearCopernicusCache = async (): Promise<void> => {
   await caches.delete(CACHE_NAME);
   localStorage.removeItem(TILELIST_CACHE_KEY);
+  localStorage.removeItem(TILE_INDEX_CACHE_KEY);
 };
 
 export const recommendCopernicusDatasetForArea = async (
