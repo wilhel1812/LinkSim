@@ -59,6 +59,7 @@ let syncTimer: number | null = null;
 let syncInFlight = false;
 let localMutationRevision = 0;
 let syncedMutationRevision = 0;
+let lastSyncedPayloadSignature: string | null = null;
 
 const recordLocalMutation = (): number => {
   localMutationRevision += 1;
@@ -73,6 +74,7 @@ const markSyncedThrough = (revision: number = localMutationRevision): number => 
 const resetSyncRevisions = (): void => {
   localMutationRevision = 0;
   syncedMutationRevision = 0;
+  lastSyncedPayloadSignature = null;
 };
 
 const canEditLibraryItem = (
@@ -246,6 +248,20 @@ type SimulationPreset = {
     mapViewport: MapViewport;
   };
 };
+
+type SyncPayload = {
+  siteLibrary: SiteLibraryEntry[];
+  simulationPresets: SimulationPreset[];
+};
+
+const sortById = <T extends { id: string }>(items: T[]): T[] =>
+  [...items].sort((a, b) => a.id.localeCompare(b.id));
+
+const computeSyncPayloadSignature = (payload: SyncPayload): string =>
+  JSON.stringify({
+    siteLibrary: sortById(payload.siteLibrary),
+    simulationPresets: sortById(payload.simulationPresets),
+  });
 
 type AppState = {
   sites: Site[];
@@ -1100,12 +1116,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
           const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
           const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+          const payloadSignature = computeSyncPayloadSignature(payload);
           console.log("[appStore] Post-init pushing payload:", {
             sites: editableSites.length,
             simulations: editableSims.length,
             skipped: skippedCount,
           });
           await pushCloudLibrary(payload);
+          lastSyncedPayloadSignature = payloadSignature;
           console.log("[appStore] Post-init Push SUCCESS");
           const remaining = markSyncedThrough(revisionAtStart);
           set({
@@ -1198,12 +1216,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
         const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
         const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+        const payloadSignature = computeSyncPayloadSignature(payload);
+        if (payloadSignature === lastSyncedPayloadSignature) {
+          const remaining = markSyncedThrough(revisionAtStart);
+          set({
+            syncPending: remaining > 0,
+            pendingChangesCount: remaining,
+            syncStatus: "synced",
+            syncErrorMessage: null,
+            syncStatusMessage: "No changes to sync",
+          });
+          return;
+        }
         console.log("[appStore] Pushing payload:", {
           sites: editableSites.length,
           simulations: editableSims.length,
           skipped: skippedCount,
         });
         await pushCloudLibrary(payload);
+        lastSyncedPayloadSignature = payloadSignature;
         console.log("[appStore] Push SUCCESS");
         const remaining = markSyncedThrough(revisionAtStart);
         set({
@@ -1275,12 +1306,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
       const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
       const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+      const payloadSignature = computeSyncPayloadSignature(payload);
       console.log("[appStore] Pushing local data to cloud:", {
         sites: editableSites.length,
         simulations: editableSims.length,
         skipped: skippedCount,
       });
       await pushCloudLibrary(payload);
+      lastSyncedPayloadSignature = payloadSignature;
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
       const cloud = await fetchCloudLibrary();
       console.log("[appStore] Cloud data received:", {
