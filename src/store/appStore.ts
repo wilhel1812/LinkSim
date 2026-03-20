@@ -254,6 +254,12 @@ type SyncPayload = {
   simulationPresets: SimulationPreset[];
 };
 
+type EditableSyncPayloadInfo = {
+  payload: SyncPayload;
+  skippedCount: number;
+  signature: string;
+};
+
 const sortById = <T extends { id: string }>(items: T[]): T[] =>
   [...items].sort((a, b) => a.id.localeCompare(b.id));
 
@@ -262,6 +268,21 @@ const computeSyncPayloadSignature = (payload: SyncPayload): string =>
     siteLibrary: sortById(payload.siteLibrary),
     simulationPresets: sortById(payload.simulationPresets),
   });
+
+const buildEditableSyncPayloadInfo = (
+  siteLibrary: SiteLibraryEntry[],
+  simulationPresets: SimulationPreset[],
+  currentUser: CloudUser | null,
+): EditableSyncPayloadInfo => {
+  const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
+  const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
+  const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+  return {
+    payload,
+    skippedCount: siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length,
+    signature: computeSyncPayloadSignature(payload),
+  };
+};
 
 type AppState = {
   sites: Site[];
@@ -1013,6 +1034,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       const { currentUser, importLibraryData, loadSimulationPreset, selectScenario } = get();
+      let remotePayloadSignature: string | null = null;
 
       const cloudSites = Array.isArray(cloud.siteLibrary) ? cloud.siteLibrary as SiteLibraryEntry[] : [];
       const cloudSims = Array.isArray(cloud.simulationPresets) ? cloud.simulationPresets as SimulationPreset[] : [];
@@ -1030,6 +1052,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           currentUser.username,
           currentUser.avatarUrl ?? "",
         );
+        remotePayloadSignature = buildEditableSyncPayloadInfo(fixedCloudSites, fixedCloudSims, currentUser).signature;
 
         const cloudPresets = fixedCloudSims as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["simulationPresets"];
 
@@ -1075,6 +1098,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.log("[appStore] Merge result:", result);
         hydrated = true;
         resetSyncRevisions();
+        remotePayloadSignature = buildEditableSyncPayloadInfo(cloudSites, cloudPresets as SimulationPreset[], currentUser).signature;
         set({
           syncPending: false,
           pendingChangesCount: 0,
@@ -1084,6 +1108,28 @@ export const useAppStore = create<AppState>((set, get) => ({
           syncBusy: false,
           syncStatusMessage: `Synced: ${result.siteCount} sites, ${result.simulationCount} simulations`,
         });
+      }
+      if (remotePayloadSignature) {
+        lastSyncedPayloadSignature = remotePayloadSignature;
+      }
+      const currentState = get();
+      const currentPayload = buildEditableSyncPayloadInfo(
+        currentState.siteLibrary,
+        currentState.simulationPresets,
+        currentState.currentUser,
+      );
+      if (currentPayload.signature === lastSyncedPayloadSignature) {
+        console.log("[appStore] initializeCloudSync SUCCESS - no startup sync needed");
+        set({
+          syncPending: false,
+          pendingChangesCount: 0,
+          syncStatus: "synced",
+          syncErrorMessage: null,
+          syncBusy: false,
+          syncStatusMessage: "Up to date",
+          isInitializing: false,
+        });
+        return;
       }
       console.log("[appStore] initializeCloudSync SUCCESS - hydrated: true, scheduling sync...");
       if (syncTimer !== null) {
@@ -1112,12 +1158,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         syncInFlight = true;
         try {
           const { siteLibrary, simulationPresets, currentUser } = get();
-          const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
-          const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
-          const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
-          const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
-          const payloadSignature = computeSyncPayloadSignature(payload);
-          if (payloadSignature === lastSyncedPayloadSignature) {
+          const { payload, skippedCount, signature } = buildEditableSyncPayloadInfo(
+            siteLibrary,
+            simulationPresets,
+            currentUser,
+          );
+          if (signature === lastSyncedPayloadSignature) {
             console.log("[appStore] Post-init: no changes to sync");
             markSyncedThrough(revisionAtStart);
             set({
@@ -1133,12 +1179,12 @@ export const useAppStore = create<AppState>((set, get) => ({
             return;
           }
           console.log("[appStore] Post-init pushing payload:", {
-            sites: editableSites.length,
-            simulations: editableSims.length,
+            sites: payload.siteLibrary.length,
+            simulations: payload.simulationPresets.length,
             skipped: skippedCount,
           });
           await pushCloudLibrary(payload);
-          lastSyncedPayloadSignature = payloadSignature;
+          lastSyncedPayloadSignature = signature;
           console.log("[appStore] Post-init Push SUCCESS");
           const remaining = markSyncedThrough(revisionAtStart);
           set({
@@ -1181,6 +1227,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   performCloudSyncPush: () => {
     if (!hydrated) {
       console.log("[appStore] performCloudSyncPush skipped - not hydrated yet");
+      return;
+    }
+    const { siteLibrary, simulationPresets, currentUser } = get();
+    const currentPayload = buildEditableSyncPayloadInfo(siteLibrary, simulationPresets, currentUser);
+    if (currentPayload.signature === lastSyncedPayloadSignature) {
+      const remaining = markSyncedThrough();
+      set({
+        syncPending: remaining > 0,
+        pendingChangesCount: remaining,
+        syncStatus: "synced",
+        syncErrorMessage: null,
+        syncStatusMessage: "Up to date",
+      });
       return;
     }
     const pendingChangesCount = recordLocalMutation();
@@ -1227,12 +1286,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       syncInFlight = true;
       try {
         const { siteLibrary, simulationPresets, currentUser } = get();
-        const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
-        const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
-        const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
-        const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
-        const payloadSignature = computeSyncPayloadSignature(payload);
-        if (payloadSignature === lastSyncedPayloadSignature) {
+        const { payload, skippedCount, signature } = buildEditableSyncPayloadInfo(
+          siteLibrary,
+          simulationPresets,
+          currentUser,
+        );
+        if (signature === lastSyncedPayloadSignature) {
           const remaining = markSyncedThrough(revisionAtStart);
           set({
             syncPending: remaining > 0,
@@ -1244,12 +1303,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           return;
         }
         console.log("[appStore] Pushing payload:", {
-          sites: editableSites.length,
-          simulations: editableSims.length,
+          sites: payload.siteLibrary.length,
+          simulations: payload.simulationPresets.length,
           skipped: skippedCount,
         });
         await pushCloudLibrary(payload);
-        lastSyncedPayloadSignature = payloadSignature;
+        lastSyncedPayloadSignature = signature;
         console.log("[appStore] Push SUCCESS");
         const remaining = markSyncedThrough(revisionAtStart);
         set({
