@@ -333,7 +333,7 @@ type AppState = {
   terrainFetchStatus: string;
   terrainRecommendation: string;
   isHighResTerrainLoaded: boolean;
-  terrain30mStartedAtMs: number;
+  terrainLoadingStartedAtMs: number;
   hasOnlineElevationSync: boolean;
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
@@ -1040,7 +1040,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   terrainFetchStatus: "",
   terrainRecommendation: "",
   isHighResTerrainLoaded: false,
-  terrain30mStartedAtMs: 0,
+  terrainLoadingStartedAtMs: 0,
   hasOnlineElevationSync: false,
   siteLibrary: initialSiteLibrary,
   simulationPresets: initialSimulationPresets,
@@ -1536,7 +1536,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: "",
       terrainRecommendation: "",
       isHighResTerrainLoaded: false,
-      terrain30mStartedAtMs: 0,
+      terrainLoadingStartedAtMs: 0,
       hasOnlineElevationSync: false,
       siteDragPreview: {},
       endpointPickTarget: null,
@@ -2833,6 +2833,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: alreadyHasHighRes ? "Loading terrain..." : "Loading terrain (rough preview)...",
       isTerrainFetching: true,
       isHighResTerrainLoaded: alreadyHasHighRes,
+      terrainLoadingStartedAtMs: Date.now(),
     });
 
     const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
@@ -2870,7 +2871,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       if (alreadyHasHighRes) {
-        set({ terrainFetchStatus: formatStatus({ tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] }, TERRAIN_DATASET_FETCH_LABEL.copernicus30), isTerrainFetching: false });
+        set({ terrainFetchStatus: formatStatus({ tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] }, TERRAIN_DATASET_FETCH_LABEL.copernicus30), isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
         return;
       }
 
@@ -2881,24 +2882,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       const currentTileKeys = new Set(currentState.srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
       const hasHighResNow = [...requiredTileKeys].every((k) => currentTileKeys.has(k));
       if (hasHighResNow) {
-        set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isTerrainFetching: false, isHighResTerrainLoaded: true });
+        set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isTerrainFetching: false, isHighResTerrainLoaded: true, terrainLoadingStartedAtMs: 0 });
         return;
       }
 
       set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isHighResTerrainLoaded: false });
 
-      set({ terrainFetchStatus: "Loading high-resolution terrain (30m)...", terrain30mStartedAtMs: Date.now() });
+      set({ terrainFetchStatus: "Loading high-resolution terrain (30m)..." });
       const thirtyResult = await loadAndMerge("copernicus30");
       applyTiles(thirtyResult);
       set({
         terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
         isTerrainFetching: false,
         isHighResTerrainLoaded: true,
-        terrain30mStartedAtMs: 0,
+        terrainLoadingStartedAtMs: 0,
       });
     } catch (error) {
       const message = getUiErrorMessage(error);
-      set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false, terrain30mStartedAtMs: 0 });
+      set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
     }
   },
   recommendAndFetchTerrainForCurrentArea: async () => {
@@ -2912,7 +2913,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
       isTerrainFetching: false,
       isHighResTerrainLoaded: false,
-      terrain30mStartedAtMs: 0,
+      terrainLoadingStartedAtMs: 0,
       terrainFetchStatus: "Terrain source caches cleared.",
     }));
     get().recomputeCoverage();

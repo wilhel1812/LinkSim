@@ -844,7 +844,7 @@ export function MapView({
   const coverageSamples = useAppStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
-  const terrain30mStartedAtMs = useAppStore((state) => state.terrain30mStartedAtMs);
+  const terrainLoadingStartedAtMs = useAppStore((state) => state.terrainLoadingStartedAtMs);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
@@ -1201,18 +1201,18 @@ export function MapView({
         ? "Syncing site elevations..."
         : "";
 
-  const is30mPhase = terrain30mStartedAtMs > 0 || (terrainFetchStatus?.includes("30m") ?? false);
+  const is30mPhase = terrainLoadingStartedAtMs > 0 && (terrainFetchStatus?.includes("30m") ?? false);
   const [showKeepWorking, setShowKeepWorking] = useState(false);
   useEffect(() => {
     if (!is30mPhase) { setShowKeepWorking(false); return; }
     const check = () => {
-      const elapsed = Date.now() - terrain30mStartedAtMs;
+      const elapsed = Date.now() - terrainLoadingStartedAtMs;
       if (elapsed > 60_000) setShowKeepWorking(true);
     };
     check();
     const id = setInterval(check, 10_000);
     return () => clearInterval(id);
-  }, [is30mPhase, terrain30mStartedAtMs]);
+  }, [is30mPhase, terrainLoadingStartedAtMs]);
 
   const terrainPreviewNote = is30mPhase && srtmTiles.length > 0
     ? showKeepWorking
