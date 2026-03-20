@@ -1052,8 +1052,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           currentUser.username,
           currentUser.avatarUrl ?? "",
         );
-        remotePayloadSignature = buildEditableSyncPayloadInfo(fixedCloudSites, fixedCloudSims, currentUser).signature;
-
         const cloudPresets = fixedCloudSims as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["simulationPresets"];
 
         console.log("[appStore] Merging cloud data with local (with ownership fixes)...");
@@ -1083,6 +1081,12 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           }
         }
+        const postMergeState = get();
+        remotePayloadSignature = buildEditableSyncPayloadInfo(
+          postMergeState.siteLibrary,
+          postMergeState.simulationPresets,
+          currentUser,
+        ).signature;
       } else {
         const cloudPresets =
           (cloud.simulationPresets as Parameters<ReturnType<typeof get>["importLibraryData"]>[0]["simulationPresets"] | undefined) ?? [];
@@ -1232,6 +1236,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { siteLibrary, simulationPresets, currentUser } = get();
     const currentPayload = buildEditableSyncPayloadInfo(siteLibrary, simulationPresets, currentUser);
     if (currentPayload.signature === lastSyncedPayloadSignature) {
+      console.log("[appStore] performCloudSyncPush skipped - no changes since last sync");
       const remaining = markSyncedThrough();
       set({
         syncPending: remaining > 0,
