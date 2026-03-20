@@ -73,7 +73,7 @@
 ## Model Selection
 - **Codex 5.3** — use for full implementation passes where quality and breadth of change matter most. Expensive; reserve for when the work warrants it.
 - **Big Pickle / MiMo V2 Pro Free** — good for planning and moderate coding work. Use as the default for most passes.
-- **Plan mode always** — before any implementation pass, always present a plan first. Always recommend which model to use for the next implementation pass.
+- **Plan mode always** — before any implementation pass, always present a plan and explicitly ask for approval before starting. Recommend which model to use for the next implementation pass.
 - Also available but less experienced with this codebase: GPT-Nano, MiniMax M2.5 Free, Nemotron 3 Super Free.
 
 ## AGENTS.md Feedback
