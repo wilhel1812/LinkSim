@@ -1207,9 +1207,9 @@ export function MapView({
   const keepWorkingSuffix =
     elapsedTerrainLoadingMs > 60_000 ? " — loading will continue in the background, even if you leave the app" : "";
   const backgroundBusyLabel = (isTerrainFetching
-    ? terrainFetchStatus ?? "Loading terrain data..."
+    ? terrainFetchStatus || "Loading terrain data..."
     : isTerrainRecommending
-      ? terrainFetchStatus ?? "Checking terrain dataset coverage..."
+      ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : isElevationSyncing
         ? "Syncing site elevations..."
         : "") + keepWorkingSuffix;

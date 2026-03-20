@@ -2908,6 +2908,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   recommendAndFetchTerrainForCurrentArea: () => get().loadTerrainForCurrentArea(),
   loadTerrainForCurrentArea: async () => {
+    if (get().isTerrainFetching) return;
     const { sites } = get();
     if (!sites.length) return;
 
@@ -2916,7 +2917,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const { terrainLoadEpoch: currentEpoch } = get();
     const epoch = currentEpoch + 1;
-    set({ terrainLoadEpoch: epoch, isTerrainRecommending: true, isTerrainFetching: true, terrainRecommendation: "Evaluating terrain dataset coverage..." });
+    set({
+      terrainLoadEpoch: epoch,
+      isTerrainRecommending: true,
+      isTerrainFetching: true,
+      terrainRecommendation: "Evaluating terrain dataset coverage...",
+      terrainFetchStatus: "Loading terrain (90m)...",
+      terrainLoadingStartedAtMs: Date.now(),
+    });
 
     try {
       const copernicusRecommendation = await recommendCopernicusDatasetForArea(
@@ -2935,11 +2943,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } catch (error) {
       if (get().terrainLoadEpoch !== epoch) return;
-      set({ terrainRecommendation: `Recommendation failed: ${getUiErrorMessage(error)}`, isTerrainRecommending: false });
+      const message = getUiErrorMessage(error);
+      set({
+        terrainRecommendation: `Recommendation failed: ${message}`,
+        terrainFetchStatus: `Terrain fetch failed: ${message}`,
+        isTerrainRecommending: false,
+        isTerrainFetching: false,
+        terrainLoadingStartedAtMs: 0,
+      });
       return;
     }
 
-    if (get().isTerrainFetching) return;
     if (get().terrainLoadEpoch !== epoch) return;
 
     const { srtmTiles } = get();
@@ -2950,7 +2964,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       terrainFetchStatus: "Loading terrain (90m)...",
       isHighResTerrainLoaded: alreadyHasHighRes,
-      terrainLoadingStartedAtMs: Date.now(),
     });
 
     const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
