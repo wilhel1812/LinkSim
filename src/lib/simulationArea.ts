@@ -1,4 +1,4 @@
-import type { Site } from "../types/radio";
+import type { MapViewport, Site } from "../types/radio";
 
 export type SimulationAreaBounds = {
   minLat: number;
@@ -42,5 +42,22 @@ export const simulationAreaBoundsForSites = (
     latSpanDeg,
     lonSpanDeg,
     isCapped,
+  };
+};
+
+export const boundsToViewport = (
+  bounds: SimulationAreaBounds,
+  pixelWidth = 800,
+  pixelHeight = 600,
+): MapViewport => {
+  const zoomLat = Math.log2((360 / bounds.latSpanDeg) * (pixelHeight / 256));
+  const zoomLon = Math.log2((360 / bounds.lonSpanDeg) * (pixelWidth / 256));
+  const zoom = Math.max(1, Math.floor(Math.min(zoomLat, zoomLon, 20)));
+  return {
+    center: {
+      lat: (bounds.minLat + bounds.maxLat) / 2,
+      lon: (bounds.minLon + bounds.maxLon) / 2,
+    },
+    zoom,
   };
 };

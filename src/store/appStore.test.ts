@@ -167,7 +167,6 @@ describe("appStore auth guards", () => {
             propagationEnvironment: useAppStore.getState().propagationEnvironment,
             autoPropagationEnvironment: true,
             terrainDataset: "copernicus30",
-            mapViewport: useAppStore.getState().mapViewport,
           },
         },
       ],

@@ -19,7 +19,7 @@ import {
 } from "../lib/propagationEnvironment";
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
-import { simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import type { BasemapProvider } from "../lib/basemaps";
 import {
@@ -245,7 +245,7 @@ type SimulationPreset = {
     propagationEnvironment: PropagationEnvironment;
     autoPropagationEnvironment: boolean;
     terrainDataset: TerrainDataset;
-    mapViewport: MapViewport;
+    mapViewport?: MapViewport;
   };
 };
 
@@ -1936,12 +1936,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationModel: state.propagationModel,
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
-      environmentLossDb: state.environmentLossDb,
-      propagationEnvironment: state.propagationEnvironment,
-      autoPropagationEnvironment: state.autoPropagationEnvironment,
-      terrainDataset: state.terrainDataset,
-      mapViewport: state.mapViewport,
-    };
+        environmentLossDb: state.environmentLossDb,
+        propagationEnvironment: state.propagationEnvironment,
+        autoPropagationEnvironment: state.autoPropagationEnvironment,
+        terrainDataset: state.terrainDataset,
+      };
 
     set((current) => {
       const mergedLibrary =
@@ -2016,7 +2015,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         propagationEnvironment: current.propagationEnvironment,
         autoPropagationEnvironment: current.autoPropagationEnvironment,
         terrainDataset: current.terrainDataset,
-        mapViewport: current.mapViewport,
       };
       const nextPreset: SimulationPreset = {
         id: makeId("sim"),
@@ -2073,12 +2071,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationModel: state.propagationModel,
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
-      environmentLossDb: state.environmentLossDb,
-      propagationEnvironment: state.propagationEnvironment,
-      autoPropagationEnvironment: state.autoPropagationEnvironment,
-      terrainDataset: state.terrainDataset,
-      mapViewport: state.mapViewport,
-    };
+        environmentLossDb: state.environmentLossDb,
+        propagationEnvironment: state.propagationEnvironment,
+        autoPropagationEnvironment: state.autoPropagationEnvironment,
+        terrainDataset: state.terrainDataset,
+      };
     set((current) => {
       const mergedLibrary =
         normalized.addedCount > 0
@@ -2161,7 +2158,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         propagationEnvironment: get().propagationEnvironment,
         autoPropagationEnvironment: get().autoPropagationEnvironment,
         terrainDataset: get().terrainDataset,
-        mapViewport: get().mapViewport,
       },
       updatedAt: new Date().toISOString(),
       lastEditedByUserId: user.id,
@@ -2193,6 +2189,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (isBlankSnapshot) {
       const snapshotSystems = Array.isArray(snap.systems) && snap.systems.length ? snap.systems : defaultScenario.systems;
       const snapshotNetworks = Array.isArray(snap.networks) ? snap.networks : [];
+      const viewport = defaultScenario.viewport;
       set({
         selectedScenarioId: preset.id,
         sites: [],
@@ -2223,14 +2220,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? "Auto defaults active."
           : "Manual override active.",
         terrainDataset: normalizeTerrainDataset(snap.terrainDataset),
-        mapViewport:
-          snap.mapViewport &&
-          typeof snap.mapViewport.zoom === "number" &&
-          snap.mapViewport.center &&
-          typeof snap.mapViewport.center.lat === "number" &&
-          typeof snap.mapViewport.center.lon === "number"
-            ? snap.mapViewport
-            : defaultScenario.viewport,
+        mapViewport: viewport,
         siteDragPreview: {},
         terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       });
@@ -2245,6 +2235,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
     const libraryBacked = ensureSitesBackedByLibrary(recovered.sites, get().siteLibrary);
     const recoveredSites = syncLibraryLinkedSiteValues(libraryBacked.sites, libraryBacked.siteLibrary);
+    const bounds = simulationAreaBoundsForSites(recoveredSites);
+    const viewport = bounds ? boundsToViewport(bounds) : defaultScenario.viewport;
     const selectedSiteId = recoveredSites.some((site) => site.id === snap.selectedSiteId)
       ? snap.selectedSiteId
       : recoveredSites[0].id;
@@ -2286,14 +2278,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         : "Manual override active.",
       terrainDataset:
         normalizeTerrainDataset(snap.terrainDataset),
-      mapViewport:
-        snap.mapViewport &&
-        typeof snap.mapViewport.zoom === "number" &&
-        snap.mapViewport.center &&
-        typeof snap.mapViewport.center.lat === "number" &&
-        typeof snap.mapViewport.center.lon === "number"
-          ? snap.mapViewport
-          : defaultScenario.viewport,
+      mapViewport: viewport,
       siteDragPreview: {},
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       siteLibrary: libraryBacked.siteLibrary,
