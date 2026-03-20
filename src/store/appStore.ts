@@ -53,13 +53,21 @@ import type {
 
 const SYNC_DEBOUNCE_MS = 2500;
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
+const SYNC_SIGNATURE_KEY = "linksim-sync-signature-v1";
+const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v1";
 
 let hydrated = false;
 let syncTimer: number | null = null;
 let syncInFlight = false;
 let localMutationRevision = 0;
 let syncedMutationRevision = 0;
-let lastSyncedPayloadSignature: string | null = null;
+let lastSyncedPayloadSignature: string | null = (() => {
+  try {
+    return localStorage.getItem(SYNC_SIGNATURE_KEY);
+  } catch {
+    return null;
+  }
+})();
 
 const recordLocalMutation = (): number => {
   localMutationRevision += 1;
@@ -75,6 +83,7 @@ const resetSyncRevisions = (): void => {
   localMutationRevision = 0;
   syncedMutationRevision = 0;
   lastSyncedPayloadSignature = null;
+  localStorage.removeItem(SYNC_SIGNATURE_KEY);
 };
 
 const canEditLibraryItem = (
@@ -492,7 +501,6 @@ const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
 const BASEMAP_PROVIDER_KEY = "linksim-basemap-provider-v1";
 const BASEMAP_STYLE_PRESET_KEY = "linksim-basemap-style-preset-v1";
-const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v1";
 
 const readStorage = <T,>(key: string, fallback: T): T => {
   try {
@@ -912,24 +920,32 @@ if (
 
 // One-time migration: default all existing resources to private (issue #96).
 if (!localStorage.getItem(MIGRATION_DEFAULT_PRIVATE_KEY)) {
+  const nowIso = new Date().toISOString();
   let changed = false;
   initialSiteLibrary = initialSiteLibrary.map((entry) => {
     if (entry.visibility && entry.visibility !== "private") {
       changed = true;
-      return { ...entry, visibility: "private" as const };
+      return { ...entry, visibility: "private" as const, updatedAt: nowIso };
     }
     return entry;
   });
   initialSimulationPresets = initialSimulationPresets.map((preset) => {
     if (preset.visibility && preset.visibility !== "private") {
       changed = true;
-      return { ...preset, visibility: "private" as const };
+      return { ...preset, visibility: "private" as const, updatedAt: nowIso };
     }
     return preset;
   });
   if (changed) {
     writeStorage(SITE_LIBRARY_KEY, initialSiteLibrary);
     writeStorage(SIM_PRESETS_KEY, initialSimulationPresets);
+    const { signature } = buildEditableSyncPayloadInfo(
+      initialSiteLibrary,
+      initialSimulationPresets,
+      null,
+    );
+    lastSyncedPayloadSignature = signature;
+    writeStorage(SYNC_SIGNATURE_KEY, signature);
   }
   localStorage.setItem(MIGRATION_DEFAULT_PRIVATE_KEY, "1");
 }
@@ -1140,6 +1156,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       if (remotePayloadSignature) {
         lastSyncedPayloadSignature = remotePayloadSignature;
+        writeStorage(SYNC_SIGNATURE_KEY, remotePayloadSignature);
       }
       const currentState = get();
       const currentPayload = buildEditableSyncPayloadInfo(
@@ -1214,6 +1231,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           });
           await pushCloudLibrary(payload);
           lastSyncedPayloadSignature = signature;
+          writeStorage(SYNC_SIGNATURE_KEY, signature);
           console.log("[appStore] Post-init Push SUCCESS");
           const remaining = markSyncedThrough(revisionAtStart);
           set({
@@ -1418,6 +1436,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       await pushCloudLibrary(payload);
       lastSyncedPayloadSignature = payloadSignature;
+      writeStorage(SYNC_SIGNATURE_KEY, payloadSignature);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
       const cloud = await fetchCloudLibrary();
       console.log("[appStore] Cloud data received:", {
