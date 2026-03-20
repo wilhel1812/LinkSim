@@ -1329,6 +1329,12 @@ export function MapView({
 
   const savePendingSiteMove = () => {
     if (!pendingMoveCount) return;
+    for (const move of pendingMoveEntries) {
+      updateSite(move.siteId, {
+        position: move.currentPosition,
+        groundElevationM: move.currentGroundElevationM,
+      });
+    }
     setPendingSiteMoves({});
     clearSiteDragPreview();
     setSiteDraftStatus(null);
@@ -1336,12 +1342,6 @@ export function MapView({
 
   const dismissPendingSiteMove = () => {
     if (!pendingMoveCount) return;
-    for (const move of pendingMoveEntries) {
-      updateSite(move.siteId, {
-        position: move.originalPosition,
-        groundElevationM: move.originalGroundElevationM,
-      });
-    }
     setPendingSiteMoves({});
     clearSiteDragPreview();
     setSiteDraftStatus(null);
@@ -1401,11 +1401,23 @@ export function MapView({
     const nextGroundElevationM = Number.isFinite(terrainElevation)
       ? Math.round(terrainElevation as number)
       : site.groundElevationM;
-    clearSiteDragPreview(siteId);
-    updateSite(siteId, {
+    const existingPendingMove = pendingSiteMoves[siteId] ?? null;
+    const originalPosition = existingPendingMove?.originalPosition ?? site.position;
+    const originalGroundElevationM = existingPendingMove?.originalGroundElevationM ?? site.groundElevationM;
+    setSiteDragPreview(siteId, {
       position: nextPosition,
       groundElevationM: nextGroundElevationM,
     });
+    setPendingSiteMoves((current) => ({
+      ...current,
+      [siteId]: {
+        siteId,
+        originalPosition,
+        originalGroundElevationM,
+        currentPosition: nextPosition,
+        currentGroundElevationM: nextGroundElevationM,
+      },
+    }));
   };
 
   const onPendingNewSiteDragEnd = (event: MarkerDragEvent) => {
