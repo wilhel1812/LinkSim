@@ -844,7 +844,7 @@ export function MapView({
   const coverageSamples = useAppStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
-  const isHighResTerrainLoaded = useAppStore((state) => state.isHighResTerrainLoaded);
+  const terrain30mStartedAtMs = useAppStore((state) => state.terrain30mStartedAtMs);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
@@ -1200,8 +1200,24 @@ export function MapView({
       : isElevationSyncing
         ? "Syncing site elevations..."
         : "";
-  const terrainPreviewNote = srtmTiles.length > 0 && !isHighResTerrainLoaded
-    ? "Terrain shown at reduced resolution (90m preview)."
+
+  const is30mPhase = terrain30mStartedAtMs > 0 || (terrainFetchStatus?.includes("30m") ?? false);
+  const [showKeepWorking, setShowKeepWorking] = useState(false);
+  useEffect(() => {
+    if (!is30mPhase) { setShowKeepWorking(false); return; }
+    const check = () => {
+      const elapsed = Date.now() - terrain30mStartedAtMs;
+      if (elapsed > 60_000) setShowKeepWorking(true);
+    };
+    check();
+    const id = setInterval(check, 10_000);
+    return () => clearInterval(id);
+  }, [is30mPhase, terrain30mStartedAtMs]);
+
+  const terrainPreviewNote = is30mPhase && srtmTiles.length > 0
+    ? showKeepWorking
+      ? "High-resolution terrain loading in background — you can keep working and return later."
+      : "High-resolution terrain loading in background."
     : "";
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,

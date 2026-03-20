@@ -333,6 +333,7 @@ type AppState = {
   terrainFetchStatus: string;
   terrainRecommendation: string;
   isHighResTerrainLoaded: boolean;
+  terrain30mStartedAtMs: number;
   hasOnlineElevationSync: boolean;
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
@@ -1039,6 +1040,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   terrainFetchStatus: "",
   terrainRecommendation: "",
   isHighResTerrainLoaded: false,
+  terrain30mStartedAtMs: 0,
   hasOnlineElevationSync: false,
   siteLibrary: initialSiteLibrary,
   simulationPresets: initialSimulationPresets,
@@ -1534,6 +1536,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: "",
       terrainRecommendation: "",
       isHighResTerrainLoaded: false,
+      terrain30mStartedAtMs: 0,
       hasOnlineElevationSync: false,
       siteDragPreview: {},
       endpointPickTarget: null,
@@ -2884,17 +2887,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isHighResTerrainLoaded: false });
 
-      set({ terrainFetchStatus: "Loading high-resolution terrain (30m)..." });
+      set({ terrainFetchStatus: "Loading high-resolution terrain (30m)...", terrain30mStartedAtMs: Date.now() });
       const thirtyResult = await loadAndMerge("copernicus30");
       applyTiles(thirtyResult);
       set({
         terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
         isTerrainFetching: false,
         isHighResTerrainLoaded: true,
+        terrain30mStartedAtMs: 0,
       });
     } catch (error) {
       const message = getUiErrorMessage(error);
-      set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false });
+      set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false, terrain30mStartedAtMs: 0 });
     }
   },
   recommendAndFetchTerrainForCurrentArea: async () => {
@@ -2908,6 +2912,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
       isTerrainFetching: false,
       isHighResTerrainLoaded: false,
+      terrain30mStartedAtMs: 0,
       terrainFetchStatus: "Terrain source caches cleared.",
     }));
     get().recomputeCoverage();
