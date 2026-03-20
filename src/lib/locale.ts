@@ -86,17 +86,31 @@ export function getDateTimeFormatOptions(): Intl.DateTimeFormatOptions {
 
 /**
  * Format a date using timezone-based preferences
- * Uses undefined locale to respect browser's language settings while applying regional time/date formats
+ * Uses appropriate locale to get correct date format order (DMY vs MDY)
+ * while keeping English UI text
  */
 export function formatDate(date: Date | string | number): string {
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date;
   if (Number.isNaN(d.getTime())) return '-';
   
   try {
-    const options = getDateTimeFormatOptions();
-    // Use undefined locale to get browser's default text,
-    // but override formatting options based on timezone region
-    return new Intl.DateTimeFormat(undefined, options).format(d);
+    const timeZone = getUserTimeZone();
+    const use24Hour = regionUses24HourTime(timeZone);
+    const useDMY = regionUsesDMYFormat(timeZone);
+    
+    // Use en-GB for DMY format (DD/MM/YYYY, 24-hour time, English UI)
+    // Use undefined (browser default) for MDY format
+    const locale = useDMY ? 'en-GB' : undefined;
+    
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: !use24Hour,
+    }).format(d);
   } catch {
     // Fallback formatting if Intl is not available
     return d.toLocaleString();
@@ -127,10 +141,13 @@ export function formatDateShort(date: Date | string | number): string {
     const timeZone = getUserTimeZone();
     const useDMY = regionUsesDMYFormat(timeZone);
     
-    return new Intl.DateTimeFormat(undefined, {
+    // Use en-GB for DMY format, undefined for MDY format
+    const locale = useDMY ? 'en-GB' : undefined;
+    
+    return new Intl.DateTimeFormat(locale, {
       year: 'numeric',
-      month: useDMY ? '2-digit' : '2-digit',
-      day: useDMY ? '2-digit' : '2-digit',
+      month: '2-digit',
+      day: '2-digit',
     }).format(d);
   } catch {
     // Fallback
@@ -149,6 +166,7 @@ export function formatTime(date: Date | string | number): string {
     const timeZone = getUserTimeZone();
     const use24Hour = regionUses24HourTime(timeZone);
     
+    // Time format doesn't need locale-specific date order, use undefined
     return new Intl.DateTimeFormat(undefined, {
       hour: '2-digit',
       minute: '2-digit',
