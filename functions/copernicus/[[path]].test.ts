@@ -26,10 +26,26 @@ const env = {
 
 const mkCtx = (request: Request) => ({ request, env } as unknown as Parameters<typeof onRequest>[0]);
 
+type CacheLike = {
+  match: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
+};
+
+const setCache = (cache: CacheLike) => {
+  Object.defineProperty(globalThis, "caches", {
+    configurable: true,
+    value: { default: cache },
+  });
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   getClientAddressMock.mockReturnValue("203.0.113.9");
   takeRateLimitTokenMock.mockReturnValue({ allowed: true, remaining: 119, retryAfterSec: 0 });
+  setCache({
+    match: vi.fn().mockResolvedValue(undefined),
+    put: vi.fn().mockResolvedValue(undefined),
+  });
   vi.stubGlobal("fetch", vi.fn());
 });
 
@@ -98,5 +114,74 @@ describe("copernicus proxy", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("9");
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("serves cached tile from edge cache on cache hit", async () => {
+    const cached = new Response("tif-bytes", {
+      status: 200,
+      headers: { "content-type": "image/tiff", "cache-control": "public, max-age=2592000" },
+    });
+    const cache = {
+      match: vi.fn().mockResolvedValue(cached),
+      put: vi.fn().mockResolvedValue(undefined),
+    };
+    setCache(cache);
+
+    const req = new Request(
+      "https://example.test/copernicus/30m/Copernicus_DSM_COG_30_N60_00_E009_00_DEM/Copernicus_DSM_COG_30_N60_00_E009_00_DEM.tif",
+    );
+
+    const res = await onRequest(mkCtx(req));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-cache-status")).toBe("HIT");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(cache.put).not.toHaveBeenCalled();
+  });
+
+  it("caches successful tile responses with 30-day TTL", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response("tif", { status: 200, headers: { "content-type": "image/tiff" } }),
+    );
+
+    const req = new Request(
+      "https://example.test/copernicus/30m/Copernicus_DSM_COG_30_N60_00_E009_00_DEM/Copernicus_DSM_COG_30_N60_00_E009_00_DEM.tif",
+    );
+
+    const res = await onRequest(mkCtx(req));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toContain("max-age=2592000");
+    expect(res.headers.get("x-cache-status")).toBe("MISS");
+  });
+
+  it("caches successful tileList responses with 6-hour TTL", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response("tile-list-content", { status: 200, headers: { "content-type": "text/plain" } }),
+    );
+
+    const req = new Request("https://example.test/copernicus/30m/tileList.txt");
+
+    const res = await onRequest(mkCtx(req));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toContain("max-age=21600");
+    expect(res.headers.get("x-cache-status")).toBe("MISS");
+  });
+
+  it("does not cache non-OK responses", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response("not found", { status: 404, headers: { "content-type": "text/plain" } }),
+    );
+
+    const req = new Request(
+      "https://example.test/copernicus/30m/Copernicus_DSM_COG_30_N60_00_E009_00_DEM/Copernicus_DSM_COG_30_N60_00_E009_00_DEM.tif",
+    );
+
+    const res = await onRequest(mkCtx(req));
+
+    expect(res.status).toBe(404);
+    expect(res.headers.get("x-cache-status")).toBe("MISS");
+    expect(res.headers.get("cache-control")).toBeNull();
   });
 });

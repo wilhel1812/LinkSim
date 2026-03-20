@@ -15,6 +15,11 @@ const DATASET_TO_BUCKET: Record<string, string> = {
   "90m": "https://copernicus-dem-90m.s3.amazonaws.com",
 };
 
+const TILE_CACHE_TTL_SEC = 60 * 60 * 24 * 30;
+const TILELIST_CACHE_TTL_SEC = 60 * 60 * 6;
+
+const getCacheTtl = (isTileList: boolean): number => (isTileList ? TILELIST_CACHE_TTL_SEC : TILE_CACHE_TTL_SEC);
+
 const rateLimitIdentityFor = (request: Request): string => {
   const accessEmail = (request.headers.get("cf-access-authenticated-user-email") ?? "").trim().toLowerCase();
   if (accessEmail) return `user:${accessEmail}`;
@@ -63,6 +68,16 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const upstream = new URL(`${bucket}/${objectPath}${url.search}`);
+  const cacheKey = new Request(request.url, { method: "GET" });
+  const cache = caches.default;
+
+  const cached = await cache.match(cacheKey);
+  if (cached) {
+    const headers = new Headers(cached.headers);
+    headers.set("X-Cache-Status", "HIT");
+    return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
+  }
+
   const response = await fetch(upstream.toString(), {
     method: request.method,
     headers: {
@@ -71,9 +86,19 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     },
   });
 
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  });
+  if (response.ok) {
+    const ttl = getCacheTtl(isTileList);
+    const headers = new Headers(response.headers);
+    headers.set("Cache-Control", `public, max-age=${ttl}`);
+    headers.set("CDN-Cache-Control", `public, max-age=${ttl}`);
+    headers.set("X-Cache-Status", "MISS");
+    headers.delete("set-cookie");
+    const cacheable = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    await cache.put(cacheKey, cacheable.clone());
+    return cacheable;
+  }
+
+  const missHeaders = new Headers(response.headers);
+  missHeaders.set("X-Cache-Status", "MISS");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers: missHeaders });
 };
