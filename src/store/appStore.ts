@@ -492,6 +492,7 @@ const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
 const BASEMAP_PROVIDER_KEY = "linksim-basemap-provider-v1";
 const BASEMAP_STYLE_PRESET_KEY = "linksim-basemap-style-preset-v1";
+const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v1";
 
 const readStorage = <T,>(key: string, fallback: T): T => {
   try {
@@ -762,7 +763,7 @@ const ensureSitesBackedByLibrary = (
       entry = {
         id: makeId("libsite"),
         name: normalizedSite.name,
-        visibility: "shared",
+        visibility: "private",
         sharedWith: [],
         position: normalizedSite.position,
         groundElevationM: normalizedSite.groundElevationM,
@@ -886,7 +887,7 @@ const recoveredSiteLibraryRaw =
   siteLibraryRawState.status === "ok"
     ? siteLibraryRawState.value ?? []
     : ((getLatestSnapshotValue<SiteLibraryEntry[]>(SITE_LIBRARY_KEY) ?? []) as SiteLibraryEntry[]);
-const initialSiteLibrary = normalizeSiteLibrary(Array.isArray(recoveredSiteLibraryRaw) ? recoveredSiteLibraryRaw : []);
+let initialSiteLibrary = normalizeSiteLibrary(Array.isArray(recoveredSiteLibraryRaw) ? recoveredSiteLibraryRaw : []);
 if (
   siteLibraryRawState.status !== "ok" ||
   JSON.stringify(initialSiteLibrary) !== JSON.stringify(recoveredSiteLibraryRaw)
@@ -899,7 +900,7 @@ const recoveredSimulationPresetsRaw =
   simulationPresetsRawState.status === "ok"
     ? simulationPresetsRawState.value ?? []
     : ((getLatestSnapshotValue<SimulationPreset[]>(SIM_PRESETS_KEY) ?? []) as SimulationPreset[]);
-const initialSimulationPresets = normalizeSimulationPresets(
+let initialSimulationPresets = normalizeSimulationPresets(
   Array.isArray(recoveredSimulationPresetsRaw) ? recoveredSimulationPresetsRaw : [],
 );
 if (
@@ -907,6 +908,30 @@ if (
   JSON.stringify(initialSimulationPresets) !== JSON.stringify(recoveredSimulationPresetsRaw)
 ) {
   writeStorage(SIM_PRESETS_KEY, initialSimulationPresets);
+}
+
+// One-time migration: default all existing resources to private (issue #96).
+if (!localStorage.getItem(MIGRATION_DEFAULT_PRIVATE_KEY)) {
+  let changed = false;
+  initialSiteLibrary = initialSiteLibrary.map((entry) => {
+    if (entry.visibility && entry.visibility !== "private") {
+      changed = true;
+      return { ...entry, visibility: "private" as const };
+    }
+    return entry;
+  });
+  initialSimulationPresets = initialSimulationPresets.map((preset) => {
+    if (preset.visibility && preset.visibility !== "private") {
+      changed = true;
+      return { ...preset, visibility: "private" as const };
+    }
+    return preset;
+  });
+  if (changed) {
+    writeStorage(SITE_LIBRARY_KEY, initialSiteLibrary);
+    writeStorage(SIM_PRESETS_KEY, initialSimulationPresets);
+  }
+  localStorage.setItem(MIGRATION_DEFAULT_PRIVATE_KEY, "1");
 }
 
 type LastSession = {
@@ -1586,7 +1611,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const entry: SiteLibraryEntry = {
         id: libraryEntryId,
         name: label,
-        visibility: "shared",
+        visibility: "private",
         sharedWith: [],
         position: { lat, lon },
         groundElevationM: 0,
@@ -1716,7 +1741,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     rxGainDbi = STANDARD_SITE_RADIO.rxGainDbi,
     cableLossDb = STANDARD_SITE_RADIO.cableLossDb,
     sourceMeta,
-    visibility = "shared",
+    visibility = "private",
     description,
   ) => {
     const { currentUser } = get();
@@ -2029,7 +2054,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const currentSelectionDescription = current.simulationPresets.find(
         (preset) => preset.id === current.selectedScenarioId,
       )?.description;
-      const visibilityBase = existing?.visibility ?? "shared";
+      const visibilityBase = existing?.visibility ?? "private";
       const visibilitySafe =
         visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
           ? "private"
@@ -2101,7 +2126,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(options?.description?.trim() ? { description: options.description.trim() } : {}),
         slug: slugifyValue(presetName),
         slugAliases: [],
-        visibility: options?.visibility ?? "shared",
+        visibility: options?.visibility ?? "private",
         sharedWith: [],
         updatedAt: new Date().toISOString(),
         snapshot,
@@ -2160,7 +2185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         normalized.addedCount > 0
           ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
           : current.siteLibrary;
-      const visibilityBase = existing.visibility ?? "shared";
+      const visibilityBase = existing.visibility ?? "private";
       const visibilitySafe =
         visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
           ? "private"
@@ -2433,7 +2458,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...((preset.slugAliases ?? []).map((entry) => slugifyValue(entry))),
         ]);
         aliasSet.delete(nextSlug);
-        const nextVisibilityRaw = patch.visibility ?? preset.visibility ?? "shared";
+        const nextVisibilityRaw = patch.visibility ?? preset.visibility ?? "private";
         const nextVisibility =
           nextVisibilityRaw !== "private" && hasPrivateLibrarySiteReferences(preset.snapshot.sites, state.siteLibrary)
             ? "private"

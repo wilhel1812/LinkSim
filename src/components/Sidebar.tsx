@@ -443,7 +443,7 @@ export function Sidebar() {
   const [newSimulationName, setNewSimulationName] = useState("");
   const [newSimulationDescription, setNewSimulationDescription] = useState("");
   const [newSimulationNameError, setNewSimulationNameError] = useState("");
-  const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("shared");
+  const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("private");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
   const [simulationLibraryQuery, setSimulationLibraryQuery] = useState("");
   const [linkModal, setLinkModal] = useState<{
@@ -1237,7 +1237,7 @@ export function Sidebar() {
       newLibraryRxGainDbi,
       newLibraryCableLossDb,
       (newLibrarySourceMeta as Parameters<typeof addSiteLibraryEntry>[9]) ?? undefined,
-      pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
+      pendingDraftAutoInsert ? activeSimulationVisibility : "private",
       newLibraryDescription,
     );
     if (!createdId) {
@@ -1388,7 +1388,7 @@ export function Sidebar() {
         hwModel: selectedMeshmapNode.hwModel,
         role: selectedMeshmapNode.role,
       },
-      pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
+      pendingDraftAutoInsert ? activeSimulationVisibility : "private",
       undefined,
     );
     setMeshmapStatus(`Added ${fallbackName} to site library.`);
