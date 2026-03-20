@@ -15,11 +15,6 @@ const DATASET_TO_BUCKET: Record<string, string> = {
   "90m": "https://copernicus-dem-90m.s3.amazonaws.com",
 };
 
-const TILE_CACHE_TTL_SEC = 60 * 60 * 24 * 30;
-const TILELIST_CACHE_TTL_SEC = 60 * 60 * 6;
-
-const getCacheTtl = (isTileList: boolean): number => (isTileList ? TILELIST_CACHE_TTL_SEC : TILE_CACHE_TTL_SEC);
-
 const rateLimitIdentityFor = (request: Request): string => {
   const accessEmail = (request.headers.get("cf-access-authenticated-user-email") ?? "").trim().toLowerCase();
   if (accessEmail) return `user:${accessEmail}`;
@@ -30,12 +25,58 @@ const rateLimitIdentityFor = (request: Request): string => {
   return "anon";
 };
 
-export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
+const parseTileCoordinates = (
+  objectPath: string,
+): { dataset: string; lat: number; lon: number } | null => {
+  const tileMatch = objectPath.match(
+    /^Copernicus_DSM_COG_(30|90)_((?:N\d{2})|(?:S\d{2}))_00_((?:E\d{3})|(?:W\d{3}))_00_DEM\/(.*)\.tif$/i,
+  );
+  if (!tileMatch) return null;
+  const dataset = tileMatch[1] === "30" ? "30m" : "90m";
+  const ns = tileMatch[2];
+  const ew = tileMatch[3];
+  const nsVal = Number(ns.slice(1));
+  const ewVal = Number(ew.slice(1));
+  const lat = ns.startsWith("N") ? nsVal : -nsVal;
+  const lon = ew.startsWith("E") ? ewVal : -ewVal;
+  return { dataset, lat, lon };
+};
+
+const neighborOffsets = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
+];
+
+const buildNeighborUrls = (
+  origin: string,
+  dataset: string,
+  lat: number,
+  lon: number,
+): string[] => {
+  const res = dataset === "30m" ? "30" : "90";
+  const ns = lat >= 0 ? "N" : "S";
+  const ew = lon >= 0 ? "E" : "W";
+  const originName = `Copernicus_DSM_COG_${res}_${ns}${String(Math.abs(lat)).padStart(2, "0")}_00_${ew}${String(Math.abs(lon)).padStart(3, "0")}_DEM`;
+  const originUrl = `${origin}/copernicus/${dataset}/${originName}/${originName}.tif`;
+  return neighborOffsets.map(([dLat, dLon]) => {
+    const nLat = lat + dLat;
+    const nLon = lon + dLon;
+    const nNs = nLat >= 0 ? "N" : "S";
+    const nEw = nLon >= 0 ? "E" : "W";
+    const name = `Copernicus_DSM_COG_${res}_${nNs}${String(Math.abs(nLat)).padStart(2, "0")}_00_${nEw}${String(Math.abs(nLon)).padStart(3, "0")}_DEM`;
+    return `${origin}/copernicus/${dataset}/${name}/${name}.tif`;
+  }).filter((url) => url !== originUrl);
+};
+
+export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method not allowed", { status: 405 });
   }
 
   const url = new URL(request.url);
+  const origin = `${url.protocol}//${url.host}`;
   const upstreamPath = url.pathname.replace(/^\/copernicus\//, "");
   const [dataset, ...restParts] = upstreamPath.split("/");
   const bucket = DATASET_TO_BUCKET[dataset];
@@ -75,7 +116,30 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (cached) {
     const headers = new Headers(cached.headers);
     headers.set("X-Cache-Status", "HIT");
-    return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
+    const response = new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
+
+    if (!isTileList) {
+      const coords = parseTileCoordinates(objectPath);
+      if (coords) {
+        const neighborUrls = buildNeighborUrls(origin, coords.dataset, coords.lat, coords.lon);
+        const safePrefetch = async () => {
+          try {
+            await Promise.allSettled(
+              neighborUrls.map((neighborUrl) => {
+                const fn = globalThis.fetch;
+                if (typeof fn !== "function") return Promise.resolve();
+                return fn(neighborUrl, { method: "HEAD" }).catch(() => undefined);
+              }),
+            );
+          } catch {
+            // best-effort
+          }
+        };
+        waitUntil(safePrefetch());
+      }
+    }
+
+    return response;
   }
 
   const response = await fetch(upstream.toString(), {
@@ -87,10 +151,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   });
 
   if (response.ok) {
-    const ttl = getCacheTtl(isTileList);
     const headers = new Headers(response.headers);
-    headers.set("Cache-Control", `public, max-age=${ttl}`);
-    headers.set("CDN-Cache-Control", `public, max-age=${ttl}`);
     headers.set("X-Cache-Status", "MISS");
     headers.delete("set-cookie");
     const cacheable = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
