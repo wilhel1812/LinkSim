@@ -306,7 +306,6 @@ type AppState = {
   propagationModel: PropagationModel;
   mapViewport: MapViewport;
   locale: LocaleCode;
-  dateLocale: string;
   uiThemePreference: "system" | "light" | "dark";
   uiColorTheme: UiColorTheme;
   basemapProvider: BasemapProvider;
@@ -347,7 +346,6 @@ type AppState = {
   performCloudSyncPush: () => void;
   performManualCloudSync: () => Promise<void>;
   setLocale: (locale: LocaleCode) => void;
-  setDateLocale: (locale: string) => void;
   setSyncStatus: (status: "syncing" | "synced" | "error") => void;
   setLastSyncedAt: (iso: string | null) => void;
   setSyncErrorMessage: (message: string | null) => void;
@@ -981,7 +979,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   propagationModel: "ITM",
   mapViewport: defaultScenario.viewport,
   locale: "eng",
-  dateLocale: typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().locale : "en-US",
   uiThemePreference: initialUiThemePreference,
   uiColorTheme: initialUiColorTheme,
   basemapProvider: initialBasemapProvider,
@@ -1017,7 +1014,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentUser: null,
   isInitializing: false,
   setLocale: (locale) => set({ locale }),
-  setDateLocale: (locale) => set({ dateLocale: locale }),
   setSyncStatus: (status: "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
