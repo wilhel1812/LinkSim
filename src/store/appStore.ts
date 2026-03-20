@@ -2916,7 +2916,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const { terrainLoadEpoch: currentEpoch } = get();
     const epoch = currentEpoch + 1;
-    set({ terrainLoadEpoch: epoch, isTerrainRecommending: true, terrainRecommendation: "Evaluating terrain dataset coverage..." });
+    set({ terrainLoadEpoch: epoch, isTerrainRecommending: true, isTerrainFetching: true, terrainRecommendation: "Evaluating terrain dataset coverage..." });
 
     try {
       const copernicusRecommendation = await recommendCopernicusDatasetForArea(
@@ -2949,7 +2949,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({
       terrainFetchStatus: "Loading terrain (90m)...",
-      isTerrainFetching: true,
       isHighResTerrainLoaded: alreadyHasHighRes,
       terrainLoadingStartedAtMs: Date.now(),
     });
