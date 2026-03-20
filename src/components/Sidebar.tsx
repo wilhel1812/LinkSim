@@ -44,6 +44,7 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import { getUiErrorMessage } from "../lib/uiError";
+import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { InfoTip } from "./InfoTip";
@@ -259,8 +260,8 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
     asString(meta.hwModel) ? `HW model: ${asString(meta.hwModel)}` : "",
     asString(meta.role) ? `Role: ${asString(meta.role)}` : "",
     asString(meta.sourceUrl) ? `Source URL: ${asString(meta.sourceUrl)}` : "",
-    asString(meta.importedAt) ? `Imported: ${new Date(asString(meta.importedAt)).toLocaleString()}` : "",
-    asString(meta.syncedAt) ? `Synced: ${new Date(asString(meta.syncedAt)).toLocaleString()}` : "",
+    asString(meta.importedAt) ? `Imported: ${formatDate(asString(meta.importedAt))}` : "",
+    asString(meta.syncedAt) ? `Synced: ${formatDate(asString(meta.syncedAt))}` : "",
   ].filter(Boolean);
   return lines;
 };
@@ -442,7 +443,7 @@ export function Sidebar() {
   const [newSimulationName, setNewSimulationName] = useState("");
   const [newSimulationDescription, setNewSimulationDescription] = useState("");
   const [newSimulationNameError, setNewSimulationNameError] = useState("");
-  const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("shared");
+  const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("private");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
   const [simulationLibraryQuery, setSimulationLibraryQuery] = useState("");
   const [linkModal, setLinkModal] = useState<{
@@ -711,9 +712,9 @@ export function Sidebar() {
   }, [currentResourceOwnerId, resourceCollaboratorDirectory, resourceCollaboratorUserIds, resourceCollaboratorQuery]);
   const lastStorageActionLabel = useMemo(() => {
     const entries = [
-      storageHealth.lastExportIso ? `Export ${new Date(storageHealth.lastExportIso).toLocaleString()}` : null,
-      storageHealth.lastImportIso ? `Import ${new Date(storageHealth.lastImportIso).toLocaleString()}` : null,
-      storageHealth.lastRestoreIso ? `Restore ${new Date(storageHealth.lastRestoreIso).toLocaleString()}` : null,
+      storageHealth.lastExportIso ? `Export ${formatDate(storageHealth.lastExportIso)}` : null,
+      storageHealth.lastImportIso ? `Import ${formatDate(storageHealth.lastImportIso)}` : null,
+      storageHealth.lastRestoreIso ? `Restore ${formatDate(storageHealth.lastRestoreIso)}` : null,
     ].filter((entry): entry is string => Boolean(entry));
     return entries.length ? entries.join(" | ") : "No backup/import/restore actions recorded yet.";
   }, [storageHealth]);
@@ -1236,7 +1237,7 @@ export function Sidebar() {
       newLibraryRxGainDbi,
       newLibraryCableLossDb,
       (newLibrarySourceMeta as Parameters<typeof addSiteLibraryEntry>[9]) ?? undefined,
-      pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
+      pendingDraftAutoInsert ? activeSimulationVisibility : "private",
       newLibraryDescription,
     );
     if (!createdId) {
@@ -1324,10 +1325,10 @@ export function Sidebar() {
       if (result.fromCache) {
         const ageMin = Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000));
         setMeshmapStatus(
-          `Loaded ${result.nodes.length.toLocaleString()} node(s) from cached snapshot (${ageMin} min old).`,
+          `Loaded ${formatNumber(result.nodes.length)} node(s) from cached snapshot (${ageMin} min old).`,
         );
       } else {
-        setMeshmapStatus(`Loaded ${result.nodes.length.toLocaleString()} node(s) from live feed.`);
+        setMeshmapStatus(`Loaded ${formatNumber(result.nodes.length)} node(s) from live feed.`);
       }
     } catch (error) {
       const message = getUiErrorMessage(error);
@@ -1387,7 +1388,7 @@ export function Sidebar() {
         hwModel: selectedMeshmapNode.hwModel,
         role: selectedMeshmapNode.role,
       },
-      pendingDraftAutoInsert ? activeSimulationVisibility : "shared",
+      pendingDraftAutoInsert ? activeSimulationVisibility : "private",
       undefined,
     );
     setMeshmapStatus(`Added ${fallbackName} to site library.`);
@@ -2426,7 +2427,7 @@ export function Sidebar() {
                   ? "Approved"
                   : "Pending"}{" "}
               | Created{" "}
-              {new Date(profilePopupUser.createdAt).toLocaleString()}
+              {formatDate(profilePopupUser.createdAt)}
             </p>
             <div className="chip-group">
               <label className="field-grid">
@@ -2488,7 +2489,7 @@ export function Sidebar() {
               {changeLogPopup.changes.map((change) => (
                 <div className="library-row" key={change.id}>
                   <p className="field-help">
-                    {change.action.toUpperCase()} · {new Date(change.changedAt).toLocaleString()}
+                    {change.action.toUpperCase()} · {formatDate(change.changedAt)}
                   </p>
                   <button
                     className="inline-link-button"
@@ -3111,7 +3112,7 @@ export function Sidebar() {
                   <span className="library-row-label">
                     <strong>{preset.name}</strong>
                     {" · "}
-                    Updated {new Date(preset.updatedAt).toLocaleString()}
+                    Updated {formatDate(preset.updatedAt)}
                   </span>
                   <span className="library-row-meta">
                     <span className="access-badge">{normalizeAccessVisibility((preset as { visibility?: unknown }).visibility)}</span>
@@ -3478,8 +3479,8 @@ export function Sidebar() {
                   </div>
                   {meshmapCachedSummary ? (
                     <p className="field-help">
-                      Cached snapshot: {meshmapCachedSummary.nodeCount.toLocaleString()} node(s) from{" "}
-                      {new Date(meshmapCachedSummary.savedAt).toLocaleString()} ({meshmapCachedSummary.sourceUrl})
+                      Cached snapshot: {formatNumber(meshmapCachedSummary.nodeCount)} node(s) from{" "}
+                      {formatDate(meshmapCachedSummary.savedAt)} ({meshmapCachedSummary.sourceUrl})
                     </p>
                   ) : null}
                   {meshmapStatus ? <p className="field-help">{meshmapStatus}</p> : null}
@@ -3510,7 +3511,7 @@ export function Sidebar() {
                         </Map>
                       </div>
                       <p className="field-help">
-                        Nodes loaded: {meshmapNodes.length.toLocaleString()} total, {meshmapNodesInView.length.toLocaleString()} in view.
+                        Nodes loaded: {formatNumber(meshmapNodes.length)} total, {formatNumber(meshmapNodesInView.length)} in view.
                       </p>
                       {selectedMeshmapNode ? (
                         <div className="meshmap-selected-card">

@@ -53,13 +53,21 @@ import type {
 
 const SYNC_DEBOUNCE_MS = 2500;
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
+const SYNC_SIGNATURE_KEY = "linksim-sync-signature-v1";
+const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v2";
 
 let hydrated = false;
 let syncTimer: number | null = null;
 let syncInFlight = false;
 let localMutationRevision = 0;
 let syncedMutationRevision = 0;
-let lastSyncedPayloadSignature: string | null = null;
+let lastSyncedPayloadSignature: string | null = (() => {
+  try {
+    return localStorage.getItem(SYNC_SIGNATURE_KEY);
+  } catch {
+    return null;
+  }
+})();
 
 const recordLocalMutation = (): number => {
   localMutationRevision += 1;
@@ -75,6 +83,7 @@ const resetSyncRevisions = (): void => {
   localMutationRevision = 0;
   syncedMutationRevision = 0;
   lastSyncedPayloadSignature = null;
+  localStorage.removeItem(SYNC_SIGNATURE_KEY);
 };
 
 const canEditLibraryItem = (
@@ -762,7 +771,7 @@ const ensureSitesBackedByLibrary = (
       entry = {
         id: makeId("libsite"),
         name: normalizedSite.name,
-        visibility: "shared",
+        visibility: "private",
         sharedWith: [],
         position: normalizedSite.position,
         groundElevationM: normalizedSite.groundElevationM,
@@ -886,7 +895,7 @@ const recoveredSiteLibraryRaw =
   siteLibraryRawState.status === "ok"
     ? siteLibraryRawState.value ?? []
     : ((getLatestSnapshotValue<SiteLibraryEntry[]>(SITE_LIBRARY_KEY) ?? []) as SiteLibraryEntry[]);
-const initialSiteLibrary = normalizeSiteLibrary(Array.isArray(recoveredSiteLibraryRaw) ? recoveredSiteLibraryRaw : []);
+let initialSiteLibrary = normalizeSiteLibrary(Array.isArray(recoveredSiteLibraryRaw) ? recoveredSiteLibraryRaw : []);
 if (
   siteLibraryRawState.status !== "ok" ||
   JSON.stringify(initialSiteLibrary) !== JSON.stringify(recoveredSiteLibraryRaw)
@@ -899,7 +908,7 @@ const recoveredSimulationPresetsRaw =
   simulationPresetsRawState.status === "ok"
     ? simulationPresetsRawState.value ?? []
     : ((getLatestSnapshotValue<SimulationPreset[]>(SIM_PRESETS_KEY) ?? []) as SimulationPreset[]);
-const initialSimulationPresets = normalizeSimulationPresets(
+let initialSimulationPresets = normalizeSimulationPresets(
   Array.isArray(recoveredSimulationPresetsRaw) ? recoveredSimulationPresetsRaw : [],
 );
 if (
@@ -907,6 +916,38 @@ if (
   JSON.stringify(initialSimulationPresets) !== JSON.stringify(recoveredSimulationPresetsRaw)
 ) {
   writeStorage(SIM_PRESETS_KEY, initialSimulationPresets);
+}
+
+// One-time migration: default all existing resources to private (issue #96).
+if (!localStorage.getItem(MIGRATION_DEFAULT_PRIVATE_KEY)) {
+  const nowIso = new Date().toISOString();
+  let changed = false;
+  initialSiteLibrary = initialSiteLibrary.map((entry) => {
+    if (entry.visibility && entry.visibility !== "private") {
+      changed = true;
+      return { ...entry, visibility: "private" as const, updatedAt: nowIso };
+    }
+    return entry;
+  });
+  initialSimulationPresets = initialSimulationPresets.map((preset) => {
+    if (preset.visibility && preset.visibility !== "private") {
+      changed = true;
+      return { ...preset, visibility: "private" as const, updatedAt: nowIso };
+    }
+    return preset;
+  });
+  if (changed) {
+    writeStorage(SITE_LIBRARY_KEY, initialSiteLibrary);
+    writeStorage(SIM_PRESETS_KEY, initialSimulationPresets);
+    const { signature } = buildEditableSyncPayloadInfo(
+      initialSiteLibrary,
+      initialSimulationPresets,
+      null,
+    );
+    lastSyncedPayloadSignature = signature;
+    writeStorage(SYNC_SIGNATURE_KEY, signature);
+  }
+  localStorage.setItem(MIGRATION_DEFAULT_PRIVATE_KEY, "1");
 }
 
 type LastSession = {
@@ -1115,6 +1156,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       if (remotePayloadSignature) {
         lastSyncedPayloadSignature = remotePayloadSignature;
+        writeStorage(SYNC_SIGNATURE_KEY, remotePayloadSignature);
       }
       const currentState = get();
       const currentPayload = buildEditableSyncPayloadInfo(
@@ -1189,6 +1231,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           });
           await pushCloudLibrary(payload);
           lastSyncedPayloadSignature = signature;
+          writeStorage(SYNC_SIGNATURE_KEY, signature);
           console.log("[appStore] Post-init Push SUCCESS");
           const remaining = markSyncedThrough(revisionAtStart);
           set({
@@ -1393,6 +1436,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       await pushCloudLibrary(payload);
       lastSyncedPayloadSignature = payloadSignature;
+      writeStorage(SYNC_SIGNATURE_KEY, payloadSignature);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
       const cloud = await fetchCloudLibrary();
       console.log("[appStore] Cloud data received:", {
@@ -1586,7 +1630,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const entry: SiteLibraryEntry = {
         id: libraryEntryId,
         name: label,
-        visibility: "shared",
+        visibility: "private",
         sharedWith: [],
         position: { lat, lon },
         groundElevationM: 0,
@@ -1716,7 +1760,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     rxGainDbi = STANDARD_SITE_RADIO.rxGainDbi,
     cableLossDb = STANDARD_SITE_RADIO.cableLossDb,
     sourceMeta,
-    visibility = "shared",
+    visibility = "private",
     description,
   ) => {
     const { currentUser } = get();
@@ -2029,7 +2073,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const currentSelectionDescription = current.simulationPresets.find(
         (preset) => preset.id === current.selectedScenarioId,
       )?.description;
-      const visibilityBase = existing?.visibility ?? "shared";
+      const visibilityBase = existing?.visibility ?? "private";
       const visibilitySafe =
         visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
           ? "private"
@@ -2101,7 +2145,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(options?.description?.trim() ? { description: options.description.trim() } : {}),
         slug: slugifyValue(presetName),
         slugAliases: [],
-        visibility: options?.visibility ?? "shared",
+        visibility: options?.visibility ?? "private",
         sharedWith: [],
         updatedAt: new Date().toISOString(),
         snapshot,
@@ -2160,7 +2204,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         normalized.addedCount > 0
           ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
           : current.siteLibrary;
-      const visibilityBase = existing.visibility ?? "shared";
+      const visibilityBase = existing.visibility ?? "private";
       const visibilitySafe =
         visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
           ? "private"
@@ -2433,7 +2477,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...((preset.slugAliases ?? []).map((entry) => slugifyValue(entry))),
         ]);
         aliasSet.delete(nextSlug);
-        const nextVisibilityRaw = patch.visibility ?? preset.visibility ?? "shared";
+        const nextVisibilityRaw = patch.visibility ?? preset.visibility ?? "private";
         const nextVisibility =
           nextVisibilityRaw !== "private" && hasPrivateLibrarySiteReferences(preset.snapshot.sites, state.siteLibrary)
             ? "private"

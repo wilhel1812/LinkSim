@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchNotifications, type NotificationFeed, type PendingApprovalUser } from "../lib/cloudNotifications";
 import { getUiErrorMessage } from "../lib/uiError";
+import { formatDate } from "../lib/locale";
 
 const POLL_MS = 30_000;
 
 const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString();
+  return formatDate(iso);
 };
 
 export function NotificationsPanel() {

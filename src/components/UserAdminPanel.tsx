@@ -24,6 +24,7 @@ import {
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
+import { formatDate } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
 import { InfoTip } from "./InfoTip";
@@ -38,8 +39,7 @@ const initialsFor = (name: string): string => {
 
 const fmtDate = (iso: string | null | undefined): string => {
   if (!iso) return "-";
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
+  return formatDate(iso);
 };
 
 const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
@@ -761,7 +761,7 @@ export function UserAdminPanel() {
                   Pending changes: {pendingChangesCount}
                 </p>
                 {lastSyncedAt ? (
-                  <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                  <p className="field-help">Last synced: {formatDate(lastSyncedAt)}</p>
                 ) : (
                   <p className="field-help">Last synced: Never</p>
                 )}
