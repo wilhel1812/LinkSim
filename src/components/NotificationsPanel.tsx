@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchNotifications, type NotificationFeed, type PendingApprovalUser } from "../lib/cloudNotifications";
 import { getUiErrorMessage } from "../lib/uiError";
+import { useAppStore } from "../store/appStore";
 
 const POLL_MS = 30_000;
 
-const fmt = (iso: string) => {
+const fmt = (iso: string, dateLocale?: string) => {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString(dateLocale);
 };
 
 export function NotificationsPanel() {
@@ -14,6 +15,7 @@ export function NotificationsPanel() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [feed, setFeed] = useState<NotificationFeed>({ unreadCount: 0, items: [] });
+  const dateLocale = useAppStore((state) => state.dateLocale);
 
   const load = async () => {
     setBusy(true);
@@ -67,7 +69,7 @@ export function NotificationsPanel() {
           {pendingUsers.length ? (
             <div className="notifications-list">
               {pendingUsers.map((user) => (
-                <PendingUserRow key={user.id} user={user} />
+                <PendingUserRow key={user.id} user={user} dateLocale={dateLocale} />
               ))}
             </div>
           ) : (
@@ -79,12 +81,12 @@ export function NotificationsPanel() {
   );
 }
 
-function PendingUserRow({ user }: { user: PendingApprovalUser }) {
+function PendingUserRow({ user, dateLocale }: { user: PendingApprovalUser; dateLocale?: string }) {
   return (
     <div className="library-row">
       <strong>{user.username}</strong>
       <p className="field-help">{user.email || "No verified email from IdP"}</p>
-      <p className="field-help">Created: {fmt(user.createdAt)}</p>
+      <p className="field-help">Created: {fmt(user.createdAt, dateLocale)}</p>
       {user.accessRequestNote ? <p className="field-help">Request: {user.accessRequestNote}</p> : null}
     </div>
   );

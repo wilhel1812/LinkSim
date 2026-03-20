@@ -36,10 +36,10 @@ const initialsFor = (name: string): string => {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 };
 
-const fmtDate = (iso: string | null | undefined): string => {
+const fmtDate = (iso: string | null | undefined, dateLocale?: string): string => {
   if (!iso) return "-";
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString(dateLocale);
 };
 
 const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
@@ -130,6 +130,7 @@ export function UserAdminPanel() {
   const pendingChangesCount = useAppStore((state) => state.pendingChangesCount);
   const isOnline = useAppStore((state) => state.isOnline);
   const lastSyncedAt = useAppStore((state) => state.lastSyncedAt);
+  const dateLocale = useAppStore((state) => state.dateLocale);
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
@@ -761,7 +762,7 @@ export function UserAdminPanel() {
                   Pending changes: {pendingChangesCount}
                 </p>
                 {lastSyncedAt ? (
-                  <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString()}</p>
+                  <p className="field-help">Last synced: {new Date(lastSyncedAt).toLocaleString(dateLocale)}</p>
                 ) : (
                   <p className="field-help">Last synced: Never</p>
                 )}
@@ -868,7 +869,7 @@ export function UserAdminPanel() {
                       ? "Approved"
                       : "Pending approval"}
                 </p>
-                <p className="field-help">Created: {fmtDate(me?.createdAt)}</p>
+                <p className="field-help">Created: {fmtDate(me?.createdAt, dateLocale)}</p>
               </div>
 
               <div className="user-settings-form-column">
@@ -1092,7 +1093,7 @@ export function UserAdminPanel() {
                         actor: {event.actorUserId ?? "-"} | target: {event.targetUserId}
                       </p>
                       <p className="field-help">
-                        source: {event.sourceUserId ?? "-"} | at: {fmtDate(event.createdAt)}
+                        source: {event.sourceUserId ?? "-"} | at: {fmtDate(event.createdAt, dateLocale)}
                       </p>
                     </div>
                   ))}
@@ -1138,7 +1139,7 @@ export function UserAdminPanel() {
                             <div className="library-row" key={item.id}>
                               <strong>{item.title}</strong>
                               <p className="field-help">{item.message}</p>
-                              <p className="field-help">Updated: {fmtDate(item.createdAt)}</p>
+                              <p className="field-help">Updated: {fmtDate(item.createdAt, dateLocale)}</p>
                               <div className="chip-group">
                                 <button
                                   className="inline-action"
@@ -1216,7 +1217,7 @@ export function UserAdminPanel() {
                     <p className="field-help">
                       <strong>{entry.id}</strong>
                     </p>
-                    <p className="field-help">Deleted: {fmtDate(entry.deletedAt)}</p>
+                    <p className="field-help">Deleted: {fmtDate(entry.deletedAt, dateLocale)}</p>
                     <p className="field-help">Deleted by: {entry.deletedByUserId ?? "-"}</p>
                     <div className="chip-group">
                       <button className="inline-action" onClick={() => void restoreDeletedUser(entry.id)} type="button">
@@ -1244,7 +1245,7 @@ export function UserAdminPanel() {
                       <p className="field-help">
                         <strong>{managedUser.username}</strong> ({managedUser.id})
                       </p>
-                      <p className="field-help">Created: {fmtDate(managedUser.createdAt)}</p>
+                      <p className="field-help">Created: {fmtDate(managedUser.createdAt, dateLocale)}</p>
                       <p className="field-help">
                         Access:{" "}
                         {managedUser.accountState === "revoked"
