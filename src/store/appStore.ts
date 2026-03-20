@@ -1117,6 +1117,21 @@ export const useAppStore = create<AppState>((set, get) => ({
           const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
           const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
           const payloadSignature = computeSyncPayloadSignature(payload);
+          if (payloadSignature === lastSyncedPayloadSignature) {
+            console.log("[appStore] Post-init: no changes to sync");
+            markSyncedThrough(revisionAtStart);
+            set({
+              syncPending: false,
+              pendingChangesCount: 0,
+              syncStatus: "synced",
+              syncErrorMessage: null,
+              syncStatusMessage: "Up to date",
+              isInitializing: false,
+            });
+            syncInFlight = false;
+            set({ syncBusy: false, isInitializing: false });
+            return;
+          }
           console.log("[appStore] Post-init pushing payload:", {
             sites: editableSites.length,
             simulations: editableSims.length,
