@@ -2630,7 +2630,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
         },
       }));
-      get().updateCurrentSimulationSnapshot();
     },
   ingestSrtmFiles: async (files) => {
     set({ isTerrainFetching: true });
