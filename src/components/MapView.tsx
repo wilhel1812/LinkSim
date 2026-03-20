@@ -12,7 +12,6 @@ import type { LayerProps } from "react-map-gl/maplibre";
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { tilesForBounds } from "../lib/terrainTiles";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
@@ -1000,28 +999,6 @@ export function MapView({
   const selectedDatasetTileCount = useMemo(
     () => srtmTiles.filter((tile) => (tile.sourceId ?? "") === terrainDataset).length,
     [srtmTiles, terrainDataset],
-  );
-  const requiredTerrainTileKeys = useMemo(() => {
-    if (!analysisBounds) return [] as string[];
-    return tilesForBounds(
-      analysisBounds.minLat,
-      analysisBounds.maxLat,
-      analysisBounds.minLon,
-      analysisBounds.maxLon,
-    );
-  }, [analysisBounds, terrainDataset]);
-  const loadedDatasetTileKeys = useMemo(
-    () =>
-      new Set(
-        srtmTiles
-          .filter((tile) => (tile.sourceId ?? "") === terrainDataset)
-          .map((tile) => tile.key),
-      ),
-    [srtmTiles, terrainDataset],
-  );
-  const missingRequiredTileCount = useMemo(
-    () => requiredTerrainTileKeys.filter((key) => !loadedDatasetTileKeys.has(key)).length,
-    [requiredTerrainTileKeys, loadedDatasetTileKeys],
   );
   const boundedCoverageSamples = useMemo(() => {
     if (!analysisBounds) return coverageSamples;
