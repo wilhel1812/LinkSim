@@ -26,6 +26,8 @@ import {
   clearCopernicusCache,
   loadCopernicusTilesForArea,
   recommendCopernicusDatasetForArea,
+  type CopernicusDataset,
+  type CopernicusLoadResult,
 } from "../lib/copernicusTerrainClient";
 import {
   normalizeTerrainDataset,
@@ -329,6 +331,7 @@ type AppState = {
   terrainDataset: TerrainDataset;
   terrainFetchStatus: string;
   terrainRecommendation: string;
+  isHighResTerrainLoaded: boolean;
   hasOnlineElevationSync: boolean;
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
@@ -1034,6 +1037,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   terrainDataset: "copernicus30",
   terrainFetchStatus: "",
   terrainRecommendation: "",
+  isHighResTerrainLoaded: false,
   hasOnlineElevationSync: false,
   siteLibrary: initialSiteLibrary,
   simulationPresets: initialSimulationPresets,
@@ -1528,6 +1532,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationEnvironmentReason: "Auto defaults active.",
       terrainFetchStatus: "",
       terrainRecommendation: "",
+      isHighResTerrainLoaded: false,
       hasOnlineElevationSync: false,
       siteDragPreview: {},
       endpointPickTarget: null,
@@ -2796,15 +2801,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
+        ["copernicus90"] as const,
       );
-      const perDataset = [
-        `${TERRAIN_DATASET_LABEL.copernicus30}: ${Math.round(copernicusRecommendation.byDataset.copernicus30.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus30.availableTiles}/${copernicusRecommendation.expectedTiles})`,
-        `${TERRAIN_DATASET_LABEL.copernicus90}: ${Math.round(copernicusRecommendation.byDataset.copernicus90.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus90.availableTiles}/${copernicusRecommendation.expectedTiles})`,
-      ].join(" | ");
-      const recommendedDataset = copernicusRecommendation.dataset;
+      const perDataset = `${TERRAIN_DATASET_LABEL.copernicus90}: ${Math.round(copernicusRecommendation.byDataset.copernicus90.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus90.availableTiles}/${copernicusRecommendation.expectedTiles})`;
       set({
-        terrainDataset: recommendedDataset,
-        terrainRecommendation: `Recommended: ${TERRAIN_DATASET_LABEL[recommendedDataset]}. ${perDataset}`,
+        terrainDataset: "copernicus90",
+        terrainRecommendation: `Terrain coverage: ${perDataset}`,
         isTerrainRecommending: false,
       });
     } catch (error) {
@@ -2813,48 +2815,71 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   fetchTerrainForCurrentArea: async () => {
-    const { sites, terrainDataset } = get();
+    const { sites } = get();
     if (!sites.length) return;
 
     const bounds = simulationAreaBoundsForSites(sites);
     if (!bounds) return;
 
     set({
-      terrainFetchStatus:
-        `Fetching ${TERRAIN_DATASET_FETCH_LABEL[terrainDataset]} terrain tiles...`,
+      terrainFetchStatus: "Loading terrain (rough preview)...",
       isTerrainFetching: true,
+      isHighResTerrainLoaded: false,
     });
 
-    try {
+    const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
       const result = await loadCopernicusTilesForArea(
         bounds.minLat,
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
-        terrainDataset,
+        dataset,
       );
-      const fetchedItems = result.fetchedTiles;
-      const failedItems = result.failedTiles;
+      return result;
+    };
+
+    const applyTiles = (result: CopernicusLoadResult) => {
       set((state) => {
         const dedup = new Map<string, SrtmTile>();
         for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
         for (const tile of result.tiles) dedup.set(tile.key, tile);
-      const statusParts = [
-        `Loaded ${result.tiles.length} tile(s)`,
-        fetchedItems.length ? `${fetchedItems.length} fetched` : "",
-        result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
-        result.fallbackTiles.length ? `${result.fallbackTiles.length} fallback to Copernicus GLO-90` : "",
-        failedItems.length ? `${failedItems.length} failed` : "",
-      ].filter(Boolean);
-        const sourceLabel = TERRAIN_DATASET_FETCH_LABEL[terrainDataset];
-        const missing = failedItems;
-        return {
-          srtmTiles: Array.from(dedup.values()),
-          isTerrainFetching: false,
-          terrainFetchStatus: `${statusParts.join(", ")} from ${sourceLabel}.${missing.length ? ` Missing: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}` : ""}`,
-        };
+        return { srtmTiles: Array.from(dedup.values()) };
       });
       get().recomputeCoverage();
+    };
+
+    const formatStatus = (result: CopernicusLoadResult, sourceLabel: string): string => {
+      const parts = [
+        `Loaded ${result.tiles.length} tile(s)`,
+        result.fetchedTiles.length ? `${result.fetchedTiles.length} fetched` : "",
+        result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
+        result.fallbackTiles.length ? `${result.fallbackTiles.length} fallback to Copernicus GLO-90` : "",
+        result.failedTiles.length ? `${result.failedTiles.length} failed` : "",
+      ].filter(Boolean);
+      const missing = result.failedTiles;
+      return `${parts.join(", ")} from ${sourceLabel}.${missing.length ? ` Missing: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}` : ""}`;
+    };
+
+    try {
+      const ninetyResult = await loadAndMerge("copernicus90");
+      applyTiles(ninetyResult);
+      set({
+        terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90),
+        isHighResTerrainLoaded: false,
+      });
+
+      set({
+        terrainFetchStatus: "Loading high-resolution terrain (30m)...",
+        isHighResTerrainLoaded: false,
+      });
+
+      const thirtyResult = await loadAndMerge("copernicus30");
+      applyTiles(thirtyResult);
+      set({
+        terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
+        isTerrainFetching: false,
+        isHighResTerrainLoaded: true,
+      });
     } catch (error) {
       const message = getUiErrorMessage(error);
       set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false });
@@ -2870,6 +2895,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
       isTerrainFetching: false,
+      isHighResTerrainLoaded: false,
       terrainFetchStatus: "Terrain source caches cleared.",
     }));
     get().recomputeCoverage();

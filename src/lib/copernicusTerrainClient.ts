@@ -3,9 +3,9 @@ import type { SrtmTile } from "../types/radio";
 import { tilesForBounds } from "./terrainTiles";
 import type { TerrainDataset } from "./terrainDataset";
 
-type CopernicusDataset = Extract<TerrainDataset, "copernicus30" | "copernicus90">;
+export type CopernicusDataset = Extract<TerrainDataset, "copernicus30" | "copernicus90">;
 
-type CopernicusLoadResult = {
+export type CopernicusLoadResult = {
   tiles: SrtmTile[];
   failedTiles: string[];
   fetchedTiles: string[];
@@ -291,12 +291,13 @@ export const recommendCopernicusDatasetForArea = async (
   maxLat: number,
   minLon: number,
   maxLon: number,
+  datasets?: readonly CopernicusDataset[],
 ): Promise<CopernicusRecommendation> => {
   const expected = Math.max(1, tilesForBounds(minLat, maxLat, minLon, maxLon).length);
   const keys = new Set(tilesForBounds(minLat, maxLat, minLon, maxLon));
-  const datasets: CopernicusDataset[] = ["copernicus30", "copernicus90"];
+  const toCheck = datasets ?? (["copernicus30", "copernicus90"] as CopernicusDataset[]);
   const stats: Array<{ dataset: CopernicusDataset; availableTiles: number; completeness: number }> = [];
-  for (const dataset of datasets) {
+  for (const dataset of toCheck) {
     try {
       const list = await loadTileList(dataset);
       let available = 0;

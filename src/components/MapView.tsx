@@ -844,6 +844,7 @@ export function MapView({
   const coverageSamples = useAppStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
+  const isHighResTerrainLoaded = useAppStore((state) => state.isHighResTerrainLoaded);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
@@ -1199,6 +1200,9 @@ export function MapView({
       : isElevationSyncing
         ? "Syncing site elevations..."
         : "";
+  const terrainPreviewNote = srtmTiles.length > 0 && !isHighResTerrainLoaded
+    ? "Terrain shown at reduced resolution (90m preview)."
+    : "";
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -1750,6 +1754,13 @@ export function MapView({
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 )}
               </div>
+            </div>
+          ) : null}
+          {terrainPreviewNote ? (
+            <div className="map-inspector-section">
+              <p className="map-inspector-line" style={{ color: "var(--color-muted)" }}>
+                {terrainPreviewNote}
+              </p>
             </div>
           ) : null}
           {inspectorPrimary ? (
