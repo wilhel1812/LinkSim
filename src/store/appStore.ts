@@ -20,6 +20,7 @@ import {
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { tilesForBounds } from "../lib/terrainTiles";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import type { BasemapProvider } from "../lib/basemaps";
 import {
@@ -2815,16 +2816,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   fetchTerrainForCurrentArea: async () => {
-    const { sites } = get();
+    const { sites, srtmTiles } = get();
     if (!sites.length) return;
 
     const bounds = simulationAreaBoundsForSites(sites);
     if (!bounds) return;
 
+    const requiredTileKeys = new Set(tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon));
+    const existingTileKeys = new Set(srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
+    const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
+
     set({
-      terrainFetchStatus: "Loading terrain (rough preview)...",
+      terrainFetchStatus: alreadyHasHighRes ? "Loading terrain..." : "Loading terrain (rough preview)...",
       isTerrainFetching: true,
-      isHighResTerrainLoaded: false,
+      isHighResTerrainLoaded: alreadyHasHighRes,
     });
 
     const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
@@ -2861,18 +2866,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     try {
+      if (alreadyHasHighRes) {
+        set({ terrainFetchStatus: formatStatus({ tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] }, TERRAIN_DATASET_FETCH_LABEL.copernicus30), isTerrainFetching: false });
+        return;
+      }
+
       const ninetyResult = await loadAndMerge("copernicus90");
       applyTiles(ninetyResult);
-      set({
-        terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90),
-        isHighResTerrainLoaded: false,
-      });
 
-      set({
-        terrainFetchStatus: "Loading high-resolution terrain (30m)...",
-        isHighResTerrainLoaded: false,
-      });
+      const currentState = get();
+      const currentTileKeys = new Set(currentState.srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
+      const hasHighResNow = [...requiredTileKeys].every((k) => currentTileKeys.has(k));
+      if (hasHighResNow) {
+        set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isTerrainFetching: false, isHighResTerrainLoaded: true });
+        return;
+      }
 
+      set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isHighResTerrainLoaded: false });
+
+      set({ terrainFetchStatus: "Loading high-resolution terrain (30m)..." });
       const thirtyResult = await loadAndMerge("copernicus30");
       applyTiles(thirtyResult);
       set({
