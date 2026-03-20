@@ -2864,7 +2864,7 @@ export function Sidebar() {
               <label className="field-grid">
                 <span>
                   Access level{" "}
-                  <InfoTip text="Private: visible to owner/admin. Public/Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
+                  <InfoTip text="Private: visible to owner/admin. Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
                 </span>
                 <select
                   className="locale-select"
@@ -2878,9 +2878,6 @@ export function Sidebar() {
                   value={resourceAccessVisibility}
                 >
                   <option value="private">Private</option>
-                  <option value="public" disabled>
-                    Public (disabled)
-                  </option>
                   <option value="shared">Shared</option>
                 </select>
               </label>
