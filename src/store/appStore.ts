@@ -2819,7 +2819,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   fetchTerrainForCurrentArea: async () => {
-    const { sites, srtmTiles } = get();
+    const { sites, srtmTiles, isTerrainFetching } = get();
+    if (isTerrainFetching) return;
     if (!sites.length) return;
 
     const bounds = simulationAreaBoundsForSites(sites);
@@ -2830,7 +2831,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
 
     set({
-      terrainFetchStatus: alreadyHasHighRes ? "Loading terrain..." : "Loading terrain (rough preview)...",
+      terrainFetchStatus: "Loading terrain (90m)...",
       isTerrainFetching: true,
       isHighResTerrainLoaded: alreadyHasHighRes,
       terrainLoadingStartedAtMs: Date.now(),
@@ -2886,9 +2887,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isHighResTerrainLoaded: false });
-
-      set({ terrainFetchStatus: "Loading high-resolution terrain (30m)..." });
+      set({ terrainFetchStatus: "Loading terrain (30m)...", isHighResTerrainLoaded: false });
       const thirtyResult = await loadAndMerge("copernicus30");
       applyTiles(thirtyResult);
       set({

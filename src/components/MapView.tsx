@@ -1204,7 +1204,8 @@ export function MapView({
     const id = setInterval(update, 5_000);
     return () => clearInterval(id);
   }, [isTerrainFetching, terrainLoadingStartedAtMs]);
-  const keepWorkingSuffix = elapsedTerrainLoadingMs > 60_000 ? " — you can keep working and return later" : "";
+  const keepWorkingSuffix =
+    elapsedTerrainLoadingMs > 60_000 ? " — loading will continue in the background, even if you leave the app" : "";
   const backgroundBusyLabel = (isTerrainFetching
     ? terrainFetchStatus ?? "Loading terrain data..."
     : isTerrainRecommending
