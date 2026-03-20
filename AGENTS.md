@@ -70,6 +70,15 @@
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
 
+## Model Selection
+- **Codex 5.3** — use for full implementation passes where quality and breadth of change matter most. Expensive; reserve for when the work warrants it.
+- **Big Pickle / MiMo V2 Pro Free** — good for planning and moderate coding work. Use as the default for most passes.
+- **Plan mode always** — before any implementation pass, always present a plan first. Always recommend which model to use for the next implementation pass.
+- Also available but less experienced with this codebase: GPT-Nano, MiniMax M2.5 Free, Nemotron 3 Super Free.
+
+## AGENTS.md Feedback
+- If this file feels counterintuitive or is missing something, suggestions are welcome — but nothing changes without explicit approval.
+
 ## Handoff Guarantee
 - A new agent should be able to continue by being pointed only to this file.
 - Do not rely on undocumented tribal knowledge; if a rule is repeated in chat, add it here (or in the linked source-of-truth docs) before ending the pass.
