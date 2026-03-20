@@ -1193,32 +1193,25 @@ export function MapView({
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
-  const backgroundBusyLabel = isTerrainFetching
+  const [elapsedTerrainLoadingMs, setElapsedTerrainLoadingMs] = useState(0);
+  useEffect(() => {
+    if (!isTerrainFetching || terrainLoadingStartedAtMs === 0) {
+      setElapsedTerrainLoadingMs(0);
+      return;
+    }
+    const update = () => setElapsedTerrainLoadingMs(Date.now() - terrainLoadingStartedAtMs);
+    update();
+    const id = setInterval(update, 5_000);
+    return () => clearInterval(id);
+  }, [isTerrainFetching, terrainLoadingStartedAtMs]);
+  const keepWorkingSuffix = elapsedTerrainLoadingMs > 60_000 ? " — you can keep working and return later" : "";
+  const backgroundBusyLabel = (isTerrainFetching
     ? terrainFetchStatus ?? "Loading terrain data..."
     : isTerrainRecommending
       ? terrainFetchStatus ?? "Checking terrain dataset coverage..."
       : isElevationSyncing
         ? "Syncing site elevations..."
-        : "";
-
-  const is30mPhase = terrainLoadingStartedAtMs > 0 && (terrainFetchStatus?.includes("30m") ?? false);
-  const [showKeepWorking, setShowKeepWorking] = useState(false);
-  useEffect(() => {
-    if (!is30mPhase) { setShowKeepWorking(false); return; }
-    const check = () => {
-      const elapsed = Date.now() - terrainLoadingStartedAtMs;
-      if (elapsed > 60_000) setShowKeepWorking(true);
-    };
-    check();
-    const id = setInterval(check, 10_000);
-    return () => clearInterval(id);
-  }, [is30mPhase, terrainLoadingStartedAtMs]);
-
-  const terrainPreviewNote = is30mPhase && srtmTiles.length > 0
-    ? showKeepWorking
-      ? "High-resolution terrain loading in background — you can keep working and return later."
-      : "High-resolution terrain loading in background."
-    : "";
+        : "") + keepWorkingSuffix;
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -1770,13 +1763,6 @@ export function MapView({
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 )}
               </div>
-            </div>
-          ) : null}
-          {terrainPreviewNote ? (
-            <div className="map-inspector-section">
-              <p className="map-inspector-line" style={{ color: "var(--color-muted)" }}>
-                {terrainPreviewNote}
-              </p>
             </div>
           ) : null}
           {inspectorPrimary ? (
