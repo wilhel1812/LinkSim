@@ -576,14 +576,15 @@ input {
 }
 
 .empty-workspace-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--surface-0) 65%, transparent);
-  pointer-events: none;
+  background: color-mix(in srgb, var(--surface-0) 78%, transparent);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
 }
 
 .empty-workspace-message {
@@ -595,9 +596,9 @@ input {
   text-align: center;
   padding: 24px 32px;
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
-  box-shadow: var(--shadow-elev-1);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-elev-2);
 }
 
 .empty-workspace-message > p {
