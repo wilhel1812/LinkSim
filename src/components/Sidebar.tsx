@@ -406,6 +406,8 @@ export function Sidebar() {
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
   const getSelectedNetwork = useAppStore((state) => state.getSelectedNetwork);
   const model = useAppStore((state) => state.propagationModel);
+  const showSimulationLibraryRequest = useAppStore((state) => state.showSimulationLibraryRequest);
+  const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
   const analysis = getSelectedAnalysis();
   const selectedLink = getSelectedLink();
   const selectedLinkRaw = links.find((link) => link.id === selectedLink.id) ?? null;
@@ -740,6 +742,12 @@ export function Sidebar() {
       `${preset.name} ${preset.updatedAt}`,
     );
   }, [simulationPresets, simulationLibraryFilters, currentUserId]);
+  useEffect(() => {
+    if (showSimulationLibraryRequest) {
+      setShowSimulationLibraryManager(true);
+      setShowSimulationLibraryRequest(false);
+    }
+  }, [showSimulationLibraryRequest, setShowSimulationLibraryRequest]);
   useEffect(() => {
     persistLibraryFilterState(SITE_LIBRARY_FILTERS_KEY, siteLibraryFilters);
   }, [siteLibraryFilters]);

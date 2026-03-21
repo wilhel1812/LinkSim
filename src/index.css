@@ -575,6 +575,38 @@ input {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.empty-workspace-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--surface-0) 65%, transparent);
+  pointer-events: none;
+}
+
+.empty-workspace-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  pointer-events: auto;
+  text-align: center;
+  padding: 24px 32px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  box-shadow: var(--shadow-elev-1);
+}
+
+.empty-workspace-message > p {
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  max-width: 340px;
+  margin: 0;
+}
+
 .workspace-panel.is-profile-expanded {
   grid-template-rows: minmax(0, 1fr);
 }

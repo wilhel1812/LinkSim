@@ -72,6 +72,7 @@ export function AppShell() {
   const isOnline = useAppStore((state) => state.isOnline);
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
+  const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
 
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
@@ -131,11 +132,15 @@ export function AppShell() {
         ...(selectedLink ? { selectedLinkId: selectedLink.id } : {}),
         ...(selectedLink?.name ? { selectedLinkSlug: selectedLink.name } : {}),
         overlayMode: mapOverlayMode,
-        mapViewport: {
-          lat: mapViewport.center.lat,
-          lon: mapViewport.center.lon,
-          zoom: mapViewport.zoom,
-        },
+        ...(mapViewport
+          ? {
+              mapViewport: {
+                lat: mapViewport.center.lat,
+                lon: mapViewport.center.lon,
+                zoom: mapViewport.zoom,
+              },
+            }
+          : {}),
       },
       window.location.origin,
       "/",
@@ -738,6 +743,20 @@ export function AppShell() {
           </div>
         ) : null}
         {accessState === "readonly" ? <p className="field-help">Read-only shared view.</p> : null}
+        {sites.length === 0 ? (
+          <div className="empty-workspace-overlay">
+            <div className="empty-workspace-message">
+              <p>Open an existing simulation or create a new one to continue.</p>
+              <button
+                className="inline-action"
+                onClick={() => setShowSimulationLibraryRequest(true)}
+                type="button"
+              >
+                Open Library
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="workspace-header-actions">
           {accessState === "readonly" && isLocalRuntime ? (
             <button

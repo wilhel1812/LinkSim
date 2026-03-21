@@ -316,7 +316,7 @@ type AppState = {
   selectedNetworkId: string;
   selectedCoverageMode: CoverageMode;
   propagationModel: PropagationModel;
-  mapViewport: MapViewport;
+  mapViewport?: MapViewport;
   locale: LocaleCode;
   uiThemePreference: "system" | "light" | "dark";
   uiColorTheme: UiColorTheme;
@@ -340,6 +340,7 @@ type AppState = {
   simulationPresets: SimulationPreset[];
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
   endpointPickTarget: "from" | "to" | null;
+  showSimulationLibraryRequest: boolean;
   pendingSiteLibraryDraft:
     | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
     | null;
@@ -474,6 +475,7 @@ type AppState = {
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
   ) => void;
   clearPendingSiteLibraryDraft: () => void;
+  setShowSimulationLibraryRequest: (show: boolean) => void;
   requestOpenSiteLibraryEntry: (entryId: string) => void;
   clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
@@ -979,10 +981,8 @@ const getInitialScenarioId = (): string => {
   if (lastSession && initialSimulationPresets.some((p) => p.id === lastSession.selectedScenarioId)) {
     return lastSession.selectedScenarioId;
   }
-  return defaultScenario.id;
+  return "";
 };
-
-const initialSelectedScenarioId = getInitialScenarioId();
 
 const normalizeUiThemePreference = (value: unknown): "system" | "light" | "dark" =>
   value === "light" || value === "dark" || value === "system" ? value : "system";
@@ -1006,10 +1006,10 @@ const initialBasemapStylePreset = normalizeBasemapStylePreset(
 );
 
 export const useAppStore = create<AppState>((set, get) => ({
-  sites: defaultScenario.sites,
-  links: defaultScenario.links,
-  systems: defaultScenario.systems,
-  networks: defaultScenario.networks,
+  sites: [],
+  links: [],
+  systems: [],
+  networks: [],
   srtmTiles: [],
   coverageSamples: [],
   isSimulationRecomputing: false,
@@ -1018,20 +1018,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   isTerrainFetching: false,
   isTerrainRecommending: false,
   isElevationSyncing: false,
-  selectedLinkId: defaultScenario.defaultLinkId,
+  selectedLinkId: "",
   profileCursorIndex: 0,
   temporaryDirectionReversed: false,
-  selectedSiteId: defaultScenario.defaultSiteId,
-  selectedNetworkId: defaultScenario.defaultNetworkId,
+  selectedSiteId: "",
+  selectedNetworkId: "",
   selectedCoverageMode: "BestSite",
   propagationModel: "ITM",
-  mapViewport: defaultScenario.viewport,
+  mapViewport: undefined,
   locale: "eng",
   uiThemePreference: initialUiThemePreference,
   uiColorTheme: initialUiColorTheme,
   basemapProvider: initialBasemapProvider,
   basemapStylePreset: initialBasemapStylePreset,
-  selectedScenarioId: initialSelectedScenarioId,
+  selectedScenarioId: getInitialScenarioId(),
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
   environmentLossDb: 0,
@@ -1050,6 +1050,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   siteDragPreview: {},
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
+  showSimulationLibraryRequest: false,
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
@@ -2621,6 +2622,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }),
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
+  setShowSimulationLibraryRequest: (show) => set({ showSimulationLibraryRequest: show }),
   requestOpenSiteLibraryEntry: (entryId) =>
     set({
       pendingSiteLibraryOpenEntryId: entryId.trim() ? entryId : null,
@@ -2758,10 +2760,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     {
       set((state) => ({
         mapViewport: {
-          ...state.mapViewport,
+          ...(state.mapViewport ?? { center: { lat: 59.9, lon: 10.75 }, zoom: 8 }),
           ...patch,
           center: {
-            ...state.mapViewport.center,
+            ...(state.mapViewport?.center ?? { lat: 59.9, lon: 10.75 }),
             ...(patch.center ?? {}),
           },
         },
