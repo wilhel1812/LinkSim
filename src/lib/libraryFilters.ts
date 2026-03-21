@@ -1,11 +1,13 @@
 export type LibraryFilterRole = "owned" | "collaborator" | "editable" | "viewOnly";
 export type LibraryFilterVisibility = "private" | "sharedPublic";
+export type LibraryFilterSource = "manual" | "mqtt";
 export type LibraryFilterSort = "nameAsc";
 
 export interface LibraryFilterState {
   searchQuery: string;
   roleFilters: LibraryFilterRole[];
   visibilityFilters: LibraryFilterVisibility[];
+  sourceFilters: LibraryFilterSource[];
   sort: LibraryFilterSort;
 }
 
@@ -21,16 +23,19 @@ type PersistedLibraryFilterStateV1 = {
   searchQuery: string;
   roleFilters: LibraryFilterRole[];
   visibilityFilters: LibraryFilterVisibility[];
+  sourceFilters?: LibraryFilterSource[];
   sort: LibraryFilterSort;
 };
 
 const ROLE_FILTERS: LibraryFilterRole[] = ["owned", "collaborator", "editable", "viewOnly"];
 const VISIBILITY_FILTERS: LibraryFilterVisibility[] = ["private", "sharedPublic"];
+const SOURCE_FILTERS: LibraryFilterSource[] = ["manual", "mqtt"];
 
 export const DEFAULT_LIBRARY_FILTER_STATE: LibraryFilterState = {
   searchQuery: "",
   roleFilters: ["owned", "collaborator"],
   visibilityFilters: [],
+  sourceFilters: [],
   sort: "nameAsc",
 };
 
@@ -66,6 +71,11 @@ const sanitizeVisibilityFilters = (value: unknown): LibraryFilterVisibility[] =>
 };
 
 const sanitizeSearchQuery = (value: unknown): string => (typeof value === "string" ? value : "");
+const sanitizeSourceFilters = (value: unknown): LibraryFilterSource[] => {
+  if (!Array.isArray(value)) return [];
+  const sourceSet = new Set(SOURCE_FILTERS);
+  return dedupeInOrder(value.filter((entry): entry is LibraryFilterSource => sourceSet.has(entry as LibraryFilterSource)));
+};
 
 const sanitizeSort = (value: unknown): LibraryFilterSort => (value === "nameAsc" ? "nameAsc" : "nameAsc");
 
@@ -82,6 +92,7 @@ export const parsePersistedLibraryFilterState = (
       searchQuery: sanitizeSearchQuery(parsed.searchQuery),
       roleFilters: sanitizeRoleFilters(parsed.roleFilters),
       visibilityFilters: sanitizeVisibilityFilters(parsed.visibilityFilters),
+      sourceFilters: sanitizeSourceFilters(parsed.sourceFilters),
       sort: sanitizeSort(parsed.sort),
     };
   } catch {
@@ -95,6 +106,7 @@ export const serializeLibraryFilterState = (state: LibraryFilterState): string =
     searchQuery: state.searchQuery,
     roleFilters: sanitizeRoleFilters(state.roleFilters),
     visibilityFilters: sanitizeVisibilityFilters(state.visibilityFilters),
+    sourceFilters: sanitizeSourceFilters(state.sourceFilters),
     sort: sanitizeSort(state.sort),
   } satisfies PersistedLibraryFilterStateV1);
 
@@ -143,6 +155,7 @@ export const filterAndSortLibraryItems = <T extends FilterableLibraryItem>(
   filters: LibraryFilterState,
   currentUserId: string | null,
   searchTextForItem?: (item: T) => string,
+  sourceMatchForItem?: (item: T, source: LibraryFilterSource) => boolean,
 ): T[] => {
   const query = filters.searchQuery.trim().toLowerCase();
   const searched = query
@@ -155,7 +168,10 @@ export const filterAndSortLibraryItems = <T extends FilterableLibraryItem>(
   const filtered = searched.filter(
     (item) =>
       roleFilterMatch(item, filters.roleFilters, currentUserId) &&
-      visibilityFilterMatch(item, filters.visibilityFilters),
+      visibilityFilterMatch(item, filters.visibilityFilters) &&
+      (filters.sourceFilters.length === 0 ||
+        !sourceMatchForItem ||
+        filters.sourceFilters.some((source) => sourceMatchForItem(item, source))),
   );
 
   if (filters.sort === "nameAsc") {

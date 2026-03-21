@@ -49,6 +49,7 @@ import {
   parsePersistedLibraryFilterState,
   serializeLibraryFilterState,
   type LibraryFilterRole,
+  type LibraryFilterSource,
   type LibraryFilterState,
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
@@ -186,6 +187,10 @@ const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
 const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: string }> = [
   { key: "private", label: "Private" },
   { key: "sharedPublic", label: "Shared/Public" },
+];
+const SITE_SOURCE_FILTER_OPTIONS: Array<{ key: LibraryFilterSource; label: string }> = [
+  { key: "manual", label: "Manual" },
+  { key: "mqtt", label: "MQTT" },
 ];
 
 const readLibraryFilterState = (key: string): LibraryFilterState => {
@@ -638,9 +643,22 @@ export function Sidebar() {
       : [...state.visibilityFilters, key];
     return { ...state, visibilityFilters };
   };
+  const toggleSourceFilter = (state: LibraryFilterState, key: LibraryFilterSource): LibraryFilterState => {
+    const sourceFilters = state.sourceFilters.includes(key)
+      ? state.sourceFilters.filter((value) => value !== key)
+      : [...state.sourceFilters, key];
+    return { ...state, sourceFilters };
+  };
   const filteredSiteLibrary = useMemo(() => {
-    return filterAndSortLibraryItems(siteLibrary, siteLibraryFilters, currentUserId, (entry) =>
-      `${entry.name} ${entry.position.lat.toFixed(5)} ${entry.position.lon.toFixed(5)}`,
+    return filterAndSortLibraryItems(
+      siteLibrary,
+      siteLibraryFilters,
+      currentUserId,
+      (entry) => `${entry.name} ${entry.position.lat.toFixed(5)} ${entry.position.lon.toFixed(5)}`,
+      (entry, source) =>
+        source === "mqtt"
+          ? entry.sourceMeta?.sourceType === "mqtt-feed"
+          : entry.sourceMeta?.sourceType !== "mqtt-feed",
     );
   }, [siteLibrary, siteLibraryFilters, currentUserId]);
   const newestSiteLibraryEntryId = useMemo(() => {
@@ -3125,40 +3143,54 @@ export function Sidebar() {
                 value={simulationLibraryFilters.searchQuery}
               />
             </label>
-            <div className="chip-group">
-              {ROLE_FILTER_OPTIONS.map((option) => {
-                const active = simulationLibraryFilters.roleFilters.includes(option.key);
-                return (
-                  <button
-                    className="inline-action"
-                    key={`simulation-role-${option.key}`}
-                    onClick={() => setSimulationLibraryFilters((state) => toggleRoleFilter(state, option.key))}
-                    type="button"
-                  >
-                    {active ? `* ${option.label}` : option.label}
-                  </button>
-                );
-              })}
-              {VISIBILITY_FILTER_OPTIONS.map((option) => {
-                const active = simulationLibraryFilters.visibilityFilters.includes(option.key);
-                return (
-                  <button
-                    className="inline-action"
-                    key={`simulation-visibility-${option.key}`}
-                    onClick={() => setSimulationLibraryFilters((state) => toggleVisibilityFilter(state, option.key))}
-                    type="button"
-                  >
-                    {active ? `* ${option.label}` : option.label}
-                  </button>
-                );
-              })}
-              <button
-                className="inline-action"
-                onClick={() => setSimulationLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE)}
-                type="button"
-              >
-                Clear Filters
-              </button>
+            <div className="library-filter-panel">
+              <fieldset className="library-filter-group">
+                <legend>Ownership</legend>
+                <div className="library-filter-options">
+                  {ROLE_FILTER_OPTIONS.map((option) => {
+                    const active = simulationLibraryFilters.roleFilters.includes(option.key);
+                    return (
+                      <label className="checkbox-field library-filter-option" key={`simulation-role-${option.key}`}>
+                        <input
+                          checked={active}
+                          onChange={() => setSimulationLibraryFilters((state) => toggleRoleFilter(state, option.key))}
+                          type="checkbox"
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <fieldset className="library-filter-group">
+                <legend>Access level</legend>
+                <div className="library-filter-options">
+                  {VISIBILITY_FILTER_OPTIONS.map((option) => {
+                    const active = simulationLibraryFilters.visibilityFilters.includes(option.key);
+                    return (
+                      <label className="checkbox-field library-filter-option" key={`simulation-visibility-${option.key}`}>
+                        <input
+                          checked={active}
+                          onChange={() =>
+                            setSimulationLibraryFilters((state) => toggleVisibilityFilter(state, option.key))
+                          }
+                          type="checkbox"
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <div className="chip-group">
+                <button
+                  className="inline-action"
+                  onClick={() => setSimulationLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE)}
+                  type="button"
+                >
+                  Clear Filters
+                </button>
+              </div>
             </div>
             <label className="field-grid">
               <span>Save a copy</span>
@@ -3366,36 +3398,66 @@ export function Sidebar() {
                 value={siteLibraryFilters.searchQuery}
               />
             </label>
-            <div className="chip-group">
-              {ROLE_FILTER_OPTIONS.map((option) => {
-                const active = siteLibraryFilters.roleFilters.includes(option.key);
-                return (
-                  <button
-                    className="inline-action"
-                    key={`site-role-${option.key}`}
-                    onClick={() => setSiteLibraryFilters((state) => toggleRoleFilter(state, option.key))}
-                    type="button"
-                  >
-                    {active ? `* ${option.label}` : option.label}
-                  </button>
-                );
-              })}
-              {VISIBILITY_FILTER_OPTIONS.map((option) => {
-                const active = siteLibraryFilters.visibilityFilters.includes(option.key);
-                return (
-                  <button
-                    className="inline-action"
-                    key={`site-visibility-${option.key}`}
-                    onClick={() => setSiteLibraryFilters((state) => toggleVisibilityFilter(state, option.key))}
-                    type="button"
-                  >
-                    {active ? `* ${option.label}` : option.label}
-                  </button>
-                );
-              })}
-              <button className="inline-action" onClick={() => setSiteLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE)} type="button">
-                Clear Filters
-              </button>
+            <div className="library-filter-panel">
+              <fieldset className="library-filter-group">
+                <legend>Ownership</legend>
+                <div className="library-filter-options">
+                  {ROLE_FILTER_OPTIONS.map((option) => {
+                    const active = siteLibraryFilters.roleFilters.includes(option.key);
+                    return (
+                      <label className="checkbox-field library-filter-option" key={`site-role-${option.key}`}>
+                        <input
+                          checked={active}
+                          onChange={() => setSiteLibraryFilters((state) => toggleRoleFilter(state, option.key))}
+                          type="checkbox"
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <fieldset className="library-filter-group">
+                <legend>Access level</legend>
+                <div className="library-filter-options">
+                  {VISIBILITY_FILTER_OPTIONS.map((option) => {
+                    const active = siteLibraryFilters.visibilityFilters.includes(option.key);
+                    return (
+                      <label className="checkbox-field library-filter-option" key={`site-visibility-${option.key}`}>
+                        <input
+                          checked={active}
+                          onChange={() => setSiteLibraryFilters((state) => toggleVisibilityFilter(state, option.key))}
+                          type="checkbox"
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <fieldset className="library-filter-group">
+                <legend>Source</legend>
+                <div className="library-filter-options">
+                  {SITE_SOURCE_FILTER_OPTIONS.map((option) => {
+                    const active = siteLibraryFilters.sourceFilters.includes(option.key);
+                    return (
+                      <label className="checkbox-field library-filter-option" key={`site-source-${option.key}`}>
+                        <input
+                          checked={active}
+                          onChange={() => setSiteLibraryFilters((state) => toggleSourceFilter(state, option.key))}
+                          type="checkbox"
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <div className="chip-group">
+                <button className="inline-action" onClick={() => setSiteLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE)} type="button">
+                  Clear Filters
+                </button>
+              </div>
             </div>
             <div className="chip-group">
               <button

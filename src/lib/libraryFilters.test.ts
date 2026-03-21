@@ -30,6 +30,7 @@ describe("libraryFilters", () => {
       searchQuery: "",
       roleFilters: ["editable"],
       visibilityFilters: ["sharedPublic"],
+      sourceFilters: [],
       sort: "nameAsc",
     };
     const result = filterAndSortLibraryItems(items, filters, "u1");
@@ -41,6 +42,7 @@ describe("libraryFilters", () => {
       searchQuery: "",
       roleFilters: ["owned"],
       visibilityFilters: ["private"],
+      sourceFilters: [],
       sort: "nameAsc",
     };
     const result = filterAndSortLibraryItems(items, filters, "u1");
@@ -52,6 +54,7 @@ describe("libraryFilters", () => {
       searchQuery: "",
       roleFilters: ["viewOnly"],
       visibilityFilters: [],
+      sourceFilters: [],
       sort: "nameAsc",
     };
     const result = filterAndSortLibraryItems(items, filters, null);
@@ -64,6 +67,7 @@ describe("libraryFilters", () => {
       searchQuery: " c",
       roleFilters: [],
       visibilityFilters: [],
+      sourceFilters: [],
       sort: "nameAsc",
     };
     const result = filterAndSortLibraryItems(withSearchText, filters, "u1", (item) => item.searchText ?? item.name);
@@ -75,6 +79,7 @@ describe("libraryFilters", () => {
       searchQuery: "foo",
       roleFilters: ["owned", "owned", "editable"],
       visibilityFilters: ["private", "sharedPublic", "private"],
+      sourceFilters: [],
       sort: "nameAsc",
     };
     const parsed = parsePersistedLibraryFilterState(serializeLibraryFilterState(state));
@@ -82,8 +87,31 @@ describe("libraryFilters", () => {
       searchQuery: "foo",
       roleFilters: ["owned", "editable"],
       visibilityFilters: ["private", "sharedPublic"],
+      sourceFilters: [],
       sort: "nameAsc",
     });
+  });
+
+  it("supports source filters for site lists", () => {
+    const sourceItems: Array<MockItem & { sourceType: string }> = [
+      { id: "m", name: "MQTT Hill", sourceType: "mqtt-feed", ownerUserId: "u1", effectiveRole: "owner" },
+      { id: "n", name: "Manual Peak", sourceType: "manual", ownerUserId: "u1", effectiveRole: "owner" },
+    ];
+    const filters: LibraryFilterState = {
+      searchQuery: "",
+      roleFilters: ["owned"],
+      visibilityFilters: [],
+      sourceFilters: ["mqtt"],
+      sort: "nameAsc",
+    };
+    const result = filterAndSortLibraryItems(
+      sourceItems,
+      filters,
+      "u1",
+      (item) => item.name,
+      (item, source) => (source === "mqtt" ? item.sourceType === "mqtt-feed" : item.sourceType !== "mqtt-feed"),
+    );
+    expect(ids(result)).toEqual(["m"]);
   });
 
   it("falls back for malformed persisted state", () => {

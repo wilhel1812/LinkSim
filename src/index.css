@@ -2057,6 +2057,40 @@ input {
   font-size: 1rem;
 }
 
+.library-filter-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+}
+
+.library-filter-group {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 8px;
+  padding: 6px 8px 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.library-filter-group legend {
+  padding: 0 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.library-filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.library-filter-option {
+  min-width: 120px;
+}
+
 .library-manager-list {
   border: 1px solid var(--border);
   border-radius: 10px;
