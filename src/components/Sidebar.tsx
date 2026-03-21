@@ -575,16 +575,21 @@ export function Sidebar() {
     [],
   );
   const [selectedSimulationRef, setSelectedSimulationRef] = useState<string>(() => {
-    const fallback = `builtin:${selectedScenarioId}`;
     if (hasDeepLinkSimulationInSearch(window.location.search, window.location.pathname)) {
-      return fallback;
+      return "";
     }
     try {
       const stored = localStorage.getItem(LAST_SIMULATION_REF_KEY);
-      return stored && stored.trim() ? stored : fallback;
+      if (stored && stored.trim()) {
+        return stored.trim();
+      }
     } catch {
-      return fallback;
+      // ignore
     }
+    if (selectedScenarioId && simulationPresets.some((preset) => preset.id === selectedScenarioId)) {
+      return `saved:${selectedScenarioId}`;
+    }
+    return "";
   });
   const persistSelectedSimulationRef = (ref: string) => {
     setSelectedSimulationRef(ref);
@@ -786,9 +791,12 @@ export function Sidebar() {
       const preset = simulationPresets.find((candidate) => candidate.id === presetId);
       return preset ? `${preset.name} (saved)` : "Saved simulation";
     }
+    if (!selectedSimulationRef.trim()) {
+      return "no simulation selected";
+    }
     const simulationId = selectedSimulationRef.replace("builtin:", "");
     const simulation = scenarioOptions.find((candidate) => candidate.id === simulationId);
-    return simulation ? `${simulation.name} (starter)` : "Starter simulation";
+    return simulation ? `${simulation.name} (starter)` : "no simulation selected";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
   const activeSimulationVisibility = useMemo<"private" | "public" | "shared">(() => {
     if (!selectedSimulationRef.startsWith("saved:")) return "shared";
@@ -901,11 +909,18 @@ export function Sidebar() {
       const presetId = selectedSimulationRef.replace("saved:", "");
       const exists = simulationPresets.some((preset) => preset.id === presetId);
       if (!exists) {
-        const fallback = `builtin:${selectedScenarioId}`;
-        persistSelectedSimulationRef(fallback);
+        persistSelectedSimulationRef("");
+      }
+      return;
+    }
+    if (selectedSimulationRef.startsWith("builtin:")) {
+      const scenarioId = selectedSimulationRef.replace("builtin:", "");
+      const exists = scenarioOptions.some((scenario) => scenario.id === scenarioId);
+      if (!exists) {
+        persistSelectedSimulationRef("");
       }
     }
-  }, [selectedSimulationRef, simulationPresets, selectedScenarioId]);
+  }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
   useEffect(() => {
     if (!visibleLinks.length) return;
     const stillVisible = visibleLinks.some((link) => link.id === selectedLinkId);
@@ -1097,12 +1112,19 @@ export function Sidebar() {
       setStartupSimulationApplied(true);
       return;
     }
-    const defaultRef = `builtin:${selectedScenarioId}`;
-    if (selectedSimulationRef !== defaultRef) {
-      if (selectedSimulationRef.startsWith("builtin:")) {
-        selectScenario(selectedSimulationRef.replace("builtin:", ""));
-      } else if (selectedSimulationRef.startsWith("saved:")) {
-        loadSimulationPreset(selectedSimulationRef.replace("saved:", ""));
+    if (!selectedSimulationRef.trim()) {
+      setStartupSimulationApplied(true);
+      return;
+    }
+    if (selectedSimulationRef.startsWith("builtin:")) {
+      const scenarioId = selectedSimulationRef.replace("builtin:", "");
+      if (scenarioOptions.some((scenario) => scenario.id === scenarioId)) {
+        selectScenario(scenarioId);
+      }
+    } else if (selectedSimulationRef.startsWith("saved:")) {
+      const presetId = selectedSimulationRef.replace("saved:", "");
+      if (simulationPresets.some((preset) => preset.id === presetId)) {
+        loadSimulationPreset(presetId);
       }
     }
     setStartupSimulationApplied(true);
@@ -1110,7 +1132,8 @@ export function Sidebar() {
     hasDeepLinkSimulation,
     startupSimulationApplied,
     selectedSimulationRef,
-    selectedScenarioId,
+    scenarioOptions,
+    simulationPresets,
     selectScenario,
     loadSimulationPreset,
   ]);
@@ -1934,7 +1957,7 @@ export function Sidebar() {
           <InfoTip text="Use saved simulations for project work. Starter simulations are only local starting points." />
         </div>
         <p className="field-help">
-          Active: <strong>{activeSimulationLabel}</strong>
+          <strong>{activeSimulationLabel}</strong>
         </p>
         {selectedSimulationRef.startsWith("saved:") ? (
           <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
@@ -3132,8 +3155,7 @@ export function Sidebar() {
                         } else {
                           deleteSimulationPreset(resourceDetailsPopup.resourceId);
                           if (selectedSimulationRef === `saved:${resourceDetailsPopup.resourceId}`) {
-                            persistSelectedSimulationRef(`builtin:${selectedScenarioId}`);
-                            selectScenario(selectedScenarioId);
+                            persistSelectedSimulationRef("");
                           }
                         }
                         setResourceDetailsPopup(null);
