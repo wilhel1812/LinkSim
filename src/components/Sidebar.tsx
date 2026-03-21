@@ -1,5 +1,5 @@
 import type { ChangeEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import Map, {
   Layer,
@@ -192,6 +192,12 @@ const SITE_SOURCE_FILTER_OPTIONS: Array<{ key: LibraryFilterSource; label: strin
   { key: "manual", label: "Manual" },
   { key: "mqtt", label: "MQTT" },
 ];
+const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
+const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.key);
+const ALL_SITE_SOURCE_FILTERS = SITE_SOURCE_FILTER_OPTIONS.map((option) => option.key);
+
+type SimulationFilterGroupKey = "role" | "visibility";
+type SiteFilterGroupKey = "role" | "visibility" | "source";
 
 const readLibraryFilterState = (key: string): LibraryFilterState => {
   try {
@@ -207,6 +213,19 @@ const persistLibraryFilterState = (key: string, state: LibraryFilterState): void
   } catch {
     // Best effort only.
   }
+};
+
+const effectiveSelection = <T extends string>(selected: T[], allValues: T[]): T[] =>
+  selected.length ? selected : allValues;
+
+const selectionLabel = <T extends string>(selected: T[], allValues: T[]): string => {
+  const effective = effectiveSelection(selected, allValues);
+  return `${effective.length}/${allValues.length}`;
+};
+
+const selectionIsFiltered = <T extends string>(selected: T[], allValues: T[]): boolean => {
+  const effective = effectiveSelection(selected, allValues);
+  return effective.length !== allValues.length;
 };
 
 type LibraryBackupPayload = {
@@ -509,6 +528,15 @@ export function Sidebar() {
   const [siteLibraryFilters, setSiteLibraryFilters] = useState<LibraryFilterState>(() =>
     readLibraryFilterState(SITE_LIBRARY_FILTERS_KEY),
   );
+  const [openSimulationFilterGroup, setOpenSimulationFilterGroup] = useState<SimulationFilterGroupKey | null>(null);
+  const [openSiteFilterGroup, setOpenSiteFilterGroup] = useState<SiteFilterGroupKey | null>(null);
+  const [simulationRoleDraft, setSimulationRoleDraft] = useState<LibraryFilterRole[] | null>(null);
+  const [simulationVisibilityDraft, setSimulationVisibilityDraft] = useState<LibraryFilterVisibility[] | null>(null);
+  const [siteRoleDraft, setSiteRoleDraft] = useState<LibraryFilterRole[] | null>(null);
+  const [siteVisibilityDraft, setSiteVisibilityDraft] = useState<LibraryFilterVisibility[] | null>(null);
+  const [siteSourceDraft, setSiteSourceDraft] = useState<LibraryFilterSource[] | null>(null);
+  const simulationFilterToolbarRef = useRef<HTMLDivElement | null>(null);
+  const siteFilterToolbarRef = useRef<HTMLDivElement | null>(null);
   const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
   const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
   const [pendingDraftAutoInsert, setPendingDraftAutoInsert] = useState(false);
@@ -625,29 +653,65 @@ export function Sidebar() {
   } | null>(null);
   const hasLocalLibraryData = siteLibrary.length > 0 || simulationPresets.length > 0;
   const currentUserId = currentUser?.id ?? null;
-  const toggleRoleFilter = (
-    state: LibraryFilterState,
-    key: LibraryFilterRole,
-  ): LibraryFilterState => {
-    const roleFilters = state.roleFilters.includes(key)
-      ? state.roleFilters.filter((value) => value !== key)
-      : [...state.roleFilters, key];
-    return { ...state, roleFilters };
+  const toggleValue = <T extends string>(values: T[], key: T): T[] =>
+    values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
+  const commitSimulationRoleFilters = (roleFilters: LibraryFilterRole[]) => {
+    if (!roleFilters.length) return;
+    setSimulationLibraryFilters((state) => ({ ...state, roleFilters }));
+    setOpenSimulationFilterGroup(null);
   };
-  const toggleVisibilityFilter = (
-    state: LibraryFilterState,
-    key: LibraryFilterVisibility,
-  ): LibraryFilterState => {
-    const visibilityFilters = state.visibilityFilters.includes(key)
-      ? state.visibilityFilters.filter((value) => value !== key)
-      : [...state.visibilityFilters, key];
-    return { ...state, visibilityFilters };
+  const commitSimulationVisibilityFilters = (visibilityFilters: LibraryFilterVisibility[]) => {
+    if (!visibilityFilters.length) return;
+    setSimulationLibraryFilters((state) => ({ ...state, visibilityFilters }));
+    setOpenSimulationFilterGroup(null);
   };
-  const toggleSourceFilter = (state: LibraryFilterState, key: LibraryFilterSource): LibraryFilterState => {
-    const sourceFilters = state.sourceFilters.includes(key)
-      ? state.sourceFilters.filter((value) => value !== key)
-      : [...state.sourceFilters, key];
-    return { ...state, sourceFilters };
+  const commitSiteRoleFilters = (roleFilters: LibraryFilterRole[]) => {
+    if (!roleFilters.length) return;
+    setSiteLibraryFilters((state) => ({ ...state, roleFilters }));
+    setOpenSiteFilterGroup(null);
+  };
+  const commitSiteVisibilityFilters = (visibilityFilters: LibraryFilterVisibility[]) => {
+    if (!visibilityFilters.length) return;
+    setSiteLibraryFilters((state) => ({ ...state, visibilityFilters }));
+    setOpenSiteFilterGroup(null);
+  };
+  const commitSiteSourceFilters = (sourceFilters: LibraryFilterSource[]) => {
+    if (!sourceFilters.length) return;
+    setSiteLibraryFilters((state) => ({ ...state, sourceFilters }));
+    setOpenSiteFilterGroup(null);
+  };
+  const openSimulationRoleEditor = () => {
+    setSimulationRoleDraft(effectiveSelection(simulationLibraryFilters.roleFilters, ALL_ROLE_FILTERS));
+    setOpenSimulationFilterGroup((current) => (current === "role" ? null : "role"));
+  };
+  const openSimulationVisibilityEditor = () => {
+    setSimulationVisibilityDraft(
+      effectiveSelection(simulationLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS),
+    );
+    setOpenSimulationFilterGroup((current) => (current === "visibility" ? null : "visibility"));
+  };
+  const openSiteRoleEditor = () => {
+    setSiteRoleDraft(effectiveSelection(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS));
+    setOpenSiteFilterGroup((current) => (current === "role" ? null : "role"));
+  };
+  const openSiteVisibilityEditor = () => {
+    setSiteVisibilityDraft(effectiveSelection(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS));
+    setOpenSiteFilterGroup((current) => (current === "visibility" ? null : "visibility"));
+  };
+  const openSiteSourceEditor = () => {
+    setSiteSourceDraft(effectiveSelection(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS));
+    setOpenSiteFilterGroup((current) => (current === "source" ? null : "source"));
+  };
+  const closeSimulationFilterEditors = () => {
+    setOpenSimulationFilterGroup(null);
+    setSimulationRoleDraft(null);
+    setSimulationVisibilityDraft(null);
+  };
+  const closeSiteFilterEditors = () => {
+    setOpenSiteFilterGroup(null);
+    setSiteRoleDraft(null);
+    setSiteVisibilityDraft(null);
+    setSiteSourceDraft(null);
   };
   const filteredSiteLibrary = useMemo(() => {
     return filterAndSortLibraryItems(
@@ -682,6 +746,32 @@ export function Sidebar() {
   useEffect(() => {
     persistLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY, simulationLibraryFilters);
   }, [simulationLibraryFilters]);
+  useEffect(() => {
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        openSimulationFilterGroup &&
+        simulationFilterToolbarRef.current &&
+        !simulationFilterToolbarRef.current.contains(target)
+      ) {
+        closeSimulationFilterEditors();
+      }
+      if (openSiteFilterGroup && siteFilterToolbarRef.current && !siteFilterToolbarRef.current.contains(target)) {
+        closeSiteFilterEditors();
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      closeSimulationFilterEditors();
+      closeSiteFilterEditors();
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [openSimulationFilterGroup, openSiteFilterGroup]);
   const activeSimulationLabel = useMemo(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -3121,11 +3211,24 @@ export function Sidebar() {
       ) : null}
 
       {showSimulationLibraryManager ? (
-        <ModalOverlay aria-label="Simulation Library" onClose={() => setShowSimulationLibraryManager(false)}>
+        <ModalOverlay
+          aria-label="Simulation Library"
+          onClose={() => {
+            setShowSimulationLibraryManager(false);
+            closeSimulationFilterEditors();
+          }}
+        >
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Simulation Library</h2>
-              <button className="inline-action" onClick={() => setShowSimulationLibraryManager(false)} type="button">
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setShowSimulationLibraryManager(false);
+                  closeSimulationFilterEditors();
+                }}
+                type="button"
+              >
                 Close
               </button>
             </div>
@@ -3143,54 +3246,121 @@ export function Sidebar() {
                 value={simulationLibraryFilters.searchQuery}
               />
             </label>
-            <div className="library-filter-panel">
-              <fieldset className="library-filter-group">
-                <legend>Ownership</legend>
-                <div className="library-filter-options">
-                  {ROLE_FILTER_OPTIONS.map((option) => {
-                    const active = simulationLibraryFilters.roleFilters.includes(option.key);
-                    return (
-                      <label className="checkbox-field library-filter-option" key={`simulation-role-${option.key}`}>
-                        <input
-                          checked={active}
-                          onChange={() => setSimulationLibraryFilters((state) => toggleRoleFilter(state, option.key))}
-                          type="checkbox"
-                        />
-                        <span>{option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-              <fieldset className="library-filter-group">
-                <legend>Access level</legend>
-                <div className="library-filter-options">
-                  {VISIBILITY_FILTER_OPTIONS.map((option) => {
-                    const active = simulationLibraryFilters.visibilityFilters.includes(option.key);
-                    return (
-                      <label className="checkbox-field library-filter-option" key={`simulation-visibility-${option.key}`}>
-                        <input
-                          checked={active}
-                          onChange={() =>
-                            setSimulationLibraryFilters((state) => toggleVisibilityFilter(state, option.key))
-                          }
-                          type="checkbox"
-                        />
-                        <span>{option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-              <div className="chip-group">
+            <div className="library-filter-toolbar" ref={simulationFilterToolbarRef}>
+              <div className="library-filter-menu">
                 <button
-                  className="inline-action"
-                  onClick={() => setSimulationLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE)}
+                  className={clsx("inline-action", "library-filter-trigger", {
+                    "library-filter-trigger-active": selectionIsFiltered(
+                      simulationLibraryFilters.roleFilters,
+                      ALL_ROLE_FILTERS,
+                    ),
+                  })}
+                  onClick={openSimulationRoleEditor}
                   type="button"
                 >
-                  Clear Filters
+                  Ownership {selectionLabel(simulationLibraryFilters.roleFilters, ALL_ROLE_FILTERS)}
                 </button>
+                {openSimulationFilterGroup === "role" ? (
+                  <div className="library-filter-popover">
+                    <div className="library-filter-popover-actions">
+                      <button
+                        className="inline-action"
+                        onClick={() => commitSimulationRoleFilters(ALL_ROLE_FILTERS)}
+                        type="button"
+                      >
+                        All
+                      </button>
+                      <button className="inline-action" onClick={() => setSimulationRoleDraft([])} type="button">
+                        None
+                      </button>
+                    </div>
+                    <div className="library-filter-popover-options">
+                      {ROLE_FILTER_OPTIONS.map((option) => {
+                        const draft = simulationRoleDraft ?? effectiveSelection(simulationLibraryFilters.roleFilters, ALL_ROLE_FILTERS);
+                        const checked = draft.includes(option.key);
+                        return (
+                          <label className="checkbox-field library-filter-option" key={`simulation-role-${option.key}`}>
+                            <input
+                              checked={checked}
+                              onChange={() => {
+                                const next = toggleValue(draft, option.key);
+                                setSimulationRoleDraft(next);
+                                if (next.length) commitSimulationRoleFilters(next);
+                              }}
+                              type="checkbox"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </div>
+
+              <div className="library-filter-menu">
+                <button
+                  className={clsx("inline-action", "library-filter-trigger", {
+                    "library-filter-trigger-active": selectionIsFiltered(
+                      simulationLibraryFilters.visibilityFilters,
+                      ALL_VISIBILITY_FILTERS,
+                    ),
+                  })}
+                  onClick={openSimulationVisibilityEditor}
+                  type="button"
+                >
+                  Access level {selectionLabel(simulationLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
+                </button>
+                {openSimulationFilterGroup === "visibility" ? (
+                  <div className="library-filter-popover">
+                    <div className="library-filter-popover-actions">
+                      <button
+                        className="inline-action"
+                        onClick={() => commitSimulationVisibilityFilters(ALL_VISIBILITY_FILTERS)}
+                        type="button"
+                      >
+                        All
+                      </button>
+                      <button className="inline-action" onClick={() => setSimulationVisibilityDraft([])} type="button">
+                        None
+                      </button>
+                    </div>
+                    <div className="library-filter-popover-options">
+                      {VISIBILITY_FILTER_OPTIONS.map((option) => {
+                        const draft =
+                          simulationVisibilityDraft ??
+                          effectiveSelection(simulationLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS);
+                        const checked = draft.includes(option.key);
+                        return (
+                          <label className="checkbox-field library-filter-option" key={`simulation-visibility-${option.key}`}>
+                            <input
+                              checked={checked}
+                              onChange={() => {
+                                const next = toggleValue(draft, option.key);
+                                setSimulationVisibilityDraft(next);
+                                if (next.length) commitSimulationVisibilityFilters(next);
+                              }}
+                              type="checkbox"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setSimulationLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE);
+                  closeSimulationFilterEditors();
+                }}
+                type="button"
+              >
+                Clear Filters
+              </button>
             </div>
             <label className="field-grid">
               <span>Save a copy</span>
@@ -3370,6 +3540,7 @@ export function Sidebar() {
           onClose={() => {
             setShowSiteLibraryManager(false);
             setPendingDraftAutoInsert(false);
+            closeSiteFilterEditors();
           }}
         >
           <div className="library-manager-card">
@@ -3380,6 +3551,7 @@ export function Sidebar() {
                 onClick={() => {
                   setShowSiteLibraryManager(false);
                   setPendingDraftAutoInsert(false);
+                  closeSiteFilterEditors();
                 }}
                 type="button"
               >
@@ -3398,66 +3570,161 @@ export function Sidebar() {
                 value={siteLibraryFilters.searchQuery}
               />
             </label>
-            <div className="library-filter-panel">
-              <fieldset className="library-filter-group">
-                <legend>Ownership</legend>
-                <div className="library-filter-options">
-                  {ROLE_FILTER_OPTIONS.map((option) => {
-                    const active = siteLibraryFilters.roleFilters.includes(option.key);
-                    return (
-                      <label className="checkbox-field library-filter-option" key={`site-role-${option.key}`}>
-                        <input
-                          checked={active}
-                          onChange={() => setSiteLibraryFilters((state) => toggleRoleFilter(state, option.key))}
-                          type="checkbox"
-                        />
-                        <span>{option.label}</span>
-                      </label>
-                    );
+            <div className="library-filter-toolbar" ref={siteFilterToolbarRef}>
+              <div className="library-filter-menu">
+                <button
+                  className={clsx("inline-action", "library-filter-trigger", {
+                    "library-filter-trigger-active": selectionIsFiltered(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS),
                   })}
-                </div>
-              </fieldset>
-              <fieldset className="library-filter-group">
-                <legend>Access level</legend>
-                <div className="library-filter-options">
-                  {VISIBILITY_FILTER_OPTIONS.map((option) => {
-                    const active = siteLibraryFilters.visibilityFilters.includes(option.key);
-                    return (
-                      <label className="checkbox-field library-filter-option" key={`site-visibility-${option.key}`}>
-                        <input
-                          checked={active}
-                          onChange={() => setSiteLibraryFilters((state) => toggleVisibilityFilter(state, option.key))}
-                          type="checkbox"
-                        />
-                        <span>{option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-              <fieldset className="library-filter-group">
-                <legend>Source</legend>
-                <div className="library-filter-options">
-                  {SITE_SOURCE_FILTER_OPTIONS.map((option) => {
-                    const active = siteLibraryFilters.sourceFilters.includes(option.key);
-                    return (
-                      <label className="checkbox-field library-filter-option" key={`site-source-${option.key}`}>
-                        <input
-                          checked={active}
-                          onChange={() => setSiteLibraryFilters((state) => toggleSourceFilter(state, option.key))}
-                          type="checkbox"
-                        />
-                        <span>{option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-              <div className="chip-group">
-                <button className="inline-action" onClick={() => setSiteLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE)} type="button">
-                  Clear Filters
+                  onClick={openSiteRoleEditor}
+                  type="button"
+                >
+                  Ownership {selectionLabel(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS)}
                 </button>
+                {openSiteFilterGroup === "role" ? (
+                  <div className="library-filter-popover">
+                    <div className="library-filter-popover-actions">
+                      <button className="inline-action" onClick={() => commitSiteRoleFilters(ALL_ROLE_FILTERS)} type="button">
+                        All
+                      </button>
+                      <button className="inline-action" onClick={() => setSiteRoleDraft([])} type="button">
+                        None
+                      </button>
+                    </div>
+                    <div className="library-filter-popover-options">
+                      {ROLE_FILTER_OPTIONS.map((option) => {
+                        const draft = siteRoleDraft ?? effectiveSelection(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS);
+                        const checked = draft.includes(option.key);
+                        return (
+                          <label className="checkbox-field library-filter-option" key={`site-role-${option.key}`}>
+                            <input
+                              checked={checked}
+                              onChange={() => {
+                                const next = toggleValue(draft, option.key);
+                                setSiteRoleDraft(next);
+                                if (next.length) commitSiteRoleFilters(next);
+                              }}
+                              type="checkbox"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </div>
+
+              <div className="library-filter-menu">
+                <button
+                  className={clsx("inline-action", "library-filter-trigger", {
+                    "library-filter-trigger-active": selectionIsFiltered(
+                      siteLibraryFilters.visibilityFilters,
+                      ALL_VISIBILITY_FILTERS,
+                    ),
+                  })}
+                  onClick={openSiteVisibilityEditor}
+                  type="button"
+                >
+                  Access level {selectionLabel(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
+                </button>
+                {openSiteFilterGroup === "visibility" ? (
+                  <div className="library-filter-popover">
+                    <div className="library-filter-popover-actions">
+                      <button
+                        className="inline-action"
+                        onClick={() => commitSiteVisibilityFilters(ALL_VISIBILITY_FILTERS)}
+                        type="button"
+                      >
+                        All
+                      </button>
+                      <button className="inline-action" onClick={() => setSiteVisibilityDraft([])} type="button">
+                        None
+                      </button>
+                    </div>
+                    <div className="library-filter-popover-options">
+                      {VISIBILITY_FILTER_OPTIONS.map((option) => {
+                        const draft =
+                          siteVisibilityDraft ?? effectiveSelection(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS);
+                        const checked = draft.includes(option.key);
+                        return (
+                          <label className="checkbox-field library-filter-option" key={`site-visibility-${option.key}`}>
+                            <input
+                              checked={checked}
+                              onChange={() => {
+                                const next = toggleValue(draft, option.key);
+                                setSiteVisibilityDraft(next);
+                                if (next.length) commitSiteVisibilityFilters(next);
+                              }}
+                              type="checkbox"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="library-filter-menu">
+                <button
+                  className={clsx("inline-action", "library-filter-trigger", {
+                    "library-filter-trigger-active": selectionIsFiltered(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS),
+                  })}
+                  onClick={openSiteSourceEditor}
+                  type="button"
+                >
+                  Source {selectionLabel(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS)}
+                </button>
+                {openSiteFilterGroup === "source" ? (
+                  <div className="library-filter-popover">
+                    <div className="library-filter-popover-actions">
+                      <button
+                        className="inline-action"
+                        onClick={() => commitSiteSourceFilters(ALL_SITE_SOURCE_FILTERS)}
+                        type="button"
+                      >
+                        All
+                      </button>
+                      <button className="inline-action" onClick={() => setSiteSourceDraft([])} type="button">
+                        None
+                      </button>
+                    </div>
+                    <div className="library-filter-popover-options">
+                      {SITE_SOURCE_FILTER_OPTIONS.map((option) => {
+                        const draft = siteSourceDraft ?? effectiveSelection(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS);
+                        const checked = draft.includes(option.key);
+                        return (
+                          <label className="checkbox-field library-filter-option" key={`site-source-${option.key}`}>
+                            <input
+                              checked={checked}
+                              onChange={() => {
+                                const next = toggleValue(draft, option.key);
+                                setSiteSourceDraft(next);
+                                if (next.length) commitSiteSourceFilters(next);
+                              }}
+                              type="checkbox"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setSiteLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE);
+                  closeSiteFilterEditors();
+                }}
+                type="button"
+              >
+                Clear Filters
+              </button>
             </div>
             <div className="chip-group">
               <button

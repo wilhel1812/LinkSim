@@ -2057,38 +2057,60 @@ input {
   font-size: 1rem;
 }
 
-.library-filter-panel {
+.library-filter-toolbar {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px;
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   background: color-mix(in srgb, var(--surface-2) 86%, transparent);
 }
 
-.library-filter-group {
-  margin: 0;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 8px;
-  padding: 6px 8px 8px;
+.library-filter-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.library-filter-trigger {
+  white-space: nowrap;
+}
+
+.library-filter-trigger-active {
+  border-color: color-mix(in srgb, var(--selection) 60%, var(--border));
+  color: color-mix(in srgb, var(--selection) 86%, var(--text));
+}
+
+.library-filter-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  max-width: min(72vw, 320px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.library-filter-popover-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.library-filter-popover-options {
   display: grid;
   gap: 6px;
 }
 
-.library-filter-group legend {
-  padding: 0 4px;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-.library-filter-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
 .library-filter-option {
-  min-width: 120px;
+  min-width: 0;
 }
 
 .library-manager-list {
