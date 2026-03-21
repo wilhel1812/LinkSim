@@ -43,6 +43,15 @@ import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
+import {
+  DEFAULT_LIBRARY_FILTER_STATE,
+  filterAndSortLibraryItems,
+  parsePersistedLibraryFilterState,
+  serializeLibraryFilterState,
+  type LibraryFilterRole,
+  type LibraryFilterState,
+  type LibraryFilterVisibility,
+} from "../lib/libraryFilters";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
@@ -160,10 +169,40 @@ const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
+const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
+const SIMULATION_LIBRARY_FILTERS_KEY = "rmw-simulation-library-filters-v1";
 
 const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
   parseDeepLinkFromLocation({ search, pathname }).ok;
 const STORAGE_HEALTH_KEY = "rmw-storage-health-v1";
+
+const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
+  { key: "owned", label: "Owned" },
+  { key: "collaborator", label: "Collaborator" },
+  { key: "editable", label: "Editable" },
+  { key: "viewOnly", label: "View-only" },
+];
+
+const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: string }> = [
+  { key: "private", label: "Private" },
+  { key: "sharedPublic", label: "Shared/Public" },
+];
+
+const readLibraryFilterState = (key: string): LibraryFilterState => {
+  try {
+    return parsePersistedLibraryFilterState(localStorage.getItem(key), DEFAULT_LIBRARY_FILTER_STATE);
+  } catch {
+    return DEFAULT_LIBRARY_FILTER_STATE;
+  }
+};
+
+const persistLibraryFilterState = (key: string, state: LibraryFilterState): void => {
+  try {
+    localStorage.setItem(key, serializeLibraryFilterState(state));
+  } catch {
+    // Best effort only.
+  }
+};
 
 type LibraryBackupPayload = {
   schemaVersion: 1;
@@ -445,7 +484,9 @@ export function Sidebar() {
   const [newSimulationNameError, setNewSimulationNameError] = useState("");
   const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("private");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
-  const [simulationLibraryQuery, setSimulationLibraryQuery] = useState("");
+  const [simulationLibraryFilters, setSimulationLibraryFilters] = useState<LibraryFilterState>(() =>
+    readLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY),
+  );
   const [linkModal, setLinkModal] = useState<{
     mode: "add" | "edit";
     linkId: string | null;
@@ -460,7 +501,9 @@ export function Sidebar() {
     status: string;
   } | null>(null);
   const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
-  const [siteLibraryQuery, setSiteLibraryQuery] = useState("");
+  const [siteLibraryFilters, setSiteLibraryFilters] = useState<LibraryFilterState>(() =>
+    readLibraryFilterState(SITE_LIBRARY_FILTERS_KEY),
+  );
   const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
   const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
   const [pendingDraftAutoInsert, setPendingDraftAutoInsert] = useState(false);
@@ -576,14 +619,30 @@ export function Sidebar() {
     onConfirm: () => void;
   } | null>(null);
   const hasLocalLibraryData = siteLibrary.length > 0 || simulationPresets.length > 0;
+  const currentUserId = currentUser?.id ?? null;
+  const toggleRoleFilter = (
+    state: LibraryFilterState,
+    key: LibraryFilterRole,
+  ): LibraryFilterState => {
+    const roleFilters = state.roleFilters.includes(key)
+      ? state.roleFilters.filter((value) => value !== key)
+      : [...state.roleFilters, key];
+    return { ...state, roleFilters };
+  };
+  const toggleVisibilityFilter = (
+    state: LibraryFilterState,
+    key: LibraryFilterVisibility,
+  ): LibraryFilterState => {
+    const visibilityFilters = state.visibilityFilters.includes(key)
+      ? state.visibilityFilters.filter((value) => value !== key)
+      : [...state.visibilityFilters, key];
+    return { ...state, visibilityFilters };
+  };
   const filteredSiteLibrary = useMemo(() => {
-    const q = siteLibraryQuery.trim().toLowerCase();
-    if (!q) return siteLibrary;
-    return siteLibrary.filter((entry) => {
-      const hay = `${entry.name} ${entry.position.lat.toFixed(5)} ${entry.position.lon.toFixed(5)}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [siteLibrary, siteLibraryQuery]);
+    return filterAndSortLibraryItems(siteLibrary, siteLibraryFilters, currentUserId, (entry) =>
+      `${entry.name} ${entry.position.lat.toFixed(5)} ${entry.position.lon.toFixed(5)}`,
+    );
+  }, [siteLibrary, siteLibraryFilters, currentUserId]);
   const newestSiteLibraryEntryId = useMemo(() => {
     if (!siteLibrary.length) return "";
     const parseTs = (value: string): number => {
@@ -595,13 +654,16 @@ export function Sidebar() {
       .sort((a, b) => parseTs(b.createdAt) - parseTs(a.createdAt))[0]?.id ?? siteLibrary[0].id;
   }, [siteLibrary]);
   const filteredSimulationPresets = useMemo(() => {
-    const q = simulationLibraryQuery.trim().toLowerCase();
-    if (!q) return simulationPresets;
-    return simulationPresets.filter((preset) => {
-      const hay = `${preset.name} ${preset.updatedAt}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [simulationPresets, simulationLibraryQuery]);
+    return filterAndSortLibraryItems(simulationPresets, simulationLibraryFilters, currentUserId, (preset) =>
+      `${preset.name} ${preset.updatedAt}`,
+    );
+  }, [simulationPresets, simulationLibraryFilters, currentUserId]);
+  useEffect(() => {
+    persistLibraryFilterState(SITE_LIBRARY_FILTERS_KEY, siteLibraryFilters);
+  }, [siteLibraryFilters]);
+  useEffect(() => {
+    persistLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY, simulationLibraryFilters);
+  }, [simulationLibraryFilters]);
   const activeSimulationLabel = useMemo(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -3055,12 +3117,49 @@ export function Sidebar() {
             <label className="field-grid">
               <span>Search</span>
               <input
-                onChange={(event) => setSimulationLibraryQuery(event.target.value)}
+                onChange={(event) =>
+                  setSimulationLibraryFilters((state) => ({ ...state, searchQuery: event.target.value }))
+                }
                 placeholder="Filter saved simulations"
                 type="text"
-                value={simulationLibraryQuery}
+                value={simulationLibraryFilters.searchQuery}
               />
             </label>
+            <div className="chip-group">
+              {ROLE_FILTER_OPTIONS.map((option) => {
+                const active = simulationLibraryFilters.roleFilters.includes(option.key);
+                return (
+                  <button
+                    className="inline-action"
+                    key={`simulation-role-${option.key}`}
+                    onClick={() => setSimulationLibraryFilters((state) => toggleRoleFilter(state, option.key))}
+                    type="button"
+                  >
+                    {active ? `* ${option.label}` : option.label}
+                  </button>
+                );
+              })}
+              {VISIBILITY_FILTER_OPTIONS.map((option) => {
+                const active = simulationLibraryFilters.visibilityFilters.includes(option.key);
+                return (
+                  <button
+                    className="inline-action"
+                    key={`simulation-visibility-${option.key}`}
+                    onClick={() => setSimulationLibraryFilters((state) => toggleVisibilityFilter(state, option.key))}
+                    type="button"
+                  >
+                    {active ? `* ${option.label}` : option.label}
+                  </button>
+                );
+              })}
+              <button
+                className="inline-action"
+                onClick={() => setSimulationLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE)}
+                type="button"
+              >
+                Clear Filters
+              </button>
+            </div>
             <label className="field-grid">
               <span>Save a copy</span>
               <input
@@ -3261,12 +3360,43 @@ export function Sidebar() {
             <label className="field-grid">
               <span>Search</span>
               <input
-                onChange={(event) => setSiteLibraryQuery(event.target.value)}
+                onChange={(event) => setSiteLibraryFilters((state) => ({ ...state, searchQuery: event.target.value }))}
                 placeholder="Filter by name or coordinates"
                 type="text"
-                value={siteLibraryQuery}
+                value={siteLibraryFilters.searchQuery}
               />
             </label>
+            <div className="chip-group">
+              {ROLE_FILTER_OPTIONS.map((option) => {
+                const active = siteLibraryFilters.roleFilters.includes(option.key);
+                return (
+                  <button
+                    className="inline-action"
+                    key={`site-role-${option.key}`}
+                    onClick={() => setSiteLibraryFilters((state) => toggleRoleFilter(state, option.key))}
+                    type="button"
+                  >
+                    {active ? `* ${option.label}` : option.label}
+                  </button>
+                );
+              })}
+              {VISIBILITY_FILTER_OPTIONS.map((option) => {
+                const active = siteLibraryFilters.visibilityFilters.includes(option.key);
+                return (
+                  <button
+                    className="inline-action"
+                    key={`site-visibility-${option.key}`}
+                    onClick={() => setSiteLibraryFilters((state) => toggleVisibilityFilter(state, option.key))}
+                    type="button"
+                  >
+                    {active ? `* ${option.label}` : option.label}
+                  </button>
+                );
+              })}
+              <button className="inline-action" onClick={() => setSiteLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE)} type="button">
+                Clear Filters
+              </button>
+            </div>
             <div className="chip-group">
               <button
                 className="inline-action"
