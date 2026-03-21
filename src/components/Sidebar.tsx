@@ -592,9 +592,15 @@ export function Sidebar() {
     return "";
   });
   const persistSelectedSimulationRef = (ref: string) => {
-    setSelectedSimulationRef(ref);
+    const normalizedRef = ref.trim();
+    if (normalizedRef === selectedSimulationRef) return;
+    setSelectedSimulationRef(normalizedRef);
     try {
-      localStorage.setItem(LAST_SIMULATION_REF_KEY, ref);
+      if (normalizedRef) {
+        localStorage.setItem(LAST_SIMULATION_REF_KEY, normalizedRef);
+      } else {
+        localStorage.removeItem(LAST_SIMULATION_REF_KEY);
+      }
     } catch {
       // ignore
     }
@@ -921,6 +927,18 @@ export function Sidebar() {
       }
     }
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
+  useEffect(() => {
+    if (!selectedScenarioId) return;
+    const savedMatch = simulationPresets.some((preset) => preset.id === selectedScenarioId);
+    if (savedMatch) {
+      persistSelectedSimulationRef(`saved:${selectedScenarioId}`);
+      return;
+    }
+    const scenarioMatch = scenarioOptions.some((scenario) => scenario.id === selectedScenarioId);
+    if (scenarioMatch) {
+      persistSelectedSimulationRef(`builtin:${selectedScenarioId}`);
+    }
+  }, [selectedScenarioId, simulationPresets, scenarioOptions]);
   useEffect(() => {
     if (!visibleLinks.length) return;
     const stillVisible = visibleLinks.some((link) => link.id === selectedLinkId);

@@ -812,6 +812,11 @@ type MapInspectorHoverInfo = {
   libraryEntryId?: string;
 };
 
+const DEFAULT_MAP_VIEWPORT = {
+  center: { lat: 59.9, lon: 10.75 },
+  zoom: 8,
+};
+
 export function MapView({
   isMapExpanded,
   readOnly = false,
@@ -828,7 +833,8 @@ export function MapView({
   const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
-  const viewport = useAppStore((state) => state.mapViewport ?? { center: { lat: 59.9, lon: 10.75 }, zoom: 8 });
+  const mapViewport = useAppStore((state) => state.mapViewport);
+  const viewport = mapViewport ?? DEFAULT_MAP_VIEWPORT;
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
