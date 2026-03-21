@@ -3260,6 +3260,9 @@ export function Sidebar() {
                   type="button"
                 >
                   Ownership {selectionLabel(simulationLibraryFilters.roleFilters, ALL_ROLE_FILTERS)}
+                  <span className="library-filter-trigger-chevron">
+                    {openSimulationFilterGroup === "role" ? "^" : "v"}
+                  </span>
                 </button>
                 {openSimulationFilterGroup === "role" ? (
                   <div className="library-filter-popover">
@@ -3311,6 +3314,9 @@ export function Sidebar() {
                   type="button"
                 >
                   Access level {selectionLabel(simulationLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
+                  <span className="library-filter-trigger-chevron">
+                    {openSimulationFilterGroup === "visibility" ? "^" : "v"}
+                  </span>
                 </button>
                 {openSimulationFilterGroup === "visibility" ? (
                   <div className="library-filter-popover">
@@ -3582,6 +3588,7 @@ export function Sidebar() {
                   type="button"
                 >
                   Ownership {selectionLabel(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS)}
+                  <span className="library-filter-trigger-chevron">{openSiteFilterGroup === "role" ? "^" : "v"}</span>
                 </button>
                 {openSiteFilterGroup === "role" ? (
                   <div className="library-filter-popover">
@@ -3629,6 +3636,9 @@ export function Sidebar() {
                   type="button"
                 >
                   Access level {selectionLabel(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
+                  <span className="library-filter-trigger-chevron">
+                    {openSiteFilterGroup === "visibility" ? "^" : "v"}
+                  </span>
                 </button>
                 {openSiteFilterGroup === "visibility" ? (
                   <div className="library-filter-popover">
@@ -3678,6 +3688,7 @@ export function Sidebar() {
                   type="button"
                 >
                   Source {selectionLabel(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS)}
+                  <span className="library-filter-trigger-chevron">{openSiteFilterGroup === "source" ? "^" : "v"}</span>
                 </button>
                 {openSiteFilterGroup === "source" ? (
                   <div className="library-filter-popover">

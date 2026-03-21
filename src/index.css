@@ -2081,12 +2081,22 @@ input {
 }
 
 .library-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   white-space: nowrap;
 }
 
 .library-filter-trigger-active {
-  border-color: color-mix(in srgb, var(--selection) 60%, var(--border));
-  color: color-mix(in srgb, var(--selection) 86%, var(--text));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: color-mix(in srgb, var(--accent) 82%, var(--text));
+  background: color-mix(in srgb, var(--accent-soft) 32%, var(--surface));
+}
+
+.library-filter-trigger-chevron {
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--muted);
 }
 
 .library-filter-popover {
