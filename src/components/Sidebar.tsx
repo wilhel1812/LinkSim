@@ -3247,6 +3247,7 @@ export function Sidebar() {
               />
             </label>
             <div className="library-filter-toolbar" ref={simulationFilterToolbarRef}>
+              <span className="library-filter-row-label">Filters:</span>
               <div className="library-filter-menu">
                 <button
                   className={clsx("inline-action", "library-filter-trigger", {
@@ -3571,6 +3572,7 @@ export function Sidebar() {
               />
             </label>
             <div className="library-filter-toolbar" ref={siteFilterToolbarRef}>
+              <span className="library-filter-row-label">Filters:</span>
               <div className="library-filter-menu">
                 <button
                   className={clsx("inline-action", "library-filter-trigger", {

@@ -2065,8 +2065,14 @@ input {
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
-  overflow-x: auto;
+  overflow: visible;
   background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+}
+
+.library-filter-row-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .library-filter-menu {
