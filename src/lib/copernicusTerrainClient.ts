@@ -30,9 +30,26 @@ const CACHE_NAME = "linksim-copernicus-cog-v1";
 const TILELIST_CACHE_KEY = "linksim-copernicus-tilelist-v1";
 const TILE_INDEX_CACHE_KEY = "linksim-copernicus-tile-index-v1";
 const TILELIST_TTL_MS = 6 * 60 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 90000;
-const MAX_RETRIES = 5;
+const FETCH_TIMEOUT_MS = 20000;
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+export type RetryPolicy = {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+};
+
+const TILELIST_RETRY_POLICY: RetryPolicy = {
+  maxRetries: 5,
+  baseDelayMs: 800,
+  maxDelayMs: 15_000,
+};
+
+const TILE_RETRY_POLICY: RetryPolicy = {
+  maxRetries: 2,
+  baseDelayMs: 500,
+  maxDelayMs: 3_000,
+};
 
 const parseCopernicusKey = (entry: string): string | null => {
   const match = entry.match(/Copernicus_DSM_COG_\d+_([NS])(\d{2})_00_([EW])(\d{3})_00_DEM/i);
@@ -62,25 +79,36 @@ const parseRetryAfterMs = (value: string | null): number | null => {
   return delta > 0 ? delta : null;
 };
 
-const fetchWithRetry = async (url: string): Promise<Response> => {
+export const resolveRetryDelayMs = (
+  policy: RetryPolicy,
+  attempt: number,
+  response: Response | null,
+): number => {
+  const retryAfterMs = parseRetryAfterMs(response?.headers.get("retry-after") ?? null);
+  const exponentialMs = policy.baseDelayMs * 2 ** Math.max(0, attempt - 1);
+  const preferred = retryAfterMs ?? exponentialMs;
+  return Math.min(policy.maxDelayMs, Math.max(policy.baseDelayMs, preferred));
+};
+
+const fetchWithRetry = async (url: string, policy: RetryPolicy): Promise<Response> => {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+  for (let attempt = 1; attempt <= policy.maxRetries; attempt += 1) {
     try {
       const response = await requestWithTimeout(url);
       if (!response.ok) {
-        if (!RETRYABLE_STATUSES.has(response.status) || attempt >= MAX_RETRIES) {
+        if (!RETRYABLE_STATUSES.has(response.status) || attempt >= policy.maxRetries) {
           throw new Error(`HTTP ${response.status}`);
         }
-        const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
-        const delayMs = retryAfterMs ?? 1000 * 2 ** (attempt - 1);
-        await new Promise((resolve) => setTimeout(resolve, Math.min(90000, delayMs)));
+        const delayMs = resolveRetryDelayMs(policy, attempt, response);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;
       }
       return response;
     } catch (error) {
       lastError = error;
-      if (attempt < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** (attempt - 1)));
+      if (attempt < policy.maxRetries) {
+        const delayMs = resolveRetryDelayMs(policy, attempt, null);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
   }
@@ -108,7 +136,7 @@ const loadTileList = async (
   }
 
   const pathPrefix = DATASET_PATH[dataset];
-  const response = await fetchWithRetry(`/copernicus/${pathPrefix}/tileList.txt`);
+  const response = await fetchWithRetry(`/copernicus/${pathPrefix}/tileList.txt`, TILELIST_RETRY_POLICY);
   const text = await response.text();
   const entries: Record<string, { entry: string; path: string }> = {};
   for (const line of text.split(/\r?\n/)) {
@@ -214,7 +242,7 @@ const getCachedOrFetchTile = async (
     const cached = await cache.match(proxiedUrl);
     if (cached) return { buffer: await cached.arrayBuffer(), fromCache: true };
   }
-  const response = await fetchWithRetry(proxiedUrl);
+  const response = await fetchWithRetry(proxiedUrl, TILE_RETRY_POLICY);
   await cache.put(proxiedUrl, response.clone());
   return { buffer: await response.arrayBuffer(), fromCache: false };
 };
