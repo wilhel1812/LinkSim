@@ -191,4 +191,36 @@ describe("migrations", () => {
     expect(result.migrated).toBe(true);
     expect(migrateFn).toHaveBeenCalledTimes(1);
   });
+
+  it("applies built-in storage policy without clearing copernicus tiles", async () => {
+    const { initializeMigrations, runMigrations, setStoredVersion } = await import("./migrations");
+
+    setStoredVersion("0.9.0");
+    localStorage.setItem("rmw-meshmap-cache-v1", JSON.stringify({ savedAt: Date.now(), nodes: [] }));
+    localStorage.setItem("rmw-storage-health-v1", JSON.stringify({ ok: true }));
+    localStorage.setItem("linksim-copernicus-tilelist-v1", JSON.stringify({ copernicus30: {} }));
+    localStorage.setItem("linksim-copernicus-tile-index-v1", JSON.stringify({ copernicus30: {} }));
+
+    initializeMigrations();
+    const result = await runMigrations();
+
+    expect(result.migrated).toBe(true);
+    expect(localStorage.getItem("rmw-meshmap-cache-v1")).toBe(null);
+    expect(localStorage.getItem("rmw-storage-health-v1")).toBe(null);
+    expect(localStorage.getItem("linksim-copernicus-tilelist-v1")).not.toBe(null);
+    expect(localStorage.getItem("linksim-copernicus-tile-index-v1")).not.toBe(null);
+  });
+
+  it("initializeMigrations is idempotent", async () => {
+    const { initializeMigrations, runMigrations, setStoredVersion } = await import("./migrations");
+
+    setStoredVersion("0.9.0");
+    localStorage.setItem("rmw-meshmap-cache-v1", "cached");
+    initializeMigrations();
+    initializeMigrations();
+
+    const result = await runMigrations();
+    expect(result.migrated).toBe(true);
+    expect(localStorage.getItem("rmw-meshmap-cache-v1")).toBe(null);
+  });
 });
