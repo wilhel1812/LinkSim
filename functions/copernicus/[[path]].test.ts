@@ -79,6 +79,10 @@ describe("copernicus proxy", () => {
         limit: 1500,
       }),
     );
+    expect(res.headers.get("x-rate-limit-source")).toBe("none");
+    expect(res.headers.get("x-rate-limit-limit")).toBe("1500");
+    expect(res.headers.get("x-rate-limit-remaining")).toBe("119");
+    expect(res.headers.get("x-rate-limit-window")).toBe("0");
   });
 
   it("uses tile-list specific limits for tileList.txt requests", async () => {
@@ -110,6 +114,12 @@ describe("copernicus proxy", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it("does not check cache for 400 responses", async () => {
+    const req = new Request("https://example.test/copernicus/90m/README.md");
+    await onRequest(mkCtx(req));
+    expect(takeRateLimitTokenMock).not.toHaveBeenCalled();
+  });
+
   it("returns 429 with retry-after when throttled", async () => {
     takeRateLimitTokenMock.mockReturnValueOnce({ allowed: false, remaining: 0, retryAfterSec: 9 });
     const req = new Request(
@@ -122,6 +132,9 @@ describe("copernicus proxy", () => {
     expect(res.headers.get("retry-after")).toBe("9");
     expect(res.headers.get("x-rate-limit-source")).toBe("proxy");
     expect(res.headers.get("x-cache-status")).toBe("MISS");
+    expect(res.headers.get("x-rate-limit-limit")).toBe("1500");
+    expect(res.headers.get("x-rate-limit-remaining")).toBe("0");
+    expect(res.headers.get("x-rate-limit-window")).toBe("9");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -163,6 +176,32 @@ describe("copernicus proxy", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-cache-status")).toBe("HIT");
     expect(waitUntil).not.toHaveBeenCalled();
+    expect(takeRateLimitTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("cache hits do not consume rate limit tokens", async () => {
+    const cached = new Response("tif-bytes", {
+      status: 200,
+      headers: { "content-type": "image/tiff" },
+    });
+    const cache = {
+      match: vi.fn().mockResolvedValue(cached),
+      put: vi.fn().mockResolvedValue(undefined),
+    };
+    setCache(cache);
+
+    const waitUntil = vi.fn();
+    const req = new Request(
+      "https://example.test/copernicus/90m/Copernicus_DSM_COG_30_N60_00_E009_00_DEM/Copernicus_DSM_COG_30_N60_00_E009_00_DEM.tif",
+      { headers: { "cf-access-authenticated-user-email": "node@linksim.test" } },
+    );
+
+    const res = await onRequest({ request: req, env, waitUntil } as Parameters<typeof onRequest>[0]);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-cache-status")).toBe("HIT");
+    expect(res.headers.get("x-rate-limit-source")).toBe("none");
+    expect(takeRateLimitTokenMock).not.toHaveBeenCalled();
   });
 
   it("caches successful tile responses with explicit TTL", async () => {
@@ -179,6 +218,9 @@ describe("copernicus proxy", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-cache-status")).toBe("MISS");
     expect(res.headers.get("cache-control")).toBe("public, max-age=86400, s-maxage=604800");
+    expect(res.headers.get("x-rate-limit-limit")).toBe("1500");
+    expect(res.headers.get("x-rate-limit-remaining")).toBe("119");
+    expect(res.headers.get("x-rate-limit-window")).toBe("0");
   });
 
   it("caches successful tileList responses with explicit TTL", async () => {
@@ -252,6 +294,7 @@ describe("copernicus proxy", () => {
     expect(neighborUrls).toContain(
       "https://example.test/copernicus/30m/Copernicus_DSM_COG_30_N60_00_E010_DEM/Copernicus_DSM_COG_30_N60_00_E010_DEM.tif",
     );
+    expect(takeRateLimitTokenMock).not.toHaveBeenCalled();
     env.PROXY_COPERNICUS_PREFETCH_NEIGHBORS = "0";
   });
 

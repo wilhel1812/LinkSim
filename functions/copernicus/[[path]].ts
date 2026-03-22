@@ -73,6 +73,22 @@ const buildNeighborUrls = (
   }).filter((url) => url !== originUrl);
 };
 
+const addRateLimitHeaders = (headers: Headers, limiter: { allowed: boolean; remaining: number; retryAfterSec: number }, limit: number): void => {
+  headers.set("X-Rate-Limit-Limit", String(limit));
+  headers.set("X-Rate-Limit-Remaining", String(Math.max(0, limiter.remaining)));
+  headers.set("X-Rate-Limit-Window", String(limiter.retryAfterSec));
+};
+
+const parseRateLimit = (env: Env, isTileList: boolean): number => isTileList
+  ? parsePerMinuteLimit(
+      env.PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE,
+      parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 240),
+    )
+  : parsePerMinuteLimit(
+      env.PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE,
+      parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 2400),
+    );
+
 export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method not allowed", { status: 405 });
@@ -94,32 +110,6 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
   const isPrefetchRequest = (request.headers.get(PREFETCH_HEADER) ?? "") === "1";
   const shouldPrefetchNeighbors = env.PROXY_COPERNICUS_PREFETCH_NEIGHBORS === "1";
   const shouldUseCache = request.method === "GET";
-
-  if (!isPrefetchRequest) {
-    const limiter = takeRateLimitToken({
-      key: `proxy:copernicus:${isTileList ? "tilelist" : "tile"}:${rateLimitIdentityFor(request)}`,
-      limit: isTileList
-        ? parsePerMinuteLimit(
-            env.PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE,
-            parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 240),
-          )
-        : parsePerMinuteLimit(
-            env.PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE,
-            parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 2400),
-          ),
-    });
-    if (!limiter.allowed) {
-      return new Response("Rate limit reached", {
-        status: 429,
-        headers: {
-          "retry-after": String(limiter.retryAfterSec),
-          "X-Cache-Status": "MISS",
-          [RATE_LIMIT_SOURCE_HEADER]: "proxy",
-          "cache-control": "no-store",
-        },
-      });
-    }
-  }
 
   const upstream = new URL(`${bucket}/${objectPath}${url.search}`);
   const cacheKey = new Request(request.url, { method: "GET" });
@@ -157,6 +147,50 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
     }
 
     return response;
+  }
+
+  if (!isPrefetchRequest) {
+    const rateLimitKey = `proxy:copernicus:${isTileList ? "tilelist" : "tile"}:${rateLimitIdentityFor(request)}`;
+    const limit = parseRateLimit(env, isTileList);
+    const limiter = takeRateLimitToken({ key: rateLimitKey, limit });
+    if (!limiter.allowed) {
+      const headers = new Headers({
+        "retry-after": String(limiter.retryAfterSec),
+        "X-Cache-Status": "MISS",
+        [RATE_LIMIT_SOURCE_HEADER]: "proxy",
+        "cache-control": "no-store",
+      });
+      addRateLimitHeaders(headers, limiter, limit);
+      return new Response("Rate limit reached", { status: 429, headers });
+    }
+
+    const response = await fetch(upstream.toString(), {
+      method: request.method,
+      headers: {
+        accept: request.headers.get("accept") ?? "*/*",
+        ...(request.headers.get("range") ? { range: request.headers.get("range")! } : {}),
+      },
+    });
+
+    if (response.ok) {
+      const headers = new Headers(response.headers);
+      headers.set("X-Cache-Status", "MISS");
+      headers.set(RATE_LIMIT_SOURCE_HEADER, "none");
+      headers.set("cache-control", isTileList ? "public, max-age=3600, s-maxage=21600" : "public, max-age=86400, s-maxage=604800");
+      headers.delete("set-cookie");
+      addRateLimitHeaders(headers, limiter, limit);
+      const cacheable = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      if (shouldUseCache) {
+        await cache.put(cacheKey, cacheable.clone());
+      }
+      return cacheable;
+    }
+
+    const missHeaders = new Headers(response.headers);
+    missHeaders.set("X-Cache-Status", "MISS");
+    missHeaders.set(RATE_LIMIT_SOURCE_HEADER, response.status === 429 ? "upstream" : "none");
+    missHeaders.set("cache-control", "no-store");
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers: missHeaders });
   }
 
   const response = await fetch(upstream.toString(), {

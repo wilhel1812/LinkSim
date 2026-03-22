@@ -2839,9 +2839,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const requiredTileKeys = new Set(tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon));
     const existingTileKeys = new Set(srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
     const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
+    const SMALL_AREA_TILE_THRESHOLD = 4;
+    const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
 
     set({
-      terrainFetchStatus: "Loading terrain (90m)...",
+      terrainFetchStatus: isSmallArea ? "Loading terrain (30m, small area)..." : "Loading terrain (90m, broad coverage)...",
       isTerrainFetching: true,
       isHighResTerrainLoaded: alreadyHasHighRes,
       terrainLoadingStartedAtMs: Date.now(),
@@ -2886,6 +2888,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
+      if (isSmallArea) {
+        set({ terrainFetchStatus: "Loading terrain (30m, small area)...", isHighResTerrainLoaded: false });
+        const thirtyResult = await loadAndMerge("copernicus30");
+        applyTiles(thirtyResult);
+        set({
+          terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
+          isTerrainFetching: false,
+          isHighResTerrainLoaded: true,
+          terrainLoadingStartedAtMs: 0,
+          terrainLoadEpoch: 0,
+        });
+        return;
+      }
+
       const ninetyResult = await loadAndMerge("copernicus90");
       applyTiles(ninetyResult);
 
@@ -2897,15 +2913,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      set({ terrainFetchStatus: "Loading terrain (30m)...", isHighResTerrainLoaded: false });
+      set({ terrainFetchStatus: "Loading terrain (30m, high-res refinement)...", isHighResTerrainLoaded: false });
       const thirtyResult = await loadAndMerge("copernicus30");
       applyTiles(thirtyResult);
       set({
         terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
         isTerrainFetching: false,
         isHighResTerrainLoaded: true,
-  terrainLoadingStartedAtMs: 0,
-  terrainLoadEpoch: 0,
+        terrainLoadingStartedAtMs: 0,
+        terrainLoadEpoch: 0,
       });
     } catch (error) {
       const message = getUiErrorMessage(error);
@@ -2967,9 +2983,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const requiredTileKeys = new Set(tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon));
     const existingTileKeys = new Set(srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
     const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
+    const SMALL_AREA_TILE_THRESHOLD = 4;
+    const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
 
     set({
-      terrainFetchStatus: "Loading terrain (90m)...",
+      terrainFetchStatus: isSmallArea ? "Loading terrain (30m, small area)..." : "Loading terrain (90m, broad coverage)...",
       isHighResTerrainLoaded: alreadyHasHighRes,
     });
 
@@ -3013,6 +3031,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
+      if (isSmallArea) {
+        set({ terrainFetchStatus: "Loading terrain (30m, small area)...", isHighResTerrainLoaded: false });
+        const thirtyResult = await loadAndMerge("copernicus30");
+        if (get().terrainLoadEpoch !== epoch) return;
+        applyTiles(thirtyResult);
+        set({
+          terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
+          isTerrainFetching: false,
+          isHighResTerrainLoaded: true,
+          terrainLoadingStartedAtMs: 0,
+        });
+        return;
+      }
+
       const ninetyResult = await loadAndMerge("copernicus90");
       if (get().terrainLoadEpoch !== epoch) return;
       applyTiles(ninetyResult);
@@ -3025,7 +3057,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      set({ terrainFetchStatus: "Loading terrain (30m)...", isHighResTerrainLoaded: false });
+      set({ terrainFetchStatus: "Loading terrain (30m, high-res refinement)...", isHighResTerrainLoaded: false });
       const thirtyResult = await loadAndMerge("copernicus30");
       if (get().terrainLoadEpoch !== epoch) return;
       applyTiles(thirtyResult);
