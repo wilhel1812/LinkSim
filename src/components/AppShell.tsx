@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType } from "react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -9,8 +10,10 @@ import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
-import { OnboardingTutorialModal } from "./OnboardingTutorialModal";
 import { Sidebar } from "./Sidebar";
+const OnboardingTutorialModal = lazy(
+  () => import("./OnboardingTutorialModal") as unknown as Promise<{ default: ComponentType<{ open: boolean; onClose: () => void }> }>,
+);
 import { UserAdminPanel } from "./UserAdminPanel";
 
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
@@ -660,7 +663,9 @@ export function AppShell() {
             ?
           </button>
         </div>
-        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+        <Suspense fallback={null}>
+          <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+        </Suspense>
       </main>
     );
   }
@@ -710,7 +715,9 @@ export function AppShell() {
             ?
           </button>
         </div>
-        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+        <Suspense fallback={null}>
+          <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+        </Suspense>
       </main>
     );
   }
@@ -829,7 +836,9 @@ export function AppShell() {
           ?
         </button>
       </div>
-      <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+      <Suspense fallback={null}>
+        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+      </Suspense>
       {showMobileWarning ? (
         <ModalOverlay aria-label="Mobile support notice" onClose={() => setShowMobileWarning(false)} tier="raised">
           <div className="library-manager-card mobile-warning-modal-card">

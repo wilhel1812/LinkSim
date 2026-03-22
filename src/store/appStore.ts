@@ -21,6 +21,7 @@ import { analyzeLink, buildProfile } from "../lib/propagation";
 import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
+import { mergeSrtmTiles } from "../lib/terrainMerge";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import type { BasemapProvider } from "../lib/basemaps";
 import {
@@ -2789,12 +2790,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         }),
       );
 
-      set((state) => {
-        const dedup = new Map<string, SrtmTile>();
-        for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
-        for (const tile of parsed) dedup.set(tile.key, tile);
-        return { srtmTiles: Array.from(dedup.values()), isTerrainFetching: false };
-      });
+      set((state) => ({
+        srtmTiles: mergeSrtmTiles(state.srtmTiles, parsed),
+        isTerrainFetching: false,
+      }));
       clearTerrainLossCache();
       get().recomputeCoverage();
     } finally {
@@ -2861,12 +2860,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     const applyTiles = (result: CopernicusLoadResult) => {
-      set((state) => {
-        const dedup = new Map<string, SrtmTile>();
-        for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
-        for (const tile of result.tiles) dedup.set(tile.key, tile);
-        return { srtmTiles: Array.from(dedup.values()) };
-      });
+      set((state) => ({
+        srtmTiles: mergeSrtmTiles(state.srtmTiles, result.tiles),
+      }));
       get().recomputeCoverage();
     };
 
@@ -3003,12 +2999,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     const applyTiles = (result: CopernicusLoadResult) => {
-      set((state) => {
-        const dedup = new Map<string, SrtmTile>();
-        for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
-        for (const tile of result.tiles) dedup.set(tile.key, tile);
-        return { srtmTiles: Array.from(dedup.values()) };
-      });
+      set((state) => ({
+        srtmTiles: mergeSrtmTiles(state.srtmTiles, result.tiles),
+      }));
       get().recomputeCoverage();
     };
 
