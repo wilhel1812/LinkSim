@@ -4,6 +4,7 @@ import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } fro
 import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
+import { initializeMigrations, runMigrations } from "../lib/migrations";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
@@ -12,6 +13,8 @@ import { ModalOverlay } from "./ModalOverlay";
 import { Sidebar } from "./Sidebar";
 const OnboardingTutorialModal = lazy(() => import("./OnboardingTutorialModal"));
 import { UserAdminPanel } from "./UserAdminPanel";
+
+initializeMigrations();
 
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
@@ -253,8 +256,8 @@ export function AppShell() {
 
   useEffect(() => {
     if (accessState === "granted") {
-      console.log("[AppShell] Access granted, initializing cloud sync...");
-      void initializeCloudSync();
+      console.log("[AppShell] Access granted, running migrations and initializing cloud sync...");
+      void runMigrations().then(() => initializeCloudSync());
     }
   }, [accessState, initializeCloudSync]);
 
