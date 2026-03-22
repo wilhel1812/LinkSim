@@ -26,7 +26,7 @@ import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import type { BasemapProvider } from "../lib/basemaps";
 import {
   clearCopernicusCache,
-  loadCopernicusTilesForArea,
+  loadCopernicusTilesForAreaPhased,
   recommendCopernicusDatasetForArea,
   type CopernicusDataset,
   type CopernicusLoadResult,
@@ -2828,7 +2828,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   fetchTerrainForCurrentArea: async () => {
-    const { sites, srtmTiles, isTerrainFetching } = get();
+    const { sites, srtmTiles, isTerrainFetching, selectedLinkId, links } = get();
     if (isTerrainFetching) return;
     if (!sites.length) return;
 
@@ -2841,6 +2841,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     const SMALL_AREA_TILE_THRESHOLD = 4;
     const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
 
+    const endpointKeys = new Set<string>();
+    const selectedLink = links.find((l) => l.id === selectedLinkId) ?? links[0];
+    if (selectedLink) {
+      const fromSite = sites.find((s) => s.id === selectedLink.fromSiteId);
+      const toSite = sites.find((s) => s.id === selectedLink.toSiteId);
+      for (const site of [fromSite, toSite]) {
+        if (!site) continue;
+        for (const dLat of [-1, 0, 1]) {
+          for (const dLon of [-1, 0, 1]) {
+            const lat = site.position.lat + dLat;
+            const lon = site.position.lon + dLon;
+            const ns = lat >= 0 ? "N" : "S";
+            const ew = lon >= 0 ? "E" : "W";
+            endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
+          }
+        }
+      }
+    }
+
     set({
       terrainFetchStatus: isSmallArea ? "Loading terrain (30m, small area)..." : "Loading terrain (90m, broad coverage)...",
       isTerrainFetching: true,
@@ -2849,14 +2868,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
-      const result = await loadCopernicusTilesForArea(
+      const result = await loadCopernicusTilesForAreaPhased(
         bounds.minLat,
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
         dataset,
+        isSmallArea ? undefined : endpointKeys,
       );
-      return result;
+      return {
+        tiles: [...result.priority.tiles, ...result.remaining.tiles],
+        failedTiles: [...result.priority.failedTiles, ...result.remaining.failedTiles],
+        fetchedTiles: [...result.priority.fetchedTiles, ...result.remaining.fetchedTiles],
+        cacheHits: [...result.priority.cacheHits, ...result.remaining.cacheHits],
+        fallbackTiles: [...result.priority.fallbackTiles, ...result.remaining.fallbackTiles],
+      };
     };
 
     const applyTiles = (result: CopernicusLoadResult) => {
@@ -2866,13 +2892,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().recomputeCoverage();
     };
 
-    const formatStatus = (result: CopernicusLoadResult, sourceLabel: string): string => {
+    const formatStatus = (result: CopernicusLoadResult, sourceLabel: string, priorityLoaded = false): string => {
       const parts = [
         `Loaded ${result.tiles.length} tile(s)`,
         result.fetchedTiles.length ? `${result.fetchedTiles.length} fetched` : "",
         result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
         result.fallbackTiles.length ? `${result.fallbackTiles.length} fallback to Copernicus GLO-90` : "",
         result.failedTiles.length ? `${result.failedTiles.length} failed` : "",
+        priorityLoaded && endpointKeys.size > 0 ? `priority tiles done` : "",
       ].filter(Boolean);
       const missing = result.failedTiles;
       return `${parts.join(", ")} from ${sourceLabel}.${missing.length ? ` Missing: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}` : ""}`;
@@ -2975,12 +3002,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (get().terrainLoadEpoch !== epoch) return;
 
-    const { srtmTiles } = get();
+    const { srtmTiles, selectedLinkId, links } = get();
     const requiredTileKeys = new Set(tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon));
     const existingTileKeys = new Set(srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
     const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
     const SMALL_AREA_TILE_THRESHOLD = 4;
     const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
+
+    const endpointKeys = new Set<string>();
+    const selectedLink = links.find((l) => l.id === selectedLinkId) ?? links[0];
+    if (selectedLink) {
+      const fromSite = sites.find((s) => s.id === selectedLink.fromSiteId);
+      const toSite = sites.find((s) => s.id === selectedLink.toSiteId);
+      for (const site of [fromSite, toSite]) {
+        if (!site) continue;
+        for (const dLat of [-1, 0, 1]) {
+          for (const dLon of [-1, 0, 1]) {
+            const lat = site.position.lat + dLat;
+            const lon = site.position.lon + dLon;
+            const ns = lat >= 0 ? "N" : "S";
+            const ew = lon >= 0 ? "E" : "W";
+            endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
+          }
+        }
+      }
+    }
 
     set({
       terrainFetchStatus: isSmallArea ? "Loading terrain (30m, small area)..." : "Loading terrain (90m, broad coverage)...",
@@ -2988,14 +3034,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
-      const result = await loadCopernicusTilesForArea(
+      const result = await loadCopernicusTilesForAreaPhased(
         bounds.minLat,
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
         dataset,
+        isSmallArea ? undefined : endpointKeys,
       );
-      return result;
+      return {
+        tiles: [...result.priority.tiles, ...result.remaining.tiles],
+        failedTiles: [...result.priority.failedTiles, ...result.remaining.failedTiles],
+        fetchedTiles: [...result.priority.fetchedTiles, ...result.remaining.fetchedTiles],
+        cacheHits: [...result.priority.cacheHits, ...result.remaining.cacheHits],
+        fallbackTiles: [...result.priority.fallbackTiles, ...result.remaining.fallbackTiles],
+      };
     };
 
     const applyTiles = (result: CopernicusLoadResult) => {
