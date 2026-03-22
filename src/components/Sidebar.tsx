@@ -2508,6 +2508,10 @@ export function Sidebar() {
           {metric("EIRP", `${analysis.eirpDbm.toFixed(1)} dBm`)}
           {metric("RX estimate (raw)", `${analysis.rxLevelDbm.toFixed(1)} dBm`)}
           {metric("RX estimate (calibrated)", `${adjustedRxDbm.toFixed(1)} dBm`)}
+          {metric(
+            "LOS status",
+            analysis.model === "ITM" ? (analysis.terrainObstructed ? "Blocked" : "Clear") : "Model ignores terrain",
+          )}
           {metric("Earth bulge", `${analysis.midpointEarthBulgeM.toFixed(2)} m`)}
           {metric("F1 radius", `${analysis.firstFresnelRadiusM.toFixed(2)} m`)}
           {metric("Clearance", `${analysis.geometricClearanceM.toFixed(2)} m`)}

@@ -5,6 +5,11 @@ const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 const EARTH_RADIUS_M = 6_371_000;
 
+export const atmosphericBendingNUnitsToKFactor = (nUnits: number): number => {
+  const n = clamp(nUnits, 250, 400);
+  return clamp(1 + (n - 250) / 153, 1, 2);
+};
+
 const firstFresnelRadiusM = (distanceKm: number, frequencyMHz: number, t: number): number => {
   const dTotalM = distanceKm * 1000;
   const d1 = dTotalM * t;

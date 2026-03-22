@@ -36,6 +36,7 @@ import {
   TERRAIN_DATASET_LABEL,
   type TerrainDataset,
 } from "../lib/terrainDataset";
+import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
 import type { CloudUser } from "../lib/cloudUser";
@@ -3336,7 +3337,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
   },
   getSelectedProfile: () => {
-    const { getSelectedLink, getSelectedNetwork, getSelectedSites, srtmTiles } = get();
+    const {
+      getSelectedLink,
+      getSelectedNetwork,
+      getSelectedSites,
+      srtmTiles,
+      autoPropagationEnvironment,
+      propagationEnvironment,
+    } = get();
     const link = getSelectedLink();
     const selectedNetwork = getSelectedNetwork();
     const effectiveLink = {
@@ -3344,6 +3352,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
     };
     const { fromSite, toSite } = getSelectedSites();
+    const autoDerived = autoPropagationEnvironment
+      ? deriveDynamicPropagationEnvironment({
+          from: fromSite.position,
+          to: toSite.position,
+          fromGroundM: fromSite.groundElevationM,
+          toGroundM: toSite.groundElevationM,
+          terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+        })
+      : null;
+    const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
 
     return buildProfile(
       effectiveLink,
@@ -3351,6 +3369,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       toSite,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
       120,
+      { kFactor: atmosphericBendingNUnitsToKFactor(effectiveEnvironment.atmosphericBendingNUnits) },
     );
   },
 }));

@@ -1,7 +1,11 @@
 import { haversineDistanceKm } from "./geo";
 import { getPathLossByModel } from "./rfModels";
-import { estimateTerrainExcessLossDb, isTerrainLineObstructed } from "./terrainLoss";
-import type { Link, PropagationModel, Site } from "../types/radio";
+import {
+  atmosphericBendingNUnitsToKFactor,
+  estimateTerrainExcessLossDb,
+  isTerrainLineObstructed,
+} from "./terrainLoss";
+import type { Link, PropagationEnvironment, PropagationModel, Site } from "../types/radio";
 
 export type PassFailState = "pass_clear" | "pass_blocked" | "fail_clear" | "fail_blocked";
 
@@ -35,14 +39,19 @@ export const computeSourceCentricRxMetrics = (
   propagationModel: PropagationModel,
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
+  environment?: PropagationEnvironment,
 ): { rxDbm: number; terrainPenaltyDb: number; terrainObstructed: boolean } => {
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, { lat, lon }));
+  const kFactor = atmosphericBendingNUnitsToKFactor(environment?.atmosphericBendingNUnits ?? 301);
+  const clutterHeightM = environment?.clutterHeightM ?? 0;
+  const polarization = environment?.polarization ?? "Vertical";
   const baseLoss = getPathLossByModel(
     propagationModel,
     distanceKm,
     effectiveLink.frequencyMHz,
     fromSite.antennaHeightM,
     receiverAntennaHeightM,
+    environment,
   );
 
   let terrainPenaltyDb = 0;
@@ -58,6 +67,9 @@ export const computeSourceCentricRxMetrics = (
         frequencyMHz: effectiveLink.frequencyMHz,
         terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
         samples: terrainSamples,
+        kFactor,
+        clutterHeightM,
+        polarization,
       });
       terrainObstructed = isTerrainLineObstructed({
         from: fromSite.position,
@@ -66,6 +78,8 @@ export const computeSourceCentricRxMetrics = (
         toAntennaAbsM: rxGround + receiverAntennaHeightM,
         terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
         samples: Math.max(12, Math.round(terrainSamples * 0.66)),
+        kFactor,
+        clutterHeightM,
       });
     }
   }

@@ -9,6 +9,7 @@ import {
   type PassFailState,
 } from "../lib/passFailState";
 import { buildProfile } from "../lib/propagation";
+import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/terrainTiles";
@@ -53,7 +54,9 @@ type LinkProfileChartProps = {
 
 export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
+  const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
   const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
+  const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const chartWidth = chartSize.width;
   const chartHeight = chartSize.height;
   const sites = useAppStore((state) => state.sites);
@@ -74,6 +77,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
   const networks = useAppStore((state) => state.networks);
   const siteDragPreview = useAppStore((state) => state.siteDragPreview);
   const propagationModel = useAppStore((state) => state.propagationModel);
+  const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const profileRevision = useAppStore(
@@ -134,6 +138,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       selectedToSiteEffective,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
       120,
+      { kFactor: atmosphericBendingNUnitsToKFactor(propagationEnvironment.atmosphericBendingNUnits) },
     );
   }, [
     baseProfile,
@@ -142,6 +147,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     selectedToSiteEffective,
     siteDragPreview,
     srtmTiles,
+    propagationEnvironment.atmosphericBendingNUnits,
   ]);
   const fromSiteName = selectedFromSite?.name ?? "From";
   const toSiteName = selectedToSite?.name ?? "To";
@@ -271,31 +277,92 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     };
   }, [profile, chartWidth, chartHeight]);
 
-  const terrainLineSegments = useMemo(() => {
-    if (!geometry.hasData || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink) return geometry.terrainLineSegments;
-    return profile.slice(1).map((point, index) => {
-      const metrics = computeSourceCentricRxMetrics(
-        point.lat,
-        point.lon,
-        selectedFromSiteEffective,
-        effectiveLink,
-        selectedToSiteEffective.antennaHeightM,
-        selectedToSiteEffective.rxGainDbi,
+  const segmentStateKey = useMemo(
+    () =>
+      [
+        profileRevision,
         propagationModel,
-        (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-        24,
-      );
-      const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
-      const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
-      const state = classifyPassFailState(pass, losBlocked);
-      return {
-        d: geometry.terrainLineSegments[index]?.d ?? "",
-        state,
-      };
-    });
+        rxSensitivityTargetDbm,
+        environmentLossDb,
+        propagationEnvironment.atmosphericBendingNUnits,
+        propagationEnvironment.clutterHeightM,
+        propagationEnvironment.polarization,
+      ].join("|"),
+    [
+      profileRevision,
+      propagationModel,
+      rxSensitivityTargetDbm,
+      environmentLossDb,
+      propagationEnvironment.atmosphericBendingNUnits,
+      propagationEnvironment.clutterHeightM,
+      propagationEnvironment.polarization,
+    ],
+  );
+
+  useEffect(() => {
+    if (!geometry.hasData || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink || profile.length < 2) {
+      setTerrainSegmentStates([]);
+      return;
+    }
+    const cached = segmentStateCacheRef.current.get(segmentStateKey);
+    if (cached && cached.length === profile.length - 1) {
+      setTerrainSegmentStates(cached);
+      return;
+    }
+
+    setTerrainSegmentStates([]);
+    const nextStates = new Array<PassFailState>(profile.length - 1);
+    let index = 1;
+    let cancelled = false;
+    let rafId = 0;
+    const sampleTerrain = (lat: number, lon: number): number | null => sampleSrtmElevation(srtmTiles, lat, lon);
+
+    const processChunk = () => {
+      const start = typeof performance !== "undefined" ? performance.now() : Date.now();
+      while (index < profile.length) {
+        const point = profile[index];
+        const metrics = computeSourceCentricRxMetrics(
+          point.lat,
+          point.lon,
+          selectedFromSiteEffective,
+          effectiveLink,
+          selectedToSiteEffective.antennaHeightM,
+          selectedToSiteEffective.rxGainDbi,
+          propagationModel,
+          sampleTerrain,
+          24,
+          propagationEnvironment,
+        );
+        const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
+        const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
+        nextStates[index - 1] = classifyPassFailState(pass, losBlocked);
+        index += 1;
+        const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+        if (now - start >= 8) break;
+      }
+
+      if (cancelled) return;
+      if (index < profile.length) {
+        rafId = requestAnimationFrame(processChunk);
+        return;
+      }
+
+      const cache = segmentStateCacheRef.current;
+      cache.set(segmentStateKey, nextStates);
+      if (cache.size > 36) {
+        const oldestKey = cache.keys().next().value;
+        if (oldestKey) cache.delete(oldestKey);
+      }
+      setTerrainSegmentStates(nextStates);
+    };
+
+    rafId = requestAnimationFrame(processChunk);
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [
     geometry.hasData,
-    geometry.terrainLineSegments,
     profile,
     selectedFromSiteEffective,
     selectedToSiteEffective,
@@ -304,6 +371,20 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     srtmTiles,
     environmentLossDb,
     rxSensitivityTargetDbm,
+    propagationEnvironment,
+    segmentStateKey,
+  ]);
+
+  const terrainLineSegments = useMemo(() => {
+    if (!geometry.hasData) return geometry.terrainLineSegments;
+    return geometry.terrainLineSegments.map((segment, index) => ({
+      ...segment,
+      state: terrainSegmentStates[index] ?? segment.state,
+    }));
+  }, [
+    geometry.terrainLineSegments,
+    geometry.hasData,
+    terrainSegmentStates,
   ]);
 
   const clampedCursorIndex = Math.max(0, Math.min(profile.length - 1, profileCursorIndex));
@@ -389,6 +470,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       propagationModel,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
+      propagationEnvironment,
     );
     const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
     const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
@@ -407,6 +489,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     srtmTiles,
     environmentLossDb,
     rxSensitivityTargetDbm,
+    propagationEnvironment,
   ]);
 
   const onSvgMove = (event: MouseEvent<SVGRectElement>) => {
