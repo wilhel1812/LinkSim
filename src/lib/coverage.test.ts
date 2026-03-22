@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCoverage } from "./coverage";
+import { buildCoverage, buildCoverageAsync } from "./coverage";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import type { Network, RadioSystem, Site } from "../types/radio";
 
@@ -80,5 +80,12 @@ describe("buildCoverage", () => {
     const itm = buildCoverage("BestSite", network, sites, systems, "ITM", defaultPropagationEnvironment());
     expect(itm.length).toBeGreaterThan(100);
     expect(Number.isFinite(itm[0].valueDbm)).toBe(true);
+  });
+
+  it("buildCoverageAsync matches sync output shape", async () => {
+    const sync = buildCoverage("Polar", network, sites, systems, "FSPL", defaultPropagationEnvironment());
+    const asyncResult = await buildCoverageAsync("Polar", network, sites, systems, "FSPL", defaultPropagationEnvironment());
+    expect(asyncResult).toHaveLength(sync.length);
+    expect(Math.abs(asyncResult[0].valueDbm - sync[0].valueDbm)).toBeLessThan(0.0001);
   });
 });

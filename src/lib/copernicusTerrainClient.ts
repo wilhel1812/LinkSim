@@ -51,6 +51,90 @@ const TILE_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 3_000,
 };
 
+type ParsedCopernicusTilePayload = {
+  key: string;
+  dataset: CopernicusDataset;
+  path: string;
+  latStart: number;
+  lonStart: number;
+  width: number;
+  height: number;
+  elevations: Int16Array;
+};
+
+type TileParserRequestMessage = {
+  id: number;
+  key: string;
+  dataset: CopernicusDataset;
+  path: string;
+  buffer: ArrayBuffer;
+};
+
+type TileParserResponseMessage =
+  | {
+      id: number;
+      ok: true;
+      payload: ParsedCopernicusTilePayload;
+    }
+  | {
+      id: number;
+      ok: false;
+      error: string;
+    };
+
+let parserWorkerInstance: Worker | null = null;
+let parserRequestId = 0;
+const parserPending = new Map<
+  number,
+  {
+    resolve: (payload: ParsedCopernicusTilePayload) => void;
+    reject: (error: Error) => void;
+  }
+>();
+
+const getParserWorker = (): Worker | null => {
+  if (typeof Worker === "undefined") return null;
+  if (parserWorkerInstance) return parserWorkerInstance;
+  const worker = new Worker(new URL("../workers/copernicusTileParser.worker.ts", import.meta.url), { type: "module" });
+  worker.onmessage = (event: MessageEvent<TileParserResponseMessage>) => {
+    const data = event.data;
+    const pending = parserPending.get(data.id);
+    if (!pending) return;
+    parserPending.delete(data.id);
+    if (data.ok) {
+      pending.resolve(data.payload);
+      return;
+    }
+    pending.reject(new Error(data.error));
+  };
+  worker.onerror = () => {
+    for (const [, pending] of parserPending.entries()) {
+      pending.reject(new Error("Copernicus tile parser worker failed"));
+    }
+    parserPending.clear();
+  };
+  parserWorkerInstance = worker;
+  return worker;
+};
+
+const parseCopernicusTileOnWorker = (
+  key: string,
+  dataset: CopernicusDataset,
+  path: string,
+  buffer: ArrayBuffer,
+): Promise<ParsedCopernicusTilePayload> => {
+  const worker = getParserWorker();
+  if (!worker) {
+    return Promise.reject(new Error("Worker unavailable"));
+  }
+  const id = ++parserRequestId;
+  return new Promise<ParsedCopernicusTilePayload>((resolve, reject) => {
+    parserPending.set(id, { resolve, reject });
+    const message: TileParserRequestMessage = { id, key, dataset, path, buffer };
+    worker.postMessage(message, [buffer]);
+  });
+};
+
 const parseCopernicusKey = (entry: string): string | null => {
   const match = entry.match(/Copernicus_DSM_COG_\d+_([NS])(\d{2})_00_([EW])(\d{3})_00_DEM/i);
   if (!match) return null;
@@ -190,7 +274,7 @@ const writeTileIndex = (dataset: CopernicusDataset, keys: string[]): void => {
   }
 };
 
-const parseCopernicusTile = async (
+const parseCopernicusTileInMain = async (
   tileKey: string,
   dataset: CopernicusDataset,
   path: string,
@@ -227,6 +311,35 @@ const parseCopernicusTile = async (
     sourceLabel: `Copernicus ${dataset === "copernicus30" ? "GLO-30" : "GLO-90"}`,
     sourceDetail: path,
   };
+};
+
+const toSrtmTile = (payload: ParsedCopernicusTilePayload): SrtmTile => ({
+  key: payload.key,
+  latStart: payload.latStart,
+  lonStart: payload.lonStart,
+  size: Math.max(payload.width, payload.height),
+  width: payload.width,
+  height: payload.height,
+  arcSecondSpacing: payload.dataset === "copernicus30" ? 1 : 3,
+  elevations: payload.elevations,
+  sourceKind: "auto-fetch",
+  sourceId: payload.dataset,
+  sourceLabel: `Copernicus ${payload.dataset === "copernicus30" ? "GLO-30" : "GLO-90"}`,
+  sourceDetail: payload.path,
+});
+
+const parseCopernicusTile = async (
+  tileKey: string,
+  dataset: CopernicusDataset,
+  path: string,
+  buffer: ArrayBuffer,
+): Promise<SrtmTile> => {
+  try {
+    const payload = await parseCopernicusTileOnWorker(tileKey, dataset, path, buffer);
+    return toSrtmTile(payload);
+  } catch {
+    return parseCopernicusTileInMain(tileKey, dataset, path, buffer);
+  }
 };
 
 const getCachedOrFetchTile = async (

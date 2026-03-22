@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { buildCoverage } from "../lib/coverage";
+import { buildCoverageAsync, clearTerrainLossCache } from "../lib/coverage";
 import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
 import { haversineDistanceKm } from "../lib/geo";
@@ -2794,6 +2794,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         for (const tile of parsed) dedup.set(tile.key, tile);
         return { srtmTiles: Array.from(dedup.values()), isTerrainFetching: false };
       });
+      clearTerrainLossCache();
       get().recomputeCoverage();
     } finally {
       set({ isTerrainFetching: false });
@@ -2921,6 +2922,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const { terrainLoadEpoch: currentEpoch } = get();
     const epoch = currentEpoch + 1;
+    clearTerrainLossCache();
     set({
       terrainLoadEpoch: epoch,
       isTerrainRecommending: true,
@@ -3040,6 +3042,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearTerrainCache: async () => {
     set({ isTerrainFetching: true });
     await clearCopernicusCache();
+    clearTerrainLossCache();
     set((state) => ({
       srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
       isTerrainFetching: false,
@@ -3110,7 +3113,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const startedAt = Date.now();
       if (get().simulationRunToken !== runId) return;
 
-      const runComputation = () => {
+      const runComputation = async () => {
         const state = get();
         if (state.simulationRunToken !== runId) return;
 
@@ -3126,6 +3129,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           selectedLinkId,
           autoPropagationEnvironment,
           propagationEnvironment,
+          terrainLoadEpoch,
         } = state;
         const network = networks.find((n) => n.id === selectedNetworkId);
         if (!network) {
@@ -3162,14 +3166,25 @@ export const useAppStore = create<AppState>((set, get) => ({
             : null;
         const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
         if (autoDerived) {
-          set({
-            propagationEnvironment: autoDerived.environment,
-            propagationEnvironmentReason: autoDerived.reason,
-          });
+          if (
+            state.propagationEnvironmentReason !== autoDerived.reason ||
+            state.propagationEnvironment.clutterHeightM !== autoDerived.environment.clutterHeightM ||
+            state.propagationEnvironment.polarization !== autoDerived.environment.polarization ||
+            state.propagationEnvironment.groundDielectric !== autoDerived.environment.groundDielectric ||
+            state.propagationEnvironment.groundConductivity !== autoDerived.environment.groundConductivity ||
+            state.propagationEnvironment.radioClimate !== autoDerived.environment.radioClimate ||
+            state.propagationEnvironment.atmosphericBendingNUnits !== autoDerived.environment.atmosphericBendingNUnits
+          ) {
+            set({
+              propagationEnvironment: autoDerived.environment,
+              propagationEnvironmentReason: autoDerived.reason,
+            });
+          }
         }
 
         set({ simulationProgress: 8 });
-        const coverageSamples = buildCoverage(
+        let lastProgress = 8;
+        const coverageSamples = await buildCoverageAsync(
           selectedCoverageMode,
           network,
           sites,
@@ -3182,8 +3197,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             terrainSamples: 20,
             onProgress: (progress) => {
               if (get().simulationRunToken !== runId) return;
-              set({ simulationProgress: Math.round(8 + progress * 84) });
+              const next = Math.round(8 + progress * 84);
+              if (next - lastProgress >= 2 || next >= 99) {
+                lastProgress = next;
+                set({ simulationProgress: next });
+              }
             },
+            terrainCacheKey: `${selectedCoverageMode}|${selectedNetworkId}|${propagationModel}|${terrainLoadEpoch}`,
           },
         );
         if (get().simulationRunToken !== runId) return;
