@@ -352,6 +352,7 @@ export function Sidebar() {
   const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
   const propagationEnvironmentReason = useAppStore((state) => state.propagationEnvironmentReason);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
+  const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
   const scenarioOptions = useAppStore((state) => state.scenarioOptions);
   const locale = useAppStore((state) => state.locale);
   const networks = useAppStore((state) => state.networks);
@@ -408,11 +409,33 @@ export function Sidebar() {
   const model = useAppStore((state) => state.propagationModel);
   const showSimulationLibraryRequest = useAppStore((state) => state.showSimulationLibraryRequest);
   const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
-  const analysis = getSelectedAnalysis();
-  const selectedLink = getSelectedLink();
+  const selectedLink = useMemo(
+    () => getSelectedLink(),
+    [getSelectedLink, links, selectedLinkId, sites, networks, selectedNetworkId],
+  );
+  const selectedSite = useMemo(() => getSelectedSite(), [getSelectedSite, sites, selectedSiteId]);
+  const selectedNetwork = useMemo(
+    () => getSelectedNetwork(),
+    [getSelectedNetwork, networks, selectedNetworkId],
+  );
+  const analysis = useMemo(
+    () => getSelectedAnalysis(),
+    [
+      getSelectedAnalysis,
+      links,
+      selectedLinkId,
+      sites,
+      selectedSiteId,
+      networks,
+      selectedNetworkId,
+      model,
+      srtmTiles,
+      autoPropagationEnvironment,
+      propagationEnvironment,
+      temporaryDirectionReversed,
+    ],
+  );
   const selectedLinkRaw = links.find((link) => link.id === selectedLink.id) ?? null;
-  const selectedSite = getSelectedSite();
-  const selectedNetwork = getSelectedNetwork();
   const effectiveNetworkFrequencyMHz = selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz;
   const selectedFrequencyPreset = FREQUENCY_PRESETS.find((preset) => preset.id === selectedFrequencyPresetId);
   const isLoraEstimateRelevant = (selectedFrequencyPreset?.source ?? "Meshtastic") !== "RadioMobile";

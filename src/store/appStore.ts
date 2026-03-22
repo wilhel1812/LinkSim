@@ -55,12 +55,14 @@ import type {
 } from "../types/radio";
 
 const SYNC_DEBOUNCE_MS = 2500;
+const COVERAGE_RECOMPUTE_DEBOUNCE_MS = 140;
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SYNC_SIGNATURE_KEY = "linksim-sync-signature-v1";
 const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v2";
 
 let hydrated = false;
 let syncTimer: number | null = null;
+let coverageRecomputeTimer: number | null = null;
 let syncInFlight = false;
 let localMutationRevision = 0;
 let syncedMutationRevision = 0;
@@ -3092,115 +3094,126 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   recomputeCoverage: () => {
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const startedAt = Date.now();
     set({
       simulationRunToken: runId,
       isSimulationRecomputing: true,
       simulationProgress: 3,
     });
 
-    const runComputation = () => {
-      const state = get();
-      if (state.simulationRunToken !== runId) return;
+    if (coverageRecomputeTimer !== null) {
+      window.clearTimeout(coverageRecomputeTimer);
+      coverageRecomputeTimer = null;
+    }
 
-      const {
-        selectedCoverageMode,
-        networks,
-        selectedNetworkId,
-        sites,
-        systems,
-        propagationModel,
-        srtmTiles,
-        links,
-        selectedLinkId,
-        autoPropagationEnvironment,
-        propagationEnvironment,
-      } = state;
-      const network = networks.find((n) => n.id === selectedNetworkId);
-      if (!network) {
-        const finalize = () => {
-          if (get().simulationRunToken !== runId) return;
+    coverageRecomputeTimer = window.setTimeout(() => {
+      coverageRecomputeTimer = null;
+      const startedAt = Date.now();
+      if (get().simulationRunToken !== runId) return;
+
+      const runComputation = () => {
+        const state = get();
+        if (state.simulationRunToken !== runId) return;
+
+        const {
+          selectedCoverageMode,
+          networks,
+          selectedNetworkId,
+          sites,
+          systems,
+          propagationModel,
+          srtmTiles,
+          links,
+          selectedLinkId,
+          autoPropagationEnvironment,
+          propagationEnvironment,
+        } = state;
+        const network = networks.find((n) => n.id === selectedNetworkId);
+        if (!network) {
+          const finalize = () => {
+            if (get().simulationRunToken !== runId) return;
+            set({
+              coverageSamples: [],
+              isSimulationRecomputing: false,
+              simulationProgress: 100,
+            });
+            window.setTimeout(() => {
+              if (get().simulationRunToken === runId) {
+                set({ simulationProgress: 0, simulationRunToken: "" });
+              }
+            }, 260);
+          };
+          const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
+          window.setTimeout(finalize, waitMs);
+          return;
+        }
+
+        const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
+        const fromSite = selectedLink ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null : null;
+        const toSite = selectedLink ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null : null;
+        const autoDerived =
+          autoPropagationEnvironment && fromSite && toSite
+            ? deriveDynamicPropagationEnvironment({
+                from: fromSite.position,
+                to: toSite.position,
+                fromGroundM: fromSite.groundElevationM,
+                toGroundM: toSite.groundElevationM,
+                terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+              })
+            : null;
+        const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
+        if (autoDerived) {
           set({
-            coverageSamples: [],
-            isSimulationRecomputing: false,
-            simulationProgress: 100,
+            propagationEnvironment: autoDerived.environment,
+            propagationEnvironmentReason: autoDerived.reason,
           });
-          window.setTimeout(() => {
-            if (get().simulationRunToken === runId) {
-              set({ simulationProgress: 0, simulationRunToken: "" });
-            }
-          }, 260);
+        }
+
+        set({ simulationProgress: 8 });
+        const coverageSamples = buildCoverage(
+          selectedCoverageMode,
+          network,
+          sites,
+          systems,
+          propagationModel,
+          effectiveEnvironment,
+          ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+          {
+            sampleMultiplier: 1,
+            terrainSamples: 20,
+            onProgress: (progress) => {
+              if (get().simulationRunToken !== runId) return;
+              set({ simulationProgress: Math.round(8 + progress * 84) });
+            },
+          },
+        );
+        if (get().simulationRunToken !== runId) return;
+        const finalize = () => {
+          if (get().simulationRunToken === runId) {
+            set({
+              coverageSamples,
+              isSimulationRecomputing: false,
+              simulationProgress: 100,
+            });
+            window.setTimeout(() => {
+              if (get().simulationRunToken === runId) {
+                set({ simulationProgress: 0, simulationRunToken: "" });
+              }
+            }, 320);
+          }
         };
         const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
         window.setTimeout(finalize, waitMs);
-        return;
-      }
-
-      const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
-      const fromSite = selectedLink ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null : null;
-      const toSite = selectedLink ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null : null;
-      const autoDerived =
-        autoPropagationEnvironment && fromSite && toSite
-          ? deriveDynamicPropagationEnvironment({
-              from: fromSite.position,
-              to: toSite.position,
-              fromGroundM: fromSite.groundElevationM,
-              toGroundM: toSite.groundElevationM,
-              terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-            })
-          : null;
-      const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
-      if (autoDerived) {
-        set({
-          propagationEnvironment: autoDerived.environment,
-          propagationEnvironmentReason: autoDerived.reason,
-        });
-      }
-
-      set({ simulationProgress: 8 });
-      const coverageSamples = buildCoverage(
-        selectedCoverageMode,
-        network,
-        sites,
-        systems,
-        propagationModel,
-        effectiveEnvironment,
-        ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-        {
-          sampleMultiplier: 1,
-          terrainSamples: 20,
-          onProgress: (progress) => {
-            if (get().simulationRunToken !== runId) return;
-            set({ simulationProgress: Math.round(8 + progress * 84) });
-          },
-        },
-      );
-      if (get().simulationRunToken !== runId) return;
-      const finalize = () => {
-        if (get().simulationRunToken !== runId) return;
-        set({
-          coverageSamples,
-          isSimulationRecomputing: false,
-          simulationProgress: 100,
-        });
-        window.setTimeout(() => {
-          if (get().simulationRunToken === runId) {
-            set({ simulationProgress: 0, simulationRunToken: "" });
-          }
-        }, 320);
       };
-      const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
-      window.setTimeout(finalize, waitMs);
-    };
 
-    // Let the browser paint the progress bar before starting heavy recomputation work.
-    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(runComputation);
-      });
-    } else {
-      window.setTimeout(runComputation, 0);
-    }
+      // Let the browser paint the progress bar before starting heavy recomputation work.
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(runComputation);
+        });
+      } else {
+        window.setTimeout(runComputation, 0);
+      }
+    }, COVERAGE_RECOMPUTE_DEBOUNCE_MS);
   },
   getSelectedLink: () => {
     const { links, selectedLinkId, sites, networks, selectedNetworkId } = get();

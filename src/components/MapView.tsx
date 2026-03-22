@@ -872,7 +872,10 @@ export function MapView({
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
   const profileColor = variant.map.profileLineColor;
-  const selectedProfile = getSelectedProfile();
+  const selectedProfile = useMemo(
+    () => getSelectedProfile(),
+    [getSelectedProfile, links, sites, srtmTiles, selectedLinkId, selectedNetworkId, networks, propagationModel],
+  );
   const coverageVizMode = useAppStore((state) => state.mapOverlayMode);
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
@@ -1083,86 +1086,92 @@ export function MapView({
     return computeOverlayDimensions(bounds, overlayResolutionScale);
   }, [analysisBounds, samplesForOverlay, overlayResolutionScale]);
 
-  const coverageOverlay = useMemo<
-    (OverlayRaster & { minDbm?: number; maxDbm?: number }) | null
-  >(
-    () => {
-      const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
-      if (!bounds) return null;
-      const effectiveBandStepDb =
-        bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
-      if (coverageVizMode === "none") return null;
-      if (coverageVizMode === "relay") {
-        if (!selectedLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
-        const effectiveLink: Link = {
-          ...selectedLink,
-          frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
-        };
-        return buildRelayCandidateOverlay(
-          bounds,
-          selectedFromSite,
-          selectedToSite,
-          effectiveLink,
-          propagationModel,
-          environmentLossDb,
-          (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-          overlayDimensions,
-          24,
-        );
-      }
-      if (coverageVizMode === "passfail") {
-        if (!selectedLink || !selectedFromSite || !hasPassFailTopology) return null;
-        const effectiveLink: Link = {
-          ...selectedLink,
-          frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
-        };
-        const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? 2;
-        const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
-        return buildSourcePassFailOverlay(
-          bounds,
-          selectedFromSite,
-          effectiveLink,
-          receiverAntennaHeightM,
-          receiverRxGainDbi,
-          propagationModel,
-          rxSensitivityTargetDbm,
-          environmentLossDb,
-          (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-          overlayDimensions,
-          24,
-        );
-      }
-      return buildCoverageOverlay(
-        bounds,
-        samplesForOverlay,
-        coverageVizMode === "contours" ? "contours" : "heatmap",
-        effectiveBandStepDb,
-        overlayDimensions,
-      );
-    },
-    [
+  const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
+  const effectiveBandStepDb = useMemo(() => {
+    if (!overlayBounds) return 5;
+    return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, overlayBounds) : bandStepMode;
+  }, [overlayBounds, samplesForOverlay, bandStepMode]);
+  const baseOverlayMode = coverageVizMode === "contours" ? "contours" : coverageVizMode === "heatmap" ? "heatmap" : null;
+  const baseCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
+    if (!overlayBounds || !baseOverlayMode) return null;
+    return buildCoverageOverlay(
+      overlayBounds,
       samplesForOverlay,
-      coverageVizMode,
-      bandStepMode,
+      baseOverlayMode,
+      effectiveBandStepDb,
+      overlayDimensions,
+    );
+  }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions]);
+  const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
+    if (!overlayBounds || !selectedLink || !selectedFromSite || !hasPassFailTopology) return null;
+    const effectiveLink: Link = {
+      ...selectedLink,
+      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
+    };
+    const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? 2;
+    const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
+    return buildSourcePassFailOverlay(
+      overlayBounds,
+      selectedFromSite,
+      effectiveLink,
+      receiverAntennaHeightM,
+      receiverRxGainDbi,
+      propagationModel,
       rxSensitivityTargetDbm,
       environmentLossDb,
-      selectedLink,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+      overlayDimensions,
+      24,
+    );
+  }, [
+    overlayBounds,
+    selectedLink,
+    selectedFromSite,
+    selectedToSite,
+    selectedNetwork,
+    hasPassFailTopology,
+    propagationModel,
+    rxSensitivityTargetDbm,
+    environmentLossDb,
+    srtmTiles,
+    overlayDimensions,
+  ]);
+  const relayCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
+    if (!overlayBounds || !selectedLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
+    const effectiveLink: Link = {
+      ...selectedLink,
+      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
+    };
+    return buildRelayCandidateOverlay(
+      overlayBounds,
       selectedFromSite,
       selectedToSite,
-      selectedNetwork,
+      effectiveLink,
       propagationModel,
-      srtmTiles,
-      analysisBounds,
+      environmentLossDb,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       overlayDimensions,
-      hasPassFailTopology,
-      hasRelayTopology,
-    ],
-  );
-  const currentBandStepDb = useMemo(() => {
-    const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
-    if (!bounds) return 5;
-    return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
-  }, [analysisBounds, samplesForOverlay, bandStepMode]);
+      24,
+    );
+  }, [
+    overlayBounds,
+    selectedLink,
+    selectedFromSite,
+    selectedToSite,
+    selectedNetwork,
+    hasRelayTopology,
+    propagationModel,
+    environmentLossDb,
+    srtmTiles,
+    overlayDimensions,
+  ]);
+  const coverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
+    if (coverageVizMode === "none") return null;
+    if (coverageVizMode === "relay") return relayCoverageOverlay;
+    if (coverageVizMode === "passfail") return passFailCoverageOverlay;
+    return baseCoverageOverlay;
+  }, [coverageVizMode, relayCoverageOverlay, passFailCoverageOverlay, baseCoverageOverlay]);
+  const currentBandStepDb = effectiveBandStepDb;
 
   const signalRange = useMemo(() => {
     if (!samplesForOverlay.length) return { min: -125, max: -62 };
