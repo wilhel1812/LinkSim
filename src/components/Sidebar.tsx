@@ -947,16 +947,28 @@ export function Sidebar() {
   }, [selectedLinkId, setSelectedLinkId, visibleLinks]);
   useEffect(() => {
     let canceled = false;
-    void fetchCollaboratorDirectory()
-      .then((users) => {
-        if (canceled) return;
-        setResourceCollaboratorDirectory(users);
-      })
-      .catch(() => {
-        // Best effort for row avatar labels; detailed errors are shown in edit modal fetches.
-      });
+    const loadDirectory = () => {
+      if (canceled) return;
+      void fetchCollaboratorDirectory()
+        .then((users) => {
+          if (canceled) return;
+          setResourceCollaboratorDirectory(users);
+        })
+        .catch(() => {
+          // Best effort for row avatar labels; detailed errors are shown in edit modal fetches.
+        });
+    };
+    if (typeof requestIdleCallback === "function") {
+      const idleId = requestIdleCallback(() => loadDirectory(), { timeout: 2000 });
+      return () => {
+        canceled = true;
+        cancelIdleCallback(idleId);
+      };
+    }
+    const timerId = window.setTimeout(loadDirectory, 500);
     return () => {
       canceled = true;
+      window.clearTimeout(timerId);
     };
   }, []);
   useEffect(() => {

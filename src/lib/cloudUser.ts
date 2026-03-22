@@ -147,8 +147,20 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return (await response.json()) as T;
 };
 
+const ME_CACHE_TTL_MS = 30_000;
+let meCache: { user: CloudUser; expiresAt: number } | null = null;
+
+export const clearMeCache = (): void => {
+  meCache = null;
+};
+
 export const fetchMe = async (): Promise<CloudUser> => {
+  const now = Date.now();
+  if (meCache && now < meCache.expiresAt) {
+    return meCache.user;
+  }
   const data = await apiCall<{ user: CloudUser }>("/api/me", { method: "GET" });
+  meCache = { user: data.user, expiresAt: now + ME_CACHE_TTL_MS };
   return data.user;
 };
 
@@ -169,6 +181,7 @@ export const updateMyProfile = async (patch: {
     method: "PATCH",
     body: JSON.stringify(patch),
   });
+  clearMeCache();
   return data.user;
 };
 
