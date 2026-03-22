@@ -17,11 +17,13 @@ const env = {
   PROXY_RATE_LIMIT_PER_MINUTE: "120",
   PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE: "1500",
   PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE: "40",
+  PROXY_COPERNICUS_PREFETCH_NEIGHBORS: "0",
 } as unknown as {
   DB: D1Database;
   PROXY_RATE_LIMIT_PER_MINUTE?: string;
   PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE?: string;
   PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE?: string;
+  PROXY_COPERNICUS_PREFETCH_NEIGHBORS?: string;
 };
 
 const mkCtx = (request: Request) =>
@@ -118,7 +120,25 @@ describe("copernicus proxy", () => {
 
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("9");
+    expect(res.headers.get("x-rate-limit-source")).toBe("proxy");
+    expect(res.headers.get("x-cache-status")).toBe("MISS");
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("marks upstream 429 responses with source header", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response("upstream throttled", { status: 429, headers: { "retry-after": "7" } }),
+    );
+
+    const req = new Request(
+      "https://example.test/copernicus/90m/Copernicus_DSM_COG_30_N60_00_E009_00_DEM/Copernicus_DSM_COG_30_N60_00_E009_00_DEM.tif",
+    );
+
+    const res = await onRequest(mkCtx(req));
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("x-rate-limit-source")).toBe("upstream");
+    expect(res.headers.get("x-cache-status")).toBe("MISS");
   });
 
   it("serves cached tile from edge cache on cache hit", async () => {
@@ -142,10 +162,10 @@ describe("copernicus proxy", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("x-cache-status")).toBe("HIT");
-    expect(waitUntil).toHaveBeenCalled();
+    expect(waitUntil).not.toHaveBeenCalled();
   });
 
-  it("caches successful tile responses without explicit TTL (sliding window)", async () => {
+  it("caches successful tile responses with explicit TTL", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response("tif", { status: 200, headers: { "content-type": "image/tiff" } }),
     );
@@ -158,11 +178,10 @@ describe("copernicus proxy", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("x-cache-status")).toBe("MISS");
-    expect(res.headers.get("cache-control")).toBeNull();
-    expect(res.headers.get("cdn-cache-control")).toBeNull();
+    expect(res.headers.get("cache-control")).toBe("public, max-age=86400, s-maxage=604800");
   });
 
-  it("caches successful tileList responses without explicit TTL", async () => {
+  it("caches successful tileList responses with explicit TTL", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response("tile-list-content", { status: 200, headers: { "content-type": "text/plain" } }),
     );
@@ -173,7 +192,7 @@ describe("copernicus proxy", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("x-cache-status")).toBe("MISS");
-    expect(res.headers.get("cache-control")).toBeNull();
+    expect(res.headers.get("cache-control")).toBe("public, max-age=3600, s-maxage=21600");
   });
 
   it("does not cache non-OK responses", async () => {
@@ -189,10 +208,11 @@ describe("copernicus proxy", () => {
 
     expect(res.status).toBe(404);
     expect(res.headers.get("x-cache-status")).toBe("MISS");
-    expect(res.headers.get("cache-control")).toBeNull();
+    expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("prefetchs neighbor tiles on tile cache hit", async () => {
+  it("prefetches neighbor tiles on tile cache hit when enabled", async () => {
+    env.PROXY_COPERNICUS_PREFETCH_NEIGHBORS = "1";
     const cached = new Response("tif-bytes", {
       status: 200,
       headers: { "content-type": "image/tiff" },
@@ -216,6 +236,9 @@ describe("copernicus proxy", () => {
     await prefetchCall;
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(4);
+    for (const [, init] of vi.mocked(globalThis.fetch).mock.calls) {
+      expect((init as RequestInit | undefined)?.headers).toEqual({ "x-linksim-prefetch": "1" });
+    }
     const neighborUrls = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => String(url));
     expect(neighborUrls).toContain(
       "https://example.test/copernicus/30m/Copernicus_DSM_COG_30_N59_00_E009_DEM/Copernicus_DSM_COG_30_N59_00_E009_DEM.tif",
@@ -229,9 +252,11 @@ describe("copernicus proxy", () => {
     expect(neighborUrls).toContain(
       "https://example.test/copernicus/30m/Copernicus_DSM_COG_30_N60_00_E010_DEM/Copernicus_DSM_COG_30_N60_00_E010_DEM.tif",
     );
+    env.PROXY_COPERNICUS_PREFETCH_NEIGHBORS = "0";
   });
 
   it("does not prefetch neighbors for tileList.txt", async () => {
+    env.PROXY_COPERNICUS_PREFETCH_NEIGHBORS = "1";
     const cached = new Response("tile-list", {
       status: 200,
       headers: { "content-type": "text/plain" },
@@ -248,5 +273,28 @@ describe("copernicus proxy", () => {
     await onRequest({ request: req, env, waitUntil } as Parameters<typeof onRequest>[0]);
 
     expect(waitUntil).not.toHaveBeenCalled();
+    env.PROXY_COPERNICUS_PREFETCH_NEIGHBORS = "0";
+  });
+
+  it("does not write HEAD responses into GET cache", async () => {
+    const cache = {
+      match: vi.fn().mockResolvedValue(undefined),
+      put: vi.fn().mockResolvedValue(undefined),
+    };
+    setCache(cache);
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(undefined, { status: 200, headers: { "content-type": "image/tiff" } }),
+    );
+
+    const req = new Request(
+      "https://example.test/copernicus/30m/Copernicus_DSM_COG_30_N60_00_E009_00_DEM/Copernicus_DSM_COG_30_N60_00_E009_00_DEM.tif",
+      { method: "HEAD" },
+    );
+
+    const res = await onRequest(mkCtx(req));
+
+    expect(res.status).toBe(200);
+    expect(cache.match).not.toHaveBeenCalled();
+    expect(cache.put).not.toHaveBeenCalled();
   });
 });

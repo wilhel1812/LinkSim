@@ -15,6 +15,9 @@ const DATASET_TO_BUCKET: Record<string, string> = {
   "90m": "https://copernicus-dem-90m.s3.amazonaws.com",
 };
 
+const PREFETCH_HEADER = "x-linksim-prefetch";
+const RATE_LIMIT_SOURCE_HEADER = "X-Rate-Limit-Source";
+
 const rateLimitIdentityFor = (request: Request): string => {
   const accessEmail = (request.headers.get("cf-access-authenticated-user-email") ?? "").trim().toLowerCase();
   if (accessEmail) return `user:${accessEmail}`;
@@ -88,37 +91,48 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
     return new Response("Unsupported object", { status: 400 });
   }
   const isTileList = objectPath === "tileList.txt";
+  const isPrefetchRequest = (request.headers.get(PREFETCH_HEADER) ?? "") === "1";
+  const shouldPrefetchNeighbors = env.PROXY_COPERNICUS_PREFETCH_NEIGHBORS === "1";
+  const shouldUseCache = request.method === "GET";
 
-  const limiter = takeRateLimitToken({
-    key: `proxy:copernicus:${isTileList ? "tilelist" : "tile"}:${rateLimitIdentityFor(request)}`,
-    limit: isTileList
-      ? parsePerMinuteLimit(
-          env.PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE,
-          parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 240),
-        )
-      : parsePerMinuteLimit(
-          env.PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE,
-          parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 2400),
-        ),
-  });
-  if (!limiter.allowed) {
-    return new Response("Rate limit reached", {
-      status: 429,
-      headers: { "retry-after": String(limiter.retryAfterSec) },
+  if (!isPrefetchRequest) {
+    const limiter = takeRateLimitToken({
+      key: `proxy:copernicus:${isTileList ? "tilelist" : "tile"}:${rateLimitIdentityFor(request)}`,
+      limit: isTileList
+        ? parsePerMinuteLimit(
+            env.PROXY_COPERNICUS_TILELIST_RATE_LIMIT_PER_MINUTE,
+            parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 240),
+          )
+        : parsePerMinuteLimit(
+            env.PROXY_COPERNICUS_TILE_RATE_LIMIT_PER_MINUTE,
+            parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 2400),
+          ),
     });
+    if (!limiter.allowed) {
+      return new Response("Rate limit reached", {
+        status: 429,
+        headers: {
+          "retry-after": String(limiter.retryAfterSec),
+          "X-Cache-Status": "MISS",
+          [RATE_LIMIT_SOURCE_HEADER]: "proxy",
+          "cache-control": "no-store",
+        },
+      });
+    }
   }
 
   const upstream = new URL(`${bucket}/${objectPath}${url.search}`);
   const cacheKey = new Request(request.url, { method: "GET" });
   const cache = caches.default;
 
-  const cached = await cache.match(cacheKey);
+  const cached = shouldUseCache ? await cache.match(cacheKey) : null;
   if (cached) {
     const headers = new Headers(cached.headers);
     headers.set("X-Cache-Status", "HIT");
+    headers.set(RATE_LIMIT_SOURCE_HEADER, "none");
     const response = new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
 
-    if (!isTileList) {
+    if (!isTileList && shouldPrefetchNeighbors) {
       const coords = parseTileCoordinates(objectPath);
       if (coords) {
         const neighborUrls = buildNeighborUrls(origin, coords.dataset, coords.lat, coords.lon);
@@ -128,7 +142,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
               neighborUrls.map((neighborUrl) => {
                 const fn = globalThis.fetch;
                 if (typeof fn !== "function") return Promise.resolve();
-                return fn(neighborUrl, { method: "HEAD" }).catch(() => undefined);
+                return fn(neighborUrl, {
+                  method: "HEAD",
+                  headers: { [PREFETCH_HEADER]: "1" },
+                }).catch(() => undefined);
               }),
             );
           } catch {
@@ -153,13 +170,19 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
   if (response.ok) {
     const headers = new Headers(response.headers);
     headers.set("X-Cache-Status", "MISS");
+    headers.set(RATE_LIMIT_SOURCE_HEADER, "none");
+    headers.set("cache-control", isTileList ? "public, max-age=3600, s-maxage=21600" : "public, max-age=86400, s-maxage=604800");
     headers.delete("set-cookie");
     const cacheable = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-    await cache.put(cacheKey, cacheable.clone());
+    if (shouldUseCache) {
+      await cache.put(cacheKey, cacheable.clone());
+    }
     return cacheable;
   }
 
   const missHeaders = new Headers(response.headers);
   missHeaders.set("X-Cache-Status", "MISS");
+  missHeaders.set(RATE_LIMIT_SOURCE_HEADER, response.status === 429 ? "upstream" : "none");
+  missHeaders.set("cache-control", "no-store");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: missHeaders });
 };
