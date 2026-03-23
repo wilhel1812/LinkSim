@@ -343,6 +343,7 @@ export function Sidebar() {
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
+  const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
@@ -359,7 +360,7 @@ export function Sidebar() {
   const setLocale = useAppStore((state) => state.setLocale);
   const selectScenario = useAppStore((state) => state.selectScenario);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
-  const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
+  const selectSiteById = useAppStore((state) => state.selectSiteById);
   const setSelectedNetworkId = useAppStore((state) => state.setSelectedNetworkId);
   const setSelectedCoverageMode = useAppStore((state) => state.setSelectedCoverageMode);
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
@@ -2065,9 +2066,9 @@ export function Sidebar() {
         <div className="site-list">
           {sites.map((site) => (
             <button
-              className={clsx("site-row", selectedSiteId === site.id && "is-selected")}
+              className={clsx("site-row", selectedSiteIds.includes(site.id) && "is-selected")}
               key={site.id}
-              onClick={() => setSelectedSiteId(site.id)}
+              onClick={(event) => selectSiteById(site.id, event.metaKey || event.ctrlKey)}
               type="button"
             >
               <span>{site.name}</span>

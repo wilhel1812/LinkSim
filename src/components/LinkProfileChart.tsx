@@ -58,6 +58,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
+  const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const setProfileCursorIndex = useAppStore((state) => state.setProfileCursorIndex);
@@ -82,17 +83,33 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
   );
   const baseProfile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
-  const hasMinimumTopology = sites.length >= 2;
-  const selectedFromSiteId = selectedLink
-    ? temporaryDirectionReversed
-      ? selectedLink.toSiteId
-      : selectedLink.fromSiteId
-    : null;
-  const selectedToSiteId = selectedLink
-    ? temporaryDirectionReversed
-      ? selectedLink.fromSiteId
-      : selectedLink.toSiteId
-    : null;
+  const selectedSites = useMemo(
+    () => selectedSiteIds.map((id) => sites.find((site) => site.id === id)).filter((site): site is (typeof sites)[number] => Boolean(site)),
+    [selectedSiteIds, sites],
+  );
+  const selectionCount = selectedSites.length;
+  const hasMinimumTopology = selectionCount >= 2;
+  const tooManySelectedForProfile = selectionCount > 3;
+  const selectedFromSiteId =
+    selectedSites.length >= 2
+      ? temporaryDirectionReversed
+        ? selectedSites[selectedSites.length - 1].id
+        : selectedSites[0].id
+      : selectedLink
+        ? temporaryDirectionReversed
+          ? selectedLink.toSiteId
+          : selectedLink.fromSiteId
+        : null;
+  const selectedToSiteId =
+    selectedSites.length >= 2
+      ? temporaryDirectionReversed
+        ? selectedSites[0].id
+        : selectedSites[selectedSites.length - 1].id
+      : selectedLink
+        ? temporaryDirectionReversed
+          ? selectedLink.fromSiteId
+          : selectedLink.toSiteId
+        : null;
   const selectedFromSite = selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null;
   const selectedToSite = selectedToSiteId ? sites.find((site) => site.id === selectedToSiteId) ?? null : null;
   const selectedFromSiteEffective = useMemo(() => {
@@ -116,13 +133,27 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     };
   }, [selectedToSite, siteDragPreview]);
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId) ?? networks[0] ?? null;
-  const effectiveLink =
-    selectedLink && selectedNetwork
-      ? {
-          ...selectedLink,
-          frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz ?? selectedLink.frequencyMHz,
-        }
-      : null;
+  const effectiveLink = useMemo(() => {
+    if (!selectedNetwork) return null;
+    if (selectedLink) {
+      return {
+        ...selectedLink,
+        frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz ?? selectedLink.frequencyMHz,
+      };
+    }
+    if (!selectedFromSite || !selectedToSite) return null;
+    return {
+      id: "__selection__",
+      name: `${selectedFromSite.name} -> ${selectedToSite.name}`,
+      fromSiteId: selectedFromSite.id,
+      toSiteId: selectedToSite.id,
+      frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
+      txPowerDbm: selectedFromSite.txPowerDbm,
+      txGainDbi: selectedFromSite.txGainDbi,
+      rxGainDbi: selectedToSite.rxGainDbi,
+      cableLossDb: selectedFromSite.cableLossDb,
+    };
+  }, [selectedLink, selectedNetwork, selectedFromSite, selectedToSite]);
   const profile = useMemo(() => {
     if (!effectiveLink || !selectedFromSiteEffective || !selectedToSiteEffective) return baseProfile;
     const hasPreview =
@@ -147,7 +178,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
   ]);
   const fromSiteName = selectedFromSite?.name ?? "From";
   const toSiteName = selectedToSite?.name ?? "To";
-  const terrainBounds = simulationAreaBoundsForSites(sites);
+  const terrainBounds = simulationAreaBoundsForSites(selectedSites.length ? selectedSites : sites);
   const requiredTerrainTileKeys = terrainBounds
     ? tilesForBounds(terrainBounds.minLat, terrainBounds.maxLat, terrainBounds.minLon, terrainBounds.maxLon)
     : [];
@@ -629,6 +660,16 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       <section className="chart-panel chart-panel-empty">
         <div className="chart-empty">
           Add at least two sites to this simulation to show path profile and LOS/Fresnel analysis.
+        </div>
+      </section>
+    );
+  }
+
+  if (tooManySelectedForProfile) {
+    return (
+      <section className="chart-panel chart-panel-empty">
+        <div className="chart-empty">
+          Select three or fewer sites to show path profile analysis. Multi-link profile mode is planned but not active.
         </div>
       </section>
     );

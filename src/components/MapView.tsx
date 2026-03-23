@@ -28,9 +28,30 @@ const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => (
   id: "link-lines",
   type: "line",
   paint: {
-    "line-color": ["case", ["==", ["get", "selected"], 1], selectedColor, linkColor],
-    "line-width": ["case", ["==", ["get", "selected"], 1], 4.5, 3],
-    "line-opacity": ["case", ["==", ["get", "selected"], 1], 0.98, 0.72],
+    "line-color": [
+      "case",
+      ["==", ["get", "selected"], 1],
+      selectedColor,
+      ["==", ["get", "temporary"], 1],
+      selectedColor,
+      linkColor,
+    ],
+    "line-width": [
+      "case",
+      ["==", ["get", "selected"], 1],
+      4.5,
+      ["==", ["get", "temporary"], 1],
+      3.5,
+      3,
+    ],
+    "line-opacity": [
+      "case",
+      ["==", ["get", "selected"], 1],
+      0.98,
+      ["==", ["get", "temporary"], 1],
+      0.9,
+      0.72,
+    ],
     "line-dasharray": [1.5, 1],
   },
 });
@@ -158,6 +179,11 @@ type OverlayRaster = {
   coordinates: [[number, number], [number, number], [number, number], [number, number]];
 };
 
+type OverlayMaskArea = {
+  bounds: TerrainBounds;
+  contains: (lat: number, lon: number) => boolean;
+};
+
 const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[]): TerrainBounds => {
   const lats = sites.map((site) => site.position.lat);
   const lons = sites.map((site) => site.position.lon);
@@ -175,6 +201,117 @@ const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[
     minLon: minLon - lonPadding,
     maxLon: maxLon + lonPadding,
   };
+};
+
+const distanceKmBetween = (latA: number, lonA: number, latB: number, lonB: number): number => {
+  const dLat = (latB - latA) * 111.32;
+  const midLat = (latA + latB) / 2;
+  const dLon = (lonB - lonA) * 111.32 * Math.max(0.1, Math.cos((midLat * Math.PI) / 180));
+  return Math.sqrt(dLat * dLat + dLon * dLon);
+};
+
+const distancePointToSegmentKm = (
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number => {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq <= 1e-9) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+  const t = clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  return Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+};
+
+const convexHull = (points: { x: number; y: number }[]): { x: number; y: number }[] => {
+  if (points.length <= 2) return [...points];
+  const sorted = [...points].sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
+  const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: { x: number; y: number }[] = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+  const upper: { x: number; y: number }[] = [];
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    const point = sorted[index];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+};
+
+const pointInPolygon = (x: number, y: number, polygon: { x: number; y: number }[]): boolean => {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+};
+
+const buildBufferedSelectionArea = (sites: Site[], radiusKm: number): OverlayMaskArea | null => {
+  if (!sites.length) return null;
+  const centerLat = sites.reduce((sum, site) => sum + site.position.lat, 0) / sites.length;
+  const kmPerLat = 111.32;
+  const kmPerLon = Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)) * 111.32;
+  const projected = sites.map((site) => ({
+    x: site.position.lon * kmPerLon,
+    y: site.position.lat * kmPerLat,
+    lat: site.position.lat,
+    lon: site.position.lon,
+  }));
+  const hull = convexHull(projected.map((point) => ({ x: point.x, y: point.y })));
+  const minLat = Math.min(...projected.map((point) => point.lat));
+  const maxLat = Math.max(...projected.map((point) => point.lat));
+  const minLon = Math.min(...projected.map((point) => point.lon));
+  const maxLon = Math.max(...projected.map((point) => point.lon));
+  const latDelta = Math.max(0.01, radiusKm / kmPerLat);
+  const lonDelta = Math.max(0.01, radiusKm / kmPerLon);
+  const bounds: TerrainBounds = {
+    minLat: minLat - latDelta,
+    maxLat: maxLat + latDelta,
+    minLon: minLon - lonDelta,
+    maxLon: maxLon + lonDelta,
+  };
+
+  const contains = (lat: number, lon: number): boolean => {
+    const x = lon * kmPerLon;
+    const y = lat * kmPerLat;
+    if (projected.length === 1) {
+      return distanceKmBetween(lat, lon, projected[0].lat, projected[0].lon) <= radiusKm;
+    }
+    if (hull.length <= 2) {
+      const a = hull[0];
+      const b = hull[1] ?? hull[0];
+      return distancePointToSegmentKm(x, y, a.x, a.y, b.x, b.y) <= radiusKm;
+    }
+    if (pointInPolygon(x, y, hull)) return true;
+    for (let index = 0; index < hull.length; index += 1) {
+      const a = hull[index];
+      const b = hull[(index + 1) % hull.length];
+      if (distancePointToSegmentKm(x, y, a.x, a.y, b.x, b.y) <= radiusKm) return true;
+    }
+    return false;
+  };
+
+  return { bounds, contains };
 };
 
 const computeCoverageBounds = (samples: CoverageSampleLite[]): TerrainBounds | null => {
@@ -413,6 +550,8 @@ const buildCoverageOverlay = (
   mode: "heatmap" | "contours",
   bandStepDb: number,
   dimensions: { width: number; height: number },
+  pointMask?: (lat: number, lon: number) => boolean,
+  terrainSampler?: (lat: number, lon: number) => number | null,
 ): OverlayRaster | null => {
   if (!samples.length) return null;
   const gridInterpolator = makeGridInterpolator(samples);
@@ -431,6 +570,8 @@ const buildCoverageOverlay = (
     for (let x = 0; x < width; x += 1) {
       const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      if (pointMask && !pointMask(lat, lon)) continue;
+      if (terrainSampler && terrainSampler(lat, lon) === null) continue;
       const valueDbm = gridInterpolator
         ? gridInterpolator(lat, lon)
         : interpolateCoverageDbm(samples, lat, lon);
@@ -478,6 +619,7 @@ const buildSourcePassFailOverlay = (
   terrainSampler: (lat: number, lon: number) => number | null,
   dimensions: { width: number; height: number },
   terrainSamples: number,
+  pointMask?: (lat: number, lon: number) => boolean,
 ): OverlayRaster | null => {
   const width = dimensions.width;
   const height = dimensions.height;
@@ -494,6 +636,12 @@ const buildSourcePassFailOverlay = (
     for (let x = 0; x < width; x += 1) {
       const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      if (pointMask && !pointMask(lat, lon)) {
+        continue;
+      }
+      if (terrainSampler(lat, lon) === null) {
+        continue;
+      }
       const metrics = computeSourceCentricRxMetrics(
         lat,
         lon,
@@ -554,6 +702,7 @@ const buildRelayCandidateOverlay = (
   terrainSampler: (lat: number, lon: number) => number | null,
   dimensions: { width: number; height: number },
   terrainSamples: number,
+  pointMask?: (lat: number, lon: number) => boolean,
 ): (OverlayRaster & { minDbm: number; maxDbm: number }) | null => {
   const width = dimensions.width;
   const height = dimensions.height;
@@ -575,8 +724,15 @@ const buildRelayCandidateOverlay = (
     for (let x = 0; x < width; x += 1) {
       const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      if (pointMask && !pointMask(lat, lon)) {
+        continue;
+      }
 
-      const relayGround = terrainSampler(lat, lon) ?? fallbackRelayGround;
+      const sampledGround = terrainSampler(lat, lon);
+      if (sampledGround === null) {
+        continue;
+      }
+      const relayGround = sampledGround ?? fallbackRelayGround;
       const relaySite: Site = {
         id: "__relay_candidate__",
         name: "Relay candidate",
@@ -619,6 +775,7 @@ const buildRelayCandidateOverlay = (
       maxDbm = Math.max(maxDbm, bottleneckDbm);
     }
   }
+  if (!Number.isFinite(minDbm) || !Number.isFinite(maxDbm)) return null;
   const dynamicRange = Math.max(6, maxDbm - minDbm);
 
   for (let y = 0; y < height; y += 1) {
@@ -652,11 +809,13 @@ const buildTerrainShadeOverlay = (
   bounds: TerrainBounds,
   sampler: (lat: number, lon: number) => number | null,
   dimensions: { width: number; height: number },
+  pointMask?: (lat: number, lon: number) => boolean,
 ): OverlayRaster | null => {
   const width = dimensions.width;
   const height = dimensions.height;
   const elevations = new Float32Array(width * height);
   const valid = new Uint8Array(width * height);
+  const allowed = new Uint8Array(width * height);
 
   let minElevation = Number.POSITIVE_INFINITY;
   let maxElevation = Number.NEGATIVE_INFINITY;
@@ -667,8 +826,13 @@ const buildTerrainShadeOverlay = (
     for (let x = 0; x < width; x += 1) {
       const tX = x / Math.max(1, width - 1);
       const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      const isAllowed = pointMask ? pointMask(lat, lon) : true;
       const elevation = sampler(lat, lon);
       const i = y * width + x;
+      if (isAllowed) {
+        allowed[i] = 1;
+      }
+      if (!isAllowed) continue;
       if (elevation === null) continue;
       elevations[i] = elevation;
       valid[i] = 1;
@@ -683,11 +847,13 @@ const buildTerrainShadeOverlay = (
     for (let y = 1; y < height - 1; y += 1) {
       for (let x = 1; x < width - 1; x += 1) {
         const i = y * width + x;
+        if (!allowed[i]) continue;
         if (valid[i]) continue;
         const neighbors = [i - 1, i + 1, i - width, i + width];
         let sum = 0;
         let count = 0;
         for (const n of neighbors) {
+          if (!allowed[n]) continue;
           if (!valid[n]) continue;
           sum += elevations[n];
           count += 1;
@@ -722,6 +888,10 @@ const buildTerrainShadeOverlay = (
     for (let x = 0; x < width; x += 1) {
       const i = y * width + x;
       const px = i * 4;
+      if (!allowed[i]) {
+        image.data[px + 3] = 0;
+        continue;
+      }
       if (!valid[i]) {
         image.data[px + 3] = 0;
         continue;
@@ -839,7 +1009,7 @@ export function MapView({
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
-  const selectedSiteId = useAppStore((state) => state.selectedSiteId);
+  const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
   const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
@@ -848,7 +1018,8 @@ export function MapView({
   const viewport = mapViewport ?? DEFAULT_MAP_VIEWPORT;
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
-  const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
+  const selectSiteById = useAppStore((state) => state.selectSiteById);
+  const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
   const updateSite = useAppStore((state) => state.updateSite);
   const deleteSite = useAppStore((state) => state.deleteSite);
@@ -956,13 +1127,35 @@ export function MapView({
       ? selectedLink.fromSiteId
       : selectedLink.toSiteId
     : null;
-  const selectedFromSite = selectedFromSiteId
-    ? sites.find((site) => site.id === selectedFromSiteId) ?? null
-    : null;
-  const selectedToSite = selectedToSiteId
-    ? sites.find((site) => site.id === selectedToSiteId) ?? null
-    : null;
-  const hasHeatTopology = sites.length >= 1;
+  const selectedSites = useMemo(
+    () => selectedSiteIds.map((id) => sites.find((site) => site.id === id)).filter((site): site is Site => Boolean(site)),
+    [selectedSiteIds, sites],
+  );
+  const selectedSiteSet = useMemo(() => new Set(selectedSites.map((site) => site.id)), [selectedSites]);
+  const selectionCount = selectedSites.length;
+  const selectedFromSite = selectedSites[0] ?? (selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null);
+  const selectedToSite =
+    selectedSites.length >= 2
+      ? selectedSites[selectedSites.length - 1]
+      : selectedToSiteId
+        ? sites.find((site) => site.id === selectedToSiteId) ?? null
+        : null;
+  const activeSelectionLink = useMemo<Link | null>(() => {
+    if (!selectedFromSite) return null;
+    const toSite = selectedToSite ?? selectedFromSite;
+    return {
+      id: "__selection__",
+      name: `${selectedFromSite.name} -> ${toSite.name}`,
+      fromSiteId: selectedFromSite.id,
+      toSiteId: toSite.id,
+      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink?.frequencyMHz ?? 869.618,
+      txPowerDbm: selectedFromSite.txPowerDbm,
+      txGainDbi: selectedFromSite.txGainDbi,
+      rxGainDbi: toSite.rxGainDbi,
+      cableLossDb: selectedFromSite.cableLossDb,
+    };
+  }, [selectedFromSite, selectedToSite, selectedNetwork, selectedLink]);
+  const hasHeatTopology = selectionCount >= 1;
   const simulationLibrarySiteIds = useMemo(
     () =>
       new Set(
@@ -1001,10 +1194,17 @@ export function MapView({
       canceled = true;
     };
   }, [showDiscoveryMqtt, mqttNodes.length]);
-  const hasPassFailTopology = sites.length >= 1;
-  const hasRelayTopology = sites.length >= 2;
-  const hasMinimumTopology = hasHeatTopology;
-  const analysisBounds = useMemo(() => (sites.length ? computeTerrainBounds(sites) : null), [sites]);
+  const hasPassFailTopology = selectionCount >= 1;
+  const hasRelayTopology = selectionCount >= 2;
+  const hasMinimumTopology = sites.length >= 1;
+  const analysisTargetSites = selectedSites.length ? selectedSites : sites;
+  const overlayMaskArea = useMemo(() => buildBufferedSelectionArea(selectedSites, 20), [selectedSites]);
+  const overlayPointMask = overlayMaskArea?.contains;
+  const analysisBounds = useMemo(() => {
+    if (overlayMaskArea) return overlayMaskArea.bounds;
+    if (!analysisTargetSites.length) return null;
+    return computeTerrainBounds(analysisTargetSites);
+  }, [analysisTargetSites, overlayMaskArea]);
   const analysisBoundsDiagonalKm = useMemo(
     () => (analysisBounds ? boundsDiagonalKm(analysisBounds) : 0),
     [analysisBounds],
@@ -1038,16 +1238,15 @@ export function MapView({
   );
 
   const lineFeatures = useMemo(
-    () => ({
-      type: "FeatureCollection" as const,
-      features: visibleLinks
+    () => {
+      const savedLinkFeatures = visibleLinks
         .map((link) => {
           const from = sites.find((site) => site.id === link.fromSiteId);
           const to = sites.find((site) => site.id === link.toSiteId);
           if (!from || !to) return null;
           return {
             type: "Feature" as const,
-            properties: { id: link.id, selected: link.id === selectedLinkId ? 1 : 0 },
+            properties: { id: link.id, selected: link.id === selectedLinkId ? 1 : 0, temporary: 0 },
             geometry: {
               type: "LineString" as const,
               coordinates: [
@@ -1057,9 +1256,40 @@ export function MapView({
             },
           };
         })
-        .filter((feature): feature is NonNullable<typeof feature> => feature !== null),
-    }),
-    [visibleLinks, selectedLinkId, sites],
+        .filter((feature): feature is NonNullable<typeof feature> => feature !== null);
+      const fromSite = selectedSites[0] ?? null;
+      const toSite = selectedSites.length >= 2 ? selectedSites[selectedSites.length - 1] : null;
+      const hasSavedLinkForSelection = Boolean(
+        fromSite &&
+          toSite &&
+          links.some(
+            (link) =>
+              (link.fromSiteId === fromSite.id && link.toSiteId === toSite.id) ||
+              (link.fromSiteId === toSite.id && link.toSiteId === fromSite.id),
+          ),
+      );
+      const temporarySelectionFeature =
+        fromSite && toSite && !hasSavedLinkForSelection
+          ? [
+              {
+                type: "Feature" as const,
+                properties: { id: "__selection__", selected: 0, temporary: 1 },
+                geometry: {
+                  type: "LineString" as const,
+                  coordinates: [
+                    [fromSite.position.lon, fromSite.position.lat],
+                    [toSite.position.lon, toSite.position.lat],
+                  ],
+                },
+              },
+            ]
+          : [];
+      return {
+        type: "FeatureCollection" as const,
+        features: [...savedLinkFeatures, ...temporarySelectionFeature],
+      };
+    },
+    [visibleLinks, selectedLinkId, sites, selectedSites, links],
   );
 
   const profileFeatures = useMemo(
@@ -1112,21 +1342,19 @@ export function MapView({
       baseOverlayMode,
       effectiveBandStepDb,
       overlayDimensions,
+      overlayPointMask,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
     );
-  }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions]);
+  }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
   const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "passfail") return null;
-    if (!overlayBounds || !selectedLink || !selectedFromSite || !hasPassFailTopology) return null;
-    const effectiveLink: Link = {
-      ...selectedLink,
-      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
-    };
-    const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? 2;
-    const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
+    if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
+    const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite.antennaHeightM ?? 2;
+    const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? selectedFromSite.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
     return buildSourcePassFailOverlay(
       overlayBounds,
       selectedFromSite,
-      effectiveLink,
+      activeSelectionLink,
       receiverAntennaHeightM,
       receiverRxGainDbi,
       propagationModel,
@@ -1136,14 +1364,14 @@ export function MapView({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       overlayDimensions,
       24,
+      overlayPointMask,
     );
   }, [
     coverageVizMode,
     overlayBounds,
-    selectedLink,
+    activeSelectionLink,
     selectedFromSite,
     selectedToSite,
-    selectedNetwork,
     hasPassFailTopology,
     propagationModel,
     propagationEnvironment,
@@ -1151,39 +1379,37 @@ export function MapView({
     environmentLossDb,
     srtmTiles,
     overlayDimensions,
+    overlayPointMask,
   ]);
   const relayCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "relay") return null;
-    if (!overlayBounds || !selectedLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
-    const effectiveLink: Link = {
-      ...selectedLink,
-      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
-    };
+    if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
     return buildRelayCandidateOverlay(
       overlayBounds,
       selectedFromSite,
       selectedToSite,
-      effectiveLink,
+      activeSelectionLink,
       propagationModel,
       propagationEnvironment,
       environmentLossDb,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       overlayDimensions,
       24,
+      overlayPointMask,
     );
   }, [
     coverageVizMode,
     overlayBounds,
-    selectedLink,
+    activeSelectionLink,
     selectedFromSite,
     selectedToSite,
-    selectedNetwork,
     hasRelayTopology,
     propagationModel,
     propagationEnvironment,
     environmentLossDb,
     srtmTiles,
     overlayDimensions,
+    overlayPointMask,
   ]);
   const coverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode === "none") return null;
@@ -1223,8 +1449,13 @@ export function MapView({
   const simulationTerrainOverlay = useMemo(() => {
     if (!hasSimulationTerrain || !analysisBounds) return null;
     const bounds = analysisBounds;
-    return buildTerrainShadeOverlay(bounds, (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon), overlayDimensions);
-  }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions]);
+    return buildTerrainShadeOverlay(
+      bounds,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+      overlayDimensions,
+      overlayPointMask,
+    );
+  }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions, overlayPointMask]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
@@ -1290,23 +1521,8 @@ export function MapView({
     });
   };
 
-  const onSiteClick = (siteId: string) => {
-    setSelectedSiteId(siteId);
-    if (coverageVizMode === "passfail" && selectedLink) {
-      if (siteId === selectedLink.fromSiteId) return;
-      if (siteId === selectedLink.toSiteId) {
-        const swapToId =
-          selectedLink.fromSiteId !== siteId
-            ? selectedLink.fromSiteId
-            : sites.find((candidate) => candidate.id !== siteId)?.id;
-        if (swapToId && swapToId !== siteId) {
-          updateLink(selectedLink.id, { fromSiteId: siteId, toSiteId: swapToId });
-        }
-        return;
-      }
-      updateLink(selectedLink.id, { fromSiteId: siteId });
-      return;
-    }
+  const onSiteClick = (siteId: string, additive = false) => {
+    selectSiteById(siteId, additive);
     if (!endpointPickTarget || !selectedLink) return;
     setEndpointPickError(null);
     if (endpointPickTarget === "from" && siteId === selectedLink.toSiteId) {
@@ -1374,6 +1590,15 @@ export function MapView({
     if (!confirmed) return;
     deleteSite(selectedSite.id);
     setSiteDraftStatus(`${selectedSite.name} removed from the simulation.`);
+  };
+
+  const saveSelectedSitesAsLink = () => {
+    if (!canPersist || selectedSites.length < 2) return;
+    const fromSite = selectedSites[0];
+    const toSite = selectedSites[selectedSites.length - 1];
+    if (!fromSite || !toSite || fromSite.id === toSite.id) return;
+    createLink(fromSite.id, toSite.id);
+    setSiteDraftStatus(`Saved link ${fromSite.name} -> ${toSite.name}.`);
   };
 
   const onSiteDrag = (siteId: string, event: MarkerDragEvent) => {
@@ -1479,8 +1704,11 @@ export function MapView({
       const nearby = features.find((feature) => feature.properties && typeof feature.properties.id !== "undefined");
       id = nearby?.properties ? String(nearby.properties.id ?? "") : "";
     }
-    if (id && visibleLinks.some((link) => link.id === id)) {
-      setSelectedLinkId(id);
+    if (id) {
+      if (id === "__selection__") return;
+      if (visibleLinks.some((link) => link.id === id)) {
+        setSelectedLinkId(id);
+      }
       return;
     }
     beginPendingNewSiteDraft(event.lngLat.lat, event.lngLat.lng);
@@ -1604,10 +1832,20 @@ export function MapView({
         return 22;
     }
   }, [resolvedBasemap.provider]);
+  const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "passfail" | "relay">>(() => {
+    if (selectionCount <= 0) return ["none"];
+    if (selectionCount === 1) return ["none", "passfail", "heatmap"];
+    if (selectionCount === 2) return ["none", "relay", "heatmap"];
+    return ["none", "heatmap"];
+  }, [selectionCount]);
+  useEffect(() => {
+    if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "passfail" | "relay")) return;
+    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : selectionCount >= 3 ? "heatmap" : "none");
+  }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode === "contours" ? "heatmap" : coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
     showDiscoveryMqtt ? "mqtt" : showDiscoverySites ? "library" : "simulation";
-  const selectedSite = sites.find((site) => site.id === selectedSiteId) ?? null;
+  const selectedSite = selectedSites[0] ?? null;
   const selectedLibraryEntry =
     selectedSite?.libraryEntryId
       ? siteLibrary.find((entry) => entry.id === selectedSite.libraryEntryId) ?? null
@@ -1734,9 +1972,9 @@ export function MapView({
               value={simulationOverlaySelectValue}
             >
               <option value="none">Hidden</option>
-              <option value="heatmap">Heatmap</option>
-              <option value="passfail">Pass/Fail</option>
-              <option value="relay">Relay</option>
+              {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
+              {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
+              {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
             </select>
           </label>
           <label className="map-provider-field">
@@ -1817,7 +2055,7 @@ export function MapView({
           {inspectorPrimary ? (
             <div className="map-inspector-section">
               <p className="map-inspector-primary">{inspectorPrimary}</p>
-              {inspectorPrimaryLibraryEntryId || (selectedSite && canPersist && sites.length > 1) ? (
+              {inspectorPrimaryLibraryEntryId || (selectedSite && canPersist && sites.length > 1) || (canPersist && selectedSites.length >= 2) ? (
                 <div className="chip-group">
                   {inspectorPrimaryLibraryEntryId ? (
                     <button
@@ -1831,6 +2069,11 @@ export function MapView({
                   {selectedSite && canPersist && sites.length > 1 ? (
                     <button className="inline-action danger" onClick={removeSelectedSiteFromSimulation} type="button">
                       Remove From Simulation
+                    </button>
+                  ) : null}
+                  {canPersist && selectedSites.length >= 2 ? (
+                    <button className="inline-action" onClick={saveSelectedSitesAsLink} type="button">
+                      Save Selected Link
                     </button>
                   ) : null}
                 </div>
@@ -2186,7 +2429,7 @@ export function MapView({
         </Source>
 
         {sites.map((site) => {
-          const isSelected = site.id === selectedSiteId;
+          const isSelected = selectedSiteSet.has(site.id);
           const pendingMove = pendingSiteMoves[site.id];
           const markerPosition = pendingMove?.currentPosition ?? site.position;
           const isTemporarilyMoved = Boolean(pendingMove);
@@ -2222,7 +2465,8 @@ export function MapView({
                 onMouseLeave={() => setOverlayHoverInfo(null)}
                 onClick={(event) => {
                   stopMapClickBubbling(event);
-                  onSiteClick(site.id);
+                  const nativeEvent = event as unknown as { ctrlKey?: boolean; metaKey?: boolean };
+                  onSiteClick(site.id, Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
