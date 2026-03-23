@@ -1,7 +1,11 @@
 import { haversineDistanceKm, interpolateCoordinate } from "./geo";
 import { resolveLinkRadio } from "./linkRadio";
 import { fsplDb, getPathLossByModel } from "./rfModels";
-import { estimateTerrainExcessLossDb } from "./terrainLoss";
+import {
+  atmosphericBendingNUnitsToKFactor,
+  estimateTerrainExcessLossDb,
+  isTerrainLineObstructed,
+} from "./terrainLoss";
 import type {
   BestSiteCandidate,
   Coordinates,
@@ -13,13 +17,7 @@ import type {
   Site,
 } from "../types/radio";
 
-const EARTH_RADIUS_M = 6_371_000;
-
 type TerrainSampler = (coordinates: Coordinates) => number | null;
-const nUnitsToKFactor = (nUnits: number): number => {
-  const n = Math.max(250, Math.min(400, nUnits));
-  return Math.max(1, Math.min(2, 1 + (n - 250) / 153));
-};
 
 const firstFresnelRadiusM = (
   distanceKm: number,
@@ -33,10 +31,11 @@ const firstFresnelRadiusM = (
   return Math.sqrt((wavelengthM * d1 * d2) / dTotalM);
 };
 
-const earthBulgeM = (distanceKm: number, t: number): number => {
+const earthBulgeM = (distanceKm: number, t: number, kFactor: number): number => {
   const dTotalM = distanceKm * 1000;
   const x = dTotalM * t;
-  return (x * (dTotalM - x)) / (2 * EARTH_RADIUS_M);
+  const effectiveRadiusM = 6_371_000 * Math.max(1, kFactor);
+  return (x * (dTotalM - x)) / (2 * effectiveRadiusM);
 };
 
 const buildTerrainPoint = (
@@ -45,6 +44,7 @@ const buildTerrainPoint = (
   fromSite: Site,
   toSite: Site,
   link: Link,
+  kFactor: number,
   terrainSampler?: TerrainSampler,
 ): ProfilePoint => {
   const fromAntennaAbsM = fromSite.groundElevationM + fromSite.antennaHeightM;
@@ -59,13 +59,8 @@ const buildTerrainPoint = (
   const terrainBaseM =
     fromSite.groundElevationM + (toSite.groundElevationM - fromSite.groundElevationM) * t;
 
-  const syntheticVariationM =
-    Math.sin(t * Math.PI * 2) * 7 +
-    Math.sin(t * Math.PI * 4.5) * 3 +
-    Math.exp(-((t - 0.48) ** 2) / 0.02) * 18;
-
-  const bulgeM = earthBulgeM(distanceKm, t);
-  const terrainM = (terrainFromSampler ?? terrainBaseM + syntheticVariationM) + bulgeM;
+  const bulgeM = earthBulgeM(distanceKm, t, kFactor);
+  const terrainM = (terrainFromSampler ?? terrainBaseM) + bulgeM;
 
   const fresnel = firstFresnelRadiusM(distanceKm, link.frequencyMHz, t);
 
@@ -86,12 +81,14 @@ export const buildProfile = (
   toSite: Site,
   terrainSampler?: TerrainSampler,
   samples = 80,
+  options?: { kFactor?: number },
 ): ProfilePoint[] => {
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, toSite.position));
+  const kFactor = Math.max(1, options?.kFactor ?? 4 / 3);
 
   return Array.from({ length: samples }, (_, i) => {
     const t = i / (samples - 1);
-    return buildTerrainPoint(t, distanceKm, fromSite, toSite, link, terrainSampler);
+    return buildTerrainPoint(t, distanceKm, fromSite, toSite, link, kFactor, terrainSampler);
   });
 };
 
@@ -106,6 +103,9 @@ export const analyzeLink = (
   const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, toSite.position));
   const fromAntennaAbsM = fromSite.groundElevationM + fromSite.antennaHeightM;
   const toAntennaAbsM = toSite.groundElevationM + toSite.antennaHeightM;
+  const kFactor = atmosphericBendingNUnitsToKFactor(options?.environment?.atmosphericBendingNUnits ?? 301);
+  const clutterHeightM = options?.environment?.clutterHeightM ?? 0;
+  const polarization = options?.environment?.polarization ?? "Vertical";
 
   const basePathLossDb = getPathLossByModel(
     model,
@@ -124,13 +124,27 @@ export const analyzeLink = (
       fromAntennaAbsM: fromAntennaAbsM,
       toAntennaAbsM: toAntennaAbsM,
       frequencyMHz: link.frequencyMHz,
-        terrainSampler,
-        samples: Math.max(24, Math.round(options?.terrainSamples ?? 32)),
-        kFactor: nUnitsToKFactor(options?.environment?.atmosphericBendingNUnits ?? 301),
-        clutterHeightM: options?.environment?.clutterHeightM ?? 0,
-        polarization: options?.environment?.polarization ?? "Vertical",
-      });
+      terrainSampler,
+      samples: Math.max(24, Math.round(options?.terrainSamples ?? 32)),
+      kFactor,
+      clutterHeightM,
+      polarization,
+    });
   }
+
+  const terrainObstructed =
+    model === "ITM" && terrainSampler
+      ? isTerrainLineObstructed({
+          from: fromSite.position,
+          to: toSite.position,
+          fromAntennaAbsM,
+          toAntennaAbsM,
+          terrainSampler,
+          samples: Math.max(24, Math.round(options?.terrainSamples ?? 32)),
+          kFactor,
+          clutterHeightM,
+        })
+      : false;
 
   const pathLossDb = basePathLossDb + terrainPenaltyDb;
   const pureFsplDb = fsplDb(distanceKm, link.frequencyMHz);
@@ -140,7 +154,7 @@ export const analyzeLink = (
 
   const midpointLineM = (fromAntennaAbsM + toAntennaAbsM) / 2;
   const midpointTerrainM = (fromSite.groundElevationM + toSite.groundElevationM) / 2;
-  const midpointBulgeM = earthBulgeM(distanceKm, 0.5);
+  const midpointBulgeM = earthBulgeM(distanceKm, 0.5, kFactor);
   const fresnelMidpointM = firstFresnelRadiusM(distanceKm, link.frequencyMHz, 0.5);
 
   const geometricClearanceM = midpointLineM - (midpointTerrainM + midpointBulgeM);
@@ -154,6 +168,7 @@ export const analyzeLink = (
     toSite,
     terrainSampler,
     Math.max(48, Math.round(options?.terrainSamples ?? 96)),
+    { kFactor },
   );
   const worstFresnelPoint = clearanceProfile.reduce<{
     clearanceM: number;
@@ -184,6 +199,7 @@ export const analyzeLink = (
     fsplDb: pureFsplDb,
     eirpDbm,
     rxLevelDbm,
+    terrainObstructed,
     midpointEarthBulgeM: midpointBulgeM,
     firstFresnelRadiusM: fresnelMidpointM,
     geometricClearanceM,

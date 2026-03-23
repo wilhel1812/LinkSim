@@ -1,5 +1,5 @@
-export const APP_VERSION = "0.9.19";
-export const APP_COMMIT = "00978a64";
+export const APP_VERSION = "0.9.20";
+export const APP_COMMIT = "364fc2fe";
 export const APP_BUILD_LABEL = `v${APP_VERSION}+${APP_COMMIT}`;
 export type BuildChannel = "stable" | "beta" | "alpha";
 export const buildLabelForChannel = (channel: BuildChannel): string => {

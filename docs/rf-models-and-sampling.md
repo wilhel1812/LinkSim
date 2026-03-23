@@ -14,6 +14,8 @@
 ## Pass/Fail interpretation
 - Pass/Fail compares predicted calibrated RX dBm to RX target dBm.
 - `PASS` means `RX >= target`.
+- LOS obstruction checks (blocked/clear) use the same terrain LOS evaluator across map overlays, path profile hover states, and selected-link analysis.
+- Curvature in LOS checks uses effective Earth radius (`k-factor`) derived from atmospheric bending `N-units` in propagation environment settings.
 - Map colors in Pass/Fail mode:
   - `green`: clear path and meets target
   - `yellow`: blocked path but still meets target

@@ -8,7 +8,10 @@ import {
   passFailStateLabel,
   type PassFailState,
 } from "../lib/passFailState";
+import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
+import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
 import { buildProfile } from "../lib/propagation";
+import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/terrainTiles";
@@ -32,13 +35,6 @@ const areaPath = (
   return `${top} ${bottom} Z`;
 };
 
-const firstFresnelRadiusM = (distanceKm: number, frequencyMHz: number, t: number): number => {
-  const dTotalM = Math.max(1, distanceKm * 1000);
-  const d1 = dTotalM * t;
-  const d2 = dTotalM - d1;
-  const wavelengthM = 300 / Math.max(1, frequencyMHz);
-  return Math.sqrt((wavelengthM * d1 * d2) / dTotalM);
-};
 const earthBulgeM = (distanceKm: number, t: number): number => {
   const earthRadiusM = 6_371_000;
   const dTotalM = Math.max(1, distanceKm * 1000);
@@ -53,7 +49,10 @@ type LinkProfileChartProps = {
 
 export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
+  const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
   const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
+  const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
+  const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
   const chartWidth = chartSize.width;
   const chartHeight = chartSize.height;
   const sites = useAppStore((state) => state.sites);
@@ -74,6 +73,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
   const networks = useAppStore((state) => state.networks);
   const siteDragPreview = useAppStore((state) => state.siteDragPreview);
   const propagationModel = useAppStore((state) => state.propagationModel);
+  const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const profileRevision = useAppStore(
@@ -134,6 +134,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       selectedToSiteEffective,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
       120,
+      { kFactor: atmosphericBendingNUnitsToKFactor(propagationEnvironment.atmosphericBendingNUnits) },
     );
   }, [
     baseProfile,
@@ -142,6 +143,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     selectedToSiteEffective,
     siteDragPreview,
     srtmTiles,
+    propagationEnvironment.atmosphericBendingNUnits,
   ]);
   const fromSiteName = selectedFromSite?.name ?? "From";
   const toSiteName = selectedToSite?.name ?? "To";
@@ -209,9 +211,8 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
         xForDistance: () => M.l,
         yForElevation: () => chartHeight - M.b,
         terrainPath: "",
+        terrainStrokePath: "",
         terrainLineSegments: [] as { d: string; state: PassFailState }[],
-        losPath: "",
-        fresnelPath: "",
         yTicks: [] as { value: number; py: number }[],
         xTicks: [] as { value: number; px: number; anchor: "start" | "middle" | "end" }[],
       };
@@ -237,10 +238,6 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     const y = scaleLinear().domain([safeElevMin - 5, adjustedMax + 5]).range([chartHeight - M.b, M.t]);
 
     const terrainPoints = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.terrainM) }));
-    const losPoints = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.losM) }));
-    const fresnelTop = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.fresnelTopM) }));
-    const fresnelBottom = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.fresnelBottomM) }));
-
     const terrainLineSegments = terrainPoints.slice(1).map((point, i) => ({
       d: linePath([terrainPoints[i], point]),
       state: "pass_clear" as PassFailState,
@@ -251,9 +248,8 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       xForDistance: (distanceKm: number) => x(distanceKm),
       yForElevation: (elevation: number) => y(elevation),
       terrainPath: `${linePath(terrainPoints)} L${chartWidth - M.r},${chartHeight - M.b} L${M.l},${chartHeight - M.b} Z`,
+      terrainStrokePath: linePath(terrainPoints),
       terrainLineSegments,
-      losPath: linePath(losPoints),
-      fresnelPath: areaPath(fresnelTop, fresnelBottom),
       yTicks: Array.from({ length: 5 }, (_, i) => {
         const value = safeElevMin - 5 + ((adjustedMax - safeElevMin + 10) * i) / 4;
         return { value, py: y(value) };
@@ -271,31 +267,92 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     };
   }, [profile, chartWidth, chartHeight]);
 
-  const terrainLineSegments = useMemo(() => {
-    if (!geometry.hasData || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink) return geometry.terrainLineSegments;
-    return profile.slice(1).map((point, index) => {
-      const metrics = computeSourceCentricRxMetrics(
-        point.lat,
-        point.lon,
-        selectedFromSiteEffective,
-        effectiveLink,
-        selectedToSiteEffective.antennaHeightM,
-        selectedToSiteEffective.rxGainDbi,
+  const segmentStateKey = useMemo(
+    () =>
+      [
+        profileRevision,
         propagationModel,
-        (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-        24,
-      );
-      const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
-      const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
-      const state = classifyPassFailState(pass, losBlocked);
-      return {
-        d: geometry.terrainLineSegments[index]?.d ?? "",
-        state,
-      };
-    });
+        rxSensitivityTargetDbm,
+        environmentLossDb,
+        propagationEnvironment.atmosphericBendingNUnits,
+        propagationEnvironment.clutterHeightM,
+        propagationEnvironment.polarization,
+      ].join("|"),
+    [
+      profileRevision,
+      propagationModel,
+      rxSensitivityTargetDbm,
+      environmentLossDb,
+      propagationEnvironment.atmosphericBendingNUnits,
+      propagationEnvironment.clutterHeightM,
+      propagationEnvironment.polarization,
+    ],
+  );
+
+  useEffect(() => {
+    if (!geometry.hasData || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink || profile.length < 2) {
+      setTerrainSegmentStates([]);
+      return;
+    }
+    const cached = segmentStateCacheRef.current.get(segmentStateKey);
+    if (cached && cached.length === profile.length - 1) {
+      setTerrainSegmentStates(cached);
+      return;
+    }
+
+    setTerrainSegmentStates([]);
+    const nextStates = new Array<PassFailState>(profile.length - 1);
+    let index = 1;
+    let cancelled = false;
+    let rafId = 0;
+    const sampleTerrain = (lat: number, lon: number): number | null => sampleSrtmElevation(srtmTiles, lat, lon);
+
+    const processChunk = () => {
+      const start = typeof performance !== "undefined" ? performance.now() : Date.now();
+      while (index < profile.length) {
+        const point = profile[index];
+        const metrics = computeSourceCentricRxMetrics(
+          point.lat,
+          point.lon,
+          selectedFromSiteEffective,
+          effectiveLink,
+          selectedToSiteEffective.antennaHeightM,
+          selectedToSiteEffective.rxGainDbi,
+          propagationModel,
+          sampleTerrain,
+          24,
+          propagationEnvironment,
+        );
+        const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
+        const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
+        nextStates[index - 1] = classifyPassFailState(pass, losBlocked);
+        index += 1;
+        const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+        if (now - start >= 8) break;
+      }
+
+      if (cancelled) return;
+      if (index < profile.length) {
+        rafId = requestAnimationFrame(processChunk);
+        return;
+      }
+
+      const cache = segmentStateCacheRef.current;
+      cache.set(segmentStateKey, nextStates);
+      if (cache.size > 36) {
+        const oldestKey = cache.keys().next().value;
+        if (oldestKey) cache.delete(oldestKey);
+      }
+      setTerrainSegmentStates(nextStates);
+    };
+
+    rafId = requestAnimationFrame(processChunk);
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [
     geometry.hasData,
-    geometry.terrainLineSegments,
     profile,
     selectedFromSiteEffective,
     selectedToSiteEffective,
@@ -304,66 +361,122 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     srtmTiles,
     environmentLossDb,
     rxSensitivityTargetDbm,
+    propagationEnvironment,
+    segmentStateKey,
+  ]);
+
+  const terrainLineSegments = useMemo(() => {
+    if (!geometry.hasData) return geometry.terrainLineSegments;
+    return geometry.terrainLineSegments.map((segment, index) => ({
+      ...segment,
+      state: terrainSegmentStates[index] ?? segment.state,
+    }));
+  }, [
+    geometry.terrainLineSegments,
+    geometry.hasData,
+    terrainSegmentStates,
   ]);
 
   const clampedCursorIndex = Math.max(0, Math.min(profile.length - 1, profileCursorIndex));
   const cursorPoint = profile[clampedCursorIndex];
-  const activeProfileSlice = useMemo(
-    () => (profile.length > 1 ? profile.slice(0, Math.max(2, clampedCursorIndex + 1)) : profile),
-    [profile, clampedCursorIndex],
-  );
-  const activeLosHeights = useMemo(() => {
-    if (!activeProfileSlice.length) return [] as number[];
-    const sourceAntennaM = profile[0]?.losM ?? activeProfileSlice[0]?.losM ?? 0;
-    const targetTerrainM = activeProfileSlice[activeProfileSlice.length - 1]?.terrainM ?? sourceAntennaM;
-    const targetAntennaAbsM = selectedToSiteEffective
-      ? targetTerrainM + selectedToSiteEffective.antennaHeightM
-      : targetTerrainM;
-    const totalDistanceKm = Math.max(0.001, activeProfileSlice[activeProfileSlice.length - 1]?.distanceKm ?? 0.001);
-    return activeProfileSlice.map((point) => {
-      const t = clamp(point.distanceKm / totalDistanceKm, 0, 1);
-      return sourceAntennaM + (targetAntennaAbsM - sourceAntennaM) * t;
-    });
-  }, [activeProfileSlice, profile, selectedToSiteEffective]);
+  const activeHoverSegments = useMemo(() => {
+    if (!effectiveLink || !selectedFromSiteEffective || !selectedToSiteEffective) return [];
+    return buildHoverProfileSegments(
+      profile,
+      clampedCursorIndex,
+      selectedFromSiteEffective.antennaHeightM,
+      selectedToSiteEffective.antennaHeightM,
+      effectiveLink.frequencyMHz,
+    );
+  }, [
+    profile,
+    clampedCursorIndex,
+    selectedFromSiteEffective,
+    selectedToSiteEffective,
+    effectiveLink,
+  ]);
+  const isSplitHoverMode = activeHoverSegments.length > 1;
+  const hoverSegmentStates = useMemo(() => {
+    const states = new Map<"from-to-cursor" | "to-to-cursor", PassFailState>();
+    if (!cursorPoint || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink) return states;
 
-  const activeFresnel = useMemo(() => {
-    if (!activeProfileSlice.length || !effectiveLink) return [] as Array<{ top: number; bottom: number }>;
-    const totalDistanceKm = Math.max(0.001, activeProfileSlice[activeProfileSlice.length - 1]?.distanceKm ?? 0.001);
-    return activeProfileSlice.map((point, index) => {
-      const t = clamp(point.distanceKm / totalDistanceKm, 0, 1);
-      const radius = firstFresnelRadiusM(totalDistanceKm, effectiveLink.frequencyMHz, t);
-      const center = activeLosHeights[index] ?? 0;
-      return {
-        top: center + radius,
-        bottom: center - radius,
-      };
-    });
-  }, [activeProfileSlice, effectiveLink, activeLosHeights]);
+    const forward = computeSourceCentricRxMetrics(
+      cursorPoint.lat,
+      cursorPoint.lon,
+      selectedFromSiteEffective,
+      effectiveLink,
+      selectedToSiteEffective.antennaHeightM,
+      selectedToSiteEffective.rxGainDbi,
+      propagationModel,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+      24,
+      propagationEnvironment,
+    );
+    const forwardPass = forward.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
+    const forwardBlocked = propagationModel === "ITM" && forward.terrainObstructed;
+    states.set("from-to-cursor", classifyPassFailState(forwardPass, forwardBlocked));
 
-  const activeLosPath = useMemo(
+    if (isSplitHoverMode) {
+      const reverse = computeSourceCentricRxMetrics(
+        cursorPoint.lat,
+        cursorPoint.lon,
+        selectedToSiteEffective,
+        effectiveLink,
+        selectedFromSiteEffective.antennaHeightM,
+        selectedFromSiteEffective.rxGainDbi,
+        propagationModel,
+        (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+        24,
+        propagationEnvironment,
+      );
+      const reversePass = reverse.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
+      const reverseBlocked = propagationModel === "ITM" && reverse.terrainObstructed;
+      states.set("to-to-cursor", classifyPassFailState(reversePass, reverseBlocked));
+    }
+
+    return states;
+  }, [
+    cursorPoint,
+    selectedFromSiteEffective,
+    selectedToSiteEffective,
+    effectiveLink,
+    propagationModel,
+    srtmTiles,
+    propagationEnvironment,
+    environmentLossDb,
+    rxSensitivityTargetDbm,
+    isSplitHoverMode,
+  ]);
+  const activeLosPaths = useMemo(
     () =>
-      activeProfileSlice.length > 1
-        ? linePath(
-            activeProfileSlice.map((p, index) => ({
-              x: geometry.xForDistance(p.distanceKm),
-              y: geometry.yForElevation(activeLosHeights[index] ?? p.losM),
-            })),
-          )
-        : "",
-    [activeProfileSlice, geometry, activeLosHeights],
+      activeHoverSegments.map((segment, index) => ({
+        id: segment.id,
+        path: linePath(
+          segment.points.map((point) => ({
+            x: geometry.xForDistance(point.distanceKm),
+            y: geometry.yForElevation(point.losM),
+          })),
+        ),
+        state: hoverSegmentStates.get(segment.id) ?? "pass_clear",
+        isSecondary: index > 0,
+      })),
+    [activeHoverSegments, geometry, hoverSegmentStates],
   );
-  const activeFresnelPath = useMemo(() => {
-    if (activeProfileSlice.length < 2 || activeFresnel.length < 2) return "";
-    const top = activeProfileSlice.map((p, index) => ({
-      x: geometry.xForDistance(p.distanceKm),
-      y: geometry.yForElevation(activeFresnel[index]?.top ?? p.fresnelTopM),
-    }));
-    const bottom = activeProfileSlice.map((p, index) => ({
-      x: geometry.xForDistance(p.distanceKm),
-      y: geometry.yForElevation(activeFresnel[index]?.bottom ?? p.fresnelBottomM),
-    }));
-    return areaPath(top, bottom);
-  }, [activeProfileSlice, activeFresnel, geometry]);
+  const activeFresnelPaths = useMemo(
+    () =>
+      activeHoverSegments.map((segment) => {
+        const top = segment.points.map((point) => ({
+          x: geometry.xForDistance(point.distanceKm),
+          y: geometry.yForElevation(point.fresnelTopM),
+        }));
+        const bottom = segment.points.map((point) => ({
+          x: geometry.xForDistance(point.distanceKm),
+          y: geometry.yForElevation(point.fresnelBottomM),
+        }));
+        return areaPath(top, bottom);
+      }),
+    [activeHoverSegments, geometry],
+  );
   const earthCurvatureHorizonPath = useMemo(() => {
     if (profile.length < 2) return "";
     const totalDistanceKm = Math.max(0.001, profile[profile.length - 1]?.distanceKm ?? 0.001);
@@ -377,9 +490,9 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     });
     return linePath(points);
   }, [profile, geometry]);
-  const cursorState = useMemo(() => {
+  const cursorStates = useMemo(() => {
     if (!cursorPoint || !selectedFromSiteEffective || !selectedToSiteEffective || !effectiveLink) return null;
-    const metrics = computeSourceCentricRxMetrics(
+    const forwardMetrics = computeSourceCentricRxMetrics(
       cursorPoint.lat,
       cursorPoint.lon,
       selectedFromSiteEffective,
@@ -389,27 +502,101 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       propagationModel,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
+      propagationEnvironment,
     );
-    const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
-    const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
-    const state = classifyPassFailState(pass, losBlocked);
-    return {
-      state,
-      label: passFailStateLabel(state),
-      rxDbm: metrics.rxDbm,
-    };
+    const forwardPass = forwardMetrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
+    const forwardBlocked = propagationModel === "ITM" && forwardMetrics.terrainObstructed;
+    const forwardState = classifyPassFailState(forwardPass, forwardBlocked);
+    const totalDistanceKm = profile[profile.length - 1]?.distanceKm ?? 0;
+    const nextStates = [
+      {
+        key: "from",
+        sideLabel: `${fromSiteName} -> Cursor Point`,
+        distanceKm: cursorPoint.distanceKm,
+        state: forwardState,
+        label: passFailStateLabel(forwardState),
+        rxAfterEnvLossDbm: forwardMetrics.rxDbm - environmentLossDb,
+      },
+    ];
+
+    if (!isSplitHoverMode) return nextStates;
+
+    const reverseMetrics = computeSourceCentricRxMetrics(
+      cursorPoint.lat,
+      cursorPoint.lon,
+      selectedToSiteEffective,
+      effectiveLink,
+      selectedFromSiteEffective.antennaHeightM,
+      selectedFromSiteEffective.rxGainDbi,
+      propagationModel,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+      24,
+      propagationEnvironment,
+    );
+    const reversePass = reverseMetrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
+    const reverseBlocked = propagationModel === "ITM" && reverseMetrics.terrainObstructed;
+    const reverseState = classifyPassFailState(reversePass, reverseBlocked);
+    nextStates.push({
+      key: "to",
+      sideLabel: `${toSiteName} -> Cursor Point`,
+      distanceKm: Math.max(0, totalDistanceKm - cursorPoint.distanceKm),
+      state: reverseState,
+      label: passFailStateLabel(reverseState),
+      rxAfterEnvLossDbm: reverseMetrics.rxDbm - environmentLossDb,
+    });
+    return nextStates;
   }, [
     cursorPoint,
+    profile,
     selectedFromSiteEffective,
     selectedToSiteEffective,
     effectiveLink,
+    fromSiteName,
+    toSiteName,
+    isSplitHoverMode,
     propagationModel,
     srtmTiles,
     environmentLossDb,
     rxSensitivityTargetDbm,
+    propagationEnvironment,
   ]);
+  const footerCursorState = !isSplitHoverMode && cursorStates ? cursorStates[0] : null;
+  const splitHoverPopoverPosition = useMemo(() => {
+    if (!hoverPosition || !isSplitHoverMode) return null;
+    return {
+      x: clamp(hoverPosition.x, 180, chartWidth - 180),
+      y: clamp(hoverPosition.y - 12, 52, chartHeight - 12),
+    };
+  }, [hoverPosition, isSplitHoverMode, chartWidth, chartHeight]);
 
   const onSvgMove = (event: MouseEvent<SVGRectElement>) => {
+    if (!geometry.hasData || profile.length < 2) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const xNorm = event.clientX - rect.left;
+    const yNorm = event.clientY - rect.top;
+    const chartX = (xNorm / rect.width) * chartWidth;
+    const chartY = M.t + (yNorm / rect.height) * (chartHeight - M.t - M.b);
+
+    const getNearestProfileIndex = (xCoordinate: number): number => {
+      let nearest = 0;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < profile.length; i += 1) {
+        const px = geometry.xForDistance(profile[i].distanceKm);
+        const d = Math.abs(px - xCoordinate);
+        if (d < nearestDistance) {
+          nearestDistance = d;
+          nearest = i;
+        }
+      }
+      return nearest;
+    };
+
+    const nearest = getNearestProfileIndex(chartX);
+    setProfileCursorIndex(nearest);
+    setHoverPosition({ x: chartX, y: chartY });
+  };
+
+  const onSvgClick = (event: MouseEvent<SVGRectElement>) => {
     if (!geometry.hasData || profile.length < 2) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const xNorm = event.clientX - rect.left;
@@ -426,9 +613,13 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       }
     }
     setProfileCursorIndex(nearest);
+    const nearestPoint = profile[nearest];
+    if (!nearestPoint) return;
+    dispatchProfileDraftSiteRequest({ lat: nearestPoint.lat, lon: nearestPoint.lon });
   };
 
   const onSvgLeave = () => {
+    setHoverPosition(null);
     if (profile.length < 1) return;
     setProfileCursorIndex(profile.length - 1);
   };
@@ -506,17 +697,29 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
             </g>
           ))}
 
-          <path className="fresnel-band" d={activeFresnelPath} />
+          {activeFresnelPaths.map((path, index) => (
+            <path className={`fresnel-band ${index > 0 ? "fresnel-band-secondary" : ""}`} d={path} key={`fresnel-${index}`} />
+          ))}
           <path className="terrain-fill-path" d={geometry.terrainPath} fill={`url(#${terrainFillGradientId})`} />
-          {terrainLineSegments.map((segment, index) => (
+          {isSplitHoverMode ? (
+            <path className="terrain-line-neutral" d={geometry.terrainStrokePath} />
+          ) : (
+            terrainLineSegments.map((segment, index) => (
+              <path
+                className={`terrain-state-${segment.state}`}
+                d={segment.d}
+                key={`terrain-segment-${index}`}
+              />
+            ))
+          )}
+          <path className="earth-curvature-horizon" d={earthCurvatureHorizonPath} />
+          {activeLosPaths.map((segment) => (
             <path
-              className={`terrain-state-${segment.state}`}
-              d={segment.d}
-              key={`terrain-segment-${index}`}
+              className={`los-path state-${segment.state} ${segment.isSecondary ? "los-path-secondary" : ""}`}
+              d={segment.path}
+              key={`los-${segment.id}`}
             />
           ))}
-          <path className="earth-curvature-horizon" d={earthCurvatureHorizonPath} />
-          <path className="los-path" d={activeLosPath} />
           {cursorPoint ? (
             <g className="profile-cursor">
               <line
@@ -538,10 +741,30 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
             y={M.t}
             width={chartWidth - M.l - M.r}
             height={chartHeight - M.t - M.b}
+            onClick={onSvgClick}
             onMouseMove={onSvgMove}
             onMouseLeave={onSvgLeave}
           />
         </svg>
+        {splitHoverPopoverPosition && cursorStates && cursorStates.length > 1 ? (
+          <div
+            className="chart-hover-popover"
+            role="status"
+            style={{
+              left: `${(splitHoverPopoverPosition.x / chartWidth) * 100}%`,
+              top: `${(splitHoverPopoverPosition.y / chartHeight) * 100}%`,
+            }}
+          >
+            {cursorStates.map((state) => (
+              <div className="chart-hover-popover-row" key={state.key}>
+                <span className={`state-dot state-dot-${state.state}`} aria-hidden />
+                <span>
+                  {state.sideLabel}: {state.label} at {state.distanceKm.toFixed(2)} km ({state.rxAfterEnvLossDbm.toFixed(1)} dBm after env loss)
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
         </div>
       )}
       <div className="chart-footer-row">
@@ -564,12 +787,12 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
           {isExpanded ? "Exit Fullscreen" : "Fullscreen"}
         </button>
         <div className="chart-hover-state">
-          {cursorPoint && cursorState ? (
+          {cursorPoint && footerCursorState ? (
             <>
-              <span className={`state-dot state-dot-${cursorState.state}`} aria-hidden />
+              <span className={`state-dot state-dot-${footerCursorState.state}`} aria-hidden />
               <span>
-                {cursorState.label} at {cursorPoint.distanceKm.toFixed(2)} km (
-                {(cursorState.rxDbm - environmentLossDb).toFixed(1)} dBm after env loss)
+                {footerCursorState.label} at {footerCursorState.distanceKm.toFixed(2)} km (
+                {footerCursorState.rxAfterEnvLossDbm.toFixed(1)} dBm after env loss)
               </span>
             </>
           ) : null}
