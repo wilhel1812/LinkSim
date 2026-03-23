@@ -20,6 +20,7 @@
   - Merge issue branches into `staging` first.
   - Promote to production through `release/vX.Y.Z` branch/PR into `main`.
   - Use `hotfix/<slug>` only for explicitly approved incidents.
+  - This staging-integration model is the default unless the user explicitly overrides it.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
 - Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.
 - Never commit or push directly to `main`; always create/use a separate branch for changes and push that branch.
@@ -76,6 +77,11 @@
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
   - Maintain explicit status labels: `pending-discussion` -> `in-progress` -> `in-staging` -> `released`.
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
+
+## Branch Protection Rollout Safety
+- When introducing a new required status check, roll it out in two phases to avoid PR deadlocks:
+  1. merge the workflow that produces the check
+  2. then add that check to branch protection required checks
 
 ## Model Selection
 - **Codex 5.3** — use for full implementation passes where quality and breadth of change matter most. Expensive; reserve for when the work warrants it.
