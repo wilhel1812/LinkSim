@@ -1,4 +1,4 @@
-import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -10,8 +10,8 @@ import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
+import OnboardingTutorialModal from "./OnboardingTutorialModal";
 import { Sidebar } from "./Sidebar";
-const OnboardingTutorialModal = lazy(() => import("./OnboardingTutorialModal"));
 import { UserAdminPanel } from "./UserAdminPanel";
 
 initializeMigrations();
@@ -20,6 +20,7 @@ const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
+const ACCESS_CHECK_TIMEOUT_MS = 10_000;
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
@@ -80,6 +81,7 @@ export function AppShell() {
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
+  const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   const [activeUserId, setActiveUserId] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -199,8 +201,34 @@ export function AppShell() {
   }, [isOnline]);
 
   useEffect(() => {
+    let cancelled = false;
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      timedOut = true;
+      console.error("[AppShell] Access check timed out", {
+        timeoutMs: ACCESS_CHECK_TIMEOUT_MS,
+        isLocalRuntime,
+        deepLinkMode: deepLinkParse.ok,
+        online: typeof navigator === "undefined" ? true : navigator.onLine,
+        isInitializing,
+      });
+      setAccessDiagnosticMessage(
+        "Access check timed out. Reload the page. If this continues, open the console and share the startup error.",
+      );
+      setAccessState("locked");
+    }, ACCESS_CHECK_TIMEOUT_MS);
+
+    console.info("[AppShell] Starting access check", {
+      isLocalRuntime,
+      deepLinkMode: deepLinkParse.ok,
+      online: typeof navigator === "undefined" ? true : navigator.onLine,
+      isInitializing,
+    });
+
     void (async () => {
       try {
+        if (cancelled || timedOut) return;
         const localForceReadonly =
           isLocalRuntime &&
           (() => {
@@ -211,11 +239,17 @@ export function AppShell() {
             }
           })();
         if (localForceReadonly) {
+          if (cancelled || timedOut) return;
+          window.clearTimeout(timeoutId);
+          setAccessDiagnosticMessage(null);
           setAccessState("readonly");
           setDeepLinkNotice("Local read-only mode.");
           return;
         }
         const profile = await fetchMe();
+        if (cancelled || timedOut) return;
+        window.clearTimeout(timeoutId);
+        setAccessDiagnosticMessage(null);
         setCurrentUser(profile);
         setActiveUserId(profile.id);
         try {
@@ -239,7 +273,16 @@ export function AppShell() {
         }
         setAccessState("pending");
       } catch (error) {
+        if (cancelled || timedOut) return;
+        window.clearTimeout(timeoutId);
         const message = getUiErrorMessage(error);
+        console.error("[AppShell] Access check failed", {
+          message,
+          isLocalRuntime,
+          deepLinkMode: deepLinkParse.ok,
+          online: typeof navigator === "undefined" ? true : navigator.onLine,
+        });
+        setAccessDiagnosticMessage(`Access check failed: ${message}`);
         if (message.includes("Session revoked by admin")) {
           window.location.href = "/cdn-cgi/access/logout";
           return;
@@ -252,7 +295,11 @@ export function AppShell() {
         setAccessState("locked");
       }
     })();
-  }, [deepLinkParse.ok, isLocalRuntime]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [deepLinkParse.ok, isLocalRuntime, isInitializing, setCurrentUser]);
 
   useEffect(() => {
     if (accessState === "granted") {
@@ -511,7 +558,6 @@ export function AppShell() {
           zoom: payload.mapViewport.zoom,
         });
       }
-      setDeepLinkNotice("Loaded shared simulation link.");
     })();
   }, [
     accessState,
@@ -612,6 +658,7 @@ export function AppShell() {
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
           <h2>Checking access…</h2>
+          {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
         </section>
       </main>
     );
@@ -673,6 +720,7 @@ export function AppShell() {
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
           <h2>Access unavailable</h2>
+          {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
           <p className="field-help">
             Your account session is valid, but this account is not available in LinkSim right now.
           </p>

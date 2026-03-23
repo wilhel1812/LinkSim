@@ -582,7 +582,7 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--surface-0) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
   backdrop-filter: blur(2px);
   pointer-events: auto;
 }
@@ -597,7 +597,7 @@ input {
   padding: 24px 32px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--surface-1);
+  background: var(--surface);
   box-shadow: var(--shadow-elev-2);
 }
 
@@ -1260,7 +1260,7 @@ input {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 90%, var(--surface) 10%);
+  background: color-mix(in srgb, var(--surface-2) 90%, var(--surface) 10%);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
   font-size: 0.75rem;
   color: var(--text);

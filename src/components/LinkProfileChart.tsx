@@ -510,7 +510,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     const nextStates = [
       {
         key: "from",
-        sideLabel: `${fromSiteName} -> C`,
+        sideLabel: `${fromSiteName} -> Cursor Point`,
         distanceKm: cursorPoint.distanceKm,
         state: forwardState,
         label: passFailStateLabel(forwardState),
@@ -537,7 +537,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     const reverseState = classifyPassFailState(reversePass, reverseBlocked);
     nextStates.push({
       key: "to",
-      sideLabel: `${toSiteName} -> C`,
+      sideLabel: `${toSiteName} -> Cursor Point`,
       distanceKm: Math.max(0, totalDistanceKm - cursorPoint.distanceKm),
       state: reverseState,
       label: passFailStateLabel(reverseState),
