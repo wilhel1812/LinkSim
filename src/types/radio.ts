@@ -104,6 +104,7 @@ export type LinkAnalysis = {
   fsplDb: number;
   eirpDbm: number;
   rxLevelDbm: number;
+  terrainObstructed: boolean;
   midpointEarthBulgeM: number;
   firstFresnelRadiusM: number;
   geometricClearanceM: number;

@@ -27,3 +27,5 @@ dist-ssr
 .wrangler
 
 .tmp/
+
+debug-logs/

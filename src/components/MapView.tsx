@@ -12,13 +12,16 @@ import type { LayerProps } from "react-map-gl/maplibre";
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { tilesForBounds } from "../lib/terrainTiles";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
+import {
+  PROFILE_DRAFT_SITE_REQUEST_EVENT,
+  type ProfileDraftSiteRequestDetail,
+} from "../lib/profileDraftEvent";
 import { useAppStore } from "../store/appStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
-import type { Link, Site } from "../types/radio";
+import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
@@ -389,6 +392,7 @@ const computeSourceCentricRxDbm = (
   propagationModel: "FSPL" | "TwoRay" | "ITM",
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
+  propagationEnvironment: PropagationEnvironment,
 ): number =>
   computeSourceCentricRxMetrics(
     lat,
@@ -400,6 +404,7 @@ const computeSourceCentricRxDbm = (
     propagationModel,
     terrainSampler,
     terrainSamples,
+    propagationEnvironment,
   ).rxDbm;
 
 const buildCoverageOverlay = (
@@ -467,6 +472,7 @@ const buildSourcePassFailOverlay = (
   receiverAntennaHeightM: number,
   receiverRxGainDbi: number,
   propagationModel: "FSPL" | "TwoRay" | "ITM",
+  propagationEnvironment: PropagationEnvironment,
   rxTargetDbm: number,
   environmentLossDb: number,
   terrainSampler: (lat: number, lon: number) => number | null,
@@ -498,6 +504,7 @@ const buildSourcePassFailOverlay = (
         propagationModel,
         terrainSampler,
         terrainSamples,
+        propagationEnvironment,
       );
       const pass = metrics.rxDbm - environmentLossDb >= rxTargetDbm;
       const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
@@ -542,6 +549,7 @@ const buildRelayCandidateOverlay = (
   toSite: Site,
   effectiveLink: Link,
   propagationModel: "FSPL" | "TwoRay" | "ITM",
+  propagationEnvironment: PropagationEnvironment,
   environmentLossDb: number,
   terrainSampler: (lat: number, lon: number) => number | null,
   dimensions: { width: number; height: number },
@@ -590,6 +598,7 @@ const buildRelayCandidateOverlay = (
         propagationModel,
         terrainSampler,
         terrainSamples,
+        propagationEnvironment,
       );
       const relayToTargetRx = computeSourceCentricRxDbm(
         toSite.position.lat,
@@ -601,6 +610,7 @@ const buildRelayCandidateOverlay = (
         propagationModel,
         terrainSampler,
         terrainSamples,
+        propagationEnvironment,
       );
       const bottleneckDbm = Math.min(fromToRelayRx, relayToTargetRx) - environmentLossDb;
       const i = y * width + x;
@@ -813,6 +823,11 @@ type MapInspectorHoverInfo = {
   libraryEntryId?: string;
 };
 
+const DEFAULT_MAP_VIEWPORT = {
+  center: { lat: 59.9, lon: 10.75 },
+  zoom: 8,
+};
+
 export function MapView({
   isMapExpanded,
   readOnly = false,
@@ -829,7 +844,8 @@ export function MapView({
   const endpointPickTarget = useAppStore((state) => state.endpointPickTarget);
   const profileCursorIndex = useAppStore((state) => state.profileCursorIndex);
   const getSelectedProfile = useAppStore((state) => state.getSelectedProfile);
-  const viewport = useAppStore((state) => state.mapViewport);
+  const mapViewport = useAppStore((state) => state.mapViewport);
+  const viewport = mapViewport ?? DEFAULT_MAP_VIEWPORT;
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
@@ -844,6 +860,8 @@ export function MapView({
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
   const coverageSamples = useAppStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
+  const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
+  const terrainLoadingStartedAtMs = useAppStore((state) => state.terrainLoadingStartedAtMs);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
@@ -852,6 +870,7 @@ export function MapView({
   const hasOnlineElevationSync = useAppStore((state) => state.hasOnlineElevationSync);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
+  const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
   const isSimulationRecomputing = useAppStore((state) => state.isSimulationRecomputing);
   const simulationProgress = useAppStore((state) => state.simulationProgress);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
@@ -865,7 +884,10 @@ export function MapView({
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
   const profileColor = variant.map.profileLineColor;
-  const selectedProfile = getSelectedProfile();
+  const selectedProfile = useMemo(
+    () => getSelectedProfile(),
+    [getSelectedProfile, links, sites, srtmTiles, selectedLinkId, selectedNetworkId, networks, propagationModel],
+  );
   const coverageVizMode = useAppStore((state) => state.mapOverlayMode);
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
@@ -1000,28 +1022,6 @@ export function MapView({
     () => srtmTiles.filter((tile) => (tile.sourceId ?? "") === terrainDataset).length,
     [srtmTiles, terrainDataset],
   );
-  const requiredTerrainTileKeys = useMemo(() => {
-    if (!analysisBounds) return [] as string[];
-    return tilesForBounds(
-      analysisBounds.minLat,
-      analysisBounds.maxLat,
-      analysisBounds.minLon,
-      analysisBounds.maxLon,
-    );
-  }, [analysisBounds]);
-  const loadedDatasetTileKeys = useMemo(
-    () =>
-      new Set(
-        srtmTiles
-          .filter((tile) => (tile.sourceId ?? "") === terrainDataset)
-          .map((tile) => tile.key),
-      ),
-    [srtmTiles, terrainDataset],
-  );
-  const missingRequiredTileCount = useMemo(
-    () => requiredTerrainTileKeys.filter((key) => !loadedDatasetTileKeys.has(key)).length,
-    [requiredTerrainTileKeys, loadedDatasetTileKeys],
-  );
   const boundedCoverageSamples = useMemo(() => {
     if (!analysisBounds) return coverageSamples;
     return coverageSamples.filter(
@@ -1098,86 +1098,100 @@ export function MapView({
     return computeOverlayDimensions(bounds, overlayResolutionScale);
   }, [analysisBounds, samplesForOverlay, overlayResolutionScale]);
 
-  const coverageOverlay = useMemo<
-    (OverlayRaster & { minDbm?: number; maxDbm?: number }) | null
-  >(
-    () => {
-      const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
-      if (!bounds) return null;
-      const effectiveBandStepDb =
-        bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
-      if (coverageVizMode === "none") return null;
-      if (coverageVizMode === "relay") {
-        if (!selectedLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
-        const effectiveLink: Link = {
-          ...selectedLink,
-          frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
-        };
-        return buildRelayCandidateOverlay(
-          bounds,
-          selectedFromSite,
-          selectedToSite,
-          effectiveLink,
-          propagationModel,
-          environmentLossDb,
-          (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-          overlayDimensions,
-          24,
-        );
-      }
-      if (coverageVizMode === "passfail") {
-        if (!selectedLink || !selectedFromSite || !hasPassFailTopology) return null;
-        const effectiveLink: Link = {
-          ...selectedLink,
-          frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
-        };
-        const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? 2;
-        const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
-        return buildSourcePassFailOverlay(
-          bounds,
-          selectedFromSite,
-          effectiveLink,
-          receiverAntennaHeightM,
-          receiverRxGainDbi,
-          propagationModel,
-          rxSensitivityTargetDbm,
-          environmentLossDb,
-          (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-          overlayDimensions,
-          24,
-        );
-      }
-      return buildCoverageOverlay(
-        bounds,
-        samplesForOverlay,
-        coverageVizMode === "contours" ? "contours" : "heatmap",
-        effectiveBandStepDb,
-        overlayDimensions,
-      );
-    },
-    [
+  const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
+  const effectiveBandStepDb = useMemo(() => {
+    if (!overlayBounds) return 5;
+    return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, overlayBounds) : bandStepMode;
+  }, [overlayBounds, samplesForOverlay, bandStepMode]);
+  const baseOverlayMode = coverageVizMode === "contours" ? "contours" : coverageVizMode === "heatmap" ? "heatmap" : null;
+  const baseCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
+    if (!overlayBounds || !baseOverlayMode) return null;
+    return buildCoverageOverlay(
+      overlayBounds,
       samplesForOverlay,
-      coverageVizMode,
-      bandStepMode,
+      baseOverlayMode,
+      effectiveBandStepDb,
+      overlayDimensions,
+    );
+  }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions]);
+  const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
+    if (coverageVizMode !== "passfail") return null;
+    if (!overlayBounds || !selectedLink || !selectedFromSite || !hasPassFailTopology) return null;
+    const effectiveLink: Link = {
+      ...selectedLink,
+      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
+    };
+    const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? 2;
+    const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
+    return buildSourcePassFailOverlay(
+      overlayBounds,
+      selectedFromSite,
+      effectiveLink,
+      receiverAntennaHeightM,
+      receiverRxGainDbi,
+      propagationModel,
+      propagationEnvironment,
       rxSensitivityTargetDbm,
       environmentLossDb,
-      selectedLink,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+      overlayDimensions,
+      24,
+    );
+  }, [
+    coverageVizMode,
+    overlayBounds,
+    selectedLink,
+    selectedFromSite,
+    selectedToSite,
+    selectedNetwork,
+    hasPassFailTopology,
+    propagationModel,
+    propagationEnvironment,
+    rxSensitivityTargetDbm,
+    environmentLossDb,
+    srtmTiles,
+    overlayDimensions,
+  ]);
+  const relayCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
+    if (coverageVizMode !== "relay") return null;
+    if (!overlayBounds || !selectedLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
+    const effectiveLink: Link = {
+      ...selectedLink,
+      frequencyMHz: selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? selectedLink.frequencyMHz,
+    };
+    return buildRelayCandidateOverlay(
+      overlayBounds,
       selectedFromSite,
       selectedToSite,
-      selectedNetwork,
+      effectiveLink,
       propagationModel,
-      srtmTiles,
-      analysisBounds,
+      propagationEnvironment,
+      environmentLossDb,
+      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       overlayDimensions,
-      hasPassFailTopology,
-      hasRelayTopology,
-    ],
-  );
-  const currentBandStepDb = useMemo(() => {
-    const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
-    if (!bounds) return 5;
-    return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, bounds) : bandStepMode;
-  }, [analysisBounds, samplesForOverlay, bandStepMode]);
+      24,
+    );
+  }, [
+    coverageVizMode,
+    overlayBounds,
+    selectedLink,
+    selectedFromSite,
+    selectedToSite,
+    selectedNetwork,
+    hasRelayTopology,
+    propagationModel,
+    propagationEnvironment,
+    environmentLossDb,
+    srtmTiles,
+    overlayDimensions,
+  ]);
+  const coverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
+    if (coverageVizMode === "none") return null;
+    if (coverageVizMode === "relay") return relayCoverageOverlay;
+    if (coverageVizMode === "passfail") return passFailCoverageOverlay;
+    return baseCoverageOverlay;
+  }, [coverageVizMode, relayCoverageOverlay, passFailCoverageOverlay, baseCoverageOverlay]);
+  const currentBandStepDb = effectiveBandStepDb;
 
   const signalRange = useMemo(() => {
     if (!samplesForOverlay.length) return { min: -125, max: -62 };
@@ -1213,20 +1227,27 @@ export function MapView({
   }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
-  const isLikelyTerrainColdFetch =
-    isTerrainFetching &&
-    requiredTerrainTileKeys.length > 0 &&
-    missingRequiredTileCount > 0;
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
-  const backgroundBusyLabel = isTerrainFetching
-    ? isLikelyTerrainColdFetch
-      ? `Fetching terrain data... first load for this area can take a few minutes, then it is cached (${missingRequiredTileCount}/${requiredTerrainTileKeys.length} tile(s) missing).`
-      : "Fetching terrain data... first load for uncached tiles can take a few minutes."
+  const [elapsedTerrainLoadingMs, setElapsedTerrainLoadingMs] = useState(0);
+  useEffect(() => {
+    if (!isTerrainFetching || terrainLoadingStartedAtMs === 0) {
+      setElapsedTerrainLoadingMs(0);
+      return;
+    }
+    const update = () => setElapsedTerrainLoadingMs(Date.now() - terrainLoadingStartedAtMs);
+    update();
+    const id = setInterval(update, 5_000);
+    return () => clearInterval(id);
+  }, [isTerrainFetching, terrainLoadingStartedAtMs]);
+  const keepWorkingSuffix =
+    elapsedTerrainLoadingMs > 60_000 ? " — loading will continue in the background, even if you leave the app" : "";
+  const backgroundBusyLabel = (isTerrainFetching
+    ? terrainFetchStatus || "Loading terrain data..."
     : isTerrainRecommending
-      ? "Checking terrain dataset coverage..."
+      ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : isElevationSyncing
         ? "Syncing site elevations..."
-        : "";
+        : "") + keepWorkingSuffix;
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -1429,6 +1450,16 @@ export function MapView({
     setSiteDraftStatus(null);
   };
 
+  const beginPendingNewSiteDraft = (lat: number, lon: number) => {
+    if (endpointPickTarget) return;
+    if (pendingMoveCount > 0) {
+      setSiteDraftStatus("Save or dismiss the current site move before creating another new site.");
+      return;
+    }
+    setPendingNewSiteDraft({ lat, lon });
+    setSiteDraftStatus(null);
+  };
+
   const onMapClick = (event: MapLayerMouseEvent) => {
     const rawTarget = event.originalEvent?.target;
     if (rawTarget instanceof Element && rawTarget.closest(".site-pin")) return;
@@ -1452,16 +1483,19 @@ export function MapView({
       setSelectedLinkId(id);
       return;
     }
-    if (pendingMoveCount > 0) {
-      setSiteDraftStatus("Save or dismiss the current site move before creating another new site.");
-      return;
-    }
-    setPendingNewSiteDraft({
-      lat: event.lngLat.lat,
-      lon: event.lngLat.lng,
-    });
-    setSiteDraftStatus(null);
+    beginPendingNewSiteDraft(event.lngLat.lat, event.lngLat.lng);
   };
+
+  useEffect(() => {
+    const onProfileDraftRequest = (rawEvent: Event) => {
+      const customEvent = rawEvent as CustomEvent<ProfileDraftSiteRequestDetail>;
+      const detail = customEvent.detail;
+      if (!detail) return;
+      beginPendingNewSiteDraft(detail.lat, detail.lon);
+    };
+    window.addEventListener(PROFILE_DRAFT_SITE_REQUEST_EVENT, onProfileDraftRequest);
+    return () => window.removeEventListener(PROFILE_DRAFT_SITE_REQUEST_EVENT, onProfileDraftRequest);
+  }, [endpointPickTarget, pendingMoveCount]);
 
   const addDiscoveryLibrarySiteToSimulation = (entryId: string) => {
     if (!canPersist) {

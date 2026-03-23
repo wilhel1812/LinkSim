@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { buildCoverage } from "../lib/coverage";
+import { buildCoverageAsync, clearTerrainLossCache } from "../lib/coverage";
 import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
 import { haversineDistanceKm } from "../lib/geo";
@@ -20,12 +20,16 @@ import {
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { tilesForBounds } from "../lib/terrainTiles";
+import { mergeSrtmTiles } from "../lib/terrainMerge";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import type { BasemapProvider } from "../lib/basemaps";
 import {
   clearCopernicusCache,
-  loadCopernicusTilesForArea,
+  loadCopernicusTilesForAreaPhased,
   recommendCopernicusDatasetForArea,
+  type CopernicusDataset,
+  type CopernicusLoadResult,
 } from "../lib/copernicusTerrainClient";
 import {
   normalizeTerrainDataset,
@@ -33,6 +37,7 @@ import {
   TERRAIN_DATASET_LABEL,
   type TerrainDataset,
 } from "../lib/terrainDataset";
+import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
 import type { CloudUser } from "../lib/cloudUser";
@@ -52,12 +57,14 @@ import type {
 } from "../types/radio";
 
 const SYNC_DEBOUNCE_MS = 2500;
+const COVERAGE_RECOMPUTE_DEBOUNCE_MS = 140;
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SYNC_SIGNATURE_KEY = "linksim-sync-signature-v1";
 const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v2";
 
 let hydrated = false;
 let syncTimer: number | null = null;
+let coverageRecomputeTimer: number | null = null;
 let syncInFlight = false;
 let localMutationRevision = 0;
 let syncedMutationRevision = 0;
@@ -313,7 +320,7 @@ type AppState = {
   selectedNetworkId: string;
   selectedCoverageMode: CoverageMode;
   propagationModel: PropagationModel;
-  mapViewport: MapViewport;
+  mapViewport?: MapViewport;
   locale: LocaleCode;
   uiThemePreference: "system" | "light" | "dark";
   uiColorTheme: UiColorTheme;
@@ -329,11 +336,15 @@ type AppState = {
   terrainDataset: TerrainDataset;
   terrainFetchStatus: string;
   terrainRecommendation: string;
+  isHighResTerrainLoaded: boolean;
+  terrainLoadingStartedAtMs: number;
+  terrainLoadEpoch: number;
   hasOnlineElevationSync: boolean;
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
   endpointPickTarget: "from" | "to" | null;
+  showSimulationLibraryRequest: boolean;
   pendingSiteLibraryDraft:
     | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
     | null;
@@ -468,6 +479,7 @@ type AppState = {
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
   ) => void;
   clearPendingSiteLibraryDraft: () => void;
+  setShowSimulationLibraryRequest: (show: boolean) => void;
   requestOpenSiteLibraryEntry: (entryId: string) => void;
   clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
@@ -482,6 +494,7 @@ type AppState = {
   recommendTerrainDatasetForCurrentArea: () => Promise<void>;
   fetchTerrainForCurrentArea: () => Promise<void>;
   recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
+  loadTerrainForCurrentArea: () => Promise<void>;
   clearTerrainCache: () => Promise<void>;
   syncSiteElevationsOnline: () => Promise<void>;
   syncSiteElevationOnline: (siteId: string) => Promise<void>;
@@ -972,10 +985,8 @@ const getInitialScenarioId = (): string => {
   if (lastSession && initialSimulationPresets.some((p) => p.id === lastSession.selectedScenarioId)) {
     return lastSession.selectedScenarioId;
   }
-  return defaultScenario.id;
+  return "";
 };
-
-const initialSelectedScenarioId = getInitialScenarioId();
 
 const normalizeUiThemePreference = (value: unknown): "system" | "light" | "dark" =>
   value === "light" || value === "dark" || value === "system" ? value : "system";
@@ -999,10 +1010,10 @@ const initialBasemapStylePreset = normalizeBasemapStylePreset(
 );
 
 export const useAppStore = create<AppState>((set, get) => ({
-  sites: defaultScenario.sites,
-  links: defaultScenario.links,
-  systems: defaultScenario.systems,
-  networks: defaultScenario.networks,
+  sites: [],
+  links: [],
+  systems: [],
+  networks: [],
   srtmTiles: [],
   coverageSamples: [],
   isSimulationRecomputing: false,
@@ -1011,20 +1022,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   isTerrainFetching: false,
   isTerrainRecommending: false,
   isElevationSyncing: false,
-  selectedLinkId: defaultScenario.defaultLinkId,
+  selectedLinkId: "",
   profileCursorIndex: 0,
   temporaryDirectionReversed: false,
-  selectedSiteId: defaultScenario.defaultSiteId,
-  selectedNetworkId: defaultScenario.defaultNetworkId,
+  selectedSiteId: "",
+  selectedNetworkId: "",
   selectedCoverageMode: "BestSite",
   propagationModel: "ITM",
-  mapViewport: defaultScenario.viewport,
+  mapViewport: undefined,
   locale: "eng",
   uiThemePreference: initialUiThemePreference,
   uiColorTheme: initialUiColorTheme,
   basemapProvider: initialBasemapProvider,
   basemapStylePreset: initialBasemapStylePreset,
-  selectedScenarioId: initialSelectedScenarioId,
+  selectedScenarioId: getInitialScenarioId(),
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
   environmentLossDb: 0,
@@ -1034,12 +1045,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   terrainDataset: "copernicus30",
   terrainFetchStatus: "",
   terrainRecommendation: "",
+  isHighResTerrainLoaded: false,
+  terrainLoadingStartedAtMs: 0,
+  terrainLoadEpoch: 0,
   hasOnlineElevationSync: false,
   siteLibrary: initialSiteLibrary,
   simulationPresets: initialSimulationPresets,
   siteDragPreview: {},
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
+  showSimulationLibraryRequest: false,
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
@@ -1528,6 +1543,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       propagationEnvironmentReason: "Auto defaults active.",
       terrainFetchStatus: "",
       terrainRecommendation: "",
+      isHighResTerrainLoaded: false,
+      terrainLoadingStartedAtMs: 0,
+      terrainLoadEpoch: 0,
       hasOnlineElevationSync: false,
       siteDragPreview: {},
       endpointPickTarget: null,
@@ -2608,6 +2626,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }),
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
+  setShowSimulationLibraryRequest: (show) => set({ showSimulationLibraryRequest: show }),
   requestOpenSiteLibraryEntry: (entryId) =>
     set({
       pendingSiteLibraryOpenEntryId: entryId.trim() ? entryId : null,
@@ -2745,10 +2764,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     {
       set((state) => ({
         mapViewport: {
-          ...state.mapViewport,
+          ...(state.mapViewport ?? { center: { lat: 59.9, lon: 10.75 }, zoom: 8 }),
           ...patch,
           center: {
-            ...state.mapViewport.center,
+            ...(state.mapViewport?.center ?? { lat: 59.9, lon: 10.75 }),
             ...(patch.center ?? {}),
           },
         },
@@ -2771,12 +2790,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         }),
       );
 
-      set((state) => {
-        const dedup = new Map<string, SrtmTile>();
-        for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
-        for (const tile of parsed) dedup.set(tile.key, tile);
-        return { srtmTiles: Array.from(dedup.values()), isTerrainFetching: false };
-      });
+      set((state) => ({
+        srtmTiles: mergeSrtmTiles(state.srtmTiles, parsed),
+        isTerrainFetching: false,
+      }));
+      clearTerrainLossCache();
       get().recomputeCoverage();
     } finally {
       set({ isTerrainFetching: false });
@@ -2796,15 +2814,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
+        ["copernicus90"] as const,
       );
-      const perDataset = [
-        `${TERRAIN_DATASET_LABEL.copernicus30}: ${Math.round(copernicusRecommendation.byDataset.copernicus30.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus30.availableTiles}/${copernicusRecommendation.expectedTiles})`,
-        `${TERRAIN_DATASET_LABEL.copernicus90}: ${Math.round(copernicusRecommendation.byDataset.copernicus90.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus90.availableTiles}/${copernicusRecommendation.expectedTiles})`,
-      ].join(" | ");
-      const recommendedDataset = copernicusRecommendation.dataset;
+      const perDataset = `${TERRAIN_DATASET_LABEL.copernicus90}: ${Math.round(copernicusRecommendation.byDataset.copernicus90.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus90.availableTiles}/${copernicusRecommendation.expectedTiles})`;
       set({
-        terrainDataset: recommendedDataset,
-        terrainRecommendation: `Recommended: ${TERRAIN_DATASET_LABEL[recommendedDataset]}. ${perDataset}`,
+        terrainDataset: "copernicus90",
+        terrainRecommendation: `Terrain coverage: ${perDataset}`,
         isTerrainRecommending: false,
       });
     } catch (error) {
@@ -2813,63 +2828,306 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   fetchTerrainForCurrentArea: async () => {
-    const { sites, terrainDataset } = get();
+    const { sites, srtmTiles, isTerrainFetching, selectedLinkId, links } = get();
+    if (isTerrainFetching) return;
     if (!sites.length) return;
 
     const bounds = simulationAreaBoundsForSites(sites);
     if (!bounds) return;
 
+    const requiredTileKeys = new Set(tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon));
+    const existingTileKeys = new Set(srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
+    const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
+    const SMALL_AREA_TILE_THRESHOLD = 4;
+    const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
+
+    const endpointKeys = new Set<string>();
+    const selectedLink = links.find((l) => l.id === selectedLinkId) ?? links[0];
+    if (selectedLink) {
+      const fromSite = sites.find((s) => s.id === selectedLink.fromSiteId);
+      const toSite = sites.find((s) => s.id === selectedLink.toSiteId);
+      for (const site of [fromSite, toSite]) {
+        if (!site) continue;
+        for (const dLat of [-1, 0, 1]) {
+          for (const dLon of [-1, 0, 1]) {
+            const lat = site.position.lat + dLat;
+            const lon = site.position.lon + dLon;
+            const ns = lat >= 0 ? "N" : "S";
+            const ew = lon >= 0 ? "E" : "W";
+            endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
+          }
+        }
+      }
+    }
+
     set({
-      terrainFetchStatus:
-        `Fetching ${TERRAIN_DATASET_FETCH_LABEL[terrainDataset]} terrain tiles...`,
+      terrainFetchStatus: isSmallArea ? "Loading terrain (30m, small area)..." : "Loading terrain (90m, broad coverage)...",
       isTerrainFetching: true,
+      isHighResTerrainLoaded: alreadyHasHighRes,
+      terrainLoadingStartedAtMs: Date.now(),
     });
 
-    try {
-      const result = await loadCopernicusTilesForArea(
+    const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
+      const result = await loadCopernicusTilesForAreaPhased(
         bounds.minLat,
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
-        terrainDataset,
+        dataset,
+        isSmallArea ? undefined : endpointKeys,
       );
-      const fetchedItems = result.fetchedTiles;
-      const failedItems = result.failedTiles;
-      set((state) => {
-        const dedup = new Map<string, SrtmTile>();
-        for (const tile of state.srtmTiles) dedup.set(tile.key, tile);
-        for (const tile of result.tiles) dedup.set(tile.key, tile);
-      const statusParts = [
+      return {
+        tiles: [...result.priority.tiles, ...result.remaining.tiles],
+        failedTiles: [...result.priority.failedTiles, ...result.remaining.failedTiles],
+        fetchedTiles: [...result.priority.fetchedTiles, ...result.remaining.fetchedTiles],
+        cacheHits: [...result.priority.cacheHits, ...result.remaining.cacheHits],
+        fallbackTiles: [...result.priority.fallbackTiles, ...result.remaining.fallbackTiles],
+      };
+    };
+
+    const applyTiles = (result: CopernicusLoadResult) => {
+      set((state) => ({
+        srtmTiles: mergeSrtmTiles(state.srtmTiles, result.tiles),
+      }));
+      get().recomputeCoverage();
+    };
+
+    const formatStatus = (result: CopernicusLoadResult, sourceLabel: string, priorityLoaded = false): string => {
+      const parts = [
         `Loaded ${result.tiles.length} tile(s)`,
-        fetchedItems.length ? `${fetchedItems.length} fetched` : "",
+        result.fetchedTiles.length ? `${result.fetchedTiles.length} fetched` : "",
         result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
         result.fallbackTiles.length ? `${result.fallbackTiles.length} fallback to Copernicus GLO-90` : "",
-        failedItems.length ? `${failedItems.length} failed` : "",
+        result.failedTiles.length ? `${result.failedTiles.length} failed` : "",
+        priorityLoaded && endpointKeys.size > 0 ? `priority tiles done` : "",
       ].filter(Boolean);
-        const sourceLabel = TERRAIN_DATASET_FETCH_LABEL[terrainDataset];
-        const missing = failedItems;
-        return {
-          srtmTiles: Array.from(dedup.values()),
+      const missing = result.failedTiles;
+      return `${parts.join(", ")} from ${sourceLabel}.${missing.length ? ` Missing: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}` : ""}`;
+    };
+
+    try {
+      if (alreadyHasHighRes) {
+        set({ terrainFetchStatus: formatStatus({ tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] }, TERRAIN_DATASET_FETCH_LABEL.copernicus30), isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
+        return;
+      }
+
+      if (isSmallArea) {
+        set({ terrainFetchStatus: "Loading terrain (30m, small area)...", isHighResTerrainLoaded: false });
+        const thirtyResult = await loadAndMerge("copernicus30");
+        applyTiles(thirtyResult);
+        set({
+          terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
           isTerrainFetching: false,
-          terrainFetchStatus: `${statusParts.join(", ")} from ${sourceLabel}.${missing.length ? ` Missing: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}` : ""}`,
-        };
+          isHighResTerrainLoaded: true,
+          terrainLoadingStartedAtMs: 0,
+          terrainLoadEpoch: 0,
+        });
+        return;
+      }
+
+      const ninetyResult = await loadAndMerge("copernicus90");
+      applyTiles(ninetyResult);
+
+      const currentState = get();
+      const currentTileKeys = new Set(currentState.srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
+      const hasHighResNow = [...requiredTileKeys].every((k) => currentTileKeys.has(k));
+      if (hasHighResNow) {
+        set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isTerrainFetching: false, isHighResTerrainLoaded: true, terrainLoadingStartedAtMs: 0 });
+        return;
+      }
+
+      set({ terrainFetchStatus: "Loading terrain (30m, high-res refinement)...", isHighResTerrainLoaded: false });
+      const thirtyResult = await loadAndMerge("copernicus30");
+      applyTiles(thirtyResult);
+      set({
+        terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
+        isTerrainFetching: false,
+        isHighResTerrainLoaded: true,
+        terrainLoadingStartedAtMs: 0,
+        terrainLoadEpoch: 0,
       });
-      get().recomputeCoverage();
     } catch (error) {
       const message = getUiErrorMessage(error);
-      set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false });
+      set({ terrainFetchStatus: `Terrain fetch failed: ${message}`, isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
     }
   },
-  recommendAndFetchTerrainForCurrentArea: async () => {
-    await get().recommendTerrainDatasetForCurrentArea();
-    await get().fetchTerrainForCurrentArea();
+  recommendAndFetchTerrainForCurrentArea: () => get().loadTerrainForCurrentArea(),
+  loadTerrainForCurrentArea: async () => {
+    if (get().isTerrainFetching) return;
+    const { sites } = get();
+    if (!sites.length) return;
+
+    const bounds = simulationAreaBoundsForSites(sites);
+    if (!bounds) return;
+
+    const { terrainLoadEpoch: currentEpoch } = get();
+    const epoch = currentEpoch + 1;
+    clearTerrainLossCache();
+    set({
+      terrainLoadEpoch: epoch,
+      isTerrainRecommending: true,
+      isTerrainFetching: true,
+      terrainRecommendation: "Evaluating terrain dataset coverage...",
+      terrainFetchStatus: "Loading terrain (90m)...",
+      terrainLoadingStartedAtMs: Date.now(),
+    });
+
+    try {
+      const copernicusRecommendation = await recommendCopernicusDatasetForArea(
+        bounds.minLat,
+        bounds.maxLat,
+        bounds.minLon,
+        bounds.maxLon,
+        ["copernicus90"] as const,
+      );
+      if (get().terrainLoadEpoch !== epoch) return;
+      const perDataset = `${TERRAIN_DATASET_LABEL.copernicus90}: ${Math.round(copernicusRecommendation.byDataset.copernicus90.completeness * 100)}% (${copernicusRecommendation.byDataset.copernicus90.availableTiles}/${copernicusRecommendation.expectedTiles})`;
+      set({
+        terrainDataset: "copernicus90",
+        terrainRecommendation: `Terrain coverage: ${perDataset}`,
+        isTerrainRecommending: false,
+      });
+    } catch (error) {
+      if (get().terrainLoadEpoch !== epoch) return;
+      const message = getUiErrorMessage(error);
+      set({
+        terrainRecommendation: `Recommendation failed: ${message}`,
+        terrainFetchStatus: `Terrain fetch failed: ${message}`,
+        isTerrainRecommending: false,
+        isTerrainFetching: false,
+        terrainLoadingStartedAtMs: 0,
+      });
+      return;
+    }
+
+    if (get().terrainLoadEpoch !== epoch) return;
+
+    const { srtmTiles, selectedLinkId, links } = get();
+    const requiredTileKeys = new Set(tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon));
+    const existingTileKeys = new Set(srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
+    const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
+    const SMALL_AREA_TILE_THRESHOLD = 4;
+    const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
+
+    const endpointKeys = new Set<string>();
+    const selectedLink = links.find((l) => l.id === selectedLinkId) ?? links[0];
+    if (selectedLink) {
+      const fromSite = sites.find((s) => s.id === selectedLink.fromSiteId);
+      const toSite = sites.find((s) => s.id === selectedLink.toSiteId);
+      for (const site of [fromSite, toSite]) {
+        if (!site) continue;
+        for (const dLat of [-1, 0, 1]) {
+          for (const dLon of [-1, 0, 1]) {
+            const lat = site.position.lat + dLat;
+            const lon = site.position.lon + dLon;
+            const ns = lat >= 0 ? "N" : "S";
+            const ew = lon >= 0 ? "E" : "W";
+            endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
+          }
+        }
+      }
+    }
+
+    set({
+      terrainFetchStatus: isSmallArea ? "Loading terrain (30m, small area)..." : "Loading terrain (90m, broad coverage)...",
+      isHighResTerrainLoaded: alreadyHasHighRes,
+    });
+
+    const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
+      const result = await loadCopernicusTilesForAreaPhased(
+        bounds.minLat,
+        bounds.maxLat,
+        bounds.minLon,
+        bounds.maxLon,
+        dataset,
+        isSmallArea ? undefined : endpointKeys,
+      );
+      return {
+        tiles: [...result.priority.tiles, ...result.remaining.tiles],
+        failedTiles: [...result.priority.failedTiles, ...result.remaining.failedTiles],
+        fetchedTiles: [...result.priority.fetchedTiles, ...result.remaining.fetchedTiles],
+        cacheHits: [...result.priority.cacheHits, ...result.remaining.cacheHits],
+        fallbackTiles: [...result.priority.fallbackTiles, ...result.remaining.fallbackTiles],
+      };
+    };
+
+    const applyTiles = (result: CopernicusLoadResult) => {
+      set((state) => ({
+        srtmTiles: mergeSrtmTiles(state.srtmTiles, result.tiles),
+      }));
+      get().recomputeCoverage();
+    };
+
+    const formatStatus = (result: CopernicusLoadResult, sourceLabel: string): string => {
+      const parts = [
+        `Loaded ${result.tiles.length} tile(s)`,
+        result.fetchedTiles.length ? `${result.fetchedTiles.length} fetched` : "",
+        result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
+        result.fallbackTiles.length ? `${result.fallbackTiles.length} fallback to Copernicus GLO-90` : "",
+        result.failedTiles.length ? `${result.failedTiles.length} failed` : "",
+      ].filter(Boolean);
+      const missing = result.failedTiles;
+      return `${parts.join(", ")} from ${sourceLabel}.${missing.length ? ` Missing: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}` : ""}`;
+    };
+
+    try {
+      if (alreadyHasHighRes) {
+        if (get().terrainLoadEpoch !== epoch) return;
+        set({ terrainFetchStatus: formatStatus({ tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] }, TERRAIN_DATASET_FETCH_LABEL.copernicus30), isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
+        return;
+      }
+
+      if (isSmallArea) {
+        set({ terrainFetchStatus: "Loading terrain (30m, small area)...", isHighResTerrainLoaded: false });
+        const thirtyResult = await loadAndMerge("copernicus30");
+        if (get().terrainLoadEpoch !== epoch) return;
+        applyTiles(thirtyResult);
+        set({
+          terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
+          isTerrainFetching: false,
+          isHighResTerrainLoaded: true,
+          terrainLoadingStartedAtMs: 0,
+        });
+        return;
+      }
+
+      const ninetyResult = await loadAndMerge("copernicus90");
+      if (get().terrainLoadEpoch !== epoch) return;
+      applyTiles(ninetyResult);
+
+      const currentState = get();
+      const currentTileKeys = new Set(currentState.srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
+      const hasHighResNow = [...requiredTileKeys].every((k) => currentTileKeys.has(k));
+      if (hasHighResNow) {
+        set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isTerrainFetching: false, isHighResTerrainLoaded: true, terrainLoadingStartedAtMs: 0 });
+        return;
+      }
+
+      set({ terrainFetchStatus: "Loading terrain (30m, high-res refinement)...", isHighResTerrainLoaded: false });
+      const thirtyResult = await loadAndMerge("copernicus30");
+      if (get().terrainLoadEpoch !== epoch) return;
+      applyTiles(thirtyResult);
+      set({
+        terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
+        isTerrainFetching: false,
+        isHighResTerrainLoaded: true,
+        terrainLoadingStartedAtMs: 0,
+      });
+    } catch (error) {
+      if (get().terrainLoadEpoch !== epoch) return;
+      set({ terrainFetchStatus: `Terrain fetch failed: ${getUiErrorMessage(error)}`, isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
+    }
   },
   clearTerrainCache: async () => {
     set({ isTerrainFetching: true });
     await clearCopernicusCache();
+    clearTerrainLossCache();
     set((state) => ({
       srtmTiles: state.srtmTiles.filter((tile) => tile.sourceKind === "manual-upload"),
       isTerrainFetching: false,
+      isHighResTerrainLoaded: false,
+      terrainLoadingStartedAtMs: 0,
+      terrainLoadEpoch: 0,
       terrainFetchStatus: "Terrain source caches cleared.",
     }));
     get().recomputeCoverage();
@@ -2899,134 +3157,200 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   syncSiteElevationsOnline: async () => {
     const sites = get().sites;
+    const requestSites = sites.map((site) => ({
+      id: site.id,
+      position: site.position,
+    }));
+    const requestById = new Map(requestSites.map((site) => [site.id, site]));
     set({ isElevationSyncing: true });
     try {
-      const elevations = await fetchElevations(sites.map((site) => site.position));
+      const elevations = await fetchElevations(requestSites.map((site) => site.position));
+      const elevationById = new Map<string, number>();
+      requestSites.forEach((site, index) => {
+        const elevation = elevations[index];
+        if (Number.isFinite(elevation)) {
+          elevationById.set(site.id, Math.round(elevation));
+        }
+      });
 
-      set((state) => ({
-        sites: state.sites.map((site, index) => ({
-          ...site,
-          groundElevationM: Number.isFinite(elevations[index])
-            ? Math.round(elevations[index])
-            : site.groundElevationM,
-        })),
-        hasOnlineElevationSync: true,
-      }));
+      set((state) => {
+        const isStale =
+          state.sites.length !== requestSites.length ||
+          state.sites.some((site) => {
+            const requested = requestById.get(site.id);
+            return (
+              !requested ||
+              requested.position.lat !== site.position.lat ||
+              requested.position.lon !== site.position.lon
+            );
+          });
+        if (isStale) {
+          return {};
+        }
+
+        let appliedAny = false;
+        const nextSites = state.sites.map((site) => {
+          const nextElevation = elevationById.get(site.id);
+          if (typeof nextElevation !== "number") return site;
+          appliedAny = true;
+          return {
+            ...site,
+            groundElevationM: nextElevation,
+          };
+        });
+
+        if (!appliedAny) {
+          return {};
+        }
+
+        return {
+          sites: nextSites,
+          hasOnlineElevationSync: true,
+        };
+      });
     } finally {
       set({ isElevationSyncing: false });
     }
   },
   recomputeCoverage: () => {
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const startedAt = Date.now();
     set({
       simulationRunToken: runId,
       isSimulationRecomputing: true,
       simulationProgress: 3,
     });
 
-    const runComputation = () => {
-      const state = get();
-      if (state.simulationRunToken !== runId) return;
+    if (coverageRecomputeTimer !== null) {
+      window.clearTimeout(coverageRecomputeTimer);
+      coverageRecomputeTimer = null;
+    }
 
-      const {
-        selectedCoverageMode,
-        networks,
-        selectedNetworkId,
-        sites,
-        systems,
-        propagationModel,
-        srtmTiles,
-        links,
-        selectedLinkId,
-        autoPropagationEnvironment,
-        propagationEnvironment,
-      } = state;
-      const network = networks.find((n) => n.id === selectedNetworkId);
-      if (!network) {
+    coverageRecomputeTimer = window.setTimeout(() => {
+      coverageRecomputeTimer = null;
+      const startedAt = Date.now();
+      if (get().simulationRunToken !== runId) return;
+
+      const runComputation = async () => {
+        const state = get();
+        if (state.simulationRunToken !== runId) return;
+
+        const {
+          selectedCoverageMode,
+          networks,
+          selectedNetworkId,
+          sites,
+          systems,
+          propagationModel,
+          srtmTiles,
+          links,
+          selectedLinkId,
+          autoPropagationEnvironment,
+          propagationEnvironment,
+          terrainLoadEpoch,
+        } = state;
+        const network = networks.find((n) => n.id === selectedNetworkId);
+        if (!network) {
+          const finalize = () => {
+            if (get().simulationRunToken !== runId) return;
+            set({
+              coverageSamples: [],
+              isSimulationRecomputing: false,
+              simulationProgress: 100,
+            });
+            window.setTimeout(() => {
+              if (get().simulationRunToken === runId) {
+                set({ simulationProgress: 0, simulationRunToken: "" });
+              }
+            }, 260);
+          };
+          const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
+          window.setTimeout(finalize, waitMs);
+          return;
+        }
+
+        const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
+        const fromSite = selectedLink ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null : null;
+        const toSite = selectedLink ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null : null;
+        const autoDerived =
+          autoPropagationEnvironment && fromSite && toSite
+            ? deriveDynamicPropagationEnvironment({
+                from: fromSite.position,
+                to: toSite.position,
+                fromGroundM: fromSite.groundElevationM,
+                toGroundM: toSite.groundElevationM,
+                terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+              })
+            : null;
+        const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
+        if (autoDerived) {
+          if (
+            state.propagationEnvironmentReason !== autoDerived.reason ||
+            state.propagationEnvironment.clutterHeightM !== autoDerived.environment.clutterHeightM ||
+            state.propagationEnvironment.polarization !== autoDerived.environment.polarization ||
+            state.propagationEnvironment.groundDielectric !== autoDerived.environment.groundDielectric ||
+            state.propagationEnvironment.groundConductivity !== autoDerived.environment.groundConductivity ||
+            state.propagationEnvironment.radioClimate !== autoDerived.environment.radioClimate ||
+            state.propagationEnvironment.atmosphericBendingNUnits !== autoDerived.environment.atmosphericBendingNUnits
+          ) {
+            set({
+              propagationEnvironment: autoDerived.environment,
+              propagationEnvironmentReason: autoDerived.reason,
+            });
+          }
+        }
+
+        set({ simulationProgress: 8 });
+        let lastProgress = 8;
+        const coverageSamples = await buildCoverageAsync(
+          selectedCoverageMode,
+          network,
+          sites,
+          systems,
+          propagationModel,
+          effectiveEnvironment,
+          ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+          {
+            sampleMultiplier: 1,
+            terrainSamples: 20,
+            onProgress: (progress) => {
+              if (get().simulationRunToken !== runId) return;
+              const next = Math.round(8 + progress * 84);
+              if (next - lastProgress >= 2 || next >= 99) {
+                lastProgress = next;
+                set({ simulationProgress: next });
+              }
+            },
+            terrainCacheKey: `${selectedCoverageMode}|${selectedNetworkId}|${propagationModel}|${terrainLoadEpoch}`,
+          },
+        );
+        if (get().simulationRunToken !== runId) return;
         const finalize = () => {
-          if (get().simulationRunToken !== runId) return;
-          set({
-            coverageSamples: [],
-            isSimulationRecomputing: false,
-            simulationProgress: 100,
-          });
-          window.setTimeout(() => {
-            if (get().simulationRunToken === runId) {
-              set({ simulationProgress: 0, simulationRunToken: "" });
-            }
-          }, 260);
+          if (get().simulationRunToken === runId) {
+            set({
+              coverageSamples,
+              isSimulationRecomputing: false,
+              simulationProgress: 100,
+            });
+            window.setTimeout(() => {
+              if (get().simulationRunToken === runId) {
+                set({ simulationProgress: 0, simulationRunToken: "" });
+              }
+            }, 320);
+          }
         };
         const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
         window.setTimeout(finalize, waitMs);
-        return;
-      }
-
-      const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
-      const fromSite = selectedLink ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null : null;
-      const toSite = selectedLink ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null : null;
-      const autoDerived =
-        autoPropagationEnvironment && fromSite && toSite
-          ? deriveDynamicPropagationEnvironment({
-              from: fromSite.position,
-              to: toSite.position,
-              fromGroundM: fromSite.groundElevationM,
-              toGroundM: toSite.groundElevationM,
-              terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-            })
-          : null;
-      const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
-      if (autoDerived) {
-        set({
-          propagationEnvironment: autoDerived.environment,
-          propagationEnvironmentReason: autoDerived.reason,
-        });
-      }
-
-      set({ simulationProgress: 8 });
-      const coverageSamples = buildCoverage(
-        selectedCoverageMode,
-        network,
-        sites,
-        systems,
-        propagationModel,
-        effectiveEnvironment,
-        ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-        {
-          sampleMultiplier: 1,
-          terrainSamples: 20,
-          onProgress: (progress) => {
-            if (get().simulationRunToken !== runId) return;
-            set({ simulationProgress: Math.round(8 + progress * 84) });
-          },
-        },
-      );
-      if (get().simulationRunToken !== runId) return;
-      const finalize = () => {
-        if (get().simulationRunToken !== runId) return;
-        set({
-          coverageSamples,
-          isSimulationRecomputing: false,
-          simulationProgress: 100,
-        });
-        window.setTimeout(() => {
-          if (get().simulationRunToken === runId) {
-            set({ simulationProgress: 0, simulationRunToken: "" });
-          }
-        }, 320);
       };
-      const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
-      window.setTimeout(finalize, waitMs);
-    };
 
-    // Let the browser paint the progress bar before starting heavy recomputation work.
-    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(runComputation);
-      });
-    } else {
-      window.setTimeout(runComputation, 0);
-    }
+      // Let the browser paint the progress bar before starting heavy recomputation work.
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(runComputation);
+        });
+      } else {
+        window.setTimeout(runComputation, 0);
+      }
+    }, COVERAGE_RECOMPUTE_DEBOUNCE_MS);
   },
   getSelectedLink: () => {
     const { links, selectedLinkId, sites, networks, selectedNetworkId } = get();
@@ -3129,7 +3453,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
   },
   getSelectedProfile: () => {
-    const { getSelectedLink, getSelectedNetwork, getSelectedSites, srtmTiles } = get();
+    const {
+      getSelectedLink,
+      getSelectedNetwork,
+      getSelectedSites,
+      srtmTiles,
+      autoPropagationEnvironment,
+      propagationEnvironment,
+    } = get();
     const link = getSelectedLink();
     const selectedNetwork = getSelectedNetwork();
     const effectiveLink = {
@@ -3137,6 +3468,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
     };
     const { fromSite, toSite } = getSelectedSites();
+    const autoDerived = autoPropagationEnvironment
+      ? deriveDynamicPropagationEnvironment({
+          from: fromSite.position,
+          to: toSite.position,
+          fromGroundM: fromSite.groundElevationM,
+          toGroundM: toSite.groundElevationM,
+          terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+        })
+      : null;
+    const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
 
     return buildProfile(
       effectiveLink,
@@ -3144,6 +3485,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       toSite,
       ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
       120,
+      { kFactor: atmosphericBendingNUnitsToKFactor(effectiveEnvironment.atmosphericBendingNUnits) },
     );
   },
 }));

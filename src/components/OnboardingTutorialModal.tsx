@@ -12,7 +12,7 @@ const FEEDBACK_ISSUES_URL = "https://github.com/wilhel1812/LinkSim/issues/new/ch
 const PRIVACY_URL = "https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md";
 const TERMS_URL = "https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md";
 
-export function OnboardingTutorialModal({ open, onClose }: OnboardingTutorialModalProps) {
+export default function OnboardingTutorialModal({ open, onClose }: OnboardingTutorialModalProps) {
   if (!open) return null;
   return (
     <ModalOverlay aria-label="Onboarding Tutorial" onClose={onClose} tier="raised">

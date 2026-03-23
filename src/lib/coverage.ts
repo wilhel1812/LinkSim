@@ -13,6 +13,13 @@ import type {
   Site,
 } from "../types/radio";
 
+export type BuildCoverageOptions = {
+  sampleMultiplier?: number;
+  terrainSamples?: number;
+  onProgress?: (progress: number) => void;
+  terrainCacheKey?: string;
+};
+
 const toRadians = (deg: number): number => (deg * Math.PI) / 180;
 
 const midpoint = (sites: Site[]): { lat: number; lon: number } => ({
@@ -26,6 +33,56 @@ const nUnitsToKFactor = (nUnits: number): number => {
   return Math.max(1, Math.min(2, 1 + (n - 250) / 153));
 };
 
+const TERRAIN_LOSS_CACHE_LIMIT = 100_000;
+const terrainLossMemo = new Map<string, number>();
+
+const quantize = (value: number): string => value.toFixed(5);
+
+const terrainLossCacheKeyFor = (
+  scopeKey: string,
+  sampleLat: number,
+  sampleLon: number,
+  rxSite: Site,
+  txSystem: RadioSystem,
+  frequencyMHz: number,
+  terrainSamples: number,
+  environment: PropagationEnvironment,
+): string =>
+  [
+    scopeKey,
+    quantize(sampleLat),
+    quantize(sampleLon),
+    rxSite.id,
+    txSystem.id,
+    quantize(rxSite.groundElevationM),
+    quantize(rxSite.antennaHeightM),
+    quantize(txSystem.antennaHeightM),
+    quantize(frequencyMHz),
+    String(terrainSamples),
+    quantize(environment.atmosphericBendingNUnits),
+    quantize(environment.clutterHeightM),
+    environment.polarization,
+  ].join("|");
+
+const getMemoizedTerrainLoss = (
+  key: string,
+  compute: () => number,
+): number => {
+  const cached = terrainLossMemo.get(key);
+  if (typeof cached === "number") return cached;
+  const value = compute();
+  terrainLossMemo.set(key, value);
+  if (terrainLossMemo.size > TERRAIN_LOSS_CACHE_LIMIT) {
+    const oldest = terrainLossMemo.keys().next().value;
+    if (typeof oldest === "string") terrainLossMemo.delete(oldest);
+  }
+  return value;
+};
+
+export const clearTerrainLossCache = (): void => {
+  terrainLossMemo.clear();
+};
+
 const evalRx = (
   sampleLat: number,
   sampleLon: number,
@@ -36,6 +93,7 @@ const evalRx = (
   terrainSamples: number,
   environment: PropagationEnvironment,
   terrainSampler?: (coordinates: Coordinates) => number | null,
+  terrainCacheKey?: string,
 ): number => {
   const distanceKm = Math.max(
     0.001,
@@ -52,18 +110,31 @@ const evalRx = (
   const txGround = terrainSampler ? terrainSampler({ lat: sampleLat, lon: sampleLon }) : null;
   const terrainLoss =
     model === "ITM" && terrainSampler && txGround !== null
-      ? estimateTerrainExcessLossDb({
-          from: { lat: sampleLat, lon: sampleLon },
-          to: rxSite.position,
-          fromAntennaAbsM: txGround + txSystem.antennaHeightM,
-          toAntennaAbsM: rxSite.groundElevationM + rxSite.antennaHeightM,
-          frequencyMHz,
-          terrainSampler,
-          samples: terrainSamples,
-          kFactor: nUnitsToKFactor(environment.atmosphericBendingNUnits),
-          clutterHeightM: environment.clutterHeightM,
-          polarization: environment.polarization,
-        })
+      ? getMemoizedTerrainLoss(
+          terrainLossCacheKeyFor(
+            terrainCacheKey ?? "global",
+            sampleLat,
+            sampleLon,
+            rxSite,
+            txSystem,
+            frequencyMHz,
+            terrainSamples,
+            environment,
+          ),
+          () =>
+            estimateTerrainExcessLossDb({
+              from: { lat: sampleLat, lon: sampleLon },
+              to: rxSite.position,
+              fromAntennaAbsM: txGround + txSystem.antennaHeightM,
+              toAntennaAbsM: rxSite.groundElevationM + rxSite.antennaHeightM,
+              frequencyMHz,
+              terrainSampler,
+              samples: terrainSamples,
+              kFactor: nUnitsToKFactor(environment.atmosphericBendingNUnits),
+              clutterHeightM: environment.clutterHeightM,
+              polarization: environment.polarization,
+            }),
+        )
       : 0;
 
   const eirp = txSystem.txPowerDbm + txSystem.txGainDbi - txSystem.cableLossDb;
@@ -111,11 +182,7 @@ export const buildCoverage = (
   model: PropagationModel,
   environment: PropagationEnvironment,
   terrainSampler?: (coordinates: Coordinates) => number | null,
-  options?: {
-    sampleMultiplier?: number;
-    terrainSamples?: number;
-    onProgress?: (progress: number) => void;
-  },
+  options?: BuildCoverageOptions,
 ): CoverageSample[] => {
   if (sites.length === 0 || systems.length === 0) return [];
   const effectiveFrequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
@@ -206,6 +273,7 @@ export const buildCoverage = (
           terrainSamples,
           environment,
           terrainSampler,
+          options?.terrainCacheKey,
         );
       })
       .filter((v): v is number => v !== null);
@@ -219,6 +287,134 @@ export const buildCoverage = (
     results.push({ ...sample, valueDbm });
     if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
       onProgress?.(0.1 + ((i + 1) / total) * 0.9);
+    }
+  }
+  return results;
+};
+
+export const buildCoverageAsync = async (
+  mode: CoverageMode,
+  network: Network,
+  sites: Site[],
+  systems: RadioSystem[],
+  model: PropagationModel,
+  environment: PropagationEnvironment,
+  terrainSampler?: (coordinates: Coordinates) => number | null,
+  options?: BuildCoverageOptions,
+): Promise<CoverageSample[]> => {
+  if (sites.length === 0 || systems.length === 0) return [];
+  const effectiveFrequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
+  const sampleMultiplier = Math.max(1, options?.sampleMultiplier ?? 1);
+  const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
+  const onProgress = options?.onProgress;
+  const fallbackSystemId = systems[0]?.id ?? "";
+  const effectiveMemberships =
+    network.memberships
+      .filter(
+        (member) =>
+          sites.some((site) => site.id === member.siteId) &&
+          systems.some((system) => system.id === member.systemId),
+      )
+      .map((member) => ({ siteId: member.siteId, systemId: member.systemId })) || [];
+  const membershipsToUse =
+    effectiveMemberships.length > 0
+      ? effectiveMemberships
+      : sites.map((site) => ({ siteId: site.id, systemId: fallbackSystemId }));
+
+  const center = midpoint(sites);
+  const networkSites = membershipsToUse
+    .map((m) => sites.find((s) => s.id === m.siteId))
+    .filter((s): s is Site => Boolean(s));
+
+  const samples: { lat: number; lon: number }[] = [];
+  if (mode === "Polar") {
+    const rings = Math.max(6, Math.round(10 * sampleMultiplier));
+    const spokes = Math.max(18, Math.round(36 * sampleMultiplier));
+    for (const p of polarOffsets(24, rings, spokes)) {
+      samples.push(move(center.lat, center.lon, p.dk, p.az));
+    }
+  } else if (mode === "Route") {
+    const from = networkSites[0] ?? sites[0];
+    const to = networkSites[1] ?? sites[sites.length - 1] ?? from;
+    const routePoints = Math.max(80, Math.round(120 * sampleMultiplier));
+    for (let i = 0; i < routePoints; i += 1) {
+      const t = routePoints <= 1 ? 0 : i / (routePoints - 1);
+      samples.push({
+        lat: interpolate(from.position.lat, to.position.lat, t),
+        lon: interpolate(from.position.lon, to.position.lon, t),
+      });
+    }
+  } else {
+    const baseGridSize = mode === "Cartesian" ? 42 : 24;
+    const targetSamples = Math.max(64, Math.round(baseGridSize * baseGridSize * sampleMultiplier * sampleMultiplier));
+    const bounds = simulationAreaBoundsForSites(sites);
+    if (!bounds) return [];
+
+    const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+    const latSpanKm = Math.max(0.001, (bounds.maxLat - bounds.minLat) * 111.32);
+    const lonScale = Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+    const lonSpanKm = Math.max(0.001, (bounds.maxLon - bounds.minLon) * 111.32 * lonScale);
+    const aspect = latSpanKm / lonSpanKm;
+    const cols = Math.max(6, Math.round(Math.sqrt(targetSamples / Math.max(0.2, Math.min(5, aspect)))));
+    const rows = Math.max(6, Math.round(targetSamples / cols));
+
+    for (let y = 0; y < rows; y += 1) {
+      const ty = rows <= 1 ? 0 : y / (rows - 1);
+      const lat = bounds.minLat + (bounds.maxLat - bounds.minLat) * ty;
+      for (let x = 0; x < cols; x += 1) {
+        const tx = cols <= 1 ? 0 : x / (cols - 1);
+        const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tx;
+        samples.push({ lat, lon });
+      }
+    }
+  }
+
+  onProgress?.(0.1);
+  const total = Math.max(1, samples.length);
+  const notifyEvery = Math.max(1, Math.floor(total / 40));
+  const results: CoverageSample[] = [];
+  const chunkSize = 48;
+
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = samples[i];
+    const rxLevels = membershipsToUse
+      .map((m) => {
+        const site = sites.find((s) => s.id === m.siteId);
+        const system = systems.find((sys) => sys.id === m.systemId);
+        if (!site || !system) return null;
+        return evalRx(
+          sample.lat,
+          sample.lon,
+          site,
+          system,
+          effectiveFrequencyMHz,
+          model,
+          terrainSamples,
+          environment,
+          terrainSampler,
+          options?.terrainCacheKey,
+        );
+      })
+      .filter((v): v is number => v !== null);
+
+    const valueDbm = rxLevels.length
+      ? mode === "BestSite"
+        ? Math.min(...rxLevels)
+        : rxLevels.reduce((sum, x) => sum + x, 0) / rxLevels.length
+      : -140;
+
+    results.push({ ...sample, valueDbm });
+    if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
+      onProgress?.(0.1 + ((i + 1) / total) * 0.9);
+    }
+    if ((i + 1) % chunkSize === 0) {
+      await new Promise<void>((resolve) => {
+        if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(() => resolve());
+          return;
+        }
+        setTimeout(resolve, 0);
+      });
     }
   }
   return results;

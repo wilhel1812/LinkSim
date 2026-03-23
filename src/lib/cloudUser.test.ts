@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearMeCache,
   fetchMe,
   fetchUsers,
   fetchResourceChanges,
@@ -10,6 +11,11 @@ import {
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.stubGlobal("fetch", vi.fn());
+  clearMeCache();
+});
+
+afterEach(() => {
+  clearMeCache();
 });
 
 describe("cloudUser client", () => {
@@ -45,5 +51,61 @@ describe("cloudUser client", () => {
     );
 
     await expect(updateUserRole("u1", "admin")).rejects.toThrow("400 Bad Request: Invalid role.");
+  });
+
+  describe("fetchMe cache", () => {
+    const userPayload = {
+      id: "u1",
+      username: "U",
+      bio: "",
+      avatarUrl: "",
+      isAdmin: false,
+      isApproved: true,
+      createdAt: "x",
+      updatedAt: "x",
+    };
+
+    it("caches fetchMe result for subsequent calls within TTL", async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ user: userPayload }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+      const first = await fetchMe();
+      expect(first.id).toBe("u1");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      const second = await fetchMe();
+      expect(second.id).toBe("u1");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("clearMeCache forces a fresh fetch", async () => {
+      vi.mocked(globalThis.fetch)
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ user: userPayload }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ user: { ...userPayload, id: "u2" } }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+
+      const first = await fetchMe();
+      expect(first.id).toBe("u1");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+      clearMeCache();
+
+      const second = await fetchMe();
+      expect(second.id).toBe("u2");
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
   });
 });

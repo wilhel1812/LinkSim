@@ -4,19 +4,23 @@ import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } fro
 import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
+import { initializeMigrations, runMigrations } from "../lib/migrations";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
-import { OnboardingTutorialModal } from "./OnboardingTutorialModal";
+import OnboardingTutorialModal from "./OnboardingTutorialModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
+
+initializeMigrations();
 
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
+const ACCESS_CHECK_TIMEOUT_MS = 10_000;
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
@@ -72,10 +76,12 @@ export function AppShell() {
   const isOnline = useAppStore((state) => state.isOnline);
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
+  const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
 
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
+  const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   const [activeUserId, setActiveUserId] = useState("");
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -131,11 +137,15 @@ export function AppShell() {
         ...(selectedLink ? { selectedLinkId: selectedLink.id } : {}),
         ...(selectedLink?.name ? { selectedLinkSlug: selectedLink.name } : {}),
         overlayMode: mapOverlayMode,
-        mapViewport: {
-          lat: mapViewport.center.lat,
-          lon: mapViewport.center.lon,
-          zoom: mapViewport.zoom,
-        },
+        ...(mapViewport
+          ? {
+              mapViewport: {
+                lat: mapViewport.center.lat,
+                lon: mapViewport.center.lon,
+                zoom: mapViewport.zoom,
+              },
+            }
+          : {}),
       },
       window.location.origin,
       "/",
@@ -191,8 +201,34 @@ export function AppShell() {
   }, [isOnline]);
 
   useEffect(() => {
+    let cancelled = false;
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      timedOut = true;
+      console.error("[AppShell] Access check timed out", {
+        timeoutMs: ACCESS_CHECK_TIMEOUT_MS,
+        isLocalRuntime,
+        deepLinkMode: deepLinkParse.ok,
+        online: typeof navigator === "undefined" ? true : navigator.onLine,
+        isInitializing,
+      });
+      setAccessDiagnosticMessage(
+        "Access check timed out. Reload the page. If this continues, open the console and share the startup error.",
+      );
+      setAccessState("locked");
+    }, ACCESS_CHECK_TIMEOUT_MS);
+
+    console.info("[AppShell] Starting access check", {
+      isLocalRuntime,
+      deepLinkMode: deepLinkParse.ok,
+      online: typeof navigator === "undefined" ? true : navigator.onLine,
+      isInitializing,
+    });
+
     void (async () => {
       try {
+        if (cancelled || timedOut) return;
         const localForceReadonly =
           isLocalRuntime &&
           (() => {
@@ -203,11 +239,17 @@ export function AppShell() {
             }
           })();
         if (localForceReadonly) {
+          if (cancelled || timedOut) return;
+          window.clearTimeout(timeoutId);
+          setAccessDiagnosticMessage(null);
           setAccessState("readonly");
           setDeepLinkNotice("Local read-only mode.");
           return;
         }
         const profile = await fetchMe();
+        if (cancelled || timedOut) return;
+        window.clearTimeout(timeoutId);
+        setAccessDiagnosticMessage(null);
         setCurrentUser(profile);
         setActiveUserId(profile.id);
         try {
@@ -231,7 +273,16 @@ export function AppShell() {
         }
         setAccessState("pending");
       } catch (error) {
+        if (cancelled || timedOut) return;
+        window.clearTimeout(timeoutId);
         const message = getUiErrorMessage(error);
+        console.error("[AppShell] Access check failed", {
+          message,
+          isLocalRuntime,
+          deepLinkMode: deepLinkParse.ok,
+          online: typeof navigator === "undefined" ? true : navigator.onLine,
+        });
+        setAccessDiagnosticMessage(`Access check failed: ${message}`);
         if (message.includes("Session revoked by admin")) {
           window.location.href = "/cdn-cgi/access/logout";
           return;
@@ -244,12 +295,16 @@ export function AppShell() {
         setAccessState("locked");
       }
     })();
-  }, [deepLinkParse.ok, isLocalRuntime]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [deepLinkParse.ok, isLocalRuntime, isInitializing, setCurrentUser]);
 
   useEffect(() => {
     if (accessState === "granted") {
-      console.log("[AppShell] Access granted, initializing cloud sync...");
-      void initializeCloudSync();
+      console.log("[AppShell] Access granted, running migrations and initializing cloud sync...");
+      void runMigrations().then(() => initializeCloudSync());
     }
   }, [accessState, initializeCloudSync]);
 
@@ -503,7 +558,6 @@ export function AppShell() {
           zoom: payload.mapViewport.zoom,
         });
       }
-      setDeepLinkNotice("Loaded shared simulation link.");
     })();
   }, [
     accessState,
@@ -604,6 +658,7 @@ export function AppShell() {
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
           <h2>Checking access…</h2>
+          {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
         </section>
       </main>
     );
@@ -665,6 +720,7 @@ export function AppShell() {
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
           <h2>Access unavailable</h2>
+          {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
           <p className="field-help">
             Your account session is valid, but this account is not available in LinkSim right now.
           </p>
@@ -738,6 +794,20 @@ export function AppShell() {
           </div>
         ) : null}
         {accessState === "readonly" ? <p className="field-help">Read-only shared view.</p> : null}
+        {sites.length === 0 ? (
+          <div className="empty-workspace-overlay">
+            <div className="empty-workspace-message">
+              <p>Open an existing simulation or create a new one to continue.</p>
+              <button
+                className="inline-action"
+                onClick={() => setShowSimulationLibraryRequest(true)}
+                type="button"
+              >
+                Open Library
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="workspace-header-actions">
           {accessState === "readonly" && isLocalRuntime ? (
             <button
