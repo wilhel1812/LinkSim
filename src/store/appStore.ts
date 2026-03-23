@@ -3157,19 +3157,57 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   syncSiteElevationsOnline: async () => {
     const sites = get().sites;
+    const requestSites = sites.map((site) => ({
+      id: site.id,
+      position: site.position,
+    }));
+    const requestById = new Map(requestSites.map((site) => [site.id, site]));
     set({ isElevationSyncing: true });
     try {
-      const elevations = await fetchElevations(sites.map((site) => site.position));
+      const elevations = await fetchElevations(requestSites.map((site) => site.position));
+      const elevationById = new Map<string, number>();
+      requestSites.forEach((site, index) => {
+        const elevation = elevations[index];
+        if (Number.isFinite(elevation)) {
+          elevationById.set(site.id, Math.round(elevation));
+        }
+      });
 
-      set((state) => ({
-        sites: state.sites.map((site, index) => ({
-          ...site,
-          groundElevationM: Number.isFinite(elevations[index])
-            ? Math.round(elevations[index])
-            : site.groundElevationM,
-        })),
-        hasOnlineElevationSync: true,
-      }));
+      set((state) => {
+        const isStale =
+          state.sites.length !== requestSites.length ||
+          state.sites.some((site) => {
+            const requested = requestById.get(site.id);
+            return (
+              !requested ||
+              requested.position.lat !== site.position.lat ||
+              requested.position.lon !== site.position.lon
+            );
+          });
+        if (isStale) {
+          return {};
+        }
+
+        let appliedAny = false;
+        const nextSites = state.sites.map((site) => {
+          const nextElevation = elevationById.get(site.id);
+          if (typeof nextElevation !== "number") return site;
+          appliedAny = true;
+          return {
+            ...site,
+            groundElevationM: nextElevation,
+          };
+        });
+
+        if (!appliedAny) {
+          return {};
+        }
+
+        return {
+          sites: nextSites,
+          hasOnlineElevationSync: true,
+        };
+      });
     } finally {
       set({ isElevationSyncing: false });
     }
