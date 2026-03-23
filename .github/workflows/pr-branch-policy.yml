@@ -1,0 +1,34 @@
+name: PR Branch Policy
+
+on:
+  pull_request:
+    branches:
+      - main
+      - staging
+
+jobs:
+  enforce:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Validate head branch naming policy
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$BASE_REF" = "staging" ]; then
+            if [[ "$HEAD_REF" =~ ^issue/[0-9]+-[a-z0-9-]+$ ]] || [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9-]+$ ]] || [[ "$HEAD_REF" =~ ^chore/[a-z0-9-]+$ ]]; then
+              exit 0
+            fi
+            echo "PR to staging must come from issue/<id>-<slug>, hotfix/<slug>, or chore/<slug>."
+            exit 1
+          fi
+          if [ "$BASE_REF" = "main" ]; then
+            if [[ "$HEAD_REF" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9-]+$ ]]; then
+              exit 0
+            fi
+            echo "PR to main must come from release/vX.Y.Z or hotfix/<slug>."
+            exit 1
+          fi
