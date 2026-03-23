@@ -6,15 +6,15 @@ on:
       target:
         description: "Deployment target"
         required: true
-        default: "staging-main"
+        default: "staging"
         type: choice
         options:
-          - staging-main
+          - staging
           - prod-main
 
 jobs:
-  deploy-staging-main:
-    if: ${{ github.event.inputs.target == 'staging-main' }}
+  deploy-staging:
+    if: ${{ github.event.inputs.target == 'staging' }}
     runs-on: ubuntu-latest
     environment: staging
     permissions:
@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: staging
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,11 +34,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Deploy staging/main with guardrails
+      - name: Deploy staging with guardrails
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npm run deploy:staging:main
+          VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+        run: npm run deploy:staging
 
   deploy-prod-main:
     if: ${{ github.event.inputs.target == 'prod-main' }}
@@ -68,4 +69,5 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
         run: npm run deploy:prod:main
