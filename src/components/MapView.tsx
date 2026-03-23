@@ -15,6 +15,10 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
+import {
+  PROFILE_DRAFT_SITE_REQUEST_EVENT,
+  type ProfileDraftSiteRequestDetail,
+} from "../lib/profileDraftEvent";
 import { useAppStore } from "../store/appStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
@@ -1446,6 +1450,16 @@ export function MapView({
     setSiteDraftStatus(null);
   };
 
+  const beginPendingNewSiteDraft = (lat: number, lon: number) => {
+    if (endpointPickTarget) return;
+    if (pendingMoveCount > 0) {
+      setSiteDraftStatus("Save or dismiss the current site move before creating another new site.");
+      return;
+    }
+    setPendingNewSiteDraft({ lat, lon });
+    setSiteDraftStatus(null);
+  };
+
   const onMapClick = (event: MapLayerMouseEvent) => {
     const rawTarget = event.originalEvent?.target;
     if (rawTarget instanceof Element && rawTarget.closest(".site-pin")) return;
@@ -1469,16 +1483,19 @@ export function MapView({
       setSelectedLinkId(id);
       return;
     }
-    if (pendingMoveCount > 0) {
-      setSiteDraftStatus("Save or dismiss the current site move before creating another new site.");
-      return;
-    }
-    setPendingNewSiteDraft({
-      lat: event.lngLat.lat,
-      lon: event.lngLat.lng,
-    });
-    setSiteDraftStatus(null);
+    beginPendingNewSiteDraft(event.lngLat.lat, event.lngLat.lng);
   };
+
+  useEffect(() => {
+    const onProfileDraftRequest = (rawEvent: Event) => {
+      const customEvent = rawEvent as CustomEvent<ProfileDraftSiteRequestDetail>;
+      const detail = customEvent.detail;
+      if (!detail) return;
+      beginPendingNewSiteDraft(detail.lat, detail.lon);
+    };
+    window.addEventListener(PROFILE_DRAFT_SITE_REQUEST_EVENT, onProfileDraftRequest);
+    return () => window.removeEventListener(PROFILE_DRAFT_SITE_REQUEST_EVENT, onProfileDraftRequest);
+  }, [endpointPickTarget, pendingMoveCount]);
 
   const addDiscoveryLibrarySiteToSimulation = (entryId: string) => {
     if (!canPersist) {

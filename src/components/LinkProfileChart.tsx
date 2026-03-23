@@ -9,6 +9,7 @@ import {
   type PassFailState,
 } from "../lib/passFailState";
 import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
+import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
 import { buildProfile } from "../lib/propagation";
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
@@ -576,6 +577,31 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     const chartX = (xNorm / rect.width) * chartWidth;
     const chartY = M.t + (yNorm / rect.height) * (chartHeight - M.t - M.b);
 
+    const getNearestProfileIndex = (xCoordinate: number): number => {
+      let nearest = 0;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < profile.length; i += 1) {
+        const px = geometry.xForDistance(profile[i].distanceKm);
+        const d = Math.abs(px - xCoordinate);
+        if (d < nearestDistance) {
+          nearestDistance = d;
+          nearest = i;
+        }
+      }
+      return nearest;
+    };
+
+    const nearest = getNearestProfileIndex(chartX);
+    setProfileCursorIndex(nearest);
+    setHoverPosition({ x: chartX, y: chartY });
+  };
+
+  const onSvgClick = (event: MouseEvent<SVGRectElement>) => {
+    if (!geometry.hasData || profile.length < 2) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const xNorm = event.clientX - rect.left;
+    const chartX = (xNorm / rect.width) * chartWidth;
+
     let nearest = 0;
     let nearestDistance = Number.POSITIVE_INFINITY;
     for (let i = 0; i < profile.length; i += 1) {
@@ -587,7 +613,9 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       }
     }
     setProfileCursorIndex(nearest);
-    setHoverPosition({ x: chartX, y: chartY });
+    const nearestPoint = profile[nearest];
+    if (!nearestPoint) return;
+    dispatchProfileDraftSiteRequest({ lat: nearestPoint.lat, lon: nearestPoint.lon });
   };
 
   const onSvgLeave = () => {
@@ -713,6 +741,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
             y={M.t}
             width={chartWidth - M.l - M.r}
             height={chartHeight - M.t - M.b}
+            onClick={onSvgClick}
             onMouseMove={onSvgMove}
             onMouseLeave={onSvgLeave}
           />
