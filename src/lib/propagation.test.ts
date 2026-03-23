@@ -126,4 +126,20 @@ describe("buildProfile", () => {
 
     expect(k1[midIndex].terrainM).toBeGreaterThan(k2[midIndex].terrainM);
   });
+
+  it("uses only endpoint interpolation plus Earth bulge when terrain samples are missing", () => {
+    const profile = buildProfile(link, a, b, undefined, 16, { kFactor: 1 });
+    const totalDistanceKm = profile[profile.length - 1]?.distanceKm ?? 0.001;
+    const effectiveRadiusM = 6_371_000;
+
+    for (let i = 0; i < profile.length; i += 1) {
+      const point = profile[i];
+      const t = i / (profile.length - 1);
+      const dTotalM = Math.max(1, totalDistanceKm * 1000);
+      const x = dTotalM * t;
+      const bulgeM = (x * (dTotalM - x)) / (2 * effectiveRadiusM);
+      const expectedBaseM = a.groundElevationM + (b.groundElevationM - a.groundElevationM) * t;
+      expect(point.terrainM).toBeCloseTo(expectedBaseM + bulgeM, 6);
+    }
+  });
 });

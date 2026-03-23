@@ -59,13 +59,8 @@ const buildTerrainPoint = (
   const terrainBaseM =
     fromSite.groundElevationM + (toSite.groundElevationM - fromSite.groundElevationM) * t;
 
-  const syntheticVariationM =
-    Math.sin(t * Math.PI * 2) * 7 +
-    Math.sin(t * Math.PI * 4.5) * 3 +
-    Math.exp(-((t - 0.48) ** 2) / 0.02) * 18;
-
   const bulgeM = earthBulgeM(distanceKm, t, kFactor);
-  const terrainM = (terrainFromSampler ?? terrainBaseM + syntheticVariationM) + bulgeM;
+  const terrainM = (terrainFromSampler ?? terrainBaseM) + bulgeM;
 
   const fresnel = firstFresnelRadiusM(distanceKm, link.frequencyMHz, t);
 
