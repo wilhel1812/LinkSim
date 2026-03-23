@@ -15,6 +15,12 @@
   - Unless the user explicitly says otherwise, work in local test environment.
   - After local verification, deploy to live test/staging for verification.
   - Only promote to production after explicit user approval, using the same verified commit.
+- Branch workflow:
+  - Use per-issue branches: `issue/<id>-<slug>`.
+  - Merge issue branches into `staging` first.
+  - Promote to production through `release/vX.Y.Z` branch/PR into `main`.
+  - Use `hotfix/<slug>` only for explicitly approved incidents.
+  - This staging-integration model is the default unless the user explicitly overrides it.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
 - Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.
 - Never commit or push directly to `main`; always create/use a separate branch for changes and push that branch.
@@ -45,13 +51,14 @@
   - `npm run deploy:staging:preview` → Preview URL
   - `npm run deploy:prod:main` → https://linksim.link
 - Staging deploy default:
-  - Use `npm run deploy:staging` (any branch) to deploy to https://staging.linksim.link
+  - Use `npm run deploy:staging` from `staging` branch to deploy to https://staging.linksim.link
   - Use `npm run deploy:staging:preview` only for side-by-side comparisons with preview URL
 - Never run raw `wrangler pages deploy` for release operations.
 - If a guarded deploy fails, fix the script/preflight issue and re-run the guarded script. Do not bypass with manual Wrangler deploys.
 - Promotion gate:
   - Promote the exact same verified commit from local -> staging -> production.
   - If code changes after staging verification, rerun local verification and redeploy staging before production.
+  - Production promotion branch must be `release/vX.Y.Z` (or approved `hotfix/<slug>`).
 - Local run reliability:
   - Restart local server whenever runtime/config/env changes can affect behavior.
   - Re-verify affected flows after restart before marking work as done.
@@ -68,7 +75,13 @@
   - Treat GitHub Issues as the canonical backlog for open and completed work.
   - Use issue titles as the default source of task naming.
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
+  - Maintain explicit status labels: `pending-discussion` -> `in-progress` -> `in-staging` -> `released`.
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
+
+## Branch Protection Rollout Safety
+- When introducing a new required status check, roll it out in two phases to avoid PR deadlocks:
+  1. merge the workflow that produces the check
+  2. then add that check to branch protection required checks
 
 ## Model Selection
 - **Codex 5.3** — use for full implementation passes where quality and breadth of change matter most. Expensive; reserve for when the work warrants it.

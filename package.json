@@ -31,7 +31,7 @@
     "refresh:staging:d1": "./scripts/refresh-staging-d1.sh",
     "refresh:staging:r2": "./scripts/refresh-staging-r2.sh",
     "refresh:staging": "npm run refresh:staging:d1 && npm run refresh:staging:r2",
-    "refresh-and-deploy:staging": "npm run refresh:staging && npm run deploy:staging:main"
+    "refresh-and-deploy:staging": "npm run refresh:staging && npm run deploy:staging"
   },
   "dependencies": {
     "clsx": "^2.1.1",
