@@ -714,7 +714,7 @@ const buildRelayCandidateOverlay = (
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   const image = ctx.createImageData(width, height);
-  const bottleneck = new Float32Array(width * height);
+  const bottleneck = new Float32Array(width * height).fill(-Infinity);
   let minDbm = Number.POSITIVE_INFINITY;
   let maxDbm = Number.NEGATIVE_INFINITY;
 
@@ -780,8 +780,9 @@ const buildRelayCandidateOverlay = (
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      const px = (y * width + x) * 4;
       const i = y * width + x;
+      if (!Number.isFinite(bottleneck[i])) continue;
+      const px = i * 4;
       const normalized = -125 + ((bottleneck[i] - minDbm) / dynamicRange) * 63;
       const [r, g, b] = coverageColorForDbm(clamp(normalized, -125, -62));
       image.data[px] = r;
