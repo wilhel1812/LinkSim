@@ -1101,26 +1101,7 @@ export function MapView({
   );
   const hasSimulationTerrain = srtmTiles.length > 0;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
-  const selectedLink =
-    links.find((link) => link.id === selectedLinkId) ??
-    visibleLinks[0] ??
-    links[0] ??
-    (sites.length >= 1
-      ? {
-          id: "__auto__",
-          name: "Auto Link",
-          fromSiteId: sites[0].id,
-          toSiteId: sites[1]?.id ?? sites[0].id,
-          frequencyMHz:
-            selectedNetwork?.frequencyOverrideMHz ??
-            selectedNetwork?.frequencyMHz ??
-            869.618,
-          txPowerDbm: sites[0]?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm,
-          txGainDbi: sites[0]?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi,
-          rxGainDbi: sites[1]?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi,
-          cableLossDb: sites[0]?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb,
-        }
-      : null);
+  const selectedLink = links.find((link) => link.id === selectedLinkId) ?? null;
   const selectedFromSiteId = selectedLink
     ? temporaryDirectionReversed
       ? selectedLink.toSiteId
@@ -1301,7 +1282,7 @@ export function MapView({
     () => ({
       type: "FeatureCollection" as const,
       features:
-        selectionCount >= 2 && selectedProfile.length > 1
+        selectionCount === 2 && selectedProfile.length > 1
           ? [
               {
                 type: "Feature" as const,
@@ -1318,7 +1299,7 @@ export function MapView({
   );
 
   const cursorPoint =
-    selectionCount >= 2
+    selectionCount === 2
       ? selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))]
       : undefined;
 

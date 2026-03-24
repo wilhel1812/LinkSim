@@ -89,7 +89,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
   );
   const selectionCount = selectedSites.length;
   const hasMinimumTopology = selectionCount >= 2;
-  const tooManySelectedForProfile = selectionCount > 3;
+  const tooManySelectedForProfile = selectionCount > 2;
   const selectedFromSiteId =
     selectedSites.length >= 2
       ? temporaryDirectionReversed
@@ -669,7 +669,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     return (
       <section className="chart-panel chart-panel-empty">
         <div className="chart-empty">
-          Select three or fewer sites to show path profile analysis. Multi-link profile mode is planned but not active.
+          Select two sites to show path profile analysis. Multi-link profile mode is planned but not active.
         </div>
       </section>
     );
