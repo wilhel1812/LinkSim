@@ -1194,7 +1194,7 @@ export function MapView({
   const hasRelayTopology = selectionCount >= 2;
   const hasMinimumTopology = sites.length >= 1;
   const analysisTargetSites = selectedSites.length ? selectedSites : sites;
-  const overlayMaskArea = useMemo(() => buildBufferedSelectionArea(selectedSites, 20), [selectedSites]);
+  const overlayMaskArea = useMemo(() => buildBufferedSelectionArea(analysisTargetSites, 20), [analysisTargetSites]);
   const overlayPointMask = overlayMaskArea?.contains;
   const analysisBounds = useMemo(() => {
     if (overlayMaskArea) return overlayMaskArea.bounds;
