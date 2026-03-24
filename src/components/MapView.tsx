@@ -1193,7 +1193,7 @@ export function MapView({
   const hasPassFailTopology = selectionCount >= 1;
   const hasRelayTopology = selectionCount >= 2;
   const hasMinimumTopology = sites.length >= 1;
-  const analysisTargetSites = selectedSites.length ? selectedSites : sites;
+  const analysisTargetSites = sites;
   const overlayMaskArea = useMemo(() => buildBufferedSelectionArea(analysisTargetSites, 20), [analysisTargetSites]);
   const overlayPointMask = overlayMaskArea?.contains;
   const analysisBounds = useMemo(() => {

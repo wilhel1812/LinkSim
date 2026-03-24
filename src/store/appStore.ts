@@ -1056,20 +1056,6 @@ const bufferedBoundsForSites = (sites: Site[], radiusKm: number): TerrainFetchBo
   };
 };
 
-const getTerrainFocusSites = (sites: Site[], selectedSiteIds: string[], selectedSiteId: string): Site[] => {
-  const normalizedSelection = normalizeSelectedSiteIds(selectedSiteIds, sites);
-  if (normalizedSelection.length) {
-    const selectedSites = normalizedSelection
-      .map((id) => sites.find((site) => site.id === id))
-      .filter((site): site is Site => Boolean(site));
-    if (selectedSites.length) return selectedSites;
-  }
-  if (selectedSiteId) {
-    const selectedSite = sites.find((site) => site.id === selectedSiteId);
-    if (selectedSite) return [selectedSite];
-  }
-  return sites;
-};
 const initialBasemapProvider = normalizeBasemapProvider(readStorage<string>(BASEMAP_PROVIDER_KEY, "carto"));
 const initialBasemapStylePreset = normalizeBasemapStylePreset(
   readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "normal"),
@@ -3013,11 +2999,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   recommendTerrainDatasetForCurrentArea: async () => {
-    const { sites, selectedSiteIds, selectedSiteId } = get();
+    const { sites } = get();
     if (!sites.length) return;
 
-    const focusSites = getTerrainFocusSites(sites, selectedSiteIds, selectedSiteId);
-    const bounds = bufferedBoundsForSites(focusSites, 20);
+    const bounds = bufferedBoundsForSites(sites, 20);
     if (!bounds) return;
 
     set({ terrainRecommendation: "Evaluating terrain dataset coverage...", isTerrainRecommending: true });
@@ -3041,13 +3026,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   fetchTerrainForCurrentArea: async () => {
-    const { sites, srtmTiles, isTerrainFetching, selectedSiteIds, selectedSiteId } = get();
+    const { sites, srtmTiles, isTerrainFetching } = get();
     if (isTerrainFetching) return;
     if (!sites.length) return;
 
-    const focusSites = getTerrainFocusSites(sites, selectedSiteIds, selectedSiteId);
-    const coreBounds = bufferedBoundsForSites(focusSites, 20);
-    const extendedBounds = bufferedBoundsForSites(focusSites, 40);
+    const coreBounds = bufferedBoundsForSites(sites, 20);
+    const extendedBounds = bufferedBoundsForSites(sites, 40);
     if (!coreBounds || !extendedBounds) return;
 
     const requiredTileKeys = new Set(
@@ -3063,7 +3047,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
 
     const endpointKeys = new Set<string>();
-    const prioritizedSites = focusSites.length >= 2 ? [focusSites[0], focusSites[focusSites.length - 1]] : focusSites;
+    const prioritizedSites = sites.length >= 2 ? [sites[0], sites[sites.length - 1]] : sites;
     for (const site of prioritizedSites) {
       for (const dLat of [-1, 0, 1]) {
         for (const dLon of [-1, 0, 1]) {
@@ -3190,12 +3174,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   recommendAndFetchTerrainForCurrentArea: () => get().loadTerrainForCurrentArea(),
   loadTerrainForCurrentArea: async () => {
     if (get().isTerrainFetching) return;
-    const { sites, selectedSiteIds, selectedSiteId } = get();
+    const { sites } = get();
     if (!sites.length) return;
 
-    const focusSites = getTerrainFocusSites(sites, selectedSiteIds, selectedSiteId);
-    const coreBounds = bufferedBoundsForSites(focusSites, 20);
-    const extendedBounds = bufferedBoundsForSites(focusSites, 40);
+    const coreBounds = bufferedBoundsForSites(sites, 20);
+    const extendedBounds = bufferedBoundsForSites(sites, 40);
     if (!coreBounds || !extendedBounds) return;
 
     const { terrainLoadEpoch: currentEpoch } = get();
@@ -3254,7 +3237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
 
     const endpointKeys = new Set<string>();
-    const prioritizedSites = focusSites.length >= 2 ? [focusSites[0], focusSites[focusSites.length - 1]] : focusSites;
+    const prioritizedSites = sites.length >= 2 ? [sites[0], sites[sites.length - 1]] : sites;
     for (const site of prioritizedSites) {
       for (const dLat of [-1, 0, 1]) {
         for (const dLon of [-1, 0, 1]) {
