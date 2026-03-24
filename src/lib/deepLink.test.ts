@@ -31,63 +31,61 @@ describe("deepLink", () => {
     expect(parsed).toEqual({ ok: false, reason: "missing_sim" });
   });
 
-  it("parses v2 path with just simulation", () => {
+  it("parses v2 path with just simulation (no query params)", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/høgevarde",
-      search: "?dl=2",
+      pathname: "/Høgevarde",
+      search: "",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.payload.simulationSlug).toBe("høgevarde");
+    expect(parsed.payload.simulationSlug).toBe("Høgevarde");
     expect(parsed.payload.selectedSiteSlugs).toBeUndefined();
     expect(parsed.payload.selectedLinkSlugs).toBeUndefined();
   });
 
   it("parses v2 path with single site", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/høgevarde/fyrisjøen",
-      search: "?dl=2",
+      pathname: "/Høgevarde/Fyrisjøen",
+      search: "",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.payload.simulationSlug).toBe("høgevarde");
-    expect(parsed.payload.selectedSiteSlugs).toEqual(["fyrisjøen"]);
+    expect(parsed.payload.simulationSlug).toBe("Høgevarde");
+    expect(parsed.payload.selectedSiteSlugs).toEqual(["Fyrisjøen"]);
   });
 
   it("parses v2 path with multiple sites (multi-site selection)", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/høgevarde/fyrisjøen+hoeg-router",
-      search: "?dl=2",
+      pathname: "/Høgevarde/Fyrisjøen+HOEG-ROUTER",
+      search: "",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.payload.simulationSlug).toBe("høgevarde");
-    expect(parsed.payload.selectedSiteSlugs).toEqual(["fyrisjøen", "hoeg-router"]);
+    expect(parsed.payload.simulationSlug).toBe("Høgevarde");
+    expect(parsed.payload.selectedSiteSlugs).toEqual(["Fyrisjøen", "HOEG-ROUTER"]);
   });
 
   it("parses v2 path with link (two sites in <>)", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/høgevarde/fyrisjøen<>hoeg-router",
-      search: "?dl=2",
+      pathname: "/Høgevarde/Fyrisjøen<>HOEG-ROUTER",
+      search: "",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.payload.simulationSlug).toBe("høgevarde");
-    expect(parsed.payload.selectedLinkSlugs).toEqual(["fyrisjøen", "hoeg-router"]);
+    expect(parsed.payload.simulationSlug).toBe("Høgevarde");
+    expect(parsed.payload.selectedLinkSlugs).toEqual(["Fyrisjøen", "HOEG-ROUTER"]);
   });
 
-  it("builds v2 URL with just simulation", () => {
+  it("builds v2 URL with just simulation (no query params)", () => {
     const url = buildDeepLinkUrl(
       {
         version: 2,
         simulationId: "sim-999",
-        simulationSlug: "høgevarde",
+        simulationSlug: "Høgevarde",
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toContain("dl=2");
-    expect(url).toContain("sim=sim-999");
-    expect(decodeURIComponent(new URL(url).pathname)).toBe("/høgevarde");
+    expect(url).toBe("https://linksim.pages.dev/Høgevarde");
   });
 
   it("builds v2 URL with multiple selected sites", () => {
@@ -95,12 +93,12 @@ describe("deepLink", () => {
       {
         version: 2,
         simulationId: "sim-999",
-        simulationSlug: "høgevarde",
-        selectedSiteSlugs: ["fyrisjøen", "hoeg-router", "fagerlinattan"],
+        simulationSlug: "Høgevarde",
+        selectedSiteSlugs: ["Fyrisjøen", "HOEG-ROUTER", "Fagerlinattan"],
       },
       "https://linksim.pages.dev",
     );
-    expect(decodeURIComponent(new URL(url).pathname)).toBe("/høgevarde/fyrisjøen+hoeg-router+fagerlinattan");
+    expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen+HOEG-ROUTER+Fagerlinattan");
   });
 
   it("builds v2 URL with link selection", () => {
@@ -108,16 +106,16 @@ describe("deepLink", () => {
       {
         version: 2,
         simulationId: "sim-999",
-        simulationSlug: "høgevarde",
-        selectedLinkSlugs: ["fyrisjøen", "hoeg-router"],
+        simulationSlug: "Høgevarde",
+        selectedLinkSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
       },
       "https://linksim.pages.dev",
     );
-    expect(decodeURIComponent(new URL(url).pathname)).toBe("/høgevarde/fyrisjøen<>hoeg-router");
+    expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen<>HOEG-ROUTER");
   });
 
-  it("slugifies names preserving unicode and stripping delimiters", () => {
-    expect(slugifyName(" NOR HØGEVARDE / test ")).toBe("nor-høgevarde-test");
+  it("slugifies names preserving unicode and case, stripping delimiters", () => {
+    expect(slugifyName(" NOR HØGEVARDE / test ")).toBe("NOR-HØGEVARDE-test");
     expect(slugifyName("site+name")).toBe("sitename");
     expect(slugifyName("site<>name")).toBe("sitename");
     expect(slugifyName("site/name")).toBe("sitename");

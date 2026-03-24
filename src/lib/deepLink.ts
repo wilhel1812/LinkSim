@@ -24,12 +24,19 @@ const isReservedPathHead = (head: string): boolean => {
 };
 
 const normalizeSlugSegment = (value: string): string =>
-  value.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
+  value.trim().replace(/^\/+|\/+$/g, "");
+
+const isV2Path = (pathname: string): boolean => {
+  const segments = (pathname ?? "/").split("/").filter(Boolean);
+  if (segments.length >= 2) return true;
+  if (segments[0]?.includes("+") || segments[0]?.includes("<>")) return true;
+  if (segments[0]) return true;
+  return false;
+};
 
 export const slugifyName = (value: string): string =>
   value
     .trim()
-    .toLocaleLowerCase()
     .normalize("NFKC")
     .replace(DELIMITER_CHARS, "")
     .normalize("NFKD")
@@ -102,8 +109,25 @@ export const parseDeepLinkFromLocation = (locationLike: DeepLinkLocationLike): D
     };
   }
 
+  const isV2Format = versionRaw === "2" || isV2Path(locationLike.pathname ?? "/");
+
   if (versionRaw && versionRaw !== "2") {
     return { ok: false, reason: "invalid_version" };
+  }
+
+  if (!isV2Format) {
+    const simulationId = trimToUndefined(params.get("sim"));
+    if (!simulationId) {
+      if (params.has("sim")) return { ok: false, reason: "invalid_sim" };
+      return { ok: false, reason: "missing_sim" };
+    }
+    return {
+      ok: true,
+      payload: {
+        version: 2,
+        simulationId,
+      },
+    };
   }
 
   const { simulationSlug: pathSimulationSlug, selection } = parseV2Path(locationLike.pathname ?? "/");
@@ -177,9 +201,5 @@ export const buildDeepLinkUrl = (
     pathPart += `/${sitePath}`;
   }
 
-  const url = new URL(pathPart, origin);
-  url.searchParams.set("dl", String(payload.version));
-  if (payload.simulationId) url.searchParams.set("sim", payload.simulationId);
-
-  return url.toString();
+  return `${origin}${pathPart}`;
 };
