@@ -1860,6 +1860,10 @@ export function MapView({
     return ["none", "heatmap", "contours"];
   }, [selectionCount]);
   useEffect(() => {
+    if (coverageVizMode === "heatmap") {
+      setCoverageVizMode("contours");
+      return;
+    }
     if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "passfail" | "relay")) return;
     setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "contours");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
