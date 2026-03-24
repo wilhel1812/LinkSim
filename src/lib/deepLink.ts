@@ -191,13 +191,15 @@ export const buildDeepLinkUrl = (
     return url.toString();
   }
 
-  let pathPart = `/${pathSlug}`;
+  let pathPart = `/${encodeURIComponent(pathSlug).replace(/%2F/g, "/")}`;
 
   if (payload.selectedLinkSlugs && payload.selectedLinkSlugs.length === 2) {
     const [from, to] = payload.selectedLinkSlugs;
-    pathPart += `/${slugifyName(from)}<>${slugifyName(to)}`;
+    pathPart += `/${encodeURIComponent(from).replace(/%2F/g, "/")}<>${encodeURIComponent(to).replace(/%2F/g, "/")}`;
   } else if (payload.selectedSiteSlugs && payload.selectedSiteSlugs.length > 0) {
-    const sitePath = payload.selectedSiteSlugs.map(slugifyName).join("+");
+    const sitePath = payload.selectedSiteSlugs
+      .map((s) => encodeURIComponent(s).replace(/%2F/g, "/"))
+      .join("+");
     pathPart += `/${sitePath}`;
   }
 

@@ -85,7 +85,7 @@ describe("deepLink", () => {
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toBe("https://linksim.pages.dev/Høgevarde");
+    expect(url).toBe("https://linksim.pages.dev/H%C3%B8gevarde");
   });
 
   it("builds v2 URL with multiple selected sites", () => {
@@ -98,7 +98,7 @@ describe("deepLink", () => {
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen+HOEG-ROUTER+Fagerlinattan");
+    expect(url).toBe("https://linksim.pages.dev/H%C3%B8gevarde/Fyrisj%C3%B8en+HOEG-ROUTER+Fagerlinattan");
   });
 
   it("builds v2 URL with link selection", () => {
@@ -111,7 +111,7 @@ describe("deepLink", () => {
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen<>HOEG-ROUTER");
+    expect(url).toBe("https://linksim.pages.dev/H%C3%B8gevarde/Fyrisj%C3%B8en<>HOEG-ROUTER");
   });
 
   it("slugifies names preserving unicode and case, stripping delimiters", () => {
