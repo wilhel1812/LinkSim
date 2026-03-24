@@ -65,14 +65,24 @@ describe("deepLink", () => {
     expect(parsed.payload.selectedSiteSlugs).toEqual(["Fyrisjøen", "HOEG-ROUTER"]);
   });
 
-  it("parses v2 path with link (two sites in <>)", () => {
+  it("parses v2 path with link (two sites in ~)", () => {
+    const parsed = parseDeepLinkFromLocation({
+      pathname: "/Høgevarde/Fyrisjøen~HOEG-ROUTER",
+      search: "",
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.payload.simulationSlug).toBe("Høgevarde");
+    expect(parsed.payload.selectedLinkSlugs).toEqual(["Fyrisjøen", "HOEG-ROUTER"]);
+  });
+
+  it("parses legacy <> link delimiter", () => {
     const parsed = parseDeepLinkFromLocation({
       pathname: "/Høgevarde/Fyrisjøen<>HOEG-ROUTER",
       search: "",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.payload.simulationSlug).toBe("Høgevarde");
     expect(parsed.payload.selectedLinkSlugs).toEqual(["Fyrisjøen", "HOEG-ROUTER"]);
   });
 
@@ -122,14 +132,16 @@ describe("deepLink", () => {
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen<>HOEG-ROUTER");
+    expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen~HOEG-ROUTER");
   });
 
   it("slugifies names preserving unicode and case, stripping delimiters", () => {
     expect(slugifyName(" NOR HØGEVARDE / test ")).toBe("NOR-HØGEVARDE-test");
     expect(slugifyName("site+name")).toBe("sitename");
     expect(slugifyName("site<>name")).toBe("sitename");
+    expect(slugifyName("site~name")).toBe("sitename");
     expect(slugifyName("site/name")).toBe("sitename");
+    expect(slugifyName("🏝️")).toBe("🏝");
   });
 
   it("canonicalizes keys for matching existing normalized slugs", () => {

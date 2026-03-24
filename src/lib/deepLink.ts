@@ -1,4 +1,6 @@
-const DELIMITER_CHARS = /[+<>\/]/g;
+const DELIMITER_CHARS = /[+<>~\/]/g;
+const PRIMARY_LINK_DELIMITER = "~";
+const LEGACY_LINK_DELIMITER = "<>";
 
 export type DeepLinkPayloadV2 = {
   version: 2;
@@ -46,6 +48,7 @@ export const slugifyName = (value: string): string =>
   value
     .trim()
     .normalize("NFKC")
+    .replace(/[\uFE0E\uFE0F]/g, "")
     .replace(DELIMITER_CHARS, "")
     .normalize("NFKD")
     .replace(/\s+/g, "-")
@@ -55,6 +58,7 @@ export const slugifyName = (value: string): string =>
 export const canonicalizeDeepLinkKey = (value: string): string =>
   safeDecodeURIComponent(value)
     .trim()
+    .replace(/[\uFE0E\uFE0F]/g, "")
     .toLocaleLowerCase()
     .normalize("NFKC")
     .replace(/ß/g, "ss")
@@ -92,8 +96,14 @@ const parseV2Path = (pathname: string) => {
 
   const selectionPart = segments.slice(1).join("/");
 
-  if (selectionPart.includes("<>")) {
-    const [fromSlug, toSlug] = selectionPart.split("<>").map(normalizeSlugSegment);
+  const linkDelimiter = selectionPart.includes(PRIMARY_LINK_DELIMITER)
+    ? PRIMARY_LINK_DELIMITER
+    : selectionPart.includes(LEGACY_LINK_DELIMITER)
+      ? LEGACY_LINK_DELIMITER
+      : null;
+
+  if (linkDelimiter) {
+    const [fromSlug, toSlug] = selectionPart.split(linkDelimiter).map(normalizeSlugSegment);
     return {
       simulationSlug,
       selection: { type: "link", fromSlug: fromSlug ?? "", toSlug: toSlug ?? "" },
@@ -222,7 +232,7 @@ export const buildDeepLinkUrl = (
 
   if (payload.selectedLinkSlugs && payload.selectedLinkSlugs.length === 2) {
     const [from, to] = payload.selectedLinkSlugs;
-    pathPart += `/${cleanSlug(from)}<>${cleanSlug(to)}`;
+    pathPart += `/${cleanSlug(from)}${PRIMARY_LINK_DELIMITER}${cleanSlug(to)}`;
   } else if (payload.selectedSiteSlugs && payload.selectedSiteSlugs.length > 0) {
     const sitePath = payload.selectedSiteSlugs.map(cleanSlug).join("+");
     pathPart += `/${sitePath}`;
