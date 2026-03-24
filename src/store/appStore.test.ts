@@ -429,3 +429,47 @@ describe("appStore elevation sync", () => {
     expect(useAppStore.getState().hasOnlineElevationSync).toBe(false);
   });
 });
+
+describe("appStore blank simulation loading", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+    useAppStore.setState({
+      currentUser: {
+        id: "owner-1",
+        username: "owner",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+      },
+      selectedScenarioId: "starter-default",
+      sites: [],
+      links: [],
+      simulationPresets: [],
+    });
+  });
+
+  it("persists last-session selection when loading a blank saved simulation", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Blank Session", { visibility: "private", ownerUserId: "owner-1" });
+    expect(createdId).toBeTruthy();
+
+    storage.mock.removeItem("linksim-last-session-v1");
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+
+    const raw = storage.mock.getItem("linksim-last-session-v1");
+    expect(raw).toBeTruthy();
+    expect(raw).toContain(createdId as string);
+  });
+});
