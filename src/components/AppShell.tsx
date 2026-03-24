@@ -593,15 +593,7 @@ export function AppShell() {
       setShareStatus("Unable to build share link for this simulation.");
       return;
     }
-    let linkToCopy = currentShareLink;
-    try {
-      const parsed = new URL(currentShareLink);
-      parsed.pathname = decodeURIComponent(parsed.pathname);
-      linkToCopy = parsed.toString();
-    } catch {
-      linkToCopy = currentShareLink;
-    }
-    await copyToClipboard(linkToCopy);
+    await copyToClipboard(currentShareLink);
     setShareStatus("Share link copied.");
     setCopyToast("Copied to clipboard");
   }, [activeSimulation, currentShareLink]);
