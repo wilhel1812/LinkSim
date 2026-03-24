@@ -812,14 +812,14 @@ export function Sidebar() {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
       const preset = simulationPresets.find((candidate) => candidate.id === presetId);
-      return preset ? `${preset.name} (saved)` : "Saved simulation";
+      return preset ? `${preset.name}` : "Saved simulation";
     }
     if (!selectedSimulationRef.trim()) {
       return "no simulation selected";
     }
     const simulationId = selectedSimulationRef.replace("builtin:", "");
     const simulation = scenarioOptions.find((candidate) => candidate.id === simulationId);
-    return simulation ? `${simulation.name} (starter)` : "no simulation selected";
+    return simulation ? `${simulation.name}` : "no simulation selected";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
   const activeSimulationVisibility = useMemo<"private" | "public" | "shared">(() => {
     if (!selectedSimulationRef.startsWith("saved:")) return "shared";
@@ -2039,7 +2039,6 @@ export function Sidebar() {
           <InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />
         </div>
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
-        <p className="field-help">Current sites in this simulation:</p>
         <div className="site-list">
           {sites.map((site) => (
             <button
