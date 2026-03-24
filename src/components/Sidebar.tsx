@@ -1995,12 +1995,9 @@ export function Sidebar() {
       </header>
       <section className="panel-section section-scenario">
         <div className="section-heading">
-          <h2>Simulation</h2>
+          <h2>Simulation: {activeSimulationLabel}</h2>
           <InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />
         </div>
-        <p className="field-help simulation-name">
-          <strong>{activeSimulationLabel}</strong>
-        </p>
         <div className="chip-group simulation-buttons">
           <button
             className="inline-action"
