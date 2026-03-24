@@ -58,18 +58,18 @@ export function AppShell() {
   const importLibraryData = useAppStore((state) => state.importLibraryData);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
+  const selectSiteById = useAppStore((state) => state.selectSiteById);
   const setMapOverlayMode = useAppStore((state) => state.setMapOverlayMode);
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
-  const mapViewport = useAppStore((state) => state.mapViewport);
-  const mapOverlayMode = useAppStore((state) => state.mapOverlayMode);
   const links = useAppStore((state) => state.links);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const sites = useAppStore((state) => state.sites);
+  const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
@@ -131,28 +131,33 @@ export function AppShell() {
   const currentShareLink = useMemo(() => {
     if (!activeSimulation) return "";
     const simulationSlug = activeSimulation.name;
+    const selectedSites = selectedSiteIds
+      .map((id) => sites.find((site) => site.id === id))
+      .filter((site): site is NonNullable<typeof site> => Boolean(site));
+
+    let selectedLinkSlugs: string[] | undefined;
+    let selectedSiteSlugs: string[] | undefined;
+
+    if (selectedLink) {
+      selectedLinkSlugs = [selectedLink.fromSiteId, selectedLink.toSiteId]
+        .map((id) => sites.find((s) => s.id === id)?.name)
+        .filter((name): name is string => Boolean(name));
+    } else if (selectedSites.length > 0) {
+      selectedSiteSlugs = selectedSites.map((s) => s.name);
+    }
+
     return buildDeepLinkUrl(
       {
-        version: 1,
+        version: 2,
         simulationId: activeSimulation.id,
         simulationSlug,
-        ...(selectedLink ? { selectedLinkId: selectedLink.id } : {}),
-        ...(selectedLink?.name ? { selectedLinkSlug: selectedLink.name } : {}),
-        overlayMode: mapOverlayMode,
-        ...(mapViewport
-          ? {
-              mapViewport: {
-                lat: mapViewport.center.lat,
-                lon: mapViewport.center.lon,
-                zoom: mapViewport.zoom,
-              },
-            }
-          : {}),
+        ...(selectedLinkSlugs ? { selectedLinkSlugs } : {}),
+        ...(selectedSiteSlugs ? { selectedSiteSlugs } : {}),
       },
       window.location.origin,
       "/",
     );
-  }, [activeSimulation, selectedLink, mapOverlayMode, mapViewport]);
+  }, [activeSimulation, selectedLink, selectedSiteIds, sites]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -539,26 +544,24 @@ export function AppShell() {
         return;
       }
       loadSimulationPreset(resolvedSimulationId);
-      if (payload.selectedLinkId) {
-        const latest = useAppStore.getState();
-        if (latest.links.some((link) => link.id === payload.selectedLinkId)) {
-          setSelectedLinkId(payload.selectedLinkId);
-        }
-      } else if (payload.selectedLinkSlug) {
-        const latest = useAppStore.getState();
-        const bySlug = latest.links.find((link) =>
-          slugifyName(link.name ?? "") === payload.selectedLinkSlug,
+      const latest = useAppStore.getState();
+      if (payload.selectedLinkSlugs && payload.selectedLinkSlugs.length === 2) {
+        const [fromSlug, toSlug] = payload.selectedLinkSlugs;
+        const bySlug = latest.links.find(
+          (link) =>
+            slugifyName(latest.sites.find((s) => s.id === link.fromSiteId)?.name ?? "") === fromSlug &&
+            slugifyName(latest.sites.find((s) => s.id === link.toSiteId)?.name ?? "") === toSlug,
         );
-        if (bySlug) setSelectedLinkId(bySlug.id);
-      }
-      if (payload.overlayMode) {
-        setMapOverlayMode(payload.overlayMode);
-      }
-      if (payload.mapViewport) {
-        updateMapViewport({
-          center: { lat: payload.mapViewport.lat, lon: payload.mapViewport.lon },
-          zoom: payload.mapViewport.zoom,
-        });
+        if (bySlug) {
+          setSelectedLinkId(bySlug.id);
+        }
+      } else if (payload.selectedSiteSlugs && payload.selectedSiteSlugs.length > 0) {
+        for (const siteSlug of payload.selectedSiteSlugs) {
+          const site = latest.sites.find((s) => slugifyName(s.name) === siteSlug);
+          if (site) {
+            selectSiteById(site.id, true);
+          }
+        }
       }
     })();
   }, [
