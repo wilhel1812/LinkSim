@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from calculation_api.main import app
+from calculation_api.main import create_app
 
 
-client = TestClient(app)
+client = TestClient(create_app())
 
 
 def _node(name: str, lat: float, lon: float) -> dict:
@@ -122,3 +122,29 @@ def test_link_budget_returns_404_for_missing_node_name() -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Site not found: Site C"
+
+
+def test_rate_limit_returns_429_after_limit_is_exceeded() -> None:
+    rate_limited_client = TestClient(create_app(rate_limit_per_min=2, rate_limit_window_sec=60))
+    payload = {
+        "calculation": "link_budget",
+        "input": {
+            "from_site": "Site A",
+            "to_site": "Site B",
+            "frequency_mhz": 868,
+            "nodes": [
+                _node("Site A", 59.9139, 10.7522),
+                _node("Site B", 59.9170, 10.7600),
+            ],
+        },
+    }
+
+    first = rate_limited_client.post("/api/v1/calculate", json=payload)
+    second = rate_limited_client.post("/api/v1/calculate", json=payload)
+    third = rate_limited_client.post("/api/v1/calculate", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+    assert third.json()["detail"] == "Rate limit exceeded"
+    assert int(third.headers["Retry-After"]) > 0

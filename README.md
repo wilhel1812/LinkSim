@@ -100,6 +100,11 @@ Run with Docker Compose:
 docker compose up --build calc-api
 ```
 
+Optional rate-limit environment variables:
+
+- `CALC_API_RATE_LIMIT_PER_MIN` (default `60`)
+- `CALC_API_RATE_LIMIT_WINDOW_SEC` (default `60`)
+
 Example request:
 
 ```bash
