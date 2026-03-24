@@ -381,9 +381,12 @@ export function AppShell() {
 
     void (async () => {
       const payload = deepLinkParse.payload;
+      console.log("[DeepLink] Parsed payload:", JSON.stringify(payload));
       let resolvedSimulationId = payload.simulationId ?? "";
+      console.log("[DeepLink] Initial resolvedSimulationId:", resolvedSimulationId);
       const resolveBySlug = (): string | undefined => {
         const slug = slugifyName(payload.simulationSlug ?? "");
+        console.log("[DeepLink] resolveBySlug - input slug:", payload.simulationSlug, "-> slugified:", slug);
         if (!slug) return undefined;
         const bySlug = useAppStore
           .getState()
@@ -393,6 +396,7 @@ export function AppShell() {
                 ? String((preset as { slug?: unknown }).slug)
                 : preset.name;
             const presetSlug = slugifyName(presetSlugValue);
+            console.log("[DeepLink] Comparing preset:", preset.name, "slugValue:", presetSlugValue, "-> slugified:", presetSlug, "with target:", slug);
             if (presetSlug === slug) return true;
             const aliases = Array.isArray((preset as { slugAliases?: unknown }).slugAliases)
               ? ((preset as { slugAliases?: string[] }).slugAliases ?? [])
@@ -400,12 +404,15 @@ export function AppShell() {
             return aliases.some((alias) => slugifyName(alias) === slug);
           })
           ?.id;
+        console.log("[DeepLink] resolveBySlug result:", bySlug);
         return bySlug;
       };
       if (!resolvedSimulationId) {
         resolvedSimulationId = resolveBySlug() ?? "";
+        console.log("[DeepLink] After resolveBySlug:", resolvedSimulationId);
       }
       let state = useAppStore.getState();
+      console.log("[DeepLink] simulationPresets:", state.simulationPresets.map(p => ({ id: p.id, name: p.name })));
       let exists = resolvedSimulationId
         ? state.simulationPresets.some((preset) => preset.id === resolvedSimulationId)
         : Boolean(resolveBySlug());
