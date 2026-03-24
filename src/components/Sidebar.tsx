@@ -965,6 +965,7 @@ export function Sidebar() {
   }, [selectedScenarioId, simulationPresets, scenarioOptions]);
   useEffect(() => {
     if (!visibleLinks.length) return;
+    if (!selectedLinkId) return;
     const stillVisible = visibleLinks.some((link) => link.id === selectedLinkId);
     if (stillVisible) return;
     setSelectedLinkId(visibleLinks[0].id);
