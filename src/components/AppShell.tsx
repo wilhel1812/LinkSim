@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
+import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { initializeMigrations, runMigrations } from "../lib/migrations";
@@ -106,6 +107,7 @@ export function AppShell() {
   );
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
+  const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
   const selectedLink = useMemo(
     () => links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null,
     [links, selectedLinkId],
@@ -794,7 +796,7 @@ export function AppShell() {
           </div>
         ) : null}
         {accessState === "readonly" ? <p className="field-help">Read-only shared view.</p> : null}
-        {sites.length === 0 ? (
+        {workspaceState === "no-simulation" ? (
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
               <p>Open an existing simulation or create a new one to continue.</p>
@@ -806,6 +808,11 @@ export function AppShell() {
                 Open Library
               </button>
             </div>
+          </div>
+        ) : null}
+        {workspaceState === "blank-simulation" ? (
+          <div className="workspace-header-actions">
+            <span className="field-help">This Simulation is blank. Add sites from the map or Site Library to continue.</span>
           </div>
         ) : null}
         <div className="workspace-header-actions">

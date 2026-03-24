@@ -2331,6 +2331,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const snapshotSystems = Array.isArray(snap.systems) && snap.systems.length ? snap.systems : defaultScenario.systems;
       const snapshotNetworks = Array.isArray(snap.networks) ? snap.networks : [];
       const viewport = defaultScenario.viewport;
+      const loadedAtIso = new Date().toISOString();
       set({
         selectedScenarioId: preset.id,
         sites: [],
@@ -2365,6 +2366,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         siteDragPreview: {},
         terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       });
+      writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: loadedAtIso });
       get().recomputeCoverage();
       return;
     }
