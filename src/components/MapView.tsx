@@ -1020,6 +1020,7 @@ export function MapView({
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const selectSiteById = useAppStore((state) => state.selectSiteById);
+  const clearActiveSelection = useAppStore((state) => state.clearActiveSelection);
   const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
   const updateSite = useAppStore((state) => state.updateSite);
@@ -1063,11 +1064,12 @@ export function MapView({
   const coverageVizMode = useAppStore((state) => state.mapOverlayMode);
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
-  const [showTerrainOverlay, setShowTerrainOverlay] = useState(true);
+  const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(true);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
+  const [armAddSiteOnNextEmptyMapClick, setArmAddSiteOnNextEmptyMapClick] = useState(false);
   const [pendingSiteMoves, setPendingSiteMoves] = useState<Record<string, PendingSiteMove>>({});
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [showDiscoverySites, setShowDiscoverySites] = useState(false);
@@ -1075,6 +1077,7 @@ export function MapView({
   const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
   const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
+  const [selectedDiscoveryLibraryEntryId, setSelectedDiscoveryLibraryEntryId] = useState<string | null>(null);
   const [mqttDuplicatePrompt, setMqttDuplicatePrompt] = useState<{
     node: MeshmapNode;
     existingId: string;
@@ -1156,7 +1159,7 @@ export function MapView({
       cableLossDb: selectedFromSite.cableLossDb,
     };
   }, [selectedFromSite, selectedToSite, selectedNetwork, selectedLink]);
-  const hasHeatTopology = selectionCount >= 1;
+  const hasHeatTopology = sites.length >= 1;
   const simulationLibrarySiteIds = useMemo(
     () =>
       new Set(
@@ -1240,6 +1243,7 @@ export function MapView({
 
   const lineFeatures = useMemo(
     () => {
+      const showSelectionHighlights = !armAddSiteOnNextEmptyMapClick;
       const savedLinkFeatures = visibleLinks
         .map((link) => {
           const from = sites.find((site) => site.id === link.fromSiteId);
@@ -1247,7 +1251,7 @@ export function MapView({
           if (!from || !to) return null;
           return {
             type: "Feature" as const,
-            properties: { id: link.id, selected: link.id === selectedLinkId ? 1 : 0, temporary: 0 },
+            properties: { id: link.id, selected: showSelectionHighlights && link.id === selectedLinkId ? 1 : 0, temporary: 0 },
             geometry: {
               type: "LineString" as const,
               coordinates: [
@@ -1270,7 +1274,7 @@ export function MapView({
           ),
       );
       const temporarySelectionFeature =
-        fromSite && toSite && !hasSavedLinkForSelection
+        showSelectionHighlights && fromSite && toSite && !hasSavedLinkForSelection
           ? [
               {
                 type: "Feature" as const,
@@ -1290,14 +1294,14 @@ export function MapView({
         features: [...savedLinkFeatures, ...temporarySelectionFeature],
       };
     },
-    [visibleLinks, selectedLinkId, sites, selectedSites, links],
+    [visibleLinks, selectedLinkId, sites, selectedSites, links, armAddSiteOnNextEmptyMapClick],
   );
 
   const profileFeatures = useMemo(
     () => ({
       type: "FeatureCollection" as const,
       features:
-        selectedProfile.length > 1
+        selectionCount >= 2 && selectedProfile.length > 1
           ? [
               {
                 type: "Feature" as const,
@@ -1310,10 +1314,13 @@ export function MapView({
             ]
           : [],
     }),
-    [selectedProfile],
+    [selectedProfile, selectionCount],
   );
 
-  const cursorPoint = selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))];
+  const cursorPoint =
+    selectionCount >= 2
+      ? selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))]
+      : undefined;
 
   const overlayResolutionScale = useMemo(() => {
     if (analysisBoundsDiagonalKm > 600) return 0.52;
@@ -1523,6 +1530,8 @@ export function MapView({
   };
 
   const onSiteClick = (siteId: string, additive = false) => {
+    setArmAddSiteOnNextEmptyMapClick(false);
+    setSelectedDiscoveryLibraryEntryId(null);
     selectSiteById(siteId, additive);
     if (!endpointPickTarget || !selectedLink) return;
     setEndpointPickError(null);
@@ -1706,12 +1715,28 @@ export function MapView({
       id = nearby?.properties ? String(nearby.properties.id ?? "") : "";
     }
     if (id) {
+      setArmAddSiteOnNextEmptyMapClick(false);
+      setSelectedDiscoveryLibraryEntryId(null);
       if (id === "__selection__") return;
       if (visibleLinks.some((link) => link.id === id)) {
         setSelectedLinkId(id);
       }
       return;
     }
+    if (pendingNewSiteDraft) {
+      dismissPendingNewSiteDraft();
+      clearActiveSelection();
+      setSelectedDiscoveryLibraryEntryId(null);
+      setArmAddSiteOnNextEmptyMapClick(true);
+      return;
+    }
+    if (!armAddSiteOnNextEmptyMapClick) {
+      clearActiveSelection();
+      setSelectedDiscoveryLibraryEntryId(null);
+      setArmAddSiteOnNextEmptyMapClick(true);
+      return;
+    }
+    setArmAddSiteOnNextEmptyMapClick(false);
     beginPendingNewSiteDraft(event.lngLat.lat, event.lngLat.lng);
   };
 
@@ -1726,6 +1751,11 @@ export function MapView({
     return () => window.removeEventListener(PROFILE_DRAFT_SITE_REQUEST_EVENT, onProfileDraftRequest);
   }, [endpointPickTarget, pendingMoveCount]);
 
+  useEffect(() => {
+    if (showDiscoverySites) return;
+    setSelectedDiscoveryLibraryEntryId(null);
+  }, [showDiscoverySites]);
+
   const addDiscoveryLibrarySiteToSimulation = (entryId: string) => {
     if (!canPersist) {
       setSiteDraftStatus("Read-only mode: cannot add library sites to this simulation.");
@@ -1737,6 +1767,8 @@ export function MapView({
     }
     insertSiteFromLibrary(entryId);
     setSiteDraftStatus("Added selected library site to the current simulation.");
+    setSelectedDiscoveryLibraryEntryId(entryId);
+    setArmAddSiteOnNextEmptyMapClick(false);
   };
 
   const addDiscoveryMqttNodeToSimulation = (node: MeshmapNode) => {
@@ -1834,30 +1866,42 @@ export function MapView({
     }
   }, [resolvedBasemap.provider]);
   const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "passfail" | "relay">>(() => {
-    if (selectionCount <= 0) return ["none"];
+    if (selectionCount <= 0) return ["none", "heatmap"];
     if (selectionCount === 1) return ["none", "passfail", "heatmap"];
     if (selectionCount === 2) return ["none", "relay", "heatmap"];
     return ["none", "heatmap"];
   }, [selectionCount]);
   useEffect(() => {
     if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "passfail" | "relay")) return;
-    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : selectionCount >= 3 ? "heatmap" : "none");
+    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode === "contours" ? "heatmap" : coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
     showDiscoveryMqtt ? "mqtt" : showDiscoverySites ? "library" : "simulation";
   const selectedSite = selectedSites[0] ?? null;
+  const selectedDiscoveryLibraryEntry =
+    selectedDiscoveryLibraryEntryId
+      ? sharedOrPublicLibrarySites.find((entry) => entry.id === selectedDiscoveryLibraryEntryId) ?? null
+      : null;
   const selectedLibraryEntry =
     selectedSite?.libraryEntryId
       ? siteLibrary.find((entry) => entry.id === selectedSite.libraryEntryId) ?? null
       : null;
+  const selectedDiscoveryInspectorText = selectedDiscoveryLibraryEntry
+    ? `${selectedDiscoveryLibraryEntry.name} · ${selectedDiscoveryLibraryEntry.position.lat.toFixed(5)}, ${selectedDiscoveryLibraryEntry.position.lon.toFixed(5)}`
+    : null;
   const selectedSiteInspectorText = selectedSite
     ? `${selectedSite.name} · ${selectedSite.position.lat.toFixed(5)}, ${selectedSite.position.lon.toFixed(5)} · ${
         selectedSite.groundElevationM
       } m ASL`
     : null;
-  const inspectorPrimary = overlayHoverInfo?.text ?? selectedSiteInspectorText;
-  const inspectorPrimaryLibraryEntryId = overlayHoverInfo?.libraryEntryId ?? selectedLibraryEntry?.id;
+  const inspectorPrimary = overlayHoverInfo?.text ?? selectedDiscoveryInspectorText ?? selectedSiteInspectorText;
+  const inspectorPrimaryLibraryEntryId =
+    overlayHoverInfo?.libraryEntryId ?? selectedDiscoveryLibraryEntry?.id ?? selectedLibraryEntry?.id;
+  const canAddSelectedDiscoverySite =
+    canPersist &&
+    Boolean(selectedDiscoveryLibraryEntry) &&
+    !sites.some((site) => site.libraryEntryId === selectedDiscoveryLibraryEntry?.id);
   const inspectorLines: string[] = [];
   if (!hasSimulationTerrain) inspectorLines.push("No terrain loaded: simulation currently uses site elevations only.");
   if (resolvedBasemap.fallbackReason && !useFallbackMapStyle) inspectorLines.push(resolvedBasemap.fallbackReason);
@@ -1865,7 +1909,7 @@ export function MapView({
   if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
   if (showDiscoverySites) {
     inspectorLines.push(
-      `Shared/public library sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to add it to this simulation.`,
+      `Shared/public library sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to simulation.`,
     );
   }
   if (showDiscoveryMqtt) {
@@ -2056,7 +2100,7 @@ export function MapView({
           {inspectorPrimary ? (
             <div className="map-inspector-section">
               <p className="map-inspector-primary">{inspectorPrimary}</p>
-              {inspectorPrimaryLibraryEntryId || (selectedSite && canPersist && sites.length > 1) || (canPersist && selectedSites.length >= 2) ? (
+              {inspectorPrimaryLibraryEntryId || canAddSelectedDiscoverySite || (selectedSite && canPersist && sites.length > 1) || (canPersist && selectedSites.length >= 2) ? (
                 <div className="chip-group">
                   {inspectorPrimaryLibraryEntryId ? (
                     <button
@@ -2070,6 +2114,15 @@ export function MapView({
                   {selectedSite && canPersist && sites.length > 1 ? (
                     <button className="inline-action danger" onClick={removeSelectedSiteFromSimulation} type="button">
                       Remove From Simulation
+                    </button>
+                  ) : null}
+                  {canAddSelectedDiscoverySite && selectedDiscoveryLibraryEntry ? (
+                    <button
+                      className="inline-action"
+                      onClick={() => addDiscoveryLibrarySiteToSimulation(selectedDiscoveryLibraryEntry.id)}
+                      type="button"
+                    >
+                      Add To Simulation
                     </button>
                   ) : null}
                   {canPersist && selectedSites.length >= 2 ? (
@@ -2430,7 +2483,7 @@ export function MapView({
         </Source>
 
         {sites.map((site) => {
-          const isSelected = selectedSiteSet.has(site.id);
+          const isSelected = !armAddSiteOnNextEmptyMapClick && selectedSiteSet.has(site.id);
           const pendingMove = pendingSiteMoves[site.id];
           const markerPosition = pendingMove?.currentPosition ?? site.position;
           const isTemporarilyMoved = Boolean(pendingMove);
@@ -2503,18 +2556,20 @@ export function MapView({
                   onMouseLeave={() => setOverlayHoverInfo(null)}
                   onClick={(event) => {
                     stopMapClickBubbling(event);
-                    addDiscoveryLibrarySiteToSimulation(entry.id);
+                    setArmAddSiteOnNextEmptyMapClick(false);
+                    setSelectedDiscoveryLibraryEntryId(entry.id);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       stopMapClickBubbling(event);
-                      addDiscoveryLibrarySiteToSimulation(entry.id);
+                      setArmAddSiteOnNextEmptyMapClick(false);
+                      setSelectedDiscoveryLibraryEntryId(entry.id);
                     }
                   }}
                   role="button"
                   tabIndex={0}
                 >
-                  <span>+ {entry.name}</span>
+                  <span>{entry.name}</span>
                 </div>
               </Marker>
             ))

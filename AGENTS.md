@@ -14,6 +14,7 @@
 - Default environment workflow:
   - Unless the user explicitly says otherwise, work in local test environment.
   - After local verification, deploy to live test/staging for verification.
+  - For every implementation batch by default: do both local verification and staging deployment verification in the same pass.
   - Only promote to production after explicit user approval, using the same verified commit.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
 - Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.

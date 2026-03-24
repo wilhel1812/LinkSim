@@ -385,6 +385,7 @@ type AppState = {
   setProfileCursorIndex: (index: number) => void;
   setSelectedSiteId: (id: string) => void;
   selectSiteById: (id: string, additive?: boolean) => void;
+  clearActiveSelection: () => void;
   getSelectedSiteIds: () => string[];
   setSelectedNetworkId: (id: string) => void;
   setSelectedCoverageMode: (mode: CoverageMode) => void;
@@ -1030,7 +1031,7 @@ const sameSiteSelection = (left: string[], right: string[]): boolean => {
 };
 
 const defaultOverlayModeForSelectionCount = (selectionCount: number): MapOverlayMode => {
-  if (selectionCount <= 0) return "none";
+  if (selectionCount <= 0) return "heatmap";
   if (selectionCount === 1) return "passfail";
   if (selectionCount === 2) return "relay";
   return "heatmap";
@@ -1705,6 +1706,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       void get().syncSiteElevationOnline(id);
     }
   },
+  clearActiveSelection: () =>
+    set((state) => {
+      const nextOverlay = defaultOverlayModeForSelectionCount(0);
+      if (
+        !state.selectedSiteIds.length &&
+        !state.selectedSiteId &&
+        !state.selectedLinkId &&
+        !state.temporaryDirectionReversed &&
+        state.endpointPickTarget === null &&
+        state.profileCursorIndex === 0 &&
+        state.mapOverlayMode === nextOverlay
+      ) {
+        return state;
+      }
+      return {
+        selectedSiteIds: [],
+        selectedSiteId: "",
+        selectedLinkId: "",
+        temporaryDirectionReversed: false,
+        endpointPickTarget: null,
+        profileCursorIndex: 0,
+        mapOverlayMode: nextOverlay,
+      };
+    }),
   setSelectedNetworkId: (id) => {
     set({ selectedNetworkId: id });
     get().recomputeCoverage();
