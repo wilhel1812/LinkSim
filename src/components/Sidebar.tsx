@@ -1396,6 +1396,7 @@ export function Sidebar() {
     setNewSimulationDescription("");
     setShowNewSimulationModal(false);
   };
+  const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const displayLinkName = (linkId: string, linkName?: string) => {
     const trimmedName = linkName?.trim();
     if (trimmedName) return trimmedName;
@@ -1403,7 +1404,7 @@ export function Sidebar() {
     if (!link) return linkId;
     const from = sites.find((site) => site.id === link.fromSiteId)?.name ?? "Unknown";
     const to = sites.find((site) => site.id === link.toSiteId)?.name ?? "Unknown";
-    return `${from} -> ${to}`;
+    return `${from} ↔ ${to}`;
   };
   const toggleLibrarySelection = (entryId: string) => {
     setSelectedLibraryIds((current) => {
@@ -1995,23 +1996,18 @@ export function Sidebar() {
       <section className="panel-section section-scenario">
         <div className="section-heading">
           <h2>Simulation</h2>
-          <InfoTip text="Use saved simulations for project work. Starter simulations are only local starting points." />
+          <InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />
         </div>
-        <p className="field-help">
+        <p className="field-help simulation-name">
           <strong>{activeSimulationLabel}</strong>
         </p>
-        {selectedSimulationRef.startsWith("saved:") ? (
-          <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
-            Edit Simulation
-          </button>
-        ) : null}
-        <div className="chip-group">
+        <div className="chip-group simulation-buttons">
           <button
             className="inline-action"
             onClick={() => setShowSimulationLibraryManager(true)}
             type="button"
           >
-            Open Simulation Library
+            Library
           </button>
           <button
             className="inline-action"
@@ -2023,11 +2019,16 @@ export function Sidebar() {
             }}
             type="button"
           >
-            New Simulation
+            New
           </button>
           <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-            Save a Copy
+            Duplicate
           </button>
+          {selectedSimulationRef.startsWith("saved:") ? (
+            <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
+              Edit
+            </button>
+          ) : null}
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
       </section>
@@ -2035,18 +2036,7 @@ export function Sidebar() {
       <section className="panel-section section-sites">
         <div className="section-heading">
           <h2>Sites</h2>
-          <InfoTip text="Site add/edit is managed in Site Library. Here you only include or remove sites in this simulation." />
-        </div>
-        <p className="field-help">Use Site Library to add/edit sites, then add selected sites to this simulation.</p>
-        <div className="chip-group">
-          <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
-            Open Site Library
-          </button>
-          {newestSiteLibraryEntryId ? (
-            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
-              Insert Newest
-            </button>
-          ) : null}
+          <InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />
         </div>
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
         <p className="field-help">Current sites in this simulation:</p>
@@ -2065,24 +2055,34 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
-          Edit Selected Site
-        </button>
-        <button
-          className="inline-action danger"
-          disabled={sites.length <= 1}
-          onClick={() =>
-            requestDeleteConfirm(
-              "Remove Site",
-              `Remove ${selectedSite.name} from the current simulation?`,
-              () => deleteSite(selectedSite.id),
-              "Remove",
-            )
-          }
-          type="button"
-        >
-          Remove Selected From Simulation
-        </button>
+        <div className="chip-group">
+          <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
+            Library
+          </button>
+          {newestSiteLibraryEntryId ? (
+            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
+              Insert newest
+            </button>
+          ) : null}
+          <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+            Edit
+          </button>
+          <button
+            className="inline-action danger"
+            disabled={sites.length <= 1}
+            onClick={() =>
+              requestDeleteConfirm(
+                "Remove Site",
+                `Remove ${selectedSite.name} from the current simulation?`,
+                () => deleteSite(selectedSite.id),
+                "Remove",
+              )
+            }
+            type="button"
+          >
+            Remove
+          </button>
+        </div>
       </section>
 
       <section className="panel-section section-radio">
@@ -2264,7 +2264,7 @@ export function Sidebar() {
       <section className="panel-section section-path">
         <div className="section-heading">
           <h2>Links</h2>
-          <InfoTip text="Select a link for path analysis. Use Add/Edit/Delete to manage links in this simulation." />
+          <InfoTip text={`Select multiple sites by ${isMac ? "Cmd" : "Ctrl"}+Clicking to instantly view a link. When a link is active on the map, you can save it permanently to this simulation by pressing "Save" in the inspector.`} />
         </div>
         <div className="link-list">
           {visibleLinks.map((link) => (
@@ -2275,16 +2275,15 @@ export function Sidebar() {
               type="button"
             >
               <span className="link-title">{displayLinkName(link.id, link.name)}</span>
-              <span className="link-subtitle">{effectiveNetworkFrequencyMHz.toFixed(3)} MHz (from channel)</span>
             </button>
           ))}
         </div>
         <div className="chip-group">
           <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
-            Add Link
+            New
           </button>
           <button className="inline-action" onClick={openEditLinkModal} type="button">
-            Edit Link
+            Edit
           </button>
           <button
             className="inline-action danger"
@@ -2298,7 +2297,7 @@ export function Sidebar() {
             }
             type="button"
           >
-            Delete Selected Link
+            Remove
           </button>
         </div>
       </section>
