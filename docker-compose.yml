@@ -28,3 +28,11 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+
+  calc-api:
+    build:
+      context: .
+      target: calculation-api
+    ports:
+      - "8000:8000"
+    restart: unless-stopped

@@ -80,6 +80,46 @@ npm run smoke:fit-profile
 npm run smoke:itm
 ```
 
+## Calculation API (FastAPI)
+
+Install Python dependencies:
+
+```bash
+python3 -m pip install -r requirements-calculation-api.txt
+```
+
+Run the API locally:
+
+```bash
+python3 -m uvicorn calculation_api.main:app --reload --port 8000
+```
+
+Run with Docker Compose:
+
+```bash
+docker compose up --build calc-api
+```
+
+Example request:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/calculate \
+  -H 'content-type: application/json' \
+  -d '{
+    "calculation": "link_budget",
+    "input": {
+      "from_site": "Site A",
+      "to_site": "Site B",
+      "frequency_mhz": 868,
+      "rx_target_dbm": -110,
+      "nodes": [
+        {"name": "Site A", "lat": 59.9139, "lon": 10.7522},
+        {"name": "Site B", "lat": 59.9170, "lon": 10.7600}
+      ]
+    }
+  }'
+```
+
 ## Deploy and Release
 
 ### Staging deploy
