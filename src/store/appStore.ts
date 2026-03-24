@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { buildCoverageAsync, clearTerrainLossCache } from "../lib/coverage";
-import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
 import { haversineDistanceKm } from "../lib/geo";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -312,7 +311,6 @@ type AppState = {
   simulationRunToken: string;
   isTerrainFetching: boolean;
   isTerrainRecommending: boolean;
-  isElevationSyncing: boolean;
   selectedLinkId: string;
   profileCursorIndex: number;
   temporaryDirectionReversed: boolean;
@@ -340,7 +338,6 @@ type AppState = {
   isHighResTerrainLoaded: boolean;
   terrainLoadingStartedAtMs: number;
   terrainLoadEpoch: number;
-  hasOnlineElevationSync: boolean;
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
@@ -500,8 +497,6 @@ type AppState = {
   recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
   loadTerrainForCurrentArea: () => Promise<void>;
   clearTerrainCache: () => Promise<void>;
-  syncSiteElevationsOnline: () => Promise<void>;
-  syncSiteElevationOnline: (siteId: string) => Promise<void>;
   recomputeCoverage: () => void;
   getSelectedLink: () => Link;
   getSelectedSite: () => Site;
@@ -1073,7 +1068,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   simulationRunToken: "",
   isTerrainFetching: false,
   isTerrainRecommending: false,
-  isElevationSyncing: false,
   selectedLinkId: "",
   profileCursorIndex: 0,
   temporaryDirectionReversed: false,
@@ -1101,7 +1095,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   isHighResTerrainLoaded: false,
   terrainLoadingStartedAtMs: 0,
   terrainLoadEpoch: 0,
-  hasOnlineElevationSync: false,
   siteLibrary: initialSiteLibrary,
   simulationPresets: initialSimulationPresets,
   siteDragPreview: {},
@@ -1600,7 +1593,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       isHighResTerrainLoaded: false,
       terrainLoadingStartedAtMs: 0,
       terrainLoadEpoch: 0,
-      hasOnlineElevationSync: false,
       siteDragPreview: {},
       endpointPickTarget: null,
       mapViewport: scenario.viewport,
@@ -1657,7 +1649,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         mapOverlayMode: nextOverlay,
       };
     });
-    void get().syncSiteElevationOnline(id);
   },
   selectSiteById: (id, additive = false) => {
     set((state) => {
@@ -1688,9 +1679,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         mapOverlayMode: nextOverlay,
       };
     });
-    if (!additive) {
-      void get().syncSiteElevationOnline(id);
-    }
   },
   clearActiveSelection: () =>
     set((state) => {
@@ -1829,7 +1817,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     get().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
-    void get().syncSiteElevationOnline(id);
   },
   deleteSite: (siteId) => {
     const { currentUser, selectedScenarioId, simulationPresets } = get();
@@ -2164,9 +2151,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     get().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
-    for (const siteId of createdSiteIds) {
-      void get().syncSiteElevationOnline(siteId);
-    }
   },
   updateSiteLibraryEntry: (entryId, patch) => {
     const { currentUser } = get();
@@ -3373,48 +3357,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: "Terrain source caches cleared.",
     }));
     get().recomputeCoverage();
-  },
-  syncSiteElevationOnline: async (siteId) => {
-    const site = get().sites.find((candidate) => candidate.id === siteId);
-    if (!site) return;
-    if (!Number.isFinite(site.position.lat) || !Number.isFinite(site.position.lon)) return;
-    if (site.groundElevationM > 0) return;
-
-    set({ isElevationSyncing: true });
-    try {
-      const [elevation] = await fetchElevations([site.position]);
-      if (!Number.isFinite(elevation)) return;
-      set((state) => ({
-        sites: state.sites.map((candidate) =>
-          candidate.id === siteId ? { ...candidate, groundElevationM: Math.round(elevation) } : candidate,
-        ),
-        hasOnlineElevationSync: true,
-      }));
-      get().recomputeCoverage();
-    } catch {
-      // Keep manual/default elevation when online sync fails.
-    } finally {
-      set({ isElevationSyncing: false });
-    }
-  },
-  syncSiteElevationsOnline: async () => {
-    const sites = get().sites;
-    set({ isElevationSyncing: true });
-    try {
-      const elevations = await fetchElevations(sites.map((site) => site.position));
-
-      set((state) => ({
-        sites: state.sites.map((site, index) => ({
-          ...site,
-          groundElevationM: Number.isFinite(elevations[index])
-            ? Math.round(elevations[index])
-            : site.groundElevationM,
-        })),
-        hasOnlineElevationSync: true,
-      }));
-    } finally {
-      set({ isElevationSyncing: false });
-    }
   },
   recomputeCoverage: () => {
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

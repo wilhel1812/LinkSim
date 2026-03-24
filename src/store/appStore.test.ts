@@ -31,7 +31,12 @@ vi.mock("../lib/coverage", () => ({
   buildCoverage: vi.fn(() => []),
 }));
 
+vi.mock("../lib/elevationService", () => ({
+  fetchElevations: vi.fn(async () => [123]),
+}));
+
 import { useAppStore } from "./appStore";
+import { fetchElevations } from "../lib/elevationService";
 
 describe("appStore auth guards", () => {
   beforeEach(() => {
@@ -198,6 +203,32 @@ describe("appStore auth guards", () => {
     expect(useAppStore.getState().sites[0]?.name).toBe("Alpha");
     expect(useAppStore.getState().siteLibrary[0]?.name).toBe("Alpha");
     expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("does not auto-sync online elevations when adding a site", async () => {
+    vi.mocked(fetchElevations).mockClear();
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    useAppStore.getState().addSiteByCoordinates("Gamma", 3, 3);
+    await Promise.resolve();
+
+    expect(fetchElevations).not.toHaveBeenCalled();
   });
 
   it("blocks updateCurrentSimulationSnapshot when current user cannot edit selected simulation", () => {

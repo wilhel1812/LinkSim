@@ -677,21 +677,6 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
 
   return (
     <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`} data-profile-revision={profileRevision}>
-      {terrainIsStaleForCurrentArea ? (
-        <div className="terrain-alert" role="status">
-          <p>
-            Terrain data is out of date for the current analysis area. Missing {missingTerrainTileKeys.length} of{" "}
-            {requiredTerrainTileKeys.length} required tile(s).
-          </p>
-          <button
-            className="inline-action"
-            onClick={() => void recommendAndFetchTerrainForCurrentArea()}
-            type="button"
-          >
-            Refresh Terrain Data
-          </button>
-        </div>
-      ) : null}
       <div className="chart-endpoints" aria-live="polite">
         <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
         <span className="chart-endpoint-sep" aria-hidden>

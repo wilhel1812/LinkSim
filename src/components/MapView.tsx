@@ -1040,7 +1040,6 @@ export function MapView({
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
-  const hasOnlineElevationSync = useAppStore((state) => state.hasOnlineElevationSync);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
@@ -1048,7 +1047,6 @@ export function MapView({
   const simulationProgress = useAppStore((state) => state.simulationProgress);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
-  const isElevationSyncing = useAppStore((state) => state.isElevationSyncing);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
   const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
   const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
@@ -1458,7 +1456,7 @@ export function MapView({
   }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions, overlayPointMask]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
-  const isBackgroundBusy = isTerrainFetching || isTerrainRecommending || isElevationSyncing;
+  const isBackgroundBusy = isTerrainFetching || isTerrainRecommending;
   const [elapsedTerrainLoadingMs, setElapsedTerrainLoadingMs] = useState(0);
   useEffect(() => {
     if (!isTerrainFetching || terrainLoadingStartedAtMs === 0) {
@@ -1476,9 +1474,7 @@ export function MapView({
     ? terrainFetchStatus || "Loading terrain data..."
     : isTerrainRecommending
       ? terrainFetchStatus || "Checking terrain dataset coverage..."
-      : isElevationSyncing
-        ? "Syncing site elevations..."
-        : "") + keepWorkingSuffix;
+      : "") + keepWorkingSuffix;
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -2228,9 +2224,7 @@ export function MapView({
             ) : (
               <p>Terrain source: simulation/manual site elevations only</p>
             )}
-            <p>
-              Site elevations: {hasOnlineElevationSync ? "Open-Meteo sync + simulation values" : "Simulation values"}
-            </p>
+            <p>Site elevations: Simulation values</p>
             <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
             <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
             <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>

@@ -1,4 +1,3 @@
-import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import Map, {
@@ -41,8 +40,7 @@ import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironme
 import { analyzeLink } from "../lib/propagation";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
-import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
+import { PRIMARY_ATTRIBUTION } from "../lib/terrainCatalog";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -382,8 +380,6 @@ export function Sidebar() {
   );
   const setPropagationModel = useAppStore((state) => state.setPropagationModel);
   const updateLink = useAppStore((state) => state.updateLink);
-  const ingestSrtmFiles = useAppStore((state) => state.ingestSrtmFiles);
-  const syncSiteElevationsOnline = useAppStore((state) => state.syncSiteElevationsOnline);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
@@ -400,9 +396,6 @@ export function Sidebar() {
   const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
-  const recommendAndFetchTerrainForCurrentArea = useAppStore(
-    (state) => state.recommendAndFetchTerrainForCurrentArea,
-  );
   const getSelectedAnalysis = useAppStore((state) => state.getSelectedAnalysis);
   const getSelectedLink = useAppStore((state) => state.getSelectedLink);
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
@@ -1110,12 +1103,6 @@ export function Sidebar() {
     setSelectedCoverageMode(mode);
   };
 
-  const onUploadTiles = async (event: ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files?.length) return;
-    await ingestSrtmFiles(event.target.files);
-    event.target.value = "";
-  };
-
   const exportManifest = () => {
     const terrainSources = srtmTiles.reduce<Record<string, number>>((acc, tile) => {
       const key = tile.sourceLabel ?? "Unknown";
@@ -1145,7 +1132,6 @@ export function Sidebar() {
       autoPropagationEnvironment,
       propagationEnvironment: effectivePropagationEnvironment,
       propagationEnvironmentReason,
-      hasOnlineElevationSync: useAppStore.getState().hasOnlineElevationSync,
       terrainTileCount: srtmTiles.length,
       terrainSources,
       selectedAnalysis: analysis,
@@ -2460,37 +2446,6 @@ export function Sidebar() {
           </div>
         </ModalOverlay>
       ) : null}
-
-      <section className="panel-section section-data">
-        <details className="compact-details">
-          <summary>Terrain & Sources (Advanced)</summary>
-          <p className="field-help">
-            {srtmTiles.length} terrain tile(s) loaded. Terrain is used in profile and obstruction/loss calculations.
-          </p>
-          <button
-            className="inline-action"
-            onClick={() => void recommendAndFetchTerrainForCurrentArea()}
-            type="button"
-          >
-            Auto Fetch Terrain Data
-          </button>
-          <p className="field-help">Automatic source: {TERRAIN_DATASET_LABEL[terrainDataset]}</p>
-          <label className="upload-button">
-            {t(locale, "loadHgt")}
-            <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
-          </label>
-          <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
-            {t(locale, "syncSiteElevations")}
-          </button>
-          {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
-          {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
-          <div className="asset-list">
-            <a href={REMOTE_SRTM_ENDPOINTS[terrainDataset]} rel="noreferrer" target="_blank">
-              Open selected terrain dataset page
-            </a>
-          </div>
-        </details>
-      </section>
 
       <section className="panel-section section-results">
         <div className="section-heading">
