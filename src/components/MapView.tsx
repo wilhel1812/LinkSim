@@ -1058,7 +1058,7 @@ export function MapView({
   const profileColor = variant.map.profileLineColor;
   const selectedProfile = useMemo(
     () => getSelectedProfile(),
-    [getSelectedProfile, links, sites, srtmTiles, selectedLinkId, selectedNetworkId, networks, propagationModel],
+    [getSelectedProfile, links, sites, srtmTiles, selectedLinkId, selectedSiteIds, selectedNetworkId, networks, propagationModel],
   );
   const coverageVizMode = useAppStore((state) => state.mapOverlayMode);
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
