@@ -33,6 +33,9 @@ services:
     build:
       context: .
       target: calculation-api
+    environment:
+      CALC_API_RATE_LIMIT_PER_MIN: "60"
+      CALC_API_RATE_LIMIT_WINDOW_SEC: "60"
     ports:
       - "8000:8000"
     restart: unless-stopped
