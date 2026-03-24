@@ -82,7 +82,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
   );
   const baseProfile = getSelectedProfile();
-  const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
+  const selectedLink = links.find((link) => link.id === selectedLinkId) ?? null;
   const selectedSites = useMemo(
     () => selectedSiteIds.map((id) => sites.find((site) => site.id === id)).filter((site): site is (typeof sites)[number] => Boolean(site)),
     [selectedSiteIds, sites],
@@ -659,7 +659,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     return (
       <section className="chart-panel chart-panel-empty">
         <div className="chart-empty">
-          Add at least two sites to this simulation to show path profile and LOS/Fresnel analysis.
+          Select exactly two sites, or choose a saved link, to show path profile and LOS/Fresnel analysis.
         </div>
       </section>
     );
@@ -669,7 +669,7 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
     return (
       <section className="chart-panel chart-panel-empty">
         <div className="chart-empty">
-          Select two sites to show path profile analysis. Multi-link profile mode is planned but not active.
+          Select exactly two sites, or choose a saved link, to show path profile analysis.
         </div>
       </section>
     );
