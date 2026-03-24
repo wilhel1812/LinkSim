@@ -191,15 +191,19 @@ export const buildDeepLinkUrl = (
     return url.toString();
   }
 
-  let pathPart = `/${encodeURIComponent(pathSlug).replace(/%2F/g, "/")}`;
+  const encodeSlug = (s: string) =>
+    encodeURIComponent(s)
+      .replace(/%2F/g, "/")
+      .replace(/%3C/g, "<")
+      .replace(/%3E/g, ">");
+
+  let pathPart = `/${encodeSlug(pathSlug)}`;
 
   if (payload.selectedLinkSlugs && payload.selectedLinkSlugs.length === 2) {
     const [from, to] = payload.selectedLinkSlugs;
-    pathPart += `/${encodeURIComponent(from).replace(/%2F/g, "/")}<>${encodeURIComponent(to).replace(/%2F/g, "/")}`;
+    pathPart += `/${encodeSlug(from)}<>${encodeSlug(to)}`;
   } else if (payload.selectedSiteSlugs && payload.selectedSiteSlugs.length > 0) {
-    const sitePath = payload.selectedSiteSlugs
-      .map((s) => encodeURIComponent(s).replace(/%2F/g, "/"))
-      .join("+");
+    const sitePath = payload.selectedSiteSlugs.map(encodeSlug).join("+");
     pathPart += `/${sitePath}`;
   }
 
