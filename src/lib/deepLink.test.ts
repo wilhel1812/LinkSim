@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "./deepLink";
+import { buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "./deepLink";
 
 describe("deepLink", () => {
   it("parses old v1 deep link payload and converts to v2", () => {
@@ -76,6 +76,17 @@ describe("deepLink", () => {
     expect(parsed.payload.selectedLinkSlugs).toEqual(["Fyrisjøen", "HOEG-ROUTER"]);
   });
 
+  it("parses encoded unicode path with encoded <> delimiter", () => {
+    const parsed = parseDeepLinkFromLocation({
+      pathname: "/%F0%9F%92%A9/%F0%9F%8F%9D%EF%B8%8F%3C%3E%F0%9F%8C%8B",
+      search: "",
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.payload.simulationSlug).toBe("💩");
+    expect(parsed.payload.selectedLinkSlugs).toEqual(["🏝️", "🌋"]);
+  });
+
   it("builds v2 URL with just simulation (no query params)", () => {
     const url = buildDeepLinkUrl(
       {
@@ -119,6 +130,12 @@ describe("deepLink", () => {
     expect(slugifyName("site+name")).toBe("sitename");
     expect(slugifyName("site<>name")).toBe("sitename");
     expect(slugifyName("site/name")).toBe("sitename");
+  });
+
+  it("canonicalizes keys for matching existing normalized slugs", () => {
+    expect(canonicalizeDeepLinkKey("Blefjell")).toBe("blefjell");
+    expect(canonicalizeDeepLinkKey("Høgevarde")).toBe("hogevarde");
+    expect(canonicalizeDeepLinkKey("%F0%9F%92%A9")).toBe("");
   });
 
   it("handles query-only old format with sim_slug", () => {

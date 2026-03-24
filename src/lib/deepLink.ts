@@ -23,6 +23,14 @@ const isReservedPathHead = (head: string): boolean => {
   return value === "api" || value === "cdn-cgi" || value === "assets" || value === "meshmap";
 };
 
+const safeDecodeURIComponent = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
 const normalizeSlugSegment = (value: string): string =>
   value.trim().replace(/^\/+|\/+$/g, "");
 
@@ -44,12 +52,28 @@ export const slugifyName = (value: string): string =>
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
 
+export const canonicalizeDeepLinkKey = (value: string): string =>
+  safeDecodeURIComponent(value)
+    .trim()
+    .toLocaleLowerCase()
+    .normalize("NFKC")
+    .replace(/ß/g, "ss")
+    .replace(/æ/g, "ae")
+    .replace(/ø/g, "o")
+    .replace(/å/g, "a")
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
 type DeepLinkLocationLike = Pick<Location, "search"> & { pathname?: string };
 
 const parseV2Path = (pathname: string) => {
   const segments = (pathname ?? "/")
     .split("/")
     .map((s) => s.trim())
+    .map((s) => safeDecodeURIComponent(s))
     .filter(Boolean);
 
   if (!segments.length) return { simulationSlug: undefined, selection: undefined };

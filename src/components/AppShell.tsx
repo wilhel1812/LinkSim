@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
-import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
+import { buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -364,8 +364,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if ((accessState !== "granted" && accessState !== "readonly") || deepLinkAppliedRef.current) return;
-    deepLinkAppliedRef.current = true;
+    if ((accessState !== "granted" && accessState !== "readonly") || deepLinkAppliedRef.current || isInitializing) return;
     if (!deepLinkParse.ok) {
       if (deepLinkParse.reason !== "missing_sim") {
         setDeepLinkNotice(
@@ -376,29 +375,43 @@ export function AppShell() {
               : "The shared link is missing a valid simulation id.",
         );
       }
+      deepLinkAppliedRef.current = true;
       return;
     }
 
     void (async () => {
       const payload = deepLinkParse.payload;
+      const safeDecode = (value: string): string => {
+        try {
+          return decodeURIComponent(value);
+        } catch {
+          return value;
+        }
+      };
       let resolvedSimulationId = payload.simulationId ?? "";
       const resolveBySlug = (): string | undefined => {
-        const decodedSlug = decodeURIComponent(payload.simulationSlug ?? "");
-        const slug = slugifyName(decodedSlug);
-        if (!slug) return undefined;
+        const decodedSlug = safeDecode(payload.simulationSlug ?? "");
+        const targetPretty = slugifyName(decodedSlug);
+        const targetCanonical = canonicalizeDeepLinkKey(decodedSlug);
+        if (!targetPretty && !targetCanonical) return undefined;
         const bySlug = useAppStore
           .getState()
           .simulationPresets.find((preset) => {
-            const presetSlugValue =
-              typeof (preset as { slug?: unknown }).slug === "string"
-                ? String((preset as { slug?: unknown }).slug)
-                : preset.name;
-            const presetSlug = slugifyName(presetSlugValue);
-            if (presetSlug === slug) return true;
+            const presetSlugRaw = typeof (preset as { slug?: unknown }).slug === "string" ? String((preset as { slug?: unknown }).slug) : "";
+            const presetSlugValue = presetSlugRaw.trim() ? presetSlugRaw : preset.name;
+            const presetPretty = slugifyName(presetSlugValue);
+            const presetCanonical = canonicalizeDeepLinkKey(presetSlugValue);
+            if ((targetPretty && presetPretty === targetPretty) || (targetCanonical && presetCanonical === targetCanonical)) {
+              return true;
+            }
             const aliases = Array.isArray((preset as { slugAliases?: unknown }).slugAliases)
               ? ((preset as { slugAliases?: string[] }).slugAliases ?? [])
               : [];
-            return aliases.some((alias) => slugifyName(alias) === slug);
+            return aliases.some((alias) => {
+              const aliasPretty = slugifyName(alias);
+              const aliasCanonical = canonicalizeDeepLinkKey(alias);
+              return (targetPretty && aliasPretty === targetPretty) || (targetCanonical && aliasCanonical === targetCanonical);
+            });
           })
           ?.id;
         return bySlug;
@@ -459,6 +472,7 @@ export function AppShell() {
               }
             }
             if (!exists) {
+              deepLinkAppliedRef.current = true;
               return;
             }
           }
@@ -480,10 +494,12 @@ export function AppShell() {
                 exists = Boolean(resolvedSimulationId);
               } catch {
                 setDeepLinkNotice("This shared simulation no longer exists.");
+                deepLinkAppliedRef.current = true;
                 return;
               }
             } else {
               setDeepLinkNotice("This shared simulation no longer exists.");
+              deepLinkAppliedRef.current = true;
               return;
             }
           }
@@ -512,6 +528,7 @@ export function AppShell() {
           exists = Boolean(resolvedSimulationId);
         } catch {
           setDeepLinkNotice("This shared simulation is unavailable.");
+          deepLinkAppliedRef.current = true;
           return;
         }
       }
@@ -524,10 +541,12 @@ export function AppShell() {
           });
           if (status.status === "forbidden") {
             setDeepLinkNotice("You do not have access to this shared simulation.");
+            deepLinkAppliedRef.current = true;
             return;
           }
           if (status.status === "missing") {
             setDeepLinkNotice("This shared simulation no longer exists.");
+            deepLinkAppliedRef.current = true;
             return;
           }
           if (status.simulationId) {
@@ -537,41 +556,65 @@ export function AppShell() {
           // Ignore and use generic message.
         }
         setDeepLinkNotice("This shared simulation is unavailable.");
+        deepLinkAppliedRef.current = true;
         return;
       }
 
       if (!resolvedSimulationId) {
         setDeepLinkNotice("This shared simulation is unavailable.");
+        deepLinkAppliedRef.current = true;
         return;
       }
       loadSimulationPreset(resolvedSimulationId);
       const latest = useAppStore.getState();
-      const decodedLinkSlugs = payload.selectedLinkSlugs?.map(decodeURIComponent);
-      const decodedSiteSlugs = payload.selectedSiteSlugs?.map(decodeURIComponent);
+      const decodedLinkSlugs = payload.selectedLinkSlugs?.map(safeDecode);
+      const decodedSiteSlugs = payload.selectedSiteSlugs?.map(safeDecode);
       if (decodedLinkSlugs && decodedLinkSlugs.length === 2) {
         const [fromSlug, toSlug] = decodedLinkSlugs;
+        const fromPretty = slugifyName(fromSlug);
+        const toPretty = slugifyName(toSlug);
+        const fromCanonical = canonicalizeDeepLinkKey(fromSlug);
+        const toCanonical = canonicalizeDeepLinkKey(toSlug);
         const bySlug = latest.links.find(
-          (link) =>
-            slugifyName(latest.sites.find((s) => s.id === link.fromSiteId)?.name ?? "") === fromSlug &&
-            slugifyName(latest.sites.find((s) => s.id === link.toSiteId)?.name ?? "") === toSlug,
+          (link) => {
+            const fromName = latest.sites.find((s) => s.id === link.fromSiteId)?.name ?? "";
+            const toName = latest.sites.find((s) => s.id === link.toSiteId)?.name ?? "";
+            const fromNamePretty = slugifyName(fromName);
+            const toNamePretty = slugifyName(toName);
+            const fromNameCanonical = canonicalizeDeepLinkKey(fromName);
+            const toNameCanonical = canonicalizeDeepLinkKey(toName);
+            return (
+              ((fromPretty && fromNamePretty === fromPretty) || (fromCanonical && fromNameCanonical === fromCanonical)) &&
+              ((toPretty && toNamePretty === toPretty) || (toCanonical && toNameCanonical === toCanonical))
+            );
+          },
         );
         if (bySlug) {
           setSelectedLinkId(bySlug.id);
         }
       } else if (decodedSiteSlugs && decodedSiteSlugs.length > 0) {
         for (const siteSlug of decodedSiteSlugs) {
-          const site = latest.sites.find((s) => slugifyName(s.name) === siteSlug);
+          const sitePretty = slugifyName(siteSlug);
+          const siteCanonical = canonicalizeDeepLinkKey(siteSlug);
+          const site = latest.sites.find((s) => {
+            const candidatePretty = slugifyName(s.name);
+            const candidateCanonical = canonicalizeDeepLinkKey(s.name);
+            return (sitePretty && candidatePretty === sitePretty) || (siteCanonical && candidateCanonical === siteCanonical);
+          });
           if (site) {
             selectSiteById(site.id, true);
           }
         }
       }
+      deepLinkAppliedRef.current = true;
     })();
   }, [
     accessState,
     deepLinkParse,
     importLibraryData,
+    isInitializing,
     loadSimulationPreset,
+    simulationPresets,
     setMapOverlayMode,
     setSelectedLinkId,
     updateMapViewport,
