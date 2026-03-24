@@ -383,7 +383,7 @@ export function AppShell() {
       const payload = deepLinkParse.payload;
       let resolvedSimulationId = payload.simulationId ?? "";
       const resolveBySlug = (): string | undefined => {
-        const slug = payload.simulationSlug?.trim().toLowerCase();
+        const slug = slugifyName(payload.simulationSlug ?? "");
         if (!slug) return undefined;
         const bySlug = useAppStore
           .getState()
