@@ -2364,7 +2364,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         terrainDataset: normalizeTerrainDataset(snap.terrainDataset),
         mapViewport: viewport,
         siteDragPreview: {},
-        mapOverlayMode: defaultOverlayModeForSelectionCount(0),
         terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       });
       writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: loadedAtIso });
