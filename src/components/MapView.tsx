@@ -1853,15 +1853,15 @@ export function MapView({
         return 22;
     }
   }, [resolvedBasemap.provider]);
-  const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "passfail" | "relay">>(() => {
-    if (selectionCount <= 0) return ["none", "heatmap"];
-    if (selectionCount === 1) return ["none", "passfail", "heatmap"];
-    if (selectionCount === 2) return ["none", "relay", "heatmap"];
-    return ["none", "heatmap"];
+  const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "passfail" | "relay">>(() => {
+    if (selectionCount <= 0) return ["none", "heatmap", "contours"];
+    if (selectionCount === 1) return ["none", "passfail", "heatmap", "contours"];
+    if (selectionCount === 2) return ["none", "relay", "heatmap", "contours"];
+    return ["none", "heatmap", "contours"];
   }, [selectionCount]);
   useEffect(() => {
-    if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "passfail" | "relay")) return;
-    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
+    if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "passfail" | "relay")) return;
+    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "contours");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode === "contours" ? "heatmap" : coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
@@ -1995,9 +1995,13 @@ export function MapView({
             <select
               className="locale-select"
               onChange={(event) => {
-                const mode = event.target.value as "none" | "heatmap" | "passfail" | "relay";
+                const mode = event.target.value as "none" | "heatmap" | "contours" | "passfail" | "relay";
                 if (mode === "heatmap") {
                   setCoverageVizMode("heatmap");
+                  return;
+                }
+                if (mode === "contours") {
+                  setCoverageVizMode("contours");
                   return;
                 }
                 setCoverageVizMode(mode);
@@ -2006,6 +2010,7 @@ export function MapView({
             >
               <option value="none">Hidden</option>
               {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
+              {allowedOverlayModes.includes("contours") ? <option value="contours">Contours</option> : null}
               {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
               {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
             </select>
