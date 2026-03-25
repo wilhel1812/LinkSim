@@ -109,7 +109,7 @@ export function AppShell() {
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
   const selectedLink = useMemo(
-    () => links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null,
+    () => links.find((link) => link.id === selectedLinkId) ?? null,
     [links, selectedLinkId],
   );
   const referencedPrivateSites = useMemo(() => {
