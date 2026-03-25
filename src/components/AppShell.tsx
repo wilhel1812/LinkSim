@@ -11,7 +11,7 @@ import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
-import OnboardingTutorialModal from "./OnboardingTutorialModal";
+import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
 
@@ -86,7 +86,9 @@ export function AppShell() {
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   const [activeUserId, setActiveUserId] = useState("");
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [welcomeExpandOnboarding, setWelcomeExpandOnboarding] = useState(false);
+  const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
@@ -273,7 +275,10 @@ export function AppShell() {
         setActiveUserId(profile.id);
         try {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
-          if (!seen) setShowOnboarding(true);
+          if (!seen && !deepLinkParse.ok) {
+            setShowWelcomeModal(true);
+            setWelcomeExpandOnboarding(false);
+          }
         } catch {
           // ignore storage errors
         }
@@ -674,8 +679,8 @@ export function AppShell() {
     updateMapViewport,
   ]);
 
-  const closeOnboarding = () => {
-    setShowOnboarding(false);
+  const closeWelcome = () => {
+    setShowWelcomeModal(false);
     if (!activeUserId) return;
     try {
       localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
@@ -683,6 +688,37 @@ export function AppShell() {
       // ignore storage errors
     }
   };
+
+  const openWelcomeExpanded = () => {
+    setWelcomeExpandOnboarding(true);
+    setShowWelcomeModal(true);
+  };
+
+  const loadSimulationFromWelcome = (presetId: string) => {
+    loadSimulationPreset(presetId);
+    setShowWelcomeModal(false);
+    try {
+      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (libraryAutoOpened) return;
+    if (workspaceState !== "no-simulation") return;
+    if (showWelcomeModal) return;
+    if (accessState !== "granted" && accessState !== "readonly") return;
+    if (!activeUserId) return;
+    try {
+      const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`);
+      if (!seen) return;
+    } catch {
+      return;
+    }
+    setLibraryAutoOpened(true);
+    setShowSimulationLibraryRequest(true);
+  }, [libraryAutoOpened, workspaceState, showWelcomeModal, accessState, activeUserId, setShowSimulationLibraryRequest]);
 
   const copyCurrentLink = useCallback(async () => {
     if (!activeSimulation) {
@@ -794,20 +830,20 @@ export function AppShell() {
               </button>
             </div>
           ) : null}
-          {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
+           {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
         </section>
         <div className="floating-help-cluster">
           {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
           <button
             aria-label="Open onboarding"
             className="floating-help-button"
-            onClick={() => setShowOnboarding(true)}
+            onClick={openWelcomeExpanded}
             type="button"
           >
             ?
           </button>
         </div>
-        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+        <WelcomeModal expandOnboarding={welcomeExpandOnboarding} onClose={closeWelcome} onLoadSimulation={loadSimulationFromWelcome} open={showWelcomeModal} />
       </main>
     );
   }
@@ -852,13 +888,13 @@ export function AppShell() {
           <button
             aria-label="Open onboarding"
             className="floating-help-button"
-            onClick={() => setShowOnboarding(true)}
+            onClick={openWelcomeExpanded}
             type="button"
           >
             ?
           </button>
         </div>
-        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+        <WelcomeModal expandOnboarding={welcomeExpandOnboarding} onClose={closeWelcome} onLoadSimulation={loadSimulationFromWelcome} open={showWelcomeModal} />
       </main>
     );
   }
@@ -976,13 +1012,13 @@ export function AppShell() {
         <button
           aria-label="Open onboarding"
           className="floating-help-button"
-          onClick={() => setShowOnboarding(true)}
+          onClick={openWelcomeExpanded}
           type="button"
         >
           ?
         </button>
       </div>
-      <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+      <WelcomeModal expandOnboarding={welcomeExpandOnboarding} onClose={closeWelcome} onLoadSimulation={loadSimulationFromWelcome} open={showWelcomeModal} />
       {showMobileWarning ? (
         <ModalOverlay aria-label="Mobile support notice" onClose={() => setShowMobileWarning(false)} tier="raised">
           <div className="library-manager-card mobile-warning-modal-card">
