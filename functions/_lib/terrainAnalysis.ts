@@ -50,10 +50,12 @@ const parseCopernicusKey = (entry: string): string | null => {
 const parseTileList = (raw: string, pathPrefix: "30m" | "90m"): Map<string, TileListEntry[]> => {
   const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const map = new Map<string, TileListEntry[]>();
-  for (const path of lines) {
-    const key = parseCopernicusKey(path);
+  for (const line of lines) {
+    const key = parseCopernicusKey(line);
     if (!key) continue;
-    const dataset: TileListEntry["dataset"] = /_COG_30_/i.test(path) ? "copernicus30" : "copernicus90";
+    const directory = line.replace(/\/+$/, "");
+    const path = directory.includes(".tif") ? directory : `${directory}/${directory}.tif`;
+    const dataset: TileListEntry["dataset"] = /_COG_30_/i.test(line) ? "copernicus30" : "copernicus90";
     const entry: TileListEntry = { key, pathPrefix, path, dataset };
     const existing = map.get(key) ?? [];
     existing.push(entry);
