@@ -17,8 +17,9 @@ const JOB_STATUS = {
 type JobStatus = (typeof JOB_STATUS)[keyof typeof JOB_STATUS];
 
 const MAX_NODES = 20;
-const MAX_DISTANCE_KM = 500;
+const MAX_DISTANCE_KM = 2000;
 const MAX_SAMPLES = 500;
+const MAX_RUNTIME_MS = 300000;
 
 type NodeInput = {
   name: string;
@@ -35,7 +36,7 @@ type LinkBudgetInput = {
   to_site: string;
   frequency_mhz: number;
   rx_target_dbm: number;
-  mode: "fast" | "terrain";
+  mode: "terrain";
   include_verdict: boolean;
   include_rx_dbm: boolean;
   nodes: NodeInput[];
@@ -73,34 +74,6 @@ const asString = (value: unknown, fieldName: string): string => {
   return value.trim();
 };
 
-const haversineKm = (a: NodeInput, b: NodeInput): number => {
-  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
-  const lat1 = toRadians(a.lat);
-  const lon1 = toRadians(a.lon);
-  const lat2 = toRadians(b.lat);
-  const lon2 = toRadians(b.lon);
-  const dLat = lat2 - lat1;
-  const dLon = lon2 - lon1;
-  const hav =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 6371 * (2 * Math.asin(Math.sqrt(hav)));
-};
-
-const fsplDb = (distanceKm: number, frequencyMhz: number): number => {
-  const safeDistanceKm = Math.max(0.001, distanceKm);
-  return 32.44 + 20 * Math.log10(safeDistanceKm) + 20 * Math.log10(frequencyMhz);
-};
-
-const normalizeBool = (value: unknown, fallback: boolean): boolean => {
-  if (typeof value === "boolean") return value;
-  return fallback;
-};
-
-const normalizeMode = (value: unknown): "fast" | "terrain" => {
-  if (value === "terrain") return "terrain";
-  return "fast";
-};
-
 const normalizeNode = (value: unknown, index: number): NodeInput => {
   const row = asRecord(value, `nodes[${index}] must be an object.`);
   const lat = asFiniteNumber(row.lat, `nodes[${index}].lat`);
@@ -119,7 +92,7 @@ const normalizeNode = (value: unknown, index: number): NodeInput => {
   };
 };
 
-const normalizeRequest = (value: unknown): CalculationRequest => {
+const normalizeTerrainRequest = (value: unknown): CalculationRequest => {
   const root = asRecord(value, "Request body must be a JSON object.");
   if (root.calculation !== "link_budget") {
     throw new Error("Unsupported calculation type: link_budget is currently the only supported value.");
@@ -148,9 +121,9 @@ const normalizeRequest = (value: unknown): CalculationRequest => {
     to_site: asString(toSite, "input.to_site"),
     frequency_mhz: asFiniteNumber(input.frequency_mhz, "input.frequency_mhz"),
     rx_target_dbm: typeof input.rx_target_dbm === "number" ? input.rx_target_dbm : -100,
-    mode: normalizeMode(input.mode),
-    include_verdict: normalizeBool(input.include_verdict, true),
-    include_rx_dbm: normalizeBool(input.include_rx_dbm, true),
+    mode: "terrain",
+    include_verdict: typeof input.include_verdict === "boolean" ? input.include_verdict : true,
+    include_rx_dbm: typeof input.include_rx_dbm === "boolean" ? input.include_rx_dbm : true,
     nodes: nodesRaw.map((row, index) => normalizeNode(row, index)),
   };
 
@@ -168,74 +141,50 @@ const normalizeRequest = (value: unknown): CalculationRequest => {
   };
 };
 
-const validateDistanceLimits = (request: CalculationRequest): void => {
-  const nodesByName = new Map<string, NodeInput>(
-    request.input.nodes.map((node) => [node.name.trim().toLowerCase(), node]),
-  );
-  const fromNode = nodesByName.get(request.input.from_site.trim().toLowerCase());
-  const toNode = nodesByName.get(request.input.to_site.trim().toLowerCase());
-  if (!fromNode || !toNode) return;
-
-  const distanceKm = haversineKm(fromNode, toNode);
-  if (distanceKm > MAX_DISTANCE_KM) {
-    throw new Error(
-      `Distance ${distanceKm.toFixed(1)} km exceeds maximum of ${MAX_DISTANCE_KM} km for synchronous calculation. ` +
-        `Use POST /api/v1/calculate/jobs for longer paths.`,
-    );
+const generateJobId = (): string => {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "calc_";
+  for (let i = 0; i < 16; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
+  return result;
 };
 
-const calculateLinkBudget = (request: CalculationRequest) => {
-  if (request.input.mode === "terrain") {
-    throw new Error(
-      "Terrain mode is not available on synchronous /api/v1/calculate. " +
-        `Use POST /api/v1/calculate/jobs for terrain-aware calculations (supports up to ${MAX_DISTANCE_KM} km).`,
-    );
-  }
-
-  validateDistanceLimits(request);
-
-  const nodesByName = new Map<string, NodeInput>(
-    request.input.nodes.map((node) => [node.name.trim().toLowerCase(), node]),
+const getJob = async (env: Env, jobId: string) => {
+  const stmt = env.DB.prepare(
+    "SELECT id, status, input_json, result_json, error_message, created_at, updated_at FROM calculation_jobs WHERE id = ?",
   );
-  const fromNode = nodesByName.get(request.input.from_site.trim().toLowerCase());
-  if (!fromNode) throw new Error(`Site not found: ${request.input.from_site}`);
-  const toNode = nodesByName.get(request.input.to_site.trim().toLowerCase());
-  if (!toNode) throw new Error(`Site not found: ${request.input.to_site}`);
+  const row = await stmt.bind(jobId).first<{
+    id: string;
+    status: string;
+    input_json: string;
+    result_json: string | null;
+    error_message: string | null;
+    created_at: string;
+    updated_at: string;
+  }>();
+  return row;
+};
 
-  const distanceKm = haversineKm(fromNode, toNode);
-  const pathLossDb = fsplDb(distanceKm, request.input.frequency_mhz);
-  const eirpDbm = fromNode.tx_power_dbm + fromNode.tx_gain_dbi - fromNode.cable_loss_db;
-  const rxDbm = eirpDbm + toNode.rx_gain_dbi - pathLossDb;
-  const verdict = rxDbm >= request.input.rx_target_dbm ? "PASS" : "FAIL";
-
-  return {
-    calculation: "link_budget",
-    mode: request.input.mode,
-    terrain_used: false,
-    result: {
-      from_site: fromNode.name,
-      to_site: toNode.name,
-      distance_km: distanceKm,
-      path_loss_db: pathLossDb,
-      rx_dbm: request.input.include_rx_dbm ? rxDbm : null,
-      verdict: request.input.include_verdict ? verdict : null,
-    },
-  };
+const createJob = async (env: Env, jobId: string, inputJson: string): Promise<void> => {
+  const stmt = env.DB.prepare(
+    "INSERT INTO calculation_jobs (id, status, input_json, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
+  );
+  await stmt.bind(jobId, JOB_STATUS.QUEUED, inputJson).run();
 };
 
 export const onRequestOptions = async ({ request }: Context) => handleOptions(request);
 
 export const onRequestPost = async ({ request, env }: Context) => {
   try {
-    const limitPerMinute = parsePerMinuteLimit(env.CALC_API_PROXY_RATE_LIMIT_PER_MINUTE, 120);
+    const limitPerMinute = parsePerMinuteLimit(env.CALC_API_PROXY_RATE_LIMIT_PER_MINUTE, 60);
     const address = getClientAddress(request);
-    const limiter = takeRateLimitToken({ key: `calc-api:${address}`, limit: limitPerMinute });
+    const limiter = takeRateLimitToken({ key: `calc-jobs:${address}`, limit: limitPerMinute });
     if (!limiter.allowed) {
       return withCors(
         request,
         json(
-          { error: "Calculation API rate limit reached. Please wait and try again." },
+          { error: "Calculation jobs rate limit reached. Please wait and try again." },
           {
             status: 429,
             headers: {
@@ -246,8 +195,21 @@ export const onRequestPost = async ({ request, env }: Context) => {
       );
     }
 
-    const payload = normalizeRequest(await request.json());
-    return withCors(request, json(calculateLinkBudget(payload)));
+    const payload = normalizeTerrainRequest(await request.json());
+
+    const jobId = generateJobId();
+    const inputJson = JSON.stringify(payload);
+
+    await createJob(env, jobId, inputJson);
+
+    return withCors(
+      request,
+      json({
+        job_id: jobId,
+        status: JOB_STATUS.QUEUED,
+        message: "Job queued. Poll GET /api/v1/calculate/jobs/{job_id} for status.",
+      }),
+    );
   } catch (error) {
     return errorResponse(request, error, 400);
   }

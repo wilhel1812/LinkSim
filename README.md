@@ -80,22 +80,50 @@ npm run smoke:fit-profile
 npm run smoke:itm
 ```
 
-## Calculation API
+## Calculation API (FastAPI)
 
-`/api/v1/calculate` runs directly in LinkSim Pages Functions and uses the same propagation stack as the app (`ITM` with Copernicus terrain sampling).
-
-Behavior notes:
-
-- Public endpoint: `https://linksim.link/api/v1/calculate`
-- Terrain source: Copernicus DEM via `/copernicus/30m/*`
-- If node ground elevation is omitted, the API samples terrain and uses that elevation with `2m` default antenna height
-- Result includes app-style pass/fail text, for example `LOS clear + fail at 83.39 km (-133.6 dBm after env loss)`
-- Edge rate limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
-
-Example request:
+Install Python dependencies:
 
 ```bash
-curl -X POST http://localhost:8788/api/v1/calculate \
+python3 -m pip install -r requirements-calculation-api.txt
+```
+
+Run the API locally:
+
+```bash
+python3 -m uvicorn calculation_api.main:app --reload --port 8000
+```
+
+Run with Docker Compose:
+
+```bash
+docker compose up --build calc-api
+```
+
+Optional rate-limit environment variables:
+
+- `CALC_API_RATE_LIMIT_PER_MIN` (default `60`)
+- `CALC_API_RATE_LIMIT_WINDOW_SEC` (default `60`)
+
+Production routing through LinkSim Pages:
+
+- Public endpoint: `https://linksim.link/api/v1/calculate`
+- API runs directly in Pages Functions (no external upstream required)
+- Synchronous endpoint provides fast FSPL link-budget calculations from request inputs (no terrain tile fetch)
+- `input.mode` supports `fast` (default, max 500 km); `terrain` is rejected on this synchronous route
+- Hard limits enforced: max 20 nodes, max 500 km (sync), max 2000 km (async jobs), max 500 samples
+- Edge limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
+
+**Async terrain jobs (for long links or terrain-aware calculations):**
+
+- `POST /api/v1/calculate/jobs` — Enqueue terrain calculation job
+- `GET /api/v1/calculate/jobs/{job_id}` — Poll job status and retrieve result
+- Status values: `queued`, `running`, `completed`, `failed`, `timed_out`
+
+Example (fast sync):
+
+```bash
+curl -X POST https://linksim.link/api/v1/calculate \
   -H 'content-type: application/json' \
   -d '{
     "calculation": "link_budget",
@@ -110,6 +138,31 @@ curl -X POST http://localhost:8788/api/v1/calculate \
       ]
     }
   }'
+```
+
+Example (async terrain job):
+
+```bash
+# Enqueue job
+curl -X POST https://linksim.link/api/v1/calculate/jobs \
+  -H 'content-type: application/json' \
+  -d '{
+    "calculation": "link_budget",
+    "input": {
+      "mode": "terrain",
+      "from_site": "Site A",
+      "to_site": "Site B",
+      "frequency_mhz": 868,
+      "rx_target_dbm": -110,
+      "nodes": [
+        {"name": "Site A", "lat": 59.9139, "lon": 10.7522},
+        {"name": "Site B", "lat": 60.0, "lon": 11.0}
+      ]
+    }
+  }'
+
+# Poll for result
+curl https://linksim.link/api/v1/calculate/jobs/calc_xxxxxxxxxxxx
 ```
 
 ## Deploy and Release
