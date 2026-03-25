@@ -58,7 +58,9 @@ export function AppShell() {
   const importLibraryData = useAppStore((state) => state.importLibraryData);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
+  const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
   const selectSiteById = useAppStore((state) => state.selectSiteById);
+  const clearActiveSelection = useAppStore((state) => state.clearActiveSelection);
   const setMapOverlayMode = useAppStore((state) => state.setMapOverlayMode);
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
@@ -593,6 +595,7 @@ export function AppShell() {
           setSelectedLinkId(bySlug.id);
         }
       } else if (decodedSiteSlugs && decodedSiteSlugs.length > 0) {
+        const matchedSiteIds: string[] = [];
         for (const siteSlug of decodedSiteSlugs) {
           const sitePretty = slugifyName(siteSlug);
           const siteCanonical = canonicalizeDeepLinkKey(siteSlug);
@@ -601,8 +604,14 @@ export function AppShell() {
             const candidateCanonical = canonicalizeDeepLinkKey(s.name);
             return (sitePretty && candidatePretty === sitePretty) || (siteCanonical && candidateCanonical === siteCanonical);
           });
-          if (site) {
-            selectSiteById(site.id, true);
+          if (site && !matchedSiteIds.includes(site.id)) matchedSiteIds.push(site.id);
+        }
+        if (matchedSiteIds.length > 0) {
+          clearActiveSelection();
+          const [firstSiteId, ...remainingSiteIds] = matchedSiteIds;
+          if (firstSiteId) setSelectedSiteId(firstSiteId);
+          for (const siteId of remainingSiteIds) {
+            selectSiteById(siteId, true);
           }
         }
       }
@@ -614,8 +623,10 @@ export function AppShell() {
     importLibraryData,
     isInitializing,
     loadSimulationPreset,
+    clearActiveSelection,
     simulationPresets,
     setMapOverlayMode,
+    setSelectedSiteId,
     setSelectedLinkId,
     updateMapViewport,
   ]);
