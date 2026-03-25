@@ -1,5 +1,6 @@
 import { getClientAddress, takeRateLimitToken } from "../../_lib/rateLimit";
 import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
+import { analyzeTerrainLink } from "../../_lib/terrainAnalysis";
 import type { Env } from "../../_lib/types";
 
 type Context = {
@@ -314,7 +315,7 @@ const updateJob = async (
   await stmt.bind(status, resultJson, errorMessage, jobId).run();
 };
 
-const processTerrainJob = async (env: Env, jobId: string): Promise<void> => {
+const processTerrainJob = async (env: Env, jobId: string, requestUrl: string): Promise<void> => {
   const startedAt = Date.now();
   try {
     await updateJob(env, jobId, JOB_STATUS.RUNNING, null, null);
@@ -329,12 +330,22 @@ const processTerrainJob = async (env: Env, jobId: string): Promise<void> => {
       );
     }
     const samples = estimateSampleCount(distanceKm);
-    const elevationsM = await sampleTerrainProfile(fromNode, toNode, samples);
-    const { terrainPenaltyDb, maxIntrusionM } = estimateTerrainPenaltyDb(elevationsM);
-    const baselineFsplDb = fsplDb(distanceKm, payload.input.frequency_mhz);
-    const pathLossDb = baselineFsplDb + terrainPenaltyDb;
+
+    const terrainResult = await analyzeTerrainLink(
+      env,
+      requestUrl,
+      fromNode.lat,
+      fromNode.lon,
+      toNode.lat,
+      toNode.lon,
+      payload.input.frequency_mhz,
+      fromNode.tx_power_dbm,
+      toNode.rx_gain_dbi,
+      samples,
+    );
+
     const eirpDbm = fromNode.tx_power_dbm + fromNode.tx_gain_dbi - fromNode.cable_loss_db;
-    const rxDbm = eirpDbm + toNode.rx_gain_dbi - pathLossDb;
+    const rxDbm = eirpDbm + toNode.rx_gain_dbi - terrainResult.totalPathLossDb;
     const verdict = rxDbm >= payload.input.rx_target_dbm ? "PASS" : "FAIL";
     const runtimeMs = Date.now() - startedAt;
     if (runtimeMs > MAX_RUNTIME_MS) {
@@ -350,19 +361,22 @@ const processTerrainJob = async (env: Env, jobId: string): Promise<void> => {
       result: {
         from_site: fromNode.name,
         to_site: toNode.name,
-        distance_km: distanceKm,
-        baseline_fspl_db: baselineFsplDb,
-        terrain_penalty_db: terrainPenaltyDb,
-        path_loss_db: pathLossDb,
+        distance_km: terrainResult.distanceKm,
+        baseline_fspl_db: terrainResult.baselineFsplDb,
+        terrain_penalty_db: terrainResult.terrainPenaltyDb,
+        path_loss_db: terrainResult.totalPathLossDb,
         rx_dbm: payload.input.include_rx_dbm ? rxDbm : null,
         verdict: payload.input.include_verdict ? verdict : null,
       },
       meta: {
-        terrain_source: "open-meteo-elevation",
+        terrain_source: "copernicus",
+        tiles_fetched: terrainResult.tilesFetched,
         samples_requested: samples,
-        samples_used: elevationsM.length,
+        samples_used: terrainResult.samplesUsed,
         max_samples: MAX_SAMPLES,
-        max_intrusion_m: maxIntrusionM,
+        max_intrusion_m: terrainResult.maxIntrusionM,
+        fresnel_clearance_percent: terrainResult.fresnelClearancePercent,
+        terrain_obstructed: terrainResult.terrainObstructed,
         runtime_ms: runtimeMs,
         max_runtime_ms: MAX_RUNTIME_MS,
       },
@@ -403,7 +417,7 @@ export const onRequestPost = async ({ request, env, waitUntil }: Context) => {
     const inputJson = JSON.stringify(payload);
 
     await createJob(env, jobId, inputJson);
-    const processing = processTerrainJob(env, jobId);
+    const processing = processTerrainJob(env, jobId, request.url);
     if (waitUntil) {
       waitUntil(processing);
     } else {
