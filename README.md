@@ -119,6 +119,7 @@ Production routing through LinkSim Pages:
 - `POST /api/v1/calculate/jobs` — Enqueue terrain calculation job
 - `GET /api/v1/calculate/jobs/{job_id}` — Poll job status and retrieve result
 - Status values: `queued`, `running`, `completed`, `failed`, `timed_out`
+- Terrain mode currently samples elevation profile via Open-Meteo and applies terrain penalty over FSPL baseline
 
 Example (fast sync):
 

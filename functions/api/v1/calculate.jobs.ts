@@ -21,6 +21,8 @@ const MAX_NODES = 20;
 const MAX_DISTANCE_KM = 2000;
 const MAX_SAMPLES = 500;
 const MAX_RUNTIME_MS = 300000;
+const ELEVATION_CHUNK_SIZE = 50;
+const ELEVATION_TIMEOUT_MS = 20000;
 
 type JobRow = {
   id: string;
@@ -170,6 +172,83 @@ const fsplDb = (distanceKm: number, frequencyMhz: number): number => {
   return 32.44 + 20 * Math.log10(safeDistanceKm) + 20 * Math.log10(frequencyMhz);
 };
 
+const interpolateCoordinate = (from: NodeInput, to: NodeInput, t: number): { lat: number; lon: number } => ({
+  lat: from.lat + (to.lat - from.lat) * t,
+  lon: from.lon + (to.lon - from.lon) * t,
+});
+
+const requestWithTimeout = async (url: string): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ELEVATION_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+const chunk = <T>(input: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < input.length; i += size) out.push(input.slice(i, i + size));
+  return out;
+};
+
+const sampleTerrainProfile = async (
+  fromNode: NodeInput,
+  toNode: NodeInput,
+  samples: number,
+): Promise<number[]> => {
+  const coordinates = Array.from({ length: samples }, (_, i) => {
+    const t = samples <= 1 ? 0 : i / (samples - 1);
+    return interpolateCoordinate(fromNode, toNode, t);
+  });
+  const groups = chunk(coordinates, ELEVATION_CHUNK_SIZE);
+  const out: number[] = [];
+
+  for (const group of groups) {
+    const lat = group.map((c) => c.lat.toFixed(6)).join(",");
+    const lon = group.map((c) => c.lon.toFixed(6)).join(",");
+    const url = `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`;
+    const response = await requestWithTimeout(url);
+    if (!response.ok) {
+      throw new Error(`Terrain elevation API failed with status ${response.status}.`);
+    }
+    const payload = (await response.json()) as { elevation?: unknown };
+    if (!Array.isArray(payload.elevation)) {
+      throw new Error("Terrain elevation API returned invalid payload.");
+    }
+    for (const value of payload.elevation) {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        throw new Error("Terrain elevation API returned invalid elevation values.");
+      }
+      out.push(value);
+    }
+  }
+
+  if (out.length !== samples) {
+    throw new Error("Terrain sampling count mismatch.");
+  }
+  return out;
+};
+
+const estimateTerrainPenaltyDb = (
+  elevationsM: number[],
+): { terrainPenaltyDb: number; maxIntrusionM: number } => {
+  const fromAntennaAbsM = elevationsM[0] + 2;
+  const toAntennaAbsM = elevationsM[elevationsM.length - 1] + 2;
+
+  let maxIntrusionM = 0;
+  for (let i = 1; i < elevationsM.length - 1; i += 1) {
+    const t = i / (elevationsM.length - 1);
+    const losM = fromAntennaAbsM + (toAntennaAbsM - fromAntennaAbsM) * t;
+    const intrusionM = elevationsM[i] - losM;
+    if (intrusionM > maxIntrusionM) maxIntrusionM = intrusionM;
+  }
+
+  const terrainPenaltyDb = Math.max(0, Math.min(40, maxIntrusionM * 0.12));
+  return { terrainPenaltyDb, maxIntrusionM };
+};
+
 const findEndpointNodes = (payload: CalculationRequest): { fromNode: NodeInput; toNode: NodeInput } => {
   const nodesByName = new Map<string, NodeInput>(
     payload.input.nodes.map((node) => [node.name.trim().toLowerCase(), node]),
@@ -250,7 +329,10 @@ const processTerrainJob = async (env: Env, jobId: string): Promise<void> => {
       );
     }
     const samples = estimateSampleCount(distanceKm);
-    const pathLossDb = fsplDb(distanceKm, payload.input.frequency_mhz);
+    const elevationsM = await sampleTerrainProfile(fromNode, toNode, samples);
+    const { terrainPenaltyDb, maxIntrusionM } = estimateTerrainPenaltyDb(elevationsM);
+    const baselineFsplDb = fsplDb(distanceKm, payload.input.frequency_mhz);
+    const pathLossDb = baselineFsplDb + terrainPenaltyDb;
     const eirpDbm = fromNode.tx_power_dbm + fromNode.tx_gain_dbi - fromNode.cable_loss_db;
     const rxDbm = eirpDbm + toNode.rx_gain_dbi - pathLossDb;
     const verdict = rxDbm >= payload.input.rx_target_dbm ? "PASS" : "FAIL";
@@ -263,24 +345,27 @@ const processTerrainJob = async (env: Env, jobId: string): Promise<void> => {
     const result = {
       calculation: "link_budget",
       mode: "terrain",
-      terrain_used: false,
-      terrain_status: "queued_compute_placeholder",
+      terrain_used: true,
+      terrain_status: "sampled",
       result: {
         from_site: fromNode.name,
         to_site: toNode.name,
         distance_km: distanceKm,
+        baseline_fspl_db: baselineFsplDb,
+        terrain_penalty_db: terrainPenaltyDb,
         path_loss_db: pathLossDb,
         rx_dbm: payload.input.include_rx_dbm ? rxDbm : null,
         verdict: payload.input.include_verdict ? verdict : null,
       },
       meta: {
+        terrain_source: "open-meteo-elevation",
         samples_requested: samples,
+        samples_used: elevationsM.length,
         max_samples: MAX_SAMPLES,
+        max_intrusion_m: maxIntrusionM,
         runtime_ms: runtimeMs,
         max_runtime_ms: MAX_RUNTIME_MS,
       },
-      warning:
-        "Terrain jobs endpoint is wired and asynchronous, but terrain tile sampling worker is not enabled yet. Returning FSPL baseline until worker is added.",
     };
     await updateJob(env, jobId, JOB_STATUS.COMPLETED, JSON.stringify(result), null);
   } catch (error) {
