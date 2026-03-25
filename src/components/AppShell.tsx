@@ -404,7 +404,6 @@ export function AppShell() {
 
     void (async () => {
       const payload = deepLinkParse.payload;
-      console.log("[DeepLinkDebug] payload", payload);
       const safeDecode = (value: string): string => {
         try {
           return decodeURIComponent(value);
@@ -443,7 +442,6 @@ export function AppShell() {
       if (!resolvedSimulationId) {
         resolvedSimulationId = resolveBySlug() ?? "";
       }
-      console.log("[DeepLinkDebug] resolvedSimulationId", resolvedSimulationId);
       let state = useAppStore.getState();
       let exists = resolvedSimulationId
         ? state.simulationPresets.some((preset) => preset.id === resolvedSimulationId)
@@ -592,10 +590,8 @@ export function AppShell() {
       }
       loadSimulationPreset(resolvedSimulationId);
       const latest = useAppStore.getState();
-      console.log("[DeepLinkDebug] sitesAfterLoad", latest.sites.map((s) => ({ id: s.id, name: s.name })));
       const decodedLinkSlugs = payload.selectedLinkSlugs?.map(safeDecode);
       const decodedSiteSlugs = payload.selectedSiteSlugs?.map(safeDecode);
-      console.log("[DeepLinkDebug] decodedSelections", { decodedLinkSlugs, decodedSiteSlugs });
       const normalizeForMatch = (value: string): string => slugifyName(value).normalize("NFKC");
       const normalizeExact = (value: string): string => safeDecode(value).trim().normalize("NFKC").replace(/[\uFE0E\uFE0F]/g, "");
       if (decodedLinkSlugs && decodedLinkSlugs.length === 2) {
@@ -627,10 +623,8 @@ export function AppShell() {
           },
         );
         if (bySlug) {
-          console.log("[DeepLinkDebug] matchedLink", { linkId: bySlug.id, name: bySlug.name });
           setSelectedLinkId(bySlug.id);
         } else {
-          console.log("[DeepLinkDebug] linkMatchFailed", { decodedLinkSlugs });
           clearActiveSelection();
           setDeepLinkNotice("Could not resolve link selection from this deep link.");
         }
@@ -650,13 +644,8 @@ export function AppShell() {
               (siteCanonical && candidateCanonical === siteCanonical)
             );
           });
-          console.log("[DeepLinkDebug] siteMatchAttempt", {
-            siteSlug,
-            matched: site ? { id: site.id, name: site.name } : null,
-          });
           if (site && !matchedSiteIds.includes(site.id)) matchedSiteIds.push(site.id);
         }
-        console.log("[DeepLinkDebug] matchedSiteIds", matchedSiteIds);
         if (matchedSiteIds.length === decodedSiteSlugs.length && matchedSiteIds.length > 0) {
           clearActiveSelection();
           const [firstSiteId, ...remainingSiteIds] = matchedSiteIds;
@@ -664,17 +653,7 @@ export function AppShell() {
           for (const siteId of remainingSiteIds) {
             selectSiteById(siteId, true);
           }
-          const afterSelection = useAppStore.getState();
-          console.log("[DeepLinkDebug] afterApply", {
-            selectedSiteId: afterSelection.selectedSiteId,
-            selectedSiteIds: afterSelection.selectedSiteIds,
-            selectedLinkId: afterSelection.selectedLinkId,
-          });
         } else {
-          console.log("[DeepLinkDebug] siteMatchFailed", {
-            requested: decodedSiteSlugs,
-            matchedSiteIds,
-          });
           clearActiveSelection();
           setDeepLinkNotice("Could not resolve all site selections from this deep link.");
         }
