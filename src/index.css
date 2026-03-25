@@ -2135,26 +2135,46 @@ input {
   background: color-mix(in srgb, var(--surface) 86%, transparent);
 }
 
-.welcome-modal-card {
-  width: min(1320px, 98vw);
-  height: min(94vh, 1100px);
-  max-height: min(94vh, 1100px);
-  grid-template-rows: auto auto 1fr auto;
-  overflow: hidden;
+.welcome-compact-card {
+  width: min(440px, 92vw);
+  padding: 24px 28px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.welcome-modal-onboarding-section {
-  margin-bottom: 8px;
+.welcome-compact-card h2 {
+  margin: 0;
+  font-size: 1.2rem;
 }
 
-.welcome-modal-onboarding-toggle {
-  font-weight: 600;
-  cursor: pointer;
+.welcome-compact-card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
 }
 
-.welcome-modal-onboarding-content {
-  margin-top: 8px;
-  max-height: 40vh;
+.welcome-compact-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.welcome-compact-button {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: left;
+  font-size: 0.92rem;
+}
+
+.welcome-compact-button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
 
 .welcome-modal-new-simulation-backdrop {
