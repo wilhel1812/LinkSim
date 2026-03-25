@@ -9,6 +9,7 @@ export type NodeInput = {
   rx_gain_dbi: number;
   cable_loss_db: number;
   antenna_height_m?: number;
+  ground_elevation_m?: number;
 };
 
 export type LinkBudgetInput = {
@@ -16,6 +17,7 @@ export type LinkBudgetInput = {
   to_site: string;
   frequency_mhz: number;
   rx_target_dbm: number;
+  environment_loss_db: number;
   mode: "fast" | "terrain";
   include_verdict: boolean;
   include_rx_dbm: boolean;
@@ -71,6 +73,7 @@ const normalizeNode = (value: unknown, index: number): NodeInput => {
     rx_gain_dbi: typeof row.rx_gain_dbi === "number" ? row.rx_gain_dbi : 2,
     cable_loss_db: typeof row.cable_loss_db === "number" ? row.cable_loss_db : 1,
     antenna_height_m: typeof row.antenna_height_m === "number" ? row.antenna_height_m : 2,
+    ground_elevation_m: typeof row.ground_elevation_m === "number" ? row.ground_elevation_m : undefined,
   };
 };
 
@@ -93,6 +96,7 @@ export const normalizeCalculationRequest = (value: unknown): CalculationRequest 
     to_site: asString(toSite, "input.to_site"),
     frequency_mhz: asFiniteNumber(input.frequency_mhz, "input.frequency_mhz"),
     rx_target_dbm: typeof input.rx_target_dbm === "number" ? input.rx_target_dbm : -100,
+    environment_loss_db: typeof input.environment_loss_db === "number" ? input.environment_loss_db : 0,
     mode: normalizeMode(input.mode),
     include_verdict: normalizeBool(input.include_verdict, true),
     include_rx_dbm: normalizeBool(input.include_rx_dbm, true),

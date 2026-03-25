@@ -1,8 +1,6 @@
 import { fromArrayBuffer } from "geotiff";
 import { analyzeLink } from "../../src/lib/propagation";
 import { defaultPropagationEnvironment } from "../../src/lib/propagationEnvironment";
-import { sampleSrtmElevation } from "../../src/lib/srtm";
-import type { SrtmTile } from "../../src/types/radio";
 import type { Env } from "./types";
 
 type TileListEntry = {
@@ -22,7 +20,31 @@ export type TerrainAnalysisResult = {
   fresnelClearancePercent: number;
   samplesUsed: number;
   tilesFetched: string[];
+  fromGroundM: number;
+  toGroundM: number;
 };
+
+type TerrainBounds = {
+  minLat: number;
+  maxLat: number;
+  minLon: number;
+  maxLon: number;
+};
+
+type CompactTerrainTile = {
+  key: string;
+  dataset: "copernicus30" | "copernicus90";
+  minLat: number;
+  maxLat: number;
+  minLon: number;
+  maxLon: number;
+  width: number;
+  height: number;
+  elevations: Int16Array;
+};
+
+const TILE_MARGIN_DEG = 0.02;
+const MAX_TILE_CELLS = 90_000;
 
 const tileKey = (lat: number, lon: number): string => {
   const ns = lat >= 0 ? "N" : "S";
@@ -86,71 +108,146 @@ const chooseTileEntry = (entries: TileListEntry[]): TileListEntry | null => {
   return preferred30 ?? entries[0] ?? null;
 };
 
-const parseCopernicusTile = async (entry: TileListEntry, buffer: ArrayBuffer): Promise<SrtmTile> => {
+const toTerrainBounds = (
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+): TerrainBounds => ({
+  minLat: Math.max(-90, Math.min(from.lat, to.lat) - TILE_MARGIN_DEG),
+  maxLat: Math.min(90, Math.max(from.lat, to.lat) + TILE_MARGIN_DEG),
+  minLon: Math.max(-180, Math.min(from.lon, to.lon) - TILE_MARGIN_DEG),
+  maxLon: Math.min(180, Math.max(from.lon, to.lon) + TILE_MARGIN_DEG),
+});
+
+const parseCopernicusTile = async (
+  entry: TileListEntry,
+  buffer: ArrayBuffer,
+  bounds: TerrainBounds,
+): Promise<CompactTerrainTile | null> => {
   const tiff = await fromArrayBuffer(buffer);
   const image = await tiff.getImage();
   const width = image.getWidth();
   const height = image.getHeight();
-  const [minLon, minLat] = image.getBoundingBox();
-  const nodata = image.getGDALNoData();
-  const raster = await image.readRasters({ interleave: true, samples: [0] });
-  const out = new Int16Array(width * height);
-  const nodataNumeric = nodata === null ? NaN : Number(nodata);
+  const [minLon, minLat, maxLon, maxLat] = image.getBoundingBox();
+  const overlapMinLon = Math.max(minLon, bounds.minLon);
+  const overlapMaxLon = Math.min(maxLon, bounds.maxLon);
+  const overlapMinLat = Math.max(minLat, bounds.minLat);
+  const overlapMaxLat = Math.min(maxLat, bounds.maxLat);
+  if (overlapMinLon >= overlapMaxLon || overlapMinLat >= overlapMaxLat) {
+    return null;
+  }
 
-  for (let i = 0; i < out.length; i += 1) {
+  const x0 = Math.max(0, Math.min(width - 1, Math.floor(((overlapMinLon - minLon) / (maxLon - minLon)) * width)));
+  const x1 = Math.max(x0 + 1, Math.min(width, Math.ceil(((overlapMaxLon - minLon) / (maxLon - minLon)) * width)));
+  const y0 = Math.max(
+    0,
+    Math.min(
+      height - 1,
+      Math.floor(((maxLat - overlapMaxLat) / (maxLat - minLat)) * height),
+    ),
+  );
+  const y1 = Math.max(
+    y0 + 1,
+    Math.min(
+      height,
+      Math.ceil(((maxLat - overlapMinLat) / (maxLat - minLat)) * height),
+    ),
+  );
+
+  const sourceW = Math.max(1, x1 - x0);
+  const sourceH = Math.max(1, y1 - y0);
+  const preferredDim = entry.dataset === "copernicus30" ? 300 : 220;
+  let targetW = Math.min(sourceW, preferredDim);
+  let targetH = Math.min(sourceH, preferredDim);
+  const cellCount = targetW * targetH;
+  if (cellCount > MAX_TILE_CELLS) {
+    const scale = Math.sqrt(MAX_TILE_CELLS / cellCount);
+    targetW = Math.max(1, Math.floor(targetW * scale));
+    targetH = Math.max(1, Math.floor(targetH * scale));
+  }
+
+  const nodata = image.getGDALNoData();
+  const raster = await image.readRasters({
+    interleave: true,
+    samples: [0],
+    window: [x0, y0, x1, y1],
+    width: targetW,
+    height: targetH,
+  });
+  const nodataNumeric = nodata === null ? NaN : Number(nodata);
+  const result = new Int16Array(targetW * targetH);
+
+  for (let i = 0; i < result.length; i += 1) {
     const value = Number((raster as ArrayLike<number>)[i]);
     if (!Number.isFinite(value) || (Number.isFinite(nodataNumeric) && Math.abs(value - nodataNumeric) <= 0.01)) {
-      out[i] = -32768;
+      result[i] = -32768;
       continue;
     }
-    out[i] = Math.max(-32767, Math.min(32767, Math.round(value)));
+    result[i] = Math.max(-32767, Math.min(32767, Math.round(value)));
   }
 
   return {
     key: entry.key,
-    latStart: Math.floor(minLat),
-    lonStart: Math.floor(minLon),
-    size: Math.max(width, height),
-    width,
-    height,
-    arcSecondSpacing: entry.dataset === "copernicus30" ? 1 : 3,
-    elevations: out,
-    sourceKind: "auto-fetch",
-    sourceId: entry.dataset,
-    sourceLabel: `Copernicus ${entry.dataset === "copernicus30" ? "GLO-30" : "GLO-90"}`,
-    sourceDetail: entry.path,
+    dataset: entry.dataset,
+    minLat: overlapMinLat,
+    maxLat: overlapMaxLat,
+    minLon: overlapMinLon,
+    maxLon: overlapMaxLon,
+    width: targetW,
+    height: targetH,
+    elevations: result,
   };
 };
 
-const fetchTile = async (origin: string, entry: TileListEntry): Promise<SrtmTile | null> => {
+const fetchTile = async (origin: string, entry: TileListEntry, bounds: TerrainBounds): Promise<CompactTerrainTile | null> => {
   const response = await fetch(`${origin}/copernicus/${entry.pathPrefix}/${entry.path}`);
   if (!response.ok) return null;
   const buffer = await response.arrayBuffer();
-  return parseCopernicusTile(entry, buffer);
+  return parseCopernicusTile(entry, buffer, bounds);
+};
+
+const sampleTerrainElevation = (
+  tiles: ReadonlyArray<CompactTerrainTile>,
+  lat: number,
+  lon: number,
+): number | null => {
+  const tile = tiles.find(
+    (candidate) =>
+      lat >= candidate.minLat &&
+      lat <= candidate.maxLat &&
+      lon >= candidate.minLon &&
+      lon <= candidate.maxLon,
+  );
+  if (!tile) return null;
+
+  const latSpan = Math.max(1e-9, tile.maxLat - tile.minLat);
+  const lonSpan = Math.max(1e-9, tile.maxLon - tile.minLon);
+  const row = Math.max(0, Math.min(tile.height - 1, Math.round(((tile.maxLat - lat) / latSpan) * (tile.height - 1))));
+  const col = Math.max(0, Math.min(tile.width - 1, Math.round(((lon - tile.minLon) / lonSpan) * (tile.width - 1))));
+  const value = tile.elevations[row * tile.width + col] ?? -32768;
+  if (value <= -32760) return null;
+  return value;
 };
 
 export const loadCopernicusTilesForPath = async (
   from: { lat: number; lon: number },
   to: { lat: number; lon: number },
   requestUrl: string,
-): Promise<{ tiles: SrtmTile[]; tileKeys: string[] }> => {
+): Promise<{ tiles: CompactTerrainTile[]; tileKeys: string[] }> => {
   const origin = new URL(requestUrl).origin;
-  const minLat = Math.min(from.lat, to.lat) - 0.1;
-  const maxLat = Math.max(from.lat, to.lat) + 0.1;
-  const minLon = Math.min(from.lon, to.lon) - 0.1;
-  const maxLon = Math.max(from.lon, to.lon) + 0.1;
+  const bounds = toTerrainBounds(from, to);
+  const { minLat, maxLat, minLon, maxLon } = bounds;
   const neededKeys = tilesForBounds(minLat, maxLat, minLon, maxLon);
 
   const [index30, index90] = await Promise.all([fetchTileList(origin, "30m"), fetchTileList(origin, "90m")]);
   const tileIndex = mergeTileIndexes(index30, index90);
 
-  const tiles: SrtmTile[] = [];
+  const tiles: CompactTerrainTile[] = [];
   const fetchedKeys: string[] = [];
   for (const key of neededKeys) {
     const entries = tileIndex.get(key) ?? [];
     const selected = chooseTileEntry(entries);
     if (!selected) continue;
-    const tile = await fetchTile(origin, selected);
+    const tile = await fetchTile(origin, selected, bounds);
     if (!tile) continue;
     tiles.push(tile);
     fetchedKeys.push(`${key}:${selected.dataset}`);
@@ -162,8 +259,8 @@ export const loadCopernicusTilesForPath = async (
 export const analyzeTerrainLink = async (
   env: Env,
   requestUrl: string,
-  fromSite: { lat: number; lon: number; name: string; txPowerDbm: number; txGainDbi: number; rxGainDbi: number; cableLossDb: number; antennaHeightM: number },
-  toSite: { lat: number; lon: number; name: string; txPowerDbm: number; txGainDbi: number; rxGainDbi: number; cableLossDb: number; antennaHeightM: number },
+  fromSite: { lat: number; lon: number; name: string; txPowerDbm: number; txGainDbi: number; rxGainDbi: number; cableLossDb: number; antennaHeightM: number; groundElevationM?: number },
+  toSite: { lat: number; lon: number; name: string; txPowerDbm: number; txGainDbi: number; rxGainDbi: number; cableLossDb: number; antennaHeightM: number; groundElevationM?: number },
   frequencyMhz: number,
   samples: number,
 ): Promise<TerrainAnalysisResult> => {
@@ -177,9 +274,9 @@ export const analyzeTerrainLink = async (
     throw new Error("No terrain tiles available for this region");
   }
 
-  const terrainSampler = ({ lat, lon }: { lat: number; lon: number }) => sampleSrtmElevation(tiles, lat, lon);
-  const fromGroundM = terrainSampler({ lat: fromSite.lat, lon: fromSite.lon }) ?? 0;
-  const toGroundM = terrainSampler({ lat: toSite.lat, lon: toSite.lon }) ?? 0;
+  const terrainSampler = ({ lat, lon }: { lat: number; lon: number }) => sampleTerrainElevation(tiles, lat, lon);
+  const fromGroundM = terrainSampler({ lat: fromSite.lat, lon: fromSite.lon }) ?? fromSite.groundElevationM ?? 0;
+  const toGroundM = terrainSampler({ lat: toSite.lat, lon: toSite.lon }) ?? toSite.groundElevationM ?? 0;
 
   const from = {
     id: "from",
@@ -230,5 +327,7 @@ export const analyzeTerrainLink = async (
     fresnelClearancePercent: analysis.worstFresnelClearancePercent,
     samplesUsed: Math.max(24, Math.round(samples)),
     tilesFetched: tileKeys,
+    fromGroundM,
+    toGroundM,
   };
 };

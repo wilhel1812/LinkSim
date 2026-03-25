@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getClientAddressMock, takeRateLimitTokenMock, fromArrayBufferMock } = vi.hoisted(() => ({
+const { getClientAddressMock, takeRateLimitTokenMock, analyzeTerrainLinkMock } = vi.hoisted(() => ({
   getClientAddressMock: vi.fn(),
   takeRateLimitTokenMock: vi.fn(),
-  fromArrayBufferMock: vi.fn(),
+  analyzeTerrainLinkMock: vi.fn(),
 }));
 
 vi.mock("../../_lib/rateLimit", () => ({
@@ -11,8 +11,8 @@ vi.mock("../../_lib/rateLimit", () => ({
   takeRateLimitToken: takeRateLimitTokenMock,
 }));
 
-vi.mock("geotiff", () => ({
-  fromArrayBuffer: fromArrayBufferMock,
+vi.mock("../../_lib/terrainAnalysis", () => ({
+  analyzeTerrainLink: analyzeTerrainLinkMock,
 }));
 
 import { onRequestPost } from "./calculate";
@@ -27,17 +27,20 @@ const mkCtx = (request: Request, env: TestEnv) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubGlobal("fetch", vi.fn());
   getClientAddressMock.mockReturnValue("203.0.113.1");
   takeRateLimitTokenMock.mockReturnValue({ allowed: true, remaining: 99, retryAfterSec: 0 });
-  fromArrayBufferMock.mockResolvedValue({
-    getImage: async () => ({
-      getWidth: () => 2,
-      getHeight: () => 2,
-      getBoundingBox: () => [0, 0, 1, 1],
-      getGDALNoData: () => null,
-      readRasters: async () => new Int16Array([100, 100, 100, 100]),
-    }),
+  analyzeTerrainLinkMock.mockResolvedValue({
+    distanceKm: 0.55,
+    baselineFsplDb: 86.1,
+    terrainPenaltyDb: 42.6,
+    totalPathLossDb: 128.7,
+    terrainObstructed: true,
+    maxIntrusionM: 14,
+    fresnelClearancePercent: -20,
+    samplesUsed: 24,
+    tilesFetched: ["N59E010:copernicus30"],
+    fromGroundM: 21,
+    toGroundM: 11,
   });
 });
 
@@ -71,19 +74,10 @@ describe("api/v1/calculate", () => {
     await expect(res.json()).resolves.toEqual({
       error: "Calculation API rate limit reached. Please wait and try again.",
     });
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(analyzeTerrainLinkMock).not.toHaveBeenCalled();
   });
 
-  it("uses Copernicus terrain elevations and returns app-style summary", async () => {
-    vi.mocked(globalThis.fetch)
-      .mockResolvedValueOnce(
-        new Response("Copernicus_DSM_COG_30_N00_00_E000_00_DEM\n", {
-          status: 200,
-          headers: { "content-type": "text/plain" },
-        }),
-      )
-      .mockResolvedValueOnce(new Response(new ArrayBuffer(8), { status: 200 }));
-
+  it("returns app-style summary with terrain-derived fields", async () => {
     const req = new Request("https://linksim.link/api/v1/calculate", {
       method: "POST",
       headers: {
@@ -92,11 +86,6 @@ describe("api/v1/calculate", () => {
       body: JSON.stringify(mkPayload()),
     });
     const res = await onRequestPost(mkCtx(req, { DB: {} }));
-
-    expect(globalThis.fetch).toHaveBeenCalledWith("https://linksim.link/copernicus/30m/tileList.txt");
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "https://linksim.link/copernicus/30m/Copernicus_DSM_COG_30_N00_00_E000_00_DEM/Copernicus_DSM_COG_30_N00_00_E000_00_DEM.tif",
-    );
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -115,18 +104,14 @@ describe("api/v1/calculate", () => {
     expect(body.calculation).toBe("link_budget");
     expect(body.result.summary).toMatch(/LOS (clear|blocked) \+ (pass|fail) at .* \(.* dBm after env loss\)/);
     expect(body.result.pass_fail_label).toMatch(/^LOS (clear|blocked) \+ (pass|fail)$/);
-    expect(body.result.from_ground_elevation_m).toBe(100);
-    expect(body.result.to_ground_elevation_m).toBe(100);
+    expect(body.result.from_ground_elevation_m).toBe(21);
+    expect(body.result.to_ground_elevation_m).toBe(11);
     expect(body.result.from_antenna_height_m).toBe(2);
     expect(body.result.to_antenna_height_m).toBe(2);
-    expect(body.result.terrain_tiles_loaded).toEqual(["N00E000"]);
+    expect(body.result.terrain_tiles_loaded).toEqual(["N59E010:copernicus30"]);
   });
 
   it("supports from_node/to_node aliases", async () => {
-    vi.mocked(globalThis.fetch)
-      .mockResolvedValueOnce(new Response("Copernicus_DSM_COG_30_N00_00_E000_00_DEM\n", { status: 200 }))
-      .mockResolvedValueOnce(new Response(new ArrayBuffer(8), { status: 200 }));
-
     const req = new Request("https://linksim.link/api/v1/calculate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -170,6 +155,22 @@ describe("api/v1/calculate", () => {
 
     const res = await onRequestPost(mkCtx(req, { DB: {} }));
     expect(res.status).toBe(404);
-    await expect(res.json()).resolves.toEqual({ error: "Site not found in nodes." });
+    await expect(res.json()).resolves.toEqual({ error: "Site not found: Missing" });
+  });
+
+  it("returns 503 for unavailable terrain tiles", async () => {
+    analyzeTerrainLinkMock.mockRejectedValueOnce(new Error("No terrain tiles available for this region"));
+
+    const req = new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(mkPayload()),
+    });
+    const res = await onRequestPost(mkCtx(req, { DB: {} }));
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({
+      error: "Terrain tiles unavailable for this path. Please retry shortly or use /api/v1/calculate/jobs.",
+    });
   });
 });
