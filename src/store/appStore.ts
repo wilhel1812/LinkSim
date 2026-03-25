@@ -1638,6 +1638,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextOverlay = defaultOverlayModeForSelectionCount(selection.length);
       if (
         state.selectedSiteId === nextSelectedSiteId &&
+        state.selectedLinkId === "" &&
         state.mapOverlayMode === nextOverlay &&
         sameSiteSelection(state.selectedSiteIds, selection)
       ) {
@@ -1646,6 +1647,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         selectedSiteId: nextSelectedSiteId,
         selectedSiteIds: selection,
+        selectedLinkId: "",
         mapOverlayMode: nextOverlay,
       };
     });
@@ -1668,6 +1670,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextOverlay = defaultOverlayModeForSelectionCount(normalizedSelection.length);
       if (
         state.selectedSiteId === nextSelectedSiteId &&
+        state.selectedLinkId === "" &&
         state.mapOverlayMode === nextOverlay &&
         sameSiteSelection(state.selectedSiteIds, normalizedSelection)
       ) {
@@ -1676,6 +1679,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         selectedSiteIds: normalizedSelection,
         selectedSiteId: nextSelectedSiteId,
+        selectedLinkId: "",
         mapOverlayMode: nextOverlay,
       };
     });
