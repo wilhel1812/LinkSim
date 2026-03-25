@@ -65,8 +65,10 @@ const fetchTileAsBytes = async (origin: string, dataset: "30m" | "90m", tileKeyP
   const lat = tileKeyParam.slice(1, 3);
   const ew = tileKeyParam.slice(3, 4);
   const lon = tileKeyParam.slice(4, 7);
-  const tileName = `Copernicus_DSM_COG_${dataset === "30m" ? "30" : "90"}_${ns}${lat}_00_${ew}${lon}_00_DEM`;
-  const url = `${origin}${COPERNICUS_PROXY_BASE}/${dataset}/${tileName}/${tileName}.tif`;
+  // 30m data is actually in the 90m bucket, and 90m is also in the 90m bucket
+  const bucketDataset = dataset === "30m" ? "90m" : "90m";
+  const tileName = `Copernicus_DSM_COG_${dataset === "30m" ? "30" : "90"}_${ns}${lat}_00_${ew}${String(lon).padStart(3, "0")}_00_DEM`;
+  const url = `${origin}${COPERNICUS_PROXY_BASE}/${bucketDataset}/${tileName}/${tileName}.tif`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
