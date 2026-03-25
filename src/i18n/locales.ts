@@ -45,8 +45,6 @@ export type TranslationKey =
   | "sites"
   | "terrainData"
   | "rfSummary"
-  | "loadHgt"
-  | "syncSiteElevations"
   | "pathProfile"
   | "profileSubtitle";
 
@@ -61,8 +59,6 @@ const ENGLISH: TranslationTable = {
   sites: "Sites",
   terrainData: "Terrain Data",
   rfSummary: "RF Summary",
-  loadHgt: "Load .hgt tiles",
-  syncSiteElevations: "Sync site elevations (online)",
   pathProfile: "Path Profile",
   profileSubtitle: "Terrain, line-of-sight, and first Fresnel zone",
 };

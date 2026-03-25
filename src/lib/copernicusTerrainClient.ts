@@ -496,6 +496,7 @@ export const loadCopernicusTilesForAreaPhased = async (
   maxLon: number,
   dataset: CopernicusDataset,
   priorityKeys?: Set<string>,
+  options?: { skipRemaining?: boolean },
 ): Promise<CopernicusPhasedLoadResult> => {
   const candidateKeys = tilesForBounds(minLat, maxLat, minLon, maxLon);
   const pathPrefix = DATASET_PATH[dataset];
@@ -509,7 +510,11 @@ export const loadCopernicusTilesForAreaPhased = async (
     const remainingKeys = candidateKeys.filter((k) => !priorityKeys.has(k));
 
     priority = await loadTileBatch(priorityKeysList, dataset, pathPrefix, is30m ? "copernicus90" : undefined);
-    remaining = await loadTileBatch(remainingKeys, dataset, pathPrefix, is30m ? "copernicus90" : undefined);
+    if (options?.skipRemaining) {
+      remaining = { tiles: [], failedTiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [] };
+    } else {
+      remaining = await loadTileBatch(remainingKeys, dataset, pathPrefix, is30m ? "copernicus90" : undefined);
+    }
   } else {
     priority = await loadTileBatch(candidateKeys, dataset, pathPrefix, is30m ? "copernicus90" : undefined);
     remaining = { tiles: [], failedTiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [] };
