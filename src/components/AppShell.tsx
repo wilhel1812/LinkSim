@@ -579,9 +579,12 @@ export function AppShell() {
       const latest = useAppStore.getState();
       const decodedLinkSlugs = payload.selectedLinkSlugs?.map(safeDecode);
       const decodedSiteSlugs = payload.selectedSiteSlugs?.map(safeDecode);
-      const normalizeForMatch = (value: string): string => slugifyName(value);
+      const normalizeForMatch = (value: string): string => slugifyName(value).normalize("NFKC");
+      const normalizeExact = (value: string): string => safeDecode(value).trim().normalize("NFKC").replace(/[\uFE0E\uFE0F]/g, "");
       if (decodedLinkSlugs && decodedLinkSlugs.length === 2) {
         const [fromSlug, toSlug] = decodedLinkSlugs;
+        const fromExact = normalizeExact(fromSlug);
+        const toExact = normalizeExact(toSlug);
         const fromPretty = normalizeForMatch(fromSlug);
         const toPretty = normalizeForMatch(toSlug);
         const fromCanonical = canonicalizeDeepLinkKey(fromSlug);
@@ -590,30 +593,43 @@ export function AppShell() {
           (link) => {
             const fromName = latest.sites.find((s) => s.id === link.fromSiteId)?.name ?? "";
             const toName = latest.sites.find((s) => s.id === link.toSiteId)?.name ?? "";
+            const fromNameExact = normalizeExact(fromName);
+            const toNameExact = normalizeExact(toName);
             const fromNamePretty = normalizeForMatch(fromName);
             const toNamePretty = normalizeForMatch(toName);
             const fromNameCanonical = canonicalizeDeepLinkKey(fromName);
             const toNameCanonical = canonicalizeDeepLinkKey(toName);
             return (
-              ((fromPretty && fromNamePretty === fromPretty) || (fromCanonical && fromNameCanonical === fromCanonical)) &&
-              ((toPretty && toNamePretty === toPretty) || (toCanonical && toNameCanonical === toCanonical))
+              ((fromExact && fromNameExact === fromExact) ||
+                (fromPretty && fromNamePretty === fromPretty) ||
+                (fromCanonical && fromNameCanonical === fromCanonical)) &&
+              ((toExact && toNameExact === toExact) ||
+                (toPretty && toNamePretty === toPretty) ||
+                (toCanonical && toNameCanonical === toCanonical))
             );
           },
         );
         if (bySlug) {
           setSelectedLinkId(bySlug.id);
         } else {
+          clearActiveSelection();
           setDeepLinkNotice("Could not resolve link selection from this deep link.");
         }
       } else if (decodedSiteSlugs && decodedSiteSlugs.length > 0) {
         const matchedSiteIds: string[] = [];
         for (const siteSlug of decodedSiteSlugs) {
+          const siteExact = normalizeExact(siteSlug);
           const sitePretty = normalizeForMatch(siteSlug);
           const siteCanonical = canonicalizeDeepLinkKey(siteSlug);
           const site = latest.sites.find((s) => {
+            const candidateExact = normalizeExact(s.name);
             const candidatePretty = normalizeForMatch(s.name);
             const candidateCanonical = canonicalizeDeepLinkKey(s.name);
-            return (sitePretty && candidatePretty === sitePretty) || (siteCanonical && candidateCanonical === siteCanonical);
+            return (
+              (siteExact && candidateExact === siteExact) ||
+              (sitePretty && candidatePretty === sitePretty) ||
+              (siteCanonical && candidateCanonical === siteCanonical)
+            );
           });
           if (site && !matchedSiteIds.includes(site.id)) matchedSiteIds.push(site.id);
         }
@@ -625,6 +641,7 @@ export function AppShell() {
             selectSiteById(siteId, true);
           }
         } else {
+          clearActiveSelection();
           setDeepLinkNotice("Could not resolve all site selections from this deep link.");
         }
       }
