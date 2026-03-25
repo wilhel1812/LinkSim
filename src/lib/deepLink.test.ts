@@ -160,13 +160,14 @@ describe("deepLink", () => {
     expect(slugifyName("site<>name")).toBe("sitename");
     expect(slugifyName("site~name")).toBe("sitename");
     expect(slugifyName("site/name")).toBe("sitename");
-    expect(slugifyName("🏝️")).toBe("🏝️");
+    expect(slugifyName("🏝️")).toBe("🏝");
   });
 
   it("canonicalizes keys for matching existing normalized slugs", () => {
     expect(canonicalizeDeepLinkKey("Blefjell")).toBe("blefjell");
     expect(canonicalizeDeepLinkKey("Høgevarde")).toBe("høgevarde");
     expect(canonicalizeDeepLinkKey("%F0%9F%92%A9")).toBe("💩");
+    expect(canonicalizeDeepLinkKey("🏝️")).toBe("🏝");
     expect(canonicalizeDeepLinkKey("한국조선")).toBe("한국조선");
   });
 
