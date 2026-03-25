@@ -17,7 +17,7 @@ vi.mock("../../_lib/terrainAnalysis", () => ({
 }));
 
 vi.mock("./calculate.jobs", () => ({
-  onRequestPost: terrainJobsPostMock,
+  queueTerrainCalculationJob: terrainJobsPostMock,
 }));
 
 import { onRequestPost } from "./calculate";
@@ -199,7 +199,7 @@ describe("api/v1/calculate", () => {
     });
 
     const waitUntil = vi.fn();
-    const res = await onRequestPost(mkCtx(req, { DB: {} }) as Parameters<typeof onRequestPost>[0] & { waitUntil: typeof waitUntil });
+    const res = await onRequestPost({ request: req, env: { DB: {} } as TestEnv, waitUntil } as Parameters<typeof onRequestPost>[0]);
 
     expect(res.status).toBe(202);
     await expect(res.json()).resolves.toMatchObject({ job_id: "calc_job_123", status: "queued" });
