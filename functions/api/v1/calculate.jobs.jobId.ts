@@ -14,6 +14,12 @@ const JOB_STATUS = {
   TIMED_OUT: "timed_out",
 } as const;
 
+const ensureCalculationJobsTable = async (env: Env): Promise<void> => {
+  await env.DB.prepare(
+    "CREATE TABLE IF NOT EXISTS calculation_jobs (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'queued', input_json TEXT NOT NULL, result_json TEXT, error_message TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  ).run();
+};
+
 const getJob = async (env: Env, jobId: string) => {
   const stmt = env.DB.prepare(
     "SELECT id, status, input_json, result_json, error_message, created_at, updated_at FROM calculation_jobs WHERE id = ?",
@@ -53,6 +59,7 @@ export const onRequestGet = async ({ request, env }: Context) => {
   const origin = request.headers.get("origin") ?? "*";
 
   try {
+    await ensureCalculationJobsTable(env);
     const job = await getJob(env, jobId);
 
     if (!job) {

@@ -5,6 +5,7 @@ import type { Env } from "../../_lib/types";
 type Context = {
   request: Request;
   env: Env;
+  waitUntil?: (promise: Promise<unknown>) => void;
 };
 
 const JOB_STATUS = {
@@ -20,6 +21,16 @@ const MAX_NODES = 20;
 const MAX_DISTANCE_KM = 2000;
 const MAX_SAMPLES = 500;
 const MAX_RUNTIME_MS = 300000;
+
+type JobRow = {
+  id: string;
+  status: string;
+  input_json: string;
+  result_json: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 type NodeInput = {
   name: string;
@@ -141,6 +152,40 @@ const normalizeTerrainRequest = (value: unknown): CalculationRequest => {
   };
 };
 
+const haversineKm = (a: NodeInput, b: NodeInput): number => {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const lat1 = toRadians(a.lat);
+  const lon1 = toRadians(a.lon);
+  const lat2 = toRadians(b.lat);
+  const lon2 = toRadians(b.lon);
+  const dLat = lat2 - lat1;
+  const dLon = lon2 - lon1;
+  const hav =
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 6371 * (2 * Math.asin(Math.sqrt(hav)));
+};
+
+const fsplDb = (distanceKm: number, frequencyMhz: number): number => {
+  const safeDistanceKm = Math.max(0.001, distanceKm);
+  return 32.44 + 20 * Math.log10(safeDistanceKm) + 20 * Math.log10(frequencyMhz);
+};
+
+const findEndpointNodes = (payload: CalculationRequest): { fromNode: NodeInput; toNode: NodeInput } => {
+  const nodesByName = new Map<string, NodeInput>(
+    payload.input.nodes.map((node) => [node.name.trim().toLowerCase(), node]),
+  );
+  const fromNode = nodesByName.get(payload.input.from_site.trim().toLowerCase());
+  if (!fromNode) throw new Error(`Site not found: ${payload.input.from_site}`);
+  const toNode = nodesByName.get(payload.input.to_site.trim().toLowerCase());
+  if (!toNode) throw new Error(`Site not found: ${payload.input.to_site}`);
+  return { fromNode, toNode };
+};
+
+const estimateSampleCount = (distanceKm: number): number => {
+  const byDistance = Math.ceil(distanceKm / 0.5);
+  return Math.max(2, Math.min(MAX_SAMPLES, byDistance));
+};
+
 const generateJobId = (): string => {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let result = "calc_";
@@ -150,19 +195,23 @@ const generateJobId = (): string => {
   return result;
 };
 
-const getJob = async (env: Env, jobId: string) => {
+const ensureCalculationJobsTable = async (env: Env): Promise<void> => {
+  await env.DB.prepare(
+    "CREATE TABLE IF NOT EXISTS calculation_jobs (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'queued', input_json TEXT NOT NULL, result_json TEXT, error_message TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  ).run();
+  await env.DB.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_calculation_jobs_status ON calculation_jobs(status)",
+  ).run();
+  await env.DB.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_calculation_jobs_created_at ON calculation_jobs(created_at)",
+  ).run();
+};
+
+const getJob = async (env: Env, jobId: string): Promise<JobRow | null> => {
   const stmt = env.DB.prepare(
     "SELECT id, status, input_json, result_json, error_message, created_at, updated_at FROM calculation_jobs WHERE id = ?",
   );
-  const row = await stmt.bind(jobId).first<{
-    id: string;
-    status: string;
-    input_json: string;
-    result_json: string | null;
-    error_message: string | null;
-    created_at: string;
-    updated_at: string;
-  }>();
+  const row = await stmt.bind(jobId).first<JobRow>();
   return row;
 };
 
@@ -173,10 +222,78 @@ const createJob = async (env: Env, jobId: string, inputJson: string): Promise<vo
   await stmt.bind(jobId, JOB_STATUS.QUEUED, inputJson).run();
 };
 
+const updateJob = async (
+  env: Env,
+  jobId: string,
+  status: JobStatus,
+  resultJson: string | null,
+  errorMessage: string | null,
+): Promise<void> => {
+  const stmt = env.DB.prepare(
+    "UPDATE calculation_jobs SET status = ?, result_json = ?, error_message = ?, updated_at = datetime('now') WHERE id = ?",
+  );
+  await stmt.bind(status, resultJson, errorMessage, jobId).run();
+};
+
+const processTerrainJob = async (env: Env, jobId: string): Promise<void> => {
+  const startedAt = Date.now();
+  try {
+    await updateJob(env, jobId, JOB_STATUS.RUNNING, null, null);
+    const row = await getJob(env, jobId);
+    if (!row) throw new Error("Job not found while processing.");
+    const payload = JSON.parse(row.input_json) as CalculationRequest;
+    const { fromNode, toNode } = findEndpointNodes(payload);
+    const distanceKm = haversineKm(fromNode, toNode);
+    if (distanceKm > MAX_DISTANCE_KM) {
+      throw new Error(
+        `Distance ${distanceKm.toFixed(1)} km exceeds maximum of ${MAX_DISTANCE_KM} km for terrain jobs.`,
+      );
+    }
+    const samples = estimateSampleCount(distanceKm);
+    const pathLossDb = fsplDb(distanceKm, payload.input.frequency_mhz);
+    const eirpDbm = fromNode.tx_power_dbm + fromNode.tx_gain_dbi - fromNode.cable_loss_db;
+    const rxDbm = eirpDbm + toNode.rx_gain_dbi - pathLossDb;
+    const verdict = rxDbm >= payload.input.rx_target_dbm ? "PASS" : "FAIL";
+    const runtimeMs = Date.now() - startedAt;
+    if (runtimeMs > MAX_RUNTIME_MS) {
+      await updateJob(env, jobId, JOB_STATUS.TIMED_OUT, null, "Terrain job timed out.");
+      return;
+    }
+
+    const result = {
+      calculation: "link_budget",
+      mode: "terrain",
+      terrain_used: false,
+      terrain_status: "queued_compute_placeholder",
+      result: {
+        from_site: fromNode.name,
+        to_site: toNode.name,
+        distance_km: distanceKm,
+        path_loss_db: pathLossDb,
+        rx_dbm: payload.input.include_rx_dbm ? rxDbm : null,
+        verdict: payload.input.include_verdict ? verdict : null,
+      },
+      meta: {
+        samples_requested: samples,
+        max_samples: MAX_SAMPLES,
+        runtime_ms: runtimeMs,
+        max_runtime_ms: MAX_RUNTIME_MS,
+      },
+      warning:
+        "Terrain jobs endpoint is wired and asynchronous, but terrain tile sampling worker is not enabled yet. Returning FSPL baseline until worker is added.",
+    };
+    await updateJob(env, jobId, JOB_STATUS.COMPLETED, JSON.stringify(result), null);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await updateJob(env, jobId, JOB_STATUS.FAILED, null, message);
+  }
+};
+
 export const onRequestOptions = async ({ request }: Context) => handleOptions(request);
 
-export const onRequestPost = async ({ request, env }: Context) => {
+export const onRequestPost = async ({ request, env, waitUntil }: Context) => {
   try {
+    await ensureCalculationJobsTable(env);
     const limitPerMinute = parsePerMinuteLimit(env.CALC_API_PROXY_RATE_LIMIT_PER_MINUTE, 60);
     const address = getClientAddress(request);
     const limiter = takeRateLimitToken({ key: `calc-jobs:${address}`, limit: limitPerMinute });
@@ -201,6 +318,12 @@ export const onRequestPost = async ({ request, env }: Context) => {
     const inputJson = JSON.stringify(payload);
 
     await createJob(env, jobId, inputJson);
+    const processing = processTerrainJob(env, jobId);
+    if (waitUntil) {
+      waitUntil(processing);
+    } else {
+      await processing;
+    }
 
     return withCors(
       request,
