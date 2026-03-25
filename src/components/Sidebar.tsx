@@ -1,4 +1,3 @@
-import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import Map, {
@@ -41,8 +40,7 @@ import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironme
 import { analyzeLink } from "../lib/propagation";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { PRIMARY_ATTRIBUTION, REMOTE_SRTM_ENDPOINTS } from "../lib/terrainCatalog";
-import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
+import { PRIMARY_ATTRIBUTION } from "../lib/terrainCatalog";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -343,6 +341,7 @@ export function Sidebar() {
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
+  const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
@@ -359,7 +358,7 @@ export function Sidebar() {
   const setLocale = useAppStore((state) => state.setLocale);
   const selectScenario = useAppStore((state) => state.selectScenario);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
-  const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
+  const selectSiteById = useAppStore((state) => state.selectSiteById);
   const setSelectedNetworkId = useAppStore((state) => state.setSelectedNetworkId);
   const setSelectedCoverageMode = useAppStore((state) => state.setSelectedCoverageMode);
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
@@ -381,8 +380,6 @@ export function Sidebar() {
   );
   const setPropagationModel = useAppStore((state) => state.setPropagationModel);
   const updateLink = useAppStore((state) => state.updateLink);
-  const ingestSrtmFiles = useAppStore((state) => state.ingestSrtmFiles);
-  const syncSiteElevationsOnline = useAppStore((state) => state.syncSiteElevationsOnline);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainRecommendation = useAppStore((state) => state.terrainRecommendation);
@@ -399,9 +396,6 @@ export function Sidebar() {
   const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
-  const recommendAndFetchTerrainForCurrentArea = useAppStore(
-    (state) => state.recommendAndFetchTerrainForCurrentArea,
-  );
   const getSelectedAnalysis = useAppStore((state) => state.getSelectedAnalysis);
   const getSelectedLink = useAppStore((state) => state.getSelectedLink);
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
@@ -818,14 +812,14 @@ export function Sidebar() {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
       const preset = simulationPresets.find((candidate) => candidate.id === presetId);
-      return preset ? `${preset.name} (saved)` : "Saved simulation";
+      return preset ? `${preset.name}` : "Saved simulation";
     }
     if (!selectedSimulationRef.trim()) {
       return "no simulation selected";
     }
     const simulationId = selectedSimulationRef.replace("builtin:", "");
     const simulation = scenarioOptions.find((candidate) => candidate.id === simulationId);
-    return simulation ? `${simulation.name} (starter)` : "no simulation selected";
+    return simulation ? `${simulation.name}` : "no simulation selected";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
   const activeSimulationVisibility = useMemo<"private" | "public" | "shared">(() => {
     if (!selectedSimulationRef.startsWith("saved:")) return "shared";
@@ -964,6 +958,7 @@ export function Sidebar() {
   }, [selectedScenarioId, simulationPresets, scenarioOptions]);
   useEffect(() => {
     if (!visibleLinks.length) return;
+    if (!selectedLinkId) return;
     const stillVisible = visibleLinks.some((link) => link.id === selectedLinkId);
     if (stillVisible) return;
     setSelectedLinkId(visibleLinks[0].id);
@@ -1108,12 +1103,6 @@ export function Sidebar() {
     setSelectedCoverageMode(mode);
   };
 
-  const onUploadTiles = async (event: ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files?.length) return;
-    await ingestSrtmFiles(event.target.files);
-    event.target.value = "";
-  };
-
   const exportManifest = () => {
     const terrainSources = srtmTiles.reduce<Record<string, number>>((acc, tile) => {
       const key = tile.sourceLabel ?? "Unknown";
@@ -1143,7 +1132,6 @@ export function Sidebar() {
       autoPropagationEnvironment,
       propagationEnvironment: effectivePropagationEnvironment,
       propagationEnvironmentReason,
-      hasOnlineElevationSync: useAppStore.getState().hasOnlineElevationSync,
       terrainTileCount: srtmTiles.length,
       terrainSources,
       selectedAnalysis: analysis,
@@ -1408,6 +1396,7 @@ export function Sidebar() {
     setNewSimulationDescription("");
     setShowNewSimulationModal(false);
   };
+  const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const displayLinkName = (linkId: string, linkName?: string) => {
     const trimmedName = linkName?.trim();
     if (trimmedName) return trimmedName;
@@ -1415,7 +1404,7 @@ export function Sidebar() {
     if (!link) return linkId;
     const from = sites.find((site) => site.id === link.fromSiteId)?.name ?? "Unknown";
     const to = sites.find((site) => site.id === link.toSiteId)?.name ?? "Unknown";
-    return `${from} -> ${to}`;
+    return `${from} ↔ ${to}`;
   };
   const toggleLibrarySelection = (entryId: string) => {
     setSelectedLibraryIds((current) => {
@@ -2006,24 +1995,16 @@ export function Sidebar() {
       </header>
       <section className="panel-section section-scenario">
         <div className="section-heading">
-          <h2>Simulation</h2>
-          <InfoTip text="Use saved simulations for project work. Starter simulations are only local starting points." />
+          <h2>Simulation: {activeSimulationLabel}</h2>
+          <InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />
         </div>
-        <p className="field-help">
-          <strong>{activeSimulationLabel}</strong>
-        </p>
-        {selectedSimulationRef.startsWith("saved:") ? (
-          <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
-            Edit Simulation
-          </button>
-        ) : null}
-        <div className="chip-group">
+        <div className="chip-group simulation-buttons">
           <button
             className="inline-action"
             onClick={() => setShowSimulationLibraryManager(true)}
             type="button"
           >
-            Open Simulation Library
+            Library
           </button>
           <button
             className="inline-action"
@@ -2035,11 +2016,16 @@ export function Sidebar() {
             }}
             type="button"
           >
-            New Simulation
+            New
           </button>
           <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-            Save a Copy
+            Duplicate
           </button>
+          {selectedSimulationRef.startsWith("saved:") ? (
+            <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
+              Edit
+            </button>
+          ) : null}
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
       </section>
@@ -2047,27 +2033,15 @@ export function Sidebar() {
       <section className="panel-section section-sites">
         <div className="section-heading">
           <h2>Sites</h2>
-          <InfoTip text="Site add/edit is managed in Site Library. Here you only include or remove sites in this simulation." />
-        </div>
-        <p className="field-help">Use Site Library to add/edit sites, then add selected sites to this simulation.</p>
-        <div className="chip-group">
-          <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
-            Open Site Library
-          </button>
-          {newestSiteLibraryEntryId ? (
-            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
-              Insert Newest
-            </button>
-          ) : null}
+          <InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />
         </div>
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
-        <p className="field-help">Current sites in this simulation:</p>
         <div className="site-list">
           {sites.map((site) => (
             <button
-              className={clsx("site-row", selectedSiteId === site.id && "is-selected")}
+              className={clsx("site-row", selectedSiteIds.includes(site.id) && "is-selected")}
               key={site.id}
-              onClick={() => setSelectedSiteId(site.id)}
+              onClick={(event) => selectSiteById(site.id, event.metaKey || event.ctrlKey)}
               type="button"
             >
               <span>{site.name}</span>
@@ -2077,24 +2051,34 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
-          Edit Selected Site
-        </button>
-        <button
-          className="inline-action danger"
-          disabled={sites.length <= 1}
-          onClick={() =>
-            requestDeleteConfirm(
-              "Remove Site",
-              `Remove ${selectedSite.name} from the current simulation?`,
-              () => deleteSite(selectedSite.id),
-              "Remove",
-            )
-          }
-          type="button"
-        >
-          Remove Selected From Simulation
-        </button>
+        <div className="chip-group">
+          <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
+            Library
+          </button>
+          {newestSiteLibraryEntryId ? (
+            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
+              Insert newest
+            </button>
+          ) : null}
+          <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+            Edit
+          </button>
+          <button
+            className="inline-action danger"
+            disabled={sites.length <= 1}
+            onClick={() =>
+              requestDeleteConfirm(
+                "Remove Site",
+                `Remove ${selectedSite.name} from the current simulation?`,
+                () => deleteSite(selectedSite.id),
+                "Remove",
+              )
+            }
+            type="button"
+          >
+            Remove
+          </button>
+        </div>
       </section>
 
       <section className="panel-section section-radio">
@@ -2276,7 +2260,7 @@ export function Sidebar() {
       <section className="panel-section section-path">
         <div className="section-heading">
           <h2>Links</h2>
-          <InfoTip text="Select a link for path analysis. Use Add/Edit/Delete to manage links in this simulation." />
+          <InfoTip text={`Select multiple sites by ${isMac ? "Cmd" : "Ctrl"}+Clicking to instantly view a link. When a link is active on the map, you can save it permanently to this simulation by pressing "Save" in the inspector.`} />
         </div>
         <div className="link-list">
           {visibleLinks.map((link) => (
@@ -2287,16 +2271,15 @@ export function Sidebar() {
               type="button"
             >
               <span className="link-title">{displayLinkName(link.id, link.name)}</span>
-              <span className="link-subtitle">{effectiveNetworkFrequencyMHz.toFixed(3)} MHz (from channel)</span>
             </button>
           ))}
         </div>
         <div className="chip-group">
           <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
-            Add Link
+            New
           </button>
           <button className="inline-action" onClick={openEditLinkModal} type="button">
-            Edit Link
+            Edit
           </button>
           <button
             className="inline-action danger"
@@ -2310,7 +2293,7 @@ export function Sidebar() {
             }
             type="button"
           >
-            Delete Selected Link
+            Remove
           </button>
         </div>
       </section>
@@ -2458,37 +2441,6 @@ export function Sidebar() {
           </div>
         </ModalOverlay>
       ) : null}
-
-      <section className="panel-section section-data">
-        <details className="compact-details">
-          <summary>Terrain & Sources (Advanced)</summary>
-          <p className="field-help">
-            {srtmTiles.length} terrain tile(s) loaded. Terrain is used in profile and obstruction/loss calculations.
-          </p>
-          <button
-            className="inline-action"
-            onClick={() => void recommendAndFetchTerrainForCurrentArea()}
-            type="button"
-          >
-            Auto Fetch Terrain Data
-          </button>
-          <p className="field-help">Automatic source: {TERRAIN_DATASET_LABEL[terrainDataset]}</p>
-          <label className="upload-button">
-            {t(locale, "loadHgt")}
-            <input accept=".hgt,.zip,.hgt.zip" multiple onChange={onUploadTiles} type="file" />
-          </label>
-          <button className="inline-action" onClick={() => void syncSiteElevationsOnline()} type="button">
-            {t(locale, "syncSiteElevations")}
-          </button>
-          {terrainRecommendation ? <p className="field-help">{terrainRecommendation}</p> : null}
-          {terrainFetchStatus ? <p className="field-help">{terrainFetchStatus}</p> : null}
-          <div className="asset-list">
-            <a href={REMOTE_SRTM_ENDPOINTS[terrainDataset]} rel="noreferrer" target="_blank">
-              Open selected terrain dataset page
-            </a>
-          </div>
-        </details>
-      </section>
 
       <section className="panel-section section-results">
         <div className="section-heading">

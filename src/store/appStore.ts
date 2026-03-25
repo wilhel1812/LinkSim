@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { buildCoverageAsync, clearTerrainLossCache } from "../lib/coverage";
-import { fetchElevations } from "../lib/elevationService";
 import { findPresetById } from "../lib/frequencyPlans";
 import { haversineDistanceKm } from "../lib/geo";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -312,11 +311,11 @@ type AppState = {
   simulationRunToken: string;
   isTerrainFetching: boolean;
   isTerrainRecommending: boolean;
-  isElevationSyncing: boolean;
   selectedLinkId: string;
   profileCursorIndex: number;
   temporaryDirectionReversed: boolean;
   selectedSiteId: string;
+  selectedSiteIds: string[];
   selectedNetworkId: string;
   selectedCoverageMode: CoverageMode;
   propagationModel: PropagationModel;
@@ -339,7 +338,6 @@ type AppState = {
   isHighResTerrainLoaded: boolean;
   terrainLoadingStartedAtMs: number;
   terrainLoadEpoch: number;
-  hasOnlineElevationSync: boolean;
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
@@ -383,6 +381,9 @@ type AppState = {
   toggleTemporaryDirectionReversed: () => void;
   setProfileCursorIndex: (index: number) => void;
   setSelectedSiteId: (id: string) => void;
+  selectSiteById: (id: string, additive?: boolean) => void;
+  clearActiveSelection: () => void;
+  getSelectedSiteIds: () => string[];
   setSelectedNetworkId: (id: string) => void;
   setSelectedCoverageMode: (mode: CoverageMode) => void;
   setSelectedFrequencyPresetId: (id: string) => void;
@@ -496,8 +497,6 @@ type AppState = {
   recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
   loadTerrainForCurrentArea: () => Promise<void>;
   clearTerrainCache: () => Promise<void>;
-  syncSiteElevationsOnline: () => Promise<void>;
-  syncSiteElevationOnline: (siteId: string) => Promise<void>;
   recomputeCoverage: () => void;
   getSelectedLink: () => Link;
   getSelectedSite: () => Site;
@@ -1004,6 +1003,54 @@ const normalizeBasemapStylePreset = (value: unknown): string =>
       ? "normal"
       : value.trim()
     : "normal";
+
+const normalizeSelectedSiteIds = (ids: string[], sites: Site[]): string[] => {
+  if (!ids.length) return [];
+  const valid = new Set(sites.map((site) => site.id));
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (!valid.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    deduped.push(id);
+  }
+  return deduped;
+};
+
+const sameSiteSelection = (left: string[], right: string[]): boolean => {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+};
+
+const defaultOverlayModeForSelectionCount = (selectionCount: number): MapOverlayMode => {
+  if (selectionCount <= 0) return "heatmap";
+  if (selectionCount === 1) return "passfail";
+  if (selectionCount === 2) return "relay";
+  return "heatmap";
+};
+
+type TerrainFetchBounds = { minLat: number; maxLat: number; minLon: number; maxLon: number };
+
+const bufferedBoundsForSites = (sites: Site[], radiusKm: number): TerrainFetchBounds | null => {
+  if (!sites.length) return null;
+  const minLat = Math.min(...sites.map((site) => site.position.lat));
+  const maxLat = Math.max(...sites.map((site) => site.position.lat));
+  const minLon = Math.min(...sites.map((site) => site.position.lon));
+  const maxLon = Math.max(...sites.map((site) => site.position.lon));
+  const centerLat = (minLat + maxLat) / 2;
+  const latDelta = Math.max(0.01, radiusKm / 111.32);
+  const lonDelta = Math.max(0.01, radiusKm / (111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180))));
+  return {
+    minLat: minLat - latDelta,
+    maxLat: maxLat + latDelta,
+    minLon: minLon - lonDelta,
+    maxLon: maxLon + lonDelta,
+  };
+};
+
 const initialBasemapProvider = normalizeBasemapProvider(readStorage<string>(BASEMAP_PROVIDER_KEY, "carto"));
 const initialBasemapStylePreset = normalizeBasemapStylePreset(
   readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "normal"),
@@ -1021,11 +1068,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   simulationRunToken: "",
   isTerrainFetching: false,
   isTerrainRecommending: false,
-  isElevationSyncing: false,
   selectedLinkId: "",
   profileCursorIndex: 0,
   temporaryDirectionReversed: false,
   selectedSiteId: "",
+  selectedSiteIds: [],
   selectedNetworkId: "",
   selectedCoverageMode: "BestSite",
   propagationModel: "ITM",
@@ -1048,7 +1095,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   isHighResTerrainLoaded: false,
   terrainLoadingStartedAtMs: 0,
   terrainLoadEpoch: 0,
-  hasOnlineElevationSync: false,
   siteLibrary: initialSiteLibrary,
   simulationPresets: initialSimulationPresets,
   siteDragPreview: {},
@@ -1530,6 +1576,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       systems: scenario.systems,
       networks: scenario.networks,
       selectedSiteId: scenario.defaultSiteId,
+      selectedSiteIds: scenario.defaultSiteId ? [scenario.defaultSiteId] : [],
       selectedLinkId: scenario.defaultLinkId,
       profileCursorIndex: 0,
       temporaryDirectionReversed: false,
@@ -1546,7 +1593,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       isHighResTerrainLoaded: false,
       terrainLoadingStartedAtMs: 0,
       terrainLoadEpoch: 0,
-      hasOnlineElevationSync: false,
       siteDragPreview: {},
       endpointPickTarget: null,
       mapViewport: scenario.viewport,
@@ -1556,15 +1602,108 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCoverage();
   },
   setSelectedLinkId: (id) =>
-    set({ selectedLinkId: id, profileCursorIndex: 0, temporaryDirectionReversed: false }),
+    set((state) => {
+      const selectedLink = state.links.find((link) => link.id === id) ?? null;
+      const selection = selectedLink
+        ? normalizeSelectedSiteIds([selectedLink.fromSiteId, selectedLink.toSiteId], state.sites)
+        : [];
+      const nextOverlay = defaultOverlayModeForSelectionCount(selection.length);
+      if (
+        state.selectedLinkId === id &&
+        state.profileCursorIndex === 0 &&
+        state.temporaryDirectionReversed === false &&
+        state.selectedSiteId === (selection[0] ?? state.selectedSiteId) &&
+        state.mapOverlayMode === nextOverlay &&
+        sameSiteSelection(state.selectedSiteIds, selection)
+      ) {
+        return state;
+      }
+      return {
+        selectedLinkId: id,
+        profileCursorIndex: 0,
+        temporaryDirectionReversed: false,
+        selectedSiteIds: selection,
+        selectedSiteId: selection[0] ?? state.selectedSiteId,
+        mapOverlayMode: nextOverlay,
+      };
+    }),
   setTemporaryDirectionReversed: (value) => set({ temporaryDirectionReversed: Boolean(value) }),
   toggleTemporaryDirectionReversed: () =>
     set((state) => ({ temporaryDirectionReversed: !state.temporaryDirectionReversed })),
   setProfileCursorIndex: (index) => set({ profileCursorIndex: Math.max(0, Math.floor(index)) }),
   setSelectedSiteId: (id) => {
-    set({ selectedSiteId: id });
-    void get().syncSiteElevationOnline(id);
+    set((state) => {
+      const selection = normalizeSelectedSiteIds([id], state.sites);
+      const nextSelectedSiteId = selection[0] ?? id;
+      const nextOverlay = defaultOverlayModeForSelectionCount(selection.length);
+      if (
+        state.selectedSiteId === nextSelectedSiteId &&
+        state.mapOverlayMode === nextOverlay &&
+        sameSiteSelection(state.selectedSiteIds, selection)
+      ) {
+        return state;
+      }
+      return {
+        selectedSiteId: nextSelectedSiteId,
+        selectedSiteIds: selection,
+        mapOverlayMode: nextOverlay,
+      };
+    });
   },
+  selectSiteById: (id, additive = false) => {
+    set((state) => {
+      const validIds = new Set(state.sites.map((site) => site.id));
+      if (!validIds.has(id)) return state;
+      const current = normalizeSelectedSiteIds(state.selectedSiteIds, state.sites);
+      let nextSelection: string[];
+      if (!additive) {
+        nextSelection = [id];
+      } else if (current.includes(id)) {
+        nextSelection = current.filter((candidate) => candidate !== id);
+      } else {
+        nextSelection = [...current, id];
+      }
+      const normalizedSelection = normalizeSelectedSiteIds(nextSelection, state.sites);
+      const nextSelectedSiteId = normalizedSelection[0] ?? "";
+      const nextOverlay = defaultOverlayModeForSelectionCount(normalizedSelection.length);
+      if (
+        state.selectedSiteId === nextSelectedSiteId &&
+        state.mapOverlayMode === nextOverlay &&
+        sameSiteSelection(state.selectedSiteIds, normalizedSelection)
+      ) {
+        return state;
+      }
+      return {
+        selectedSiteIds: normalizedSelection,
+        selectedSiteId: nextSelectedSiteId,
+        mapOverlayMode: nextOverlay,
+      };
+    });
+  },
+  clearActiveSelection: () =>
+    set((state) => {
+      const nextOverlay = defaultOverlayModeForSelectionCount(0);
+      if (
+        !state.selectedSiteIds.length &&
+        !state.selectedSiteId &&
+        !state.selectedLinkId &&
+        !state.temporaryDirectionReversed &&
+        state.endpointPickTarget === null &&
+        state.profileCursorIndex === 0 &&
+        state.mapOverlayMode === nextOverlay
+      ) {
+        return state;
+      }
+      return {
+        selectedSiteIds: [],
+        selectedSiteId: "",
+        selectedLinkId: "",
+        temporaryDirectionReversed: false,
+        endpointPickTarget: null,
+        profileCursorIndex: 0,
+        mapOverlayMode: nextOverlay,
+      };
+    }),
   setSelectedNetworkId: (id) => {
     set({ selectedNetworkId: id });
     get().recomputeCoverage();
@@ -1671,12 +1810,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         sites: [...state.sites, newSite],
         selectedSiteId: id,
+        selectedSiteIds: [id],
+        mapOverlayMode: defaultOverlayModeForSelectionCount(1),
         siteLibrary: nextLibrary,
       };
     });
     get().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
-    void get().syncSiteElevationOnline(id);
   },
   deleteSite: (siteId) => {
     const { currentUser, selectedScenarioId, simulationPresets } = get();
@@ -1715,12 +1855,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       const safeLinkId = remainingLinks[0]?.id ?? "";
       const safeSiteId =
         state.selectedSiteId === siteId ? remainingSites[0].id : state.selectedSiteId;
+      const remainingSelectedIds = normalizeSelectedSiteIds(
+        state.selectedSiteIds.filter((id) => id !== siteId),
+        remainingSites,
+      );
+      const nextSelectedIds = remainingSelectedIds.length
+        ? remainingSelectedIds
+        : safeSiteId && remainingSites.some((site) => site.id === safeSiteId)
+          ? [safeSiteId]
+          : remainingSites[0]
+            ? [remainingSites[0].id]
+            : [];
 
       return {
         sites: remainingSites,
         links: remainingLinks,
-        selectedSiteId: safeSiteId,
+        selectedSiteId: nextSelectedIds[0] ?? safeSiteId,
+        selectedSiteIds: nextSelectedIds,
         selectedLinkId: safeLinkId,
+        mapOverlayMode: defaultOverlayModeForSelectionCount(nextSelectedIds.length),
         networks: state.networks.map((network) => ({
           ...network,
           memberships: network.memberships.filter((member) => member.siteId !== siteId),
@@ -1762,6 +1915,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       links: [...state.links, link],
       selectedLinkId: id,
+      selectedSiteIds: normalizeSelectedSiteIds([fromSiteId, toSiteId], state.sites),
+      selectedSiteId: fromSiteId,
+      mapOverlayMode: defaultOverlayModeForSelectionCount(2),
       temporaryDirectionReversed: false,
     }));
     get().recomputeCoverage();
@@ -1859,6 +2015,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         return {
           links: [fallbackLink],
           selectedLinkId: fallbackLink.id,
+          selectedSiteIds: normalizeSelectedSiteIds([fallbackLink.fromSiteId, fallbackLink.toSiteId], state.sites),
+          selectedSiteId: fallbackLink.fromSiteId,
+          mapOverlayMode: defaultOverlayModeForSelectionCount(2),
           temporaryDirectionReversed: false,
         };
       }
@@ -1866,6 +2025,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         links: remaining,
         selectedLinkId:
           state.selectedLinkId === linkId ? remaining[0].id : state.selectedLinkId,
+        selectedSiteIds:
+          state.selectedLinkId === linkId
+            ? normalizeSelectedSiteIds([remaining[0].fromSiteId, remaining[0].toSiteId], state.sites)
+            : state.selectedSiteIds,
+        selectedSiteId:
+          state.selectedLinkId === linkId
+            ? remaining[0].fromSiteId
+            : state.selectedSiteId,
+        mapOverlayMode:
+          state.selectedLinkId === linkId
+            ? defaultOverlayModeForSelectionCount(2)
+            : state.mapOverlayMode,
         temporaryDirectionReversed:
           state.selectedLinkId === linkId ? false : state.temporaryDirectionReversed,
       };
@@ -1970,15 +2141,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         networks: nextNetworks,
         links: nextLinks,
         selectedSiteId: createdSiteIds[createdSiteIds.length - 1] ?? state.selectedSiteId,
+        selectedSiteIds: createdSiteIds.length
+          ? [createdSiteIds[createdSiteIds.length - 1]]
+          : state.selectedSiteIds,
         selectedNetworkId: state.selectedNetworkId || nextNetworks[0]?.id || "",
         selectedLinkId: state.selectedLinkId || nextLinks[0]?.id || "",
+        mapOverlayMode: defaultOverlayModeForSelectionCount(createdSiteIds.length ? 1 : state.selectedSiteIds.length),
       };
     });
     get().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
-    for (const siteId of createdSiteIds) {
-      void get().syncSiteElevationOnline(siteId);
-    }
   },
   updateSiteLibraryEntry: (entryId, patch) => {
     const { currentUser } = get();
@@ -2331,6 +2503,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const snapshotSystems = Array.isArray(snap.systems) && snap.systems.length ? snap.systems : defaultScenario.systems;
       const snapshotNetworks = Array.isArray(snap.networks) ? snap.networks : [];
       const viewport = defaultScenario.viewport;
+      const loadedAtIso = new Date().toISOString();
       set({
         selectedScenarioId: preset.id,
         sites: [],
@@ -2338,6 +2511,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         systems: snapshotSystems,
         networks: snapshotNetworks,
         selectedSiteId: "",
+        selectedSiteIds: [],
         selectedLinkId: "",
         temporaryDirectionReversed: false,
         selectedNetworkId: "",
@@ -2363,8 +2537,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         terrainDataset: normalizeTerrainDataset(snap.terrainDataset),
         mapViewport: viewport,
         siteDragPreview: {},
+        mapOverlayMode: defaultOverlayModeForSelectionCount(0),
         terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       });
+      writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: loadedAtIso });
       get().recomputeCoverage();
       return;
     }
@@ -2394,6 +2570,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       systems: recovered.systems,
       networks: recovered.networks,
       selectedSiteId,
+      selectedSiteIds: selectedSiteId ? [selectedSiteId] : [],
       selectedLinkId,
       temporaryDirectionReversed: false,
       selectedNetworkId,
@@ -2423,6 +2600,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       siteDragPreview: {},
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       siteLibrary: libraryBacked.siteLibrary,
+      mapOverlayMode: defaultOverlayModeForSelectionCount(selectedSiteId ? 1 : 0),
     });
     if (libraryBacked.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
@@ -2632,7 +2810,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       pendingSiteLibraryOpenEntryId: entryId.trim() ? entryId : null,
     }),
   clearOpenSiteLibraryEntryRequest: () => set({ pendingSiteLibraryOpenEntryId: null }),
-  setMapOverlayMode: (mode) => set({ mapOverlayMode: mode }),
+  setMapOverlayMode: (mode) =>
+    set((state) => {
+      if (state.mapOverlayMode === mode) return state;
+      return { mapOverlayMode: mode };
+    }),
   applyFrequencyPresetToSelectedNetwork: () => {
     const { currentUser, selectedScenarioId, simulationPresets } = get();
     const user = requireAuth(currentUser, "applyFrequencyPresetToSelectedNetwork");
@@ -2804,7 +2986,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { sites } = get();
     if (!sites.length) return;
 
-    const bounds = simulationAreaBoundsForSites(sites);
+    const bounds = bufferedBoundsForSites(sites, 20);
     if (!bounds) return;
 
     set({ terrainRecommendation: "Evaluating terrain dataset coverage...", isTerrainRecommending: true });
@@ -2828,34 +3010,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   fetchTerrainForCurrentArea: async () => {
-    const { sites, srtmTiles, isTerrainFetching, selectedLinkId, links } = get();
+    const { sites, srtmTiles, isTerrainFetching } = get();
     if (isTerrainFetching) return;
     if (!sites.length) return;
 
-    const bounds = simulationAreaBoundsForSites(sites);
-    if (!bounds) return;
+    const coreBounds = bufferedBoundsForSites(sites, 20);
+    const extendedBounds = bufferedBoundsForSites(sites, 40);
+    if (!coreBounds || !extendedBounds) return;
 
-    const requiredTileKeys = new Set(tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon));
+    const requiredTileKeys = new Set(
+      tilesForBounds(coreBounds.minLat, coreBounds.maxLat, coreBounds.minLon, coreBounds.maxLon),
+    );
+    const extendedTileKeys = new Set(
+      tilesForBounds(extendedBounds.minLat, extendedBounds.maxLat, extendedBounds.minLon, extendedBounds.maxLon),
+    );
+    const extendedOnlyKeys = new Set([...extendedTileKeys].filter((key) => !requiredTileKeys.has(key)));
     const existingTileKeys = new Set(srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
     const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
     const SMALL_AREA_TILE_THRESHOLD = 4;
     const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
 
     const endpointKeys = new Set<string>();
-    const selectedLink = links.find((l) => l.id === selectedLinkId) ?? links[0];
-    if (selectedLink) {
-      const fromSite = sites.find((s) => s.id === selectedLink.fromSiteId);
-      const toSite = sites.find((s) => s.id === selectedLink.toSiteId);
-      for (const site of [fromSite, toSite]) {
-        if (!site) continue;
-        for (const dLat of [-1, 0, 1]) {
-          for (const dLon of [-1, 0, 1]) {
-            const lat = site.position.lat + dLat;
-            const lon = site.position.lon + dLon;
-            const ns = lat >= 0 ? "N" : "S";
-            const ew = lon >= 0 ? "E" : "W";
-            endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
-          }
+    const prioritizedSites = sites.length >= 2 ? [sites[0], sites[sites.length - 1]] : sites;
+    for (const site of prioritizedSites) {
+      for (const dLat of [-1, 0, 1]) {
+        for (const dLon of [-1, 0, 1]) {
+          const lat = site.position.lat + dLat;
+          const lon = site.position.lon + dLon;
+          const ns = lat >= 0 ? "N" : "S";
+          const ew = lon >= 0 ? "E" : "W";
+          endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
         }
       }
     }
@@ -2867,30 +3051,37 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainLoadingStartedAtMs: Date.now(),
     });
 
-    const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
-      const result = await loadCopernicusTilesForAreaPhased(
+    const loadPhased = async (
+      dataset: CopernicusDataset,
+      bounds: TerrainFetchBounds,
+      priorityKeys?: Set<string>,
+      skipRemaining = false,
+    ) =>
+      loadCopernicusTilesForAreaPhased(
         bounds.minLat,
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
         dataset,
-        isSmallArea ? undefined : endpointKeys,
+        priorityKeys,
+        { skipRemaining },
       );
-      return {
-        tiles: [...result.priority.tiles, ...result.remaining.tiles],
-        failedTiles: [...result.priority.failedTiles, ...result.remaining.failedTiles],
-        fetchedTiles: [...result.priority.fetchedTiles, ...result.remaining.fetchedTiles],
-        cacheHits: [...result.priority.cacheHits, ...result.remaining.cacheHits],
-        fallbackTiles: [...result.priority.fallbackTiles, ...result.remaining.fallbackTiles],
-      };
-    };
 
     const applyTiles = (result: CopernicusLoadResult) => {
+      if (!result.tiles.length) return;
       set((state) => ({
         srtmTiles: mergeSrtmTiles(state.srtmTiles, result.tiles),
       }));
       get().recomputeCoverage();
     };
+
+    const mergeLoadResults = (left: CopernicusLoadResult, right: CopernicusLoadResult): CopernicusLoadResult => ({
+      tiles: [...left.tiles, ...right.tiles],
+      failedTiles: [...left.failedTiles, ...right.failedTiles],
+      fetchedTiles: [...left.fetchedTiles, ...right.fetchedTiles],
+      cacheHits: [...left.cacheHits, ...right.cacheHits],
+      fallbackTiles: [...left.fallbackTiles, ...right.fallbackTiles],
+    });
 
     const formatStatus = (result: CopernicusLoadResult, sourceLabel: string, priorityLoaded = false): string => {
       const parts = [
@@ -2913,8 +3104,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (isSmallArea) {
         set({ terrainFetchStatus: "Loading terrain (30m, small area)...", isHighResTerrainLoaded: false });
-        const thirtyResult = await loadAndMerge("copernicus30");
-        applyTiles(thirtyResult);
+        const phased = await loadPhased("copernicus30", coreBounds);
+        applyTiles(phased.priority);
+        applyTiles(phased.remaining);
+        const thirtyResult = mergeLoadResults(phased.priority, phased.remaining);
         set({
           terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
           isTerrainFetching: false,
@@ -2925,8 +3118,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      const ninetyResult = await loadAndMerge("copernicus90");
-      applyTiles(ninetyResult);
+      const ninetyPhased = await loadPhased("copernicus90", coreBounds, endpointKeys);
+      applyTiles(ninetyPhased.priority);
+      set({ terrainFetchStatus: "Loading terrain (90m, broad coverage refinement)..." });
+      applyTiles(ninetyPhased.remaining);
+      const ninetyResult = mergeLoadResults(ninetyPhased.priority, ninetyPhased.remaining);
 
       const currentState = get();
       const currentTileKeys = new Set(currentState.srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
@@ -2937,8 +3133,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       set({ terrainFetchStatus: "Loading terrain (30m, high-res refinement)...", isHighResTerrainLoaded: false });
-      const thirtyResult = await loadAndMerge("copernicus30");
-      applyTiles(thirtyResult);
+      const thirtyPhased = await loadPhased("copernicus30", coreBounds, endpointKeys);
+      applyTiles(thirtyPhased.priority);
+      applyTiles(thirtyPhased.remaining);
+      const thirtyResult = mergeLoadResults(thirtyPhased.priority, thirtyPhased.remaining);
+
+      if (extendedOnlyKeys.size > 0) {
+        set({ terrainFetchStatus: "Loading terrain (30m, extended radial area)..." });
+        const extendedPhased = await loadPhased("copernicus30", extendedBounds, extendedOnlyKeys, true);
+        applyTiles(extendedPhased.priority);
+      }
       set({
         terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
         isTerrainFetching: false,
@@ -2957,8 +3161,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { sites } = get();
     if (!sites.length) return;
 
-    const bounds = simulationAreaBoundsForSites(sites);
-    if (!bounds) return;
+    const coreBounds = bufferedBoundsForSites(sites, 20);
+    const extendedBounds = bufferedBoundsForSites(sites, 40);
+    if (!coreBounds || !extendedBounds) return;
 
     const { terrainLoadEpoch: currentEpoch } = get();
     const epoch = currentEpoch + 1;
@@ -2974,10 +3179,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const copernicusRecommendation = await recommendCopernicusDatasetForArea(
-        bounds.minLat,
-        bounds.maxLat,
-        bounds.minLon,
-        bounds.maxLon,
+        coreBounds.minLat,
+        coreBounds.maxLat,
+        coreBounds.minLon,
+        coreBounds.maxLon,
         ["copernicus90"] as const,
       );
       if (get().terrainLoadEpoch !== epoch) return;
@@ -3002,28 +3207,29 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (get().terrainLoadEpoch !== epoch) return;
 
-    const { srtmTiles, selectedLinkId, links } = get();
-    const requiredTileKeys = new Set(tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon));
+    const { srtmTiles } = get();
+    const requiredTileKeys = new Set(
+      tilesForBounds(coreBounds.minLat, coreBounds.maxLat, coreBounds.minLon, coreBounds.maxLon),
+    );
+    const extendedTileKeys = new Set(
+      tilesForBounds(extendedBounds.minLat, extendedBounds.maxLat, extendedBounds.minLon, extendedBounds.maxLon),
+    );
+    const extendedOnlyKeys = new Set([...extendedTileKeys].filter((key) => !requiredTileKeys.has(key)));
     const existingTileKeys = new Set(srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
     const alreadyHasHighRes = [...requiredTileKeys].every((k) => existingTileKeys.has(k));
     const SMALL_AREA_TILE_THRESHOLD = 4;
     const isSmallArea = requiredTileKeys.size <= SMALL_AREA_TILE_THRESHOLD;
 
     const endpointKeys = new Set<string>();
-    const selectedLink = links.find((l) => l.id === selectedLinkId) ?? links[0];
-    if (selectedLink) {
-      const fromSite = sites.find((s) => s.id === selectedLink.fromSiteId);
-      const toSite = sites.find((s) => s.id === selectedLink.toSiteId);
-      for (const site of [fromSite, toSite]) {
-        if (!site) continue;
-        for (const dLat of [-1, 0, 1]) {
-          for (const dLon of [-1, 0, 1]) {
-            const lat = site.position.lat + dLat;
-            const lon = site.position.lon + dLon;
-            const ns = lat >= 0 ? "N" : "S";
-            const ew = lon >= 0 ? "E" : "W";
-            endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
-          }
+    const prioritizedSites = sites.length >= 2 ? [sites[0], sites[sites.length - 1]] : sites;
+    for (const site of prioritizedSites) {
+      for (const dLat of [-1, 0, 1]) {
+        for (const dLon of [-1, 0, 1]) {
+          const lat = site.position.lat + dLat;
+          const lon = site.position.lon + dLon;
+          const ns = lat >= 0 ? "N" : "S";
+          const ew = lon >= 0 ? "E" : "W";
+          endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
         }
       }
     }
@@ -3033,30 +3239,37 @@ export const useAppStore = create<AppState>((set, get) => ({
       isHighResTerrainLoaded: alreadyHasHighRes,
     });
 
-    const loadAndMerge = async (dataset: CopernicusDataset): Promise<CopernicusLoadResult> => {
-      const result = await loadCopernicusTilesForAreaPhased(
+    const loadPhased = async (
+      dataset: CopernicusDataset,
+      bounds: TerrainFetchBounds,
+      priorityKeys?: Set<string>,
+      skipRemaining = false,
+    ) =>
+      loadCopernicusTilesForAreaPhased(
         bounds.minLat,
         bounds.maxLat,
         bounds.minLon,
         bounds.maxLon,
         dataset,
-        isSmallArea ? undefined : endpointKeys,
+        priorityKeys,
+        { skipRemaining },
       );
-      return {
-        tiles: [...result.priority.tiles, ...result.remaining.tiles],
-        failedTiles: [...result.priority.failedTiles, ...result.remaining.failedTiles],
-        fetchedTiles: [...result.priority.fetchedTiles, ...result.remaining.fetchedTiles],
-        cacheHits: [...result.priority.cacheHits, ...result.remaining.cacheHits],
-        fallbackTiles: [...result.priority.fallbackTiles, ...result.remaining.fallbackTiles],
-      };
-    };
 
     const applyTiles = (result: CopernicusLoadResult) => {
+      if (!result.tiles.length) return;
       set((state) => ({
         srtmTiles: mergeSrtmTiles(state.srtmTiles, result.tiles),
       }));
       get().recomputeCoverage();
     };
+
+    const mergeLoadResults = (left: CopernicusLoadResult, right: CopernicusLoadResult): CopernicusLoadResult => ({
+      tiles: [...left.tiles, ...right.tiles],
+      failedTiles: [...left.failedTiles, ...right.failedTiles],
+      fetchedTiles: [...left.fetchedTiles, ...right.fetchedTiles],
+      cacheHits: [...left.cacheHits, ...right.cacheHits],
+      fallbackTiles: [...left.fallbackTiles, ...right.fallbackTiles],
+    });
 
     const formatStatus = (result: CopernicusLoadResult, sourceLabel: string): string => {
       const parts = [
@@ -3079,9 +3292,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (isSmallArea) {
         set({ terrainFetchStatus: "Loading terrain (30m, small area)...", isHighResTerrainLoaded: false });
-        const thirtyResult = await loadAndMerge("copernicus30");
+        const phased = await loadPhased("copernicus30", coreBounds);
         if (get().terrainLoadEpoch !== epoch) return;
-        applyTiles(thirtyResult);
+        applyTiles(phased.priority);
+        applyTiles(phased.remaining);
+        const thirtyResult = mergeLoadResults(phased.priority, phased.remaining);
         set({
           terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
           isTerrainFetching: false,
@@ -3091,9 +3306,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      const ninetyResult = await loadAndMerge("copernicus90");
+      const ninetyPhased = await loadPhased("copernicus90", coreBounds, endpointKeys);
       if (get().terrainLoadEpoch !== epoch) return;
-      applyTiles(ninetyResult);
+      applyTiles(ninetyPhased.priority);
+      applyTiles(ninetyPhased.remaining);
+      const ninetyResult = mergeLoadResults(ninetyPhased.priority, ninetyPhased.remaining);
 
       const currentState = get();
       const currentTileKeys = new Set(currentState.srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
@@ -3104,9 +3321,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       set({ terrainFetchStatus: "Loading terrain (30m, high-res refinement)...", isHighResTerrainLoaded: false });
-      const thirtyResult = await loadAndMerge("copernicus30");
+      const thirtyPhased = await loadPhased("copernicus30", coreBounds, endpointKeys);
       if (get().terrainLoadEpoch !== epoch) return;
-      applyTiles(thirtyResult);
+      applyTiles(thirtyPhased.priority);
+      applyTiles(thirtyPhased.remaining);
+      const thirtyResult = mergeLoadResults(thirtyPhased.priority, thirtyPhased.remaining);
+
+      if (extendedOnlyKeys.size > 0) {
+        set({ terrainFetchStatus: "Loading terrain (30m, extended radial area)..." });
+        const extendedPhased = await loadPhased("copernicus30", extendedBounds, extendedOnlyKeys, true);
+        if (get().terrainLoadEpoch !== epoch) return;
+        applyTiles(extendedPhased.priority);
+      }
       set({
         terrainFetchStatus: formatStatus(thirtyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus30),
         isTerrainFetching: false,
@@ -3131,86 +3357,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: "Terrain source caches cleared.",
     }));
     get().recomputeCoverage();
-  },
-  syncSiteElevationOnline: async (siteId) => {
-    const site = get().sites.find((candidate) => candidate.id === siteId);
-    if (!site) return;
-    if (!Number.isFinite(site.position.lat) || !Number.isFinite(site.position.lon)) return;
-    if (site.groundElevationM > 0) return;
-
-    set({ isElevationSyncing: true });
-    try {
-      const [elevation] = await fetchElevations([site.position]);
-      if (!Number.isFinite(elevation)) return;
-      set((state) => ({
-        sites: state.sites.map((candidate) =>
-          candidate.id === siteId ? { ...candidate, groundElevationM: Math.round(elevation) } : candidate,
-        ),
-        hasOnlineElevationSync: true,
-      }));
-      get().recomputeCoverage();
-    } catch {
-      // Keep manual/default elevation when online sync fails.
-    } finally {
-      set({ isElevationSyncing: false });
-    }
-  },
-  syncSiteElevationsOnline: async () => {
-    const sites = get().sites;
-    const requestSites = sites.map((site) => ({
-      id: site.id,
-      position: site.position,
-    }));
-    const requestById = new Map(requestSites.map((site) => [site.id, site]));
-    set({ isElevationSyncing: true });
-    try {
-      const elevations = await fetchElevations(requestSites.map((site) => site.position));
-      const elevationById = new Map<string, number>();
-      requestSites.forEach((site, index) => {
-        const elevation = elevations[index];
-        if (Number.isFinite(elevation)) {
-          elevationById.set(site.id, Math.round(elevation));
-        }
-      });
-
-      set((state) => {
-        const isStale =
-          state.sites.length !== requestSites.length ||
-          state.sites.some((site) => {
-            const requested = requestById.get(site.id);
-            return (
-              !requested ||
-              requested.position.lat !== site.position.lat ||
-              requested.position.lon !== site.position.lon
-            );
-          });
-        if (isStale) {
-          return {};
-        }
-
-        let appliedAny = false;
-        const nextSites = state.sites.map((site) => {
-          const nextElevation = elevationById.get(site.id);
-          if (typeof nextElevation !== "number") return site;
-          appliedAny = true;
-          return {
-            ...site,
-            groundElevationM: nextElevation,
-          };
-        });
-
-        if (!appliedAny) {
-          return {};
-        }
-
-        return {
-          sites: nextSites,
-          hasOnlineElevationSync: true,
-        };
-      });
-    } finally {
-      set({ isElevationSyncing: false });
-    }
   },
   recomputeCoverage: () => {
     const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -3393,9 +3539,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   },
   getSelectedSite: () => {
-    const { sites, selectedSiteId } = get();
-    const site = sites.find((candidate) => candidate.id === selectedSiteId);
+    const { sites, selectedSiteId, selectedSiteIds } = get();
+    const normalizedIds = normalizeSelectedSiteIds(selectedSiteIds, sites);
+    const site = sites.find((candidate) => candidate.id === (normalizedIds[0] ?? selectedSiteId));
     return site ?? sites[0] ?? defaultScenario.sites[0];
+  },
+  getSelectedSiteIds: () => {
+    const { sites, selectedSiteIds, selectedSiteId } = get();
+    const normalizedIds = normalizeSelectedSiteIds(selectedSiteIds, sites);
+    if (normalizedIds.length) return normalizedIds;
+    if (selectedSiteId && sites.some((site) => site.id === selectedSiteId)) return [selectedSiteId];
+    return [];
   },
   getSelectedNetwork: () => {
     const { networks, selectedNetworkId } = get();
@@ -3403,7 +3557,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     return network ?? networks[0] ?? defaultScenario.networks[0];
   },
   getSelectedSites: () => {
-    const { sites, getSelectedLink, temporaryDirectionReversed } = get();
+    const { sites, getSelectedLink, temporaryDirectionReversed, getSelectedSiteIds } = get();
+    const selectedIds = getSelectedSiteIds();
+    if (selectedIds.length >= 2) {
+      const fromId = selectedIds[0];
+      const toId = selectedIds[selectedIds.length - 1];
+      const effectiveFromId = temporaryDirectionReversed ? toId : fromId;
+      const effectiveToId = temporaryDirectionReversed ? fromId : toId;
+      const fromSite = sites.find((s) => s.id === effectiveFromId);
+      const toSite = sites.find((s) => s.id === effectiveToId);
+      return {
+        fromSite: fromSite ?? sites[0] ?? defaultScenario.sites[0],
+        toSite: toSite ?? sites[Math.min(1, Math.max(0, sites.length - 1))] ?? defaultScenario.sites[1],
+      };
+    }
     const link = getSelectedLink();
     const effectiveFromId = temporaryDirectionReversed ? link.toSiteId : link.fromSiteId;
     const effectiveToId = temporaryDirectionReversed ? link.fromSiteId : link.toSiteId;
