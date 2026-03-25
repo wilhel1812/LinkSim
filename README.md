@@ -92,12 +92,6 @@ Behavior notes:
 - Result includes app-style pass/fail text, for example `LOS clear + fail at 83.39 km (-133.6 dBm after env loss)`
 - Edge rate limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
 
-Production routing through LinkSim Pages:
-
-- Public endpoint: `https://linksim.link/api/v1/calculate`
-- Pages proxy upstream: `CALC_API_BASE_URL` (defaults set in Wrangler config)
-- Edge proxy limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
-
 Example request:
 
 ```bash
