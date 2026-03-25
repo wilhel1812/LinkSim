@@ -2135,6 +2135,17 @@ input {
   background: color-mix(in srgb, var(--surface) 86%, transparent);
 }
 
+.tutorial-inline-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tutorial-inline-link:hover {
+  opacity: 0.8;
+}
+
 .welcome-compact-card {
   width: min(440px, 92vw);
   padding: 24px 28px;

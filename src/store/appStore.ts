@@ -344,6 +344,7 @@ type AppState = {
   endpointPickTarget: "from" | "to" | null;
   showSimulationLibraryRequest: boolean;
   showNewSimulationRequest: boolean;
+  showSiteLibraryRequest: boolean;
   pendingSiteLibraryDraft:
     | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
     | null;
@@ -483,6 +484,7 @@ type AppState = {
   clearPendingSiteLibraryDraft: () => void;
   setShowSimulationLibraryRequest: (show: boolean) => void;
   setShowNewSimulationRequest: (show: boolean) => void;
+  setShowSiteLibraryRequest: (show: boolean) => void;
   requestOpenSiteLibraryEntry: (entryId: string) => void;
   clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
@@ -1104,6 +1106,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingSiteLibraryDraft: null,
   showSimulationLibraryRequest: false,
   showNewSimulationRequest: false,
+  showSiteLibraryRequest: false,
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
@@ -2813,6 +2816,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
   setShowSimulationLibraryRequest: (show) => set({ showSimulationLibraryRequest: show }),
   setShowNewSimulationRequest: (show) => set({ showNewSimulationRequest: show }),
+  setShowSiteLibraryRequest: (show) => set({ showSiteLibraryRequest: show }),
   requestOpenSiteLibraryEntry: (entryId) =>
     set({
       pendingSiteLibraryOpenEntryId: entryId.trim() ? entryId : null,
