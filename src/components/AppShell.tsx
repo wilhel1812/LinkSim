@@ -136,11 +136,19 @@ export function AppShell() {
     const selectedSites = selectedSiteIds
       .map((id) => sites.find((site) => site.id === id))
       .filter((site): site is NonNullable<typeof site> => Boolean(site));
+    const selectedSiteIdSet = new Set(selectedSiteIds);
 
     let selectedLinkSlugs: string[] | undefined;
     let selectedSiteSlugs: string[] | undefined;
 
-    if (selectedLink) {
+    const hasExplicitLinkSelection =
+      Boolean(selectedLink) &&
+      selectedSiteIds.length === 2 &&
+      selectedLink !== null &&
+      selectedSiteIdSet.has(selectedLink.fromSiteId) &&
+      selectedSiteIdSet.has(selectedLink.toSiteId);
+
+    if (hasExplicitLinkSelection && selectedLink) {
       selectedLinkSlugs = [selectedLink.fromSiteId, selectedLink.toSiteId]
         .map((id) => sites.find((s) => s.id === id)?.name)
         .filter((name): name is string => Boolean(name));

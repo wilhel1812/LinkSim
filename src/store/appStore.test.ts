@@ -382,6 +382,34 @@ describe("appStore auth guards", () => {
     expect(useAppStore.getState().sites.length).toBe(beforeSiteCount);
     expect(warnSpy).toHaveBeenCalled();
   });
+
+  it("clears selectedLinkId when switching to single-site selection", () => {
+    useAppStore.setState({
+      selectedLinkId: "lnk-1",
+      selectedSiteId: "site-1",
+      selectedSiteIds: ["site-1", "site-2"],
+    });
+
+    useAppStore.getState().setSelectedSiteId("site-2");
+
+    const state = useAppStore.getState();
+    expect(state.selectedLinkId).toBe("");
+    expect(state.selectedSiteIds).toEqual(["site-2"]);
+  });
+
+  it("clears selectedLinkId when toggling additive site selection", () => {
+    useAppStore.setState({
+      selectedLinkId: "lnk-1",
+      selectedSiteId: "site-1",
+      selectedSiteIds: ["site-1", "site-2"],
+    });
+
+    useAppStore.getState().selectSiteById("site-1", true);
+
+    const state = useAppStore.getState();
+    expect(state.selectedLinkId).toBe("");
+    expect(state.selectedSiteIds).toEqual(["site-2"]);
+  });
 });
 
 describe("appStore blank simulation loading", () => {
