@@ -1,50 +1,18 @@
-import { getClientAddress, takeRateLimitToken } from "../../_lib/rateLimit";
+import { analyzeLink } from "../../../src/lib/propagation";
+import { defaultPropagationEnvironment } from "../../../src/lib/propagationEnvironment";
 import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
+import { getClientAddress, takeRateLimitToken } from "../../_lib/rateLimit";
+import {
+  findEndpointNodes,
+  haversineKm,
+  MAX_SYNC_DISTANCE_KM,
+  normalizeCalculationRequest,
+  toSitesAndLink,
+  type CalculationRequest,
+} from "../../_lib/calculateShared";
 import type { Env } from "../../_lib/types";
 
-type Context = {
-  request: Request;
-  env: Env;
-};
-
-const JOB_STATUS = {
-  QUEUED: "queued",
-  RUNNING: "running",
-  COMPLETED: "completed",
-  FAILED: "failed",
-  TIMED_OUT: "timed_out",
-} as const;
-type JobStatus = (typeof JOB_STATUS)[keyof typeof JOB_STATUS];
-
-const MAX_NODES = 20;
-const MAX_DISTANCE_KM = 500;
-const MAX_SAMPLES = 500;
-
-type NodeInput = {
-  name: string;
-  lat: number;
-  lon: number;
-  tx_power_dbm: number;
-  tx_gain_dbi: number;
-  rx_gain_dbi: number;
-  cable_loss_db: number;
-};
-
-type LinkBudgetInput = {
-  from_site: string;
-  to_site: string;
-  frequency_mhz: number;
-  rx_target_dbm: number;
-  mode: "fast" | "terrain";
-  include_verdict: boolean;
-  include_rx_dbm: boolean;
-  nodes: NodeInput[];
-};
-
-type CalculationRequest = {
-  calculation: "link_budget";
-  input: LinkBudgetInput;
-};
+type Context = { request: Request; env: Env };
 
 const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number => {
   const parsed = Number(raw ?? "");
@@ -52,174 +20,43 @@ const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number 
   return Math.max(1, Math.floor(parsed));
 };
 
-const asRecord = (value: unknown, errorMessage: string): Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(errorMessage);
-  }
-  return value as Record<string, unknown>;
-};
-
-const asFiniteNumber = (value: unknown, fieldName: string): number => {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`${fieldName} must be a valid number.`);
-  }
-  return value;
-};
-
-const asString = (value: unknown, fieldName: string): string => {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${fieldName} is required.`);
-  }
-  return value.trim();
-};
-
-const haversineKm = (a: NodeInput, b: NodeInput): number => {
-  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
-  const lat1 = toRadians(a.lat);
-  const lon1 = toRadians(a.lon);
-  const lat2 = toRadians(b.lat);
-  const lon2 = toRadians(b.lon);
-  const dLat = lat2 - lat1;
-  const dLon = lon2 - lon1;
-  const hav =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 6371 * (2 * Math.asin(Math.sqrt(hav)));
-};
-
-const fsplDb = (distanceKm: number, frequencyMhz: number): number => {
-  const safeDistanceKm = Math.max(0.001, distanceKm);
-  return 32.44 + 20 * Math.log10(safeDistanceKm) + 20 * Math.log10(frequencyMhz);
-};
-
-const normalizeBool = (value: unknown, fallback: boolean): boolean => {
-  if (typeof value === "boolean") return value;
-  return fallback;
-};
-
-const normalizeMode = (value: unknown): "fast" | "terrain" => {
-  if (value === "terrain") return "terrain";
-  return "fast";
-};
-
-const normalizeNode = (value: unknown, index: number): NodeInput => {
-  const row = asRecord(value, `nodes[${index}] must be an object.`);
-  const lat = asFiniteNumber(row.lat, `nodes[${index}].lat`);
-  const lon = asFiniteNumber(row.lon, `nodes[${index}].lon`);
-  if (lat < -90 || lat > 90) throw new Error(`nodes[${index}].lat must be between -90 and 90.`);
-  if (lon < -180 || lon > 180) throw new Error(`nodes[${index}].lon must be between -180 and 180.`);
-
-  return {
-    name: asString(row.name, `nodes[${index}].name`),
-    lat,
-    lon,
-    tx_power_dbm: typeof row.tx_power_dbm === "number" ? row.tx_power_dbm : 14,
-    tx_gain_dbi: typeof row.tx_gain_dbi === "number" ? row.tx_gain_dbi : 2,
-    rx_gain_dbi: typeof row.rx_gain_dbi === "number" ? row.rx_gain_dbi : 2,
-    cable_loss_db: typeof row.cable_loss_db === "number" ? row.cable_loss_db : 1,
-  };
-};
-
-const normalizeRequest = (value: unknown): CalculationRequest => {
-  const root = asRecord(value, "Request body must be a JSON object.");
-  if (root.calculation !== "link_budget") {
-    throw new Error("Unsupported calculation type: link_budget is currently the only supported value.");
-  }
-  const input = asRecord(root.input, "input is required.");
-  const nodesRaw = input.nodes;
-  if (!Array.isArray(nodesRaw) || nodesRaw.length < 2) {
-    throw new Error("input.nodes must contain at least 2 sites.");
-  }
-
-  const fromSite =
-    typeof input.from_site === "string"
-      ? input.from_site
-      : typeof input.from_node === "string"
-        ? input.from_node
-        : "";
-  const toSite =
-    typeof input.to_site === "string"
-      ? input.to_site
-      : typeof input.to_node === "string"
-        ? input.to_node
-        : "";
-
-  const normalizedInput: LinkBudgetInput = {
-    from_site: asString(fromSite, "input.from_site"),
-    to_site: asString(toSite, "input.to_site"),
-    frequency_mhz: asFiniteNumber(input.frequency_mhz, "input.frequency_mhz"),
-    rx_target_dbm: typeof input.rx_target_dbm === "number" ? input.rx_target_dbm : -100,
-    mode: normalizeMode(input.mode),
-    include_verdict: normalizeBool(input.include_verdict, true),
-    include_rx_dbm: normalizeBool(input.include_rx_dbm, true),
-    nodes: nodesRaw.map((row, index) => normalizeNode(row, index)),
-  };
-
-  if (normalizedInput.frequency_mhz <= 0) {
-    throw new Error("input.frequency_mhz must be greater than 0.");
-  }
-
-  if (normalizedInput.nodes.length > MAX_NODES) {
-    throw new Error(`input.nodes exceeds maximum of ${MAX_NODES} sites.`);
-  }
-
-  return {
-    calculation: "link_budget",
-    input: normalizedInput,
-  };
-};
-
-const validateDistanceLimits = (request: CalculationRequest): void => {
-  const nodesByName = new Map<string, NodeInput>(
-    request.input.nodes.map((node) => [node.name.trim().toLowerCase(), node]),
-  );
-  const fromNode = nodesByName.get(request.input.from_site.trim().toLowerCase());
-  const toNode = nodesByName.get(request.input.to_site.trim().toLowerCase());
-  if (!fromNode || !toNode) return;
-
+const validateSyncDistance = (payload: CalculationRequest): void => {
+  const { fromNode, toNode } = findEndpointNodes(payload);
   const distanceKm = haversineKm(fromNode, toNode);
-  if (distanceKm > MAX_DISTANCE_KM) {
+  if (distanceKm > MAX_SYNC_DISTANCE_KM) {
     throw new Error(
-      `Distance ${distanceKm.toFixed(1)} km exceeds maximum of ${MAX_DISTANCE_KM} km for synchronous calculation. ` +
-        `Use POST /api/v1/calculate/jobs for longer paths.`,
+      `Distance ${distanceKm.toFixed(1)} km exceeds maximum of ${MAX_SYNC_DISTANCE_KM} km for synchronous calculation. ` +
+        "Use POST /api/v1/calculate/jobs for longer paths.",
     );
   }
 };
 
-const calculateLinkBudget = (request: CalculationRequest) => {
-  if (request.input.mode === "terrain") {
+const calculateFast = (payload: CalculationRequest) => {
+  if (payload.input.mode === "terrain") {
     throw new Error(
-      "Terrain mode is not available on synchronous /api/v1/calculate. " +
-        `Use POST /api/v1/calculate/jobs for terrain-aware calculations (supports up to ${MAX_DISTANCE_KM} km).`,
+      `Terrain mode is not available on synchronous /api/v1/calculate. Use POST /api/v1/calculate/jobs for terrain-aware calculations (supports up to ${MAX_SYNC_DISTANCE_KM} km).`,
     );
   }
 
-  validateDistanceLimits(request);
-
-  const nodesByName = new Map<string, NodeInput>(
-    request.input.nodes.map((node) => [node.name.trim().toLowerCase(), node]),
-  );
-  const fromNode = nodesByName.get(request.input.from_site.trim().toLowerCase());
-  if (!fromNode) throw new Error(`Site not found: ${request.input.from_site}`);
-  const toNode = nodesByName.get(request.input.to_site.trim().toLowerCase());
-  if (!toNode) throw new Error(`Site not found: ${request.input.to_site}`);
-
-  const distanceKm = haversineKm(fromNode, toNode);
-  const pathLossDb = fsplDb(distanceKm, request.input.frequency_mhz);
-  const eirpDbm = fromNode.tx_power_dbm + fromNode.tx_gain_dbi - fromNode.cable_loss_db;
-  const rxDbm = eirpDbm + toNode.rx_gain_dbi - pathLossDb;
-  const verdict = rxDbm >= request.input.rx_target_dbm ? "PASS" : "FAIL";
+  validateSyncDistance(payload);
+  const { fromNode, toNode } = findEndpointNodes(payload);
+  const { fromSite, toSite, link } = toSitesAndLink(payload, 0, 0);
+  const analysis = analyzeLink(link, fromSite, toSite, "FSPL", undefined, {
+    environment: defaultPropagationEnvironment(),
+  });
+  const verdict = analysis.rxLevelDbm >= payload.input.rx_target_dbm ? "PASS" : "FAIL";
 
   return {
     calculation: "link_budget",
-    mode: request.input.mode,
+    mode: "fast",
     terrain_used: false,
     result: {
       from_site: fromNode.name,
       to_site: toNode.name,
-      distance_km: distanceKm,
-      path_loss_db: pathLossDb,
-      rx_dbm: request.input.include_rx_dbm ? rxDbm : null,
-      verdict: request.input.include_verdict ? verdict : null,
+      distance_km: analysis.distanceKm,
+      path_loss_db: analysis.pathLossDb,
+      rx_dbm: payload.input.include_rx_dbm ? analysis.rxLevelDbm : null,
+      verdict: payload.input.include_verdict ? verdict : null,
     },
   };
 };
@@ -236,18 +73,13 @@ export const onRequestPost = async ({ request, env }: Context) => {
         request,
         json(
           { error: "Calculation API rate limit reached. Please wait and try again." },
-          {
-            status: 429,
-            headers: {
-              "retry-after": String(limiter.retryAfterSec),
-            },
-          },
+          { status: 429, headers: { "retry-after": String(limiter.retryAfterSec) } },
         ),
       );
     }
 
-    const payload = normalizeRequest(await request.json());
-    return withCors(request, json(calculateLinkBudget(payload)));
+    const payload = normalizeCalculationRequest(await request.json());
+    return withCors(request, json(calculateFast(payload)));
   } catch (error) {
     return errorResponse(request, error, 400);
   }
