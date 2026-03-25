@@ -579,18 +579,19 @@ export function AppShell() {
       const latest = useAppStore.getState();
       const decodedLinkSlugs = payload.selectedLinkSlugs?.map(safeDecode);
       const decodedSiteSlugs = payload.selectedSiteSlugs?.map(safeDecode);
+      const normalizeForMatch = (value: string): string => slugifyName(value);
       if (decodedLinkSlugs && decodedLinkSlugs.length === 2) {
         const [fromSlug, toSlug] = decodedLinkSlugs;
-        const fromPretty = slugifyName(fromSlug);
-        const toPretty = slugifyName(toSlug);
+        const fromPretty = normalizeForMatch(fromSlug);
+        const toPretty = normalizeForMatch(toSlug);
         const fromCanonical = canonicalizeDeepLinkKey(fromSlug);
         const toCanonical = canonicalizeDeepLinkKey(toSlug);
         const bySlug = latest.links.find(
           (link) => {
             const fromName = latest.sites.find((s) => s.id === link.fromSiteId)?.name ?? "";
             const toName = latest.sites.find((s) => s.id === link.toSiteId)?.name ?? "";
-            const fromNamePretty = slugifyName(fromName);
-            const toNamePretty = slugifyName(toName);
+            const fromNamePretty = normalizeForMatch(fromName);
+            const toNamePretty = normalizeForMatch(toName);
             const fromNameCanonical = canonicalizeDeepLinkKey(fromName);
             const toNameCanonical = canonicalizeDeepLinkKey(toName);
             return (
@@ -601,26 +602,30 @@ export function AppShell() {
         );
         if (bySlug) {
           setSelectedLinkId(bySlug.id);
+        } else {
+          setDeepLinkNotice("Could not resolve link selection from this deep link.");
         }
       } else if (decodedSiteSlugs && decodedSiteSlugs.length > 0) {
         const matchedSiteIds: string[] = [];
         for (const siteSlug of decodedSiteSlugs) {
-          const sitePretty = slugifyName(siteSlug);
+          const sitePretty = normalizeForMatch(siteSlug);
           const siteCanonical = canonicalizeDeepLinkKey(siteSlug);
           const site = latest.sites.find((s) => {
-            const candidatePretty = slugifyName(s.name);
+            const candidatePretty = normalizeForMatch(s.name);
             const candidateCanonical = canonicalizeDeepLinkKey(s.name);
             return (sitePretty && candidatePretty === sitePretty) || (siteCanonical && candidateCanonical === siteCanonical);
           });
           if (site && !matchedSiteIds.includes(site.id)) matchedSiteIds.push(site.id);
         }
-        if (matchedSiteIds.length > 0) {
+        if (matchedSiteIds.length === decodedSiteSlugs.length && matchedSiteIds.length > 0) {
           clearActiveSelection();
           const [firstSiteId, ...remainingSiteIds] = matchedSiteIds;
           if (firstSiteId) setSelectedSiteId(firstSiteId);
           for (const siteId of remainingSiteIds) {
             selectSiteById(siteId, true);
           }
+        } else {
+          setDeepLinkNotice("Could not resolve all site selections from this deep link.");
         }
       }
       deepLinkAppliedRef.current = true;

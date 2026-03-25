@@ -221,7 +221,14 @@ export const buildDeepLinkUrl = (
   }
 
   const cleanSlug = (s: string) =>
-    s.replace(DELIMITER_CHARS, "").replace(/\s+/g, "-").replace(/-+/g, "-");
+    s
+      .trim()
+      .normalize("NFKC")
+      .replace(VARIATION_SELECTORS, "")
+      .replace(DELIMITER_CHARS, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "");
 
   let pathPart = `/${cleanSlug(pathSlug)}`;
 
