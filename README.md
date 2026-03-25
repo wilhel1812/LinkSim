@@ -80,41 +80,22 @@ npm run smoke:fit-profile
 npm run smoke:itm
 ```
 
-## Calculation API (FastAPI)
+## Calculation API
 
-Install Python dependencies:
+`/api/v1/calculate` runs directly in LinkSim Pages Functions and uses the same propagation stack as the app (`ITM` with Copernicus terrain sampling).
 
-```bash
-python3 -m pip install -r requirements-calculation-api.txt
-```
-
-Run the API locally:
-
-```bash
-python3 -m uvicorn calculation_api.main:app --reload --port 8000
-```
-
-Run with Docker Compose:
-
-```bash
-docker compose up --build calc-api
-```
-
-Optional rate-limit environment variables:
-
-- `CALC_API_RATE_LIMIT_PER_MIN` (default `60`)
-- `CALC_API_RATE_LIMIT_WINDOW_SEC` (default `60`)
-
-Production routing through LinkSim Pages:
+Behavior notes:
 
 - Public endpoint: `https://linksim.link/api/v1/calculate`
-- Pages proxy upstream: `CALC_API_BASE_URL` (defaults set in Wrangler config)
-- Edge proxy limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
+- Terrain source: Copernicus DEM via `/copernicus/30m/*`
+- If node ground elevation is omitted, the API samples terrain and uses that elevation with `2m` default antenna height
+- Result includes app-style pass/fail text, for example `LOS clear + fail at 83.39 km (-133.6 dBm after env loss)`
+- Edge rate limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
 
 Example request:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/calculate \
+curl -X POST http://localhost:8788/api/v1/calculate \
   -H 'content-type: application/json' \
   -d '{
     "calculation": "link_budget",
