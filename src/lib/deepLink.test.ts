@@ -135,19 +135,39 @@ describe("deepLink", () => {
     expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen~HOEG-ROUTER");
   });
 
+  it("builds and parses korean simulation/site paths", () => {
+    const url = buildDeepLinkUrl(
+      {
+        version: 2,
+        simulationId: "sim-kor",
+        simulationSlug: "한국조선",
+        selectedSiteSlugs: ["남산-서울-타워", "평양텔레비죤탑"],
+      },
+      "https://linksim.pages.dev",
+    );
+    expect(url).toBe("https://linksim.pages.dev/한국조선/남산-서울-타워+평양텔레비죤탑");
+
+    const parsed = parseDeepLinkFromLocation({ pathname: "/한국조선/남산-서울-타워+평양텔레비죤탑", search: "" });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.payload.simulationSlug).toBe("한국조선");
+    expect(parsed.payload.selectedSiteSlugs).toEqual(["남산-서울-타워", "평양텔레비죤탑"]);
+  });
+
   it("slugifies names preserving unicode and case, stripping delimiters", () => {
     expect(slugifyName(" NOR HØGEVARDE / test ")).toBe("NOR-HØGEVARDE-test");
     expect(slugifyName("site+name")).toBe("sitename");
     expect(slugifyName("site<>name")).toBe("sitename");
     expect(slugifyName("site~name")).toBe("sitename");
     expect(slugifyName("site/name")).toBe("sitename");
-    expect(slugifyName("🏝️")).toBe("🏝");
+    expect(slugifyName("🏝️")).toBe("🏝️");
   });
 
   it("canonicalizes keys for matching existing normalized slugs", () => {
     expect(canonicalizeDeepLinkKey("Blefjell")).toBe("blefjell");
-    expect(canonicalizeDeepLinkKey("Høgevarde")).toBe("hogevarde");
-    expect(canonicalizeDeepLinkKey("%F0%9F%92%A9")).toBe("");
+    expect(canonicalizeDeepLinkKey("Høgevarde")).toBe("høgevarde");
+    expect(canonicalizeDeepLinkKey("%F0%9F%92%A9")).toBe("💩");
+    expect(canonicalizeDeepLinkKey("한국조선")).toBe("한국조선");
   });
 
   it("handles query-only old format with sim_slug", () => {
