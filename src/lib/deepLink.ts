@@ -1,4 +1,5 @@
 const DELIMITER_CHARS = /[+<>~\/]/g;
+const VARIATION_SELECTORS = /[\uFE0E\uFE0F]/g;
 const PRIMARY_LINK_DELIMITER = "~";
 const LEGACY_LINK_DELIMITER = "<>";
 
@@ -48,6 +49,7 @@ export const slugifyName = (value: string): string =>
   value
     .trim()
     .normalize("NFKC")
+    .replace(VARIATION_SELECTORS, "")
     .replace(DELIMITER_CHARS, "")
     .replace(/\s+/g, "-")
     .replace(/^-+|-+$/g, "")
@@ -58,6 +60,7 @@ export const canonicalizeDeepLinkKey = (value: string): string =>
     .trim()
     .toLocaleLowerCase()
     .normalize("NFKC")
+    .replace(VARIATION_SELECTORS, "")
     .replace(DELIMITER_CHARS, "")
     .replace(/\s+/g, "-")
     .replace(/^-+|-+$/g, "")
