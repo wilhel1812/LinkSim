@@ -11,6 +11,7 @@ import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
+import OnboardingTutorialModal from "./OnboardingTutorialModal";
 import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
@@ -80,6 +81,7 @@ export function AppShell() {
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
   const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
+  const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
 
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
@@ -87,7 +89,7 @@ export function AppShell() {
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   const [activeUserId, setActiveUserId] = useState("");
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const [welcomeExpandOnboarding, setWelcomeExpandOnboarding] = useState(false);
+  const [showOnboardingTutorial, setShowOnboardingTutorial] = useState(false);
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
@@ -277,7 +279,6 @@ export function AppShell() {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
           if (!seen && !deepLinkParse.ok) {
             setShowWelcomeModal(true);
-            setWelcomeExpandOnboarding(false);
           }
         } catch {
           // ignore storage errors
@@ -689,14 +690,28 @@ export function AppShell() {
     }
   };
 
-  const openWelcomeExpanded = () => {
-    setWelcomeExpandOnboarding(true);
-    setShowWelcomeModal(true);
+  const openOnboardingTutorial = () => {
+    setShowOnboardingTutorial(true);
   };
 
-  const loadSimulationFromWelcome = (presetId: string) => {
-    loadSimulationPreset(presetId);
+  const openWelcomeFromWelcome = () => {
     setShowWelcomeModal(false);
+    setShowOnboardingTutorial(true);
+  };
+
+  const openLibraryFromWelcome = () => {
+    setShowWelcomeModal(false);
+    setShowSimulationLibraryRequest(true);
+    try {
+      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
+    } catch {
+      // ignore
+    }
+  };
+
+  const createNewFromWelcome = () => {
+    setShowWelcomeModal(false);
+    setShowNewSimulationRequest(true);
     try {
       if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
     } catch {
@@ -837,13 +852,14 @@ export function AppShell() {
           <button
             aria-label="Open onboarding"
             className="floating-help-button"
-            onClick={openWelcomeExpanded}
+            onClick={openOnboardingTutorial}
             type="button"
           >
             ?
           </button>
         </div>
-        <WelcomeModal expandOnboarding={welcomeExpandOnboarding} onClose={closeWelcome} onLoadSimulation={loadSimulationFromWelcome} open={showWelcomeModal} />
+        <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
+        <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} open={showOnboardingTutorial} />
       </main>
     );
   }
@@ -888,13 +904,14 @@ export function AppShell() {
           <button
             aria-label="Open onboarding"
             className="floating-help-button"
-            onClick={openWelcomeExpanded}
+            onClick={openOnboardingTutorial}
             type="button"
           >
             ?
           </button>
         </div>
-        <WelcomeModal expandOnboarding={welcomeExpandOnboarding} onClose={closeWelcome} onLoadSimulation={loadSimulationFromWelcome} open={showWelcomeModal} />
+        <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
+        <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} open={showOnboardingTutorial} />
       </main>
     );
   }
@@ -1012,13 +1029,14 @@ export function AppShell() {
         <button
           aria-label="Open onboarding"
           className="floating-help-button"
-          onClick={openWelcomeExpanded}
+          onClick={openOnboardingTutorial}
           type="button"
         >
           ?
         </button>
       </div>
-      <WelcomeModal expandOnboarding={welcomeExpandOnboarding} onClose={closeWelcome} onLoadSimulation={loadSimulationFromWelcome} open={showWelcomeModal} />
+      <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
+      <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} open={showOnboardingTutorial} />
       {showMobileWarning ? (
         <ModalOverlay aria-label="Mobile support notice" onClose={() => setShowMobileWarning(false)} tier="raised">
           <div className="library-manager-card mobile-warning-modal-card">

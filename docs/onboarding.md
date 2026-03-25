@@ -14,13 +14,12 @@
 - Drag existing sites to test alternative positions instantly, then use **Save Positions** or **Dismiss** to commit or revert.
 
 ## Links and Site Selection
-- **Select multiple sites** on the map or sidebar using **Ctrl/Cmd+Click** to view a link between them.
+- **Select multiple sites** on the map or sidebar using **{{MODIFIER}}+Click** to view a link between them.
 - The map overlay automatically adjusts based on your selection:
   - **No selection** — Heatmap (quality overview)
   - **One site** — Pass/Fail (threshold + terrain context)
   - **Two sites** — Relay (best relay-candidate regions)
 - To save a link permanently, select two sites and press **Save** in the map inspector.
-- Links let you compare multiple candidate paths in one simulation.
 
 ## Channel and Model Settings
 - **Channel**: frequency, bandwidth, SF, coding rate, TX power, gains, cable loss, environment loss.
@@ -40,27 +39,5 @@
 | Terrain overlay | Terrain raster used by simulation in current area | Confirm what elevation input the model is actually using |
 | Path profile | Elevation profile + link geometry between selected endpoints | Validate LOS/Fresnel context and understand obstructions |
 
-- Basemap providers:
-  - **CARTO** is the global baseline and fallback.
-  - **MapTiler** and **Stadia** are available when admin-configured API keys are present.
-  - **Kartverket** is listed under regional providers and is optional.
-  - If a selected provider fails (network/quota/style error), LinkSim auto-falls back to CARTO and shows a warning banner.
-
-- Practical workflow:
-  1. Start with **Pass/Fail** for decision clarity.
-  2. Switch to **Heatmap/Contours** for quality gradients.
-  3. Use **Relay** to locate candidate repeater sites.
-  4. Confirm terrain and inspect **Path profile** before finalizing.
-
 ## Sharing and Permissions
 - Everything is **private by default**. Share simulations and sites with specific users when you're ready to collaborate.
-- User roles: **Pending**, **User**, **Moderator**, **Admin**.
-- Important: treat all content in LinkSim as potentially visible to other users and operators. Do not store passwords, private keys, API secrets, or other sensitive material in sites/simulations/profile fields.
-
-## Recommended Workflow
-1. Open or create a simulation.
-2. Add sites from Site Library.
-3. Select two sites with Ctrl/Cmd+Click to view a link.
-4. Auto-fetch terrain data.
-5. Set channel + model, then inspect map + path profile.
-6. Save the simulation and share/collaborate as needed.

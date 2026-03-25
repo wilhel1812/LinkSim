@@ -343,6 +343,7 @@ type AppState = {
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
   endpointPickTarget: "from" | "to" | null;
   showSimulationLibraryRequest: boolean;
+  showNewSimulationRequest: boolean;
   pendingSiteLibraryDraft:
     | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
     | null;
@@ -481,6 +482,7 @@ type AppState = {
   ) => void;
   clearPendingSiteLibraryDraft: () => void;
   setShowSimulationLibraryRequest: (show: boolean) => void;
+  setShowNewSimulationRequest: (show: boolean) => void;
   requestOpenSiteLibraryEntry: (entryId: string) => void;
   clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
@@ -1101,6 +1103,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   endpointPickTarget: null,
   pendingSiteLibraryDraft: null,
   showSimulationLibraryRequest: false,
+  showNewSimulationRequest: false,
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
@@ -2809,6 +2812,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
   setShowSimulationLibraryRequest: (show) => set({ showSimulationLibraryRequest: show }),
+  setShowNewSimulationRequest: (show) => set({ showNewSimulationRequest: show }),
   requestOpenSiteLibraryEntry: (entryId) =>
     set({
       pendingSiteLibraryOpenEntryId: entryId.trim() ? entryId : null,
