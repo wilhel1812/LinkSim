@@ -96,6 +96,8 @@ export function AppShell() {
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const deepLinkAppliedRef = useRef(false);
+  const cloudInitSeenRef = useRef(false);
+  const cloudInitSettledRef = useRef(false);
 
   const { theme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
@@ -374,7 +376,18 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (isInitializing) {
+      cloudInitSeenRef.current = true;
+      return;
+    }
+    if (cloudInitSeenRef.current) {
+      cloudInitSettledRef.current = true;
+    }
+  }, [isInitializing]);
+
+  useEffect(() => {
     if ((accessState !== "granted" && accessState !== "readonly") || deepLinkAppliedRef.current || isInitializing) return;
+    if (!cloudInitSettledRef.current) return;
     if (!deepLinkParse.ok) {
       if (deepLinkParse.reason !== "missing_sim") {
         setDeepLinkNotice(
