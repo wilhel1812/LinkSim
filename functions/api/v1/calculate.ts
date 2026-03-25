@@ -1,7 +1,7 @@
 import { getClientAddress, takeRateLimitToken } from "../../_lib/rateLimit";
 import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
 import type { Env } from "../../_lib/types";
-import { onRequestPost as onRequestTerrainJobPost } from "./calculate.jobs";
+import { queueTerrainCalculationJob } from "./calculate.jobs";
 import {
   findEndpointNodes,
   haversineKm,
@@ -53,7 +53,7 @@ export const onRequestPost = async (ctx: Context) => {
 
     const payload = normalizeCalculationRequest(await request.json());
     if (payload.input.mode === "terrain") {
-      return onRequestTerrainJobPost({ request, env, waitUntil });
+      return queueTerrainCalculationJob(request, env, payload, waitUntil);
     }
 
     const { fromNode, toNode } = findEndpointNodes(payload);

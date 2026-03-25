@@ -181,44 +181,56 @@ const processTerrainJob = async (env: Env, jobId: string, requestUrl: string): P
   }
 };
 
+export const queueTerrainCalculationJob = async (
+  request: Request,
+  env: Env,
+  payload: CalculationRequest,
+  waitUntil?: (promise: Promise<unknown>) => void,
+): Promise<Response> => {
+  await ensureCalculationJobsTable(env);
+  const limitPerMinute = parsePerMinuteLimit(env.CALC_API_PROXY_RATE_LIMIT_PER_MINUTE, 60);
+  const address = getClientAddress(request);
+  const limiter = takeRateLimitToken({ key: `calc-jobs:${address}`, limit: limitPerMinute });
+  if (!limiter.allowed) {
+    return withCors(
+      request,
+      json(
+        { error: "Calculation jobs rate limit reached. Please wait and try again." },
+        { status: 429, headers: { "retry-after": String(limiter.retryAfterSec) } },
+      ),
+    );
+  }
+
+  if (payload.input.mode !== "terrain") {
+    throw new Error("Only terrain mode is supported on /api/v1/calculate/jobs.");
+  }
+  validateTerrainRequest(payload);
+
+  const jobId = generateJobId();
+  await createJob(env, jobId, JSON.stringify(payload));
+  const processing = processTerrainJob(env, jobId, request.url);
+  if (waitUntil) waitUntil(processing);
+  else await processing;
+
+  return withCors(
+    request,
+    json(
+      {
+        job_id: jobId,
+        status: JOB_STATUS.QUEUED,
+        message: "Job queued. Poll GET /api/v1/calculate/jobs/{job_id} for status.",
+      },
+      { status: 202 },
+    ),
+  );
+};
+
 export const onRequestOptions = async ({ request }: Context) => handleOptions(request);
 
 export const onRequestPost = async ({ request, env, waitUntil }: Context) => {
   try {
-    await ensureCalculationJobsTable(env);
-    const limitPerMinute = parsePerMinuteLimit(env.CALC_API_PROXY_RATE_LIMIT_PER_MINUTE, 60);
-    const address = getClientAddress(request);
-    const limiter = takeRateLimitToken({ key: `calc-jobs:${address}`, limit: limitPerMinute });
-    if (!limiter.allowed) {
-      return withCors(
-        request,
-        json(
-          { error: "Calculation jobs rate limit reached. Please wait and try again." },
-          { status: 429, headers: { "retry-after": String(limiter.retryAfterSec) } },
-        ),
-      );
-    }
-
     const payload = normalizeCalculationRequest(await request.json());
-    if (payload.input.mode !== "terrain") {
-      throw new Error("Only terrain mode is supported on /api/v1/calculate/jobs.");
-    }
-    validateTerrainRequest(payload);
-
-    const jobId = generateJobId();
-    await createJob(env, jobId, JSON.stringify(payload));
-    const processing = processTerrainJob(env, jobId, request.url);
-    if (waitUntil) waitUntil(processing);
-    else await processing;
-
-    return withCors(
-      request,
-      json({
-        job_id: jobId,
-        status: JOB_STATUS.QUEUED,
-        message: "Job queued. Poll GET /api/v1/calculate/jobs/{job_id} for status.",
-      }, { status: 202 }),
-    );
+    return queueTerrainCalculationJob(request, env, payload, waitUntil);
   } catch (error) {
     return errorResponse(request, error, 400);
   }
