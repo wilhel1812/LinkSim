@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getClientAddressMock, takeRateLimitTokenMock, analyzeTerrainLinkMock } = vi.hoisted(() => ({
+const { getClientAddressMock, takeRateLimitTokenMock, analyzeTerrainLinkMock, terrainJobsPostMock } = vi.hoisted(() => ({
   getClientAddressMock: vi.fn(),
   takeRateLimitTokenMock: vi.fn(),
   analyzeTerrainLinkMock: vi.fn(),
+  terrainJobsPostMock: vi.fn(),
 }));
 
 vi.mock("../../_lib/rateLimit", () => ({
@@ -13,6 +14,10 @@ vi.mock("../../_lib/rateLimit", () => ({
 
 vi.mock("../../_lib/terrainAnalysis", () => ({
   analyzeTerrainLink: analyzeTerrainLinkMock,
+}));
+
+vi.mock("./calculate.jobs", () => ({
+  onRequestPost: terrainJobsPostMock,
 }));
 
 import { onRequestPost } from "./calculate";
@@ -42,6 +47,12 @@ beforeEach(() => {
     fromGroundM: 21,
     toGroundM: 11,
   });
+  terrainJobsPostMock.mockResolvedValue(
+    new Response(
+      JSON.stringify({ job_id: "calc_job_123", status: "queued", message: "Job queued." }),
+      { status: 202, headers: { "content-type": "application/json" } },
+    ),
+  );
 });
 
 describe("api/v1/calculate", () => {
@@ -172,5 +183,26 @@ describe("api/v1/calculate", () => {
     await expect(res.json()).resolves.toEqual({
       error: "Terrain tiles unavailable for this path. Please retry shortly or use /api/v1/calculate/jobs.",
     });
+  });
+
+  it("routes terrain mode requests through async jobs endpoint", async () => {
+    const req = new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...mkPayload(),
+        input: {
+          ...mkPayload().input,
+          mode: "terrain",
+        },
+      }),
+    });
+
+    const waitUntil = vi.fn();
+    const res = await onRequestPost(mkCtx(req, { DB: {} }) as Parameters<typeof onRequestPost>[0] & { waitUntil: typeof waitUntil });
+
+    expect(res.status).toBe(202);
+    await expect(res.json()).resolves.toMatchObject({ job_id: "calc_job_123", status: "queued" });
+    expect(terrainJobsPostMock).toHaveBeenCalledTimes(1);
   });
 });

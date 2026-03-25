@@ -1,6 +1,7 @@
 import { getClientAddress, takeRateLimitToken } from "../../_lib/rateLimit";
 import { errorResponse, handleOptions, json, withCors } from "../../_lib/http";
 import type { Env } from "../../_lib/types";
+import { onRequestPost as onRequestTerrainJobPost } from "./calculate.jobs";
 import {
   findEndpointNodes,
   haversineKm,
@@ -13,6 +14,7 @@ import { classifyPassFailState, passFailStateLabel } from "../../../src/lib/pass
 type Context = {
   request: Request;
   env: Env;
+  waitUntil?: (promise: Promise<unknown>) => void;
 };
 
 const MAX_SYNC_TERRAIN_SAMPLES = 72;
@@ -30,7 +32,8 @@ const estimateSyncSamples = (distanceKm: number): number => {
 
 export const onRequestOptions = async ({ request }: Context) => handleOptions(request);
 
-export const onRequestPost = async ({ request, env }: Context) => {
+export const onRequestPost = async (ctx: Context) => {
+  const { request, env, waitUntil } = ctx;
   try {
     const limitPerMinute = parsePerMinuteLimit(env.CALC_API_PROXY_RATE_LIMIT_PER_MINUTE, 120);
     const address = getClientAddress(request);
@@ -49,6 +52,10 @@ export const onRequestPost = async ({ request, env }: Context) => {
     }
 
     const payload = normalizeCalculationRequest(await request.json());
+    if (payload.input.mode === "terrain") {
+      return onRequestTerrainJobPost({ request, env, waitUntil });
+    }
+
     const { fromNode, toNode } = findEndpointNodes(payload);
     const distanceKm = haversineKm(fromNode, toNode);
     if (distanceKm > MAX_SYNC_DISTANCE_KM) {

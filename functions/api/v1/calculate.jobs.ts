@@ -217,7 +217,7 @@ export const onRequestPost = async ({ request, env, waitUntil }: Context) => {
         job_id: jobId,
         status: JOB_STATUS.QUEUED,
         message: "Job queued. Poll GET /api/v1/calculate/jobs/{job_id} for status.",
-      }),
+      }, { status: 202 }),
     );
   } catch (error) {
     return errorResponse(request, error, 400);
