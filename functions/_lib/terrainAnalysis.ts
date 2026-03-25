@@ -73,13 +73,10 @@ const fetchTileAsBytes = async (origin: string, dataset: "30m" | "90m", tileKeyP
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    console.log(`[terrainAnalysis] Fetching tile: ${url}`);
     const response = await fetch(url, { signal: controller.signal });
-    console.log(`[terrainAnalysis] Tile response: ${response.status} ${response.statusText}`);
     if (!response.ok) return null;
     return response.arrayBuffer();
-  } catch (e) {
-    console.log(`[terrainAnalysis] Tile fetch error: ${e}`);
+  } catch {
     return null;
   } finally {
     clearTimeout(timeoutId);
@@ -305,7 +302,6 @@ export const analyzeTerrainLink = async (
   samples: number = 80,
 ): Promise<TerrainAnalysisResult> => {
   const origin = new URL(requestUrl).origin;
-  console.log(`[terrainAnalysis] Starting for ${fromLat},${fromLon} to ${toLat},${toLon}`);
 
   const minLat = Math.min(fromLat, toLat) - 0.1;
   const maxLat = Math.max(fromLat, toLat) + 0.1;
@@ -313,20 +309,17 @@ export const analyzeTerrainLink = async (
   const maxLon = Math.max(fromLon, toLon) + 0.1;
 
   const tileKeys = tilesForBounds(minLat, maxLat, minLon, maxLon);
-  console.log(`[terrainAnalysis] Tile keys needed: ${tileKeys.join(", ")}`);
 
   const tiles: TileData[] = [];
   const tilesFetched: string[] = [];
 
   for (const key of tileKeys) {
-    console.log(`[terrainAnalysis] Trying to fetch tile: ${key}`);
     let tileData: ArrayBuffer | null = null;
     
     // Try 30m first
     tileData = await fetchTileAsBytes(origin, "30m", key);
     if (!tileData) {
       // Fallback to 90m
-      console.log(`[terrainAnalysis] 30m failed for ${key}, trying 90m`);
       tileData = await fetchTileAsBytes(origin, "90m", key);
       if (tileData) tilesFetched.push(`${key} (90m)`);
     } else {
@@ -334,49 +327,9 @@ export const analyzeTerrainLink = async (
     }
     
     if (tileData) {
-      console.log(`[terrainAnalysis] Successfully parsed tile: ${key}`);
       const parsed = parseGeoTiff(tileData, key);
       if (parsed) tiles.push(parsed);
     }
-  }
-
-  console.log(`[terrainAnalysis] Tiles fetched: ${tiles.length}, fetched: ${tilesFetched.join(", ")}`);
-
-  // Fallback to Open-Meteo if no Copernicus tiles available
-  if (tiles.length === 0) {
-    console.log(`[terrainAnalysis] No Copernicus tiles, falling back to Open-Meteo`);
-    const elevations: number[] = [];
-    for (let i = 0; i < samples; i += 1) {
-      const t = samples <= 1 ? 0 : i / (samples - 1);
-      const lat = fromLat + (toLat - fromLat) * t;
-      const lon = fromLon + (toLon - fromLon) * t;
-      try {
-        const response = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`);
-        if (response.ok) {
-          const data = await response.json() as { elevation?: number };
-          elevations.push(data.elevation ?? 0);
-        } else {
-          elevations.push(0);
-        }
-      } catch {
-        elevations.push(0);
-      }
-    }
-    
-    const distanceKm = haversineDistanceKm({ lat: fromLat, lon: fromLon }, { lat: toLat, lon: toLon });
-    const baselineFsplDb = 32.44 + 20 * Math.log10(Math.max(0.001, distanceKm)) + 20 * Math.log10(frequencyMhz);
-    
-    return {
-      distanceKm,
-      baselineFsplDb,
-      terrainPenaltyDb: 0,
-      totalPathLossDb: baselineFsplDb,
-      terrainObstructed: false,
-      maxIntrusionM: 0,
-      fresnelClearancePercent: 100,
-      samplesUsed: elevations.length,
-      tilesFetched: ["open-meteo-fallback"],
-    };
   }
 
   if (tiles.length === 0) {

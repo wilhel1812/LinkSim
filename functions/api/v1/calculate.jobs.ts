@@ -384,7 +384,6 @@ const processTerrainJob = async (env: Env, jobId: string, requestUrl: string): P
     await updateJob(env, jobId, JOB_STATUS.COMPLETED, JSON.stringify(result), null);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[processTerrainJob] Error: ${message}`);
     await updateJob(env, jobId, JOB_STATUS.FAILED, null, message);
   }
 };
