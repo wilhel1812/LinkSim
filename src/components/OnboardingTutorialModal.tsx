@@ -20,11 +20,20 @@ type OnboardingTutorialModalProps = {
   open: boolean;
   onClose: () => void;
   onOpenLibrary?: () => void;
+  onOpenSiteLibrary?: () => void;
 };
 
-export default function OnboardingTutorialModal({ open, onClose, onOpenLibrary }: OnboardingTutorialModalProps) {
+export default function OnboardingTutorialModal({
+  open,
+  onClose,
+  onOpenLibrary,
+  onOpenSiteLibrary,
+}: OnboardingTutorialModalProps) {
   const processedMarkdown = useMemo(() => {
-    return onboardingMarkdown.replace(/\{\{MODIFIER\}\}/g, isMac ? "Cmd" : "Ctrl");
+    return onboardingMarkdown
+      .replace(/\{\{MODIFIER\}\}/g, isMac ? "Cmd" : "Ctrl")
+      .replace(/\*\*Simulation Library\*\*/, "**SIMULATION_LIBRARY_LINK**")
+      .replace(/\*\*Site Library\*\*/, "**SITE_LIBRARY_LINK**");
   }, []);
 
   if (!open) return null;
@@ -44,25 +53,39 @@ export default function OnboardingTutorialModal({ open, onClose, onOpenLibrary }
             remarkPlugins={[remarkGfm]}
             components={{
               strong({ children, ...props }) {
-                if (typeof children === "string" && children === "SIMULATION_LIBRARY_BUTTON") {
+                if (typeof children === "string" && children === "SIMULATION_LIBRARY_LINK") {
                   return (
-                    <button
-                      className="inline-action"
-                      onClick={() => onOpenLibrary?.()}
-                      type="button"
+                    <a
+                      className="tutorial-inline-link"
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onOpenLibrary?.();
+                      }}
                     >
                       Simulation Library
-                    </button>
+                    </a>
+                  );
+                }
+                if (typeof children === "string" && children === "SITE_LIBRARY_LINK") {
+                  return (
+                    <a
+                      className="tutorial-inline-link"
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onOpenSiteLibrary?.();
+                      }}
+                    >
+                      Site Library
+                    </a>
                   );
                 }
                 return <strong {...props}>{children}</strong>;
               },
             }}
           >
-            {processedMarkdown.replace(
-              /\*\*Simulation Library\*\*/,
-              "**SIMULATION_LIBRARY_BUTTON**",
-            )}
+            {processedMarkdown}
           </ReactMarkdown>
         </div>
         <div className="tutorial-report-cta">
