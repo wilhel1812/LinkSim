@@ -48,9 +48,7 @@ export const slugifyName = (value: string): string =>
   value
     .trim()
     .normalize("NFKC")
-    .replace(/[\uFE0E\uFE0F]/g, "")
     .replace(DELIMITER_CHARS, "")
-    .normalize("NFKD")
     .replace(/\s+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
@@ -58,16 +56,10 @@ export const slugifyName = (value: string): string =>
 export const canonicalizeDeepLinkKey = (value: string): string =>
   safeDecodeURIComponent(value)
     .trim()
-    .replace(/[\uFE0E\uFE0F]/g, "")
     .toLocaleLowerCase()
     .normalize("NFKC")
-    .replace(/ß/g, "ss")
-    .replace(/æ/g, "ae")
-    .replace(/ø/g, "o")
-    .replace(/å/g, "a")
-    .normalize("NFKD")
-    .replace(/\p{M}+/gu, "")
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(DELIMITER_CHARS, "")
+    .replace(/\s+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
 
