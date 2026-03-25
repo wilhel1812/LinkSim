@@ -57,6 +57,7 @@ import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
+import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
 
 const metric = (label: string, value: string) => (
@@ -169,7 +170,6 @@ const SITE_LIBRARY_KEY = "rmw-site-library-v1";
 const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
 const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
-const SIMULATION_LIBRARY_FILTERS_KEY = "rmw-simulation-library-filters-v1";
 
 const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
   parseDeepLinkFromLocation({ search, pathname }).ok;
@@ -194,7 +194,6 @@ const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
 const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.key);
 const ALL_SITE_SOURCE_FILTERS = SITE_SOURCE_FILTER_OPTIONS.map((option) => option.key);
 
-type SimulationFilterGroupKey = "role" | "visibility";
 type SiteFilterGroupKey = "role" | "visibility" | "source";
 
 const readLibraryFilterState = (key: string): LibraryFilterState => {
@@ -519,7 +518,6 @@ export function Sidebar() {
     [hasNonAutoLinks, links],
   );
   const [newPresetName, setNewPresetName] = useState("");
-  const [newPresetNameError, setNewPresetNameError] = useState("");
   const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showNewSimulationModal, setShowNewSimulationModal] = useState(false);
   const [newSimulationName, setNewSimulationName] = useState("");
@@ -527,9 +525,6 @@ export function Sidebar() {
   const [newSimulationNameError, setNewSimulationNameError] = useState("");
   const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("private");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
-  const [simulationLibraryFilters, setSimulationLibraryFilters] = useState<LibraryFilterState>(() =>
-    readLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY),
-  );
   const [linkModal, setLinkModal] = useState<{
     mode: "add" | "edit";
     linkId: string | null;
@@ -547,14 +542,10 @@ export function Sidebar() {
   const [siteLibraryFilters, setSiteLibraryFilters] = useState<LibraryFilterState>(() =>
     readLibraryFilterState(SITE_LIBRARY_FILTERS_KEY),
   );
-  const [openSimulationFilterGroup, setOpenSimulationFilterGroup] = useState<SimulationFilterGroupKey | null>(null);
   const [openSiteFilterGroup, setOpenSiteFilterGroup] = useState<SiteFilterGroupKey | null>(null);
-  const [simulationRoleDraft, setSimulationRoleDraft] = useState<LibraryFilterRole[] | null>(null);
-  const [simulationVisibilityDraft, setSimulationVisibilityDraft] = useState<LibraryFilterVisibility[] | null>(null);
   const [siteRoleDraft, setSiteRoleDraft] = useState<LibraryFilterRole[] | null>(null);
   const [siteVisibilityDraft, setSiteVisibilityDraft] = useState<LibraryFilterVisibility[] | null>(null);
   const [siteSourceDraft, setSiteSourceDraft] = useState<LibraryFilterSource[] | null>(null);
-  const simulationFilterToolbarRef = useRef<HTMLDivElement | null>(null);
   const siteFilterToolbarRef = useRef<HTMLDivElement | null>(null);
   const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
   const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
@@ -685,16 +676,6 @@ export function Sidebar() {
   const currentUserId = currentUser?.id ?? null;
   const toggleValue = <T extends string>(values: T[], key: T): T[] =>
     values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
-  const commitSimulationRoleFilters = (roleFilters: LibraryFilterRole[]) => {
-    if (!roleFilters.length) return;
-    setSimulationLibraryFilters((state) => ({ ...state, roleFilters }));
-    setOpenSimulationFilterGroup(null);
-  };
-  const commitSimulationVisibilityFilters = (visibilityFilters: LibraryFilterVisibility[]) => {
-    if (!visibilityFilters.length) return;
-    setSimulationLibraryFilters((state) => ({ ...state, visibilityFilters }));
-    setOpenSimulationFilterGroup(null);
-  };
   const commitSiteRoleFilters = (roleFilters: LibraryFilterRole[]) => {
     if (!roleFilters.length) return;
     setSiteLibraryFilters((state) => ({ ...state, roleFilters }));
@@ -710,16 +691,6 @@ export function Sidebar() {
     setSiteLibraryFilters((state) => ({ ...state, sourceFilters }));
     setOpenSiteFilterGroup(null);
   };
-  const openSimulationRoleEditor = () => {
-    setSimulationRoleDraft(effectiveSelection(simulationLibraryFilters.roleFilters, ALL_ROLE_FILTERS));
-    setOpenSimulationFilterGroup((current) => (current === "role" ? null : "role"));
-  };
-  const openSimulationVisibilityEditor = () => {
-    setSimulationVisibilityDraft(
-      effectiveSelection(simulationLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS),
-    );
-    setOpenSimulationFilterGroup((current) => (current === "visibility" ? null : "visibility"));
-  };
   const openSiteRoleEditor = () => {
     setSiteRoleDraft(effectiveSelection(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS));
     setOpenSiteFilterGroup((current) => (current === "role" ? null : "role"));
@@ -731,11 +702,6 @@ export function Sidebar() {
   const openSiteSourceEditor = () => {
     setSiteSourceDraft(effectiveSelection(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS));
     setOpenSiteFilterGroup((current) => (current === "source" ? null : "source"));
-  };
-  const closeSimulationFilterEditors = () => {
-    setOpenSimulationFilterGroup(null);
-    setSimulationRoleDraft(null);
-    setSimulationVisibilityDraft(null);
   };
   const closeSiteFilterEditors = () => {
     setOpenSiteFilterGroup(null);
@@ -765,11 +731,6 @@ export function Sidebar() {
       .slice()
       .sort((a, b) => parseTs(b.createdAt) - parseTs(a.createdAt))[0]?.id ?? siteLibrary[0].id;
   }, [siteLibrary]);
-  const filteredSimulationPresets = useMemo(() => {
-    return filterAndSortLibraryItems(simulationPresets, simulationLibraryFilters, currentUserId, (preset) =>
-      `${preset.name} ${preset.updatedAt}`,
-    );
-  }, [simulationPresets, simulationLibraryFilters, currentUserId]);
   useEffect(() => {
     if (showSimulationLibraryRequest) {
       setShowSimulationLibraryManager(true);
@@ -780,25 +741,14 @@ export function Sidebar() {
     persistLibraryFilterState(SITE_LIBRARY_FILTERS_KEY, siteLibraryFilters);
   }, [siteLibraryFilters]);
   useEffect(() => {
-    persistLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY, simulationLibraryFilters);
-  }, [simulationLibraryFilters]);
-  useEffect(() => {
     const onMouseDown = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (
-        openSimulationFilterGroup &&
-        simulationFilterToolbarRef.current &&
-        !simulationFilterToolbarRef.current.contains(target)
-      ) {
-        closeSimulationFilterEditors();
-      }
       if (openSiteFilterGroup && siteFilterToolbarRef.current && !siteFilterToolbarRef.current.contains(target)) {
         closeSiteFilterEditors();
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      closeSimulationFilterEditors();
       closeSiteFilterEditors();
     };
     document.addEventListener("mousedown", onMouseDown);
@@ -807,7 +757,7 @@ export function Sidebar() {
       document.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [openSimulationFilterGroup, openSiteFilterGroup]);
+  }, [openSiteFilterGroup]);
   const activeSimulationLabel = useMemo(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -1349,11 +1299,9 @@ export function Sidebar() {
   const saveSimulationAsNew = () => {
     const trimmed = newPresetName.trim();
     if (!trimmed) {
-      setNewPresetNameError("A name is required.");
       setSimulationSaveStatus("");
       return;
     }
-    setNewPresetNameError("");
     const savedId = saveCurrentSimulationPreset(trimmed);
     if (savedId) {
       const ref = `saved:${savedId}`;
@@ -3252,298 +3200,16 @@ export function Sidebar() {
       {showSimulationLibraryManager ? (
         <ModalOverlay
           aria-label="Simulation Library"
-          onClose={() => {
-            setShowSimulationLibraryManager(false);
-            closeSimulationFilterEditors();
-          }}
+          onClose={() => setShowSimulationLibraryManager(false)}
         >
-          <div className="library-manager-card">
-            <div className="library-manager-header">
-              <h2>Simulation Library</h2>
-              <button
-                className="inline-action"
-                onClick={() => {
-                  setShowSimulationLibraryManager(false);
-                  closeSimulationFilterEditors();
-                }}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-            <p className="field-help">
-              Manage saved simulations here. Site/node editing still happens in the main workspace.
-            </p>
-            <label className="field-grid">
-              <span>Search</span>
-              <input
-                onChange={(event) =>
-                  setSimulationLibraryFilters((state) => ({ ...state, searchQuery: event.target.value }))
-                }
-                placeholder="Filter saved simulations"
-                type="text"
-                value={simulationLibraryFilters.searchQuery}
-              />
-            </label>
-            <div className="library-filter-toolbar" ref={simulationFilterToolbarRef}>
-              <span className="library-filter-row-label">Filters:</span>
-              <div className="library-filter-menu">
-                <button
-                  className={clsx("inline-action", "library-filter-trigger", {
-                    "library-filter-trigger-active": selectionIsFiltered(
-                      simulationLibraryFilters.roleFilters,
-                      ALL_ROLE_FILTERS,
-                    ),
-                  })}
-                  onClick={openSimulationRoleEditor}
-                  type="button"
-                >
-                  Ownership {selectionLabel(simulationLibraryFilters.roleFilters, ALL_ROLE_FILTERS)}
-                  <span className="library-filter-trigger-chevron">
-                    {openSimulationFilterGroup === "role" ? "^" : "v"}
-                  </span>
-                </button>
-                {openSimulationFilterGroup === "role" ? (
-                  <div className="library-filter-popover">
-                    <div className="library-filter-popover-actions">
-                      <button
-                        className="inline-action"
-                        onClick={() => commitSimulationRoleFilters(ALL_ROLE_FILTERS)}
-                        type="button"
-                      >
-                        All
-                      </button>
-                      <button className="inline-action" onClick={() => setSimulationRoleDraft([])} type="button">
-                        None
-                      </button>
-                    </div>
-                    <div className="library-filter-popover-options">
-                      {ROLE_FILTER_OPTIONS.map((option) => {
-                        const draft = simulationRoleDraft ?? effectiveSelection(simulationLibraryFilters.roleFilters, ALL_ROLE_FILTERS);
-                        const checked = draft.includes(option.key);
-                        return (
-                          <label className="checkbox-field library-filter-option" key={`simulation-role-${option.key}`}>
-                            <input
-                              checked={checked}
-                              onChange={() => {
-                                const next = toggleValue(draft, option.key);
-                                setSimulationRoleDraft(next);
-                                if (next.length) commitSimulationRoleFilters(next);
-                              }}
-                              type="checkbox"
-                            />
-                            <span>{option.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="library-filter-menu">
-                <button
-                  className={clsx("inline-action", "library-filter-trigger", {
-                    "library-filter-trigger-active": selectionIsFiltered(
-                      simulationLibraryFilters.visibilityFilters,
-                      ALL_VISIBILITY_FILTERS,
-                    ),
-                  })}
-                  onClick={openSimulationVisibilityEditor}
-                  type="button"
-                >
-                  Access level {selectionLabel(simulationLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
-                  <span className="library-filter-trigger-chevron">
-                    {openSimulationFilterGroup === "visibility" ? "^" : "v"}
-                  </span>
-                </button>
-                {openSimulationFilterGroup === "visibility" ? (
-                  <div className="library-filter-popover">
-                    <div className="library-filter-popover-actions">
-                      <button
-                        className="inline-action"
-                        onClick={() => commitSimulationVisibilityFilters(ALL_VISIBILITY_FILTERS)}
-                        type="button"
-                      >
-                        All
-                      </button>
-                      <button className="inline-action" onClick={() => setSimulationVisibilityDraft([])} type="button">
-                        None
-                      </button>
-                    </div>
-                    <div className="library-filter-popover-options">
-                      {VISIBILITY_FILTER_OPTIONS.map((option) => {
-                        const draft =
-                          simulationVisibilityDraft ??
-                          effectiveSelection(simulationLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS);
-                        const checked = draft.includes(option.key);
-                        return (
-                          <label className="checkbox-field library-filter-option" key={`simulation-visibility-${option.key}`}>
-                            <input
-                              checked={checked}
-                              onChange={() => {
-                                const next = toggleValue(draft, option.key);
-                                setSimulationVisibilityDraft(next);
-                                if (next.length) commitSimulationVisibilityFilters(next);
-                              }}
-                              type="checkbox"
-                            />
-                            <span>{option.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <button
-                className="inline-action"
-                onClick={() => {
-                  setSimulationLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE);
-                  closeSimulationFilterEditors();
-                }}
-                type="button"
-              >
-                Clear Filters
-              </button>
-            </div>
-            <label className="field-grid">
-              <span>Save a copy</span>
-              <input
-                className={newPresetNameError ? "input-error" : ""}
-                onChange={(event) => {
-                  setNewPresetName(event.target.value);
-                  if (newPresetNameError) setNewPresetNameError("");
-                }}
-                placeholder="My simulation"
-                type="text"
-                value={newPresetName}
-              />
-            </label>
-            {newPresetNameError ? <p className="field-help field-help-error">{newPresetNameError}</p> : null}
-            <div className="chip-group">
-              <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-                Save Copy
-              </button>
-              <button
-                className="inline-action"
-                onClick={() => {
-                  setNewSimulationName("");
-                  setNewSimulationDescription("");
-                  setNewSimulationNameError("");
-                  setShowNewSimulationModal(true);
-                }}
-                type="button"
-              >
-                New Simulation
-              </button>
-            </div>
-            {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
-            <div className="library-editor">
-              <h3>Saved simulations</h3>
-            <div className="library-manager-list">
-              {filteredSimulationPresets.map((preset) => (
-                <div className="library-manager-row simulation-manager-row" key={preset.id}>
-                  {(() => {
-                    const owner = resolveOwnerDisplay(
-                      (preset as { ownerUserId?: string }).ownerUserId,
-                      (preset as { createdByName?: string }).createdByName,
-                      (preset as { createdByAvatarUrl?: string }).createdByAvatarUrl,
-                    );
-                    return (
-                      <>
-                  <span className="library-row-label">
-                    <strong>{preset.name}</strong>
-                    {" · "}
-                    Updated {formatDate(preset.updatedAt)}
-                  </span>
-                  <span className="library-row-meta">
-                    <span className="access-badge">{normalizeAccessVisibility((preset as { visibility?: unknown }).visibility)}</span>
-                    <button
-                      className="row-avatar owner-avatar"
-                      onClick={() => void openUserProfilePopup((preset as { ownerUserId?: string }).ownerUserId)}
-                      title={`Owner: ${owner.name}`}
-                      type="button"
-                    >
-                      {owner.avatarUrl ? (
-                        <img
-                          alt={owner.name}
-                          className="row-avatar-image"
-                          src={owner.avatarUrl}
-                        />
-                      ) : (
-                        initialsForUser(owner.name)
-                      )}
-                    </button>
-                    {((preset.sharedWith ?? [])
-                      .filter((grant) => grant.userId !== (preset as { ownerUserId?: string }).ownerUserId)
-                      .slice(0, 3)
-                      .map((grant) => {
-                        const user = collaboratorDirectoryById.get(grant.userId);
-                        const name = user?.username ?? grant.userId;
-                        const avatarUrl = user?.avatarUrl ?? "";
-                        return (
-                          <button
-                            className="row-avatar"
-                            key={grant.userId}
-                            onClick={() => void openUserProfilePopup(grant.userId)}
-                            title={name}
-                            type="button"
-                          >
-                            {avatarUrl ? (
-                              <img alt={name} className="row-avatar-image" src={avatarUrl} />
-                            ) : (
-                              initialsForUser(name)
-                            )}
-                          </button>
-                        );
-                      }))}
-                  </span>
-                      </>
-                    );
-                  })()}
-                  <div className="library-row-actions">
-                    <button
-                      className="inline-action"
-                      onClick={() => {
-                        loadSimulationPreset(preset.id);
-                        persistSelectedSimulationRef(`saved:${preset.id}`);
-                      }}
-                      type="button"
-                    >
-                      Load
-                    </button>
-                    <button
-                      className="inline-action"
-                      onClick={() =>
-                        openResourceDetailsPopup({
-                          kind: "simulation",
-                          resourceId: preset.id,
-                          label: preset.name,
-                          createdByUserId: (preset as unknown as { createdByUserId?: string }).createdByUserId ?? null,
-                          createdByName: (preset as unknown as { createdByName?: string }).createdByName ?? "Unknown",
-                          createdByAvatarUrl:
-                            (preset as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
-                          lastEditedByUserId:
-                            (preset as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
-                          lastEditedByName:
-                            (preset as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
-                          lastEditedByAvatarUrl:
-                            (preset as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
-                        })
-                      }
-                      type="button"
-                    >
-                      Open
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {!filteredSimulationPresets.length ? <p className="field-help">No matching saved simulations.</p> : null}
-            </div>
-            </div>
-          </div>
+          <SimulationLibraryPanel
+            onClose={() => setShowSimulationLibraryManager(false)}
+            onLoadSimulation={(presetId) => {
+              loadSimulationPreset(presetId);
+              persistSelectedSimulationRef(`saved:${presetId}`);
+            }}
+            onOpenDetails={openResourceDetailsPopup}
+          />
         </ModalOverlay>
       ) : null}
 

@@ -2135,6 +2135,45 @@ input {
   background: color-mix(in srgb, var(--surface) 86%, transparent);
 }
 
+.welcome-modal-card {
+  width: min(1320px, 98vw);
+  height: min(94vh, 1100px);
+  max-height: min(94vh, 1100px);
+  grid-template-rows: auto auto 1fr auto;
+  overflow: hidden;
+}
+
+.welcome-modal-onboarding-section {
+  margin-bottom: 8px;
+}
+
+.welcome-modal-onboarding-toggle {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.welcome-modal-onboarding-content {
+  margin-top: 8px;
+  max-height: 40vh;
+}
+
+.welcome-modal-new-simulation-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.welcome-modal-new-simulation {
+  width: min(520px, 94vw);
+  max-height: min(80vh, 600px);
+  overflow: auto;
+}
+
 .library-manager-header {
   display: flex;
   align-items: center;
