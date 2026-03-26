@@ -23,6 +23,7 @@ const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
+type MobileWorkspacePanel = "map" | "profile" | "inspector" | "sidebar";
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
@@ -98,6 +99,8 @@ export function AppShell() {
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
   const [showMobileWarning, setShowMobileWarning] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("profile");
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const deepLinkAppliedRef = useRef(false);
@@ -399,6 +402,14 @@ export function AppShell() {
     },
     [],
   );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 980px)");
+    const applyViewport = () => setIsMobileViewport(mediaQuery.matches);
+    applyViewport();
+    mediaQuery.addEventListener("change", applyViewport);
+    return () => mediaQuery.removeEventListener("change", applyViewport);
+  }, []);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 900px)").matches;
@@ -950,9 +961,13 @@ export function AppShell() {
     <main
       className={`app-shell ${isMapExpanded || isProfileExpanded ? "is-map-expanded" : ""} ${
         accessState === "readonly" ? "is-readonly-shell" : ""
+      } ${
+        isMobileViewport ? "is-mobile-shell" : ""
+      } ${
+        isMobileViewport ? `mobile-panel-${mobileActivePanel}` : ""
       }`}
     >
-      {!isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
+      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {!isOnline && !offlineBannerDismissed ? (
           <div className="offline-banner" role="status">
@@ -1015,6 +1030,7 @@ export function AppShell() {
         </div>
         <MapView
           isMapExpanded={isMapExpanded}
+          showInspector={!isMobileViewport || mobileActivePanel === "inspector"}
           canPersist={canPersistWorkspace}
           onShare={
             accessState === "granted"
@@ -1039,10 +1055,69 @@ export function AppShell() {
           readOnly={!canPersistWorkspace}
           onToggleMapExpanded={() => {
             setIsProfileExpanded(false);
-            setIsMapExpanded((prev) => !prev);
+            setIsMapExpanded((prev) => {
+              const next = !prev;
+              if (isMobileViewport) {
+                setMobileActivePanel(next ? "map" : "profile");
+              }
+              return next;
+            });
           }}
         />
-        {!isMapExpanded ? (
+        {isMobileViewport ? (
+          <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
+            <button
+              aria-selected={mobileActivePanel === "sidebar"}
+              className={`mobile-workspace-tab ${mobileActivePanel === "sidebar" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsMapExpanded(false);
+                setMobileActivePanel("sidebar");
+              }}
+              role="tab"
+              type="button"
+            >
+              Sidebar
+            </button>
+            <button
+              aria-selected={mobileActivePanel === "inspector"}
+              className={`mobile-workspace-tab ${mobileActivePanel === "inspector" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsMapExpanded(false);
+                setMobileActivePanel("inspector");
+              }}
+              role="tab"
+              type="button"
+            >
+              Inspector
+            </button>
+            <button
+              aria-selected={mobileActivePanel === "profile"}
+              className={`mobile-workspace-tab ${mobileActivePanel === "profile" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsMapExpanded(false);
+                setMobileActivePanel("profile");
+              }}
+              role="tab"
+              type="button"
+            >
+              Path Profile
+            </button>
+            <button
+              aria-selected={mobileActivePanel === "map"}
+              className={`mobile-workspace-tab ${mobileActivePanel === "map" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsProfileExpanded(false);
+                setIsMapExpanded(true);
+                setMobileActivePanel("map");
+              }}
+              role="tab"
+              type="button"
+            >
+              Map
+            </button>
+          </div>
+        ) : null}
+        {!isMobileViewport && !isMapExpanded ? (
           <LinkProfileChart
             isExpanded={isProfileExpanded}
             onToggleExpanded={() => {
@@ -1050,6 +1125,22 @@ export function AppShell() {
               setIsProfileExpanded((prev) => !prev);
             }}
           />
+        ) : null}
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" ? (
+          <div className="mobile-workspace-panel" role="tabpanel" aria-label="Path profile panel">
+            <LinkProfileChart
+              isExpanded={isProfileExpanded}
+              onToggleExpanded={() => {
+                setIsMapExpanded(false);
+                setIsProfileExpanded((prev) => !prev);
+              }}
+            />
+          </div>
+        ) : null}
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "sidebar" ? (
+          <div className="mobile-workspace-panel mobile-workspace-panel-sidebar" role="tabpanel" aria-label="Sidebar panel">
+            {(accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
+          </div>
         ) : null}
       </section>
       <div className="floating-help-cluster">

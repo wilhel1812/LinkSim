@@ -971,6 +971,7 @@ const computeFitViewport = (
 
 type MapViewProps = {
   isMapExpanded: boolean;
+  showInspector?: boolean;
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
@@ -1002,6 +1003,7 @@ const DEFAULT_MAP_VIEWPORT = {
 
 export function MapView({
   isMapExpanded,
+  showInspector = true,
   readOnly = false,
   canPersist = true,
   onToggleMapExpanded,
@@ -1915,8 +1917,6 @@ export function MapView({
   }
   if (endpointPickTarget && endpointPickError) inspectorLines.push(endpointPickError);
   if (siteDraftStatus) inspectorLines.push(siteDraftStatus);
-  const showInspector = true;
-
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
       <div className="map-controls map-controls-unified">
