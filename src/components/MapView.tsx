@@ -20,6 +20,7 @@ import {
   type ProfileDraftSiteRequestDetail,
 } from "../lib/profileDraftEvent";
 import { useAppStore } from "../store/appStore";
+import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
@@ -1031,7 +1032,7 @@ export function MapView({
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
-  const coverageSamples = useAppStore((state) => state.coverageSamples);
+  const coverageSamples = useCoverageStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainLoadingStartedAtMs = useAppStore((state) => state.terrainLoadingStartedAtMs);
@@ -1043,8 +1044,8 @@ export function MapView({
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
-  const isSimulationRecomputing = useAppStore((state) => state.isSimulationRecomputing);
-  const simulationProgress = useAppStore((state) => state.simulationProgress);
+  const isSimulationRecomputing = useCoverageStore((state) => state.isSimulationRecomputing);
+  const simulationProgress = useCoverageStore((state) => state.simulationProgress);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
