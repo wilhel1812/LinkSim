@@ -1013,37 +1013,35 @@ export function AppShell() {
           {shareStatus ? <span className="field-help">{shareStatus}</span> : null}
           {deepLinkNotice ? <span className="field-help">{deepLinkNotice}</span> : null}
         </div>
-        {!isProfileExpanded ? (
-          <MapView
-            isMapExpanded={isMapExpanded}
-            canPersist={canPersistWorkspace}
-            onShare={
-              accessState === "granted"
-                ? () => {
-                    setShareStatus(null);
-                    if (!activeSimulation) {
-                      setShareStatus(
-                        "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
-                      );
-                      return;
-                    }
-                    if (toVisibility(activeSimulation.visibility) === "private") {
-                      setShowShareModal(true);
-                      return;
-                    }
-                    void copyCurrentLink()
-                      .then(() => setShareStatus("Copied to clipboard."))
-                      .catch((error) => setShareStatus(getUiErrorMessage(error)));
+        <MapView
+          isMapExpanded={isMapExpanded}
+          canPersist={canPersistWorkspace}
+          onShare={
+            accessState === "granted"
+              ? () => {
+                  setShareStatus(null);
+                  if (!activeSimulation) {
+                    setShareStatus(
+                      "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
+                    );
+                    return;
                   }
-                : undefined
-            }
-            readOnly={!canPersistWorkspace}
-            onToggleMapExpanded={() => {
-              setIsProfileExpanded(false);
-              setIsMapExpanded((prev) => !prev);
-            }}
-          />
-        ) : null}
+                  if (toVisibility(activeSimulation.visibility) === "private") {
+                    setShowShareModal(true);
+                    return;
+                  }
+                  void copyCurrentLink()
+                    .then(() => setShareStatus("Copied to clipboard."))
+                    .catch((error) => setShareStatus(getUiErrorMessage(error)));
+                }
+              : undefined
+          }
+          readOnly={!canPersistWorkspace}
+          onToggleMapExpanded={() => {
+            setIsProfileExpanded(false);
+            setIsMapExpanded((prev) => !prev);
+          }}
+        />
         {!isMapExpanded ? (
           <LinkProfileChart
             isExpanded={isProfileExpanded}

@@ -1915,13 +1915,7 @@ export function MapView({
   }
   if (endpointPickTarget && endpointPickError) inspectorLines.push(endpointPickError);
   if (siteDraftStatus) inspectorLines.push(siteDraftStatus);
-  const showInspector =
-    Boolean(inspectorPrimary) ||
-    inspectorLines.length > 0 ||
-    Boolean(pendingNewSiteDraft) ||
-    Boolean(mqttDuplicatePrompt) ||
-    isSimulationRecomputing ||
-    isBackgroundBusy;
+  const showInspector = true;
 
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
@@ -2049,7 +2043,7 @@ export function MapView({
         </div>
         <div className="map-controls-group map-controls-group-utility">
           <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
-            {isMapExpanded ? "Exit Fullscreen" : "Fullscreen"}
+            {isMapExpanded ? "Show Panels" : "Hide Panels"}
           </button>
           <button className="map-control-btn" onClick={fitToNodes} type="button">
             Fit
@@ -2197,75 +2191,12 @@ export function MapView({
               </span>
             </div>
           ) : null}
-        </aside>
-      ) : null}
-      <aside className="map-sim-summary" aria-live="polite">
-        <div className="map-sim-summary-header">
-          <h3>Simulation Sources</h3>
-          <button
-            className="map-control-btn map-summary-toggle"
-            onClick={() => setShowSimulationSummary((current) => !current)}
-            type="button"
+          <details
+            className="compact-details map-inspector-details"
+            onToggle={(event) => setShowOverlayGuide(event.currentTarget.open)}
+            open={showOverlayGuide}
           >
-            {showSimulationSummary ? "Hide" : "Show"}
-          </button>
-        </div>
-        {showSimulationSummary ? (
-          <>
-            <p>
-              Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
-            </p>
-            <p>
-              Network: {selectedNetwork?.name ?? "n/a"} @{" "}
-              {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
-            </p>
-            <p>
-              Terrain dataset: {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
-              {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
-            </p>
-            {terrainSourceSummary.length ? (
-              <ul className="map-sim-sources">
-                {terrainSourceSummary.map((entry) => (
-                  <li key={entry.label}>
-                    {entry.label}: {entry.count}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>Terrain source: simulation/manual site elevations only</p>
-            )}
-            <p>Site elevations: Simulation values</p>
-            <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
-            <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
-            <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
-            {largeAreaOptimizationActive ? (
-              <p>
-                Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
-                Zoom in or narrow site spread for higher detail.
-              </p>
-            ) : (
-              <p>Large-area optimization inactive at this simulation extent.</p>
-            )}
-            <p>
-              Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
-            </p>
-            <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
-          </>
-        ) : null}
-      </aside>
-      <aside className="map-overlay-guide" aria-live="polite">
-        <div className="map-sim-summary-header">
-          <h3>Overlay Guide</h3>
-          <button
-            className="map-control-btn map-summary-toggle"
-            onClick={() => setShowOverlayGuide((current) => !current)}
-            type="button"
-          >
-            {showOverlayGuide ? "Hide" : "Show"}
-          </button>
-        </div>
-        {showOverlayGuide ? (
-          <>
+            <summary>Overlay Guide</summary>
             <p>
               Mode: <strong>{overlayGuideTitle}</strong>
             </p>
@@ -2273,8 +2204,8 @@ export function MapView({
             {coverageVizMode === "heatmap" ? (
               <>
                 <p>
-                  Shows overall coverage strength from your current simulation sites. Think of it as “how good signal
-                  should feel if you stand here”.
+                  Shows overall coverage strength from your current simulation sites. Think of it as "how good signal
+                  should feel if you stand here".
                 </p>
                 <div className="overlay-inline-controls">
                   <span>Style</span>
@@ -2400,9 +2331,54 @@ export function MapView({
                 <p className="overlay-scale-help">Left side is worse relay quality. Right side is better relay quality.</p>
               </>
             ) : null}
-          </>
-        ) : null}
-      </aside>
+          </details>
+          <details
+            className="compact-details map-inspector-details"
+            onToggle={(event) => setShowSimulationSummary(event.currentTarget.open)}
+            open={showSimulationSummary}
+          >
+            <summary>Simulation Sources</summary>
+            <p>
+              Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
+            </p>
+            <p>
+              Network: {selectedNetwork?.name ?? "n/a"} @ {" "}
+              {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
+            </p>
+            <p>
+              Terrain dataset: {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
+              {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
+            </p>
+            {terrainSourceSummary.length ? (
+              <ul className="map-sim-sources">
+                {terrainSourceSummary.map((entry) => (
+                  <li key={entry.label}>
+                    {entry.label}: {entry.count}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>Terrain source: simulation/manual site elevations only</p>
+            )}
+            <p>Site elevations: Simulation values</p>
+            <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
+            <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
+            <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
+            {largeAreaOptimizationActive ? (
+              <p>
+                Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
+                Zoom in or narrow site spread for higher detail.
+              </p>
+            ) : (
+              <p>Large-area optimization inactive at this simulation extent.</p>
+            )}
+            <p>
+              Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
+            </p>
+            <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
+          </details>
+        </aside>
+      ) : null}
       <Map
         ref={mapRef}
         longitude={activeViewState.longitude}

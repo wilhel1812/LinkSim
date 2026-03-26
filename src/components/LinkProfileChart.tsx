@@ -804,13 +804,13 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
           Flip Direction
         </button>
         <button
-          aria-label={isExpanded ? "Exit profile fullscreen" : "Profile fullscreen"}
+          aria-label={isExpanded ? "Exit full screen" : "Full screen"}
           className={`chart-endpoint-swap ${isExpanded ? "is-active" : ""}`}
           onClick={onToggleExpanded}
-          title={isExpanded ? "Exit fullscreen" : "Fullscreen"}
+          title={isExpanded ? "Exit full screen" : "Full screen"}
           type="button"
         >
-          {isExpanded ? "Exit Fullscreen" : "Fullscreen"}
+          {isExpanded ? "Exit Full screen" : "Full screen"}
         </button>
         <div className="chart-hover-state">
           {cursorPoint && footerCursorState ? (
