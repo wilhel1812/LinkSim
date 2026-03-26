@@ -547,6 +547,14 @@ input {
   pointer-events: auto;
 }
 
+.mobile-workspace-tabs {
+  display: none;
+}
+
+.mobile-workspace-panel {
+  display: none;
+}
+
 .workspace-header-actions {
   position: absolute;
   top: 26px;
@@ -1531,6 +1539,95 @@ input {
 }
 
 @media (max-width: 980px) {
+  .app-shell.is-mobile-shell {
+    --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
+    --mobile-tabbar-height: 38px;
+    --mobile-panel-height: 36vh;
+  }
+
+  .app-shell.is-mobile-shell .mobile-workspace-tabs {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: var(--mobile-tabbar-offset);
+    z-index: 90;
+  }
+
+  .app-shell.is-mobile-shell .mobile-workspace-panel {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height));
+    z-index: 85;
+  }
+
+  .mobile-workspace-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .mobile-workspace-tab {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+    color: var(--text);
+    min-height: 34px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .mobile-workspace-tab.is-active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .mobile-workspace-panel {
+    display: grid;
+    height: var(--mobile-panel-height);
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+    z-index: 45;
+  }
+
+  .mobile-workspace-panel .chart-panel {
+    z-index: auto;
+    height: 100%;
+  }
+
+  .mobile-workspace-panel-sidebar {
+    padding: 0;
+  }
+
+  .mobile-workspace-panel-sidebar .sidebar-panel,
+  .mobile-workspace-panel .sidebar-panel {
+    height: 100%;
+    max-height: none;
+    min-height: auto;
+    overflow: auto;
+  }
+
+  .app-shell.is-mobile-shell.mobile-panel-map .mobile-workspace-panel,
+  .app-shell.is-mobile-shell.mobile-panel-inspector .mobile-workspace-panel {
+    display: none;
+  }
+
+  .app-shell.is-mobile-shell.mobile-panel-sidebar .map-inspector,
+  .app-shell.is-mobile-shell.mobile-panel-profile .map-inspector,
+  .app-shell.is-mobile-shell.mobile-panel-map .map-inspector {
+    display: none;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
@@ -1539,6 +1636,12 @@ input {
     height: auto;
     min-height: 100dvh;
     overflow: auto;
+  }
+
+  .app-shell.is-mobile-shell {
+    grid-template-rows: minmax(0, 1fr);
+    padding: 0;
+    overflow: hidden;
   }
 
   .app-shell.is-map-expanded {
@@ -1554,10 +1657,13 @@ input {
 
   .workspace-panel {
     --workspace-panel-gap: 12px;
-    grid-template-rows: minmax(420px, 62vh) minmax(190px, 30vh);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     gap: 12px;
-    height: auto;
-    min-height: 0;
+    height: 100dvh;
+    min-height: 100dvh;
+    align-content: start;
+    padding-bottom: 0;
   }
 
   .workspace-header-actions {
@@ -1579,6 +1685,10 @@ input {
   }
 
   .workspace-panel.is-profile-expanded {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .app-shell.is-mobile-shell .workspace-panel.is-profile-expanded {
     grid-template-rows: minmax(0, 1fr);
   }
 
@@ -1609,16 +1719,44 @@ input {
     max-height: calc(100dvh - 84px);
   }
 
+  .app-shell.is-mobile-shell .map-inspector {
+    display: none;
+  }
+
+  .app-shell.is-mobile-shell.mobile-panel-inspector .map-inspector {
+    display: grid;
+    position: fixed;
+    top: auto;
+    right: 12px;
+    left: 12px;
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height));
+    width: auto;
+    height: var(--mobile-panel-height);
+    max-height: none;
+    z-index: 85;
+  }
+
+  .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-bottom-right,
+  .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-bottom-left {
+    left: 8px;
+    right: auto;
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 8px);
+  }
+
+  .app-shell.is-mobile-shell.mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-right,
+  .app-shell.is-mobile-shell.mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-left,
+  .app-shell.is-mobile-shell.mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-right,
+  .app-shell.is-mobile-shell.mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-left,
+  .app-shell.is-mobile-shell.mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-right,
+  .app-shell.is-mobile-shell.mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-left {
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-height) + 8px);
+  }
+
   .workspace-panel:not(.is-profile-expanded) .map-inspector {
     max-height: calc(100dvh - 84px);
     bottom: auto;
   }
 
-  .workspace-panel:not(.is-map-expanded) .map-panel .maplibregl-ctrl-bottom-right,
-  .workspace-panel:not(.is-map-expanded) .map-panel .maplibregl-ctrl-bottom-left {
-    left: 8px;
-    bottom: 8px;
-  }
 }
 
 .locale-select {
