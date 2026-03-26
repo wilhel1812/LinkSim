@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { buildCoverageAsync, clearTerrainLossCache } from "../lib/coverage";
+import { clearTerrainLossCache } from "../lib/coverage";
+import { setAppStoreBridge, useCoverageStore } from "./coverageStore";
 import { findPresetById } from "../lib/frequencyPlans";
 import { haversineDistanceKm } from "../lib/geo";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -42,7 +43,6 @@ import type { UiColorTheme } from "../themes/types";
 import type { CloudUser } from "../lib/cloudUser";
 import type {
   CoverageMode,
-  CoverageSample,
   Link,
   LinkAnalysis,
   MapViewport,
@@ -56,14 +56,12 @@ import type {
 } from "../types/radio";
 
 const SYNC_DEBOUNCE_MS = 2500;
-const COVERAGE_RECOMPUTE_DEBOUNCE_MS = 140;
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SYNC_SIGNATURE_KEY = "linksim-sync-signature-v1";
 const MIGRATION_DEFAULT_PRIVATE_KEY = "linksim-migration-default-private-v2";
 
 let hydrated = false;
 let syncTimer: number | null = null;
-let coverageRecomputeTimer: number | null = null;
 let syncInFlight = false;
 let localMutationRevision = 0;
 let syncedMutationRevision = 0;
@@ -305,10 +303,6 @@ type AppState = {
   systems: RadioSystem[];
   networks: Network[];
   srtmTiles: SrtmTile[];
-  coverageSamples: CoverageSample[];
-  isSimulationRecomputing: boolean;
-  simulationProgress: number;
-  simulationRunToken: string;
   isTerrainFetching: boolean;
   isTerrainRecommending: boolean;
   selectedLinkId: string;
@@ -501,7 +495,6 @@ type AppState = {
   recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
   loadTerrainForCurrentArea: () => Promise<void>;
   clearTerrainCache: () => Promise<void>;
-  recomputeCoverage: () => void;
   getSelectedLink: () => Link;
   getSelectedSite: () => Site;
   getSelectedNetwork: () => Network;
@@ -1066,10 +1059,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   systems: [],
   networks: [],
   srtmTiles: [],
-  coverageSamples: [],
-  isSimulationRecomputing: false,
-  simulationProgress: 0,
-  simulationRunToken: "",
   isTerrainFetching: false,
   isTerrainRecommending: false,
   selectedLinkId: "",
@@ -1605,7 +1594,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       siteLibrary: libraryBacked.siteLibrary,
     });
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: scenario.id, savedAtIso: new Date().toISOString() });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
   },
   setSelectedLinkId: (id) =>
     set((state) => {
@@ -1716,11 +1705,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   setSelectedNetworkId: (id) => {
     set({ selectedNetworkId: id });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
   },
   setSelectedCoverageMode: (mode) => {
     set({ selectedCoverageMode: mode });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   setSelectedFrequencyPresetId: (id) => {
@@ -1737,7 +1726,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setAutoPropagationEnvironment: (value) => {
     set({ autoPropagationEnvironment: value });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   setPropagationEnvironment: (patch) => {
@@ -1749,7 +1738,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       autoPropagationEnvironment: false,
       propagationEnvironmentReason: "Manual override active.",
     }));
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   applyClimateDefaults: (climate) => {
@@ -1758,7 +1747,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       autoPropagationEnvironment: false,
       propagationEnvironmentReason: "Manual climate defaults applied.",
     }));
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   setTerrainDataset: (dataset) => {
@@ -1825,7 +1814,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         siteLibrary: nextLibrary,
       };
     });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   deleteSite: (siteId) => {
@@ -1890,7 +1879,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         })),
       };
     });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   createLink: (fromSiteId, toSiteId, name) => {
@@ -1930,7 +1919,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       mapOverlayMode: defaultOverlayModeForSelectionCount(2),
       temporaryDirectionReversed: false,
     }));
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   addSiteLibraryEntry: (
@@ -2051,7 +2040,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           state.selectedLinkId === linkId ? false : state.temporaryDirectionReversed,
       };
     });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   insertSiteFromLibrary: (entryId) => {
@@ -2159,7 +2148,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         mapOverlayMode: defaultOverlayModeForSelectionCount(createdSiteIds.length ? 1 : state.selectedSiteIds.length),
       };
     });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   updateSiteLibraryEntry: (entryId, patch) => {
@@ -2202,7 +2191,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       return { siteLibrary: next, sites: nextSites, links: nextLinks };
     });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
   },
   deleteSiteLibraryEntry: (entryId) => {
     get().deleteSiteLibraryEntries([entryId]);
@@ -2551,7 +2540,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       });
       writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: loadedAtIso });
-      get().recomputeCoverage();
+      useCoverageStore.getState().recomputeCoverage();
       return;
     }
     const recovered = ensureMinimumTopology(
@@ -2616,7 +2605,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
     }
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: new Date().toISOString() });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
   },
   renameSimulationPreset: (presetId, name) => {
     const { currentUser } = get();
@@ -2763,7 +2752,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       simulationPresets: nextSimulationPresets,
       sites: syncedSites,
     });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     return {
       siteCount: nextSiteLibrary.length - siteCountBefore,
       simulationCount: nextSimulationPresets.length - simCountBefore,
@@ -2857,12 +2846,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
       links: state.links.map((link) => ({ ...link, frequencyMHz: preset.frequencyMHz })),
     }));
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   setPropagationModel: (model) => {
     set({ propagationModel: model });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   updateSite: (id, patch) => {
@@ -2907,7 +2896,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       writeStorage(SITE_LIBRARY_KEY, nextLibrary);
       return { sites: nextSites, siteLibrary: nextLibrary };
     });
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   setSiteDragPreview: (id, preview) =>
@@ -2951,7 +2940,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return stripRedundantLinkRadioOverrides(next, fromSite, toSite);
       }),
     }));
-    get().recomputeCoverage();
+    useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
   updateMapViewport: (patch) =>
@@ -2989,7 +2978,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isTerrainFetching: false,
       }));
       clearTerrainLossCache();
-      get().recomputeCoverage();
+      useCoverageStore.getState().recomputeCoverage();
     } finally {
       set({ isTerrainFetching: false });
     }
@@ -3084,7 +3073,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         srtmTiles: mergeSrtmTiles(state.srtmTiles, result.tiles),
       }));
-      get().recomputeCoverage();
+      useCoverageStore.getState().recomputeCoverage();
     };
 
     const mergeLoadResults = (left: CopernicusLoadResult, right: CopernicusLoadResult): CopernicusLoadResult => ({
@@ -3272,7 +3261,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         srtmTiles: mergeSrtmTiles(state.srtmTiles, result.tiles),
       }));
-      get().recomputeCoverage();
+      useCoverageStore.getState().recomputeCoverage();
     };
 
     const mergeLoadResults = (left: CopernicusLoadResult, right: CopernicusLoadResult): CopernicusLoadResult => ({
@@ -3368,147 +3357,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainLoadEpoch: 0,
       terrainFetchStatus: "Terrain source caches cleared.",
     }));
-    get().recomputeCoverage();
-  },
-  recomputeCoverage: () => {
-    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    set({
-      simulationRunToken: runId,
-      isSimulationRecomputing: true,
-      simulationProgress: 3,
-    });
-
-    if (coverageRecomputeTimer !== null) {
-      window.clearTimeout(coverageRecomputeTimer);
-      coverageRecomputeTimer = null;
-    }
-
-    coverageRecomputeTimer = window.setTimeout(() => {
-      coverageRecomputeTimer = null;
-      const startedAt = Date.now();
-      if (get().simulationRunToken !== runId) return;
-
-      const runComputation = async () => {
-        const state = get();
-        if (state.simulationRunToken !== runId) return;
-
-        const {
-          selectedCoverageMode,
-          networks,
-          selectedNetworkId,
-          sites,
-          systems,
-          propagationModel,
-          srtmTiles,
-          links,
-          selectedLinkId,
-          autoPropagationEnvironment,
-          propagationEnvironment,
-          terrainLoadEpoch,
-        } = state;
-        const network = networks.find((n) => n.id === selectedNetworkId);
-        if (!network) {
-          const finalize = () => {
-            if (get().simulationRunToken !== runId) return;
-            set({
-              coverageSamples: [],
-              isSimulationRecomputing: false,
-              simulationProgress: 100,
-            });
-            window.setTimeout(() => {
-              if (get().simulationRunToken === runId) {
-                set({ simulationProgress: 0, simulationRunToken: "" });
-              }
-            }, 260);
-          };
-          const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
-          window.setTimeout(finalize, waitMs);
-          return;
-        }
-
-        const selectedLink = links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null;
-        const fromSite = selectedLink ? sites.find((site) => site.id === selectedLink.fromSiteId) ?? null : null;
-        const toSite = selectedLink ? sites.find((site) => site.id === selectedLink.toSiteId) ?? null : null;
-        const autoDerived =
-          autoPropagationEnvironment && fromSite && toSite
-            ? deriveDynamicPropagationEnvironment({
-                from: fromSite.position,
-                to: toSite.position,
-                fromGroundM: fromSite.groundElevationM,
-                toGroundM: toSite.groundElevationM,
-                terrainSampler: ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-              })
-            : null;
-        const effectiveEnvironment = autoDerived?.environment ?? propagationEnvironment;
-        if (autoDerived) {
-          if (
-            state.propagationEnvironmentReason !== autoDerived.reason ||
-            state.propagationEnvironment.clutterHeightM !== autoDerived.environment.clutterHeightM ||
-            state.propagationEnvironment.polarization !== autoDerived.environment.polarization ||
-            state.propagationEnvironment.groundDielectric !== autoDerived.environment.groundDielectric ||
-            state.propagationEnvironment.groundConductivity !== autoDerived.environment.groundConductivity ||
-            state.propagationEnvironment.radioClimate !== autoDerived.environment.radioClimate ||
-            state.propagationEnvironment.atmosphericBendingNUnits !== autoDerived.environment.atmosphericBendingNUnits
-          ) {
-            set({
-              propagationEnvironment: autoDerived.environment,
-              propagationEnvironmentReason: autoDerived.reason,
-            });
-          }
-        }
-
-        set({ simulationProgress: 8 });
-        let lastProgress = 8;
-        const coverageSamples = await buildCoverageAsync(
-          selectedCoverageMode,
-          network,
-          sites,
-          systems,
-          propagationModel,
-          effectiveEnvironment,
-          ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
-          {
-            sampleMultiplier: 1,
-            terrainSamples: 20,
-            onProgress: (progress) => {
-              if (get().simulationRunToken !== runId) return;
-              const next = Math.round(8 + progress * 84);
-              if (next - lastProgress >= 2 || next >= 99) {
-                lastProgress = next;
-                set({ simulationProgress: next });
-              }
-            },
-            terrainCacheKey: `${selectedCoverageMode}|${selectedNetworkId}|${propagationModel}|${terrainLoadEpoch}`,
-          },
-        );
-        if (get().simulationRunToken !== runId) return;
-        const finalize = () => {
-          if (get().simulationRunToken === runId) {
-            set({
-              coverageSamples,
-              isSimulationRecomputing: false,
-              simulationProgress: 100,
-            });
-            window.setTimeout(() => {
-              if (get().simulationRunToken === runId) {
-                set({ simulationProgress: 0, simulationRunToken: "" });
-              }
-            }, 320);
-          }
-        };
-        const waitMs = Math.max(0, 600 - (Date.now() - startedAt));
-        window.setTimeout(finalize, waitMs);
-      };
-
-      // Let the browser paint the progress bar before starting heavy recomputation work.
-      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-        window.requestAnimationFrame(() => {
-          window.requestAnimationFrame(runComputation);
-        });
-      } else {
-        window.setTimeout(runComputation, 0);
-      }
-    }, COVERAGE_RECOMPUTE_DEBOUNCE_MS);
+    useCoverageStore.getState().recomputeCoverage();
   },
   getSelectedLink: () => {
     const { links, selectedLinkId, sites, networks, selectedNetworkId } = get();
@@ -3669,4 +3518,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 }));
 
-useAppStore.getState().recomputeCoverage();
+setAppStoreBridge({
+  getState: () => useAppStore.getState() as unknown as Record<string, unknown>,
+  setState: (patch) => useAppStore.setState(patch as Parameters<typeof useAppStore.setState>[0]),
+});
