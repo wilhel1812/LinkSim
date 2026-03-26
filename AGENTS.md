@@ -41,6 +41,8 @@
 - After every live deploy, monitor Cloudflare Pages deployment status (`wrangler pages deployment list --project-name linksim`) and explicitly notify the user when deployment is complete.
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
 - Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
+- Maintain a human-readable `CHANGELOG.md` for every release; do not use raw commit dumps as release notes.
+- Before each production release, verify whether any issues closed since the previous release are missing a milestone and report/fix that metadata drift.
 - Version/channel labeling rule:
   - Local must display `vX.Y.Z-alpha+<commit>`.
   - Staging must display `vX.Y.Z-beta+<commit>`.
@@ -68,6 +70,7 @@
   - `npm run build:bundle`
   - Confirm build label matches intended SemVer channel rules
   - Confirm no unresolved issue/project status drift for items in the current pass
+  - Confirm `CHANGELOG.md` is updated with user-readable highlights for the target release
 - Token-efficient execution:
   - Lock scope for each pass before implementation.
   - Define done criteria and no-touch areas at pass start.
