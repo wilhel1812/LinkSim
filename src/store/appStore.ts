@@ -2192,6 +2192,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { siteLibrary: next, sites: nextSites, links: nextLinks };
     });
     useCoverageStore.getState().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
   },
   deleteSiteLibraryEntry: (entryId) => {
     get().deleteSiteLibraryEntries([entryId]);
