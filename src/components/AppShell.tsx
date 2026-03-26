@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
-import { buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
+import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -175,6 +175,35 @@ export function AppShell() {
       "/",
     );
   }, [activeSimulation, selectedLink, selectedSiteIds, sites]);
+
+  useEffect(() => {
+    if (!deepLinkAppliedRef.current) return;
+
+    const reserved = ["api", "cdn-cgi", "assets", "meshmap"];
+    const head = (window.location.pathname ?? "/").split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
+    if (reserved.includes(head)) return;
+
+    const currentPath = window.location.pathname || "/";
+    let targetPath = "/";
+
+    if (currentShareLink) {
+      try {
+        targetPath = new URL(currentShareLink).pathname;
+      } catch {
+        return;
+      }
+    } else if (activeSimulation) {
+      targetPath = buildDeepLinkPathname(activeSimulation.name, {
+        selectedSiteSlugs: selectedSiteIds
+          .map((id) => sites.find((site) => site.id === id)?.name)
+          .filter((name): name is string => Boolean(name)),
+      });
+    }
+
+    if (currentPath !== targetPath) {
+      window.history.replaceState(null, "", targetPath);
+    }
+  }, [currentShareLink, activeSimulation, selectedSiteIds, sites]);
 
   useEffect(() => {
     const root = document.documentElement;

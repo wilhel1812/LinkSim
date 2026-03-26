@@ -205,6 +205,35 @@ export const parseDeepLinkFromLocation = (locationLike: DeepLinkLocationLike): D
   };
 };
 
+const cleanSlug = (s: string): string =>
+  s
+    .trim()
+    .normalize("NFKC")
+    .replace(VARIATION_SELECTORS, "")
+    .replace(DELIMITER_CHARS, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+export const buildDeepLinkPathname = (
+  simulationSlug: string,
+  options?: { selectedLinkSlugs?: string[]; selectedSiteSlugs?: string[] },
+): string => {
+  const pathSlug = slugifyName(simulationSlug ?? "");
+  if (!pathSlug) return "/";
+
+  let path = `/${pathSlug}`;
+
+  if (options?.selectedLinkSlugs && options.selectedLinkSlugs.length === 2) {
+    const [from, to] = options.selectedLinkSlugs;
+    path += `/${cleanSlug(from)}${PRIMARY_LINK_DELIMITER}${cleanSlug(to)}`;
+  } else if (options?.selectedSiteSlugs && options.selectedSiteSlugs.length > 0) {
+    path += `/${options.selectedSiteSlugs.map(cleanSlug).join("+")}`;
+  }
+
+  return path;
+};
+
 export const buildDeepLinkUrl = (
   payload: DeepLinkPayloadV2,
   origin: string,
@@ -219,16 +248,6 @@ export const buildDeepLinkUrl = (
     if (payload.simulationSlug) url.searchParams.set("sim_slug", payload.simulationSlug);
     return url.toString();
   }
-
-  const cleanSlug = (s: string) =>
-    s
-      .trim()
-      .normalize("NFKC")
-      .replace(VARIATION_SELECTORS, "")
-      .replace(DELIMITER_CHARS, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "");
 
   let pathPart = `/${cleanSlug(pathSlug)}`;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "./deepLink";
+import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "./deepLink";
 
 describe("deepLink", () => {
   it("parses old v1 deep link payload and converts to v2", () => {
@@ -180,5 +180,81 @@ describe("deepLink", () => {
     if (!parsed.ok) return;
     expect(parsed.payload.simulationSlug).toBe("my-sim");
     expect(parsed.payload.simulationId).toBe("sim-123");
+  });
+
+  it("builds pathname for simulation only", () => {
+    const pathname = buildDeepLinkPathname("Høgevarde");
+    expect(pathname).toBe("/Høgevarde");
+  });
+
+  it("builds pathname with selected site slugs", () => {
+    const pathname = buildDeepLinkPathname("Høgevarde", {
+      selectedSiteSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
+    });
+    expect(pathname).toBe("/Høgevarde/Fyrisjøen+HOEG-ROUTER");
+  });
+
+  it("builds pathname with selected link slugs", () => {
+    const pathname = buildDeepLinkPathname("Høgevarde", {
+      selectedLinkSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
+    });
+    expect(pathname).toBe("/Høgevarde/Fyrisjøen~HOEG-ROUTER");
+  });
+
+  it("builds pathname ignoring link slugs when fewer or more than 2", () => {
+    const pathnameOne = buildDeepLinkPathname("Høgevarde", {
+      selectedLinkSlugs: ["Fyrisjøen"],
+    });
+    expect(pathnameOne).toBe("/Høgevarde");
+
+    const pathnameThree = buildDeepLinkPathname("Høgevarde", {
+      selectedLinkSlugs: ["A", "B", "C"],
+    });
+    expect(pathnameThree).toBe("/Høgevarde");
+  });
+
+  it("prefers link slugs over site slugs when both present with 2 links", () => {
+    const pathname = buildDeepLinkPathname("Høgevarde", {
+      selectedLinkSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
+      selectedSiteSlugs: ["Fyrisjøen", "HOEG-ROUTER", "Extra"],
+    });
+    expect(pathname).toBe("/Høgevarde/Fyrisjøen~HOEG-ROUTER");
+  });
+
+  it("falls back to site slugs when link slugs not exactly 2", () => {
+    const pathname = buildDeepLinkPathname("Høgevarde", {
+      selectedLinkSlugs: ["Fyrisjøen"],
+      selectedSiteSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
+    });
+    expect(pathname).toBe("/Høgevarde/Fyrisjøen+HOEG-ROUTER");
+  });
+
+  it("returns / for empty simulation slug", () => {
+    const pathname = buildDeepLinkPathname("");
+    expect(pathname).toBe("/");
+
+    const pathnameNull = buildDeepLinkPathname(undefined as unknown as string);
+    expect(pathnameNull).toBe("/");
+  });
+
+  it("strips delimiter characters from slugs", () => {
+    const pathname = buildDeepLinkPathname("Test+Sim", {
+      selectedSiteSlugs: ["Site~One", "Site+Two"],
+    });
+    expect(pathname).toBe("/TestSim/SiteOne+SiteTwo");
+  });
+
+  it("builds pathname with single site", () => {
+    const pathname = buildDeepLinkPathname("Høgevarde", {
+      selectedSiteSlugs: ["Fyrisjøen"],
+    });
+    expect(pathname).toBe("/Høgevarde/Fyrisjøen");
+  });
+
+  it("builds pathname for unicode simulation and sites", () => {
+    const pathname = buildDeepLinkPathname("한국조선", {
+      selectedSiteSlugs: ["남산-서울-타워", "평양텔레비죤탑"],
+    });
+    expect(pathname).toBe("/한국조선/남산-서울-타워+평양텔레비죤탑");
   });
 });
