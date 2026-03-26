@@ -5,3 +5,4 @@ dist
 npm-debug.log
 README.md
 *.local
+.venv-calc

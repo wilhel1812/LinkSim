@@ -14,6 +14,7 @@
 - Default environment workflow:
   - Unless the user explicitly says otherwise, work in local test environment.
   - After local verification, deploy to live test/staging for verification.
+  - For every implementation batch by default: do both local verification and staging deployment verification in the same pass.
   - Only promote to production after explicit user approval, using the same verified commit.
 - Branch workflow:
   - Use per-issue branches: `issue/<id>-<slug>`.
@@ -40,6 +41,8 @@
 - After every live deploy, monitor Cloudflare Pages deployment status (`wrangler pages deployment list --project-name linksim`) and explicitly notify the user when deployment is complete.
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
 - Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
+- Maintain a human-readable `CHANGELOG.md` for every release; do not use raw commit dumps as release notes.
+- Before each production release, verify whether any issues closed since the previous release are missing a milestone and report/fix that metadata drift.
 - Version/channel labeling rule:
   - Local must display `vX.Y.Z-alpha+<commit>`.
   - Staging must display `vX.Y.Z-beta+<commit>`.
@@ -52,7 +55,7 @@
   - `npm run deploy:prod:main` → https://linksim.link
 - Staging deploy default:
   - Use `npm run deploy:staging` from `staging` branch to deploy to https://staging.linksim.link
-  - Use `npm run deploy:staging:preview` only for side-by-side comparisons with preview URL
+  - Do not use preview deploys for normal verification; default is always the shared staging URL.
 - Never run raw `wrangler pages deploy` for release operations.
 - If a guarded deploy fails, fix the script/preflight issue and re-run the guarded script. Do not bypass with manual Wrangler deploys.
 - Promotion gate:
@@ -67,6 +70,7 @@
   - `npm run build:bundle`
   - Confirm build label matches intended SemVer channel rules
   - Confirm no unresolved issue/project status drift for items in the current pass
+  - Confirm `CHANGELOG.md` is updated with user-readable highlights for the target release
 - Token-efficient execution:
   - Lock scope for each pass before implementation.
   - Define done criteria and no-touch areas at pass start.
@@ -77,6 +81,37 @@
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
   - Maintain explicit status labels: `pending-discussion` -> `in-progress` -> `in-staging` -> `released`.
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
+
+## Staging-First Milestone Workflow (Single Source)
+- Deploy target policy:
+  - Always validate live on `https://staging.linksim.link`.
+  - Do not use preview URLs unless the user explicitly requests a one-off preview comparison in the current thread.
+- Per-issue branch policy:
+  - Start each issue branch from `origin/staging`.
+  - Branch name format: `issue/<id>-<slug>`.
+  - Keep PR scope to one issue; avoid mixed API/UI/deeplink batches in the same PR.
+- Drift check before coding (required):
+  - Run and report: `git log --oneline origin/staging -5`
+  - Run and report: `git log --oneline origin/main -5`
+  - Run and report: `git cherry -v origin/staging origin/main`
+  - If drift exists, create a dedicated `chore/reconcile-...` PR before feature work.
+- Verification gates for deep-link/API-affecting work:
+  - `npm run test -- --run src/lib/deepLink.test.ts`
+  - `npm run test -- --run functions/api/v1/calculate.test.ts`
+  - `npm run test -- --run src/store/appStore.test.ts`
+  - `npm run build`
+  - Manually verify deep-link matrix on staging:
+    - `/<simulation>`
+    - `/<simulation>/<site>`
+    - `/<simulation>/<site1>+<site2>`
+    - `/<simulation>/<site1>~<site2>`
+- Merge and staging deploy sequence per issue:
+  - Open PR into `staging`, merge, then deploy with `npm run deploy:staging`.
+  - After deploy, always confirm completion with `wrangler pages deployment list --project-name linksim-staging --environment production` and report the commit SHA/build label.
+- Milestone promotion model:
+  - Complete and verify all milestone issues on `staging` first.
+  - Promote to production in one batch from a `release/vX.Y.Z` branch cut from `staging`.
+  - Use the exact verified staging commit for production; no code changes between staging sign-off and production deploy.
 
 ## Branch Protection Rollout Safety
 - When introducing a new required status check, roll it out in two phases to avoid PR deadlocks:

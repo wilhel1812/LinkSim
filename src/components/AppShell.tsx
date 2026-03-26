@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
-import { buildDeepLinkUrl, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
+import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -12,6 +12,7 @@ import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
 import OnboardingTutorialModal from "./OnboardingTutorialModal";
+import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
 
@@ -58,18 +59,20 @@ export function AppShell() {
   const importLibraryData = useAppStore((state) => state.importLibraryData);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
+  const setSelectedSiteId = useAppStore((state) => state.setSelectedSiteId);
+  const selectSiteById = useAppStore((state) => state.selectSiteById);
+  const clearActiveSelection = useAppStore((state) => state.clearActiveSelection);
   const setMapOverlayMode = useAppStore((state) => state.setMapOverlayMode);
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
-  const mapViewport = useAppStore((state) => state.mapViewport);
-  const mapOverlayMode = useAppStore((state) => state.mapOverlayMode);
   const links = useAppStore((state) => state.links);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const sites = useAppStore((state) => state.sites);
+  const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
@@ -78,13 +81,17 @@ export function AppShell() {
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
   const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
+  const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
+  const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
 
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   const [activeUserId, setActiveUserId] = useState("");
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [showOnboardingTutorial, setShowOnboardingTutorial] = useState(false);
+  const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
@@ -94,6 +101,8 @@ export function AppShell() {
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const deepLinkAppliedRef = useRef(false);
+  const cloudInitSeenRef = useRef(false);
+  const cloudInitSettledRef = useRef(false);
 
   const { theme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
@@ -109,7 +118,7 @@ export function AppShell() {
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
   const selectedLink = useMemo(
-    () => links.find((link) => link.id === selectedLinkId) ?? links[0] ?? null,
+    () => links.find((link) => link.id === selectedLinkId) ?? null,
     [links, selectedLinkId],
   );
   const referencedPrivateSites = useMemo(() => {
@@ -131,28 +140,70 @@ export function AppShell() {
   const currentShareLink = useMemo(() => {
     if (!activeSimulation) return "";
     const simulationSlug = activeSimulation.name;
+    const selectedSites = selectedSiteIds
+      .map((id) => sites.find((site) => site.id === id))
+      .filter((site): site is NonNullable<typeof site> => Boolean(site));
+    const selectedSiteIdSet = new Set(selectedSiteIds);
+
+    let selectedLinkSlugs: string[] | undefined;
+    let selectedSiteSlugs: string[] | undefined;
+
+    const hasExplicitLinkSelection =
+      Boolean(selectedLink) &&
+      selectedSiteIds.length === 2 &&
+      selectedLink !== null &&
+      selectedSiteIdSet.has(selectedLink.fromSiteId) &&
+      selectedSiteIdSet.has(selectedLink.toSiteId);
+
+    if (hasExplicitLinkSelection && selectedLink) {
+      selectedLinkSlugs = [selectedLink.fromSiteId, selectedLink.toSiteId]
+        .map((id) => sites.find((s) => s.id === id)?.name)
+        .filter((name): name is string => Boolean(name));
+    } else if (selectedSites.length > 0) {
+      selectedSiteSlugs = selectedSites.map((s) => s.name);
+    }
+
     return buildDeepLinkUrl(
       {
-        version: 1,
+        version: 2,
         simulationId: activeSimulation.id,
         simulationSlug,
-        ...(selectedLink ? { selectedLinkId: selectedLink.id } : {}),
-        ...(selectedLink?.name ? { selectedLinkSlug: selectedLink.name } : {}),
-        overlayMode: mapOverlayMode,
-        ...(mapViewport
-          ? {
-              mapViewport: {
-                lat: mapViewport.center.lat,
-                lon: mapViewport.center.lon,
-                zoom: mapViewport.zoom,
-              },
-            }
-          : {}),
+        ...(selectedLinkSlugs ? { selectedLinkSlugs } : {}),
+        ...(selectedSiteSlugs ? { selectedSiteSlugs } : {}),
       },
       window.location.origin,
       "/",
     );
-  }, [activeSimulation, selectedLink, mapOverlayMode, mapViewport]);
+  }, [activeSimulation, selectedLink, selectedSiteIds, sites]);
+
+  useEffect(() => {
+    if (!deepLinkAppliedRef.current) return;
+
+    const reserved = ["api", "cdn-cgi", "assets", "meshmap"];
+    const head = (window.location.pathname ?? "/").split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
+    if (reserved.includes(head)) return;
+
+    const currentPath = window.location.pathname || "/";
+    let targetPath = "/";
+
+    if (currentShareLink) {
+      try {
+        targetPath = new URL(currentShareLink).pathname;
+      } catch {
+        return;
+      }
+    } else if (activeSimulation) {
+      targetPath = buildDeepLinkPathname(activeSimulation.name, {
+        selectedSiteSlugs: selectedSiteIds
+          .map((id) => sites.find((site) => site.id === id)?.name)
+          .filter((name): name is string => Boolean(name)),
+      });
+    }
+
+    if (currentPath !== targetPath) {
+      window.history.replaceState(null, "", targetPath);
+    }
+  }, [currentShareLink, activeSimulation, selectedSiteIds, sites]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -256,7 +307,9 @@ export function AppShell() {
         setActiveUserId(profile.id);
         try {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
-          if (!seen) setShowOnboarding(true);
+          if (!seen && !deepLinkParse.ok) {
+            setShowWelcomeModal(true);
+          }
         } catch {
           // ignore storage errors
         }
@@ -359,8 +412,18 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if ((accessState !== "granted" && accessState !== "readonly") || deepLinkAppliedRef.current) return;
-    deepLinkAppliedRef.current = true;
+    if (isInitializing) {
+      cloudInitSeenRef.current = true;
+      return;
+    }
+    if (cloudInitSeenRef.current) {
+      cloudInitSettledRef.current = true;
+    }
+  }, [isInitializing]);
+
+  useEffect(() => {
+    if ((accessState !== "granted" && accessState !== "readonly") || deepLinkAppliedRef.current || isInitializing) return;
+    if (!cloudInitSettledRef.current) return;
     if (!deepLinkParse.ok) {
       if (deepLinkParse.reason !== "missing_sim") {
         setDeepLinkNotice(
@@ -371,28 +434,43 @@ export function AppShell() {
               : "The shared link is missing a valid simulation id.",
         );
       }
+      deepLinkAppliedRef.current = true;
       return;
     }
 
     void (async () => {
       const payload = deepLinkParse.payload;
+      const safeDecode = (value: string): string => {
+        try {
+          return decodeURIComponent(value);
+        } catch {
+          return value;
+        }
+      };
       let resolvedSimulationId = payload.simulationId ?? "";
       const resolveBySlug = (): string | undefined => {
-        const slug = payload.simulationSlug?.trim().toLowerCase();
-        if (!slug) return undefined;
+        const decodedSlug = safeDecode(payload.simulationSlug ?? "");
+        const targetPretty = slugifyName(decodedSlug);
+        const targetCanonical = canonicalizeDeepLinkKey(decodedSlug);
+        if (!targetPretty && !targetCanonical) return undefined;
         const bySlug = useAppStore
           .getState()
           .simulationPresets.find((preset) => {
-            const presetSlugValue =
-              typeof (preset as { slug?: unknown }).slug === "string"
-                ? String((preset as { slug?: unknown }).slug)
-                : preset.name;
-            const presetSlug = slugifyName(presetSlugValue);
-            if (presetSlug === slug) return true;
+            const presetSlugRaw = typeof (preset as { slug?: unknown }).slug === "string" ? String((preset as { slug?: unknown }).slug) : "";
+            const presetSlugValue = presetSlugRaw.trim() ? presetSlugRaw : preset.name;
+            const presetPretty = slugifyName(presetSlugValue);
+            const presetCanonical = canonicalizeDeepLinkKey(presetSlugValue);
+            if ((targetPretty && presetPretty === targetPretty) || (targetCanonical && presetCanonical === targetCanonical)) {
+              return true;
+            }
             const aliases = Array.isArray((preset as { slugAliases?: unknown }).slugAliases)
               ? ((preset as { slugAliases?: string[] }).slugAliases ?? [])
               : [];
-            return aliases.some((alias) => slugifyName(alias) === slug);
+            return aliases.some((alias) => {
+              const aliasPretty = slugifyName(alias);
+              const aliasCanonical = canonicalizeDeepLinkKey(alias);
+              return (targetPretty && aliasPretty === targetPretty) || (targetCanonical && aliasCanonical === targetCanonical);
+            });
           })
           ?.id;
         return bySlug;
@@ -453,6 +531,7 @@ export function AppShell() {
               }
             }
             if (!exists) {
+              deepLinkAppliedRef.current = true;
               return;
             }
           }
@@ -474,10 +553,12 @@ export function AppShell() {
                 exists = Boolean(resolvedSimulationId);
               } catch {
                 setDeepLinkNotice("This shared simulation no longer exists.");
+                deepLinkAppliedRef.current = true;
                 return;
               }
             } else {
               setDeepLinkNotice("This shared simulation no longer exists.");
+              deepLinkAppliedRef.current = true;
               return;
             }
           }
@@ -506,6 +587,7 @@ export function AppShell() {
           exists = Boolean(resolvedSimulationId);
         } catch {
           setDeepLinkNotice("This shared simulation is unavailable.");
+          deepLinkAppliedRef.current = true;
           return;
         }
       }
@@ -518,10 +600,12 @@ export function AppShell() {
           });
           if (status.status === "forbidden") {
             setDeepLinkNotice("You do not have access to this shared simulation.");
+            deepLinkAppliedRef.current = true;
             return;
           }
           if (status.status === "missing") {
             setDeepLinkNotice("This shared simulation no longer exists.");
+            deepLinkAppliedRef.current = true;
             return;
           }
           if (status.simulationId) {
@@ -531,48 +615,103 @@ export function AppShell() {
           // Ignore and use generic message.
         }
         setDeepLinkNotice("This shared simulation is unavailable.");
+        deepLinkAppliedRef.current = true;
         return;
       }
 
       if (!resolvedSimulationId) {
         setDeepLinkNotice("This shared simulation is unavailable.");
+        deepLinkAppliedRef.current = true;
         return;
       }
       loadSimulationPreset(resolvedSimulationId);
-      if (payload.selectedLinkId) {
-        const latest = useAppStore.getState();
-        if (latest.links.some((link) => link.id === payload.selectedLinkId)) {
-          setSelectedLinkId(payload.selectedLinkId);
-        }
-      } else if (payload.selectedLinkSlug) {
-        const latest = useAppStore.getState();
-        const bySlug = latest.links.find((link) =>
-          slugifyName(link.name ?? "") === payload.selectedLinkSlug,
+      const latest = useAppStore.getState();
+      const decodedLinkSlugs = payload.selectedLinkSlugs?.map(safeDecode);
+      const decodedSiteSlugs = payload.selectedSiteSlugs?.map(safeDecode);
+      const normalizeForMatch = (value: string): string => slugifyName(value).normalize("NFKC");
+      const normalizeExact = (value: string): string => safeDecode(value).trim().normalize("NFKC").replace(/[\uFE0E\uFE0F]/g, "");
+      if (decodedLinkSlugs && decodedLinkSlugs.length === 2) {
+        const [fromSlug, toSlug] = decodedLinkSlugs;
+        const fromExact = normalizeExact(fromSlug);
+        const toExact = normalizeExact(toSlug);
+        const fromPretty = normalizeForMatch(fromSlug);
+        const toPretty = normalizeForMatch(toSlug);
+        const fromCanonical = canonicalizeDeepLinkKey(fromSlug);
+        const toCanonical = canonicalizeDeepLinkKey(toSlug);
+        const bySlug = latest.links.find(
+          (link) => {
+            const fromName = latest.sites.find((s) => s.id === link.fromSiteId)?.name ?? "";
+            const toName = latest.sites.find((s) => s.id === link.toSiteId)?.name ?? "";
+            const fromNameExact = normalizeExact(fromName);
+            const toNameExact = normalizeExact(toName);
+            const fromNamePretty = normalizeForMatch(fromName);
+            const toNamePretty = normalizeForMatch(toName);
+            const fromNameCanonical = canonicalizeDeepLinkKey(fromName);
+            const toNameCanonical = canonicalizeDeepLinkKey(toName);
+            return (
+              ((fromExact && fromNameExact === fromExact) ||
+                (fromPretty && fromNamePretty === fromPretty) ||
+                (fromCanonical && fromNameCanonical === fromCanonical)) &&
+              ((toExact && toNameExact === toExact) ||
+                (toPretty && toNamePretty === toPretty) ||
+                (toCanonical && toNameCanonical === toCanonical))
+            );
+          },
         );
-        if (bySlug) setSelectedLinkId(bySlug.id);
+        if (bySlug) {
+          setSelectedLinkId(bySlug.id);
+        } else {
+          clearActiveSelection();
+          setDeepLinkNotice("Could not resolve link selection from this deep link.");
+        }
+      } else if (decodedSiteSlugs && decodedSiteSlugs.length > 0) {
+        const matchedSiteIds: string[] = [];
+        for (const siteSlug of decodedSiteSlugs) {
+          const siteExact = normalizeExact(siteSlug);
+          const sitePretty = normalizeForMatch(siteSlug);
+          const siteCanonical = canonicalizeDeepLinkKey(siteSlug);
+          const site = latest.sites.find((s) => {
+            const candidateExact = normalizeExact(s.name);
+            const candidatePretty = normalizeForMatch(s.name);
+            const candidateCanonical = canonicalizeDeepLinkKey(s.name);
+            return (
+              (siteExact && candidateExact === siteExact) ||
+              (sitePretty && candidatePretty === sitePretty) ||
+              (siteCanonical && candidateCanonical === siteCanonical)
+            );
+          });
+          if (site && !matchedSiteIds.includes(site.id)) matchedSiteIds.push(site.id);
+        }
+        if (matchedSiteIds.length === decodedSiteSlugs.length && matchedSiteIds.length > 0) {
+          clearActiveSelection();
+          const [firstSiteId, ...remainingSiteIds] = matchedSiteIds;
+          if (firstSiteId) setSelectedSiteId(firstSiteId);
+          for (const siteId of remainingSiteIds) {
+            selectSiteById(siteId, true);
+          }
+        } else {
+          clearActiveSelection();
+          setDeepLinkNotice("Could not resolve all site selections from this deep link.");
+        }
       }
-      if (payload.overlayMode) {
-        setMapOverlayMode(payload.overlayMode);
-      }
-      if (payload.mapViewport) {
-        updateMapViewport({
-          center: { lat: payload.mapViewport.lat, lon: payload.mapViewport.lon },
-          zoom: payload.mapViewport.zoom,
-        });
-      }
+      deepLinkAppliedRef.current = true;
     })();
   }, [
     accessState,
     deepLinkParse,
     importLibraryData,
+    isInitializing,
     loadSimulationPreset,
+    clearActiveSelection,
+    simulationPresets,
     setMapOverlayMode,
+    setSelectedSiteId,
     setSelectedLinkId,
     updateMapViewport,
   ]);
 
-  const closeOnboarding = () => {
-    setShowOnboarding(false);
+  const closeWelcome = () => {
+    setShowWelcomeModal(false);
     if (!activeUserId) return;
     try {
       localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
@@ -580,6 +719,51 @@ export function AppShell() {
       // ignore storage errors
     }
   };
+
+  const openOnboardingTutorial = () => {
+    setShowOnboardingTutorial(true);
+  };
+
+  const openWelcomeFromWelcome = () => {
+    setShowWelcomeModal(false);
+    setShowOnboardingTutorial(true);
+  };
+
+  const openLibraryFromWelcome = () => {
+    setShowWelcomeModal(false);
+    setShowSimulationLibraryRequest(true);
+    try {
+      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
+    } catch {
+      // ignore
+    }
+  };
+
+  const createNewFromWelcome = () => {
+    setShowWelcomeModal(false);
+    setShowNewSimulationRequest(true);
+    try {
+      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (libraryAutoOpened) return;
+    if (workspaceState !== "no-simulation") return;
+    if (showWelcomeModal) return;
+    if (accessState !== "granted" && accessState !== "readonly") return;
+    if (!activeUserId) return;
+    try {
+      const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`);
+      if (!seen) return;
+    } catch {
+      return;
+    }
+    setLibraryAutoOpened(true);
+    setShowSimulationLibraryRequest(true);
+  }, [libraryAutoOpened, workspaceState, showWelcomeModal, accessState, activeUserId, setShowSimulationLibraryRequest]);
 
   const copyCurrentLink = useCallback(async () => {
     if (!activeSimulation) {
@@ -590,15 +774,7 @@ export function AppShell() {
       setShareStatus("Unable to build share link for this simulation.");
       return;
     }
-    let linkToCopy = currentShareLink;
-    try {
-      const parsed = new URL(currentShareLink);
-      parsed.pathname = decodeURIComponent(parsed.pathname);
-      linkToCopy = parsed.toString();
-    } catch {
-      linkToCopy = currentShareLink;
-    }
-    await copyToClipboard(linkToCopy);
+    await copyToClipboard(currentShareLink);
     setShareStatus("Share link copied.");
     setCopyToast("Copied to clipboard");
   }, [activeSimulation, currentShareLink]);
@@ -699,20 +875,21 @@ export function AppShell() {
               </button>
             </div>
           ) : null}
-          {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
+           {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
         </section>
         <div className="floating-help-cluster">
           {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
           <button
             aria-label="Open onboarding"
             className="floating-help-button"
-            onClick={() => setShowOnboarding(true)}
+            onClick={openOnboardingTutorial}
             type="button"
           >
             ?
           </button>
         </div>
-        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+        <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
+        <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       </main>
     );
   }
@@ -757,13 +934,14 @@ export function AppShell() {
           <button
             aria-label="Open onboarding"
             className="floating-help-button"
-            onClick={() => setShowOnboarding(true)}
+            onClick={openOnboardingTutorial}
             type="button"
           >
             ?
           </button>
         </div>
-        <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+        <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
+        <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       </main>
     );
   }
@@ -881,13 +1059,14 @@ export function AppShell() {
         <button
           aria-label="Open onboarding"
           className="floating-help-button"
-          onClick={() => setShowOnboarding(true)}
+          onClick={openOnboardingTutorial}
           type="button"
         >
           ?
         </button>
       </div>
-      <OnboardingTutorialModal onClose={closeOnboarding} open={showOnboarding} />
+      <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
+      <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       {showMobileWarning ? (
         <ModalOverlay aria-label="Mobile support notice" onClose={() => setShowMobileWarning(false)} tier="raised">
           <div className="library-manager-card mobile-warning-modal-card">

@@ -32,31 +32,16 @@ vi.mock("../lib/coverage", () => ({
 }));
 
 vi.mock("../lib/elevationService", () => ({
-  fetchElevations: vi.fn(),
+  fetchElevations: vi.fn(async () => [123]),
 }));
 
-import { fetchElevations } from "../lib/elevationService";
 import { useAppStore } from "./appStore";
-
-const mockedFetchElevations = vi.mocked(fetchElevations);
-
-const makeSite = (id: string, lat: number, lon: number, groundElevationM: number) => ({
-  id,
-  name: id,
-  position: { lat, lon },
-  groundElevationM,
-  antennaHeightM: 2,
-  txPowerDbm: 20,
-  txGainDbi: 2,
-  rxGainDbi: 2,
-  cableLossDb: 1,
-});
+import { fetchElevations } from "../lib/elevationService";
 
 describe("appStore auth guards", () => {
   beforeEach(() => {
     storage.mock.clear();
     vi.restoreAllMocks();
-    mockedFetchElevations.mockReset();
     useAppStore.setState({
       currentUser: null,
       siteLibrary: [
@@ -220,6 +205,32 @@ describe("appStore auth guards", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
+  it("does not auto-sync online elevations when adding a site", async () => {
+    vi.mocked(fetchElevations).mockClear();
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    useAppStore.getState().addSiteByCoordinates("Gamma", 3, 3);
+    await Promise.resolve();
+
+    expect(fetchElevations).not.toHaveBeenCalled();
+  });
+
   it("blocks updateCurrentSimulationSnapshot when current user cannot edit selected simulation", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     useAppStore.getState().setCurrentUser({
@@ -371,62 +382,165 @@ describe("appStore auth guards", () => {
     expect(useAppStore.getState().sites.length).toBe(beforeSiteCount);
     expect(warnSpy).toHaveBeenCalled();
   });
+
+  it("clears selectedLinkId when switching to single-site selection", () => {
+    useAppStore.setState({
+      selectedLinkId: "lnk-1",
+      selectedSiteId: "site-1",
+      selectedSiteIds: ["site-1", "site-2"],
+    });
+
+    useAppStore.getState().setSelectedSiteId("site-2");
+
+    const state = useAppStore.getState();
+    expect(state.selectedLinkId).toBe("");
+    expect(state.selectedSiteIds).toEqual(["site-2"]);
+  });
+
+  it("clears selectedLinkId when toggling additive site selection", () => {
+    useAppStore.setState({
+      selectedLinkId: "lnk-1",
+      selectedSiteId: "site-1",
+      selectedSiteIds: ["site-1", "site-2"],
+    });
+
+    useAppStore.getState().selectSiteById("site-1", true);
+
+    const state = useAppStore.getState();
+    expect(state.selectedLinkId).toBe("");
+    expect(state.selectedSiteIds).toEqual(["site-2"]);
+  });
 });
 
-describe("appStore elevation sync", () => {
+describe("appStore blank simulation loading", () => {
   beforeEach(() => {
-    mockedFetchElevations.mockReset();
+    storage.mock.clear();
+    vi.restoreAllMocks();
     useAppStore.setState({
-      hasOnlineElevationSync: false,
-      sites: [makeSite("site-1", 1, 1, 100), makeSite("site-2", 2, 2, 120)],
+      currentUser: {
+        id: "owner-1",
+        username: "owner",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+      },
+      selectedScenarioId: "starter-default",
+      sites: [],
+      links: [],
+      simulationPresets: [],
     });
   });
 
-  it("applies fetched elevations by site id when site order changes mid-request", async () => {
-    let resolveFetch: (values: number[]) => void = () => undefined;
-    mockedFetchElevations.mockImplementationOnce(
-      () =>
-        new Promise<number[]>((resolve) => {
-          resolveFetch = resolve;
-        }),
-    );
+  it("persists last-session selection when loading a blank saved simulation", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Blank Session", { visibility: "private", ownerUserId: "owner-1" });
+    expect(createdId).toBeTruthy();
 
-    const syncPromise = useAppStore.getState().syncSiteElevationsOnline();
+    storage.mock.removeItem("linksim-last-session-v1");
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+
+    const raw = storage.mock.getItem("linksim-last-session-v1");
+    expect(raw).toBeTruthy();
+    expect(raw).toContain(createdId as string);
+  });
+});
+
+describe("appStore blank simulation loading", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
     useAppStore.setState({
-      sites: [makeSite("site-2", 2, 2, 120), makeSite("site-1", 1, 1, 100)],
+      currentUser: {
+        id: "owner-1",
+        username: "owner",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+      },
+      selectedScenarioId: "starter-default",
+      sites: [],
+      links: [],
+      simulationPresets: [],
     });
-
-    resolveFetch([111.2, 222.7]);
-    await syncPromise;
-
-    const sites = useAppStore.getState().sites;
-    expect(sites.find((site) => site.id === "site-1")?.groundElevationM).toBe(111);
-    expect(sites.find((site) => site.id === "site-2")?.groundElevationM).toBe(223);
-    expect(useAppStore.getState().hasOnlineElevationSync).toBe(true);
   });
 
-  it("ignores stale responses when the sites list is replaced", async () => {
-    let resolveFetch: (values: number[]) => void = () => undefined;
-    mockedFetchElevations.mockImplementationOnce(
-      () =>
-        new Promise<number[]>((resolve) => {
-          resolveFetch = resolve;
-        }),
-    );
+  it("persists last-session selection when loading a blank saved simulation", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Blank Session", { visibility: "private", ownerUserId: "owner-1" });
+    expect(createdId).toBeTruthy();
 
-    const syncPromise = useAppStore.getState().syncSiteElevationsOnline();
+    storage.mock.removeItem("linksim-last-session-v1");
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+
+    const raw = storage.mock.getItem("linksim-last-session-v1");
+    expect(raw).toBeTruthy();
+    expect(raw).toContain(createdId as string);
+  });
+});
+
+describe("appStore blank simulation loading", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
     useAppStore.setState({
-      hasOnlineElevationSync: false,
-      sites: [makeSite("site-a", 59.92, 10.75, 100), makeSite("site-b", 59.95, 10.82, 120)],
+      currentUser: {
+        id: "owner-1",
+        username: "owner",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+      },
+      selectedScenarioId: "starter-default",
+      sites: [],
+      links: [],
+      simulationPresets: [],
     });
+  });
 
-    resolveFetch([501.4, 502.4]);
-    await syncPromise;
+  it("persists last-session selection when loading a blank saved simulation", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Blank Session", { visibility: "private", ownerUserId: "owner-1" });
+    expect(createdId).toBeTruthy();
 
-    const sites = useAppStore.getState().sites;
-    expect(sites.find((site) => site.id === "site-a")?.groundElevationM).toBe(100);
-    expect(sites.find((site) => site.id === "site-b")?.groundElevationM).toBe(120);
-    expect(useAppStore.getState().hasOnlineElevationSync).toBe(false);
+    storage.mock.removeItem("linksim-last-session-v1");
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+
+    const raw = storage.mock.getItem("linksim-last-session-v1");
+    expect(raw).toBeTruthy();
+    expect(raw).toContain(createdId as string);
   });
 });
 

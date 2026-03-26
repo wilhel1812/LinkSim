@@ -2135,6 +2135,76 @@ input {
   background: color-mix(in srgb, var(--surface) 86%, transparent);
 }
 
+.tutorial-inline-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tutorial-inline-link:hover {
+  opacity: 0.8;
+}
+
+.welcome-compact-card {
+  width: min(440px, 92vw);
+  padding: 24px 28px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.welcome-compact-card h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.welcome-compact-card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.welcome-compact-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.welcome-compact-button {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: left;
+  font-size: 0.92rem;
+}
+
+.welcome-compact-button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.welcome-modal-new-simulation-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.welcome-modal-new-simulation {
+  width: min(520px, 94vw);
+  max-height: min(80vh, 600px);
+  overflow: auto;
+}
+
 .library-manager-header {
   display: flex;
   align-items: center;
