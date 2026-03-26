@@ -1,0 +1,21 @@
+name: Require milestone on close
+
+on:
+  issues:
+    types: [closed]
+
+jobs:
+  enforce-milestone:
+    if: github.event.issue.state_reason == 'completed' && github.event.issue.milestone == null
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Reopen issue and comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh issue reopen "$ISSUE_NUMBER" --repo "$REPO"
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "⚠️ Issues closed as completed must have a milestone assigned. Please assign a milestone before closing."
