@@ -444,10 +444,12 @@ export function AppShell() {
     };
 
     schedule();
+    const followUpTimerA = window.setTimeout(schedule, 120);
+    const followUpTimerB = window.setTimeout(schedule, 280);
 
     const observer = new ResizeObserver(schedule);
     observer.observe(shell);
-    shell.querySelectorAll<HTMLElement>(".map-controls").forEach((element) => {
+    shell.querySelectorAll<HTMLElement>(".map-controls, .map-controls *").forEach((element) => {
       observer.observe(element);
     });
     window.addEventListener("resize", schedule);
@@ -457,6 +459,8 @@ export function AppShell() {
       if (frameId) {
         window.cancelAnimationFrame(frameId);
       }
+      window.clearTimeout(followUpTimerA);
+      window.clearTimeout(followUpTimerB);
       observer.disconnect();
       window.removeEventListener("resize", schedule);
       window.removeEventListener("orientationchange", schedule);

@@ -1550,7 +1550,7 @@ input {
 
   .app-shell.is-mobile-shell {
     --mobile-controls-top: calc(12px + env(safe-area-inset-top));
-    --mobile-controls-occupied: 0px;
+    --mobile-controls-occupied: 128px;
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
     --mobile-tabbar-height: 38px;
     --mobile-panel-height: 36vh;
@@ -1736,6 +1736,8 @@ input {
     right: 0;
     bottom: 0;
     left: 0;
+    width: 100vw;
+    height: 100lvh;
     margin: 0;
     border: 0;
     border-radius: 0;
