@@ -1075,7 +1075,7 @@ export function AppShell() {
         </div>
         <MapView
           isMapExpanded={isMapExpanded}
-          showInspector={!isMobileViewport || (!isMapExpanded && mobileActivePanel === "inspector")}
+          showInspector={!isMapExpanded && (!isMobileViewport || mobileActivePanel === "inspector")}
           showMultiSelectToggle={isMobileViewport}
           canPersist={canPersistWorkspace}
           onShare={

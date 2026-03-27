@@ -558,6 +558,7 @@ input {
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(220px, 32vh);
   gap: var(--workspace-panel-gap);
+  padding-right: calc(var(--sidebar-overlay-width) + 18px);
   min-height: 0;
   z-index: 30;
   pointer-events: none;
@@ -613,6 +614,7 @@ input {
 
 .workspace-panel.is-map-expanded {
   grid-template-rows: minmax(0, 1fr);
+  padding-right: 0;
 }
 
 .empty-workspace-overlay {
@@ -753,6 +755,7 @@ input {
 
 .app-shell:not(.is-map-expanded) .map-controls {
   left: calc(var(--sidebar-overlay-width) + 30px);
+  right: calc(var(--sidebar-overlay-width) + 30px);
 }
 
 .map-controls-unified {
@@ -823,6 +826,10 @@ input {
   max-width: 260px;
 }
 
+.app-shell:not(.is-map-expanded) .map-control-note {
+  right: calc(var(--sidebar-overlay-width) + 30px);
+}
+
 .map-inline-actions {
   margin-top: 8px;
   display: flex;
@@ -840,26 +847,21 @@ input {
 
 .map-inspector {
   position: absolute;
-  top: 66px;
+  top: 18px;
+  bottom: 18px;
   right: 18px;
   z-index: 60;
   width: min(var(--sidebar-overlay-width), calc(100% - 36px));
-  max-height: calc(100dvh - 84px);
-  bottom: auto;
+  max-height: none;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: linear-gradient(160deg, var(--surface), var(--surface-2));
   box-shadow: var(--shadow);
-  padding: 12px;
+  padding: 18px;
   display: grid;
   gap: 0;
   font-size: 0.76rem;
-}
-
-.workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-inspector {
-  bottom: auto;
-  max-height: calc(100dvh - 66px - 18px - (32vh + var(--workspace-panel-gap)));
 }
 
 .workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-panel .maplibregl-ctrl-bottom-right,
@@ -1717,6 +1719,7 @@ input {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     gap: 12px;
+    padding-right: 0;
     height: 100lvh;
     min-height: 100lvh;
     align-content: start;
