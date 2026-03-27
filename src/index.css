@@ -186,6 +186,25 @@ input {
   gap: 4px;
 }
 
+.sidebar-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sidebar-env-badge {
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 44%, var(--surface));
+  border-radius: 9px;
+  padding: 3px 7px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
 .sidebar-panel h1 {
   font-size: 1.28rem;
   letter-spacing: 0.02em;
@@ -1896,20 +1915,13 @@ input {
 }
 
 .user-chip-row .user-chip {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-}
-
-.user-env-badge {
-  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 44%, var(--surface));
-  border-radius: 9px;
-  padding: 3px 7px;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--text);
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+  position: relative;
   flex: 0 0 auto;
 }
 
@@ -1953,7 +1965,10 @@ input {
 }
 
 .user-chip .notification-badge {
-  margin-left: 8px;
+  margin-left: 0;
+  position: absolute;
+  top: -4px;
+  right: -4px;
 }
 
 .sync-indicator-button {

@@ -134,7 +134,6 @@ type UserAdminPanelProps = {
 
 export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
-  const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
   const isLocalRuntime = runtimeEnvironment === "local";
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
@@ -732,14 +731,12 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
   return (
     <>
       <div className="user-chip-row">
-        <button className="user-chip" onClick={() => setOpen(true)} type="button">
+        <button aria-label="Open user settings" className="user-chip" onClick={() => setOpen(true)} type="button">
           <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
-          <span className="user-chip-text">{me?.username ?? "Loading user..."}</span>
           {canModerate && unreadNotifications.length > 0 ? (
             <span className="notification-badge">{unreadNotifications.length}</span>
           ) : null}
         </button>
-        {envBadgeLabel ? <span className="user-env-badge">{envBadgeLabel}</span> : null}
         <button
           aria-label={syncIndicator.label}
           className={`user-icon-button sync-indicator-button ${syncIndicator.className}`}
