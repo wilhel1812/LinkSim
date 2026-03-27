@@ -1552,15 +1552,17 @@ input {
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
     --mobile-tabbar-height: 38px;
     --mobile-panel-height: 36vh;
-    --mobile-panel-visible-height: 0px;
     --mobile-attribution-gap: 16px;
-    --mobile-attribution-bottom: calc(
-      var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-visible-height) + var(--mobile-attribution-gap)
-    );
+    --mobile-attribution-extra-panel: 0px;
+    --mobile-attribution-bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-attribution-extra-panel) + var(--mobile-attribution-gap));
   }
 
   .app-shell.is-mobile-shell:not(.is-map-expanded) {
-    --mobile-panel-visible-height: var(--mobile-panel-height);
+    --mobile-attribution-extra-panel: calc(var(--mobile-panel-height) + 12px);
+  }
+
+  .app-shell.is-mobile-shell.mobile-panel-profile {
+    --mobile-attribution-extra-panel: calc(var(--mobile-panel-height) + 12px);
   }
 
   .app-shell.is-mobile-shell .mobile-workspace-tabs {
@@ -1799,7 +1801,12 @@ input {
   .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-bottom-left {
     left: 8px;
     right: auto;
-    bottom: var(--mobile-attribution-bottom);
+    bottom: var(--mobile-attribution-bottom) !important;
+    z-index: 96 !important;
+  }
+
+  .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-attrib {
+    z-index: 97;
   }
 
   .workspace-panel:not(.is-profile-expanded) .map-inspector {
