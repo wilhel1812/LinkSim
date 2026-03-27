@@ -14,7 +14,7 @@ import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
-import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
+import { getBasemapProviderCapabilities, getCartoFallbackStyle, resolveBasemapSelection } from "../lib/basemaps";
 import {
   PROFILE_DRAFT_SITE_REQUEST_EVENT,
   type ProfileDraftSiteRequestDetail,
@@ -82,31 +82,6 @@ const terrainRasterPaint = {
   "raster-contrast": 0.16,
   "raster-saturation": -0.06,
 };
-
-const fallbackStyle = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: [
-        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution:
-        '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a> <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">© CARTO</a>',
-    },
-  },
-  layers: [
-    {
-      id: "osm-base",
-      type: "raster",
-      source: "osm",
-      minzoom: 0,
-      maxzoom: 19,
-    },
-  ],
-} as const;
 
 const supportsWebgl = (): boolean => {
   try {
@@ -1852,6 +1827,7 @@ export function MapView({
     () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
     [basemapProvider, basemapStylePreset, theme, colorTheme],
   );
+  const fallbackMapStyle = useMemo(() => getCartoFallbackStyle(theme, colorTheme), [theme, colorTheme]);
   const requestedProviderConfig =
     providerCapabilities.find((entry) => entry.provider === basemapProvider) ?? providerCapabilities[0];
   const activeProviderConfig =
@@ -2415,7 +2391,7 @@ export function MapView({
           latitude: activeViewState.latitude,
           zoom: activeViewState.zoom,
         }}
-        mapStyle={useFallbackMapStyle ? (fallbackStyle as unknown as string) : resolvedBasemap.style}
+        mapStyle={useFallbackMapStyle ? fallbackMapStyle : resolvedBasemap.style}
         onError={() => {
           if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket") {
             setUseFallbackMapStyle(true);

@@ -315,6 +315,11 @@ export const resolveBasemapSelection = (
   };
 };
 
+export const getCartoFallbackStyle = (
+  theme: BasemapTheme,
+  colorTheme: UiColorTheme = "blue",
+): string | StyleSpecification => styleForPreset("carto", "normal-themed", theme, colorTheme);
+
 export const defaultPresetIdForTheme = (provider: BasemapProvider, theme: BasemapTheme): string => {
   const providerConfig = providerCapabilities.find((entry) => entry.provider === provider);
   if (!providerConfig) return "normal";
