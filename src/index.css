@@ -1539,6 +1539,11 @@ input {
 }
 
 @media (max-width: 980px) {
+  .env-staging body::after,
+  .env-local body::after {
+    border-width: 0;
+  }
+
   .app-shell.is-mobile-shell {
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
     --mobile-tabbar-height: 38px;
@@ -1642,6 +1647,7 @@ input {
     grid-template-rows: minmax(0, 1fr);
     padding: 0;
     overflow: hidden;
+    animation: none;
   }
 
   .app-shell.is-map-expanded {
@@ -1734,6 +1740,13 @@ input {
     height: var(--mobile-panel-height);
     max-height: none;
     z-index: 85;
+  }
+
+  .app-shell.is-mobile-shell.mobile-panel-profile .workspace-panel.is-profile-expanded .mobile-workspace-panel {
+    top: calc(12px + env(safe-area-inset-top));
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height));
+    height: auto;
+    max-height: none;
   }
 
   .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-bottom-right,
