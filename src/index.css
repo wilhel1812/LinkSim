@@ -1552,6 +1552,15 @@ input {
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
     --mobile-tabbar-height: 38px;
     --mobile-panel-height: 36vh;
+    --mobile-panel-visible-height: 0px;
+    --mobile-attribution-gap: 16px;
+    --mobile-attribution-bottom: calc(
+      var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-visible-height) + var(--mobile-attribution-gap)
+    );
+  }
+
+  .app-shell.is-mobile-shell:not(.is-map-expanded) {
+    --mobile-panel-visible-height: var(--mobile-panel-height);
   }
 
   .app-shell.is-mobile-shell .mobile-workspace-tabs {
@@ -1604,6 +1613,7 @@ input {
   .mobile-workspace-panel {
     display: grid;
     height: var(--mobile-panel-height);
+    min-height: var(--mobile-panel-height);
     overflow: hidden;
     border: 0;
     border-radius: 0;
@@ -1618,6 +1628,7 @@ input {
     height: 100%;
     min-height: 100%;
     max-height: 100%;
+    grid-row: 1;
     overflow: auto;
   }
 
@@ -1788,16 +1799,7 @@ input {
   .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-bottom-left {
     left: 8px;
     right: auto;
-    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 62px);
-  }
-
-  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-right,
-  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-left,
-  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-right,
-  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-left,
-  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-right,
-  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-left {
-    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-height) + 62px);
+    bottom: var(--mobile-attribution-bottom);
   }
 
   .workspace-panel:not(.is-profile-expanded) .map-inspector {
