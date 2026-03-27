@@ -1552,17 +1552,9 @@ input {
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
     --mobile-tabbar-height: 38px;
     --mobile-panel-height: 36vh;
+    --mobile-bottom-occupied: var(--mobile-tabbar-height);
     --mobile-attribution-gap: 16px;
-    --mobile-attribution-extra-panel: 0px;
-    --mobile-attribution-bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-attribution-extra-panel) + var(--mobile-attribution-gap));
-  }
-
-  .app-shell.is-mobile-shell:not(.is-map-expanded) {
-    --mobile-attribution-extra-panel: calc(var(--mobile-panel-height) + 12px);
-  }
-
-  .app-shell.is-mobile-shell.mobile-panel-profile {
-    --mobile-attribution-extra-panel: calc(var(--mobile-panel-height) + 12px);
+    --mobile-attribution-bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-bottom-occupied) + var(--mobile-attribution-gap));
   }
 
   .app-shell.is-mobile-shell .mobile-workspace-tabs {
@@ -1625,6 +1617,11 @@ input {
     z-index: 45;
   }
 
+  .mobile-workspace-panel > * {
+    height: 100%;
+    min-height: 0;
+  }
+
   .mobile-workspace-panel .chart-panel {
     z-index: auto;
     height: 100%;
@@ -1635,6 +1632,7 @@ input {
   }
 
   .mobile-workspace-panel .chart-svg-wrap {
+    height: 100%;
     min-height: 0;
   }
 
@@ -1898,6 +1896,18 @@ input {
   flex: 1 1 auto;
   min-width: 0;
   width: auto;
+}
+
+.user-env-badge {
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 44%, var(--surface));
+  border-radius: 9px;
+  padding: 3px 7px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  flex: 0 0 auto;
 }
 
 .user-icon-button {

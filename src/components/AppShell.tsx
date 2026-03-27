@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -101,11 +101,13 @@ export function AppShell() {
   const [showMobileWarning, setShowMobileWarning] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("profile");
+  const [mobileBottomOccupied, setMobileBottomOccupied] = useState(0);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const deepLinkAppliedRef = useRef(false);
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
+  const appShellRef = useRef<HTMLElement | null>(null);
 
   const { theme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
@@ -409,6 +411,60 @@ export function AppShell() {
     mediaQuery.addEventListener("change", applyViewport);
     return () => mediaQuery.removeEventListener("change", applyViewport);
   }, []);
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setMobileBottomOccupied(0);
+      return;
+    }
+
+    const shell = appShellRef.current;
+    if (!shell) return;
+
+    let frameId = 0;
+
+    const measureHeight = (selector: string) => {
+      const element = shell.querySelector<HTMLElement>(selector);
+      if (!element) return 0;
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") return 0;
+      return Math.ceil(element.getBoundingClientRect().height);
+    };
+
+    const recompute = () => {
+      const tabsHeight = measureHeight(".mobile-workspace-tabs");
+      const panelHeight = measureHeight(".mobile-workspace-panel");
+      const inspectorHeight = measureHeight(".map-inspector");
+      const nextValue = tabsHeight + Math.max(panelHeight, inspectorHeight);
+      setMobileBottomOccupied((current) => (current === nextValue ? current : nextValue));
+    };
+
+    const schedule = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(recompute);
+    };
+
+    schedule();
+
+    const observer = new ResizeObserver(schedule);
+    observer.observe(shell);
+    shell.querySelectorAll<HTMLElement>(".mobile-workspace-tabs, .mobile-workspace-panel, .map-inspector").forEach((element) => {
+      observer.observe(element);
+    });
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
+    };
+  }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel]);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 900px)").matches;
@@ -841,6 +897,13 @@ export function AppShell() {
     }
   }, [activeSimulation, copyCurrentLink, currentUser, referencedPrivateSites, updateSimulationPresetEntry, updateSiteLibraryEntry]);
 
+  const shellStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!isMobileViewport) return undefined;
+    return {
+      ["--mobile-bottom-occupied" as string]: `${mobileBottomOccupied}px`,
+    };
+  }, [isMobileViewport, mobileBottomOccupied]);
+
   if (accessState === "checking") {
     return (
       <main className="app-shell access-locked-shell">
@@ -936,6 +999,7 @@ export function AppShell() {
 
   return (
     <main
+      ref={appShellRef}
       className={`app-shell ${isMapExpanded || isProfileExpanded ? "is-map-expanded" : ""} ${
         accessState === "readonly" ? "is-readonly-shell" : ""
       } ${
@@ -943,6 +1007,7 @@ export function AppShell() {
       } ${
         isMobileViewport ? `mobile-panel-${mobileActivePanel}` : ""
       }`}
+      style={shellStyle}
     >
       {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? (
         <Sidebar onOpenHelp={openOnboardingTutorial} />

@@ -134,6 +134,7 @@ type UserAdminPanelProps = {
 
 export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
+  const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
   const isLocalRuntime = runtimeEnvironment === "local";
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
@@ -738,6 +739,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
             <span className="notification-badge">{unreadNotifications.length}</span>
           ) : null}
         </button>
+        {envBadgeLabel ? <span className="user-env-badge">{envBadgeLabel}</span> : null}
         <button
           aria-label={syncIndicator.label}
           className={`user-icon-button sync-indicator-button ${syncIndicator.className}`}
