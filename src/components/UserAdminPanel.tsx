@@ -118,7 +118,11 @@ const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl:
   return { originalDataUrl, thumbDataUrl };
 };
 
-export function UserAdminPanel() {
+type UserAdminPanelProps = {
+  onOpenHelp?: () => void;
+};
+
+export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
@@ -716,32 +720,39 @@ export function UserAdminPanel() {
 
   return (
     <>
-      <button className="user-chip" onClick={() => setOpen(true)} type="button">
-        <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
-        <span className="user-chip-text">{me?.username ?? "Loading user..."}</span>
-        <span
-          aria-label={syncIndicator.label}
-          className={`sync-indicator ${syncIndicator.class}`}
-          title={syncIndicator.title}
-          onClick={handleSyncIndicatorClick}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.stopPropagation();
-              setSyncModalOpen(true);
-            }
-          }}
-          role="button"
-          tabIndex={0}
-        >
-          {syncIndicator.icon}
-        </span>
-        <span aria-hidden className="user-chip-settings-icon">
-          ⚙
-        </span>
-        {canModerate && unreadNotifications.length > 0 ? (
-          <span className="notification-badge">{unreadNotifications.length}</span>
+      <div className="user-chip-row">
+        <button className="user-chip" onClick={() => setOpen(true)} type="button">
+          <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
+          <span className="user-chip-text">{me?.username ?? "Loading user..."}</span>
+          <span
+            aria-label={syncIndicator.label}
+            className={`sync-indicator ${syncIndicator.class}`}
+            title={syncIndicator.title}
+            onClick={handleSyncIndicatorClick}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                setSyncModalOpen(true);
+              }
+            }}
+            role="button"
+            tabIndex={0}
+          >
+            {syncIndicator.icon}
+          </span>
+          <span aria-hidden className="user-chip-settings-icon">
+            ⚙
+          </span>
+          {canModerate && unreadNotifications.length > 0 ? (
+            <span className="notification-badge">{unreadNotifications.length}</span>
+          ) : null}
+        </button>
+        {onOpenHelp ? (
+          <button aria-label="Open onboarding" className="user-help-button" onClick={onOpenHelp} type="button">
+            ?
+          </button>
         ) : null}
-      </button>
+      </div>
 
       {syncModalOpen ? (
         <ModalOverlay aria-label="Sync Status" onClose={() => setSyncModalOpen(false)}>

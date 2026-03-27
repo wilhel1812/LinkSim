@@ -328,7 +328,11 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
 
 const getSnapshotCount = (_key: string): number => 0;
 
-export function Sidebar() {
+type SidebarProps = {
+  onOpenHelp?: () => void;
+};
+
+export function Sidebar({ onOpenHelp }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const buildChannel = runtimeEnvironment === "production" ? "stable" : runtimeEnvironment === "staging" ? "beta" : "alpha";
@@ -1955,7 +1959,7 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar-panel">
-      <UserAdminPanel />
+      <UserAdminPanel onOpenHelp={onOpenHelp} />
       <header>
         <h1>{t(locale, "appTitle")}</h1>
         <p>{t(locale, "workspaceSubtitle")}</p>
