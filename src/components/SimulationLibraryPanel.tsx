@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { CircleChevronDown, CircleChevronRight, CircleX } from "lucide-react";
+import { CircleX, Funnel } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -303,7 +303,7 @@ export default function SimulationLibraryPanel({
           >
             Ownership {selectionLabel(filters.roleFilters, ALL_ROLE_FILTERS)}
             <span className="library-filter-trigger-chevron" aria-hidden="true">
-              {openFilterGroup === "role" ? <CircleChevronDown strokeWidth={1.8} /> : <CircleChevronRight strokeWidth={1.8} />}
+              <Funnel strokeWidth={1.8} />
             </span>
           </button>
           {openFilterGroup === "role" ? (
@@ -350,7 +350,7 @@ export default function SimulationLibraryPanel({
           >
             Access level {selectionLabel(filters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
             <span className="library-filter-trigger-chevron" aria-hidden="true">
-              {openFilterGroup === "visibility" ? <CircleChevronDown strokeWidth={1.8} /> : <CircleChevronRight strokeWidth={1.8} />}
+              <Funnel strokeWidth={1.8} />
             </span>
           </button>
           {openFilterGroup === "visibility" ? (
