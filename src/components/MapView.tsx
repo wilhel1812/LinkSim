@@ -24,6 +24,7 @@ import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
+import { SimulationResultsSection } from "./SimulationResultsSection";
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
@@ -1054,6 +1055,7 @@ export function MapView({
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
+  const [showResultsSummary, setShowResultsSummary] = useState(true);
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(true);
@@ -2331,6 +2333,14 @@ export function MapView({
                 <p className="overlay-scale-help">Left side is worse relay quality. Right side is better relay quality.</p>
               </>
             ) : null}
+          </details>
+          <details
+            className="compact-details map-inspector-details"
+            onToggle={(event) => setShowResultsSummary(event.currentTarget.open)}
+            open={showResultsSummary}
+          >
+            <summary>Results</summary>
+            <SimulationResultsSection />
           </details>
           <details
             className="compact-details map-inspector-details"
