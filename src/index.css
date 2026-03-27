@@ -1896,15 +1896,15 @@ input {
 }
 
 .user-chip {
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface));
-  border-radius: 12px;
-  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   cursor: pointer;
-  width: 100%;
+  width: auto;
   color: var(--text);
 }
 
@@ -1912,6 +1912,13 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.user-chip-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .user-chip-row .user-chip {
@@ -1926,11 +1933,12 @@ input {
 }
 
 .user-icon-button {
-  border: 1px solid color-mix(in srgb, var(--accent) 46%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface));
-  border-radius: 12px;
-  width: 38px;
-  height: 38px;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1941,7 +1949,7 @@ input {
 }
 
 .user-icon-button:hover {
-  transform: translateY(-1px);
+  color: var(--accent);
 }
 
 .user-icon-button:focus-visible {

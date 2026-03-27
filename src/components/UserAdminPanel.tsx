@@ -737,27 +737,29 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
             <span className="notification-badge">{unreadNotifications.length}</span>
           ) : null}
         </button>
-        <button
-          aria-label={syncIndicator.label}
-          className={`user-icon-button sync-indicator-button ${syncIndicator.className}`}
-          onClick={handleSyncIndicatorClick}
-          title={syncIndicator.title}
-          type="button"
-        >
-          <SyncStatusIcon
-            className={syncIndicator.state === "syncing" ? "sync-icon-spinning" : undefined}
-            state={syncIndicator.state}
-            title={syncIndicator.label}
-          />
-        </button>
-        <button aria-label="Open user settings" className="user-icon-button" onClick={() => setOpen(true)} type="button">
-          <SettingsIcon title="Settings" />
-        </button>
-        {onOpenHelp ? (
-          <button aria-label="Open onboarding" className="user-icon-button" onClick={onOpenHelp} type="button">
-            ?
+        <div className="user-chip-actions">
+          <button
+            aria-label={syncIndicator.label}
+            className={`user-icon-button sync-indicator-button ${syncIndicator.className}`}
+            onClick={handleSyncIndicatorClick}
+            title={syncIndicator.title}
+            type="button"
+          >
+            <SyncStatusIcon
+              className={syncIndicator.state === "syncing" ? "sync-icon-spinning" : undefined}
+              state={syncIndicator.state}
+              title={syncIndicator.label}
+            />
           </button>
-        ) : null}
+          <button aria-label="Open user settings" className="user-icon-button" onClick={() => setOpen(true)} type="button">
+            <SettingsIcon title="Settings" />
+          </button>
+          {onOpenHelp ? (
+            <button aria-label="Open onboarding" className="user-icon-button" onClick={onOpenHelp} type="button">
+              ?
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {syncModalOpen ? (
