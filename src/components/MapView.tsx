@@ -1078,6 +1078,7 @@ export function MapView({
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(true);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
@@ -2057,6 +2058,13 @@ export function MapView({
           <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
             {isMapExpanded ? "Show Panels" : "Hide Panels"}
           </button>
+          <button
+            className={`map-control-btn ${isMultiSelectMode ? "is-selected" : ""}`}
+            onClick={() => setIsMultiSelectMode((current) => !current)}
+            type="button"
+          >
+            {isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
+          </button>
           <button className="map-control-btn" onClick={fitToNodes} type="button">
             Fit
           </button>
@@ -2420,6 +2428,9 @@ export function MapView({
         }}
         interactiveLayerIds={["link-lines"]}
         onClick={onMapClick}
+        onTouchStart={() => {
+          mapRef.current?.getMap().stop();
+        }}
         onMove={(event) =>
           setInteractionViewState({
             longitude: event.viewState.longitude,
@@ -2504,12 +2515,12 @@ export function MapView({
                 onClick={(event) => {
                   stopMapClickBubbling(event);
                   const nativeEvent = event as unknown as { ctrlKey?: boolean; metaKey?: boolean };
-                  onSiteClick(site.id, Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
+                  onSiteClick(site.id, isMultiSelectMode || Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     stopMapClickBubbling(event);
-                    onSiteClick(site.id);
+                    onSiteClick(site.id, isMultiSelectMode);
                   }
                 }}
                 role="button"

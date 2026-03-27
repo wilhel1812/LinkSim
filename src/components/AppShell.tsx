@@ -23,7 +23,7 @@ const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
-type MobileWorkspacePanel = "map" | "profile" | "inspector" | "sidebar";
+type MobileWorkspacePanel = "profile" | "inspector" | "sidebar";
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
@@ -109,7 +109,6 @@ export function AppShell() {
 
   const { theme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
-  const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
   const isLocalRuntime = runtimeEnvironment === "local";
 
   const deepLinkParse = useMemo(() => parseDeepLinkFromLocation(window.location), []);
@@ -888,17 +887,6 @@ export function AppShell() {
           ) : null}
            {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
         </section>
-        <div className="floating-help-cluster">
-          {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
-          <button
-            aria-label="Open onboarding"
-            className="floating-help-button"
-            onClick={openOnboardingTutorial}
-            type="button"
-          >
-            ?
-          </button>
-        </div>
         <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
         <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       </main>
@@ -940,17 +928,6 @@ export function AppShell() {
           </div>
           {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
         </section>
-        <div className="floating-help-cluster">
-          {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
-          <button
-            aria-label="Open onboarding"
-            className="floating-help-button"
-            onClick={openOnboardingTutorial}
-            type="button"
-          >
-            ?
-          </button>
-        </div>
         <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
         <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       </main>
@@ -967,7 +944,9 @@ export function AppShell() {
         isMobileViewport ? `mobile-panel-${mobileActivePanel}` : ""
       }`}
     >
-      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
+      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? (
+        <Sidebar onOpenHelp={openOnboardingTutorial} />
+      ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {!isOnline && !offlineBannerDismissed ? (
           <div className="offline-banner" role="status">
@@ -1030,7 +1009,7 @@ export function AppShell() {
         </div>
         <MapView
           isMapExpanded={isMapExpanded}
-          showInspector={!isMobileViewport || mobileActivePanel === "inspector"}
+          showInspector={!isMobileViewport || (!isMapExpanded && mobileActivePanel === "inspector")}
           canPersist={canPersistWorkspace}
           onShare={
             accessState === "granted"
@@ -1058,7 +1037,9 @@ export function AppShell() {
             setIsMapExpanded((prev) => {
               const next = !prev;
               if (isMobileViewport) {
-                setMobileActivePanel(next ? "map" : "profile");
+                if (!next) {
+                  setMobileActivePanel("profile");
+                }
               }
               return next;
             });
@@ -1070,6 +1051,11 @@ export function AppShell() {
               aria-selected={mobileActivePanel === "sidebar"}
               className={`mobile-workspace-tab ${mobileActivePanel === "sidebar" ? "is-active" : ""}`}
               onClick={() => {
+                setIsProfileExpanded(false);
+                if (!isMapExpanded && mobileActivePanel === "sidebar") {
+                  setIsMapExpanded(true);
+                  return;
+                }
                 setIsMapExpanded(false);
                 setMobileActivePanel("sidebar");
               }}
@@ -1082,6 +1068,11 @@ export function AppShell() {
               aria-selected={mobileActivePanel === "inspector"}
               className={`mobile-workspace-tab ${mobileActivePanel === "inspector" ? "is-active" : ""}`}
               onClick={() => {
+                setIsProfileExpanded(false);
+                if (!isMapExpanded && mobileActivePanel === "inspector") {
+                  setIsMapExpanded(true);
+                  return;
+                }
                 setIsMapExpanded(false);
                 setMobileActivePanel("inspector");
               }}
@@ -1094,21 +1085,13 @@ export function AppShell() {
               aria-selected={mobileActivePanel === "profile"}
               className={`mobile-workspace-tab ${mobileActivePanel === "profile" ? "is-active" : ""}`}
               onClick={() => {
+                if (!isMapExpanded && mobileActivePanel === "profile") {
+                  setIsMapExpanded(true);
+                  setIsProfileExpanded(false);
+                  return;
+                }
                 setIsMapExpanded(false);
                 setMobileActivePanel("profile");
-              }}
-              role="tab"
-              type="button"
-            >
-              Path Profile
-            </button>
-            <button
-              aria-selected={mobileActivePanel === "map"}
-              className={`mobile-workspace-tab ${mobileActivePanel === "map" ? "is-active" : ""}`}
-              onClick={() => {
-                setIsProfileExpanded(false);
-                setIsMapExpanded(true);
-                setMobileActivePanel("map");
               }}
               role="tab"
               type="button"
@@ -1139,21 +1122,10 @@ export function AppShell() {
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "sidebar" ? (
           <div className="mobile-workspace-panel mobile-workspace-panel-sidebar" role="tabpanel" aria-label="Sidebar panel">
-            {(accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
+            {(accessState === "granted" || accessState === "readonly") ? <Sidebar onOpenHelp={openOnboardingTutorial} /> : null}
           </div>
         ) : null}
       </section>
-      <div className="floating-help-cluster">
-        {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
-        <button
-          aria-label="Open onboarding"
-          className="floating-help-button"
-          onClick={openOnboardingTutorial}
-          type="button"
-        >
-          ?
-        </button>
-      </div>
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
       <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       {showMobileWarning ? (

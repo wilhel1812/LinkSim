@@ -1572,7 +1572,7 @@ input {
 
   .mobile-workspace-tabs {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     padding: 0;
     border: 0;
@@ -1626,14 +1626,14 @@ input {
     overflow: auto;
   }
 
-  .app-shell.is-mobile-shell.mobile-panel-map .mobile-workspace-panel,
+  .app-shell.is-mobile-shell.is-map-expanded .mobile-workspace-panel,
   .app-shell.is-mobile-shell.mobile-panel-inspector .mobile-workspace-panel {
     display: none;
   }
 
   .app-shell.is-mobile-shell.mobile-panel-sidebar .map-inspector,
   .app-shell.is-mobile-shell.mobile-panel-profile .map-inspector,
-  .app-shell.is-mobile-shell.mobile-panel-map .map-inspector {
+  .app-shell.is-mobile-shell.is-map-expanded .map-inspector {
     display: none;
   }
 
@@ -1747,7 +1747,7 @@ input {
     display: none;
   }
 
-  .app-shell.is-mobile-shell.mobile-panel-inspector .map-inspector {
+  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-inspector .map-inspector {
     display: grid;
     position: fixed;
     top: auto;
@@ -1774,12 +1774,12 @@ input {
     bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 8px);
   }
 
-  .app-shell.is-mobile-shell.mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-right,
-  .app-shell.is-mobile-shell.mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-left,
-  .app-shell.is-mobile-shell.mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-right,
-  .app-shell.is-mobile-shell.mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-left,
-  .app-shell.is-mobile-shell.mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-right,
-  .app-shell.is-mobile-shell.mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-left {
+  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-right,
+  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-left,
+  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-right,
+  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-left,
+  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-right,
+  .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-left {
     bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-height) + 8px);
   }
 
@@ -1860,6 +1860,35 @@ input {
   cursor: pointer;
   width: 100%;
   color: var(--text);
+}
+
+.user-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-help-button {
+  border: 1px solid color-mix(in srgb, var(--accent) 46%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface));
+  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.user-help-button:hover {
+  transform: translateY(-1px);
+}
+
+.user-help-button:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 2px;
 }
 
 .user-chip-text {
