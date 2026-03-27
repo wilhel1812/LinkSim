@@ -1110,13 +1110,9 @@ export function MapView({
     };
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("orientationchange", handleViewportChange);
-    window.visualViewport?.addEventListener("resize", handleViewportChange);
-    window.visualViewport?.addEventListener("scroll", handleViewportChange);
     return () => {
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("orientationchange", handleViewportChange);
-      window.visualViewport?.removeEventListener("resize", handleViewportChange);
-      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
     };
   }, []);
   const hasNonAutoLinks = useMemo(
