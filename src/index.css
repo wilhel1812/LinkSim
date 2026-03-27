@@ -1549,12 +1549,13 @@ input {
   }
 
   .app-shell.is-mobile-shell {
+    --mobile-controls-top: calc(12px + env(safe-area-inset-top));
+    --mobile-controls-occupied: 0px;
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
     --mobile-tabbar-height: 38px;
     --mobile-panel-height: 36vh;
-    --mobile-bottom-occupied: var(--mobile-tabbar-height);
-    --mobile-attribution-gap: 16px;
-    --mobile-attribution-bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-bottom-occupied) + var(--mobile-attribution-gap));
+    --mobile-attribution-gap: 8px;
+    --mobile-attribution-top: calc(var(--mobile-controls-top) + var(--mobile-controls-occupied) + var(--mobile-attribution-gap));
   }
 
   .app-shell.is-mobile-shell .mobile-workspace-tabs {
@@ -1735,8 +1736,6 @@ input {
     right: 0;
     bottom: 0;
     left: 0;
-    width: 100vw;
-    height: 100lvh;
     margin: 0;
     border: 0;
     border-radius: 0;
@@ -1744,6 +1743,7 @@ input {
   }
 
   .map-controls {
+    top: var(--mobile-controls-top);
     flex-direction: column;
     align-items: stretch;
     left: 12px;
@@ -1797,10 +1797,11 @@ input {
 
   .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-bottom-right,
   .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-bottom-left {
-    left: 8px;
+    top: var(--mobile-attribution-top) !important;
+    bottom: auto !important;
+    left: 12px;
     right: auto;
-    bottom: var(--mobile-attribution-bottom) !important;
-    z-index: 96 !important;
+    z-index: 56 !important;
   }
 
   .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-attrib {

@@ -101,7 +101,7 @@ export function AppShell() {
   const [showMobileWarning, setShowMobileWarning] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("profile");
-  const [mobileBottomOccupied, setMobileBottomOccupied] = useState(0);
+  const [mobileControlsOccupied, setMobileControlsOccupied] = useState(0);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const deepLinkAppliedRef = useRef(false);
@@ -414,7 +414,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (!isMobileViewport) {
-      setMobileBottomOccupied(0);
+      setMobileControlsOccupied(0);
       return;
     }
 
@@ -432,11 +432,8 @@ export function AppShell() {
     };
 
     const recompute = () => {
-      const tabsHeight = measureHeight(".mobile-workspace-tabs");
-      const panelHeight = measureHeight(".mobile-workspace-panel");
-      const inspectorHeight = measureHeight(".map-inspector");
-      const nextValue = tabsHeight + Math.max(panelHeight, inspectorHeight);
-      setMobileBottomOccupied((current) => (current === nextValue ? current : nextValue));
+      const controlsHeight = measureHeight(".map-controls");
+      setMobileControlsOccupied((current) => (current === controlsHeight ? current : controlsHeight));
     };
 
     const schedule = () => {
@@ -450,7 +447,7 @@ export function AppShell() {
 
     const observer = new ResizeObserver(schedule);
     observer.observe(shell);
-    shell.querySelectorAll<HTMLElement>(".mobile-workspace-tabs, .mobile-workspace-panel, .map-inspector").forEach((element) => {
+    shell.querySelectorAll<HTMLElement>(".map-controls").forEach((element) => {
       observer.observe(element);
     });
     window.addEventListener("resize", schedule);
@@ -900,9 +897,9 @@ export function AppShell() {
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     if (!isMobileViewport) return undefined;
     return {
-      ["--mobile-bottom-occupied" as string]: `${mobileBottomOccupied}px`,
+      ["--mobile-controls-occupied" as string]: `${mobileControlsOccupied}px`,
     };
-  }, [isMobileViewport, mobileBottomOccupied]);
+  }, [isMobileViewport, mobileControlsOccupied]);
 
   if (accessState === "checking") {
     return (
