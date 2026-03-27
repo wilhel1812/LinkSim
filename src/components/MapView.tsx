@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Maximize2, Minimize2, SearchSlash, Share, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -2034,9 +2035,15 @@ export function MapView({
             </select>
           </label>
         </div>
-        <div className="map-controls-group map-controls-group-utility">
-          <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
-            {isMapExpanded ? "Show Panels" : "Hide Panels"}
+        <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
+          <button
+            aria-label={isMapExpanded ? "Show panels" : "Hide panels"}
+            className="map-control-btn map-control-btn-icon"
+            onClick={onToggleMapExpanded}
+            title={isMapExpanded ? "Show panels" : "Hide panels"}
+            type="button"
+          >
+            {isMapExpanded ? <Maximize2 aria-hidden="true" strokeWidth={1.8} /> : <Minimize2 aria-hidden="true" strokeWidth={1.8} />}
           </button>
           {showMultiSelectToggle ? (
             <button
@@ -2047,18 +2054,18 @@ export function MapView({
               {isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
             </button>
           ) : null}
-          <button className="map-control-btn" onClick={fitToNodes} type="button">
-            Fit
+          <button aria-label="Fit map to sites" className="map-control-btn map-control-btn-icon" onClick={fitToNodes} title="Fit" type="button">
+            <SearchSlash aria-hidden="true" strokeWidth={1.8} />
           </button>
-          <button className="map-control-btn" onClick={() => zoomBy(1)} type="button">
-            +
+          <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(1)} title="Zoom in" type="button">
+            <ZoomIn aria-hidden="true" strokeWidth={1.8} />
           </button>
-          <button className="map-control-btn" onClick={() => zoomBy(-1)} type="button">
-            -
+          <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(-1)} title="Zoom out" type="button">
+            <ZoomOut aria-hidden="true" strokeWidth={1.8} />
           </button>
           {onShare ? (
-            <button className="map-control-btn" onClick={onShare} type="button">
-              Share
+            <button aria-label="Share" className="map-control-btn map-control-btn-icon" onClick={onShare} title="Share" type="button">
+              <Share aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
         </div>

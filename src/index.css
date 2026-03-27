@@ -265,18 +265,22 @@ input {
 }
 
 .info-tip {
-  position: relative;
   width: 18px;
   height: 18px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 65%, transparent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
   color: var(--text);
-  font-size: 0.72rem;
-  font-weight: 700;
+  padding: 0;
   cursor: help;
+}
+
+.info-tip svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .info-tip-box {
@@ -812,6 +816,16 @@ input {
   flex: 0 0 auto;
 }
 
+.map-controls-utility-pill {
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  box-shadow: var(--shadow-elev-3);
+  padding: 4px;
+  gap: 4px;
+  align-items: center;
+}
+
 .map-control-note {
   position: absolute;
   top: 66px;
@@ -1150,6 +1164,20 @@ input {
   box-shadow: var(--shadow-elev-3);
 }
 
+.map-control-btn-icon {
+  min-width: 34px;
+  width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-control-btn-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
 .map-control-btn:hover {
   border-color: var(--accent);
 }
@@ -1366,6 +1394,20 @@ input {
 .chart-endpoint-swap.is-active {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.chart-endpoint-icon {
+  min-width: 34px;
+  width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-endpoint-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .chart-hover-state {
@@ -1872,6 +1914,21 @@ input {
   color: var(--danger-on, #fff);
 }
 
+.inline-action-icon {
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inline-action-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
 .user-admin-panel {
   display: grid;
   gap: 8px;
@@ -2059,9 +2116,9 @@ input {
   display: inline-flex;
 }
 
-.sync-icon-spinning {
+.sync-icon-pulsing {
   transform-origin: center;
-  animation: sync-spin 0.8s linear infinite;
+  animation: sync-pulse 1.2s ease-in-out infinite;
 }
 
 .sync-error-details {
@@ -2112,12 +2169,15 @@ input {
   min-inline-size: 0;
 }
 
-@keyframes sync-spin {
-  from {
-    transform: rotate(0deg);
+@keyframes sync-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scale(0.94);
   }
-  to {
-    transform: rotate(360deg);
+  50% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -2649,9 +2709,15 @@ input {
 }
 
 .library-filter-trigger-chevron {
-  font-size: 0.7rem;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--muted);
+}
+
+.library-filter-trigger-chevron svg {
+  width: 18px;
+  height: 18px;
 }
 
 .library-filter-popover {

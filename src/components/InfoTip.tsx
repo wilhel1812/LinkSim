@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Info } from "lucide-react";
 
 export function InfoTip({ text }: { text: string }) {
   const tipId = useId();
@@ -47,7 +48,7 @@ export function InfoTip({ text }: { text: string }) {
         ref={triggerRef}
         type="button"
       >
-        i
+        <Info aria-hidden="true" strokeWidth={1.9} />
       </button>
       {open && typeof document !== "undefined"
         ? createPortal(

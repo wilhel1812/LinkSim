@@ -1,4 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CircleX } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -1201,13 +1202,15 @@ export function AppShell() {
             <div className="library-manager-header">
               <h2>Mobile Support Notice</h2>
               <button
-                className="inline-action"
+                aria-label="Close"
+                className="inline-action inline-action-icon"
                 onClick={() => {
                   setShowMobileWarning(false);
                 }}
+                title="Close"
                 type="button"
               >
-                Close
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <p className="field-help">
@@ -1238,8 +1241,8 @@ export function AppShell() {
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Share Simulation</h2>
-              <button className="inline-action" onClick={() => setShowShareModal(false)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setShowShareModal(false)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             {!activeSimulation ? (
