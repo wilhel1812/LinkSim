@@ -1050,7 +1050,7 @@ const bufferedBoundsForSites = (sites: Site[], radiusKm: number): TerrainFetchBo
 
 const initialBasemapProvider = normalizeBasemapProvider(readStorage<string>(BASEMAP_PROVIDER_KEY, "carto"));
 const initialBasemapStylePreset = normalizeBasemapStylePreset(
-  readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "normal"),
+  readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "normal-themed"),
 );
 
 export const useAppStore = create<AppState>((set, get) => ({
