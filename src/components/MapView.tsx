@@ -1103,6 +1103,22 @@ export function MapView({
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+
+  useEffect(() => {
+    const handleViewportChange = () => {
+      mapRef.current?.resize();
+    };
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("orientationchange", handleViewportChange);
+    window.visualViewport?.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("scroll", handleViewportChange);
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("orientationchange", handleViewportChange);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
+    };
+  }, []);
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
     [links],

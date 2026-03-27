@@ -15,6 +15,7 @@
   --los: Highlight;
   --shadow: 0 16px 42px color-mix(in srgb, CanvasText 14%, transparent);
   --focus-outline: color-mix(in srgb, var(--accent) 62%, Canvas 18%);
+  --app-dynamic-vh: 100dvh;
 }
 
 * {
@@ -1543,8 +1544,8 @@ input {
   html,
   body,
   #root {
-    height: 100dvh;
-    min-height: 100dvh;
+    height: var(--app-dynamic-vh);
+    min-height: var(--app-dynamic-vh);
     overflow: hidden;
   }
 
@@ -1643,7 +1644,7 @@ input {
     --sidebar-overlay-width: 0px;
     padding: 12px;
     height: auto;
-    min-height: 100dvh;
+    min-height: var(--app-dynamic-vh);
     overflow: auto;
   }
 
@@ -1670,8 +1671,8 @@ input {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     gap: 12px;
-    height: 100dvh;
-    min-height: 100dvh;
+    height: var(--app-dynamic-vh);
+    min-height: var(--app-dynamic-vh);
     align-content: start;
     padding-bottom: 0;
   }
@@ -1709,7 +1710,7 @@ input {
     bottom: 0;
     left: 0;
     width: 100vw;
-    height: 100dvh;
+    height: var(--app-dynamic-vh);
     margin: 0;
     border: 0;
     border-radius: 0;
