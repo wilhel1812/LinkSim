@@ -3093,7 +3093,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                 >
                   Ownership {selectionLabel(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS)}
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
-                    <Funnel strokeWidth={1.8} />
+                    <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
                 </button>
                 {openSiteFilterGroup === "role" ? (
@@ -3143,7 +3143,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                 >
                   Access level {selectionLabel(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
-                    <Funnel strokeWidth={1.8} />
+                    <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
                 </button>
                 {openSiteFilterGroup === "visibility" ? (
@@ -3195,7 +3195,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                 >
                   Source {selectionLabel(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS)}
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
-                    <Funnel strokeWidth={1.8} />
+                    <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
                 </button>
                 {openSiteFilterGroup === "source" ? (

@@ -303,7 +303,7 @@ export default function SimulationLibraryPanel({
           >
             Ownership {selectionLabel(filters.roleFilters, ALL_ROLE_FILTERS)}
             <span className="library-filter-trigger-chevron" aria-hidden="true">
-              <Funnel strokeWidth={1.8} />
+              <Funnel aria-hidden="true" strokeWidth={1.8} />
             </span>
           </button>
           {openFilterGroup === "role" ? (
@@ -350,7 +350,7 @@ export default function SimulationLibraryPanel({
           >
             Access level {selectionLabel(filters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
             <span className="library-filter-trigger-chevron" aria-hidden="true">
-              <Funnel strokeWidth={1.8} />
+              <Funnel aria-hidden="true" strokeWidth={1.8} />
             </span>
           </button>
           {openFilterGroup === "visibility" ? (

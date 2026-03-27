@@ -1202,6 +1202,11 @@ input {
   background: transparent;
 }
 
+.map-control-btn-icon.is-selected {
+  background: var(--accent-soft);
+  color: color-mix(in srgb, var(--accent) 82%, var(--text));
+}
+
 .map-control-btn:hover {
   border-color: var(--accent);
 }
