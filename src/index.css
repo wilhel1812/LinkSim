@@ -1539,11 +1539,6 @@ input {
 }
 
 @media (max-width: 980px) {
-  .env-staging body::after,
-  .env-local body::after {
-    border-width: 0;
-  }
-
   .app-shell.is-mobile-shell {
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
     --mobile-tabbar-height: 38px;
