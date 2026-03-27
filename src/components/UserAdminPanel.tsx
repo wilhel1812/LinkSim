@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { CircleQuestionMark, CircleX } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -746,7 +747,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
             type="button"
           >
             <SyncStatusIcon
-              className={syncIndicator.state === "syncing" ? "sync-icon-spinning" : undefined}
+              className={syncIndicator.state === "syncing" ? "sync-icon-pulsing" : undefined}
               state={syncIndicator.state}
               title={syncIndicator.label}
             />
@@ -756,7 +757,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
           </button>
           {onOpenHelp ? (
             <button aria-label="Open onboarding" className="user-icon-button" onClick={onOpenHelp} type="button">
-              ?
+              <CircleQuestionMark aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
         </div>
@@ -767,8 +768,8 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
           <div className="library-manager-card sync-modal">
             <div className="library-manager-header">
               <h2>Cloud Sync</h2>
-              <button className="inline-action" onClick={() => setSyncModalOpen(false)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setSyncModalOpen(false)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <div className="sync-modal-content">
@@ -799,7 +800,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : syncStatus === "syncing" ? (
                   <>
-                    <span className="sync-indicator-large sync-syncing"><SyncStatusIcon className="sync-icon-spinning" state="syncing" title="Syncing" /></span>
+                    <span className="sync-indicator-large sync-syncing"><SyncStatusIcon className="sync-icon-pulsing" state="syncing" title="Syncing" /></span>
                     <div>
                       <p className="field-help">Syncing to cloud...</p>
                       {!lastSyncedAt && <p className="field-help">Initial sync in progress...</p>}
@@ -865,8 +866,8 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                 <button className="inline-action" onClick={handleSignOut} type="button">
                   Sign Out
                 </button>
-                <button className="inline-action" onClick={() => setOpen(false)} type="button">
-                  Close
+                <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setOpen(false)} title="Close" type="button">
+                  <CircleX aria-hidden="true" strokeWidth={1.8} />
                 </button>
               </div>
             </div>
@@ -1255,8 +1256,8 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                 <div className="library-manager-card user-profile-popup">
                   <div className="library-manager-header">
                     <h2>User Profile</h2>
-                    <button className="inline-action" onClick={closeManagedUser} type="button">
-                      Close
+                    <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeManagedUser} title="Close" type="button">
+                      <CircleX aria-hidden="true" strokeWidth={1.8} />
                     </button>
                   </div>
                   <div className="user-list-row">

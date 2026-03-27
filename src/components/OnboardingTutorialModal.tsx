@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { CircleX } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import onboardingMarkdown from "../../docs/onboarding.md?raw";
@@ -43,8 +44,8 @@ export default function OnboardingTutorialModal({
         <div className="library-manager-header">
           <h2>Getting Started</h2>
           <div className="chip-group">
-            <button className="inline-action" onClick={onClose} type="button">
-              Close
+            <button aria-label="Close" className="inline-action inline-action-icon" onClick={onClose} title="Close" type="button">
+              <CircleX aria-hidden="true" strokeWidth={1.8} />
             </button>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
+import { CircleChevronDown, CircleChevronRight, CircleX } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -2135,8 +2136,8 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>{linkModal.mode === "add" ? "Add Link" : "Edit Link"}</h2>
-              <button className="inline-action" onClick={() => setLinkModal(null)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setLinkModal(null)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <label className="field-grid">
@@ -2348,8 +2349,8 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>User Profile</h2>
-              <button className="inline-action" onClick={() => setProfilePopupUser(null)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setProfilePopupUser(null)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <p className="field-help">
@@ -2431,8 +2432,8 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Change Log · {changeLogPopup.label}</h2>
-              <button className="inline-action" onClick={() => setChangeLogPopup(null)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setChangeLogPopup(null)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             {changeLogPopup.busy ? <p className="field-help">Loading changes...</p> : null}
@@ -2504,8 +2505,8 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
               <h2>Edit · {resourceDetailsPopup.label}</h2>
-              <button className="inline-action" onClick={() => setResourceDetailsPopup(null)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setResourceDetailsPopup(null)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
@@ -2934,16 +2935,18 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>New Simulation</h2>
-              <button
-                className="inline-action"
-                onClick={() => {
-                  setShowNewSimulationModal(false);
-                  setNewSimulationNameError("");
-                }}
-                type="button"
-              >
-                Close
-              </button>
+                <button
+                  aria-label="Close"
+                  className="inline-action inline-action-icon"
+                  onClick={() => {
+                    setShowNewSimulationModal(false);
+                    setNewSimulationNameError("");
+                  }}
+                  title="Close"
+                  type="button"
+                >
+                  <CircleX aria-hidden="true" strokeWidth={1.8} />
+                </button>
             </div>
             <label className="field-grid">
               <span>Name</span>
@@ -3016,8 +3019,8 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>Visibility Change Confirmation</h2>
-              <button className="inline-action" onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setPendingSimulationVisibilityPrompt(null)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <p className="field-help">
@@ -3053,15 +3056,17 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
             <div className="library-manager-header">
               <h2>Site Library</h2>
               <button
-                className="inline-action"
+                aria-label="Close"
+                className="inline-action inline-action-icon"
                 onClick={() => {
                   setShowSiteLibraryManager(false);
                   setPendingDraftAutoInsert(false);
                   closeSiteFilterEditors();
                 }}
+                title="Close"
                 type="button"
               >
-                Close
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <p className="field-help">
@@ -3087,7 +3092,9 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                   type="button"
                 >
                   Ownership {selectionLabel(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS)}
-                  <span className="library-filter-trigger-chevron">{openSiteFilterGroup === "role" ? "^" : "v"}</span>
+                  <span className="library-filter-trigger-chevron" aria-hidden="true">
+                    {openSiteFilterGroup === "role" ? <CircleChevronDown strokeWidth={1.8} /> : <CircleChevronRight strokeWidth={1.8} />}
+                  </span>
                 </button>
                 {openSiteFilterGroup === "role" ? (
                   <div className="library-filter-popover">
@@ -3135,8 +3142,8 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                   type="button"
                 >
                   Access level {selectionLabel(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
-                  <span className="library-filter-trigger-chevron">
-                    {openSiteFilterGroup === "visibility" ? "^" : "v"}
+                  <span className="library-filter-trigger-chevron" aria-hidden="true">
+                    {openSiteFilterGroup === "visibility" ? <CircleChevronDown strokeWidth={1.8} /> : <CircleChevronRight strokeWidth={1.8} />}
                   </span>
                 </button>
                 {openSiteFilterGroup === "visibility" ? (
@@ -3187,7 +3194,9 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                   type="button"
                 >
                   Source {selectionLabel(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS)}
-                  <span className="library-filter-trigger-chevron">{openSiteFilterGroup === "source" ? "^" : "v"}</span>
+                  <span className="library-filter-trigger-chevron" aria-hidden="true">
+                    {openSiteFilterGroup === "source" ? <CircleChevronDown strokeWidth={1.8} /> : <CircleChevronRight strokeWidth={1.8} />}
+                  </span>
                 </button>
                 {openSiteFilterGroup === "source" ? (
                   <div className="library-filter-popover">
@@ -3721,8 +3730,8 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>{deleteConfirm.title}</h2>
-              <button className="inline-action" onClick={() => setDeleteConfirm(null)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setDeleteConfirm(null)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <p className="field-help">{deleteConfirm.message}</p>
