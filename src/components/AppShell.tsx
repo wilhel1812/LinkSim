@@ -412,24 +412,6 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    const applyDynamicViewportHeight = () => {
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-      document.documentElement.style.setProperty("--app-dynamic-vh", `${Math.round(viewportHeight)}px`);
-    };
-    applyDynamicViewportHeight();
-    window.addEventListener("resize", applyDynamicViewportHeight);
-    window.addEventListener("orientationchange", applyDynamicViewportHeight);
-    window.visualViewport?.addEventListener("resize", applyDynamicViewportHeight);
-    window.visualViewport?.addEventListener("scroll", applyDynamicViewportHeight);
-    return () => {
-      window.removeEventListener("resize", applyDynamicViewportHeight);
-      window.removeEventListener("orientationchange", applyDynamicViewportHeight);
-      window.visualViewport?.removeEventListener("resize", applyDynamicViewportHeight);
-      window.visualViewport?.removeEventListener("scroll", applyDynamicViewportHeight);
-    };
-  }, []);
-
-  useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 900px)").matches;
     if (!isMobile) return;
     try {
