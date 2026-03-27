@@ -335,6 +335,7 @@ type SidebarProps = {
 export function Sidebar({ onOpenHelp }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
+  const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
   const buildChannel = runtimeEnvironment === "production" ? "stable" : runtimeEnvironment === "staging" ? "beta" : "alpha";
   const buildLabel = buildLabelForChannel(buildChannel);
   const links = useAppStore((state) => state.links);
@@ -1961,7 +1962,10 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     <aside className="sidebar-panel">
       <UserAdminPanel onOpenHelp={onOpenHelp} />
       <header>
-        <h1>{t(locale, "appTitle")}</h1>
+        <div className="sidebar-title-row">
+          <h1>{t(locale, "appTitle")}</h1>
+          {envBadgeLabel ? <span className="sidebar-env-badge">{envBadgeLabel}</span> : null}
+        </div>
         <p>{t(locale, "workspaceSubtitle")}</p>
       </header>
       <section className="panel-section section-scenario">
