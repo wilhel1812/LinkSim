@@ -29,6 +29,7 @@ import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
+import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
 
 const initialsFor = (name: string): string => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -727,51 +728,6 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
     setSyncModalOpen(true);
   };
 
-  const renderSyncIcon = (state: SyncIndicatorState) => {
-    if (state === "error" || state === "offline") {
-      return (
-        <svg aria-hidden viewBox="0 0 20 20">
-          <path d="M10 2.5l8 14H2l8-14z" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-          <path d="M10 7v4.8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.9" />
-          <circle cx="10" cy="14.5" r="1" fill="currentColor" />
-        </svg>
-      );
-    }
-    if (state === "pending") {
-      return (
-        <svg aria-hidden viewBox="0 0 20 20">
-          <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M10 10V4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.9" />
-          <path d="M10 10l4.2 2.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.9" />
-        </svg>
-      );
-    }
-    if (state === "syncing") {
-      return (
-        <svg aria-hidden className="sync-icon-spinning" viewBox="0 0 20 20">
-          <path d="M4 10a6 6 0 0 1 10.2-4.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-          <path d="M14.4 3.6h2.6v2.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-          <path d="M16 10a6 6 0 0 1-10.2 4.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-          <path d="M5.6 16.4H3v-2.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-        </svg>
-      );
-    }
-    if (state === "local") {
-      return (
-        <svg aria-hidden viewBox="0 0 20 20">
-          <path d="M3 9.2L10 3l7 6.2v7H3v-7z" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-          <path d="M8 16.2v-4h4v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-        </svg>
-      );
-    }
-    return (
-      <svg aria-hidden viewBox="0 0 20 20">
-        <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M6.6 10.1l2.3 2.3 4.5-4.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" />
-      </svg>
-    );
-  };
-
   return (
     <>
       <div className="user-chip-row">
@@ -789,13 +745,10 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
           title={syncIndicator.title}
           type="button"
         >
-          {renderSyncIcon(syncIndicator.state)}
+          <SyncStatusIcon className={syncIndicator.state === "syncing" ? "sync-icon-spinning" : undefined} state={syncIndicator.state} />
         </button>
         <button aria-label="Open user settings" className="user-icon-button" onClick={() => setOpen(true)} type="button">
-          <svg aria-hidden viewBox="0 0 20 20">
-            <path d="M10 4.2l1.2.3.8-1.4 2 1.2-.5 1.5.9.9 1.5-.5 1.2 2-.4.8-.4.8 1.3.9v2.4l-1.3.9.4.8.4.8-1.2 2-1.5-.5-.9.9.5 1.5-2 1.2-.8-1.4L10 15.8l-1.2.3-.8 1.4-2-1.2.5-1.5-.9-.9-1.5.5-1.2-2 .4-.8.4-.8-1.3-.9V9l1.3-.9-.4-.8-.4-.8 1.2-2 1.5.5.9-.9-.5-1.5 2-1.2.8 1.4L10 4.2z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.5" />
-            <circle cx="10" cy="10" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
+          <SettingsIcon />
         </button>
         {onOpenHelp ? (
           <button aria-label="Open onboarding" className="user-icon-button" onClick={onOpenHelp} type="button">
@@ -833,7 +786,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
               <div className="sync-status-display">
                 {syncPending ? (
                   <>
-                    <span className="sync-indicator-large sync-pending">{renderSyncIcon("pending")}</span>
+                    <span className="sync-indicator-large sync-pending"><SyncStatusIcon state="pending" /></span>
                     <div>
                       <p className="field-help">Sync pending</p>
                       <p className="field-help">{pendingChangesCount} change(s) queued for sync.</p>
@@ -841,7 +794,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : syncStatus === "syncing" ? (
                   <>
-                    <span className="sync-indicator-large sync-syncing">{renderSyncIcon("syncing")}</span>
+                    <span className="sync-indicator-large sync-syncing"><SyncStatusIcon className="sync-icon-spinning" state="syncing" /></span>
                     <div>
                       <p className="field-help">Syncing to cloud...</p>
                       {!lastSyncedAt && <p className="field-help">Initial sync in progress...</p>}
@@ -849,7 +802,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : syncStatus === "synced" ? (
                   <>
-                    <span className="sync-indicator-large sync-synced">{renderSyncIcon("synced")}</span>
+                    <span className="sync-indicator-large sync-synced"><SyncStatusIcon state="synced" /></span>
                     <div>
                       <p className="field-help">Up to date</p>
                       {pendingChangesCount > 0 ? <p className="field-help">{pendingChangesCount} changes still pending.</p> : null}
@@ -857,7 +810,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : syncStatus === "error" ? (
                   <>
-                    <span className="sync-indicator-large sync-error">{renderSyncIcon("error")}</span>
+                    <span className="sync-indicator-large sync-error"><SyncStatusIcon state="error" /></span>
                     <div>
                       <p className="field-help">Sync failed</p>
                       {syncErrorMessage && (
@@ -870,7 +823,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : (
                   <>
-                    <span className={`sync-indicator-large ${syncIndicator.className}`}>{renderSyncIcon(syncIndicator.state)}</span>
+                    <span className={`sync-indicator-large ${syncIndicator.className}`}><SyncStatusIcon state={syncIndicator.state} /></span>
                     <div>
                       <p className="field-help">{syncIndicator.label}</p>
                     </div>
