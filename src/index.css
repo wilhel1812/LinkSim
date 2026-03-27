@@ -99,8 +99,8 @@ input {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  --sidebar-overlay-width: clamp(280px, 30vw, 360px);
+  --sidebar-overlay-width: clamp(280px, 20vw, 400px);
+  grid-template-columns: minmax(0, var(--sidebar-overlay-width)) minmax(0, 1fr);
   --workspace-panel-gap: 18px;
   gap: 18px;
   padding: 18px;
