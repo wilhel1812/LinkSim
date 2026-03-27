@@ -1076,6 +1076,7 @@ export function AppShell() {
         <MapView
           isMapExpanded={isMapExpanded}
           showInspector={!isMobileViewport || (!isMapExpanded && mobileActivePanel === "inspector")}
+          showMultiSelectToggle={isMobileViewport}
           canPersist={canPersistWorkspace}
           onShare={
             accessState === "granted"

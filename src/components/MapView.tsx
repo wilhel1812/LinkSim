@@ -972,6 +972,7 @@ const computeFitViewport = (
 type MapViewProps = {
   isMapExpanded: boolean;
   showInspector?: boolean;
+  showMultiSelectToggle?: boolean;
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
@@ -1004,6 +1005,7 @@ const DEFAULT_MAP_VIEWPORT = {
 export function MapView({
   isMapExpanded,
   showInspector = true,
+  showMultiSelectToggle = false,
   readOnly = false,
   canPersist = true,
   onToggleMapExpanded,
@@ -2058,13 +2060,15 @@ export function MapView({
           <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
             {isMapExpanded ? "Show Panels" : "Hide Panels"}
           </button>
-          <button
-            className={`map-control-btn ${isMultiSelectMode ? "is-selected" : ""}`}
-            onClick={() => setIsMultiSelectMode((current) => !current)}
-            type="button"
-          >
-            {isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
-          </button>
+          {showMultiSelectToggle ? (
+            <button
+              className={`map-control-btn ${isMultiSelectMode ? "is-selected" : ""}`}
+              onClick={() => setIsMultiSelectMode((current) => !current)}
+              type="button"
+            >
+              {isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
+            </button>
+          ) : null}
           <button className="map-control-btn" onClick={fitToNodes} type="button">
             Fit
           </button>
