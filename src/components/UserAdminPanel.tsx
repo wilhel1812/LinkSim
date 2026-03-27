@@ -745,10 +745,14 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
           title={syncIndicator.title}
           type="button"
         >
-          <SyncStatusIcon className={syncIndicator.state === "syncing" ? "sync-icon-spinning" : undefined} state={syncIndicator.state} />
+          <SyncStatusIcon
+            className={syncIndicator.state === "syncing" ? "sync-icon-spinning" : undefined}
+            state={syncIndicator.state}
+            title={syncIndicator.label}
+          />
         </button>
         <button aria-label="Open user settings" className="user-icon-button" onClick={() => setOpen(true)} type="button">
-          <SettingsIcon />
+          <SettingsIcon title="Settings" />
         </button>
         {onOpenHelp ? (
           <button aria-label="Open onboarding" className="user-icon-button" onClick={onOpenHelp} type="button">
@@ -786,7 +790,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
               <div className="sync-status-display">
                 {syncPending ? (
                   <>
-                    <span className="sync-indicator-large sync-pending"><SyncStatusIcon state="pending" /></span>
+                    <span className="sync-indicator-large sync-pending"><SyncStatusIcon state="pending" title="Sync pending" /></span>
                     <div>
                       <p className="field-help">Sync pending</p>
                       <p className="field-help">{pendingChangesCount} change(s) queued for sync.</p>
@@ -794,7 +798,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : syncStatus === "syncing" ? (
                   <>
-                    <span className="sync-indicator-large sync-syncing"><SyncStatusIcon className="sync-icon-spinning" state="syncing" /></span>
+                    <span className="sync-indicator-large sync-syncing"><SyncStatusIcon className="sync-icon-spinning" state="syncing" title="Syncing" /></span>
                     <div>
                       <p className="field-help">Syncing to cloud...</p>
                       {!lastSyncedAt && <p className="field-help">Initial sync in progress...</p>}
@@ -802,7 +806,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : syncStatus === "synced" ? (
                   <>
-                    <span className="sync-indicator-large sync-synced"><SyncStatusIcon state="synced" /></span>
+                    <span className="sync-indicator-large sync-synced"><SyncStatusIcon state="synced" title="Synced" /></span>
                     <div>
                       <p className="field-help">Up to date</p>
                       {pendingChangesCount > 0 ? <p className="field-help">{pendingChangesCount} changes still pending.</p> : null}
@@ -810,7 +814,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : syncStatus === "error" ? (
                   <>
-                    <span className="sync-indicator-large sync-error"><SyncStatusIcon state="error" /></span>
+                    <span className="sync-indicator-large sync-error"><SyncStatusIcon state="error" title="Sync failed" /></span>
                     <div>
                       <p className="field-help">Sync failed</p>
                       {syncErrorMessage && (
@@ -823,7 +827,9 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                   </>
                 ) : (
                   <>
-                    <span className={`sync-indicator-large ${syncIndicator.className}`}><SyncStatusIcon state={syncIndicator.state} /></span>
+                    <span className={`sync-indicator-large ${syncIndicator.className}`}>
+                      <SyncStatusIcon state={syncIndicator.state} title={syncIndicator.label} />
+                    </span>
                     <div>
                       <p className="field-help">{syncIndicator.label}</p>
                     </div>
