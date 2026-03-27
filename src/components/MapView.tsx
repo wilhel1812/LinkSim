@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Maximize2, Minimize2, SearchSlash, Share, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, Minimize2, Share, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -1060,6 +1060,7 @@ export function MapView({
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(true);
+  const [fitControlActive, setFitControlActive] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
   const [armAddSiteOnNextEmptyMapClick, setArmAddSiteOnNextEmptyMapClick] = useState(false);
@@ -1499,12 +1500,14 @@ export function MapView({
   };
 
   const zoomBy = (delta: number) => {
+    setFitControlActive(false);
     const nextZoom = clamp(activeViewState.zoom + delta, 2, providerMaxZoom);
     setInteractionViewState(null);
     updateMapViewport({ zoom: nextZoom });
   };
 
   const fitToNodes = () => {
+    setFitControlActive(true);
     const next = computeFitViewport(sites);
     setInteractionViewState(null);
     updateMapViewport({
@@ -2038,12 +2041,12 @@ export function MapView({
         <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
           <button
             aria-label={isMapExpanded ? "Show panels" : "Hide panels"}
-            className="map-control-btn map-control-btn-icon"
+            className={`map-control-btn map-control-btn-icon ${isMapExpanded ? "is-selected" : ""}`}
             onClick={onToggleMapExpanded}
             title={isMapExpanded ? "Show panels" : "Hide panels"}
             type="button"
           >
-            {isMapExpanded ? <Maximize2 aria-hidden="true" strokeWidth={1.8} /> : <Minimize2 aria-hidden="true" strokeWidth={1.8} />}
+            {isMapExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
           </button>
           {showMultiSelectToggle ? (
             <button
@@ -2054,8 +2057,14 @@ export function MapView({
               {isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
             </button>
           ) : null}
-          <button aria-label="Fit map to sites" className="map-control-btn map-control-btn-icon" onClick={fitToNodes} title="Fit" type="button">
-            <SearchSlash aria-hidden="true" strokeWidth={1.8} />
+          <button
+            aria-label="Fit map to sites"
+            className={`map-control-btn map-control-btn-icon ${fitControlActive ? "is-selected" : ""}`}
+            onClick={fitToNodes}
+            title="Fit"
+            type="button"
+          >
+            <Maximize2 aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(1)} title="Zoom in" type="button">
             <ZoomIn aria-hidden="true" strokeWidth={1.8} />
@@ -2428,13 +2437,16 @@ export function MapView({
         onTouchStart={() => {
           mapRef.current?.getMap().stop();
         }}
-        onMove={(event) =>
+        onMove={(event) => {
+          if (event.originalEvent) {
+            setFitControlActive(false);
+          }
           setInteractionViewState({
             longitude: event.viewState.longitude,
             latitude: event.viewState.latitude,
             zoom: Math.min(event.viewState.zoom, providerMaxZoom),
-          })
-        }
+          });
+        }}
         onMoveEnd={onMoveEnd}
       >
         {showTerrainOverlay && simulationTerrainOverlay ? (

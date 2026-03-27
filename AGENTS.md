@@ -27,6 +27,7 @@
 - Never commit or push directly to `main`; always create/use a separate branch for changes and push that branch.
 - Use TDD methodology for changes and new features: write/update failing tests first, implement the minimal fix to pass, then refactor with tests green.
 - Keep terminology consistent: use `Simulation`, `Site`, `Library`, `Path`, and `Channel` terms across UI and docs.
+- Icon accessibility rule: every UI icon must include accessible text. For icon-only controls, require an explicit `aria-label` on the interactive element (and matching `title` where applicable). Decorative inline icons should be `aria-hidden="true"`.
 - Any modal/popover that can open on top of another dialog must use `tier="raised"` in `ModalOverlay`.
 - When catching UI errors, use `getUiErrorMessage()` from `src/lib/uiError.ts` for consistent messaging.
 - Do not leave issue status in an ambiguous state. Close issues only when code and verification are done.
