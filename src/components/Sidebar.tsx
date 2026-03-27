@@ -1966,7 +1966,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <h1>{t(locale, "appTitle")}</h1>
           {envBadgeLabel ? <span className="sidebar-env-badge">{envBadgeLabel}</span> : null}
         </div>
-        <p>{t(locale, "workspaceSubtitle")}</p>
       </header>
       <section className="panel-section section-scenario">
         <div className="section-heading">
