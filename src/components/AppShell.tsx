@@ -1096,7 +1096,7 @@ export function AppShell() {
               role="tab"
               type="button"
             >
-              Map
+              Path Profile
             </button>
           </div>
         ) : null}

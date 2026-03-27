@@ -678,7 +678,7 @@ input {
   border: 1px solid var(--border);
   border-radius: 18px;
   overflow: hidden;
-  background: var(--surface);
+  background: linear-gradient(160deg, var(--surface), var(--surface-2));
   box-shadow: var(--shadow);
 }
 
@@ -829,10 +829,10 @@ input {
   bottom: auto;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-2) 95%, transparent);
-  box-shadow: var(--shadow-elev-2);
-  padding: 8px 10px 9px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow);
+  padding: 12px;
   display: grid;
   gap: 0;
   font-size: 0.76rem;
@@ -1612,6 +1612,16 @@ input {
   .mobile-workspace-panel .chart-panel {
     z-index: auto;
     height: 100%;
+    max-height: none;
+  }
+
+  .mobile-workspace-panel .chart-svg-wrap {
+    min-height: 0;
+  }
+
+  .mobile-workspace-panel .chart-panel svg {
+    min-height: 0;
+    max-height: none;
   }
 
   .mobile-workspace-panel-sidebar {
@@ -1771,7 +1781,7 @@ input {
   .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-bottom-left {
     left: 8px;
     right: auto;
-    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 8px);
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 38px);
   }
 
   .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-sidebar .map-panel .maplibregl-ctrl-bottom-right,
@@ -1780,7 +1790,7 @@ input {
   .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-profile .map-panel .maplibregl-ctrl-bottom-left,
   .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-right,
   .app-shell.is-mobile-shell:not(.is-map-expanded).mobile-panel-inspector .map-panel .maplibregl-ctrl-bottom-left {
-    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-height) + 8px);
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-height) + 38px);
   }
 
   .workspace-panel:not(.is-profile-expanded) .map-inspector {
@@ -1868,7 +1878,13 @@ input {
   gap: 8px;
 }
 
-.user-help-button {
+.user-chip-row .user-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.user-icon-button {
   border: 1px solid color-mix(in srgb, var(--accent) 46%, var(--border));
   background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface));
   border-radius: 12px;
@@ -1880,15 +1896,22 @@ input {
   color: var(--text);
   font-weight: 700;
   cursor: pointer;
+  flex: 0 0 auto;
 }
 
-.user-help-button:hover {
+.user-icon-button:hover {
   transform: translateY(-1px);
 }
 
-.user-help-button:focus-visible {
+.user-icon-button:focus-visible {
   outline: 2px solid var(--focus-outline);
   outline-offset: 2px;
+}
+
+.user-icon-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .user-chip-text {
@@ -1900,22 +1923,12 @@ input {
   white-space: nowrap;
 }
 
-.user-chip-settings-icon {
-  margin-left: auto;
-  font-size: 0.95rem;
-  opacity: 0.85;
-}
-
 .user-chip .notification-badge {
   margin-left: 8px;
 }
 
-.sync-indicator {
-  margin-left: 4px;
-  font-size: 0.65rem;
-  line-height: 1;
-  cursor: pointer;
-  display: inline-block;
+.sync-indicator-button {
+  color: var(--muted);
 }
 
 .sync-synced {
@@ -1926,9 +1939,6 @@ input {
 .sync-syncing {
   color: var(--accent);
   text-shadow: 0 0 0 1px var(--bg), 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent);
-  display: inline-block;
-  transform-origin: center;
-  animation: sync-spin 0.8s linear infinite;
 }
 
 .sync-pending {
@@ -1955,10 +1965,18 @@ input {
 }
 
 .sync-indicator-large {
-  font-size: 2rem;
-  display: block;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   margin-bottom: 0.5rem;
+}
+
+.sync-indicator-large svg {
+  width: 28px;
+  height: 28px;
 }
 
 .sync-modal {
@@ -1983,7 +2001,10 @@ input {
 }
 
 .sync-indicator-large.sync-syncing {
-  display: inline-block;
+  display: inline-flex;
+}
+
+.sync-icon-spinning {
   transform-origin: center;
   animation: sync-spin 0.8s linear infinite;
 }
