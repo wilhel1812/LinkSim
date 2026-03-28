@@ -40,6 +40,7 @@ import {
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
+import { getActiveHolidayTheme } from "../themes/holidayThemes";
 import type { CloudUser } from "../lib/cloudUser";
 import type {
   CoverageMode,
@@ -54,6 +55,11 @@ import type {
   Site,
   SrtmTile,
 } from "../types/radio";
+
+type HolidayThemeWindowState = {
+  reverted: string[];
+  dismissed: string[];
+};
 
 const SYNC_DEBOUNCE_MS = 2500;
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
@@ -317,6 +323,7 @@ type AppState = {
   locale: LocaleCode;
   uiThemePreference: "system" | "light" | "dark";
   uiColorTheme: UiColorTheme;
+  holidayWindowState: HolidayThemeWindowState;
   basemapProvider: BasemapProvider;
   basemapStylePreset: string;
   selectedScenarioId: string;
@@ -369,6 +376,8 @@ type AppState = {
   setIsInitializing: (value: boolean) => void;
   setUiThemePreference: (value: "system" | "light" | "dark") => void;
   setUiColorTheme: (value: UiColorTheme) => void;
+  revertHolidayThemeForWindow: () => void;
+  dismissHolidayThemeNotice: () => void;
   setBasemapProvider: (value: BasemapProvider) => void;
   setBasemapStylePreset: (value: string) => void;
   selectScenario: (id: string) => void;
@@ -994,6 +1003,34 @@ const normalizeUiColorTheme = (value: unknown): UiColorTheme =>
     ? value
     : "blue";
 const initialUiColorTheme = normalizeUiColorTheme(readStorage<string>(UI_COLOR_THEME_KEY, "blue"));
+const HOLIDAY_THEME_REVERT_KEY = "linksim-holiday-theme-revert-v1";
+const HOLIDAY_THEME_NOTICE_DISMISS_KEY = "linksim-holiday-theme-notice-dismiss-v1";
+
+const readHolidayWindowState = (): HolidayThemeWindowState => {
+  const fallback: HolidayThemeWindowState = { reverted: [], dismissed: [] };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const reverted = JSON.parse(window.localStorage.getItem(HOLIDAY_THEME_REVERT_KEY) ?? "[]");
+    const dismissed = JSON.parse(window.localStorage.getItem(HOLIDAY_THEME_NOTICE_DISMISS_KEY) ?? "[]");
+    return {
+      reverted: Array.isArray(reverted) ? reverted.filter((v): v is string => typeof v === "string") : [],
+      dismissed: Array.isArray(dismissed) ? dismissed.filter((v): v is string => typeof v === "string") : [],
+    };
+  } catch {
+    return fallback;
+  }
+};
+
+const writeHolidayWindowState = (state: HolidayThemeWindowState) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(HOLIDAY_THEME_REVERT_KEY, JSON.stringify(state.reverted));
+  window.localStorage.setItem(HOLIDAY_THEME_NOTICE_DISMISS_KEY, JSON.stringify(state.dismissed));
+};
+
+const appendUniqueWindowId = (ids: string[], nextId: string): string[] =>
+  ids.includes(nextId) ? ids : [...ids, nextId];
+
+const initialHolidayWindowState = readHolidayWindowState();
 const normalizeBasemapProvider = (value: unknown): BasemapProvider =>
   value === "carto" || value === "maptiler" || value === "stadia" || value === "kartverket" ? value : "carto";
 const normalizeBasemapStylePreset = (value: unknown): string =>
@@ -1075,6 +1112,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   locale: "eng",
   uiThemePreference: initialUiThemePreference,
   uiColorTheme: initialUiColorTheme,
+  holidayWindowState: initialHolidayWindowState,
   basemapProvider: initialBasemapProvider,
   basemapStylePreset: initialBasemapStylePreset,
   selectedScenarioId: getInitialScenarioId(),
@@ -1547,6 +1585,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     const normalized = normalizeUiColorTheme(value);
     writeStorage(UI_COLOR_THEME_KEY, normalized);
     set({ uiColorTheme: normalized });
+  },
+  revertHolidayThemeForWindow: () => {
+    const current = get().holidayWindowState;
+    const active = getActiveHolidayTheme(new Date());
+    if (!active) return;
+    const windowId = active.windowId;
+    const next: HolidayThemeWindowState = {
+      reverted: appendUniqueWindowId(current.reverted, windowId),
+      dismissed: appendUniqueWindowId(current.dismissed, windowId),
+    };
+    writeHolidayWindowState(next);
+    set({ holidayWindowState: next });
+  },
+  dismissHolidayThemeNotice: () => {
+    const current = get().holidayWindowState;
+    const active = getActiveHolidayTheme(new Date());
+    if (!active) return;
+    const windowId = active.windowId;
+    const next: HolidayThemeWindowState = {
+      reverted: current.reverted,
+      dismissed: appendUniqueWindowId(current.dismissed, windowId),
+    };
+    writeHolidayWindowState(next);
+    set({ holidayWindowState: next });
   },
   setBasemapProvider: (value) => {
     const normalized = normalizeBasemapProvider(value);
