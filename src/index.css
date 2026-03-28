@@ -1865,6 +1865,16 @@ input {
     justify-content: flex-start;
   }
 
+  .map-controls-group-utility {
+    align-self: center;
+    width: auto;
+    justify-content: center;
+  }
+
+  .map-controls-utility-pill {
+    max-width: calc(100% - 24px);
+  }
+
   .map-inspector {
     right: 12px;
     width: min(420px, calc(100% - 24px));
