@@ -1171,7 +1171,10 @@ export function AppShell() {
         {!isMobileViewport && !isMapExpanded ? (
           <LinkProfileChart
             isExpanded={isProfileExpanded}
-            onToggleExpanded={() => setIsProfileExpanded((prev) => !prev)}
+            onToggleExpanded={() => {
+              setIsMapExpanded(false);
+              setIsProfileExpanded((prev) => !prev);
+            }}
           />
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" ? (
