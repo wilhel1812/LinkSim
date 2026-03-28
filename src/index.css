@@ -81,7 +81,7 @@ body::before {
 }
 
 .env-staging body::after {
-  display: none;
+  border-color: var(--staging-frame);
 }
 
 .env-local body::after {
@@ -745,26 +745,6 @@ input {
 
 .map-panel-empty .maplibregl-map {
   filter: saturate(0.35) brightness(0.8);
-}
-
-.map-viewport-debug {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 2147483000;
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  padding: 6px 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
-  color: var(--text);
-  font-size: 0.67rem;
-  line-height: 1;
-  pointer-events: none;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .map-empty-state {
@@ -1736,10 +1716,8 @@ input {
   html,
   body,
   #root {
-    height: 100vh;
-    min-height: 100vh;
-    height: 100lvh;
-    min-height: 100lvh;
+    height: 100dvh;
+    min-height: 100dvh;
     overflow: hidden;
   }
 
@@ -1752,21 +1730,8 @@ input {
     --mobile-panel-height: 36vh;
     --mobile-attribution-gap: 8px;
     --mobile-attribution-top: calc(var(--mobile-controls-top) + var(--mobile-controls-occupied) + var(--mobile-attribution-gap));
-    height: 100vh;
-    min-height: 100vh;
-    height: 100lvh;
-    min-height: 100lvh;
-  }
-
-  @supports (-webkit-touch-callout: none) {
-    html,
-    body,
-    #root,
-    .app-shell.is-mobile-shell,
-    .app-shell.is-mobile-shell .workspace-panel {
-      height: -webkit-fill-available;
-      min-height: -webkit-fill-available;
-    }
+    height: 100dvh;
+    min-height: 100dvh;
   }
 
   .app-shell.is-mobile-shell .mobile-workspace-tabs {
@@ -1946,35 +1911,14 @@ input {
 
   .app-shell.is-mobile-shell .map-panel {
     position: fixed;
-    top: 0;
-    right: 0;
-    bottom: auto;
-    left: 0;
+    inset: 0;
     width: 100vw;
-    height: 100vh;
-    height: 100lvh;
-    min-height: 100vh;
-    min-height: 100lvh;
+    height: 100dvh;
+    min-height: 100dvh;
     margin: 0;
     border: 0;
     border-radius: 0;
     box-shadow: none;
-  }
-
-  .app-shell.is-mobile-shell .map-panel .maplibregl-map,
-  .app-shell.is-mobile-shell .map-panel .maplibregl-canvas-container,
-  .app-shell.is-mobile-shell .map-panel .maplibregl-canvas {
-    position: absolute;
-    inset: 0;
-    width: 100% !important;
-    height: 100% !important;
-  }
-
-  .app-shell.is-mobile-shell .map-panel .maplibregl-wrapper {
-    position: absolute !important;
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
   }
 
   .map-controls {
