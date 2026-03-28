@@ -15,6 +15,8 @@
   --los: Highlight;
   --shadow: 0 16px 42px color-mix(in srgb, CanvasText 14%, transparent);
   --focus-outline: color-mix(in srgb, var(--accent) 62%, Canvas 18%);
+  --glass-panel-opacity: 75%;
+  --glass-panel-blur: 12px;
 }
 
 * {
@@ -146,10 +148,16 @@ input {
 }
 
 .sidebar-panel {
-  background: linear-gradient(160deg, var(--surface), var(--surface-2));
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--surface) var(--glass-panel-opacity), transparent),
+    color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent)
+  );
   border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+  backdrop-filter: blur(var(--glass-panel-blur));
   padding: 18px;
   position: relative;
   z-index: 40;
@@ -216,7 +224,7 @@ input {
 }
 
 .panel-section {
-  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: 12px;
   padding: 12px;
@@ -507,7 +515,7 @@ input {
 .compact-details {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  background: var(--surface);
   padding: 8px 10px;
   display: grid;
   gap: 8px;
@@ -782,6 +790,12 @@ input {
   z-index: 60;
 }
 
+.map-controls-icon-only {
+  justify-content: center;
+  overflow: visible;
+  padding-top: 6px;
+}
+
 .map-controls-group-provider {
   align-items: flex-start;
   flex-wrap: nowrap;
@@ -835,7 +849,9 @@ input {
 .map-controls-utility-pill {
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+  backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow-elev-3);
   margin: 2px;
   padding: 4px;
@@ -887,7 +903,13 @@ input {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: linear-gradient(160deg, var(--surface), var(--surface-2));
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--surface) var(--glass-panel-opacity), transparent),
+    color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent)
+  );
+  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+  backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow);
   padding: 18px;
   display: grid;
@@ -998,6 +1020,34 @@ input {
 
 .map-inspector-details {
   margin-top: 8px;
+}
+
+.map-inspector-map-settings {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+}
+
+.map-inspector-map-setting {
+  display: grid;
+  gap: 4px;
+}
+
+.map-inspector-map-setting > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.map-inspector-map-setting .locale-select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  font-size: 0.74rem;
+  padding: 2px 8px;
 }
 
 .map-progress {
@@ -1340,6 +1390,7 @@ input {
 }
 
 .chart-panel {
+  background: linear-gradient(160deg, var(--surface), var(--surface-2));
   padding: 8px 0 6px;
   display: flex;
   flex-direction: column;
@@ -1352,6 +1403,10 @@ input {
 
 .workspace-panel.is-profile-expanded .chart-panel {
   grid-row: 1;
+}
+
+.workspace-panel.is-profile-expanded .map-inspector {
+  display: none;
 }
 
 .chart-panel-empty {
@@ -1696,17 +1751,19 @@ input {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
+    padding: 8px;
+    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+    backdrop-filter: blur(var(--glass-panel-blur));
+    box-shadow: var(--shadow-elev-2);
   }
 
   .mobile-workspace-tab {
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+    background: var(--surface);
     color: var(--text);
     height: 34px;
     font-size: 0.74rem;
