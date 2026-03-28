@@ -1942,6 +1942,15 @@ input {
     box-shadow: none;
   }
 
+  .app-shell.is-mobile-shell .map-panel .maplibregl-map,
+  .app-shell.is-mobile-shell .map-panel .maplibregl-canvas-container,
+  .app-shell.is-mobile-shell .map-panel .maplibregl-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
   .map-controls {
     top: var(--mobile-controls-top);
     flex-direction: column;
