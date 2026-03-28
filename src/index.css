@@ -1976,6 +1976,13 @@ input {
     inset: 0 !important;
     width: 100% !important;
     height: 100% !important;
+    background-color: var(--bg) !important;
+  }
+
+  .app-shell.is-mobile-shell .map-panel .maplibregl-viewport {
+    position: absolute !important;
+    inset: 0 !important;
+    transform: none !important;
   }
 
   .map-controls {
