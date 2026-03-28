@@ -1716,6 +1716,8 @@ input {
   html,
   body,
   #root {
+    height: 100vh;
+    min-height: 100vh;
     height: 100lvh;
     min-height: 100lvh;
     overflow: hidden;
@@ -1730,6 +1732,10 @@ input {
     --mobile-panel-height: 36vh;
     --mobile-attribution-gap: 8px;
     --mobile-attribution-top: calc(var(--mobile-controls-top) + var(--mobile-controls-occupied) + var(--mobile-attribution-gap));
+    height: 100vh;
+    min-height: 100vh;
+    height: 100lvh;
+    min-height: 100lvh;
   }
 
   .app-shell.is-mobile-shell .mobile-workspace-tabs {
@@ -1910,11 +1916,12 @@ input {
   .app-shell.is-mobile-shell .map-panel {
     position: fixed;
     top: 0;
-    left: 0;
     right: 0;
+    bottom: 0;
+    left: 0;
     width: 100vw;
+    height: 100vh;
     height: 100lvh;
-    min-height: 100lvh;
     margin: 0;
     border: 0;
     border-radius: 0;
@@ -1979,7 +1986,7 @@ input {
 
   .app-shell.is-mobile-shell.mobile-panel-profile .workspace-panel.is-profile-expanded .mobile-workspace-panel {
     top: calc(12px + env(safe-area-inset-top));
-    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height));
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-tab-gap));
     height: auto;
     max-height: none;
   }
