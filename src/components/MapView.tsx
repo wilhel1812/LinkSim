@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Maximize2, Minimize2, Share, ZoomIn, ZoomOut } from "lucide-react";
+import { Fullscreen, Maximize2, Minimize2, Share, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -2064,7 +2064,7 @@ export function MapView({
             title="Fit"
             type="button"
           >
-            <Maximize2 aria-hidden="true" strokeWidth={1.8} />
+            <Fullscreen aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(1)} title="Zoom in" type="button">
             <ZoomIn aria-hidden="true" strokeWidth={1.8} />
