@@ -1925,128 +1925,7 @@ export function MapView({
   if (siteDraftStatus) inspectorLines.push(siteDraftStatus);
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
-      <div className="map-controls map-controls-unified">
-        <div className="map-controls-group map-controls-group-provider">
-          <label className="map-provider-field">
-            <span>Map Provider</span>
-            <select
-              className="locale-select"
-              onChange={(event) => {
-                const nextProvider = event.target.value as typeof basemapProvider;
-                const nextProviderConfig =
-                  providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
-                setBasemapProvider(nextProvider);
-                setBasemapStylePreset(
-                  nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
-                    nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
-                    nextProviderConfig.presets[0]?.id ??
-                    "normal",
-                );
-                setUseFallbackMapStyle(false);
-                setMapProviderWarning(null);
-              }}
-              value={basemapProvider}
-            >
-              <optgroup label="Global">
-                {globalProviders.map((provider) => (
-                  <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                    {provider.label}
-                    {!provider.available ? " (unavailable)" : ""}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Regional">
-                {regionalProviders.map((provider) => (
-                  <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                    {provider.label}
-                    {!provider.available ? " (unavailable)" : ""}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </label>
-          <label className="map-provider-field">
-            <span>Map Style</span>
-            <select
-              className="locale-select"
-              disabled={resolvedPresetOptions.length <= 1}
-              onChange={(event) => {
-                setBasemapStylePreset(event.target.value);
-                setUseFallbackMapStyle(false);
-                setMapProviderWarning(null);
-              }}
-              value={styleSelectValue}
-            >
-              {resolvedPresetOptions.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="map-provider-field">
-            <span>Terrain</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setShowTerrainOverlay(event.target.value === "on")}
-              value={showTerrainOverlay ? "on" : "off"}
-            >
-              <option value="on">Copernicus</option>
-              <option value="off">Off</option>
-            </select>
-          </label>
-          <label className="map-provider-field">
-            <span>Simulation Overlay</span>
-            <select
-              className="locale-select"
-              onChange={(event) => {
-                const mode = event.target.value as "none" | "heatmap" | "contours" | "passfail" | "relay";
-                if (mode === "heatmap") {
-                  setCoverageVizMode("heatmap");
-                  return;
-                }
-                if (mode === "contours") {
-                  setCoverageVizMode("contours");
-                  return;
-                }
-                setCoverageVizMode(mode);
-              }}
-              value={simulationOverlaySelectValue}
-            >
-              <option value="none">Hidden</option>
-              {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
-              {allowedOverlayModes.includes("contours") ? <option value="contours">Contours</option> : null}
-              {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
-              {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
-            </select>
-          </label>
-          <label className="map-provider-field">
-            <span>Visible Sites</span>
-            <select
-              className="locale-select"
-              onChange={(event) => {
-                const mode = event.target.value as "simulation" | "library" | "mqtt";
-                if (mode === "simulation") {
-                  setShowDiscoverySites(false);
-                  setShowDiscoveryMqtt(false);
-                  return;
-                }
-                if (mode === "library") {
-                  setShowDiscoverySites(true);
-                  setShowDiscoveryMqtt(false);
-                  return;
-                }
-                setShowDiscoverySites(false);
-                setShowDiscoveryMqtt(true);
-              }}
-              value={siteVisibilityMode}
-            >
-              <option value="simulation">Only Simulation</option>
-              <option value="library">Simulation + Library</option>
-              <option value="mqtt">Simulation + MQTT</option>
-            </select>
-          </label>
-        </div>
+      <div className="map-controls map-controls-unified map-controls-icon-only">
         <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
           {showMultiSelectToggle ? (
             <button
@@ -2251,11 +2130,132 @@ export function MapView({
             onToggle={(event) => setShowOverlayGuide(event.currentTarget.open)}
             open={showOverlayGuide}
           >
-            <summary>Overlay Guide</summary>
+            <summary>Map</summary>
+            <div className="map-inspector-map-settings">
+              <label className="map-inspector-map-setting">
+                <span>Map Provider</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => {
+                    const nextProvider = event.target.value as typeof basemapProvider;
+                    const nextProviderConfig =
+                      providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
+                    setBasemapProvider(nextProvider);
+                    setBasemapStylePreset(
+                      nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
+                        nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
+                        nextProviderConfig.presets[0]?.id ??
+                        "normal",
+                    );
+                    setUseFallbackMapStyle(false);
+                    setMapProviderWarning(null);
+                  }}
+                  value={basemapProvider}
+                >
+                  <optgroup label="Global">
+                    {globalProviders.map((provider) => (
+                      <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                        {provider.label}
+                        {!provider.available ? " (unavailable)" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Regional">
+                    {regionalProviders.map((provider) => (
+                      <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                        {provider.label}
+                        {!provider.available ? " (unavailable)" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+              <label className="map-inspector-map-setting">
+                <span>Map Style</span>
+                <select
+                  className="locale-select"
+                  disabled={resolvedPresetOptions.length <= 1}
+                  onChange={(event) => {
+                    setBasemapStylePreset(event.target.value);
+                    setUseFallbackMapStyle(false);
+                    setMapProviderWarning(null);
+                  }}
+                  value={styleSelectValue}
+                >
+                  {resolvedPresetOptions.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="map-inspector-map-setting">
+                <span>Terrain</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => setShowTerrainOverlay(event.target.value === "on")}
+                  value={showTerrainOverlay ? "on" : "off"}
+                >
+                  <option value="on">Copernicus</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+              <label className="map-inspector-map-setting">
+                <span>Simulation Overlay</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => {
+                    const mode = event.target.value as "none" | "heatmap" | "contours" | "passfail" | "relay";
+                    if (mode === "heatmap") {
+                      setCoverageVizMode("heatmap");
+                      return;
+                    }
+                    if (mode === "contours") {
+                      setCoverageVizMode("contours");
+                      return;
+                    }
+                    setCoverageVizMode(mode);
+                  }}
+                  value={simulationOverlaySelectValue}
+                >
+                  <option value="none">Hidden</option>
+                  {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
+                  {allowedOverlayModes.includes("contours") ? <option value="contours">Contours</option> : null}
+                  {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
+                  {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
+                </select>
+              </label>
+              <label className="map-inspector-map-setting">
+                <span>Visible Sites</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => {
+                    const mode = event.target.value as "simulation" | "library" | "mqtt";
+                    if (mode === "simulation") {
+                      setShowDiscoverySites(false);
+                      setShowDiscoveryMqtt(false);
+                      return;
+                    }
+                    if (mode === "library") {
+                      setShowDiscoverySites(true);
+                      setShowDiscoveryMqtt(false);
+                      return;
+                    }
+                    setShowDiscoverySites(false);
+                    setShowDiscoveryMqtt(true);
+                  }}
+                  value={siteVisibilityMode}
+                >
+                  <option value="simulation">Only Simulation</option>
+                  <option value="library">Simulation + Library</option>
+                  <option value="mqtt">Simulation + MQTT</option>
+                </select>
+              </label>
+            </div>
             <p>
               Mode: <strong>{overlayGuideTitle}</strong>
             </p>
-            {coverageVizMode === "none" ? <p>Overlay is hidden. Click Heat, Pass/Fail, or Relay to show it again.</p> : null}
+            {coverageVizMode === "none" ? <p>Overlay is hidden. Use Simulation Overlay to show it again.</p> : null}
             {coverageVizMode === "heatmap" ? (
               <>
                 <p>
