@@ -1763,8 +1763,7 @@ input {
     body,
     #root,
     .app-shell.is-mobile-shell,
-    .app-shell.is-mobile-shell .workspace-panel,
-    .app-shell.is-mobile-shell .map-panel {
+    .app-shell.is-mobile-shell .workspace-panel {
       height: -webkit-fill-available;
       min-height: -webkit-fill-available;
     }
@@ -1947,14 +1946,14 @@ input {
 
   .app-shell.is-mobile-shell .map-panel {
     position: fixed;
-    top: auto;
+    top: 0;
     right: 0;
-    bottom: 0;
+    bottom: auto;
     left: 0;
-    width: auto;
-    height: -webkit-fill-available;
+    width: 100vw;
+    height: 100vh;
     height: 100lvh;
-    min-height: -webkit-fill-available;
+    min-height: 100vh;
     min-height: 100lvh;
     margin: 0;
     border: 0;
