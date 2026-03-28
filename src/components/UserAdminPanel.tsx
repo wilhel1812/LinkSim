@@ -27,6 +27,7 @@ import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
+import { useThemeVariant } from "../hooks/useThemeVariant";
 import type { UiColorTheme } from "../themes/types";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
@@ -148,6 +149,7 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const { activeHolidayTheme } = useThemeVariant();
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
@@ -947,6 +949,9 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
                     <option value="pink">Pink</option>
                     <option value="red">Red</option>
                     <option value="green">Green</option>
+                    {activeHolidayTheme ? (
+                      <option value="yellow">{activeHolidayTheme.title.replace(" Theme", "")}</option>
+                    ) : null}
                   </select>
                 </div>
                 <div className="field-grid user-field-grid">
