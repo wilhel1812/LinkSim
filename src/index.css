@@ -1738,6 +1738,18 @@ input {
     min-height: 100lvh;
   }
 
+  @supports (-webkit-touch-callout: none) {
+    html,
+    body,
+    #root,
+    .app-shell.is-mobile-shell,
+    .app-shell.is-mobile-shell .workspace-panel,
+    .app-shell.is-mobile-shell .map-panel {
+      height: -webkit-fill-available;
+      min-height: -webkit-fill-available;
+    }
+  }
+
   .app-shell.is-mobile-shell .mobile-workspace-tabs {
     position: fixed;
     left: 12px;
@@ -1921,7 +1933,9 @@ input {
     left: 0;
     width: 100vw;
     height: 100vh;
+    min-height: 100vh;
     height: 100lvh;
+    min-height: 100lvh;
     margin: 0;
     border: 0;
     border-radius: 0;
