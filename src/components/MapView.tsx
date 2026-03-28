@@ -25,7 +25,6 @@ import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
-import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
@@ -1095,101 +1094,18 @@ export function MapView({
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
-  const mapPanelRef = useRef<HTMLDivElement | null>(null);
-  const runtimeEnvironment = getCurrentRuntimeEnvironment();
-  const isStagingEnvironment = runtimeEnvironment === "staging";
-  const [viewportDebug, setViewportDebug] = useState<{
-    innerHeight: number;
-    visualHeight: number | null;
-    visualOffsetTop: number | null;
-    panelHeight: number | null;
-    panelTop: number | null;
-    panelBottom: number | null;
-    mapHeight: number | null;
-    mapTop: number | null;
-    mapBottom: number | null;
-    canvasHeight: number | null;
-    canvasTop: number | null;
-    canvasBottom: number | null;
-    mapLoaded: boolean;
-  } | null>(null);
-  const [mapIsLoaded, setMapIsLoaded] = useState(false);
-
-  useEffect(() => {
-    const triggerInitialResize = () => {
-      mapRef.current?.resize();
-    };
-    triggerInitialResize();
-    const rafId = window.requestAnimationFrame(triggerInitialResize);
-    const timeoutFastId = window.setTimeout(triggerInitialResize, 260);
-    const timeoutSlowId = window.setTimeout(triggerInitialResize, 960);
-    return () => {
-      window.cancelAnimationFrame(rafId);
-      window.clearTimeout(timeoutFastId);
-      window.clearTimeout(timeoutSlowId);
-    };
-  }, []);
 
   useEffect(() => {
     const handleViewportChange = () => {
       mapRef.current?.resize();
     };
-    const viewport = window.visualViewport;
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("orientationchange", handleViewportChange);
-    viewport?.addEventListener("resize", handleViewportChange);
-    viewport?.addEventListener("scroll", handleViewportChange);
     return () => {
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("orientationchange", handleViewportChange);
-      viewport?.removeEventListener("resize", handleViewportChange);
-      viewport?.removeEventListener("scroll", handleViewportChange);
     };
   }, []);
-
-  useEffect(() => {
-    if (!isStagingEnvironment) {
-      setViewportDebug(null);
-      return;
-    }
-    const collectViewportDebug = () => {
-      const panel = mapPanelRef.current;
-      const map = mapIsLoaded && mapRef.current ? mapRef.current.getMap() : null;
-      const mapContainer = map?.getContainer() ?? null;
-      const mapCanvas = map?.getCanvas() ?? null;
-      const panelRect = panel?.getBoundingClientRect() ?? null;
-      const mapRect = mapContainer?.getBoundingClientRect() ?? null;
-      const canvasRect = mapCanvas?.getBoundingClientRect() ?? null;
-      const visualViewport = window.visualViewport;
-      setViewportDebug({
-        innerHeight: window.innerHeight,
-        visualHeight: visualViewport ? Math.round(visualViewport.height) : null,
-        visualOffsetTop: visualViewport ? Math.round(visualViewport.offsetTop) : null,
-        panelHeight: panelRect ? Math.round(panelRect.height) : null,
-        panelTop: panelRect ? Math.round(panelRect.top) : null,
-        panelBottom: panelRect ? Math.round(panelRect.bottom) : null,
-        mapHeight: mapRect ? Math.round(mapRect.height) : null,
-        mapTop: mapRect ? Math.round(mapRect.top) : null,
-        mapBottom: mapRect ? Math.round(mapRect.bottom) : null,
-        canvasHeight: canvasRect ? Math.round(canvasRect.height) : null,
-        canvasTop: canvasRect ? Math.round(canvasRect.top) : null,
-        canvasBottom: canvasRect ? Math.round(canvasRect.bottom) : null,
-        mapLoaded: mapIsLoaded,
-      });
-    };
-    collectViewportDebug();
-    const visualViewport = window.visualViewport;
-    window.addEventListener("resize", collectViewportDebug);
-    window.addEventListener("orientationchange", collectViewportDebug);
-    visualViewport?.addEventListener("resize", collectViewportDebug);
-    visualViewport?.addEventListener("scroll", collectViewportDebug);
-    return () => {
-      window.removeEventListener("resize", collectViewportDebug);
-      window.removeEventListener("orientationchange", collectViewportDebug);
-      visualViewport?.removeEventListener("resize", collectViewportDebug);
-      visualViewport?.removeEventListener("scroll", collectViewportDebug);
-    };
-  }, [isStagingEnvironment, mapIsLoaded]);
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
     [links],
@@ -2008,24 +1924,7 @@ export function MapView({
   if (endpointPickTarget && endpointPickError) inspectorLines.push(endpointPickError);
   if (siteDraftStatus) inspectorLines.push(siteDraftStatus);
   return (
-    <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"} ref={mapPanelRef}>
-      {isStagingEnvironment && viewportDebug ? (
-        <div aria-live="polite" className="map-viewport-debug" role="status">
-          <span>{`inner ${viewportDebug.innerHeight}`}</span>
-          <span>{`vv ${viewportDebug.visualHeight ?? "-"}`}</span>
-          <span>{`vvTop ${viewportDebug.visualOffsetTop ?? "-"}`}</span>
-          <span>{`panel ${viewportDebug.panelHeight ?? "-"}`}</span>
-          <span>{`pT ${viewportDebug.panelTop ?? "-"}`}</span>
-          <span>{`pB ${viewportDebug.panelBottom ?? "-"}`}</span>
-          <span>{`map ${viewportDebug.mapHeight ?? "-"}`}</span>
-          <span>{`mT ${viewportDebug.mapTop ?? "-"}`}</span>
-          <span>{`mB ${viewportDebug.mapBottom ?? "-"}`}</span>
-          <span>{`canvas ${viewportDebug.canvasHeight ?? "-"}`}</span>
-          <span>{`cT ${viewportDebug.canvasTop ?? "-"}`}</span>
-          <span>{`cB ${viewportDebug.canvasBottom ?? "-"}`}</span>
-          <span>{`loaded ${viewportDebug.mapLoaded ? "Y" : "N"}`}</span>
-        </div>
-      ) : null}
+    <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
       <div className="map-controls map-controls-unified map-controls-icon-only">
         <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
           {showMultiSelectToggle ? (
@@ -2586,7 +2485,6 @@ export function MapView({
           });
         }}
         onMoveEnd={onMoveEnd}
-        onLoad={() => setMapIsLoaded(true)}
       >
         {showTerrainOverlay && simulationTerrainOverlay ? (
           <Source
