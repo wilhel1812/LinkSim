@@ -1002,7 +1002,7 @@ export function AppShell() {
   return (
     <main
       ref={appShellRef}
-      className={`app-shell ${isMapExpanded || isProfileExpanded ? "is-map-expanded" : ""} ${
+      className={`app-shell ${isMapExpanded ? "is-map-expanded" : ""} ${
         accessState === "readonly" ? "is-readonly-shell" : ""
       } ${
         isMobileViewport ? "is-mobile-shell" : ""
@@ -1102,15 +1102,7 @@ export function AppShell() {
           readOnly={!canPersistWorkspace}
           onToggleMapExpanded={() => {
             setIsProfileExpanded(false);
-            setIsMapExpanded((prev) => {
-              const next = !prev;
-              if (isMobileViewport) {
-                if (!next) {
-                  setMobileActivePanel("profile");
-                }
-              }
-              return next;
-            });
+            setIsMapExpanded((prev) => !prev);
           }}
         />
         {isMobileViewport ? (
@@ -1171,20 +1163,14 @@ export function AppShell() {
         {!isMobileViewport && !isMapExpanded ? (
           <LinkProfileChart
             isExpanded={isProfileExpanded}
-            onToggleExpanded={() => {
-              setIsMapExpanded(false);
-              setIsProfileExpanded((prev) => !prev);
-            }}
+            onToggleExpanded={() => setIsProfileExpanded((prev) => !prev)}
           />
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" ? (
           <div className="mobile-workspace-panel" role="tabpanel" aria-label="Path profile panel">
             <LinkProfileChart
               isExpanded={isProfileExpanded}
-              onToggleExpanded={() => {
-                setIsMapExpanded(false);
-                setIsProfileExpanded((prev) => !prev);
-              }}
+              onToggleExpanded={() => setIsProfileExpanded((prev) => !prev)}
             />
           </div>
         ) : null}
