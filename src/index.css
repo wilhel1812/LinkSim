@@ -767,7 +767,9 @@ input {
   justify-content: space-between;
   align-items: flex-start;
   gap: 8px;
+  padding: 3px 0;
   overflow-x: auto;
+  overflow-y: visible;
   scrollbar-width: thin;
 }
 
