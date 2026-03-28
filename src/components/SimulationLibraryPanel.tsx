@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
+import { CircleX, Funnel } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -274,8 +275,8 @@ export default function SimulationLibraryPanel({
     <div className="library-manager-card">
       <div className="library-manager-header">
         <h2>Simulation Library</h2>
-        <button className="inline-action" onClick={onClose} type="button">
-          Close
+        <button aria-label="Close" className="inline-action inline-action-icon" onClick={onClose} title="Close" type="button">
+          <CircleX aria-hidden="true" strokeWidth={1.8} />
         </button>
       </div>
       <p className="field-help">
@@ -301,8 +302,8 @@ export default function SimulationLibraryPanel({
             type="button"
           >
             Ownership {selectionLabel(filters.roleFilters, ALL_ROLE_FILTERS)}
-            <span className="library-filter-trigger-chevron">
-              {openFilterGroup === "role" ? "^" : "v"}
+            <span className="library-filter-trigger-chevron" aria-hidden="true">
+              <Funnel aria-hidden="true" strokeWidth={1.8} />
             </span>
           </button>
           {openFilterGroup === "role" ? (
@@ -348,8 +349,8 @@ export default function SimulationLibraryPanel({
             type="button"
           >
             Access level {selectionLabel(filters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
-            <span className="library-filter-trigger-chevron">
-              {openFilterGroup === "visibility" ? "^" : "v"}
+            <span className="library-filter-trigger-chevron" aria-hidden="true">
+              <Funnel aria-hidden="true" strokeWidth={1.8} />
             </span>
           </button>
           {openFilterGroup === "visibility" ? (
@@ -508,14 +509,16 @@ export default function SimulationLibraryPanel({
             <div className="library-manager-header">
               <h2>New Simulation</h2>
               <button
-                className="inline-action"
+                aria-label="Close"
+                className="inline-action inline-action-icon"
                 onClick={() => {
                   setShowNewSimulationModal(false);
                   setNewSimulationNameError("");
                 }}
+                title="Close"
                 type="button"
               >
-                Close
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <label className="field-grid">

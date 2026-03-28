@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CircleX } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -23,6 +24,7 @@ const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
+type MobileWorkspacePanel = "profile" | "inspector" | "sidebar";
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
@@ -98,15 +100,18 @@ export function AppShell() {
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
   const [showMobileWarning, setShowMobileWarning] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("profile");
+  const [mobileControlsOccupied, setMobileControlsOccupied] = useState(0);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const deepLinkAppliedRef = useRef(false);
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
+  const appShellRef = useRef<HTMLElement | null>(null);
 
   const { theme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
-  const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
   const isLocalRuntime = runtimeEnvironment === "local";
 
   const deepLinkParse = useMemo(() => parseDeepLinkFromLocation(window.location), []);
@@ -399,6 +404,69 @@ export function AppShell() {
     },
     [],
   );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 980px)");
+    const applyViewport = () => setIsMobileViewport(mediaQuery.matches);
+    applyViewport();
+    mediaQuery.addEventListener("change", applyViewport);
+    return () => mediaQuery.removeEventListener("change", applyViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setMobileControlsOccupied(0);
+      return;
+    }
+
+    const shell = appShellRef.current;
+    if (!shell) return;
+
+    let frameId = 0;
+
+    const measureHeight = (selector: string) => {
+      const element = shell.querySelector<HTMLElement>(selector);
+      if (!element) return 0;
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") return 0;
+      return Math.ceil(element.getBoundingClientRect().height);
+    };
+
+    const recompute = () => {
+      const controlsHeight = measureHeight(".map-controls");
+      setMobileControlsOccupied((current) => (current === controlsHeight ? current : controlsHeight));
+    };
+
+    const schedule = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(recompute);
+    };
+
+    schedule();
+    const followUpTimerA = window.setTimeout(schedule, 120);
+    const followUpTimerB = window.setTimeout(schedule, 280);
+
+    const observer = new ResizeObserver(schedule);
+    observer.observe(shell);
+    shell.querySelectorAll<HTMLElement>(".map-controls, .map-controls *").forEach((element) => {
+      observer.observe(element);
+    });
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.clearTimeout(followUpTimerA);
+      window.clearTimeout(followUpTimerB);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
+    };
+  }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel]);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 900px)").matches;
@@ -831,6 +899,13 @@ export function AppShell() {
     }
   }, [activeSimulation, copyCurrentLink, currentUser, referencedPrivateSites, updateSimulationPresetEntry, updateSiteLibraryEntry]);
 
+  const shellStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!isMobileViewport) return undefined;
+    return {
+      ["--mobile-controls-occupied" as string]: `${mobileControlsOccupied}px`,
+    };
+  }, [isMobileViewport, mobileControlsOccupied]);
+
   if (accessState === "checking") {
     return (
       <main className="app-shell access-locked-shell">
@@ -877,17 +952,6 @@ export function AppShell() {
           ) : null}
            {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
         </section>
-        <div className="floating-help-cluster">
-          {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
-          <button
-            aria-label="Open onboarding"
-            className="floating-help-button"
-            onClick={openOnboardingTutorial}
-            type="button"
-          >
-            ?
-          </button>
-        </div>
         <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
         <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       </main>
@@ -929,17 +993,6 @@ export function AppShell() {
           </div>
           {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
         </section>
-        <div className="floating-help-cluster">
-          {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
-          <button
-            aria-label="Open onboarding"
-            className="floating-help-button"
-            onClick={openOnboardingTutorial}
-            type="button"
-          >
-            ?
-          </button>
-        </div>
         <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
         <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       </main>
@@ -948,11 +1001,19 @@ export function AppShell() {
 
   return (
     <main
-      className={`app-shell ${isMapExpanded || isProfileExpanded ? "is-map-expanded" : ""} ${
+      ref={appShellRef}
+      className={`app-shell ${isMapExpanded ? "is-map-expanded" : ""} ${
         accessState === "readonly" ? "is-readonly-shell" : ""
+      } ${
+        isMobileViewport ? "is-mobile-shell" : ""
+      } ${
+        isMobileViewport ? `mobile-panel-${mobileActivePanel}` : ""
       }`}
+      style={shellStyle}
     >
-      {!isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? <Sidebar /> : null}
+      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? (
+        <Sidebar onOpenHelp={openOnboardingTutorial} />
+      ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {!isOnline && !offlineBannerDismissed ? (
           <div className="offline-banner" role="status">
@@ -1013,58 +1074,112 @@ export function AppShell() {
           {shareStatus ? <span className="field-help">{shareStatus}</span> : null}
           {deepLinkNotice ? <span className="field-help">{deepLinkNotice}</span> : null}
         </div>
-        {!isProfileExpanded ? (
-          <MapView
-            isMapExpanded={isMapExpanded}
-            canPersist={canPersistWorkspace}
-            onShare={
-              accessState === "granted"
-                ? () => {
-                    setShareStatus(null);
-                    if (!activeSimulation) {
-                      setShareStatus(
-                        "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
-                      );
-                      return;
-                    }
-                    if (toVisibility(activeSimulation.visibility) === "private") {
-                      setShowShareModal(true);
-                      return;
-                    }
-                    void copyCurrentLink()
-                      .then(() => setShareStatus("Copied to clipboard."))
-                      .catch((error) => setShareStatus(getUiErrorMessage(error)));
+        <MapView
+          isMapExpanded={isMapExpanded}
+          showInspector={!isMapExpanded && (!isMobileViewport || mobileActivePanel === "inspector")}
+          showMultiSelectToggle={isMobileViewport}
+          canPersist={canPersistWorkspace}
+          onShare={
+            accessState === "granted"
+              ? () => {
+                  setShareStatus(null);
+                  if (!activeSimulation) {
+                    setShareStatus(
+                      "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
+                    );
+                    return;
                   }
-                : undefined
-            }
-            readOnly={!canPersistWorkspace}
-            onToggleMapExpanded={() => {
-              setIsProfileExpanded(false);
-              setIsMapExpanded((prev) => !prev);
-            }}
-          />
+                  if (toVisibility(activeSimulation.visibility) === "private") {
+                    setShowShareModal(true);
+                    return;
+                  }
+                  void copyCurrentLink()
+                    .then(() => setShareStatus("Copied to clipboard."))
+                    .catch((error) => setShareStatus(getUiErrorMessage(error)));
+                }
+              : undefined
+          }
+          readOnly={!canPersistWorkspace}
+          onToggleMapExpanded={() => {
+            setIsProfileExpanded(false);
+            setIsMapExpanded((prev) => !prev);
+          }}
+        />
+        {isMobileViewport ? (
+          <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
+            <button
+              aria-selected={mobileActivePanel === "sidebar"}
+              className={`mobile-workspace-tab ${mobileActivePanel === "sidebar" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsProfileExpanded(false);
+                if (!isMapExpanded && mobileActivePanel === "sidebar") {
+                  setIsMapExpanded(true);
+                  return;
+                }
+                setIsMapExpanded(false);
+                setMobileActivePanel("sidebar");
+              }}
+              role="tab"
+              type="button"
+            >
+              Sidebar
+            </button>
+            <button
+              aria-selected={mobileActivePanel === "inspector"}
+              className={`mobile-workspace-tab ${mobileActivePanel === "inspector" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsProfileExpanded(false);
+                if (!isMapExpanded && mobileActivePanel === "inspector") {
+                  setIsMapExpanded(true);
+                  return;
+                }
+                setIsMapExpanded(false);
+                setMobileActivePanel("inspector");
+              }}
+              role="tab"
+              type="button"
+            >
+              Inspector
+            </button>
+            <button
+              aria-selected={mobileActivePanel === "profile"}
+              className={`mobile-workspace-tab ${mobileActivePanel === "profile" ? "is-active" : ""}`}
+              onClick={() => {
+                if (!isMapExpanded && mobileActivePanel === "profile") {
+                  setIsMapExpanded(true);
+                  setIsProfileExpanded(false);
+                  return;
+                }
+                setIsMapExpanded(false);
+                setMobileActivePanel("profile");
+              }}
+              role="tab"
+              type="button"
+            >
+              Path Profile
+            </button>
+          </div>
         ) : null}
-        {!isMapExpanded ? (
+        {!isMobileViewport && !isMapExpanded ? (
           <LinkProfileChart
             isExpanded={isProfileExpanded}
-            onToggleExpanded={() => {
-              setIsMapExpanded(false);
-              setIsProfileExpanded((prev) => !prev);
-            }}
+            onToggleExpanded={() => setIsProfileExpanded((prev) => !prev)}
           />
         ) : null}
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" ? (
+          <div className="mobile-workspace-panel" role="tabpanel" aria-label="Path profile panel">
+            <LinkProfileChart
+              isExpanded={isProfileExpanded}
+              onToggleExpanded={() => setIsProfileExpanded((prev) => !prev)}
+            />
+          </div>
+        ) : null}
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "sidebar" ? (
+          <div className="mobile-workspace-panel mobile-workspace-panel-sidebar" role="tabpanel" aria-label="Sidebar panel">
+            {(accessState === "granted" || accessState === "readonly") ? <Sidebar onOpenHelp={openOnboardingTutorial} /> : null}
+          </div>
+        ) : null}
       </section>
-      <div className="floating-help-cluster">
-        {envBadgeLabel ? <span className="floating-env-badge">{envBadgeLabel}</span> : null}
-        <button
-          aria-label="Open onboarding"
-          className="floating-help-button"
-          onClick={openOnboardingTutorial}
-          type="button"
-        >
-          ?
-        </button>
-      </div>
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
       <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       {showMobileWarning ? (
@@ -1073,13 +1188,15 @@ export function AppShell() {
             <div className="library-manager-header">
               <h2>Mobile Support Notice</h2>
               <button
-                className="inline-action"
+                aria-label="Close"
+                className="inline-action inline-action-icon"
                 onClick={() => {
                   setShowMobileWarning(false);
                 }}
+                title="Close"
                 type="button"
               >
-                Close
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <p className="field-help">
@@ -1110,8 +1227,8 @@ export function AppShell() {
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Share Simulation</h2>
-              <button className="inline-action" onClick={() => setShowShareModal(false)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setShowShareModal(false)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             {!activeSimulation ? (

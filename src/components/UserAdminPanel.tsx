@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { CircleQuestionMark, CircleX } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -29,6 +30,7 @@ import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
+import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
 
 const initialsFor = (name: string): string => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -46,6 +48,15 @@ const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
+
+type SyncIndicatorState = "local" | "offline" | "pending" | "syncing" | "synced" | "error";
+
+type SyncIndicator = {
+  state: SyncIndicatorState;
+  className: string;
+  label: string;
+  title: string;
+};
 
 const readDismissedNotificationIds = (): Set<string> => {
   try {
@@ -118,7 +129,11 @@ const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl:
   return { originalDataUrl, thumbDataUrl };
 };
 
-export function UserAdminPanel() {
+type UserAdminPanelProps = {
+  onOpenHelp?: () => void;
+};
+
+export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
@@ -663,19 +678,19 @@ export function UserAdminPanel() {
     };
   }, []);
 
-  const getSyncIndicator = () => {
+  const getSyncIndicator = (): SyncIndicator => {
     const timeLabel = lastSyncedAt
       ? `Up to date (synced ${new Date(lastSyncedAt).toLocaleTimeString()})`
       : "Up to date";
 
     if (isLocalRuntime) {
-      return { icon: "🏠", class: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
+      return { state: "local", className: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
     }
 
     if (!isOnline) {
       return {
-        icon: "⚠",
-        class: "sync-offline",
+        state: "offline",
+        className: "sync-offline",
         label: "Offline",
         title: `Offline. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}. Open Sync Status for details.`,
       };
@@ -683,8 +698,8 @@ export function UserAdminPanel() {
 
     if (syncPending) {
       return {
-        icon: "◐",
-        class: "sync-pending",
+        state: "pending",
+        className: "sync-pending",
         label: "Sync pending",
         title: `${timeLabel}. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}.`,
       };
@@ -692,18 +707,18 @@ export function UserAdminPanel() {
 
     switch (syncStatus) {
       case "syncing":
-        return { icon: "↻", class: "sync-syncing", label: "Syncing...", title: timeLabel };
+        return { state: "syncing", className: "sync-syncing", label: "Syncing...", title: timeLabel };
       case "synced":
-        return { icon: "●", class: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
+        return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
       case "error":
         return {
-          icon: "⚠",
-          class: "sync-error",
+          state: "error",
+          className: "sync-error",
           label: "Sync failed",
           title: `${timeLabel}. ${syncErrorMessage ?? "Open Sync Status for details."}`,
         };
       default:
-        return { icon: "●", class: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
+        return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
     }
   };
 
@@ -716,40 +731,45 @@ export function UserAdminPanel() {
 
   return (
     <>
-      <button className="user-chip" onClick={() => setOpen(true)} type="button">
-        <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
-        <span className="user-chip-text">{me?.username ?? "Loading user..."}</span>
-        <span
-          aria-label={syncIndicator.label}
-          className={`sync-indicator ${syncIndicator.class}`}
-          title={syncIndicator.title}
-          onClick={handleSyncIndicatorClick}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.stopPropagation();
-              setSyncModalOpen(true);
-            }
-          }}
-          role="button"
-          tabIndex={0}
-        >
-          {syncIndicator.icon}
-        </span>
-        <span aria-hidden className="user-chip-settings-icon">
-          ⚙
-        </span>
-        {canModerate && unreadNotifications.length > 0 ? (
-          <span className="notification-badge">{unreadNotifications.length}</span>
-        ) : null}
-      </button>
+      <div className="user-chip-row">
+        <button aria-label="Open user settings" className="user-chip" onClick={() => setOpen(true)} type="button">
+          <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
+          {canModerate && unreadNotifications.length > 0 ? (
+            <span className="notification-badge">{unreadNotifications.length}</span>
+          ) : null}
+        </button>
+        <div className="user-chip-actions">
+          <button
+            aria-label={syncIndicator.label}
+            className={`user-icon-button sync-indicator-button ${syncIndicator.className}`}
+            onClick={handleSyncIndicatorClick}
+            title={syncIndicator.title}
+            type="button"
+          >
+            <SyncStatusIcon
+              className={syncIndicator.state === "syncing" ? "sync-icon-pulsing" : undefined}
+              state={syncIndicator.state}
+              title={syncIndicator.label}
+            />
+          </button>
+          <button aria-label="Open user settings" className="user-icon-button" onClick={() => setOpen(true)} type="button">
+            <SettingsIcon title="Settings" />
+          </button>
+          {onOpenHelp ? (
+            <button aria-label="Open onboarding" className="user-icon-button" onClick={onOpenHelp} type="button">
+              <CircleQuestionMark aria-hidden="true" strokeWidth={1.8} />
+            </button>
+          ) : null}
+        </div>
+      </div>
 
       {syncModalOpen ? (
         <ModalOverlay aria-label="Sync Status" onClose={() => setSyncModalOpen(false)}>
           <div className="library-manager-card sync-modal">
             <div className="library-manager-header">
               <h2>Cloud Sync</h2>
-              <button className="inline-action" onClick={() => setSyncModalOpen(false)} type="button">
-                Close
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setSyncModalOpen(false)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <div className="sync-modal-content">
@@ -772,7 +792,7 @@ export function UserAdminPanel() {
               <div className="sync-status-display">
                 {syncPending ? (
                   <>
-                    <span className="sync-indicator-large sync-pending">◐</span>
+                    <span className="sync-indicator-large sync-pending"><SyncStatusIcon state="pending" title="Sync pending" /></span>
                     <div>
                       <p className="field-help">Sync pending</p>
                       <p className="field-help">{pendingChangesCount} change(s) queued for sync.</p>
@@ -780,7 +800,7 @@ export function UserAdminPanel() {
                   </>
                 ) : syncStatus === "syncing" ? (
                   <>
-                    <span className="sync-indicator-large sync-syncing">↻</span>
+                    <span className="sync-indicator-large sync-syncing"><SyncStatusIcon className="sync-icon-pulsing" state="syncing" title="Syncing" /></span>
                     <div>
                       <p className="field-help">Syncing to cloud...</p>
                       {!lastSyncedAt && <p className="field-help">Initial sync in progress...</p>}
@@ -788,7 +808,7 @@ export function UserAdminPanel() {
                   </>
                 ) : syncStatus === "synced" ? (
                   <>
-                    <span className="sync-indicator-large sync-synced">●</span>
+                    <span className="sync-indicator-large sync-synced"><SyncStatusIcon state="synced" title="Synced" /></span>
                     <div>
                       <p className="field-help">Up to date</p>
                       {pendingChangesCount > 0 ? <p className="field-help">{pendingChangesCount} changes still pending.</p> : null}
@@ -796,7 +816,7 @@ export function UserAdminPanel() {
                   </>
                 ) : syncStatus === "error" ? (
                   <>
-                    <span className="sync-indicator-large sync-error">⚠</span>
+                    <span className="sync-indicator-large sync-error"><SyncStatusIcon state="error" title="Sync failed" /></span>
                     <div>
                       <p className="field-help">Sync failed</p>
                       {syncErrorMessage && (
@@ -809,7 +829,9 @@ export function UserAdminPanel() {
                   </>
                 ) : (
                   <>
-                    <span className={`sync-indicator-large ${syncIndicator.class}`}>{syncIndicator.icon}</span>
+                    <span className={`sync-indicator-large ${syncIndicator.className}`}>
+                      <SyncStatusIcon state={syncIndicator.state} title={syncIndicator.label} />
+                    </span>
                     <div>
                       <p className="field-help">{syncIndicator.label}</p>
                     </div>
@@ -844,8 +866,8 @@ export function UserAdminPanel() {
                 <button className="inline-action" onClick={handleSignOut} type="button">
                   Sign Out
                 </button>
-                <button className="inline-action" onClick={() => setOpen(false)} type="button">
-                  Close
+                <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setOpen(false)} title="Close" type="button">
+                  <CircleX aria-hidden="true" strokeWidth={1.8} />
                 </button>
               </div>
             </div>
@@ -1234,8 +1256,8 @@ export function UserAdminPanel() {
                 <div className="library-manager-card user-profile-popup">
                   <div className="library-manager-header">
                     <h2>User Profile</h2>
-                    <button className="inline-action" onClick={closeManagedUser} type="button">
-                      Close
+                    <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeManagedUser} title="Close" type="button">
+                      <CircleX aria-hidden="true" strokeWidth={1.8} />
                     </button>
                   </div>
                   <div className="user-list-row">

@@ -1,5 +1,6 @@
 import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
+import { ArrowLeftRight, Maximize2, Minimize2 } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -796,21 +797,21 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
       <div className="chart-footer-row">
         <button
           aria-label="Reverse path direction for this view"
-          className={`chart-endpoint-swap ${temporaryDirectionReversed ? "is-active" : ""}`}
+          className={`chart-endpoint-swap chart-endpoint-icon ${temporaryDirectionReversed ? "is-active" : ""}`}
           onClick={toggleTemporaryDirectionReversed}
           title="Temporarily reverse path direction"
           type="button"
         >
-          Flip Direction
+          <ArrowLeftRight aria-hidden="true" strokeWidth={1.8} />
         </button>
         <button
-          aria-label={isExpanded ? "Exit profile fullscreen" : "Profile fullscreen"}
-          className={`chart-endpoint-swap ${isExpanded ? "is-active" : ""}`}
+          aria-label={isExpanded ? "Exit full screen" : "Full screen"}
+          className={`chart-endpoint-swap chart-endpoint-icon ${isExpanded ? "is-active" : ""}`}
           onClick={onToggleExpanded}
-          title={isExpanded ? "Exit fullscreen" : "Fullscreen"}
+          title={isExpanded ? "Exit full screen" : "Full screen"}
           type="button"
         >
-          {isExpanded ? "Exit Fullscreen" : "Fullscreen"}
+          {isExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
         </button>
         <div className="chart-hover-state">
           {cursorPoint && footerCursorState ? (

@@ -100,11 +100,13 @@ const cartoThemedTint = (
     if (colorTheme === "pink") return { color: "#8f5678", opacity: 0.1 };
     if (colorTheme === "red") return { color: "#8d4b4b", opacity: 0.1 };
     if (colorTheme === "green") return { color: "#4d7f62", opacity: 0.1 };
+    if (colorTheme === "yellow") return { color: "#7c6524", opacity: 0.1 };
     return { color: "#4f6f9a", opacity: 0.1 };
   }
   if (colorTheme === "pink") return { color: "#d379ab", opacity: 0.08 };
   if (colorTheme === "red") return { color: "#db8a8a", opacity: 0.08 };
   if (colorTheme === "green") return { color: "#76b28d", opacity: 0.08 };
+  if (colorTheme === "yellow") return { color: "#e8c65f", opacity: 0.08 };
   return { color: "#7fa7d8", opacity: 0.08 };
 };
 
@@ -314,6 +316,11 @@ export const resolveBasemapSelection = (
     fallbackReason,
   };
 };
+
+export const getCartoFallbackStyle = (
+  theme: BasemapTheme,
+  colorTheme: UiColorTheme = "blue",
+): string | StyleSpecification => styleForPreset("carto", "normal-themed", theme, colorTheme);
 
 export const defaultPresetIdForTheme = (provider: BasemapProvider, theme: BasemapTheme): string => {
   const providerConfig = providerCapabilities.find((entry) => entry.provider === provider);

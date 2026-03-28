@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -14,15 +15,17 @@ import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
-import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
+import { getBasemapProviderCapabilities, getCartoFallbackStyle, resolveBasemapSelection } from "../lib/basemaps";
 import {
   PROFILE_DRAFT_SITE_REQUEST_EVENT,
   type ProfileDraftSiteRequestDetail,
 } from "../lib/profileDraftEvent";
 import { useAppStore } from "../store/appStore";
+import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
+import { SimulationResultsSection } from "./SimulationResultsSection";
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
@@ -81,31 +84,6 @@ const terrainRasterPaint = {
   "raster-contrast": 0.16,
   "raster-saturation": -0.06,
 };
-
-const fallbackStyle = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: [
-        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution:
-        '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a> <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">© CARTO</a>',
-    },
-  },
-  layers: [
-    {
-      id: "osm-base",
-      type: "raster",
-      source: "osm",
-      minzoom: 0,
-      maxzoom: 19,
-    },
-  ],
-} as const;
 
 const supportsWebgl = (): boolean => {
   try {
@@ -970,6 +948,8 @@ const computeFitViewport = (
 
 type MapViewProps = {
   isMapExpanded: boolean;
+  showInspector?: boolean;
+  showMultiSelectToggle?: boolean;
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
@@ -1001,6 +981,8 @@ const DEFAULT_MAP_VIEWPORT = {
 
 export function MapView({
   isMapExpanded,
+  showInspector = true,
+  showMultiSelectToggle = false,
   readOnly = false,
   canPersist = true,
   onToggleMapExpanded,
@@ -1031,7 +1013,7 @@ export function MapView({
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
-  const coverageSamples = useAppStore((state) => state.coverageSamples);
+  const coverageSamples = useCoverageStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainLoadingStartedAtMs = useAppStore((state) => state.terrainLoadingStartedAtMs);
@@ -1043,15 +1025,24 @@ export function MapView({
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
-  const isSimulationRecomputing = useAppStore((state) => state.isSimulationRecomputing);
-  const simulationProgress = useAppStore((state) => state.simulationProgress);
+  const isSimulationRecomputing = useCoverageStore((state) => state.isSimulationRecomputing);
+  const simulationProgress = useCoverageStore((state) => state.simulationProgress);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
   const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
   const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
   const setBasemapStylePreset = useAppStore((state) => state.setBasemapStylePreset);
-  const { theme, colorTheme, variant } = useThemeVariant();
+  const {
+    theme,
+    colorTheme,
+    variant,
+    activeHolidayTheme,
+    showHolidayThemeNotice,
+    isHolidayThemeForced,
+    dismissHolidayThemeNotice,
+    revertHolidayThemeForWindow,
+  } = useThemeVariant();
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
   const profileColor = variant.map.profileLineColor;
@@ -1074,8 +1065,11 @@ export function MapView({
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
+  const [showResultsSummary, setShowResultsSummary] = useState(true);
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(true);
+  const [fitControlActive, setFitControlActive] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
   const [armAddSiteOnNextEmptyMapClick, setArmAddSiteOnNextEmptyMapClick] = useState(false);
@@ -1100,6 +1094,18 @@ export function MapView({
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+
+  useEffect(() => {
+    const handleViewportChange = () => {
+      mapRef.current?.resize();
+    };
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("orientationchange", handleViewportChange);
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("orientationchange", handleViewportChange);
+    };
+  }, []);
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
     [links],
@@ -1503,12 +1509,14 @@ export function MapView({
   };
 
   const zoomBy = (delta: number) => {
+    setFitControlActive(false);
     const nextZoom = clamp(activeViewState.zoom + delta, 2, providerMaxZoom);
     setInteractionViewState(null);
     updateMapViewport({ zoom: nextZoom });
   };
 
   const fitToNodes = () => {
+    setFitControlActive(true);
     const next = computeFitViewport(sites);
     setInteractionViewState(null);
     updateMapViewport({
@@ -1834,6 +1842,7 @@ export function MapView({
     () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
     [basemapProvider, basemapStylePreset, theme, colorTheme],
   );
+  const fallbackMapStyle = useMemo(() => getCartoFallbackStyle(theme, colorTheme), [theme, colorTheme]);
   const requestedProviderConfig =
     providerCapabilities.find((entry) => entry.provider === basemapProvider) ?? providerCapabilities[0];
   const activeProviderConfig =
@@ -1914,154 +1923,48 @@ export function MapView({
   }
   if (endpointPickTarget && endpointPickError) inspectorLines.push(endpointPickError);
   if (siteDraftStatus) inspectorLines.push(siteDraftStatus);
-  const showInspector =
-    Boolean(inspectorPrimary) ||
-    inspectorLines.length > 0 ||
-    Boolean(pendingNewSiteDraft) ||
-    Boolean(mqttDuplicatePrompt) ||
-    isSimulationRecomputing ||
-    isBackgroundBusy;
-
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
-      <div className="map-controls map-controls-unified">
-        <div className="map-controls-group map-controls-group-provider">
-          <label className="map-provider-field">
-            <span>Map Provider</span>
-            <select
-              className="locale-select"
-              onChange={(event) => {
-                const nextProvider = event.target.value as typeof basemapProvider;
-                const nextProviderConfig =
-                  providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
-                setBasemapProvider(nextProvider);
-                setBasemapStylePreset(
-                  nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
-                    nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
-                    nextProviderConfig.presets[0]?.id ??
-                    "normal",
-                );
-                setUseFallbackMapStyle(false);
-                setMapProviderWarning(null);
-              }}
-              value={basemapProvider}
+      <div className="map-controls map-controls-unified map-controls-icon-only">
+        <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
+          {showMultiSelectToggle ? (
+            <button
+              aria-label={isMultiSelectMode ? "Disable multi-select" : "Enable multi-select"}
+              className={`map-control-btn map-control-btn-icon ${isMultiSelectMode ? "is-selected" : ""}`}
+              onClick={() => setIsMultiSelectMode((current) => !current)}
+              title={isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
+              type="button"
             >
-              <optgroup label="Global">
-                {globalProviders.map((provider) => (
-                  <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                    {provider.label}
-                    {!provider.available ? " (unavailable)" : ""}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Regional">
-                {regionalProviders.map((provider) => (
-                  <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                    {provider.label}
-                    {!provider.available ? " (unavailable)" : ""}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </label>
-          <label className="map-provider-field">
-            <span>Map Style</span>
-            <select
-              className="locale-select"
-              disabled={resolvedPresetOptions.length <= 1}
-              onChange={(event) => {
-                setBasemapStylePreset(event.target.value);
-                setUseFallbackMapStyle(false);
-                setMapProviderWarning(null);
-              }}
-              value={styleSelectValue}
-            >
-              {resolvedPresetOptions.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="map-provider-field">
-            <span>Terrain</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setShowTerrainOverlay(event.target.value === "on")}
-              value={showTerrainOverlay ? "on" : "off"}
-            >
-              <option value="on">Copernicus</option>
-              <option value="off">Off</option>
-            </select>
-          </label>
-          <label className="map-provider-field">
-            <span>Simulation Overlay</span>
-            <select
-              className="locale-select"
-              onChange={(event) => {
-                const mode = event.target.value as "none" | "heatmap" | "contours" | "passfail" | "relay";
-                if (mode === "heatmap") {
-                  setCoverageVizMode("heatmap");
-                  return;
-                }
-                if (mode === "contours") {
-                  setCoverageVizMode("contours");
-                  return;
-                }
-                setCoverageVizMode(mode);
-              }}
-              value={simulationOverlaySelectValue}
-            >
-              <option value="none">Hidden</option>
-              {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
-              {allowedOverlayModes.includes("contours") ? <option value="contours">Contours</option> : null}
-              {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
-              {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
-            </select>
-          </label>
-          <label className="map-provider-field">
-            <span>Visible Sites</span>
-            <select
-              className="locale-select"
-              onChange={(event) => {
-                const mode = event.target.value as "simulation" | "library" | "mqtt";
-                if (mode === "simulation") {
-                  setShowDiscoverySites(false);
-                  setShowDiscoveryMqtt(false);
-                  return;
-                }
-                if (mode === "library") {
-                  setShowDiscoverySites(true);
-                  setShowDiscoveryMqtt(false);
-                  return;
-                }
-                setShowDiscoverySites(false);
-                setShowDiscoveryMqtt(true);
-              }}
-              value={siteVisibilityMode}
-            >
-              <option value="simulation">Only Simulation</option>
-              <option value="library">Simulation + Library</option>
-              <option value="mqtt">Simulation + MQTT</option>
-            </select>
-          </label>
-        </div>
-        <div className="map-controls-group map-controls-group-utility">
-          <button className="map-control-btn" onClick={onToggleMapExpanded} type="button">
-            {isMapExpanded ? "Exit Fullscreen" : "Fullscreen"}
+              <SquareStack aria-hidden="true" strokeWidth={1.8} />
+            </button>
+          ) : null}
+          <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(-1)} title="Zoom out" type="button">
+            <ZoomOut aria-hidden="true" strokeWidth={1.8} />
           </button>
-          <button className="map-control-btn" onClick={fitToNodes} type="button">
-            Fit
+          <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(1)} title="Zoom in" type="button">
+            <ZoomIn aria-hidden="true" strokeWidth={1.8} />
           </button>
-          <button className="map-control-btn" onClick={() => zoomBy(1)} type="button">
-            +
+          <button
+            aria-label="Fit map to sites"
+            className={`map-control-btn map-control-btn-icon ${fitControlActive ? "is-selected" : ""}`}
+            onClick={fitToNodes}
+            title="Fit"
+            type="button"
+          >
+            <Fullscreen aria-hidden="true" strokeWidth={1.8} />
           </button>
-          <button className="map-control-btn" onClick={() => zoomBy(-1)} type="button">
-            -
+          <button
+            aria-label={isMapExpanded ? "Show panels" : "Hide panels"}
+            className={`map-control-btn map-control-btn-icon ${isMapExpanded ? "is-selected" : ""}`}
+            onClick={onToggleMapExpanded}
+            title={isMapExpanded ? "Show panels" : "Hide panels"}
+            type="button"
+          >
+            {isMapExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
           </button>
           {onShare ? (
-            <button className="map-control-btn" onClick={onShare} type="button">
-              Share
+            <button aria-label="Share" className="map-control-btn map-control-btn-icon" onClick={onShare} title="Share" type="button">
+              <Share aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
         </div>
@@ -2092,6 +1995,32 @@ export function MapView({
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 )}
               </div>
+            </div>
+          ) : null}
+          {showHolidayThemeNotice && activeHolidayTheme ? (
+            <div className="map-inspector-section map-holiday-note" role="status">
+              <p className="map-inspector-primary map-holiday-note-title">
+                <span className="map-holiday-note-icons" aria-hidden="true">
+                  <Rabbit size={15} strokeWidth={1.8} />
+                  <Egg size={14} strokeWidth={1.8} />
+                </span>
+                {activeHolidayTheme.message}
+              </p>
+              <p className="map-inspector-line">
+                {isHolidayThemeForced
+                  ? "Easter theme is active this week."
+                  : "Your preferred theme is active for this Easter week."}
+              </p>
+              <span className="map-inline-actions">
+                {isHolidayThemeForced ? (
+                  <button className="map-control-btn" onClick={revertHolidayThemeForWindow} type="button">
+                    Revert Theme
+                  </button>
+                ) : null}
+                <button className="map-control-btn" onClick={dismissHolidayThemeNotice} type="button">
+                  Dismiss
+                </button>
+              </span>
             </div>
           ) : null}
           {inspectorPrimary ? (
@@ -2196,84 +2125,142 @@ export function MapView({
               </span>
             </div>
           ) : null}
-        </aside>
-      ) : null}
-      <aside className="map-sim-summary" aria-live="polite">
-        <div className="map-sim-summary-header">
-          <h3>Simulation Sources</h3>
-          <button
-            className="map-control-btn map-summary-toggle"
-            onClick={() => setShowSimulationSummary((current) => !current)}
-            type="button"
+          <details
+            className="compact-details map-inspector-details"
+            onToggle={(event) => setShowOverlayGuide(event.currentTarget.open)}
+            open={showOverlayGuide}
           >
-            {showSimulationSummary ? "Hide" : "Show"}
-          </button>
-        </div>
-        {showSimulationSummary ? (
-          <>
-            <p>
-              Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
-            </p>
-            <p>
-              Network: {selectedNetwork?.name ?? "n/a"} @{" "}
-              {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
-            </p>
-            <p>
-              Terrain dataset: {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
-              {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
-            </p>
-            {terrainSourceSummary.length ? (
-              <ul className="map-sim-sources">
-                {terrainSourceSummary.map((entry) => (
-                  <li key={entry.label}>
-                    {entry.label}: {entry.count}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>Terrain source: simulation/manual site elevations only</p>
-            )}
-            <p>Site elevations: Simulation values</p>
-            <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
-            <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
-            <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
-            {largeAreaOptimizationActive ? (
-              <p>
-                Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
-                Zoom in or narrow site spread for higher detail.
-              </p>
-            ) : (
-              <p>Large-area optimization inactive at this simulation extent.</p>
-            )}
-            <p>
-              Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
-            </p>
-            <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
-          </>
-        ) : null}
-      </aside>
-      <aside className="map-overlay-guide" aria-live="polite">
-        <div className="map-sim-summary-header">
-          <h3>Overlay Guide</h3>
-          <button
-            className="map-control-btn map-summary-toggle"
-            onClick={() => setShowOverlayGuide((current) => !current)}
-            type="button"
-          >
-            {showOverlayGuide ? "Hide" : "Show"}
-          </button>
-        </div>
-        {showOverlayGuide ? (
-          <>
+            <summary>Map</summary>
+            <div className="map-inspector-map-settings">
+              <label className="map-inspector-map-setting">
+                <span>Map Provider</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => {
+                    const nextProvider = event.target.value as typeof basemapProvider;
+                    const nextProviderConfig =
+                      providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
+                    setBasemapProvider(nextProvider);
+                    setBasemapStylePreset(
+                      nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
+                        nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
+                        nextProviderConfig.presets[0]?.id ??
+                        "normal",
+                    );
+                    setUseFallbackMapStyle(false);
+                    setMapProviderWarning(null);
+                  }}
+                  value={basemapProvider}
+                >
+                  <optgroup label="Global">
+                    {globalProviders.map((provider) => (
+                      <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                        {provider.label}
+                        {!provider.available ? " (unavailable)" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Regional">
+                    {regionalProviders.map((provider) => (
+                      <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
+                        {provider.label}
+                        {!provider.available ? " (unavailable)" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+              <label className="map-inspector-map-setting">
+                <span>Map Style</span>
+                <select
+                  className="locale-select"
+                  disabled={resolvedPresetOptions.length <= 1}
+                  onChange={(event) => {
+                    setBasemapStylePreset(event.target.value);
+                    setUseFallbackMapStyle(false);
+                    setMapProviderWarning(null);
+                  }}
+                  value={styleSelectValue}
+                >
+                  {resolvedPresetOptions.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="map-inspector-map-setting">
+                <span>Terrain</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => setShowTerrainOverlay(event.target.value === "on")}
+                  value={showTerrainOverlay ? "on" : "off"}
+                >
+                  <option value="on">Copernicus</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+              <label className="map-inspector-map-setting">
+                <span>Simulation Overlay</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => {
+                    const mode = event.target.value as "none" | "heatmap" | "contours" | "passfail" | "relay";
+                    if (mode === "heatmap") {
+                      setCoverageVizMode("heatmap");
+                      return;
+                    }
+                    if (mode === "contours") {
+                      setCoverageVizMode("contours");
+                      return;
+                    }
+                    setCoverageVizMode(mode);
+                  }}
+                  value={simulationOverlaySelectValue}
+                >
+                  <option value="none">Hidden</option>
+                  {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
+                  {allowedOverlayModes.includes("contours") ? <option value="contours">Contours</option> : null}
+                  {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
+                  {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
+                </select>
+              </label>
+              <label className="map-inspector-map-setting">
+                <span>Visible Sites</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => {
+                    const mode = event.target.value as "simulation" | "library" | "mqtt";
+                    if (mode === "simulation") {
+                      setShowDiscoverySites(false);
+                      setShowDiscoveryMqtt(false);
+                      return;
+                    }
+                    if (mode === "library") {
+                      setShowDiscoverySites(true);
+                      setShowDiscoveryMqtt(false);
+                      return;
+                    }
+                    setShowDiscoverySites(false);
+                    setShowDiscoveryMqtt(true);
+                  }}
+                  value={siteVisibilityMode}
+                >
+                  <option value="simulation">Only Simulation</option>
+                  <option value="library">Simulation + Library</option>
+                  <option value="mqtt">Simulation + MQTT</option>
+                </select>
+              </label>
+            </div>
             <p>
               Mode: <strong>{overlayGuideTitle}</strong>
             </p>
-            {coverageVizMode === "none" ? <p>Overlay is hidden. Click Heat, Pass/Fail, or Relay to show it again.</p> : null}
+            {coverageVizMode === "none" ? <p>Overlay is hidden. Use Simulation Overlay to show it again.</p> : null}
             {coverageVizMode === "heatmap" ? (
               <>
                 <p>
-                  Shows overall coverage strength from your current simulation sites. Think of it as “how good signal
-                  should feel if you stand here”.
+                  Shows overall coverage strength from your current simulation sites. Think of it as "how good signal
+                  should feel if you stand here".
                 </p>
                 <div className="overlay-inline-controls">
                   <span>Style</span>
@@ -2399,9 +2386,62 @@ export function MapView({
                 <p className="overlay-scale-help">Left side is worse relay quality. Right side is better relay quality.</p>
               </>
             ) : null}
-          </>
-        ) : null}
-      </aside>
+          </details>
+          <details
+            className="compact-details map-inspector-details"
+            onToggle={(event) => setShowResultsSummary(event.currentTarget.open)}
+            open={showResultsSummary}
+          >
+            <summary>Results</summary>
+            <SimulationResultsSection />
+          </details>
+          <details
+            className="compact-details map-inspector-details"
+            onToggle={(event) => setShowSimulationSummary(event.currentTarget.open)}
+            open={showSimulationSummary}
+          >
+            <summary>Simulation Sources</summary>
+            <p>
+              Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
+            </p>
+            <p>
+              Network: {selectedNetwork?.name ?? "n/a"} @ {" "}
+              {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
+            </p>
+            <p>
+              Terrain dataset: {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
+              {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
+            </p>
+            {terrainSourceSummary.length ? (
+              <ul className="map-sim-sources">
+                {terrainSourceSummary.map((entry) => (
+                  <li key={entry.label}>
+                    {entry.label}: {entry.count}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>Terrain source: simulation/manual site elevations only</p>
+            )}
+            <p>Site elevations: Simulation values</p>
+            <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
+            <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
+            <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
+            {largeAreaOptimizationActive ? (
+              <p>
+                Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
+                Zoom in or narrow site spread for higher detail.
+              </p>
+            ) : (
+              <p>Large-area optimization inactive at this simulation extent.</p>
+            )}
+            <p>
+              Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
+            </p>
+            <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
+          </details>
+        </aside>
+      ) : null}
       <Map
         ref={mapRef}
         longitude={activeViewState.longitude}
@@ -2414,7 +2454,7 @@ export function MapView({
           latitude: activeViewState.latitude,
           zoom: activeViewState.zoom,
         }}
-        mapStyle={useFallbackMapStyle ? (fallbackStyle as unknown as string) : resolvedBasemap.style}
+        mapStyle={useFallbackMapStyle ? fallbackMapStyle : resolvedBasemap.style}
         onError={() => {
           if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket") {
             setUseFallbackMapStyle(true);
@@ -2431,13 +2471,19 @@ export function MapView({
         }}
         interactiveLayerIds={["link-lines"]}
         onClick={onMapClick}
-        onMove={(event) =>
+        onTouchStart={() => {
+          mapRef.current?.getMap().stop();
+        }}
+        onMove={(event) => {
+          if (event.originalEvent) {
+            setFitControlActive(false);
+          }
           setInteractionViewState({
             longitude: event.viewState.longitude,
             latitude: event.viewState.latitude,
             zoom: Math.min(event.viewState.zoom, providerMaxZoom),
-          })
-        }
+          });
+        }}
         onMoveEnd={onMoveEnd}
       >
         {showTerrainOverlay && simulationTerrainOverlay ? (
@@ -2515,12 +2561,12 @@ export function MapView({
                 onClick={(event) => {
                   stopMapClickBubbling(event);
                   const nativeEvent = event as unknown as { ctrlKey?: boolean; metaKey?: boolean };
-                  onSiteClick(site.id, Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
+                  onSiteClick(site.id, isMultiSelectMode || Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     stopMapClickBubbling(event);
-                    onSiteClick(site.id);
+                    onSiteClick(site.id, isMultiSelectMode);
                   }
                 }}
                 role="button"
