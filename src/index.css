@@ -1726,6 +1726,7 @@ input {
     --mobile-controls-occupied: 128px;
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
     --mobile-tabbar-height: 52px;
+    --mobile-panel-tab-gap: 12px;
     --mobile-panel-height: 36vh;
     --mobile-attribution-gap: 8px;
     --mobile-attribution-top: calc(var(--mobile-controls-top) + var(--mobile-controls-occupied) + var(--mobile-attribution-gap));
@@ -1743,7 +1744,7 @@ input {
     position: fixed;
     left: 12px;
     right: 12px;
-    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height));
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-tab-gap));
     z-index: 85;
   }
 
@@ -1908,9 +1909,11 @@ input {
 
   .app-shell.is-mobile-shell .map-panel {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
     width: 100vw;
-    height: 100dvh;
+    height: 100lvh;
     min-height: 100lvh;
     margin: 0;
     border: 0;
@@ -1966,7 +1969,7 @@ input {
     top: auto;
     right: 12px;
     left: 12px;
-    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height));
+    bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-tab-gap));
     width: auto;
     height: var(--mobile-panel-height);
     min-height: var(--mobile-panel-height);
