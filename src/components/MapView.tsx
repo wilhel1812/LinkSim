@@ -1105,7 +1105,9 @@ export function MapView({
     panelHeight: number | null;
     mapHeight: number | null;
     canvasHeight: number | null;
+    mapLoaded: boolean;
   } | null>(null);
+  const [mapIsLoaded, setMapIsLoaded] = useState(false);
 
   useEffect(() => {
     const triggerInitialResize = () => {
@@ -1146,7 +1148,7 @@ export function MapView({
     }
     const collectViewportDebug = () => {
       const panel = mapPanelRef.current;
-      const map = mapRef.current?.getMap();
+      const map = mapIsLoaded && mapRef.current ? mapRef.current.getMap() : null;
       const mapContainer = map?.getContainer() ?? null;
       const mapCanvas = map?.getCanvas() ?? null;
       const visualViewport = window.visualViewport;
@@ -1157,6 +1159,7 @@ export function MapView({
         panelHeight: panel ? Math.round(panel.getBoundingClientRect().height) : null,
         mapHeight: mapContainer ? Math.round(mapContainer.getBoundingClientRect().height) : null,
         canvasHeight: mapCanvas ? Math.round(mapCanvas.getBoundingClientRect().height) : null,
+        mapLoaded: mapIsLoaded,
       });
     };
     collectViewportDebug();
@@ -1171,7 +1174,7 @@ export function MapView({
       visualViewport?.removeEventListener("resize", collectViewportDebug);
       visualViewport?.removeEventListener("scroll", collectViewportDebug);
     };
-  }, [isStagingEnvironment]);
+  }, [isStagingEnvironment, mapIsLoaded]);
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
     [links],
@@ -1999,6 +2002,7 @@ export function MapView({
           <span>{`panel ${viewportDebug.panelHeight ?? "-"}`}</span>
           <span>{`map ${viewportDebug.mapHeight ?? "-"}`}</span>
           <span>{`canvas ${viewportDebug.canvasHeight ?? "-"}`}</span>
+          <span>{`loaded ${viewportDebug.mapLoaded ? "Y" : "N"}`}</span>
         </div>
       ) : null}
       <div className="map-controls map-controls-unified map-controls-icon-only">
@@ -2561,6 +2565,7 @@ export function MapView({
           });
         }}
         onMoveEnd={onMoveEnd}
+        onLoad={() => setMapIsLoaded(true)}
       >
         {showTerrainOverlay && simulationTerrainOverlay ? (
           <Source
