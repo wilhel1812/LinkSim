@@ -25,6 +25,7 @@ import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
+import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
@@ -1094,6 +1095,16 @@ export function MapView({
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+  const mapPanelRef = useRef<HTMLDivElement | null>(null);
+  const runtimeEnvironment = getCurrentRuntimeEnvironment();
+  const isStagingEnvironment = runtimeEnvironment === "staging";
+  const [viewportDebug, setViewportDebug] = useState<{
+    innerHeight: number;
+    visualHeight: number | null;
+    visualOffsetTop: number | null;
+    panelHeight: number | null;
+    canvasHeight: number | null;
+  } | null>(null);
 
   useEffect(() => {
     const handleViewportChange = () => {
@@ -1111,6 +1122,37 @@ export function MapView({
       viewport?.removeEventListener("scroll", handleViewportChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isStagingEnvironment) {
+      setViewportDebug(null);
+      return;
+    }
+    const collectViewportDebug = () => {
+      const panel = mapPanelRef.current;
+      const canvas = panel?.querySelector(".maplibregl-canvas") as HTMLCanvasElement | null;
+      const visualViewport = window.visualViewport;
+      setViewportDebug({
+        innerHeight: window.innerHeight,
+        visualHeight: visualViewport ? Math.round(visualViewport.height) : null,
+        visualOffsetTop: visualViewport ? Math.round(visualViewport.offsetTop) : null,
+        panelHeight: panel ? Math.round(panel.getBoundingClientRect().height) : null,
+        canvasHeight: canvas ? Math.round(canvas.getBoundingClientRect().height) : null,
+      });
+    };
+    collectViewportDebug();
+    const visualViewport = window.visualViewport;
+    window.addEventListener("resize", collectViewportDebug);
+    window.addEventListener("orientationchange", collectViewportDebug);
+    visualViewport?.addEventListener("resize", collectViewportDebug);
+    visualViewport?.addEventListener("scroll", collectViewportDebug);
+    return () => {
+      window.removeEventListener("resize", collectViewportDebug);
+      window.removeEventListener("orientationchange", collectViewportDebug);
+      visualViewport?.removeEventListener("resize", collectViewportDebug);
+      visualViewport?.removeEventListener("scroll", collectViewportDebug);
+    };
+  }, [isStagingEnvironment]);
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
     [links],
@@ -1929,7 +1971,16 @@ export function MapView({
   if (endpointPickTarget && endpointPickError) inspectorLines.push(endpointPickError);
   if (siteDraftStatus) inspectorLines.push(siteDraftStatus);
   return (
-    <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
+    <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"} ref={mapPanelRef}>
+      {isStagingEnvironment && viewportDebug ? (
+        <div aria-live="polite" className="map-viewport-debug" role="status">
+          <span>{`inner ${viewportDebug.innerHeight}`}</span>
+          <span>{`vv ${viewportDebug.visualHeight ?? "-"}`}</span>
+          <span>{`vvTop ${viewportDebug.visualOffsetTop ?? "-"}`}</span>
+          <span>{`panel ${viewportDebug.panelHeight ?? "-"}`}</span>
+          <span>{`canvas ${viewportDebug.canvasHeight ?? "-"}`}</span>
+        </div>
+      ) : null}
       <div className="map-controls map-controls-unified map-controls-icon-only">
         <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
           {showMultiSelectToggle ? (

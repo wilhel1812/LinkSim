@@ -81,7 +81,7 @@ body::before {
 }
 
 .env-staging body::after {
-  border-color: var(--staging-frame);
+  display: none;
 }
 
 .env-local body::after {
@@ -745,6 +745,25 @@ input {
 
 .map-panel-empty .maplibregl-map {
   filter: saturate(0.35) brightness(0.8);
+}
+
+.map-viewport-debug {
+  position: fixed;
+  left: 10px;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  z-index: 120;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  color: var(--text);
+  font-size: 0.67rem;
+  line-height: 1;
+  pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .map-empty-state {
