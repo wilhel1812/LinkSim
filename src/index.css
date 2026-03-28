@@ -1971,6 +1971,13 @@ input {
     height: 100% !important;
   }
 
+  .app-shell.is-mobile-shell .map-panel .maplibregl-wrapper {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
   .map-controls {
     top: var(--mobile-controls-top);
     flex-direction: column;
