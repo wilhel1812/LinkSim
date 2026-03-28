@@ -976,6 +976,26 @@ input {
   border-top: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
 }
 
+.map-holiday-note {
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+  padding: 10px;
+}
+
+.map-holiday-note-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-holiday-note-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+}
+
 .map-inspector-details {
   margin-top: 8px;
 }
