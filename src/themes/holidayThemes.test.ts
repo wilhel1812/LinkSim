@@ -16,9 +16,9 @@ describe("holidayThemes", () => {
     expect(isoDay(computeGregorianEasterSunday(2026))).toBe("2026-04-05");
   });
 
-  it("resolves Easter window from Friday to Monday inclusive", () => {
+  it("resolves Easter window from the prior Friday through Monday after Easter", () => {
     const easter2025 = resolveEasterWindow(2025);
-    expect(isoDay(easter2025.startUtc)).toBe("2025-04-18");
+    expect(isoDay(easter2025.startUtc)).toBe("2025-04-11");
     expect(isoDay(easter2025.endUtc)).toBe("2025-04-21");
   });
 
@@ -31,7 +31,12 @@ describe("holidayThemes", () => {
 
   it("stays inactive outside the Easter window", () => {
     expect(getActiveHolidayTheme(new Date("2026-04-09T12:00:00.000Z"))).toBeNull();
-    expect(getActiveHolidayTheme(new Date("2026-04-02T12:00:00.000Z"))).toBeNull();
+    expect(getActiveHolidayTheme(new Date("2026-03-26T12:00:00.000Z"))).toBeNull();
+  });
+
+  it("includes the full Easter week window boundaries", () => {
+    expect(getActiveHolidayTheme(new Date("2026-03-27T12:00:00.000Z"))?.key).toBe("easter");
+    expect(getActiveHolidayTheme(new Date("2026-04-06T12:00:00.000Z"))?.key).toBe("easter");
   });
 
   it("returns stable window ids for per-window preference handling", () => {

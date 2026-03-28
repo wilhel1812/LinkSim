@@ -46,7 +46,7 @@ export const computeGregorianEasterSunday = (year: number): Date => {
 export const resolveEasterWindow = (year: number): HolidayThemeWindow => {
   const easterSunday = computeGregorianEasterSunday(year);
   return {
-    startUtc: addUtcDays(easterSunday, -2),
+    startUtc: addUtcDays(easterSunday, -9),
     endUtc: addUtcDays(easterSunday, 1),
   };
 };

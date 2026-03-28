@@ -2129,8 +2129,8 @@ export function MapView({
               </p>
               <p className="map-inspector-line">
                 {isHolidayThemeForced
-                  ? "Easter theme is active this weekend."
-                  : "Your preferred theme is active for this Easter weekend."}
+                  ? "Easter theme is active this week."
+                  : "Your preferred theme is active for this Easter week."}
               </p>
               <span className="map-inline-actions">
                 {isHolidayThemeForced ? (
