@@ -1103,8 +1103,14 @@ export function MapView({
     visualHeight: number | null;
     visualOffsetTop: number | null;
     panelHeight: number | null;
+    panelTop: number | null;
+    panelBottom: number | null;
     mapHeight: number | null;
+    mapTop: number | null;
+    mapBottom: number | null;
     canvasHeight: number | null;
+    canvasTop: number | null;
+    canvasBottom: number | null;
     mapLoaded: boolean;
   } | null>(null);
   const [mapIsLoaded, setMapIsLoaded] = useState(false);
@@ -1151,14 +1157,23 @@ export function MapView({
       const map = mapIsLoaded && mapRef.current ? mapRef.current.getMap() : null;
       const mapContainer = map?.getContainer() ?? null;
       const mapCanvas = map?.getCanvas() ?? null;
+      const panelRect = panel?.getBoundingClientRect() ?? null;
+      const mapRect = mapContainer?.getBoundingClientRect() ?? null;
+      const canvasRect = mapCanvas?.getBoundingClientRect() ?? null;
       const visualViewport = window.visualViewport;
       setViewportDebug({
         innerHeight: window.innerHeight,
         visualHeight: visualViewport ? Math.round(visualViewport.height) : null,
         visualOffsetTop: visualViewport ? Math.round(visualViewport.offsetTop) : null,
-        panelHeight: panel ? Math.round(panel.getBoundingClientRect().height) : null,
-        mapHeight: mapContainer ? Math.round(mapContainer.getBoundingClientRect().height) : null,
-        canvasHeight: mapCanvas ? Math.round(mapCanvas.getBoundingClientRect().height) : null,
+        panelHeight: panelRect ? Math.round(panelRect.height) : null,
+        panelTop: panelRect ? Math.round(panelRect.top) : null,
+        panelBottom: panelRect ? Math.round(panelRect.bottom) : null,
+        mapHeight: mapRect ? Math.round(mapRect.height) : null,
+        mapTop: mapRect ? Math.round(mapRect.top) : null,
+        mapBottom: mapRect ? Math.round(mapRect.bottom) : null,
+        canvasHeight: canvasRect ? Math.round(canvasRect.height) : null,
+        canvasTop: canvasRect ? Math.round(canvasRect.top) : null,
+        canvasBottom: canvasRect ? Math.round(canvasRect.bottom) : null,
         mapLoaded: mapIsLoaded,
       });
     };
@@ -2000,8 +2015,14 @@ export function MapView({
           <span>{`vv ${viewportDebug.visualHeight ?? "-"}`}</span>
           <span>{`vvTop ${viewportDebug.visualOffsetTop ?? "-"}`}</span>
           <span>{`panel ${viewportDebug.panelHeight ?? "-"}`}</span>
+          <span>{`pT ${viewportDebug.panelTop ?? "-"}`}</span>
+          <span>{`pB ${viewportDebug.panelBottom ?? "-"}`}</span>
           <span>{`map ${viewportDebug.mapHeight ?? "-"}`}</span>
+          <span>{`mT ${viewportDebug.mapTop ?? "-"}`}</span>
+          <span>{`mB ${viewportDebug.mapBottom ?? "-"}`}</span>
           <span>{`canvas ${viewportDebug.canvasHeight ?? "-"}`}</span>
+          <span>{`cT ${viewportDebug.canvasTop ?? "-"}`}</span>
+          <span>{`cB ${viewportDebug.canvasBottom ?? "-"}`}</span>
           <span>{`loaded ${viewportDebug.mapLoaded ? "Y" : "N"}`}</span>
         </div>
       ) : null}
