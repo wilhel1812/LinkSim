@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Fullscreen, Maximize2, Minimize2, Share, ZoomIn, ZoomOut } from "lucide-react";
+import { Fullscreen, Maximize2, Minimize2, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -2039,24 +2039,23 @@ export function MapView({
           </label>
         </div>
         <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
-          <button
-            aria-label={isMapExpanded ? "Show panels" : "Hide panels"}
-            className={`map-control-btn map-control-btn-icon ${isMapExpanded ? "is-selected" : ""}`}
-            onClick={onToggleMapExpanded}
-            title={isMapExpanded ? "Show panels" : "Hide panels"}
-            type="button"
-          >
-            {isMapExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
-          </button>
           {showMultiSelectToggle ? (
             <button
-              className={`map-control-btn ${isMultiSelectMode ? "is-selected" : ""}`}
+              aria-label={isMultiSelectMode ? "Disable multi-select" : "Enable multi-select"}
+              className={`map-control-btn map-control-btn-icon ${isMultiSelectMode ? "is-selected" : ""}`}
               onClick={() => setIsMultiSelectMode((current) => !current)}
+              title={isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
               type="button"
             >
-              {isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
+              <SquareStack aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
+          <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(-1)} title="Zoom out" type="button">
+            <ZoomOut aria-hidden="true" strokeWidth={1.8} />
+          </button>
+          <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(1)} title="Zoom in" type="button">
+            <ZoomIn aria-hidden="true" strokeWidth={1.8} />
+          </button>
           <button
             aria-label="Fit map to sites"
             className={`map-control-btn map-control-btn-icon ${fitControlActive ? "is-selected" : ""}`}
@@ -2066,11 +2065,14 @@ export function MapView({
           >
             <Fullscreen aria-hidden="true" strokeWidth={1.8} />
           </button>
-          <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(1)} title="Zoom in" type="button">
-            <ZoomIn aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(-1)} title="Zoom out" type="button">
-            <ZoomOut aria-hidden="true" strokeWidth={1.8} />
+          <button
+            aria-label={isMapExpanded ? "Show panels" : "Hide panels"}
+            className={`map-control-btn map-control-btn-icon ${isMapExpanded ? "is-selected" : ""}`}
+            onClick={onToggleMapExpanded}
+            title={isMapExpanded ? "Show panels" : "Hide panels"}
+            type="button"
+          >
+            {isMapExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
           </button>
           {onShare ? (
             <button aria-label="Share" className="map-control-btn map-control-btn-icon" onClick={onShare} title="Share" type="button">

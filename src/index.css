@@ -837,6 +837,7 @@ input {
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface-2) 94%, transparent);
   box-shadow: var(--shadow-elev-3);
+  margin: 2px;
   padding: 4px;
   gap: 4px;
   align-items: center;
