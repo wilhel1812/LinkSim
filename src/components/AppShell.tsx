@@ -1002,7 +1002,7 @@ export function AppShell() {
   return (
     <main
       ref={appShellRef}
-      className={`app-shell ${isMapExpanded || isProfileExpanded ? "is-map-expanded" : ""} ${
+      className={`app-shell ${isMapExpanded ? "is-map-expanded" : ""} ${
         accessState === "readonly" ? "is-readonly-shell" : ""
       } ${
         isMobileViewport ? "is-mobile-shell" : ""
