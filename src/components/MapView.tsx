@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Fullscreen, Maximize2, Minimize2, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -1033,7 +1033,16 @@ export function MapView({
   const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
   const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
   const setBasemapStylePreset = useAppStore((state) => state.setBasemapStylePreset);
-  const { theme, colorTheme, variant } = useThemeVariant();
+  const {
+    theme,
+    colorTheme,
+    variant,
+    activeHolidayTheme,
+    showHolidayThemeNotice,
+    isHolidayThemeForced,
+    dismissHolidayThemeNotice,
+    revertHolidayThemeForWindow,
+  } = useThemeVariant();
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
   const profileColor = variant.map.profileLineColor;
@@ -2107,6 +2116,32 @@ export function MapView({
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 )}
               </div>
+            </div>
+          ) : null}
+          {showHolidayThemeNotice && activeHolidayTheme ? (
+            <div className="map-inspector-section map-holiday-note" role="status">
+              <p className="map-inspector-primary map-holiday-note-title">
+                <span className="map-holiday-note-icons" aria-hidden="true">
+                  <Rabbit size={15} strokeWidth={1.8} />
+                  <Egg size={14} strokeWidth={1.8} />
+                </span>
+                {activeHolidayTheme.message}
+              </p>
+              <p className="map-inspector-line">
+                {isHolidayThemeForced
+                  ? "Easter theme is active this weekend."
+                  : "Your preferred theme is active for this Easter weekend."}
+              </p>
+              <span className="map-inline-actions">
+                {isHolidayThemeForced ? (
+                  <button className="map-control-btn" onClick={revertHolidayThemeForWindow} type="button">
+                    Revert Theme
+                  </button>
+                ) : null}
+                <button className="map-control-btn" onClick={dismissHolidayThemeNotice} type="button">
+                  Dismiss
+                </button>
+              </span>
             </div>
           ) : null}
           {inspectorPrimary ? (

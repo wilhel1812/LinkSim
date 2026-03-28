@@ -990,7 +990,9 @@ const initialUiThemePreference = normalizeUiThemePreference(
   readStorage<string>(UI_THEME_PREFERENCE_KEY, "system"),
 );
 const normalizeUiColorTheme = (value: unknown): UiColorTheme =>
-  value === "pink" || value === "blue" || value === "red" || value === "green" ? value : "blue";
+  value === "pink" || value === "blue" || value === "red" || value === "green" || value === "yellow"
+    ? value
+    : "blue";
 const initialUiColorTheme = normalizeUiColorTheme(readStorage<string>(UI_COLOR_THEME_KEY, "blue"));
 const normalizeBasemapProvider = (value: unknown): BasemapProvider =>
   value === "carto" || value === "maptiler" || value === "stadia" || value === "kartverket" ? value : "carto";
