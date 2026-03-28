@@ -1103,8 +1103,24 @@ export function MapView({
     visualHeight: number | null;
     visualOffsetTop: number | null;
     panelHeight: number | null;
+    mapHeight: number | null;
     canvasHeight: number | null;
   } | null>(null);
+
+  useEffect(() => {
+    const triggerInitialResize = () => {
+      mapRef.current?.resize();
+    };
+    triggerInitialResize();
+    const rafId = window.requestAnimationFrame(triggerInitialResize);
+    const timeoutFastId = window.setTimeout(triggerInitialResize, 260);
+    const timeoutSlowId = window.setTimeout(triggerInitialResize, 960);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.clearTimeout(timeoutFastId);
+      window.clearTimeout(timeoutSlowId);
+    };
+  }, []);
 
   useEffect(() => {
     const handleViewportChange = () => {
@@ -1130,14 +1146,17 @@ export function MapView({
     }
     const collectViewportDebug = () => {
       const panel = mapPanelRef.current;
-      const canvas = panel?.querySelector(".maplibregl-canvas") as HTMLCanvasElement | null;
+      const map = mapRef.current?.getMap();
+      const mapContainer = map?.getContainer() ?? null;
+      const mapCanvas = map?.getCanvas() ?? null;
       const visualViewport = window.visualViewport;
       setViewportDebug({
         innerHeight: window.innerHeight,
         visualHeight: visualViewport ? Math.round(visualViewport.height) : null,
         visualOffsetTop: visualViewport ? Math.round(visualViewport.offsetTop) : null,
         panelHeight: panel ? Math.round(panel.getBoundingClientRect().height) : null,
-        canvasHeight: canvas ? Math.round(canvas.getBoundingClientRect().height) : null,
+        mapHeight: mapContainer ? Math.round(mapContainer.getBoundingClientRect().height) : null,
+        canvasHeight: mapCanvas ? Math.round(mapCanvas.getBoundingClientRect().height) : null,
       });
     };
     collectViewportDebug();
@@ -1978,6 +1997,7 @@ export function MapView({
           <span>{`vv ${viewportDebug.visualHeight ?? "-"}`}</span>
           <span>{`vvTop ${viewportDebug.visualOffsetTop ?? "-"}`}</span>
           <span>{`panel ${viewportDebug.panelHeight ?? "-"}`}</span>
+          <span>{`map ${viewportDebug.mapHeight ?? "-"}`}</span>
           <span>{`canvas ${viewportDebug.canvasHeight ?? "-"}`}</span>
         </div>
       ) : null}
