@@ -1725,7 +1725,7 @@ input {
     --mobile-controls-top: calc(12px + env(safe-area-inset-top));
     --mobile-controls-occupied: 128px;
     --mobile-tabbar-offset: calc(12px + env(safe-area-inset-bottom));
-    --mobile-tabbar-height: 38px;
+    --mobile-tabbar-height: 52px;
     --mobile-panel-height: 36vh;
     --mobile-attribution-gap: 8px;
     --mobile-attribution-top: calc(var(--mobile-controls-top) + var(--mobile-controls-occupied) + var(--mobile-attribution-gap));
@@ -1908,12 +1908,10 @@ input {
 
   .app-shell.is-mobile-shell .map-panel {
     position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
+    inset: 0;
     width: 100vw;
-    height: 100lvh;
+    height: 100dvh;
+    min-height: 100lvh;
     margin: 0;
     border: 0;
     border-radius: 0;
