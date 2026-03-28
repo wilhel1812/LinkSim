@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.12.1] - 2026-03-28
+
+### Fixed
+- Holiday theme state is now shared across all UI consumers (AppShell, MapView, Sidebar). Clicking "Revert Theme" in the map inspector immediately reverts the color without requiring a page refresh.
+- Yellow Easter theme option now appears in the color theme dropdown during the active Easter window, and disappears afterward.
+
 ## [0.12.0] - 2026-03-28
 
 ### Added
