@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.12.0] - 2026-03-28
+
+### Added
+- Mobile: tabbed interface splits map/profile view and sidebar for better small-screen layout.
+- Desktop: right-side inspector panel for simulation results alongside the sidebar.
+- Easter holiday theme framework with automatic seasonal activation and window management.
+- Holiday theme system is reusable for future seasonal overrides.
+
+### Changed
+- Unified UI iconography with the Lucide icon set across all controls, map buttons, and sidebar.
+- Map UI controls consolidated into the sidebar; removed floating overlays on mobile.
+- iOS: map renders full-bleed behind safe areas with proper viewport anchoring.
+- Sidebar header simplified to icon-only row; environment badge moved to title area.
+- Basemap fallback now uses Carto Normal style instead of incorrect default layer.
+
+### Fixed
+- Fullscreen toggle for map and path profile now operate independently.
+- Mobile attribution placement is stable across panel open/close states.
+- iOS map canvas sizing is consistent across orientation changes and viewport updates.
+- Coverage store extracted from main Zustand store to reduce re-render overhead.
+
 ## [0.11.0] - 2026-03-26
 
 ### Added
