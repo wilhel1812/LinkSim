@@ -1099,11 +1099,14 @@ export function MapView({
     const handleViewportChange = () => {
       mapRef.current?.resize();
     };
+    const viewport = window.visualViewport;
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("orientationchange", handleViewportChange);
+    viewport?.addEventListener("resize", handleViewportChange);
     return () => {
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("orientationchange", handleViewportChange);
+      viewport?.removeEventListener("resize", handleViewportChange);
     };
   }, []);
   const hasNonAutoLinks = useMemo(
