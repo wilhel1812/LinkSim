@@ -1184,7 +1184,12 @@ export function MapView({
       .then((result) => {
         if (canceled) return;
         setMqttNodes(result.nodes);
-        setMqttLoadStatus(null);
+        if (result.fromCache && result.networkError) {
+          const ageMin = Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000));
+          setMqttLoadStatus(`Live fetch failed — showing ${result.nodes.length} cached node(s) from ${ageMin} min ago.`);
+        } else {
+          setMqttLoadStatus(null);
+        }
       })
       .catch((error) => {
         if (canceled) return;
