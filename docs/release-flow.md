@@ -6,7 +6,6 @@
 ## Branch model (integration + release)
 - `issue/<id>-<slug>`: single issue implementation branch.
 - `staging`: integration branch for accepted issue work.
-- `release/vX.Y.Z`: release-candidate branch cut from `staging`.
 - `main`: production branch only.
 - `hotfix/<slug>`: production incident branch (only when explicitly approved).
 
@@ -26,11 +25,10 @@
 
 3. Production
 - Promote only after explicit user approval.
-- Cut `release/vX.Y.Z` from the verified `staging` commit.
-- Open PR `release/vX.Y.Z` -> `main`.
+- Open PR `staging` -> `main`.
 - Deploy the exact verified staging commit to production (no extra code changes in between).
 - Use explicit guarded command only: `npm run deploy:prod:main`.
-- After production deploy, back-merge `main` -> `staging` to keep parity.
+- After production deploy, continue all new work from updated `origin/staging`.
 
 ## Guardrails
 - No direct production hotfixes unless explicitly requested by the user.
@@ -52,7 +50,7 @@
   - `hotfix/<slug>`
   - `chore/<slug>`
 - PRs into `main` must come from:
-  - `release/vX.Y.Z`
+  - `staging` (default and only normal release path)
   - `hotfix/<slug>` (approved production incidents only)
 - Merge strategy: squash merge only.
 - Auto-delete merged branches enabled.
@@ -80,8 +78,23 @@
   3. Commit and push.
   4. Open PR to `staging` and merge once approved.
   5. Deploy `staging` using `npm run deploy:staging` and verify at https://staging.linksim.link.
-  6. Promote via `release/vX.Y.Z` PR to `main` only with explicit approval.
+  6. Promote via `staging` -> `main` PR only with explicit approval.
 - No hidden scope changes during promotion; if code changes after staging verification, restart the loop.
+
+## Milestone release rules
+- Milestone delivery happens in trains:
+  1. complete milestone issues on `staging`
+  2. verify milestone behavior on https://staging.linksim.link
+  3. freeze milestone scope at release sign-off (no new feature merges into `staging`)
+  4. promote with a single `staging` -> `main` PR
+  5. deploy production from the merged `main` commit
+- Promotion must use the same verified staging commit SHA.
+- If any code changes after staging sign-off, restart staging verification before production.
+- Before opening the promotion PR, require:
+  - all in-scope milestone issues are `in-staging` or `released`
+  - `npm test` passes
+  - `npm run build` passes
+  - `CHANGELOG.md` includes a human-readable entry for the release
 
 ## Issue state machine
 - Use these labels to keep issue status explicit:
@@ -97,6 +110,11 @@
   - `prod-main`
 - `prod-main` job runs in the `production` GitHub environment (configure required reviewers in repo settings).
 - `staging` runs in the `staging` environment.
+
+## Drift prevention rules
+- Issue branches must be created from latest `origin/staging`.
+- PRs into `staging` or `main` must be up-to-date with the base branch before merge.
+- Never promote from `issue/*` or `chore/*` directly into `main`.
 
 ## Deploy Targets Reference
 | Target | URL | Description |

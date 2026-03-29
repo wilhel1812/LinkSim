@@ -27,12 +27,29 @@ jobs:
             exit 1
           fi
           if [ "$BASE_REF" = "main" ]; then
-            if [[ "$HEAD_REF" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9-]+$ ]]; then
+            if [ "$HEAD_REF" = "staging" ] || [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9-]+$ ]]; then
               exit 0
             fi
-            echo "PR to main must come from release/vX.Y.Z or hotfix/<slug>."
+            echo "PR to main must come from staging (normal release) or hotfix/<slug> (approved incident only)."
             exit 1
           fi
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Enforce PR head is up-to-date with base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF"
+          if git merge-base --is-ancestor "origin/$BASE_REF" HEAD; then
+            echo "PR head includes latest origin/$BASE_REF"
+            exit 0
+          fi
+          echo "PR head is behind origin/$BASE_REF. Rebase/merge base branch before merge."
+          exit 1
       - name: Set commit status on success
         if: success()
         uses: actions/github-script@v7
