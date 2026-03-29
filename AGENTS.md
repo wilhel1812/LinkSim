@@ -19,7 +19,7 @@
 - Branch workflow:
   - Use per-issue branches: `issue/<id>-<slug>`.
   - Merge issue branches into `staging` first.
-  - Promote to production through `release/vX.Y.Z` branch/PR into `main`.
+  - For normal releases, promote to production only via a direct PR from `staging` into `main` (no release branch).
   - Use `hotfix/<slug>` only for explicitly approved incidents.
   - This staging-integration model is the default unless the user explicitly overrides it.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
@@ -62,7 +62,8 @@
 - Promotion gate:
   - Promote the exact same verified commit from local -> staging -> production.
   - If code changes after staging verification, rerun local verification and redeploy staging before production.
-  - Production promotion branch must be `release/vX.Y.Z` (or approved `hotfix/<slug>`).
+  - Normal production promotion PR must be `staging` -> `main`.
+  - Hotfix promotion PR may be `hotfix/<slug>` -> `main` only with explicit user approval in-thread.
 - Local run reliability:
   - Restart local server whenever runtime/config/env changes can affect behavior.
   - Re-verify affected flows after restart before marking work as done.
@@ -91,6 +92,10 @@
   - Start each issue branch from `origin/staging`.
   - Branch name format: `issue/<id>-<slug>`.
   - Keep PR scope to one issue; avoid mixed API/UI/deeplink batches in the same PR.
+  - Agent safety rails:
+    - Do not create normal-release `release/*` branches.
+    - Do not open PRs to `main` from `issue/*` or `chore/*` branches.
+    - If local branch is behind its PR base branch, rebase/refresh before merging.
 - Drift check before coding (required):
   - Run and report: `git log --oneline origin/staging -5`
   - Run and report: `git log --oneline origin/main -5`
@@ -111,8 +116,10 @@
   - After deploy, always confirm completion with `wrangler pages deployment list --project-name linksim-staging --environment production` and report the commit SHA/build label.
 - Milestone promotion model:
   - Complete and verify all milestone issues on `staging` first.
-  - Promote to production in one batch from a `release/vX.Y.Z` branch cut from `staging`.
+  - Promote to production in one batch with a direct PR from `staging` to `main`.
   - Use the exact verified staging commit for production; no code changes between staging sign-off and production deploy.
+  - Freeze milestone scope at sign-off: no new feature work lands on `staging` until production deploy completes.
+  - After production deploy, continue new issue work from the updated `origin/staging` baseline.
 
 ## Branch Protection Rollout Safety
 - When introducing a new required status check, roll it out in two phases to avoid PR deadlocks:
