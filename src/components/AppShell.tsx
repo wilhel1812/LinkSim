@@ -1188,20 +1188,11 @@ export function AppShell() {
           </div>
         ) : null}
       </section>
-      {!isMobileViewport && (isMapExpanded || isProfileExpanded) ? (
+      {isMapExpanded || isProfileExpanded ? (
         <div className="floating-attribution-pill">
           <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
           <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>{resolvedBasemap.attribution}</span>
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>MapLibre</span>
-        </div>
-      ) : null}
-      {isMobileViewport && isMapExpanded ? (
-        <div className="floating-attribution-text">
-          <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>{resolvedBasemap.attribution}</span>
+          <span>{resolvedBasemap.attribution.replace(/©/g, "")}</span>
           <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
           <span>MapLibre</span>
         </div>
