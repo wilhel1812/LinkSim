@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Loader2, Maximize2, Minimize2, Rabbit, RefreshCw, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -2067,6 +2067,30 @@ export function MapView({
                   {line}
                 </p>
               ))}
+            </div>
+          ) : null}
+          {showDiscoveryMqtt && mqttLoadStatus ? (
+            <div className="map-inspector-section">
+              <span className="map-inline-actions">
+                {mqttLoadStatus === "Loading MQTT nodes..." ? (
+                  <span className="map-spinner">
+                    <Loader2 aria-hidden="true" size={14} strokeWidth={2} />
+                  </span>
+                ) : mqttLoadStatus.includes("failed") ? (
+                  <button
+                    aria-label="Retry MQTT load"
+                    className="map-control-btn"
+                    onClick={() => {
+                      setMqttNodes([]);
+                      setMqttLoadStatus(null);
+                    }}
+                    type="button"
+                  >
+                    <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
+                    <span>Retry</span>
+                  </button>
+                ) : null}
+              </span>
             </div>
           ) : null}
           {mqttDuplicatePrompt ? (

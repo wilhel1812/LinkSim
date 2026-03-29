@@ -43,7 +43,6 @@ export type MeshmapFetchResult = {
 };
 
 const DEFAULT_MESHMAP_FEED_URL = "/meshmap/nodes.json";
-const DIRECT_MESHMAP_FEED_URL = "https://meshmap.net/nodes.json";
 const MESHMAP_CACHE_KEY = "rmw-meshmap-cache-v1";
 const MESHMAP_SOURCE_URL_KEY = "rmw-meshmap-source-url-v1";
 
@@ -158,7 +157,6 @@ export const fetchMeshmapNodes = async (options: MeshmapFetchOptions = {}): Prom
   const sourceUrl = options.sourceUrl?.trim() || readPreferredMeshmapSourceUrl();
   const cacheTtlMs = options.cacheTtlMs ?? 12 * 60 * 60 * 1000;
   const cached = readCache();
-  const fallbackUrls = Array.from(new Set([DEFAULT_MESHMAP_FEED_URL, DIRECT_MESHMAP_FEED_URL]));
   try {
     const response = await fetch(sourceUrl, { cache: "no-store" });
     if (!response.ok) {
@@ -176,24 +174,6 @@ export const fetchMeshmapNodes = async (options: MeshmapFetchOptions = {}): Prom
       fromCache: false,
     };
   } catch (error) {
-    for (const fallbackUrl of fallbackUrls) {
-      if (fallbackUrl === sourceUrl) continue;
-      try {
-        const fallback = await fetch(fallbackUrl, { cache: "no-store" });
-        if (!fallback.ok) continue;
-        const payload = (await fallback.json()) as unknown;
-        const nodes = parseMeshmapLikeFeed(payload);
-        if (!nodes.length) continue;
-        writeCache(fallbackUrl, nodes);
-        return {
-          nodes,
-          sourceUrl: fallbackUrl,
-          fromCache: false,
-        };
-      } catch {
-        // Try next fallback URL.
-      }
-    }
     if (
       cached &&
       (cached.sourceUrl === sourceUrl || cached.sourceUrl === DEFAULT_MESHMAP_FEED_URL) &&

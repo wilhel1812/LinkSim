@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel } from "lucide-react";
+import { CircleX, Funnel, Loader2, RefreshCw } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -3444,6 +3444,11 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                   </label>
                   <div className="chip-group">
                     <button className="inline-action" disabled={meshmapLoading} onClick={() => void loadMeshmapFeed()} type="button">
+                      {meshmapLoading ? (
+                        <span className="map-spinner">
+                          <Loader2 aria-hidden="true" size={14} strokeWidth={2} />
+                        </span>
+                      ) : null}
                       {meshmapLoading ? "Loading..." : "Load Feed"}
                     </button>
                     <button
@@ -3460,7 +3465,23 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                       {formatDate(meshmapCachedSummary.savedAt)} ({meshmapCachedSummary.sourceUrl})
                     </p>
                   ) : null}
-                  {meshmapStatus ? <p className="field-help">{meshmapStatus}</p> : null}
+                  {meshmapStatus ? (
+                    <p className="field-help">
+                      {meshmapStatus}
+                      {meshmapStatus.includes("failed") ? (
+                        <button
+                          aria-label="Retry loading Meshtastic feed"
+                          className="inline-action"
+                          onClick={() => void loadMeshmapFeed()}
+                          style={{ marginLeft: 8 }}
+                          type="button"
+                        >
+                          <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
+                          <span>Retry</span>
+                        </button>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {showMeshtasticBrowser ? (
                     <div className="meshmap-browser">
                       <div className="meshmap-browser-map">
