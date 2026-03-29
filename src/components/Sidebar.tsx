@@ -1399,7 +1399,9 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       if (result.fromCache) {
         const ageMin = Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000));
         setMeshmapStatus(
-          `Loaded ${formatNumber(result.nodes.length)} node(s) from cached snapshot (${ageMin} min old).`,
+          result.networkError
+            ? `Live fetch failed — showing ${formatNumber(result.nodes.length)} cached node(s) from ${ageMin} min ago.`
+            : `Loaded ${formatNumber(result.nodes.length)} node(s) from cached snapshot (${ageMin} min old).`,
         );
       } else {
         setMeshmapStatus(`Loaded ${formatNumber(result.nodes.length)} node(s) from live feed.`);

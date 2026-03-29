@@ -40,6 +40,7 @@ export type MeshmapFetchResult = {
   sourceUrl: string;
   fromCache: boolean;
   cacheAgeMs?: number;
+  networkError?: boolean;
 };
 
 const DEFAULT_MESHMAP_FEED_URL = "/meshmap/nodes.json";
@@ -185,6 +186,7 @@ export const fetchMeshmapNodes = async (options: MeshmapFetchOptions = {}): Prom
         sourceUrl: cached.sourceUrl,
         fromCache: true,
         cacheAgeMs: Date.now() - cached.savedAt,
+        networkError: true,
       };
     }
     const message = error instanceof Error ? error.message : String(error);
