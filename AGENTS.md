@@ -84,6 +84,7 @@
   - Use issue titles as the default source of task naming.
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
   - Maintain explicit status labels: `pending-discussion` -> `in-progress` -> `in-staging` -> `released`.
+  - After every staging merge/deploy, automatically update the related GitHub Issue(s) label from `in-progress` to `in-staging`. Do not wait for the user to ask.
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
 
 ## Staging-First Milestone Workflow (Single Source)
