@@ -197,6 +197,9 @@ input {
 }
 
 .sidebar-footer-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--muted);
   text-decoration: none;
 }
@@ -204,12 +207,6 @@ input {
 .sidebar-footer-links a:hover {
   color: var(--text);
   text-decoration: underline;
-}
-
-.sidebar-footer-icon {
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
 }
 
 .sidebar-panel > header {
