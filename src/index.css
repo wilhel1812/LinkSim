@@ -184,8 +184,32 @@ input {
   width: 100%;
   align-self: stretch;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   text-align: center;
+}
+
+.sidebar-footer-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-footer-links a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.sidebar-footer-links a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.sidebar-footer-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
 }
 
 .sidebar-panel > header {
@@ -259,10 +283,6 @@ input {
 
 .sidebar-panel .section-data {
   order: 6;
-}
-
-.sidebar-panel .section-more {
-  order: 7;
 }
 
 .section-heading {
