@@ -914,7 +914,6 @@ input {
   backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow-elev-3);
   padding: 6px 12px;
-  pointer-events: none;
 }
 
 .floating-attribution-pill a {
@@ -923,6 +922,7 @@ input {
 }
 
 .floating-attribution-pill a:hover {
+  color: var(--text);
   text-decoration: underline;
 }
 

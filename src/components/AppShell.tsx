@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleX, Copyright, Map as MapIcon } from "lucide-react";
+import { CircleX, Copyright } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -1190,7 +1190,6 @@ export function AppShell() {
       </section>
       {isMapExpanded || isProfileExpanded ? (
         <div className="floating-attribution-pill">
-          <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
           <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
           <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
             {resolvedBasemap.attribution.replace(/©/g, "").trim()}
