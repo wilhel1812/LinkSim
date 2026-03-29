@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel, Loader2, RefreshCw } from "lucide-react";
+import { CircleX, Funnel, RefreshCw } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -3444,11 +3444,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                   </label>
                   <div className="chip-group">
                     <button className="inline-action" disabled={meshmapLoading} onClick={() => void loadMeshmapFeed()} type="button">
-                      {meshmapLoading ? (
-                        <span className="map-spinner">
-                          <Loader2 aria-hidden="true" size={14} strokeWidth={2} />
-                        </span>
-                      ) : null}
                       {meshmapLoading ? "Loading..." : "Load Feed"}
                     </button>
                     <button
@@ -3459,6 +3454,11 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                       {showMeshtasticBrowser ? "Hide Browser" : "Show Browser"}
                     </button>
                   </div>
+                  {meshmapLoading ? (
+                    <div className="map-progress-track" style={{ marginTop: 8 }}>
+                      <div className="map-progress-fill map-progress-fill-indeterminate" />
+                    </div>
+                  ) : null}
                   {meshmapCachedSummary ? (
                     <p className="field-help">
                       Cached snapshot: {formatNumber(meshmapCachedSummary.nodeCount)} node(s) from{" "}

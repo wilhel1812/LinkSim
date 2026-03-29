@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Egg, Fullscreen, Loader2, Maximize2, Minimize2, Rabbit, RefreshCw, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -1913,12 +1913,11 @@ export function MapView({
       `Shared/public library sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to simulation.`,
     );
   }
-  if (showDiscoveryMqtt) {
+  if (showDiscoveryMqtt && !mqttLoadStatus) {
     inspectorLines.push(
-      mqttLoadStatus ??
-        (mqttTooDenseInView
-          ? `MQTT nodes in view: ${mqttNodesInView.length}. Zoom in to show markers (limit ${mqttInViewLimit}).`
-          : `MQTT nodes in view: ${mqttNodesInView.length}. Click a marker to open an Add Site draft.`),
+      mqttTooDenseInView
+        ? `MQTT nodes in view: ${mqttNodesInView.length}. Zoom in to show markers (limit ${mqttInViewLimit}).`
+        : `MQTT nodes in view: ${mqttNodesInView.length}. Click a marker to open an Add Site draft.`,
     );
   }
   if (endpointPickTarget && endpointPickError) inspectorLines.push(endpointPickError);
@@ -2071,12 +2070,13 @@ export function MapView({
           ) : null}
           {showDiscoveryMqtt && mqttLoadStatus ? (
             <div className="map-inspector-section">
-              <span className="map-inline-actions">
-                {mqttLoadStatus === "Loading MQTT nodes..." ? (
-                  <span className="map-spinner">
-                    <Loader2 aria-hidden="true" size={14} strokeWidth={2} />
-                  </span>
-                ) : mqttLoadStatus.includes("failed") ? (
+              <p className="map-inspector-line">{mqttLoadStatus}</p>
+              {mqttLoadStatus === "Loading MQTT nodes..." ? (
+                <div className="map-progress-track">
+                  <div className="map-progress-fill map-progress-fill-indeterminate" />
+                </div>
+              ) : mqttLoadStatus.includes("failed") ? (
+                <span className="map-inline-actions">
                   <button
                     aria-label="Retry MQTT load"
                     className="map-control-btn"
@@ -2089,8 +2089,8 @@ export function MapView({
                     <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
                     <span>Retry</span>
                   </button>
-                ) : null}
-              </span>
+                </span>
+              ) : null}
             </div>
           ) : null}
           {mqttDuplicatePrompt ? (
