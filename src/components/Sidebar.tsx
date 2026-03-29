@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel, RefreshCw } from "lucide-react";
+import { CircleX, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -2163,31 +2163,26 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
         <div className="sidebar-footer-links">
-          <a
-            aria-label="GitHub"
-            className="sidebar-footer-icon"
-            href="https://github.com/wilhel1812/LinkSim"
-            rel="noreferrer"
-            target="_blank"
-            title="GitHub"
-          >
+          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">
+            <Handshake aria-hidden="true" size={13} strokeWidth={1.8} />
+            Terms
+          </a>
+          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md" rel="noreferrer" target="_blank">
+            <HatGlasses aria-hidden="true" size={13} strokeWidth={1.8} />
+            Privacy
+          </a>
+          <a href="https://github.com/wilhel1812/LinkSim" rel="noreferrer" target="_blank">
             <svg
               aria-hidden="true"
-              height="14"
+              height="13"
               role="img"
               viewBox="0 0 24 24"
-              width="14"
+              width="13"
               xmlns="http://www.w3.org/2000/svg"
             >
               <path d={siGithub.path} fill="currentColor" />
             </svg>
-          </a>
-          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">
-            Terms
-          </a>
-          <span aria-hidden="true">·</span>
-          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md" rel="noreferrer" target="_blank">
-            Privacy
+            GitHub
           </a>
         </div>
         <div className="sidebar-footer-version">
