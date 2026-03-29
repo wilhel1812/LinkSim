@@ -50,6 +50,20 @@ jobs:
           fi
           echo "PR head is behind origin/$BASE_REF. Rebase/merge base branch before merge."
           exit 1
+      - name: Require milestone checklist attestation for staging-main release
+        if: github.base_ref == 'main' && github.head_ref == 'staging'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || "";
+            const requiredPattern = /\[[xX]\]\s*Milestone release checklist completed:\s*docs\/milestone-release-checklist\.md/;
+            if (requiredPattern.test(body)) {
+              core.info("Milestone release checklist attestation found in PR body.");
+              return;
+            }
+            core.setFailed(
+              "Missing required PR body attestation for staging->main release: '- [x] Milestone release checklist completed: docs/milestone-release-checklist.md'",
+            );
       - name: Set commit status on success
         if: success()
         uses: actions/github-script@v7

@@ -4,11 +4,13 @@
 - Treat this file as the single handoff entrypoint.
 - Before any code changes, review open GitHub Issues for the repo and then read:
   1. `docs/release-flow.md`
+  2. `docs/milestone-release-checklist.md`
 - If instructions conflict, precedence is:
   1. explicit user instruction in current thread
   2. this `AGENTS.md`
   3. GitHub Issues / GitHub Projects state for the repo
   4. `docs/release-flow.md`
+  5. `docs/milestone-release-checklist.md`
 
 - Always update the relevant GitHub Issue(s) before and after implementation batches.
 - Default environment workflow:

@@ -3,6 +3,10 @@
 ## Default rule
 - Unless explicitly stated otherwise, work in the local test environment.
 
+## Required reading before implementation/release work
+- `docs/release-flow.md`
+- `docs/milestone-release-checklist.md`
+
 ## Branch model (integration + release)
 - `issue/<id>-<slug>`: single issue implementation branch.
 - `staging`: integration branch for accepted issue work.
@@ -95,6 +99,10 @@
   - `npm test` passes
   - `npm run build` passes
   - `CHANGELOG.md` includes a human-readable entry for the release
+  - `docs/milestone-release-checklist.md` is completed
+- PR body requirement for normal promotion (`staging` -> `main`):
+  - include the checked line:
+    - `- [x] Milestone release checklist completed: docs/milestone-release-checklist.md`
 
 ## Issue state machine
 - Use these labels to keep issue status explicit:
