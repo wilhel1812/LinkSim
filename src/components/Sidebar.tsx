@@ -11,7 +11,7 @@ import Map, {
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import { useThemeVariant } from "../hooks/useThemeVariant";
-import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
+import { t } from "../i18n/locales";
 import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
@@ -40,7 +40,6 @@ import {
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { PRIMARY_ATTRIBUTION } from "../lib/terrainCatalog";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -55,6 +54,7 @@ import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
+import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
@@ -129,24 +129,11 @@ const meshmapLabelsLayer = (color: string, haloColor: string): LayerProps => ({
   },
 });
 
-const downloadJson = (fileName: string, payload: unknown) => {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.click();
-  URL.revokeObjectURL(url);
-};
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
-const SITE_LIBRARY_KEY = "rmw-site-library-v1";
-const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
-const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
 const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
 
 const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
   parseDeepLinkFromLocation({ search, pathname }).ok;
-const STORAGE_HEALTH_KEY = "rmw-storage-health-v1";
 
 const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
   { key: "owned", label: "Owned" },
@@ -196,39 +183,6 @@ const selectionLabel = <T extends string>(selected: T[], allValues: T[]): string
 const selectionIsFiltered = <T extends string>(selected: T[], allValues: T[]): boolean => {
   const effective = effectiveSelection(selected, allValues);
   return effective.length !== allValues.length;
-};
-
-type LibraryBackupPayload = {
-  schemaVersion: 1;
-  exportedAtIso: string;
-  origin: string;
-  siteLibrary?: unknown[];
-  simulationPresets?: unknown[];
-};
-
-type StorageHealth = {
-  lastExportIso?: string;
-  lastImportIso?: string;
-  lastRestoreIso?: string;
-};
-
-const readStorageHealth = (): StorageHealth => {
-  try {
-    const raw = localStorage.getItem(STORAGE_HEALTH_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as StorageHealth;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const writeStorageHealth = (value: StorageHealth) => {
-  try {
-    localStorage.setItem(STORAGE_HEALTH_KEY, JSON.stringify(value));
-  } catch {
-    // Best effort only.
-  }
 };
 
 const formatChangeSummary = (action: string, note: string | null): string => {
@@ -299,8 +253,6 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
   return lines;
 };
 
-const getSnapshotCount = (_key: string): number => 0;
-
 type SidebarProps = {
   onOpenHelp?: () => void;
 };
@@ -329,7 +281,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const scenarioOptions = useAppStore((state) => state.scenarioOptions);
   const locale = useAppStore((state) => state.locale);
   const networks = useAppStore((state) => state.networks);
-  const setLocale = useAppStore((state) => state.setLocale);
   const selectScenario = useAppStore((state) => state.selectScenario);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const selectSiteById = useAppStore((state) => state.selectSiteById);
@@ -526,8 +477,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     }
   };
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
-  const [storageStatus, setStorageStatus] = useState("");
-  const [storageHealth, setStorageHealth] = useState<StorageHealth>(() => readStorageHealth());
   const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
   const [profilePopupBusy, setProfilePopupBusy] = useState(false);
   const [profilePopupStatus, setProfilePopupStatus] = useState("");
@@ -573,18 +522,12 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
   } | null>(null);
-  const [storageOriginWarning, setStorageOriginWarning] = useState("");
-  const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
-    siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
-    simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
-  }));
   const [deleteConfirm, setDeleteConfirm] = useState<{
     title: string;
     message: string;
     confirmLabel: string;
     onConfirm: () => void;
   } | null>(null);
-  const hasLocalLibraryData = siteLibrary.length > 0 || simulationPresets.length > 0;
   const currentUserId = currentUser?.id ?? null;
   const toggleValue = <T extends string>(values: T[], key: T): T[] =>
     values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
@@ -796,14 +739,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     });
     return filtered.slice(0, 30);
   }, [currentResourceOwnerId, resourceCollaboratorDirectory, resourceCollaboratorUserIds, resourceCollaboratorQuery]);
-  const lastStorageActionLabel = useMemo(() => {
-    const entries = [
-      storageHealth.lastExportIso ? `Export ${formatDate(storageHealth.lastExportIso)}` : null,
-      storageHealth.lastImportIso ? `Import ${formatDate(storageHealth.lastImportIso)}` : null,
-      storageHealth.lastRestoreIso ? `Restore ${formatDate(storageHealth.lastRestoreIso)}` : null,
-    ].filter((entry): entry is string => Boolean(entry));
-    return entries.length ? entries.join(" | ") : "No backup/import/restore actions recorded yet.";
-  }, [storageHealth]);
   useEffect(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -1012,40 +947,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     loadSimulationPreset,
   ]);
 
-  useEffect(() => {
-    const origin = window.location.origin;
-    const host = window.location.hostname;
-    setStorageOriginWarning(
-      host === "127.0.0.1"
-        ? "You are on 127.0.0.1. Browser storage is origin-scoped; localhost and 127.0.0.1 do not share data."
-        : "",
-    );
-    try {
-      const booted = localStorage.getItem(STORAGE_BOOT_KEY);
-      if (!booted) {
-        localStorage.setItem(STORAGE_BOOT_KEY, JSON.stringify({ firstSeenIso: new Date().toISOString(), origin }));
-        if (!hasLocalLibraryData) {
-          setStorageStatus(
-            "No local library data found yet in this browser origin. Export backups regularly to avoid surprises.",
-          );
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, [hasLocalLibraryData]);
-
-  useEffect(() => {
-    refreshSnapshotInfo();
-  }, [siteLibrary, simulationPresets]);
-
-  const refreshSnapshotInfo = () => {
-    setStorageSnapshotInfo({
-      siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
-      simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
-    });
-  };
-
   const requestDeleteConfirm = (
     title: string,
     message: string,
@@ -1053,24 +954,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     confirmLabel = "Delete",
   ) => {
     setDeleteConfirm({ title, message, confirmLabel, onConfirm });
-  };
-
-  const exportLocalLibraries = () => {
-    const payload: LibraryBackupPayload = {
-      schemaVersion: 1,
-      exportedAtIso: new Date().toISOString(),
-      origin: window.location.origin,
-      siteLibrary,
-      simulationPresets,
-    };
-    const stamp = payload.exportedAtIso.replace(/[:.]/g, "-");
-    downloadJson(`linksim-backup-${stamp}.json`, payload);
-    const nextHealth = { ...storageHealth, lastExportIso: payload.exportedAtIso };
-    setStorageHealth(nextHealth);
-    writeStorageHealth(nextHealth);
-    setStorageStatus(
-      `Exported backup (${siteLibrary.length} site(s), ${simulationPresets.length} simulation(s)) for ${payload.origin}.`,
-    );
   };
 
   const openAddLinkModal = () => {
@@ -2277,73 +2160,40 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
         </ModalOverlay>
       ) : null}
 
-      <section className="panel-section section-more">
-        <details className="compact-details">
-          <summary>More</summary>
-          <div className="section-heading">
-            <p className="field-help">Local Storage Safety</p>
-            <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly." />
-          </div>
-          {storageOriginWarning ? <p className="field-help warning-text">{storageOriginWarning}</p> : null}
-          <p className="field-help">{lastStorageActionLabel}</p>
-          <p className="field-help">
-            Snapshot history: {storageSnapshotInfo.siteSnapshots} site snapshot(s),{" "}
-            {storageSnapshotInfo.simulationSnapshots} simulation snapshot(s).
-          </p>
-          <div className="chip-group">
-            <button className="inline-action" onClick={exportLocalLibraries} type="button">
-              Export Library Backup
-            </button>
-          </div>
-          {storageStatus ? <p className="field-help">{storageStatus}</p> : null}
-          <label className="field-grid">
-            <span>Language</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setLocale(event.target.value as (typeof SUPPORTED_LOCALES)[number])}
-              value={locale}
-            >
-              {SUPPORTED_LOCALES.map((code) => (
-                <option key={code} value={code}>
-                  {LOCALE_LABELS[code]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="field-help">References and external resources:</p>
-          <div className="asset-list">
-            <a href="https://github.com/wilhel1812/LinkSim/issues/new/choose" rel="noreferrer" target="_blank">
-              Feedback / Suggestions (GitHub Issues)
-            </a>
-            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md" rel="noreferrer" target="_blank">
-              Privacy Notice
-            </a>
-            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">
-              Terms & Acceptable Use
-            </a>
-            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/rf-models-and-sampling.md" rel="noreferrer" target="_blank">
-              RF Models & Sampling Guide
-            </a>
-          </div>
-          <details className="compact-details">
-            <summary>Credits & Attribution</summary>
-            <p className="field-help subtle-note">
-              Inspired by{" "}
-              <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
-                {PRIMARY_ATTRIBUTION.projectName}
-              </a>{" "}
-              by {PRIMARY_ATTRIBUTION.authorName}
-            </p>
-            <p className="field-help subtle-note">
-              Basemap: {resolvedBasemap.providerLabel} · {resolvedBasemap.presetLabel} (provider attribution applies).
-            </p>
-          </details>
-        </details>
-      </section>
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
-        Build: {buildLabel} (
-        {runtimeEnvironment === "production" ? "live-prod" : runtimeEnvironment === "local" ? "local" : "live-test"})
+        <div className="sidebar-footer-links">
+          <a
+            aria-label="GitHub"
+            className="sidebar-footer-icon"
+            href="https://github.com/wilhel1812/LinkSim"
+            rel="noreferrer"
+            target="_blank"
+            title="GitHub"
+          >
+            <svg
+              aria-hidden="true"
+              height="14"
+              role="img"
+              viewBox="0 0 24 24"
+              width="14"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d={siGithub.path} fill="currentColor" />
+            </svg>
+          </a>
+          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">
+            Terms
+          </a>
+          <span aria-hidden="true">·</span>
+          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md" rel="noreferrer" target="_blank">
+            Privacy
+          </a>
+        </div>
+        <div className="sidebar-footer-version">
+          Build: {buildLabel} (
+          {runtimeEnvironment === "production" ? "live-prod" : runtimeEnvironment === "local" ? "local" : "live-test"})
+        </div>
       </footer>
 
       {profilePopupUser ? (
