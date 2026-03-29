@@ -202,11 +202,12 @@ input {
 }
 
 .sidebar-footer-attribution a {
-  color: var(--accent);
+  color: var(--muted);
   text-decoration: none;
 }
 
 .sidebar-footer-attribution a:hover {
+  color: var(--text);
   text-decoration: underline;
 }
 
@@ -917,7 +918,7 @@ input {
 }
 
 .floating-attribution-pill a {
-  color: var(--accent);
+  color: var(--muted);
   text-decoration: none;
 }
 
