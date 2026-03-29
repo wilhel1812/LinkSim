@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleX } from "lucide-react";
+import { CircleX, Copyright, Map as MapIcon } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -7,6 +7,7 @@ import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { initializeMigrations, runMigrations } from "../lib/migrations";
+import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
@@ -85,7 +86,6 @@ export function AppShell() {
   const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
   const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
-
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
@@ -110,7 +110,15 @@ export function AppShell() {
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
 
-  const { theme, variant } = useThemeVariant();
+  const { theme, colorTheme, variant } = useThemeVariant();
+  const basemapProvider = useAppStore((state) => state.basemapProvider);
+  const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
+
+  const resolvedBasemap = useMemo(
+    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
+    [basemapProvider, basemapStylePreset, theme, colorTheme],
+  );
+
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
 
@@ -1180,6 +1188,24 @@ export function AppShell() {
           </div>
         ) : null}
       </section>
+      {!isMobileViewport && (isMapExpanded || isProfileExpanded) ? (
+        <div className="floating-attribution-pill">
+          <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
+          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
+          <span>{resolvedBasemap.attribution}</span>
+          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
+          <span>MapLibre</span>
+        </div>
+      ) : null}
+      {isMobileViewport && isMapExpanded ? (
+        <div className="floating-attribution-text">
+          <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
+          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
+          <span>{resolvedBasemap.attribution}</span>
+          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
+          <span>MapLibre</span>
+        </div>
+      ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
       <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       {showMobileWarning ? (
