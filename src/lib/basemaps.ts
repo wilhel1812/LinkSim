@@ -13,6 +13,7 @@ export type BasemapProviderCapability = {
   label: string;
   group: "global" | "regional";
   attribution: string;
+  attributionUrl?: string;
   requiresKey: boolean;
   keyEnvVar?: string;
   available: boolean;
@@ -23,6 +24,7 @@ export type BasemapProviderCapability = {
 export type BasemapSelectionResolved = {
   style: string | StyleSpecification;
   attribution: string;
+  attributionUrl: string;
   provider: BasemapProvider;
   providerLabel: string;
   presetId: string;
@@ -219,6 +221,7 @@ const providerCapabilities: BasemapProviderCapability[] = [
     label: "CARTO",
     group: "global",
     attribution: CARTO_ATTRIBUTION,
+    attributionUrl: "https://carto.com/attributions",
     requiresKey: false,
     available: true,
     presets: cartoPresets,
@@ -228,6 +231,7 @@ const providerCapabilities: BasemapProviderCapability[] = [
     label: "MapTiler",
     group: "global",
     attribution: "© OpenStreetMap contributors © MapTiler",
+    attributionUrl: "https://www.openstreetmap.org/copyright",
     requiresKey: true,
     keyEnvVar: "VITE_MAPTILER_KEY",
     available: MAPTILER_KEY.length > 0,
@@ -239,6 +243,7 @@ const providerCapabilities: BasemapProviderCapability[] = [
     label: "Stadia",
     group: "global",
     attribution: "© Stadia Maps © OpenMapTiles © OpenStreetMap contributors © Stamen Design",
+    attributionUrl: "https://stadiamaps.com/",
     requiresKey: false,
     keyEnvVar: "VITE_STADIA_KEY",
     available: true,
@@ -249,6 +254,7 @@ const providerCapabilities: BasemapProviderCapability[] = [
     label: "Kartverket",
     group: "regional",
     attribution: "© Kartverket",
+    attributionUrl: "https://kartverket.no/",
     requiresKey: false,
     available: true,
     presets: kartverketPresets,
@@ -309,6 +315,7 @@ export const resolveBasemapSelection = (
   return {
     style: styleForPreset(provider.provider, preset.id, theme, colorTheme),
     attribution: provider.attribution,
+    attributionUrl: provider.attributionUrl ?? "https://www.openstreetmap.org/copyright",
     provider: provider.provider,
     providerLabel: provider.label,
     presetId: preset.id,

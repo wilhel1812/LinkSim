@@ -2165,9 +2165,13 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
         <div className="sidebar-footer-attribution">
           <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
           <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>{resolvedBasemap.attribution.replace(/©/g, "")}</span>
+          <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
+            {resolvedBasemap.attribution.replace(/©/g, "").trim()}
+          </a>
           <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>MapLibre</span>
+          <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
+            MapLibre
+          </a>
         </div>
         <div className="sidebar-footer-links">
           <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">

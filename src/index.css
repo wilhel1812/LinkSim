@@ -951,6 +951,10 @@ input {
   text-decoration: underline;
 }
 
+.app-shell.is-mobile-shell .floating-attribution-pill {
+  bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 12px);
+}
+
 .map-control-note {
   position: absolute;
   top: 66px;

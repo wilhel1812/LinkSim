@@ -1192,9 +1192,13 @@ export function AppShell() {
         <div className="floating-attribution-pill">
           <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
           <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>{resolvedBasemap.attribution.replace(/©/g, "")}</span>
+          <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
+            {resolvedBasemap.attribution.replace(/©/g, "").trim()}
+          </a>
           <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>MapLibre</span>
+          <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
+            MapLibre
+          </a>
         </div>
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
