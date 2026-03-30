@@ -698,6 +698,7 @@ input {
 
 .workspace-panel.is-profile-expanded {
   grid-template-rows: minmax(0, 1fr);
+  padding-right: 0;
 }
 
 .workspace-header {
@@ -801,7 +802,7 @@ input {
   scrollbar-width: thin;
 }
 
-.app-shell:not(.is-map-expanded) .map-controls {
+.app-shell:not(.is-map-expanded):not(.is-profile-expanded) .map-controls {
   left: calc(var(--sidebar-overlay-width) + 30px);
   right: calc(var(--sidebar-overlay-width) + 30px);
 }
@@ -952,7 +953,7 @@ input {
   max-width: 260px;
 }
 
-.app-shell:not(.is-map-expanded) .map-control-note {
+.app-shell:not(.is-map-expanded):not(.is-profile-expanded) .map-control-note {
   right: calc(var(--sidebar-overlay-width) + 30px);
 }
 
