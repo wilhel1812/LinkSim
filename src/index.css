@@ -114,7 +114,8 @@ input {
   animation: fade-in 260ms ease;
 }
 
-.app-shell.is-map-expanded {
+.app-shell.is-map-expanded,
+.app-shell.is-profile-expanded {
   grid-template-columns: minmax(0, 1fr);
 }
 
