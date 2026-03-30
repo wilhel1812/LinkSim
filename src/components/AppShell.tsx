@@ -14,12 +14,14 @@ import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
 import OnboardingTutorialModal from "./OnboardingTutorialModal";
+import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
 
 initializeMigrations();
 
+const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
@@ -83,6 +85,7 @@ export function AppShell() {
   const isOnline = useAppStore((state) => state.isOnline);
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
+  const showSimulationLibraryRequest = useAppStore((state) => state.showSimulationLibraryRequest);
   const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
   const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
@@ -105,6 +108,7 @@ export function AppShell() {
   const [mobileControlsOccupied, setMobileControlsOccupied] = useState(0);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
+  const [showLibraryFromRequest, setShowLibraryFromRequest] = useState(false);
   const deepLinkAppliedRef = useRef(false);
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
@@ -841,6 +845,12 @@ export function AppShell() {
     setShowSimulationLibraryRequest(true);
   }, [libraryAutoOpened, workspaceState, showWelcomeModal, accessState, activeUserId, setShowSimulationLibraryRequest]);
 
+  useEffect(() => {
+    if (!showSimulationLibraryRequest) return;
+    setShowSimulationLibraryRequest(false);
+    setShowLibraryFromRequest(true);
+  }, [showSimulationLibraryRequest, setShowSimulationLibraryRequest]);
+
   const copyCurrentLink = useCallback(async () => {
     if (!activeSimulation) {
       setShareStatus("Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.");
@@ -1199,6 +1209,24 @@ export function AppShell() {
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
       <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
+      {showLibraryFromRequest ? (
+        <ModalOverlay
+          aria-label="Simulation Library"
+          onClose={() => setShowLibraryFromRequest(false)}
+        >
+          <SimulationLibraryPanel
+            onClose={() => setShowLibraryFromRequest(false)}
+            onLoadSimulation={(presetId) => {
+              loadSimulationPreset(presetId);
+              try {
+                localStorage.setItem(LAST_SIMULATION_REF_KEY, `saved:${presetId}`);
+              } catch {
+                // ignore storage errors
+              }
+            }}
+          />
+        </ModalOverlay>
+      ) : null}
       {showMobileWarning ? (
         <ModalOverlay aria-label="Mobile support notice" onClose={() => setShowMobileWarning(false)} tier="raised">
           <div className="library-manager-card mobile-warning-modal-card">

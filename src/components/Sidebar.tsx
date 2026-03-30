@@ -321,8 +321,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
   const getSelectedNetwork = useAppStore((state) => state.getSelectedNetwork);
   const model = useAppStore((state) => state.propagationModel);
-  const showSimulationLibraryRequest = useAppStore((state) => state.showSimulationLibraryRequest);
-  const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
   const showNewSimulationRequest = useAppStore((state) => state.showNewSimulationRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
   const showSiteLibraryRequest = useAppStore((state) => state.showSiteLibraryRequest);
@@ -602,12 +600,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       .slice()
       .sort((a, b) => parseTs(b.createdAt) - parseTs(a.createdAt))[0]?.id ?? siteLibrary[0].id;
   }, [siteLibrary]);
-  useEffect(() => {
-    if (showSimulationLibraryRequest) {
-      setShowSimulationLibraryManager(true);
-      setShowSimulationLibraryRequest(false);
-    }
-  }, [showSimulationLibraryRequest, setShowSimulationLibraryRequest]);
   useEffect(() => {
     if (showNewSimulationRequest) {
       setNewSimulationName("");
