@@ -190,26 +190,6 @@ input {
   text-align: center;
 }
 
-.sidebar-footer-attribution {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.68rem;
-  color: var(--muted);
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-bottom: 4px;
-}
-
-.sidebar-footer-attribution a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.sidebar-footer-attribution a:hover {
-  text-decoration: underline;
-}
-
 .sidebar-footer-links {
   display: inline-flex;
   align-items: center;
