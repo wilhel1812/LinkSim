@@ -304,6 +304,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const setPropagationModel = useAppStore((state) => state.setPropagationModel);
   const updateLink = useAppStore((state) => state.updateLink);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
+  const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
   const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
@@ -1254,6 +1255,10 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(result.lat);
     setNewLibraryLon(result.lon);
+    updateMapViewport({
+      center: { lat: result.lat, lon: result.lon },
+      zoom: 12,
+    });
     try {
       const [elevation] = await fetchElevations([{ lat: result.lat, lon: result.lon }]);
       if (Number.isFinite(elevation)) {
