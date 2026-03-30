@@ -1017,11 +1017,11 @@ export function AppShell() {
     );
   }
 
-  const toggleProfileExpanded = useCallback(() => {
+  const toggleProfileExpanded = () => {
     setIsMapExpanded(false);
     setMobileActivePanel("profile");
     setIsProfileExpanded((prev) => !prev);
-  }, []);
+  };
 
   return (
     <main
