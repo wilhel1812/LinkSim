@@ -1017,6 +1017,12 @@ export function AppShell() {
     );
   }
 
+  const toggleProfileExpanded = useCallback(() => {
+    setIsMapExpanded(false);
+    setMobileActivePanel("profile");
+    setIsProfileExpanded((prev) => !prev);
+  }, []);
+
   return (
     <main
       ref={appShellRef}
@@ -1163,11 +1169,6 @@ export function AppShell() {
               aria-selected={mobileActivePanel === "profile"}
               className={`mobile-workspace-tab ${mobileActivePanel === "profile" ? "is-active" : ""}`}
               onClick={() => {
-                if (!isMapExpanded && mobileActivePanel === "profile") {
-                  setIsMapExpanded(true);
-                  setIsProfileExpanded(false);
-                  return;
-                }
                 setIsMapExpanded(false);
                 setMobileActivePanel("profile");
               }}
@@ -1181,14 +1182,14 @@ export function AppShell() {
         {!isMobileViewport && !isMapExpanded ? (
           <LinkProfileChart
             isExpanded={isProfileExpanded}
-            onToggleExpanded={() => setIsProfileExpanded((prev) => !prev)}
+            onToggleExpanded={toggleProfileExpanded}
           />
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" ? (
           <div className="mobile-workspace-panel" role="tabpanel" aria-label="Path profile panel">
             <LinkProfileChart
               isExpanded={isProfileExpanded}
-              onToggleExpanded={() => setIsProfileExpanded((prev) => !prev)}
+              onToggleExpanded={toggleProfileExpanded}
             />
           </div>
         ) : null}
