@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleX, Copyright, Map as MapIcon } from "lucide-react";
+import { CircleX } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -1200,11 +1200,14 @@ export function AppShell() {
       </section>
       {isMapExpanded || isProfileExpanded ? (
         <div className="floating-attribution-pill">
-          <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>{resolvedBasemap.attribution.replace(/©/g, "")}</span>
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>MapLibre</span>
+          <span>&copy;</span>
+          <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
+            {resolvedBasemap.attribution.replace(/©/g, "").trim()}
+          </a>
+          <span>&copy;</span>
+          <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
+            MapLibre
+          </a>
         </div>
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />

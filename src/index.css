@@ -214,6 +214,8 @@ input {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .sidebar-footer-links a {
@@ -914,15 +916,15 @@ input {
   backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow-elev-3);
   padding: 6px 12px;
-  pointer-events: none;
 }
 
 .floating-attribution-pill a {
-  color: var(--accent);
+  color: var(--muted);
   text-decoration: none;
 }
 
 .floating-attribution-pill a:hover {
+  color: var(--text);
   text-decoration: underline;
 }
 
@@ -949,6 +951,10 @@ input {
 
 .floating-attribution-text a:hover {
   text-decoration: underline;
+}
+
+.app-shell.is-mobile-shell .floating-attribution-pill {
+  bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 12px);
 }
 
 .map-control-note {
