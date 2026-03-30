@@ -1027,6 +1027,8 @@ export function AppShell() {
     <main
       ref={appShellRef}
       className={`app-shell ${isMapExpanded ? "is-map-expanded" : ""} ${
+        isProfileExpanded ? "is-profile-expanded" : ""
+      } ${
         accessState === "readonly" ? "is-readonly-shell" : ""
       } ${
         isMobileViewport ? "is-mobile-shell" : ""
