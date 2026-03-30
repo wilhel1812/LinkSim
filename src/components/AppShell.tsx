@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleX, Copyright } from "lucide-react";
+import { CircleX } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -1190,11 +1190,11 @@ export function AppShell() {
       </section>
       {isMapExpanded || isProfileExpanded ? (
         <div className="floating-attribution-pill">
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
+          <span>©</span>
           <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
             {resolvedBasemap.attribution.replace(/©/g, "").trim()}
           </a>
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
+          <span>©</span>
           <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
             MapLibre
           </a>

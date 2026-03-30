@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { CircleX, Copyright, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
+import { CircleX, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -2163,11 +2163,11 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
         <div className="sidebar-footer-links">
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
+          <span>©</span>
           <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
             {resolvedBasemap.attribution.replace(/©/g, "").trim()}
           </a>
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
+          <span>©</span>
           <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
             MapLibre
           </a>
