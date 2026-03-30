@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { CircleX, Copyright, Funnel, Handshake, HatGlasses, Map as MapIcon, RefreshCw } from "lucide-react";
+import { CircleX, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -2176,13 +2176,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
 
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
-        <div className="sidebar-footer-attribution">
-          <MapIcon aria-hidden="true" size={11} strokeWidth={1.8} />
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>{resolvedBasemap.attribution.replace(/©/g, "")}</span>
-          <Copyright aria-hidden="true" size={9} strokeWidth={2.5} />
-          <span>MapLibre</span>
-        </div>
         <div className="sidebar-footer-links">
           <span>©</span>
           <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
