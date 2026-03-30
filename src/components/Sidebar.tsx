@@ -505,6 +505,21 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const [resourceDescriptionDraft, setResourceDescriptionDraft] = useState("");
   const [resourceLatDraft, setResourceLatDraft] = useState(0);
   const [resourceLonDraft, setResourceLonDraft] = useState(0);
+  const [inlineMapView, setInlineMapView] = useState({
+    longitude: resourceLonDraft,
+    latitude: resourceLatDraft,
+    zoom: 12,
+    bearing: 0,
+    pitch: 0,
+    padding: { left: 0, right: 0, top: 0, bottom: 0 },
+  });
+  useEffect(() => {
+    setInlineMapView((prev) => ({
+      ...prev,
+      latitude: resourceLatDraft,
+      longitude: resourceLonDraft,
+    }));
+  }, [resourceLatDraft, resourceLonDraft]);
   const [resourceGroundDraft, setResourceGroundDraft] = useState(0);
   const [resourceAntennaDraft, setResourceAntennaDraft] = useState(2);
   const [resourceTxPowerDraft, setResourceTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
@@ -1255,6 +1270,8 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(result.lat);
     setNewLibraryLon(result.lon);
+    setResourceLatDraft(result.lat);
+    setResourceLonDraft(result.lon);
     updateMapViewport({
       center: { lat: result.lat, lon: result.lon },
       zoom: 12,
@@ -2594,10 +2611,25 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                     </label>
                   </div>
                   <Map
-                    initialViewState={{
-                      longitude: resourceLonDraft,
-                      latitude: resourceLatDraft,
-                      zoom: 12,
+                    {...{
+                      longitude: inlineMapView.longitude,
+                      latitude: inlineMapView.latitude,
+                      zoom: inlineMapView.zoom,
+                      bearing: inlineMapView.bearing,
+                      pitch: inlineMapView.pitch,
+                      padding: inlineMapView.padding,
+                      width: 200,
+                      height: 150,
+                    }}
+                    onMoveEnd={(event) => {
+                      setInlineMapView({
+                        longitude: event.viewState.longitude,
+                        latitude: event.viewState.latitude,
+                        zoom: event.viewState.zoom,
+                        bearing: event.viewState.bearing ?? 0,
+                        pitch: event.viewState.pitch ?? 0,
+                        padding: event.viewState.padding as { left: number; right: number; top: number; bottom: number },
+                      });
                     }}
                     mapStyle={resolvedBasemap.style}
                     onClick={(event) => {
