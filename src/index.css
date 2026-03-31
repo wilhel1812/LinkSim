@@ -643,21 +643,6 @@ input {
   text-overflow: ellipsis;
 }
 
-.copy-toast {
-  position: fixed;
-  left: 50%;
-  top: 52%;
-  transform: translate(-50%, -50%);
-  z-index: 12000;
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--accent);
-  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
-  box-shadow: var(--shadow-elev-2);
-  color: var(--text);
-  font-weight: 700;
-}
-
 .workspace-panel.is-map-expanded {
   grid-template-rows: minmax(0, 1fr);
   padding-right: 0;
@@ -816,7 +801,8 @@ input {
   top: calc(18px + 36px + var(--workspace-panel-gap));
   left: 50%;
   transform: translateX(-50%);
-  width: min(92vw, 760px);
+  width: max-content;
+  max-width: min(calc(100% - 36px), calc(100% - (var(--sidebar-overlay-width) * 2) - 60px));
   z-index: 55;
   display: inline-flex;
   align-items: center;
@@ -828,6 +814,11 @@ input {
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   font-size: 0.84rem;
   box-shadow: var(--shadow-elev-3);
+}
+
+.workspace-panel.is-map-expanded .map-inline-notice,
+.workspace-panel.is-profile-expanded .map-inline-notice {
+  max-width: calc(100% - 36px);
 }
 
 .map-inline-notice-warning {
@@ -2041,7 +2032,7 @@ input {
 
   .map-inline-notice {
     top: calc(var(--mobile-controls-top) + 42px + var(--workspace-panel-gap));
-    width: calc(100% - 24px);
+    max-width: calc(100% - 24px);
   }
 
   .map-provider-field .locale-select {
