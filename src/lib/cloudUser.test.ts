@@ -6,6 +6,7 @@ import {
   fetchResourceChanges,
   fetchAdminAuditEvents,
   updateUserRole,
+  updateMyProfile,
 } from "./cloudUser";
 
 beforeEach(() => {
@@ -29,6 +30,23 @@ describe("cloudUser client", () => {
 
     const result = await fetchMe();
     expect(result.id).toBe("u1");
+    const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+    const headers = new Headers((init as RequestInit | undefined)?.headers ?? {});
+    expect(headers.has("content-type")).toBe(false);
+  });
+
+  it("sends JSON content-type when request has body", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ user: { id: "u1", username: "U", bio: "", avatarUrl: "", isAdmin: false, isApproved: true, createdAt: "x", updatedAt: "x" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await updateMyProfile({ bio: "hello" });
+    const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+    const headers = new Headers((init as RequestInit | undefined)?.headers ?? {});
+    expect(headers.get("content-type")).toBe("application/json");
   });
 
   it("normalizes non-array users and changes payloads", async () => {
