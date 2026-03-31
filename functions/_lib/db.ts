@@ -68,6 +68,20 @@ const slugifyName = (value: string): string =>
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
 
+const DELIMITER_CHARS = /[+<>~\/]/g;
+const VARIATION_SELECTORS = /[\uFE0E\uFE0F]/g;
+
+export const canonicalizeSimulationLookupKey = (value: string): string =>
+  value
+    .trim()
+    .toLocaleLowerCase()
+    .normalize("NFKC")
+    .replace(VARIATION_SELECTORS, "")
+    .replace(DELIMITER_CHARS, "")
+    .replace(/\s+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
 const sanitizeSlugAliasList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -1911,19 +1925,26 @@ export const resolveSimulationIdBySlug = async (
 ): Promise<string | null> => {
   await ensureSchema(env);
   const slug = slugifyName(simulationSlug);
-  if (!slug) return null;
+  const canonicalKey = canonicalizeSimulationLookupKey(simulationSlug);
+  if (!slug && !canonicalKey) return null;
   const rows = await env.DB
     .prepare("SELECT id, name, payload_json FROM simulations LIMIT 8000")
     .all<{ id: string; name: string; payload_json: string }>();
   for (const row of rows.results) {
     const nameSlug = slugifyName(row.name);
-    if (nameSlug === slug) return row.id;
+    if (slug && nameSlug === slug) return row.id;
+    if (canonicalKey && canonicalizeSimulationLookupKey(row.name) === canonicalKey) return row.id;
     try {
       const payload = JSON.parse(row.payload_json) as { slug?: unknown; slugAliases?: unknown };
-      const payloadSlug = typeof payload.slug === "string" ? slugifyName(payload.slug) : "";
-      if (payloadSlug && payloadSlug === slug) return row.id;
-      const aliases = sanitizeSlugAliasList(payload.slugAliases);
-      if (aliases.includes(slug)) return row.id;
+      const payloadSlugRaw = typeof payload.slug === "string" ? payload.slug : "";
+      const payloadSlug = slugifyName(payloadSlugRaw);
+      if (slug && payloadSlug && payloadSlug === slug) return row.id;
+      if (canonicalKey && payloadSlugRaw && canonicalizeSimulationLookupKey(payloadSlugRaw) === canonicalKey) return row.id;
+      const aliases = Array.isArray(payload.slugAliases)
+        ? payload.slugAliases.filter((alias): alias is string => typeof alias === "string" && alias.trim().length > 0)
+        : [];
+      if (slug && aliases.some((alias) => slugifyName(alias) === slug)) return row.id;
+      if (canonicalKey && aliases.some((alias) => canonicalizeSimulationLookupKey(alias) === canonicalKey)) return row.id;
     } catch {
       // ignore invalid payload rows
     }
