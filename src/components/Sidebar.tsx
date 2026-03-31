@@ -255,9 +255,10 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
 
 type SidebarProps = {
   onOpenHelp?: () => void;
+  hideLibraryBrowsing?: boolean;
 };
 
-export function Sidebar({ onOpenHelp }: SidebarProps) {
+export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
@@ -602,19 +603,27 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   }, [siteLibrary]);
   useEffect(() => {
     if (showNewSimulationRequest) {
+      if (hideLibraryBrowsing) {
+        setShowNewSimulationRequest(false);
+        return;
+      }
       setNewSimulationName("");
       setNewSimulationDescription("");
       setNewSimulationNameError("");
       setShowNewSimulationModal(true);
       setShowNewSimulationRequest(false);
     }
-  }, [showNewSimulationRequest, setShowNewSimulationRequest]);
+  }, [hideLibraryBrowsing, showNewSimulationRequest, setShowNewSimulationRequest]);
   useEffect(() => {
     if (showSiteLibraryRequest) {
+      if (hideLibraryBrowsing) {
+        setShowSiteLibraryRequest(false);
+        return;
+      }
       setShowSiteLibraryManager(true);
       setShowSiteLibraryRequest(false);
     }
-  }, [showSiteLibraryRequest, setShowSiteLibraryRequest]);
+  }, [hideLibraryBrowsing, showSiteLibraryRequest, setShowSiteLibraryRequest]);
   useEffect(() => {
     persistLibraryFilterState(SITE_LIBRARY_FILTERS_KEY, siteLibraryFilters);
   }, [siteLibraryFilters]);
@@ -1731,33 +1740,39 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           <InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />
         </div>
         <div className="chip-group simulation-buttons">
-          <button
-            className="inline-action"
-            onClick={() => setShowSimulationLibraryManager(true)}
-            type="button"
-          >
-            Library
-          </button>
-          <button
-            className="inline-action"
-            onClick={() => {
-              setNewSimulationName("");
-              setNewSimulationDescription("");
-              setNewSimulationNameError("");
-              setShowNewSimulationModal(true);
-            }}
-            type="button"
-          >
-            New
-          </button>
-          <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-            Duplicate
-          </button>
-          {selectedSimulationRef.startsWith("saved:") ? (
-            <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
-              Edit
-            </button>
-          ) : null}
+          {!hideLibraryBrowsing ? (
+            <>
+              <button
+                className="inline-action"
+                onClick={() => setShowSimulationLibraryManager(true)}
+                type="button"
+              >
+                Library
+              </button>
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setNewSimulationName("");
+                  setNewSimulationDescription("");
+                  setNewSimulationNameError("");
+                  setShowNewSimulationModal(true);
+                }}
+                type="button"
+              >
+                New
+              </button>
+              <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+                Duplicate
+              </button>
+              {selectedSimulationRef.startsWith("saved:") ? (
+                <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
+                  Edit
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <span className="field-help">Shared-link guest mode: library browsing is hidden.</span>
+          )}
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
       </section>
@@ -1784,17 +1799,21 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           ))}
         </div>
         <div className="chip-group">
-          <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
-            Library
-          </button>
-          {newestSiteLibraryEntryId ? (
-            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
-              Insert newest
-            </button>
+          {!hideLibraryBrowsing ? (
+            <>
+              <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
+                Library
+              </button>
+              {newestSiteLibraryEntryId ? (
+                <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
+                  Insert newest
+                </button>
+              ) : null}
+              <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+                Edit
+              </button>
+            </>
           ) : null}
-          <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
-            Edit
-          </button>
           <button
             className="inline-action danger"
             disabled={sites.length <= 1}
@@ -2809,7 +2828,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           </div>
         </ModalOverlay>
       ) : null}
-      {showNewSimulationModal ? (
+      {showNewSimulationModal && !hideLibraryBrowsing ? (
         <ModalOverlay
           aria-label="New Simulation"
           onClose={() => {
@@ -2880,7 +2899,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
         </ModalOverlay>
       ) : null}
 
-      {showSimulationLibraryManager ? (
+      {showSimulationLibraryManager && !hideLibraryBrowsing ? (
         <ModalOverlay
           aria-label="Simulation Library"
           onClose={() => setShowSimulationLibraryManager(false)}
@@ -2929,7 +2948,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           </div>
         </ModalOverlay>
       ) : null}
-      {showSiteLibraryManager ? (
+      {showSiteLibraryManager && !hideLibraryBrowsing ? (
         <ModalOverlay
           aria-label="Site Library"
           onClose={() => {
