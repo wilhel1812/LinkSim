@@ -115,6 +115,7 @@ export function AppShell() {
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const [showLibraryFromRequest, setShowLibraryFromRequest] = useState(false);
   const deepLinkAppliedRef = useRef(false);
+  const deepLinkLoadFailedRef = useRef(false);
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
@@ -215,6 +216,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (!deepLinkAppliedRef.current) return;
+    if (deepLinkParse.ok && deepLinkLoadFailedRef.current) return;
 
     const reserved = ["api", "cdn-cgi", "assets", "meshmap"];
     const head = (window.location.pathname ?? "/").split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
@@ -240,7 +242,7 @@ export function AppShell() {
     if (currentPath !== targetPath) {
       window.history.replaceState(null, "", targetPath);
     }
-  }, [currentShareLink, activeSimulation, selectedSiteIds, sites]);
+  }, [currentShareLink, activeSimulation, selectedSiteIds, sites, deepLinkParse.ok]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -563,6 +565,7 @@ export function AppShell() {
       return;
     }
     if (!deepLinkParse.ok) {
+      deepLinkLoadFailedRef.current = deepLinkParse.reason !== "missing_sim";
       if (deepLinkParse.reason !== "missing_sim") {
         publishAppNotice({
           id: "invalid-deep-link",
@@ -581,6 +584,7 @@ export function AppShell() {
     }
 
     void (async () => {
+      deepLinkLoadFailedRef.current = false;
       const payload = deepLinkParse.payload;
       const safeDecode = (value: string): string => {
         try {
@@ -661,6 +665,7 @@ export function AppShell() {
           resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
           exists = Boolean(resolvedSimulationId);
         } catch {
+          deepLinkLoadFailedRef.current = true;
           publishAppNotice({
             id: "shared-simulation-unavailable",
             message: "This shared simulation is unavailable.",
@@ -705,6 +710,7 @@ export function AppShell() {
               }
             }
             if (!exists) {
+              deepLinkLoadFailedRef.current = true;
               deepLinkAppliedRef.current = true;
               return;
             }
@@ -726,6 +732,7 @@ export function AppShell() {
                 resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
                 exists = Boolean(resolvedSimulationId);
               } catch {
+                deepLinkLoadFailedRef.current = true;
                 publishAppNotice({
                   id: "shared-simulation-missing",
                   message: "This shared simulation no longer exists.",
@@ -736,6 +743,7 @@ export function AppShell() {
                 return;
               }
             } else {
+              deepLinkLoadFailedRef.current = true;
               publishAppNotice({
                 id: "shared-simulation-missing",
                 message: "This shared simulation no longer exists.",
@@ -761,6 +769,7 @@ export function AppShell() {
             simulationSlug: payload.simulationSlug,
           });
           if (status.status === "forbidden") {
+            deepLinkLoadFailedRef.current = true;
             publishAppNotice({
               id: "shared-simulation-forbidden",
               message: "You do not have access to this shared simulation.",
@@ -771,6 +780,7 @@ export function AppShell() {
             return;
           }
           if (status.status === "missing") {
+            deepLinkLoadFailedRef.current = true;
             publishAppNotice({
               id: "shared-simulation-missing",
               message: "This shared simulation no longer exists.",
@@ -793,10 +803,12 @@ export function AppShell() {
           persistent: true,
         });
         deepLinkAppliedRef.current = true;
+        deepLinkLoadFailedRef.current = true;
         return;
       }
 
       if (!resolvedSimulationId) {
+        deepLinkLoadFailedRef.current = true;
         publishAppNotice({
           id: "shared-simulation-unavailable",
           message: "This shared simulation is unavailable.",
@@ -807,6 +819,7 @@ export function AppShell() {
         return;
       }
       loadSimulationPreset(resolvedSimulationId);
+      deepLinkLoadFailedRef.current = false;
       const latest = useAppStore.getState();
       const decodedLinkSlugs = payload.selectedLinkSlugs?.map(safeDecode);
       const decodedSiteSlugs = payload.selectedSiteSlugs?.map(safeDecode);
@@ -1180,7 +1193,7 @@ export function AppShell() {
       style={shellStyle}
     >
       {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? (
-        <Sidebar hideLibraryBrowsing={isAnonymousGuestReadonly} onOpenHelp={openOnboardingTutorial} />
+        <Sidebar hideLibraryBrowsing={isAnonymousGuestReadonly} onOpenHelp={openOnboardingTutorial} readOnly={!canPersistWorkspace} />
       ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {!isOnline && !offlineBannerDismissed ? (
@@ -1357,7 +1370,7 @@ export function AppShell() {
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "sidebar" ? (
           <div className="mobile-workspace-panel mobile-workspace-panel-sidebar" role="tabpanel" aria-label="Sidebar panel">
             {(accessState === "granted" || accessState === "readonly") ? (
-              <Sidebar hideLibraryBrowsing={isAnonymousGuestReadonly} onOpenHelp={openOnboardingTutorial} />
+              <Sidebar hideLibraryBrowsing={isAnonymousGuestReadonly} onOpenHelp={openOnboardingTutorial} readOnly={!canPersistWorkspace} />
             ) : null}
           </div>
         ) : null}

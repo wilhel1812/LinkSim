@@ -256,9 +256,10 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
 type SidebarProps = {
   onOpenHelp?: () => void;
   hideLibraryBrowsing?: boolean;
+  readOnly?: boolean;
 };
 
-export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false }: SidebarProps) {
+export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = false }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
@@ -1823,21 +1824,23 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false }: SidebarProp
               </button>
             </>
           ) : null}
-          <button
-            className="inline-action danger"
-            disabled={sites.length <= 1}
-            onClick={() =>
-              requestDeleteConfirm(
-                "Remove Site",
-                `Remove ${selectedSite.name} from the current simulation?`,
-                () => deleteSite(selectedSite.id),
-                "Remove",
-              )
-            }
-            type="button"
-          >
-            Remove
-          </button>
+          {!readOnly ? (
+            <button
+              className="inline-action danger"
+              disabled={sites.length <= 1}
+              onClick={() =>
+                requestDeleteConfirm(
+                  "Remove Site",
+                  `Remove ${selectedSite.name} from the current simulation?`,
+                  () => deleteSite(selectedSite.id),
+                  "Remove",
+                )
+              }
+              type="button"
+            >
+              Remove
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -2035,26 +2038,30 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false }: SidebarProp
           ))}
         </div>
         <div className="chip-group">
-          <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
-            New
-          </button>
-          <button className="inline-action" onClick={openEditLinkModal} type="button">
-            Edit
-          </button>
-          <button
-            className="inline-action danger"
-            disabled={!links.length}
-            onClick={() =>
-              requestDeleteConfirm(
-                "Delete Link",
-                `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
-                () => deleteLink(selectedLink.id),
-              )
-            }
-            type="button"
-          >
-            Remove
-          </button>
+          {!readOnly ? (
+            <>
+              <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+                New
+              </button>
+              <button className="inline-action" onClick={openEditLinkModal} type="button">
+                Edit
+              </button>
+              <button
+                className="inline-action danger"
+                disabled={!links.length}
+                onClick={() =>
+                  requestDeleteConfirm(
+                    "Delete Link",
+                    `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
+                    () => deleteLink(selectedLink.id),
+                  )
+                }
+                type="button"
+              >
+                Remove
+              </button>
+            </>
+          ) : null}
         </div>
       </section>
 
