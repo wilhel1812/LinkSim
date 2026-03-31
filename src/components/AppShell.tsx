@@ -131,6 +131,7 @@ export function AppShell() {
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
     [simulationPresets, selectedScenarioId],
   );
+  const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
@@ -359,7 +360,7 @@ export function AppShell() {
           window.location.href = "/cdn-cgi/access/logout";
           return;
         }
-        if (deepLinkParse.ok && (message.includes("401") || message.includes("Unauthorized"))) {
+        if (deepLinkParse.ok) {
           setAccessState("readonly");
           setDeepLinkNotice("Read-only shared view.");
           return;
@@ -1038,7 +1039,7 @@ export function AppShell() {
       style={shellStyle}
     >
       {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? (
-        <Sidebar onOpenHelp={openOnboardingTutorial} />
+        <Sidebar hideLibraryBrowsing={isAnonymousGuestReadonly} onOpenHelp={openOnboardingTutorial} />
       ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {!isOnline && !offlineBannerDismissed ? (
@@ -1060,18 +1061,26 @@ export function AppShell() {
             </div>
           </div>
         ) : null}
-        {accessState === "readonly" ? <p className="field-help">Read-only shared view.</p> : null}
+        {accessState === "readonly" ? (
+          <p className="field-help">
+            {isAnonymousGuestReadonly
+              ? "Read-only guest view. Library browsing is hidden in shared-link mode."
+              : "Read-only shared view."}
+          </p>
+        ) : null}
         {workspaceState === "no-simulation" ? (
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
               <p>Open an existing simulation or create a new one to continue.</p>
-              <button
-                className="inline-action"
-                onClick={() => setShowSimulationLibraryRequest(true)}
-                type="button"
-              >
-                Open Library
-              </button>
+              {!isAnonymousGuestReadonly ? (
+                <button
+                  className="inline-action"
+                  onClick={() => setShowSimulationLibraryRequest(true)}
+                  type="button"
+                >
+                  Open Library
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -1197,7 +1206,9 @@ export function AppShell() {
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "sidebar" ? (
           <div className="mobile-workspace-panel mobile-workspace-panel-sidebar" role="tabpanel" aria-label="Sidebar panel">
-            {(accessState === "granted" || accessState === "readonly") ? <Sidebar onOpenHelp={openOnboardingTutorial} /> : null}
+            {(accessState === "granted" || accessState === "readonly") ? (
+              <Sidebar hideLibraryBrowsing={isAnonymousGuestReadonly} onOpenHelp={openOnboardingTutorial} />
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -1215,7 +1226,7 @@ export function AppShell() {
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
       <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
-      {showLibraryFromRequest ? (
+      {showLibraryFromRequest && !isAnonymousGuestReadonly ? (
         <ModalOverlay
           aria-label="Simulation Library"
           onClose={() => setShowLibraryFromRequest(false)}
