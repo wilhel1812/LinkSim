@@ -793,6 +793,10 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false }: SidebarProp
     setSelectedLinkId(visibleLinks[0].id);
   }, [selectedLinkId, setSelectedLinkId, visibleLinks]);
   useEffect(() => {
+    if (hideLibraryBrowsing) {
+      setResourceCollaboratorDirectory([]);
+      return;
+    }
     let canceled = false;
     const loadDirectory = () => {
       if (canceled) return;
@@ -817,8 +821,13 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false }: SidebarProp
       canceled = true;
       window.clearTimeout(timerId);
     };
-  }, []);
+  }, [hideLibraryBrowsing]);
   useEffect(() => {
+    if (hideLibraryBrowsing) {
+      setResourceCollaboratorDirectoryBusy(false);
+      setResourceCollaboratorDirectoryStatus("");
+      return;
+    }
     if (!resourceDetailsPopup) return;
     let canceled = false;
     setResourceCollaboratorDirectoryBusy(true);
@@ -840,7 +849,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false }: SidebarProp
     return () => {
       canceled = true;
     };
-  }, [resourceDetailsPopup]);
+  }, [hideLibraryBrowsing, resourceDetailsPopup]);
   const meshmapNodesInView = useMemo(() => {
     const lonSpan = Math.max(0.12, 360 / Math.pow(2, meshmapView.zoom) * 2.2);
     const latSpan = Math.max(0.12, 170 / Math.pow(2, meshmapView.zoom) * 1.8);
@@ -1727,7 +1736,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false }: SidebarProp
 
   return (
     <aside className="sidebar-panel">
-      <UserAdminPanel onOpenHelp={onOpenHelp} />
+      {!hideLibraryBrowsing ? <UserAdminPanel onOpenHelp={onOpenHelp} /> : null}
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>
