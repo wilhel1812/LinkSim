@@ -106,8 +106,6 @@ export function AppShell() {
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
-  const [shareStatus, setShareStatus] = useState<string | null>(null);
-  const [copyToast, setCopyToast] = useState<string | null>(null);
   const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
   const [showMobileWarning, setShowMobileWarning] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
@@ -147,6 +145,12 @@ export function AppShell() {
       return notice;
     });
   }, []);
+  const publishTransientNotice = useCallback(
+    (id: string, message: string, tone: AppNotice["tone"] = "info") => {
+      publishAppNotice({ id, message, tone, persistent: false });
+    },
+    [publishAppNotice],
+  );
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
@@ -332,11 +336,17 @@ export function AppShell() {
           return;
         }
         if (deepLinkParse.ok && !isLocalRuntime) {
-          if (cancelled || timedOut) return;
-          window.clearTimeout(timeoutId);
-          setAccessDiagnosticMessage(null);
-          setAccessState("readonly");
-          return;
+          const deepLinkStatus = await fetchDeepLinkStatus({
+            simulationId: deepLinkParse.payload.simulationId,
+            simulationSlug: deepLinkParse.payload.simulationSlug,
+          });
+          if (!deepLinkStatus.authenticated) {
+            if (cancelled || timedOut) return;
+            window.clearTimeout(timeoutId);
+            setAccessDiagnosticMessage(null);
+            setAccessState("readonly");
+            return;
+          }
         }
         const profile = await fetchMe();
         if (cancelled || timedOut) return;
@@ -400,7 +410,7 @@ export function AppShell() {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [deepLinkParse.ok, isLocalRuntime, isInitializing, setCurrentUser]);
+  }, [deepLinkParse, isLocalRuntime, isInitializing, setCurrentUser]);
 
   useEffect(() => {
     if (accessState === "granted") {
@@ -956,43 +966,58 @@ export function AppShell() {
 
   const copyCurrentLink = useCallback(async () => {
     if (!activeSimulation) {
-      setShareStatus("Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.");
+      publishAppNotice({
+        id: "share-open-simulation-first",
+        message: "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
+        tone: "warning",
+        persistent: true,
+      });
       return;
     }
     if (!currentShareLink) {
-      setShareStatus("Unable to build share link for this simulation.");
+      publishAppNotice({
+        id: "share-link-build-failed",
+        message: "Unable to build share link for this simulation.",
+        tone: "error",
+        persistent: true,
+      });
       return;
     }
     await copyToClipboard(currentShareLink);
-    setShareStatus("Share link copied.");
-    setCopyToast("Copied to clipboard");
-  }, [activeSimulation, currentShareLink]);
-
-  useEffect(() => {
-    if (!copyToast) return;
-    const timer = window.setTimeout(() => setCopyToast(null), 1200);
-    return () => window.clearTimeout(timer);
-  }, [copyToast]);
+    publishTransientNotice("share-link-copied", "Share link copied.");
+  }, [activeSimulation, currentShareLink, publishAppNotice, publishTransientNotice]);
 
   const runUpgradeAndShare = useCallback(async () => {
     if (!activeSimulation || !currentUser) {
-      setShareStatus("No active saved simulation.");
+      publishAppNotice({
+        id: "share-no-active-simulation",
+        message: "No active saved simulation.",
+        tone: "warning",
+        persistent: true,
+      });
       return;
     }
     if (!canEditResource(activeSimulation)) {
-      setShareStatus("You do not have edit access to this simulation.");
+      publishAppNotice({
+        id: "share-no-edit-access-simulation",
+        message: "You do not have edit access to this simulation.",
+        tone: "warning",
+        persistent: true,
+      });
       return;
     }
     const blockedSites = referencedPrivateSites.filter((site) => !canEditResource(site));
     if (blockedSites.length) {
-      setShareStatus(
-        `Cannot upgrade ${blockedSites.length} private site(s) because you do not have edit access to them.`,
-      );
+      publishAppNotice({
+        id: "share-no-edit-access-sites",
+        message: `Cannot upgrade ${blockedSites.length} private site(s) because you do not have edit access to them.`,
+        tone: "warning",
+        persistent: true,
+      });
       return;
     }
 
     setShareBusy(true);
-    setShareStatus("Upgrading visibility and syncing to cloud...");
     try {
       for (const site of referencedPrivateSites) {
         updateSiteLibraryEntry(site.id, { visibility: "shared" });
@@ -1012,13 +1037,27 @@ export function AppShell() {
       });
 
       await copyCurrentLink();
-      setShareStatus("Simulation and referenced sites are now Shared. Link copied.");
+      publishTransientNotice("share-upgrade-complete", "Simulation and referenced sites are now Shared. Link copied.");
     } catch (error) {
-      setShareStatus(`Upgrade failed: ${getUiErrorMessage(error)}`);
+      publishAppNotice({
+        id: "share-upgrade-failed",
+        message: `Upgrade failed: ${getUiErrorMessage(error)}`,
+        tone: "error",
+        persistent: true,
+      });
     } finally {
       setShareBusy(false);
     }
-  }, [activeSimulation, copyCurrentLink, currentUser, referencedPrivateSites, updateSimulationPresetEntry, updateSiteLibraryEntry]);
+  }, [
+    activeSimulation,
+    copyCurrentLink,
+    currentUser,
+    publishAppNotice,
+    publishTransientNotice,
+    referencedPrivateSites,
+    updateSimulationPresetEntry,
+    updateSiteLibraryEntry,
+  ]);
 
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     if (!isMobileViewport) return undefined;
@@ -1201,7 +1240,6 @@ export function AppShell() {
               Return to Local User
             </button>
           ) : null}
-          {shareStatus ? <span className="field-help">{shareStatus}</span> : null}
         </div>
         <MapView
           isMapExpanded={isMapExpanded}
@@ -1211,11 +1249,14 @@ export function AppShell() {
           onShare={
             accessState === "granted"
               ? () => {
-                  setShareStatus(null);
+                  setAppNotice(null);
                   if (!activeSimulation) {
-                    setShareStatus(
-                      "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
-                    );
+                    publishAppNotice({
+                      id: "share-open-simulation-first",
+                      message: "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
+                      tone: "warning",
+                      persistent: true,
+                    });
                     return;
                   }
                   if (toVisibility(activeSimulation.visibility) === "private") {
@@ -1223,8 +1264,14 @@ export function AppShell() {
                     return;
                   }
                   void copyCurrentLink()
-                    .then(() => setShareStatus("Copied to clipboard."))
-                    .catch((error) => setShareStatus(getUiErrorMessage(error)));
+                    .catch((error) => {
+                      publishAppNotice({
+                        id: "share-copy-failed",
+                        message: getUiErrorMessage(error),
+                        tone: "error",
+                        persistent: true,
+                      });
+                    });
                 }
               : undefined
           }
@@ -1386,7 +1433,6 @@ export function AppShell() {
           </div>
         </ModalOverlay>
       ) : null}
-      {copyToast ? <div className="copy-toast">{copyToast}</div> : null}
       {showShareModal ? (
         <ModalOverlay aria-label="Share simulation" onClose={() => setShowShareModal(false)}>
           <div className="library-manager-card">
@@ -1429,7 +1475,6 @@ export function AppShell() {
                 ) : null}
               </>
             )}
-            {shareStatus ? <p className="field-help">{shareStatus}</p> : null}
           </div>
         </ModalOverlay>
       ) : null}
