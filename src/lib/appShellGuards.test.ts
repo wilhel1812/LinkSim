@@ -36,6 +36,10 @@ describe("isAuthSignInRequiredMessage", () => {
     expect(isAuthSignInRequiredMessage("Unauthorized")).toBe(true);
     expect(isAuthSignInRequiredMessage("401 Unauthorized")).toBe(true);
     expect(isAuthSignInRequiredMessage("Authentication required")).toBe(true);
+    expect(isAuthSignInRequiredMessage("Load failed")).toBe(true);
+    expect(isAuthSignInRequiredMessage("Failed to fetch")).toBe(true);
+    expect(isAuthSignInRequiredMessage("Sign in · Cloudflare Access")).toBe(true);
+    expect(isAuthSignInRequiredMessage("You are signed out. Sign in to continue.")).toBe(true);
   });
 
   it("ignores unrelated errors", () => {
