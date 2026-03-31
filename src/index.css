@@ -798,7 +798,7 @@ input {
 
 .map-inline-notice {
   position: absolute;
-  top: calc(18px + 36px + var(--workspace-panel-gap));
+  top: calc(18px + 36px + (var(--workspace-panel-gap) * 2));
   left: 50%;
   transform: translateX(-50%);
   width: max-content;
@@ -822,11 +822,11 @@ input {
 }
 
 .map-inline-notice-warning {
-  border-color: color-mix(in srgb, #f2b44b 68%, var(--border));
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
 }
 
 .map-inline-notice-error {
-  border-color: color-mix(in srgb, #d85a5a 70%, var(--border));
+  border-color: color-mix(in srgb, var(--text) 34%, var(--border));
 }
 
 .map-inline-notice .inline-action {
@@ -2031,7 +2031,7 @@ input {
   }
 
   .map-inline-notice {
-    top: calc(var(--mobile-controls-top) + 42px + var(--workspace-panel-gap));
+    top: calc(var(--mobile-controls-top) + 42px + (var(--workspace-panel-gap) * 2));
     max-width: calc(100% - 24px);
   }
 
