@@ -17,6 +17,10 @@
   --focus-outline: color-mix(in srgb, var(--accent) 62%, Canvas 18%);
   --glass-panel-opacity: 75%;
   --glass-panel-blur: 12px;
+  --state-pass-clear: var(--success);
+  --state-pass-blocked: var(--warning);
+  --state-fail-clear: color-mix(in srgb, var(--warning) 45%, var(--danger));
+  --state-fail-blocked: var(--danger);
 }
 
 * {
@@ -944,7 +948,9 @@ input {
   gap: 4px;
   font-size: 0.7rem;
   color: color-mix(in srgb, var(--text) 88%, transparent);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.82), 0 0 6px rgba(0, 0, 0, 0.68);
+  text-shadow:
+    0 1px 2px color-mix(in srgb, var(--bg) 82%, transparent),
+    0 0 6px color-mix(in srgb, var(--bg) 68%, transparent);
   pointer-events: none;
   white-space: nowrap;
 }
@@ -1275,11 +1281,11 @@ input {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: linear-gradient(
     90deg,
-    rgb(105, 42, 45) 0%,
-    rgb(201, 92, 45) 35%,
-    rgb(218, 175, 55) 58%,
-    rgb(95, 178, 95) 82%,
-    rgb(64, 150, 178) 100%
+    color-mix(in srgb, var(--state-fail-blocked) 88%, var(--text)) 0%,
+    color-mix(in srgb, var(--state-fail-clear) 94%, var(--text)) 35%,
+    color-mix(in srgb, var(--state-pass-blocked) 92%, var(--text)) 58%,
+    color-mix(in srgb, var(--state-pass-clear) 90%, var(--text)) 82%,
+    color-mix(in srgb, var(--los) 84%, var(--text)) 100%
   );
 }
 
@@ -1637,7 +1643,7 @@ input {
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, var(--surface) 10%);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
+  box-shadow: var(--shadow-elev-3);
   font-size: 0.75rem;
   color: var(--text);
   z-index: 2;
@@ -1657,19 +1663,19 @@ input {
 }
 
 .state-dot-pass_clear {
-  background: #52b560;
+  background: var(--state-pass-clear);
 }
 
 .state-dot-pass_blocked {
-  background: #e8aa48;
+  background: var(--state-pass-blocked);
 }
 
 .state-dot-fail_clear {
-  background: #eb7846;
+  background: var(--state-fail-clear);
 }
 
 .state-dot-fail_blocked {
-  background: #cd574f;
+  background: var(--state-fail-blocked);
 }
 
 .chart-footer-row {
@@ -1751,19 +1757,19 @@ input {
 }
 
 .terrain-state-pass_clear {
-  stroke: #52b560;
+  stroke: var(--state-pass-clear);
 }
 
 .terrain-state-pass_blocked {
-  stroke: #e8aa48;
+  stroke: var(--state-pass-blocked);
 }
 
 .terrain-state-fail_clear {
-  stroke: #eb7846;
+  stroke: var(--state-fail-clear);
 }
 
 .terrain-state-fail_blocked {
-  stroke: #cd574f;
+  stroke: var(--state-fail-blocked);
 }
 
 .terrain-line-neutral {
@@ -1788,19 +1794,19 @@ input {
 }
 
 .los-path.state-pass_clear {
-  stroke: #52b560;
+  stroke: var(--state-pass-clear);
 }
 
 .los-path.state-pass_blocked {
-  stroke: #e8aa48;
+  stroke: var(--state-pass-blocked);
 }
 
 .los-path.state-fail_clear {
-  stroke: #eb7846;
+  stroke: var(--state-fail-clear);
 }
 
 .los-path.state-fail_blocked {
-  stroke: #cd574f;
+  stroke: var(--state-fail-blocked);
 }
 
 .los-path-secondary {
@@ -2114,12 +2120,12 @@ input {
 }
 
 .input-error {
-  border: 1px solid var(--bad, #ff5d5d) !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bad, #ff5d5d) 24%, transparent);
+  border: 1px solid var(--danger) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 24%, transparent);
 }
 
 .field-help-error {
-  color: var(--bad, #ff5d5d);
+  color: var(--danger);
   font-weight: 600;
 }
 
@@ -2135,7 +2141,7 @@ input {
 .inline-action.danger {
   border-color: color-mix(in srgb, var(--danger) 78%, var(--border));
   background: var(--danger);
-  color: var(--danger-on, #fff);
+  color: var(--danger-on);
 }
 
 .inline-action-icon {

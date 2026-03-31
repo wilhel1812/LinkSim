@@ -4,6 +4,7 @@ import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser"
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
+import { type DeepLinkApplyOutcome, isAuthSignInRequiredMessage, shouldRewritePathAfterDeepLinkApply } from "../lib/appShellGuards";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -116,6 +117,7 @@ export function AppShell() {
   const [showLibraryFromRequest, setShowLibraryFromRequest] = useState(false);
   const deepLinkAppliedRef = useRef(false);
   const deepLinkLoadFailedRef = useRef(false);
+  const deepLinkApplyOutcomeRef = useRef<DeepLinkApplyOutcome>("idle");
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
@@ -215,8 +217,15 @@ export function AppShell() {
   }, [activeSimulation, selectedLink, selectedSiteIds, sites]);
 
   useEffect(() => {
-    if (!deepLinkAppliedRef.current) return;
-    if (deepLinkParse.ok && deepLinkLoadFailedRef.current) return;
+    if (
+      !shouldRewritePathAfterDeepLinkApply({
+        deepLinkApplied: deepLinkAppliedRef.current,
+        deepLinkParseOk: deepLinkParse.ok,
+        deepLinkApplyOutcome: deepLinkApplyOutcomeRef.current,
+      })
+    ) {
+      return;
+    }
 
     const reserved = ["api", "cdn-cgi", "assets", "meshmap"];
     const head = (window.location.pathname ?? "/").split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
@@ -405,6 +414,11 @@ export function AppShell() {
           setAccessState("readonly");
           return;
         }
+        if (isAuthSignInRequiredMessage(message)) {
+          setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
+          setAccessState("locked");
+          return;
+        }
         setAccessState("locked");
       }
     })();
@@ -437,6 +451,10 @@ export function AppShell() {
     }
     window.location.href = "/cdn-cgi/access/logout";
   }, [deepLinkParse.ok, isLocalRuntime]);
+
+  const signIn = useCallback(() => {
+    window.location.href = "/cdn-cgi/access/login";
+  }, []);
 
   const switchLocalRole = useCallback(
     async (role: "admin" | "moderator" | "user" | "pending") => {
@@ -566,6 +584,7 @@ export function AppShell() {
     }
     if (!deepLinkParse.ok) {
       deepLinkLoadFailedRef.current = deepLinkParse.reason !== "missing_sim";
+      deepLinkApplyOutcomeRef.current = deepLinkParse.reason === "missing_sim" ? "idle" : "failed";
       if (deepLinkParse.reason !== "missing_sim") {
         publishAppNotice({
           id: "invalid-deep-link",
@@ -585,7 +604,13 @@ export function AppShell() {
 
     void (async () => {
       deepLinkLoadFailedRef.current = false;
+      deepLinkApplyOutcomeRef.current = "idle";
       const payload = deepLinkParse.payload;
+      const markDeepLinkFailed = () => {
+        deepLinkLoadFailedRef.current = true;
+        deepLinkApplyOutcomeRef.current = "failed";
+        deepLinkAppliedRef.current = true;
+      };
       const safeDecode = (value: string): string => {
         try {
           return decodeURIComponent(value);
@@ -665,14 +690,13 @@ export function AppShell() {
           resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
           exists = Boolean(resolvedSimulationId);
         } catch {
-          deepLinkLoadFailedRef.current = true;
+          markDeepLinkFailed();
           publishAppNotice({
             id: "shared-simulation-unavailable",
             message: "This shared simulation is unavailable.",
             tone: "error",
             persistent: true,
           });
-          deepLinkAppliedRef.current = true;
           return;
         }
       }
@@ -710,8 +734,7 @@ export function AppShell() {
               }
             }
             if (!exists) {
-              deepLinkLoadFailedRef.current = true;
-              deepLinkAppliedRef.current = true;
+              markDeepLinkFailed();
               return;
             }
           }
@@ -732,25 +755,23 @@ export function AppShell() {
                 resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
                 exists = Boolean(resolvedSimulationId);
               } catch {
-                deepLinkLoadFailedRef.current = true;
+                markDeepLinkFailed();
                 publishAppNotice({
                   id: "shared-simulation-missing",
                   message: "This shared simulation no longer exists.",
                   tone: "warning",
                   persistent: true,
                 });
-                deepLinkAppliedRef.current = true;
                 return;
               }
             } else {
-              deepLinkLoadFailedRef.current = true;
+              markDeepLinkFailed();
               publishAppNotice({
                 id: "shared-simulation-missing",
                 message: "This shared simulation no longer exists.",
                 tone: "warning",
                 persistent: true,
               });
-              deepLinkAppliedRef.current = true;
               return;
             }
           }
@@ -769,25 +790,23 @@ export function AppShell() {
             simulationSlug: payload.simulationSlug,
           });
           if (status.status === "forbidden") {
-            deepLinkLoadFailedRef.current = true;
+            markDeepLinkFailed();
             publishAppNotice({
               id: "shared-simulation-forbidden",
               message: "You do not have access to this shared simulation.",
               tone: "warning",
               persistent: true,
             });
-            deepLinkAppliedRef.current = true;
             return;
           }
           if (status.status === "missing") {
-            deepLinkLoadFailedRef.current = true;
+            markDeepLinkFailed();
             publishAppNotice({
               id: "shared-simulation-missing",
               message: "This shared simulation no longer exists.",
               tone: "warning",
               persistent: true,
             });
-            deepLinkAppliedRef.current = true;
             return;
           }
           if (status.simulationId) {
@@ -802,24 +821,23 @@ export function AppShell() {
           tone: "error",
           persistent: true,
         });
-        deepLinkAppliedRef.current = true;
-        deepLinkLoadFailedRef.current = true;
+        markDeepLinkFailed();
         return;
       }
 
       if (!resolvedSimulationId) {
-        deepLinkLoadFailedRef.current = true;
+        markDeepLinkFailed();
         publishAppNotice({
           id: "shared-simulation-unavailable",
           message: "This shared simulation is unavailable.",
           tone: "error",
           persistent: true,
         });
-        deepLinkAppliedRef.current = true;
         return;
       }
       loadSimulationPreset(resolvedSimulationId);
       deepLinkLoadFailedRef.current = false;
+      deepLinkApplyOutcomeRef.current = "succeeded";
       const latest = useAppStore.getState();
       const decodedLinkSlugs = payload.selectedLinkSlugs?.map(safeDecode);
       const decodedSiteSlugs = payload.selectedSiteSlugs?.map(safeDecode);
@@ -1078,6 +1096,7 @@ export function AppShell() {
       ["--mobile-controls-occupied" as string]: `${mobileControlsOccupied}px`,
     };
   }, [isMobileViewport, mobileControlsOccupied]);
+  const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
 
   if (accessState === "checking") {
     return (
@@ -1137,16 +1156,28 @@ export function AppShell() {
         <section className="panel-section access-locked-panel">
           <h2>Access unavailable</h2>
           {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
-          <p className="field-help">
-            Your account session is valid, but this account is not available in LinkSim right now.
-          </p>
-          <p className="field-help">
-            If your user was removed by an admin, ask for re-approval. Then sign out and sign in again.
-          </p>
+          {lockedNeedsSignIn ? (
+            <p className="field-help">Sign in with your approved account to continue.</p>
+          ) : (
+            <>
+              <p className="field-help">
+                Your account session is valid, but this account is not available in LinkSim right now.
+              </p>
+              <p className="field-help">
+                If your user was removed by an admin, ask for re-approval. Then sign out and sign in again.
+              </p>
+            </>
+          )}
           <div className="chip-group">
-            <button className="inline-action" onClick={signOutOrReadonly} type="button">
-              Sign Out
-            </button>
+            {lockedNeedsSignIn ? (
+              <button className="inline-action" onClick={signIn} type="button">
+                Sign In
+              </button>
+            ) : (
+              <button className="inline-action" onClick={signOutOrReadonly} type="button">
+                Sign Out
+              </button>
+            )}
             {isLocalRuntime ? (
               <>
                 <button className="inline-action" onClick={() => void switchLocalRole("admin")} type="button">

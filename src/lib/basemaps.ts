@@ -1,4 +1,5 @@
 import type { StyleSpecification } from "maplibre-gl";
+import { THEMES } from "../themes";
 import type { UiColorTheme } from "../themes/types";
 
 export type BasemapProvider = "carto" | "maptiler" | "stadia" | "kartverket";
@@ -98,18 +99,10 @@ const cartoThemedTint = (
   colorTheme: UiColorTheme,
   theme: BasemapTheme,
 ): { color: string; opacity: number } => {
-  if (theme === "dark") {
-    if (colorTheme === "pink") return { color: "#8f5678", opacity: 0.1 };
-    if (colorTheme === "red") return { color: "#8d4b4b", opacity: 0.1 };
-    if (colorTheme === "green") return { color: "#4d7f62", opacity: 0.1 };
-    if (colorTheme === "yellow") return { color: "#7c6524", opacity: 0.1 };
-    return { color: "#4f6f9a", opacity: 0.1 };
-  }
-  if (colorTheme === "pink") return { color: "#d379ab", opacity: 0.08 };
-  if (colorTheme === "red") return { color: "#db8a8a", opacity: 0.08 };
-  if (colorTheme === "green") return { color: "#76b28d", opacity: 0.08 };
-  if (colorTheme === "yellow") return { color: "#e8c65f", opacity: 0.08 };
-  return { color: "#7fa7d8", opacity: 0.08 };
+  return {
+    color: THEMES[colorTheme][theme].cssVars["--terrain"],
+    opacity: theme === "dark" ? 0.1 : 0.08,
+  };
 };
 
 const themedCartoStyle = (theme: BasemapTheme, colorTheme: UiColorTheme): StyleSpecification => {
