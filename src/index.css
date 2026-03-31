@@ -807,8 +807,42 @@ input {
   right: calc(var(--sidebar-overlay-width) + 30px);
 }
 
+.app-shell:not(.is-map-expanded):not(.is-profile-expanded) .map-inline-notice {
+  left: calc(var(--sidebar-overlay-width) + 30px);
+  right: calc(var(--sidebar-overlay-width) + 30px);
+}
+
 .map-controls-unified {
   z-index: 60;
+}
+
+.map-inline-notice {
+  position: absolute;
+  top: 72px;
+  left: 18px;
+  right: 18px;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  box-shadow: var(--shadow-elev-2);
+}
+
+.map-inline-notice-warning {
+  border-color: color-mix(in srgb, #f2b44b 68%, var(--border));
+}
+
+.map-inline-notice-error {
+  border-color: color-mix(in srgb, #d85a5a 70%, var(--border));
+}
+
+.map-inline-notice .inline-action {
+  white-space: nowrap;
 }
 
 .map-controls-icon-only {
@@ -2005,6 +2039,12 @@ input {
 
   .app-shell:not(.is-map-expanded) .map-controls {
     left: 12px;
+  }
+
+  .map-inline-notice {
+    top: calc(var(--mobile-controls-top) + 46px);
+    left: 12px;
+    right: 12px;
   }
 
   .map-provider-field .locale-select {
