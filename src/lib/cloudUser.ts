@@ -124,12 +124,14 @@ export type DeepLinkStatus = "ok" | "forbidden" | "missing";
 export type DeepLinkStatusResult = { status: DeepLinkStatus; simulationId?: string };
 
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const headers = new Headers(init?.headers ?? {});
+  const hasBody = init?.body !== undefined && init.body !== null;
+  if (hasBody && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
   const response = await fetch(path, {
     ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
   if (!response.ok) {
     const raw = await response.text();

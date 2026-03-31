@@ -318,6 +318,14 @@ export function AppShell() {
           setDeepLinkNotice("Local read-only mode.");
           return;
         }
+        if (deepLinkParse.ok && !isLocalRuntime) {
+          if (cancelled || timedOut) return;
+          window.clearTimeout(timeoutId);
+          setAccessDiagnosticMessage(null);
+          setAccessState("readonly");
+          setDeepLinkNotice("Read-only shared view.");
+          return;
+        }
         const profile = await fetchMe();
         if (cancelled || timedOut) return;
         window.clearTimeout(timeoutId);
@@ -350,12 +358,21 @@ export function AppShell() {
         if (cancelled || timedOut) return;
         window.clearTimeout(timeoutId);
         const message = getUiErrorMessage(error);
-        console.error("[AppShell] Access check failed", {
-          message,
-          isLocalRuntime,
-          deepLinkMode: deepLinkParse.ok,
-          online: typeof navigator === "undefined" ? true : navigator.onLine,
-        });
+        if (deepLinkParse.ok) {
+          console.info("[AppShell] Guest deep-link bootstrap using read-only fallback", {
+            message,
+            isLocalRuntime,
+            deepLinkMode: deepLinkParse.ok,
+            online: typeof navigator === "undefined" ? true : navigator.onLine,
+          });
+        } else {
+          console.error("[AppShell] Access check failed", {
+            message,
+            isLocalRuntime,
+            deepLinkMode: deepLinkParse.ok,
+            online: typeof navigator === "undefined" ? true : navigator.onLine,
+          });
+        }
         setAccessDiagnosticMessage(`Access check failed: ${message}`);
         if (message.includes("Session revoked by admin")) {
           window.location.href = "/cdn-cgi/access/logout";
@@ -593,6 +610,28 @@ export function AppShell() {
         }
       }
 
+      if (!exists && accessState === "readonly") {
+        try {
+          const publicBundle = await fetchPublicSimulationLibrary({
+            simulationId: resolvedSimulationId || undefined,
+            simulationSlug: payload.simulationSlug,
+          });
+          importLibraryData(
+            {
+              siteLibrary: publicBundle.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
+              simulationPresets: publicBundle.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
+            },
+            "merge",
+          );
+          resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
+          exists = Boolean(resolvedSimulationId);
+        } catch {
+          setDeepLinkNotice("This shared simulation is unavailable.");
+          deepLinkAppliedRef.current = true;
+          return;
+        }
+      }
+
       if (!exists) {
         try {
           const status = await fetchDeepLinkStatus({
@@ -657,28 +696,6 @@ export function AppShell() {
           }
         } catch {
           // Ignore and use generic message.
-        }
-      }
-
-      if (!exists && accessState === "readonly") {
-        try {
-          const publicBundle = await fetchPublicSimulationLibrary({
-            simulationId: resolvedSimulationId || undefined,
-            simulationSlug: payload.simulationSlug,
-          });
-          importLibraryData(
-            {
-              siteLibrary: publicBundle.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
-              simulationPresets: publicBundle.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
-            },
-            "merge",
-          );
-          resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
-          exists = Boolean(resolvedSimulationId);
-        } catch {
-          setDeepLinkNotice("This shared simulation is unavailable.");
-          deepLinkAppliedRef.current = true;
-          return;
         }
       }
 
