@@ -453,7 +453,8 @@ export function AppShell() {
   }, [deepLinkParse.ok, isLocalRuntime]);
 
   const signIn = useCallback(() => {
-    window.location.href = "/cdn-cgi/access/login";
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
   }, []);
 
   const switchLocalRole = useCallback(
