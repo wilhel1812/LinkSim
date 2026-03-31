@@ -954,6 +954,11 @@ type MapViewProps = {
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
   onShare?: () => void;
+  notice?: {
+    message: string;
+    tone: "info" | "warning" | "error";
+    onDismiss?: () => void;
+  };
 };
 
 type PendingNewSiteDraft = {
@@ -987,6 +992,7 @@ export function MapView({
   canPersist = true,
   onToggleMapExpanded,
   onShare,
+  notice,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
@@ -1993,6 +1999,16 @@ export function MapView({
           ) : null}
         </div>
       </div>
+      {notice ? (
+        <div className={`map-inline-notice map-inline-notice-${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>
+          <span>{notice.message}</span>
+          {notice.onDismiss ? (
+            <button aria-label="Dismiss notice" className="inline-action" onClick={notice.onDismiss} title="Dismiss" type="button">
+              Dismiss
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {(coverageVizMode !== "none" &&
         (!hasHeatTopology ||
         (coverageVizMode === "relay" && !hasRelayTopology) ||

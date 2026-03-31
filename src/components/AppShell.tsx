@@ -29,6 +29,12 @@ const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
 type MobileWorkspacePanel = "profile" | "inspector" | "sidebar";
+type AppNotice = {
+  id: string;
+  message: string;
+  tone: "info" | "warning" | "error";
+  persistent: boolean;
+};
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
@@ -102,7 +108,7 @@ export function AppShell() {
   const [shareBusy, setShareBusy] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
-  const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
+  const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
   const [showMobileWarning, setShowMobileWarning] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("profile");
@@ -133,6 +139,14 @@ export function AppShell() {
     [simulationPresets, selectedScenarioId],
   );
   const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
+  const publishAppNotice = useCallback((notice: AppNotice) => {
+    setAppNotice((current) => {
+      if (current && current.id === notice.id && current.message === notice.message) {
+        return current;
+      }
+      return notice;
+    });
+  }, []);
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
@@ -315,7 +329,6 @@ export function AppShell() {
           window.clearTimeout(timeoutId);
           setAccessDiagnosticMessage(null);
           setAccessState("readonly");
-          setDeepLinkNotice("Local read-only mode.");
           return;
         }
         if (deepLinkParse.ok && !isLocalRuntime) {
@@ -323,7 +336,6 @@ export function AppShell() {
           window.clearTimeout(timeoutId);
           setAccessDiagnosticMessage(null);
           setAccessState("readonly");
-          setDeepLinkNotice("Read-only shared view.");
           return;
         }
         const profile = await fetchMe();
@@ -350,7 +362,6 @@ export function AppShell() {
         }
         if (deepLinkParse.ok) {
           setAccessState("readonly");
-          setDeepLinkNotice("Read-only shared view.");
           return;
         }
         setAccessState("pending");
@@ -380,7 +391,6 @@ export function AppShell() {
         }
         if (deepLinkParse.ok) {
           setAccessState("readonly");
-          setDeepLinkNotice("Read-only shared view.");
           return;
         }
         setAccessState("locked");
@@ -430,11 +440,22 @@ export function AppShell() {
       } catch (error) {
         const message = getUiErrorMessage(error);
         setLocalDevStatus(`Local role switch failed: ${message}`);
-        setDeepLinkNotice(`Local role switch failed: ${message}`);
+        publishAppNotice({
+          id: "local-role-switch-failed",
+          message: `Local role switch failed: ${message}`,
+          tone: "error",
+          persistent: true,
+        });
       }
     },
-    [],
+    [publishAppNotice],
   );
+
+  useEffect(() => {
+    if (!appNotice || appNotice.persistent) return;
+    const timer = window.setTimeout(() => setAppNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [appNotice]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 980px)");
@@ -533,13 +554,17 @@ export function AppShell() {
     }
     if (!deepLinkParse.ok) {
       if (deepLinkParse.reason !== "missing_sim") {
-        setDeepLinkNotice(
-          deepLinkParse.reason === "invalid_version"
-            ? "Unsupported deep-link format."
-            : deepLinkParse.reason === "invalid_slug"
-              ? "The shared link path is invalid."
-              : "The shared link is missing a valid simulation id.",
-        );
+        publishAppNotice({
+          id: "invalid-deep-link",
+          message:
+            deepLinkParse.reason === "invalid_version"
+              ? "Unsupported deep-link format."
+              : deepLinkParse.reason === "invalid_slug"
+                ? "The shared link path is invalid."
+                : "The shared link is missing a valid simulation id.",
+          tone: "warning",
+          persistent: true,
+        });
       }
       deepLinkAppliedRef.current = true;
       return;
@@ -626,7 +651,12 @@ export function AppShell() {
           resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
           exists = Boolean(resolvedSimulationId);
         } catch {
-          setDeepLinkNotice("This shared simulation is unavailable.");
+          publishAppNotice({
+            id: "shared-simulation-unavailable",
+            message: "This shared simulation is unavailable.",
+            tone: "error",
+            persistent: true,
+          });
           deepLinkAppliedRef.current = true;
           return;
         }
@@ -639,7 +669,12 @@ export function AppShell() {
             simulationSlug: payload.simulationSlug,
           });
           if (status.status === "forbidden") {
-            setDeepLinkNotice("You do not have access to this shared simulation.");
+            publishAppNotice({
+              id: "shared-simulation-forbidden",
+              message: "You do not have access to this shared simulation.",
+              tone: "warning",
+              persistent: true,
+            });
             if (accessState === "readonly") {
               try {
                 const publicBundle = await fetchPublicSimulationLibrary({
@@ -681,12 +716,22 @@ export function AppShell() {
                 resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
                 exists = Boolean(resolvedSimulationId);
               } catch {
-                setDeepLinkNotice("This shared simulation no longer exists.");
+                publishAppNotice({
+                  id: "shared-simulation-missing",
+                  message: "This shared simulation no longer exists.",
+                  tone: "warning",
+                  persistent: true,
+                });
                 deepLinkAppliedRef.current = true;
                 return;
               }
             } else {
-              setDeepLinkNotice("This shared simulation no longer exists.");
+              publishAppNotice({
+                id: "shared-simulation-missing",
+                message: "This shared simulation no longer exists.",
+                tone: "warning",
+                persistent: true,
+              });
               deepLinkAppliedRef.current = true;
               return;
             }
@@ -706,12 +751,22 @@ export function AppShell() {
             simulationSlug: payload.simulationSlug,
           });
           if (status.status === "forbidden") {
-            setDeepLinkNotice("You do not have access to this shared simulation.");
+            publishAppNotice({
+              id: "shared-simulation-forbidden",
+              message: "You do not have access to this shared simulation.",
+              tone: "warning",
+              persistent: true,
+            });
             deepLinkAppliedRef.current = true;
             return;
           }
           if (status.status === "missing") {
-            setDeepLinkNotice("This shared simulation no longer exists.");
+            publishAppNotice({
+              id: "shared-simulation-missing",
+              message: "This shared simulation no longer exists.",
+              tone: "warning",
+              persistent: true,
+            });
             deepLinkAppliedRef.current = true;
             return;
           }
@@ -721,13 +776,23 @@ export function AppShell() {
         } catch {
           // Ignore and use generic message.
         }
-        setDeepLinkNotice("This shared simulation is unavailable.");
+        publishAppNotice({
+          id: "shared-simulation-unavailable",
+          message: "This shared simulation is unavailable.",
+          tone: "error",
+          persistent: true,
+        });
         deepLinkAppliedRef.current = true;
         return;
       }
 
       if (!resolvedSimulationId) {
-        setDeepLinkNotice("This shared simulation is unavailable.");
+        publishAppNotice({
+          id: "shared-simulation-unavailable",
+          message: "This shared simulation is unavailable.",
+          tone: "error",
+          persistent: true,
+        });
         deepLinkAppliedRef.current = true;
         return;
       }
@@ -769,7 +834,12 @@ export function AppShell() {
           setSelectedLinkId(bySlug.id);
         } else {
           clearActiveSelection();
-          setDeepLinkNotice("Could not resolve link selection from this deep link.");
+          publishAppNotice({
+            id: "shared-link-selection-unresolved",
+            message: "Could not resolve link selection from this deep link.",
+            tone: "warning",
+            persistent: true,
+          });
         }
       } else if (decodedSiteSlugs && decodedSiteSlugs.length > 0) {
         const matchedSiteIds: string[] = [];
@@ -798,7 +868,12 @@ export function AppShell() {
           }
         } else {
           clearActiveSelection();
-          setDeepLinkNotice("Could not resolve all site selections from this deep link.");
+          publishAppNotice({
+            id: "shared-site-selection-unresolved",
+            message: "Could not resolve all site selections from this deep link.",
+            tone: "warning",
+            persistent: true,
+          });
         }
       }
       deepLinkAppliedRef.current = true;
@@ -815,6 +890,7 @@ export function AppShell() {
     setSelectedSiteId,
     setSelectedLinkId,
     updateMapViewport,
+    publishAppNotice,
   ]);
 
   const closeWelcome = () => {
@@ -1087,13 +1163,6 @@ export function AppShell() {
             </div>
           </div>
         ) : null}
-        {accessState === "readonly" ? (
-          <p className="field-help">
-            {isAnonymousGuestReadonly
-              ? "Read-only guest view. Library browsing is hidden in shared-link mode."
-              : "Read-only shared view."}
-          </p>
-        ) : null}
         {workspaceState === "no-simulation" ? (
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
@@ -1133,7 +1202,6 @@ export function AppShell() {
             </button>
           ) : null}
           {shareStatus ? <span className="field-help">{shareStatus}</span> : null}
-          {deepLinkNotice ? <span className="field-help">{deepLinkNotice}</span> : null}
         </div>
         <MapView
           isMapExpanded={isMapExpanded}
@@ -1165,6 +1233,15 @@ export function AppShell() {
             setIsProfileExpanded(false);
             setIsMapExpanded((prev) => !prev);
           }}
+          notice={
+            appNotice
+              ? {
+                  message: appNotice.message,
+                  tone: appNotice.tone,
+                  onDismiss: appNotice.persistent ? () => setAppNotice(null) : undefined,
+                }
+              : undefined
+          }
         />
         {isMobileViewport ? (
           <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
