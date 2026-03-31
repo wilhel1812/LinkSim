@@ -1017,6 +1017,11 @@ export function MapView({
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainLoadingStartedAtMs = useAppStore((state) => state.terrainLoadingStartedAtMs);
+  const terrainProgressPercent = useAppStore((state) => state.terrainProgressPercent);
+  const terrainProgressTilesLoaded = useAppStore((state) => state.terrainProgressTilesLoaded);
+  const terrainProgressTilesTotal = useAppStore((state) => state.terrainProgressTilesTotal);
+  const terrainProgressBytesLoaded = useAppStore((state) => state.terrainProgressBytesLoaded);
+  const terrainProgressBytesEstimated = useAppStore((state) => state.terrainProgressBytesEstimated);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
@@ -1481,8 +1486,15 @@ export function MapView({
   }, [isTerrainFetching, terrainLoadingStartedAtMs]);
   const keepWorkingSuffix =
     elapsedTerrainLoadingMs > 60_000 ? " — loading will continue in the background, even if you leave the app" : "";
+  const formatMb = (bytes: number) => `${(Math.max(0, bytes) / (1024 * 1024)).toFixed(1)} MB`;
+  const terrainProgressLabel =
+    isTerrainFetching && terrainProgressTilesTotal > 0
+      ? `Loading terrain ${terrainProgressPercent}% — ${formatMb(terrainProgressBytesLoaded)} of ~${formatMb(
+          terrainProgressBytesEstimated || terrainProgressBytesLoaded,
+        )} (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles)`
+      : null;
   const backgroundBusyLabel = (isTerrainFetching
-    ? terrainFetchStatus || "Loading terrain data..."
+    ? terrainProgressLabel || terrainFetchStatus || "Loading terrain data..."
     : isTerrainRecommending
       ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : "") + keepWorkingSuffix;
@@ -1995,6 +2007,8 @@ export function MapView({
               <div className="map-progress-track">
                 {isSimulationRecomputing ? (
                   <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
+                ) : isTerrainFetching && terrainProgressTilesTotal > 0 ? (
+                  <div className="map-progress-fill" style={{ width: `${terrainProgressPercent}%` }} />
                 ) : (
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 )}
