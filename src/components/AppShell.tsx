@@ -3,6 +3,7 @@ import { CircleX } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
+import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -503,8 +504,16 @@ export function AppShell() {
   }, [isInitializing]);
 
   useEffect(() => {
-    if ((accessState !== "granted" && accessState !== "readonly") || deepLinkAppliedRef.current || isInitializing) return;
-    if (!cloudInitSettledRef.current) return;
+    if (
+      !canRunDeepLinkApply({
+        accessState,
+        deepLinkAlreadyApplied: deepLinkAppliedRef.current,
+        isInitializing,
+        cloudInitSettled: cloudInitSettledRef.current,
+      })
+    ) {
+      return;
+    }
     if (!deepLinkParse.ok) {
       if (deepLinkParse.reason !== "missing_sim") {
         setDeepLinkNotice(
