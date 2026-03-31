@@ -1179,7 +1179,7 @@ export function AppShell() {
             </div>
           </div>
         ) : null}
-        {workspaceState === "blank-simulation" ? (
+        {workspaceState === "blank-simulation" && !appNotice ? (
           <div className="workspace-header-actions">
             <span className="field-help">This Simulation is blank. Add sites from the map or Site Library to continue.</span>
           </div>
