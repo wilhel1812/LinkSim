@@ -311,6 +311,7 @@ type AppState = {
   networks: Network[];
   srtmTiles: SrtmTile[];
   isTerrainFetching: boolean;
+  isEditorTerrainFetching: boolean;
   isTerrainRecommending: boolean;
   selectedLinkId: string;
   profileCursorIndex: number;
@@ -509,6 +510,7 @@ type AppState = {
   fetchTerrainForCurrentArea: () => Promise<void>;
   recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
   loadTerrainForCurrentArea: () => Promise<void>;
+  loadTerrainForCoordinate: (lat: number, lon: number) => Promise<void>;
   clearTerrainCache: () => Promise<void>;
   getSelectedLink: () => Link;
   getSelectedSite: () => Site;
@@ -1105,6 +1107,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   networks: [],
   srtmTiles: [],
   isTerrainFetching: false,
+  isEditorTerrainFetching: false,
   isTerrainRecommending: false,
   selectedLinkId: "",
   profileCursorIndex: 0,
@@ -3305,6 +3308,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   recommendAndFetchTerrainForCurrentArea: () => get().loadTerrainForCurrentArea(),
+  loadTerrainForCoordinate: async (lat: number, lon: number) => {
+    const { isEditorTerrainFetching, srtmTiles, terrainDataset } = get();
+    if (isEditorTerrainFetching) return;
+    if (sampleSrtmElevation(srtmTiles, lat, lon) !== null) return;
+    set({ isEditorTerrainFetching: true });
+    try {
+      const minLat = Math.floor(lat);
+      const minLon = Math.floor(lon);
+      const result = await loadCopernicusTilesForAreaPhased(
+        minLat,
+        minLat + 1,
+        minLon,
+        minLon + 1,
+        terrainDataset ?? "copernicus90",
+      );
+      const incoming = [...result.priority.tiles, ...result.remaining.tiles];
+      if (incoming.length > 0) {
+        set((s) => ({ srtmTiles: mergeSrtmTiles(s.srtmTiles, incoming) }));
+      }
+    } finally {
+      set({ isEditorTerrainFetching: false });
+    }
+  },
   loadTerrainForCurrentArea: async () => {
     if (get().isTerrainFetching) return;
     const { sites } = get();
