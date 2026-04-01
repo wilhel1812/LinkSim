@@ -421,6 +421,14 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
   const [newLibrarySourceMeta, setNewLibrarySourceMeta] = useState<unknown>(undefined);
   const [newLibraryLat, setNewLibraryLat] = useState(60.0);
   const [newLibraryLon, setNewLibraryLon] = useState(10.0);
+  const [newLibraryMapView, setNewLibraryMapView] = useState({
+    longitude: 10.0,
+    latitude: 60.0,
+    zoom: 12,
+    bearing: 0,
+    pitch: 0,
+    padding: { left: 0, right: 0, top: 0, bottom: 0 },
+  });
   const [newLibraryGroundM, setNewLibraryGroundM] = useState(0);
   const [newLibraryAntennaM, setNewLibraryAntennaM] = useState(2);
   const [newLibraryTxPowerDbm, setNewLibraryTxPowerDbm] = useState(STANDARD_SITE_RADIO.txPowerDbm);
@@ -521,6 +529,14 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
       longitude: resourceLonDraft,
     }));
   }, [resourceLatDraft, resourceLonDraft]);
+  useEffect(() => {
+    setNewLibraryMapView((prev) => ({
+      ...prev,
+      latitude: newLibraryLat,
+      longitude: newLibraryLon,
+      zoom: 12,
+    }));
+  }, [newLibraryLat, newLibraryLon]);
   const [resourceGroundDraft, setResourceGroundDraft] = useState(0);
   const [resourceAntennaDraft, setResourceAntennaDraft] = useState(2);
   const [resourceTxPowerDraft, setResourceTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
@@ -3510,10 +3526,22 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
                       </label>
                     </div>
                     <Map
-                      initialViewState={{
-                        longitude: newLibraryLon,
-                        latitude: newLibraryLat,
-                        zoom: 12,
+                      bearing={newLibraryMapView.bearing}
+                      latitude={newLibraryMapView.latitude}
+                      longitude={newLibraryMapView.longitude}
+                      padding={newLibraryMapView.padding}
+                      pitch={newLibraryMapView.pitch}
+                      zoom={newLibraryMapView.zoom}
+                      onMoveEnd={(event) => {
+                        const p = event.viewState.padding;
+                        setNewLibraryMapView({
+                          longitude: event.viewState.longitude,
+                          latitude: event.viewState.latitude,
+                          zoom: event.viewState.zoom,
+                          bearing: event.viewState.bearing,
+                          pitch: event.viewState.pitch,
+                          padding: { left: p.left ?? 0, right: p.right ?? 0, top: p.top ?? 0, bottom: p.bottom ?? 0 },
+                        });
                       }}
                       mapStyle={resolvedBasemap.style}
                       onClick={(event) => {
