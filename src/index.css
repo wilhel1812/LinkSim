@@ -688,6 +688,7 @@ input {
 .workspace-panel.is-profile-expanded {
   grid-template-rows: minmax(0, 1fr);
   padding-right: 0;
+  z-index: 101;
 }
 
 .workspace-header {
@@ -966,10 +967,6 @@ input {
 
 .app-shell.is-mobile-shell .floating-attribution-pill {
   bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 12px);
-}
-
-.app-shell.is-profile-expanded .floating-attribution-pill {
-  z-index: 30;
 }
 
 .map-control-note {
