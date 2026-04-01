@@ -1098,17 +1098,8 @@ export function AppShell() {
     };
   }, [isMobileViewport, mobileControlsOccupied]);
   const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
-
-  if (accessState === "checking") {
-    return (
-      <main className="app-shell access-locked-shell">
-        <section className="panel-section access-locked-panel">
-          <h2>Checking access…</h2>
-          {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
-        </section>
-      </main>
-    );
-  }
+  const isAnonymousBootstrapShell = accessState === "checking" || (accessState === "locked" && lockedNeedsSignIn);
+  const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
 
   if (accessState === "pending") {
     return (
@@ -1151,7 +1142,7 @@ export function AppShell() {
     );
   }
 
-  if (accessState === "locked") {
+  if (accessState === "locked" && !lockedNeedsSignIn) {
     return (
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
@@ -1216,7 +1207,7 @@ export function AppShell() {
       className={`app-shell ${isMapExpanded ? "is-map-expanded" : ""} ${
         isProfileExpanded ? "is-profile-expanded" : ""
       } ${
-        accessState === "readonly" ? "is-readonly-shell" : ""
+        isReadOnlyShell ? "is-readonly-shell" : ""
       } ${
         isMobileViewport ? "is-mobile-shell" : ""
       } ${
@@ -1224,10 +1215,23 @@ export function AppShell() {
       }`}
       style={shellStyle}
     >
-      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly") ? (
-        <Sidebar hideLibraryBrowsing={isAnonymousGuestReadonly} onOpenHelp={openOnboardingTutorial} readOnly={!canPersistWorkspace} />
+      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
+        <Sidebar hideLibraryBrowsing={isReadOnlyShell} onOpenHelp={openOnboardingTutorial} readOnly={!canPersistWorkspace} />
       ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
+        {accessState === "checking" ? (
+          <div className="workspace-header-actions">
+            <span className="field-help">Checking access in the background. Anonymous mode is available while this resolves.</span>
+          </div>
+        ) : null}
+        {accessState === "locked" && lockedNeedsSignIn ? (
+          <div className="workspace-header-actions">
+            <span className="field-help">You are signed out. Continue in anonymous mode or sign in to unlock your account workspace.</span>
+            <button className="inline-action" onClick={signIn} type="button">
+              Sign In
+            </button>
+          </div>
+        ) : null}
         {!isOnline && !offlineBannerDismissed ? (
           <div className="offline-banner" role="status">
             <span>Offline. Changes are saved locally and will sync when connection returns.</span>
@@ -1251,7 +1255,7 @@ export function AppShell() {
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
               <p>Open an existing simulation or create a new one to continue.</p>
-              {!isAnonymousGuestReadonly ? (
+              {!isReadOnlyShell ? (
                 <button
                   className="inline-action"
                   onClick={() => setShowSimulationLibraryRequest(true)}
@@ -1401,8 +1405,8 @@ export function AppShell() {
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "sidebar" ? (
           <div className="mobile-workspace-panel mobile-workspace-panel-sidebar" role="tabpanel" aria-label="Sidebar panel">
-            {(accessState === "granted" || accessState === "readonly") ? (
-              <Sidebar hideLibraryBrowsing={isAnonymousGuestReadonly} onOpenHelp={openOnboardingTutorial} readOnly={!canPersistWorkspace} />
+            {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
+              <Sidebar hideLibraryBrowsing={isReadOnlyShell} onOpenHelp={openOnboardingTutorial} readOnly={!canPersistWorkspace} />
             ) : null}
           </div>
         ) : null}
@@ -1421,7 +1425,7 @@ export function AppShell() {
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
       <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
-      {showLibraryFromRequest && !isAnonymousGuestReadonly ? (
+      {showLibraryFromRequest && !isReadOnlyShell ? (
         <ModalOverlay
           aria-label="Simulation Library"
           onClose={() => setShowLibraryFromRequest(false)}
