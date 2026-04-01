@@ -257,9 +257,10 @@ type SidebarProps = {
   onOpenHelp?: () => void;
   hideLibraryBrowsing?: boolean;
   readOnly?: boolean;
+  authBootstrapPending?: boolean;
 };
 
-export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = false }: SidebarProps) {
+export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = false, authBootstrapPending = false }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
@@ -1737,7 +1738,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
 
   return (
     <aside className="sidebar-panel">
-      <UserAdminPanel onOpenHelp={onOpenHelp} />
+      <UserAdminPanel authBootstrapPending={authBootstrapPending} onOpenHelp={onOpenHelp} />
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>

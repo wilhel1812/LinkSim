@@ -1216,7 +1216,12 @@ export function AppShell() {
       style={shellStyle}
     >
       {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
-        <Sidebar hideLibraryBrowsing={isReadOnlyShell} onOpenHelp={openOnboardingTutorial} readOnly={!canPersistWorkspace} />
+        <Sidebar
+          authBootstrapPending={accessState === "checking"}
+          hideLibraryBrowsing={isReadOnlyShell}
+          onOpenHelp={openOnboardingTutorial}
+          readOnly={!canPersistWorkspace}
+        />
       ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {accessState === "checking" ? (
@@ -1406,7 +1411,12 @@ export function AppShell() {
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "sidebar" ? (
           <div className="mobile-workspace-panel mobile-workspace-panel-sidebar" role="tabpanel" aria-label="Sidebar panel">
             {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
-              <Sidebar hideLibraryBrowsing={isReadOnlyShell} onOpenHelp={openOnboardingTutorial} readOnly={!canPersistWorkspace} />
+              <Sidebar
+                authBootstrapPending={accessState === "checking"}
+                hideLibraryBrowsing={isReadOnlyShell}
+                onOpenHelp={openOnboardingTutorial}
+                readOnly={!canPersistWorkspace}
+              />
             ) : null}
           </div>
         ) : null}
