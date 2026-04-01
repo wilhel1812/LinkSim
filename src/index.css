@@ -968,6 +968,10 @@ input {
   bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + 12px);
 }
 
+.app-shell.is-profile-expanded .floating-attribution-pill {
+  z-index: 30;
+}
+
 .map-control-note {
   position: absolute;
   top: 66px;
@@ -2102,6 +2106,10 @@ input {
 
   .app-shell.is-mobile-shell .map-panel .maplibregl-ctrl-attrib {
     z-index: 97;
+  }
+
+  .app-shell.is-mobile-shell.is-profile-expanded .map-panel .maplibregl-ctrl-attrib {
+    z-index: 40;
   }
 
   .workspace-panel:not(.is-profile-expanded) .map-inspector {
