@@ -432,6 +432,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
     padding: { left: 0, right: 0, top: 0, bottom: 0 },
   });
   const [newLibraryGroundM, setNewLibraryGroundM] = useState(0);
+  const [isNewLibraryElevationUserSet, setIsNewLibraryElevationUserSet] = useState(false);
   const [newLibraryAntennaM, setNewLibraryAntennaM] = useState(2);
   const [newLibraryTxPowerDbm, setNewLibraryTxPowerDbm] = useState(STANDARD_SITE_RADIO.txPowerDbm);
   const [newLibraryTxGainDbi, setNewLibraryTxGainDbi] = useState(STANDARD_SITE_RADIO.txGainDbi);
@@ -539,8 +540,9 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
       zoom: 12,
     }));
   }, [newLibraryLat, newLibraryLon]);
-  // Debounced terrain prefetch for Add Site form
+  // Debounced terrain prefetch for Add Site form; reset user-set flag when coordinates change
   useEffect(() => {
+    setIsNewLibraryElevationUserSet(false);
     const timer = setTimeout(() => {
       loadTerrainForCoordinate(newLibraryLat, newLibraryLon);
     }, 500);
@@ -1281,17 +1283,11 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
     if (!Number.isFinite(elevation)) return null;
     return Math.round(elevation);
   };
-  // Auto-fill Add Site elevation when terrain loads (only if user hasn't set a value)
+  // Auto-fill Add Site elevation when terrain loads (only if user hasn't manually set a value)
   useEffect(() => {
-    if (newLibraryGroundM !== 0) return;
+    if (isNewLibraryElevationUserSet) return;
     const elevation = fetchGroundFromLoadedTerrain(newLibraryLat, newLibraryLon);
     if (elevation !== null) setNewLibraryGroundM(elevation);
-  }, [srtmTiles]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Auto-fill Edit Site elevation when terrain loads (only if user hasn't set a value)
-  useEffect(() => {
-    if (resourceGroundDraft !== 0) return;
-    const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
-    if (elevation !== null) setResourceGroundDraft(elevation);
   }, [srtmTiles]); // eslint-disable-line react-hooks/exhaustive-deps
   const fetchNewLibraryGroundFromTerrain = () => {
     const elevation = fetchGroundFromLoadedTerrain(newLibraryLat, newLibraryLon);
@@ -3317,7 +3313,10 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
                   <span>Ground elev (m)</span>
                   <div className="field-inline">
                     <input
-                      onChange={(event) => setNewLibraryGroundM(parseNumber(event.target.value))}
+                      onChange={(event) => {
+                        setNewLibraryGroundM(parseNumber(event.target.value));
+                        setIsNewLibraryElevationUserSet(true);
+                      }}
                       type="number"
                       value={newLibraryGroundM}
                     />
