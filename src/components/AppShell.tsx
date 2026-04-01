@@ -1384,8 +1384,16 @@ export function AppShell() {
               aria-selected={mobileActivePanel === "profile"}
               className={`mobile-workspace-tab ${mobileActivePanel === "profile" ? "is-active" : ""}`}
               onClick={() => {
-                setIsMapExpanded(false);
-                setMobileActivePanel("profile");
+                if (isProfileExpanded) {
+                  setIsProfileExpanded(false);
+                  setIsMapExpanded(false);
+                  setMobileActivePanel("profile");
+                } else if (!isMapExpanded && mobileActivePanel === "profile") {
+                  setIsMapExpanded(true);
+                } else {
+                  setIsMapExpanded(false);
+                  setMobileActivePanel("profile");
+                }
               }}
               role="tab"
               type="button"
