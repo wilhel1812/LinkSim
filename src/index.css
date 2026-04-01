@@ -2235,6 +2235,7 @@ input {
   background: color-mix(in srgb, var(--panel) 86%, var(--bg));
   font-size: 0.84rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .user-chip-row .user-chip.user-chip-signup:hover {
@@ -2245,6 +2246,20 @@ input {
 .user-chip-row .user-chip.user-chip-signup svg {
   width: 16px;
   height: 16px;
+}
+
+.user-chip-row .user-chip.user-chip-loading {
+  width: 132px;
+  min-width: 132px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 86%, var(--bg));
+}
+
+.user-chip-row .user-chip.user-chip-loading .map-progress-track {
+  height: 6px;
 }
 
 .user-icon-button {
