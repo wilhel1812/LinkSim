@@ -385,6 +385,11 @@ export function AppShell() {
     window.location.href = "/cdn-cgi/access/logout";
   }, [deepLinkParse.ok, isLocalRuntime]);
 
+  const signIn = useCallback(() => {
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
+  }, []);
+
   const switchLocalRole = useCallback(
     async (role: "admin" | "moderator" | "user" | "pending") => {
       try {
@@ -971,6 +976,9 @@ export function AppShell() {
             If your user was removed by an admin, ask for re-approval. Then sign out and sign in again.
           </p>
           <div className="chip-group">
+            <button className="inline-action" onClick={signIn} type="button">
+              Sign In
+            </button>
             <button className="inline-action" onClick={signOutOrReadonly} type="button">
               Sign Out
             </button>
