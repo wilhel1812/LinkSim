@@ -308,6 +308,8 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
   const updateLink = useAppStore((state) => state.updateLink);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
+  const isEditorTerrainFetching = useAppStore((state) => state.isEditorTerrainFetching);
+  const loadTerrainForCoordinate = useAppStore((state) => state.loadTerrainForCoordinate);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
   const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
@@ -537,6 +539,20 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
       zoom: 12,
     }));
   }, [newLibraryLat, newLibraryLon]);
+  // Debounced terrain prefetch for Add Site form
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadTerrainForCoordinate(newLibraryLat, newLibraryLon);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [newLibraryLat, newLibraryLon, loadTerrainForCoordinate]);
+  // Debounced terrain prefetch for Edit Site form
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadTerrainForCoordinate(resourceLatDraft, resourceLonDraft);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [resourceLatDraft, resourceLonDraft, loadTerrainForCoordinate]);
   const [resourceGroundDraft, setResourceGroundDraft] = useState(0);
   const [resourceAntennaDraft, setResourceAntennaDraft] = useState(2);
   const [resourceTxPowerDraft, setResourceTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
@@ -1265,6 +1281,18 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
     if (!Number.isFinite(elevation)) return null;
     return Math.round(elevation);
   };
+  // Auto-fill Add Site elevation when terrain loads (only if user hasn't set a value)
+  useEffect(() => {
+    if (newLibraryGroundM !== 0) return;
+    const elevation = fetchGroundFromLoadedTerrain(newLibraryLat, newLibraryLon);
+    if (elevation !== null) setNewLibraryGroundM(elevation);
+  }, [srtmTiles]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Auto-fill Edit Site elevation when terrain loads (only if user hasn't set a value)
+  useEffect(() => {
+    if (resourceGroundDraft !== 0) return;
+    const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
+    if (elevation !== null) setResourceGroundDraft(elevation);
+  }, [srtmTiles]); // eslint-disable-line react-hooks/exhaustive-deps
   const fetchNewLibraryGroundFromTerrain = () => {
     const elevation = fetchGroundFromLoadedTerrain(newLibraryLat, newLibraryLon);
     if (elevation === null) {
@@ -2528,6 +2556,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
                       />
                       <button
                         className="inline-action field-inline-btn"
+                        disabled={isEditorTerrainFetching}
                         onClick={() => {
                           const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
                           if (elevation === null) {
@@ -2542,7 +2571,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
                         }}
                         type="button"
                       >
-                        Fetch
+                        {isEditorTerrainFetching ? "Loading…" : "Fetch"}
                       </button>
                     </div>
                   </label>
@@ -3292,8 +3321,8 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
                       type="number"
                       value={newLibraryGroundM}
                     />
-                    <button className="inline-action field-inline-btn" onClick={fetchNewLibraryGroundFromTerrain} type="button">
-                      Fetch
+                    <button className="inline-action field-inline-btn" disabled={isEditorTerrainFetching} onClick={fetchNewLibraryGroundFromTerrain} type="button">
+                      {isEditorTerrainFetching ? "Loading…" : "Fetch"}
                     </button>
                   </div>
                 </label>
