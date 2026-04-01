@@ -1737,7 +1737,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
 
   return (
     <aside className="sidebar-panel">
-      {!hideLibraryBrowsing ? <UserAdminPanel onOpenHelp={onOpenHelp} /> : null}
+      <UserAdminPanel onOpenHelp={onOpenHelp} />
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>
