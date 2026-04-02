@@ -1105,31 +1105,17 @@ input {
   gap: 6px;
 }
 
-.map-inspector-header-title {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--text);
-  margin-right: 4px;
-}
-
 .panel-size-controls {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.map-inspector-header-main {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.map-inspector-header-panel-controls {
+.map-inspector-header-actions-right {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  gap: 4px;
 }
 
 .workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-panel .maplibregl-ctrl-bottom-right,
@@ -1987,9 +1973,7 @@ input {
     z-index: 85;
   }
 
-  .app-shell.is-mobile-shell .map-inspector-header-title {
-    display: none;
-  }
+
 
   .mobile-workspace-tabs {
     display: grid;
