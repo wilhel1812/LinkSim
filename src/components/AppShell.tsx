@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleX, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share } from "lucide-react";
-import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
+import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
@@ -114,6 +114,13 @@ export function AppShell() {
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
+  const [shareDirectory, setShareDirectory] = useState<CollaboratorDirectoryUser[]>([]);
+  const [shareDirectoryBusy, setShareDirectoryBusy] = useState(false);
+  const [shareSpecificUsers, setShareSpecificUsers] = useState<string[]>([]);
+  const [shareSpecificRoles, setShareSpecificRoles] = useState<Record<string, "viewer" | "editor">>({});
+  const [shareUserQuery, setShareUserQuery] = useState("");
+  const [shareSpecificBusy, setShareSpecificBusy] = useState(false);
+  const [shareSpecificStatus, setShareSpecificStatus] = useState("");
   const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
@@ -1105,6 +1112,38 @@ export function AppShell() {
     updateSiteLibraryEntry,
   ]);
 
+  const runShareWithSpecificUsers = useCallback(async () => {
+    if (!activeSimulation || !currentUser) return;
+    if (!shareSpecificUsers.length) {
+      setShareSpecificStatus("Add at least one user first.");
+      return;
+    }
+    setShareSpecificBusy(true);
+    setShareSpecificStatus("");
+    try {
+      const existingGrants = (activeSimulation.sharedWith ?? []) as Array<{ userId: string; role: string }>;
+      const existingIds = new Set(existingGrants.map((g) => g.userId));
+      const newGrants = shareSpecificUsers
+        .filter((id) => !existingIds.has(id))
+        .map((id) => ({ userId: id, role: shareSpecificRoles[id] ?? "viewer" }));
+      const mergedGrants = [
+        ...existingGrants.map((g) => ({ userId: g.userId, role: (shareSpecificRoles[g.userId] ?? g.role) as "viewer" | "editor" })),
+        ...newGrants,
+      ];
+      updateSimulationPresetEntry(activeSimulation.id, { sharedWith: mergedGrants });
+      const latest = useAppStore.getState();
+      const latestSimulation = latest.simulationPresets.find((p) => p.id === activeSimulation.id);
+      if (!latestSimulation) throw new Error("Simulation missing after local update.");
+      await pushCloudLibrary({ simulationPresets: [latestSimulation], siteLibrary: [] });
+      await copyCurrentLink();
+      setShareSpecificStatus("Collaborators saved. Link copied — share it with the users you added.");
+    } catch (error) {
+      setShareSpecificStatus(`Failed: ${getUiErrorMessage(error)}`);
+    } finally {
+      setShareSpecificBusy(false);
+    }
+  }, [activeSimulation, copyCurrentLink, currentUser, shareSpecificRoles, shareSpecificUsers, updateSimulationPresetEntry]);
+
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     const style: CSSProperties = {
       ["--sidebar-overlay-width" as string]:
@@ -1232,6 +1271,14 @@ export function AppShell() {
     setMobileBottomPanelMode(nextMode);
   }, []);
 
+  const closeShareModal = useCallback(() => {
+    setShowShareModal(false);
+    setShareSpecificUsers([]);
+    setShareSpecificRoles({});
+    setShareUserQuery("");
+    setShareSpecificStatus("");
+  }, []);
+
   const openShareModalOrCopy = useCallback(() => {
     setAppNotice(null);
     if (!activeSimulation) {
@@ -1244,7 +1291,17 @@ export function AppShell() {
       return;
     }
     if (toVisibility(activeSimulation.visibility) === "private") {
+      setShareSpecificUsers([]);
+      setShareSpecificRoles({});
+      setShareUserQuery("");
+      setShareSpecificStatus("");
+      setShareDirectory([]);
+      setShareDirectoryBusy(true);
       setShowShareModal(true);
+      void fetchCollaboratorDirectory()
+        .then((users) => setShareDirectory(users))
+        .catch(() => {})
+        .finally(() => setShareDirectoryBusy(false));
       return;
     }
     void copyCurrentLink().catch((error) => {
@@ -1640,11 +1697,11 @@ export function AppShell() {
         </ModalOverlay>
       ) : null}
       {showShareModal ? (
-        <ModalOverlay aria-label="Share simulation" onClose={() => setShowShareModal(false)}>
+        <ModalOverlay aria-label="Share simulation" onClose={closeShareModal}>
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Share Simulation</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setShowShareModal(false)} title="Close" type="button">
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeShareModal} title="Close" type="button">
                 <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
@@ -1657,26 +1714,93 @@ export function AppShell() {
                 {toVisibility(activeSimulation.visibility) === "private" ? (
                   <div className="panel-section compact-panel">
                     <h4>Private Simulation</h4>
-                    <p className="field-help">
-                      This simulation is private. To make the share link broadly accessible, set this simulation and its referenced private sites to Shared.
-                    </p>
-                    <p className="field-help">
-                      Referenced private sites: {referencedPrivateSites.length}
-                    </p>
-                    {referencedPrivateSites.length ? (
-                      <ul className="field-help access-pending-list">
-                        {referencedPrivateSites.map((site) => (
-                          <li key={site.id}>
-                            {site.name} {canEditResource(site) ? "" : "(no edit access)"}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
+                    <p className="field-help">Choose how to share this simulation:</p>
                     <div className="chip-group">
                       <button className="inline-action" disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
                         Upgrade To Shared And Copy Link
                       </button>
                     </div>
+                    {referencedPrivateSites.length ? (
+                      <p className="field-help">
+                        Referenced private sites that will also be upgraded: {referencedPrivateSites.length}
+                        {referencedPrivateSites.some((site) => !canEditResource(site)) ? " (some sites require owner access)" : ""}
+                      </p>
+                    ) : null}
+                    <details>
+                      <summary className="field-help" style={{ cursor: "pointer", paddingTop: "0.5em" }}>
+                        Share with specific users only (stays private)
+                      </summary>
+                      <p className="field-help">
+                        Add users by name or email. They must be logged in to access the link.
+                      </p>
+                      <div className="chip-group collaborator-selected-list">
+                        {shareSpecificUsers.map((uid) => {
+                          const user = shareDirectory.find((u) => u.id === uid);
+                          return (
+                            <span className="site-quick-item" key={uid}>
+                              <span>{user?.username ?? uid}</span>
+                              <select
+                                aria-label={`Role for ${user?.username ?? uid}`}
+                                onChange={(e) => setShareSpecificRoles((prev) => ({ ...prev, [uid]: e.target.value as "viewer" | "editor" }))}
+                                value={shareSpecificRoles[uid] ?? "viewer"}
+                              >
+                                <option value="viewer">Viewer</option>
+                                <option value="editor">Editor</option>
+                              </select>
+                              <button
+                                className="inline-action"
+                                onClick={() => setShareSpecificUsers((prev) => prev.filter((id) => id !== uid))}
+                                type="button"
+                              >
+                                Remove
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <input
+                        onChange={(e) => setShareUserQuery(e.target.value)}
+                        placeholder="Search users by name or email"
+                        type="text"
+                        value={shareUserQuery}
+                      />
+                      <div className="collaborator-candidate-list">
+                        {shareDirectoryBusy ? (
+                          <p className="field-help">Loading users…</p>
+                        ) : (
+                          shareDirectory
+                            .filter((u) => !shareSpecificUsers.includes(u.id) && u.id !== currentUser?.id)
+                            .filter((u) => !shareUserQuery || u.username.toLowerCase().includes(shareUserQuery.toLowerCase()) || u.email.toLowerCase().includes(shareUserQuery.toLowerCase()))
+                            .slice(0, 8)
+                            .map((u) => (
+                              <button
+                                className="site-quick-item"
+                                key={u.id}
+                                onClick={() => {
+                                  setShareSpecificUsers((prev) => prev.includes(u.id) ? prev : [...prev, u.id]);
+                                  setShareUserQuery("");
+                                }}
+                                type="button"
+                              >
+                                <span>{u.username}</span>
+                                <span className="field-help">{u.email}</span>
+                                <span className="inline-action">Add</span>
+                              </button>
+                            ))
+                        )}
+                      </div>
+                      <div className="chip-group">
+                        <button
+                          className="inline-action"
+                          disabled={shareSpecificBusy || !shareSpecificUsers.length}
+                          onClick={() => void runShareWithSpecificUsers()}
+                          type="button"
+                        >
+                          Save & Copy Link
+                        </button>
+                      </div>
+                      {shareSpecificStatus ? <p className="field-help">{shareSpecificStatus}</p> : null}
+                    </details>
                   </div>
                 ) : null}
               </>
