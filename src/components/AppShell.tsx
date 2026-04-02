@@ -48,13 +48,29 @@ const canEditResource = (value: unknown): boolean => {
   return false;
 };
 
-const copyToClipboard = async (text: string): Promise<void> => {
+const copyToClipboard = async (textOrPromise: string | Promise<string>): Promise<void> => {
+  // When the content is deferred (a Promise), use ClipboardItem so the clipboard
+  // write is registered within the current user-gesture context while the content
+  // resolves asynchronously. This prevents NotAllowedError after awaited network calls.
+  if (textOrPromise instanceof Promise) {
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": textOrPromise.then((t) => new Blob([t], { type: "text/plain" })),
+        }),
+      ]);
+      return;
+    }
+    // Fallback for browsers without ClipboardItem (e.g. Firefox): resolve first.
+    await copyToClipboard(await textOrPromise);
+    return;
+  }
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(textOrPromise);
     return;
   }
   const textarea = document.createElement("textarea");
-  textarea.value = text;
+  textarea.value = textOrPromise;
   textarea.setAttribute("readonly", "true");
   textarea.style.position = "absolute";
   textarea.style.left = "-9999px";
@@ -1071,6 +1087,13 @@ export function AppShell() {
     }
 
     setShareBusy(true);
+
+    // Start clipboard write within gesture context; content resolves after save.
+    let resolveUpgradeLink!: (t: string) => void;
+    let rejectUpgradeLink!: (e: unknown) => void;
+    const upgradeLinkPromise = new Promise<string>((res, rej) => { resolveUpgradeLink = res; rejectUpgradeLink = rej; });
+    const upgradeClipboardDone = copyToClipboard(upgradeLinkPromise);
+
     try {
       for (const site of referencedPrivateSites) {
         updateSiteLibraryEntry(site.id, { visibility: "shared" });
@@ -1089,9 +1112,11 @@ export function AppShell() {
         siteLibrary: latestSites,
       });
 
-      await copyCurrentLink();
+      resolveUpgradeLink(currentShareLink);
+      await upgradeClipboardDone;
       publishTransientNotice("share-upgrade-complete", "Simulation and referenced sites are now Shared. Link copied.");
     } catch (error) {
+      rejectUpgradeLink(error);
       publishAppNotice({
         id: "share-upgrade-failed",
         message: `Upgrade failed: ${getUiErrorMessage(error)}`,
@@ -1103,7 +1128,7 @@ export function AppShell() {
     }
   }, [
     activeSimulation,
-    copyCurrentLink,
+    currentShareLink,
     currentUser,
     publishAppNotice,
     publishTransientNotice,
@@ -1120,6 +1145,13 @@ export function AppShell() {
     }
     setShareSpecificBusy(true);
     setShareSpecificStatus("");
+
+    // Resolve the link text deferred so clipboard write starts within this gesture context.
+    let resolveLink!: (t: string) => void;
+    let rejectLink!: (e: unknown) => void;
+    const linkPromise = new Promise<string>((res, rej) => { resolveLink = res; rejectLink = rej; });
+    const clipboardDone = copyToClipboard(linkPromise);
+
     try {
       const existingGrants = (activeSimulation.sharedWith ?? []) as Array<{ userId: string; role: string }>;
       const existingIds = new Set(existingGrants.map((g) => g.userId));
@@ -1135,14 +1167,16 @@ export function AppShell() {
       const latestSimulation = latest.simulationPresets.find((p) => p.id === activeSimulation.id);
       if (!latestSimulation) throw new Error("Simulation missing after local update.");
       await pushCloudLibrary({ simulationPresets: [latestSimulation], siteLibrary: [] });
-      await copyCurrentLink();
+      resolveLink(currentShareLink);
+      await clipboardDone;
       setShareSpecificStatus("Collaborators saved. Link copied — share it with the users you added.");
     } catch (error) {
+      rejectLink(error);
       setShareSpecificStatus(`Failed: ${getUiErrorMessage(error)}`);
     } finally {
       setShareSpecificBusy(false);
     }
-  }, [activeSimulation, copyCurrentLink, currentUser, shareSpecificRoles, shareSpecificUsers, updateSimulationPresetEntry]);
+  }, [activeSimulation, currentShareLink, currentUser, shareSpecificRoles, shareSpecificUsers, updateSimulationPresetEntry]);
 
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     const style: CSSProperties = {
