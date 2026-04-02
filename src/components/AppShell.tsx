@@ -1547,8 +1547,18 @@ export function AppShell() {
           canPersist={canPersistWorkspace}
           inspectorHeaderActions={
             <div className="map-inspector-header-actions">
-              <div className="map-inspector-header-main">
-                <span className="map-inspector-header-title">Inspector</span>
+              {!isMobileViewport ? (
+                <button
+                  aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
+                  className="map-control-btn map-control-btn-icon"
+                  onClick={() => setIsInspectorHidden((prev) => !prev)}
+                  title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
+                  type="button"
+                >
+                  {isInspectorHidden ? <PanelRight aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
+                </button>
+              ) : null}
+              <div className="map-inspector-header-actions-right">
                 {accessState === "granted" ? (
                   <button
                     aria-label="Share"
@@ -1560,21 +1570,7 @@ export function AppShell() {
                     <Share aria-hidden="true" strokeWidth={1.8} />
                   </button>
                 ) : null}
-              </div>
-              <div className="map-inspector-header-panel-controls">
-                {isMobileViewport ? (
-                  panelSizeControls("Inspector")
-                ) : (
-                  <button
-                    aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
-                    className="map-control-btn map-control-btn-icon"
-                    onClick={() => setIsInspectorHidden((prev) => !prev)}
-                    title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
-                    type="button"
-                  >
-                    {isInspectorHidden ? <PanelRight aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
-                  </button>
-                )}
+                {isMobileViewport ? panelSizeControls("Inspector") : null}
               </div>
             </div>
           }
