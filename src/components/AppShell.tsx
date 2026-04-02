@@ -25,7 +25,6 @@ initializeMigrations();
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
-const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
@@ -116,7 +115,6 @@ export function AppShell() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
-  const [showMobileWarning, setShowMobileWarning] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
   const [mobileBottomPanelMode, setMobileBottomPanelMode] = useState<MobileBottomPanelMode>("normal");
@@ -577,17 +575,6 @@ export function AppShell() {
       window.removeEventListener("orientationchange", schedule);
     };
   }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel, mobileBottomPanelMode]);
-
-  useEffect(() => {
-    const isMobile = window.matchMedia("(max-width: 900px)").matches;
-    if (!isMobile) return;
-    try {
-      if (localStorage.getItem(MOBILE_WARNING_DISMISS_KEY) === "1") return;
-    } catch {
-      // ignore storage errors
-    }
-    setShowMobileWarning(true);
-  }, []);
 
   useEffect(() => {
     if (isInitializing) {
@@ -1526,8 +1513,8 @@ export function AppShell() {
         {isMobileViewport ? (
           <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
             <button
-              aria-selected={mobileActivePanel === "navigator"}
-              className={`mobile-workspace-tab ${mobileActivePanel === "navigator" ? "is-active" : ""}`}
+              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator"}
+              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator" ? "is-active" : ""}`}
               onClick={() => {
                 setIsMapExpanded(false);
                 setMobileActivePanel("navigator");
@@ -1541,8 +1528,8 @@ export function AppShell() {
               Navigator
             </button>
             <button
-              aria-selected={mobileActivePanel === "inspector"}
-              className={`mobile-workspace-tab ${mobileActivePanel === "inspector" ? "is-active" : ""}`}
+              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector"}
+              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector" ? "is-active" : ""}`}
               onClick={() => {
                 setIsMapExpanded(false);
                 setMobileActivePanel("inspector");
@@ -1556,8 +1543,8 @@ export function AppShell() {
               Inspector
             </button>
             <button
-              aria-selected={mobileActivePanel === "profile"}
-              className={`mobile-workspace-tab ${mobileActivePanel === "profile" ? "is-active" : ""}`}
+              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile"}
+              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile" ? "is-active" : ""}`}
               onClick={() => {
                 setIsMapExpanded(false);
                 setMobileActivePanel("profile");
@@ -1650,45 +1637,6 @@ export function AppShell() {
               }
             }}
           />
-        </ModalOverlay>
-      ) : null}
-      {showMobileWarning ? (
-        <ModalOverlay aria-label="Mobile support notice" onClose={() => setShowMobileWarning(false)} tier="raised">
-          <div className="library-manager-card mobile-warning-modal-card">
-            <div className="library-manager-header">
-              <h2>Mobile Support Notice</h2>
-              <button
-                aria-label="Close"
-                className="inline-action inline-action-icon"
-                onClick={() => {
-                  setShowMobileWarning(false);
-                }}
-                title="Close"
-                type="button"
-              >
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
-            </div>
-            <p className="field-help">
-              LinkSim is currently designed to work best in a desktop environment. Mobile should work, but is not a delightful experience at the moment.
-            </p>
-            <div className="chip-group">
-              <button
-                className="inline-action"
-                onClick={() => {
-                  setShowMobileWarning(false);
-                  try {
-                    localStorage.setItem(MOBILE_WARNING_DISMISS_KEY, "1");
-                  } catch {
-                    // ignore storage errors
-                  }
-                }}
-                type="button"
-              >
-                Don&apos;t show again
-              </button>
-            </div>
-          </div>
         </ModalOverlay>
       ) : null}
       {showShareModal ? (
