@@ -1234,6 +1234,9 @@ export function AppShell() {
           hideLibraryBrowsing={isReadOnlyShell}
           onOpenHelp={openOnboardingTutorial}
           readOnly={!canPersistWorkspace}
+          simulationDisplayLabel={
+            isReadOnlyShell && !deepLinkParse.ok && sites.length > 0 ? "Oslo Demo" : undefined
+          }
         />
       ) : null}
       <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
@@ -1242,17 +1245,21 @@ export function AppShell() {
             <span className="field-help">Checking access in the background. Anonymous mode is available while this resolves.</span>
           </div>
         ) : null}
-        {accessState === "locked" && lockedNeedsSignIn && !deepLinkParse.ok ? (
+        {accessState === "locked" && lockedNeedsSignIn ? (
           <div className="workspace-header-actions">
-            <span className="field-help">Exploring in demo mode.</span>
+            <span className="field-help">
+              {deepLinkParse.ok ? "Viewing as guest." : "Demo workspace — sign in to save your own simulations."}
+            </span>
             <button className="inline-action" onClick={signIn} type="button">
-              Sign in to save your own simulations
+              Sign In
             </button>
           </div>
         ) : null}
-        {accessState === "locked" && lockedNeedsSignIn && deepLinkParse.ok ? (
+        {isAnonymousGuestReadonly ? (
           <div className="workspace-header-actions">
-            <span className="field-help">Viewing as guest.</span>
+            <span className="field-help">
+              {deepLinkParse.ok ? "Viewing as guest." : "Demo workspace — sign in to save your own simulations."}
+            </span>
             <button className="inline-action" onClick={signIn} type="button">
               Sign In
             </button>

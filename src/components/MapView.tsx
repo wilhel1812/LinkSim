@@ -918,37 +918,31 @@ const buildTerrainShadeOverlay = (
   };
 };
 
-const computeFitViewport = (
-  sites: { position: { lat: number; lon: number } }[],
-  containerWidth = 800,
-  containerHeight = 600,
-): { lat: number; lon: number; zoom: number } => {
-  if (!sites.length) return { lat: 59.9, lon: 10.7, zoom: 8 };
-  if (sites.length === 1) {
-    return { lat: sites[0].position.lat, lon: sites[0].position.lon, zoom: 13 };
-  }
+/** ~20 km geographic margin added around sites before fitting. */
+const FIT_PAD_DEG = 0.18;
+/**
+ * Pixel insets reserved for UI chrome inside the map container.
+ * Right accounts for the map controls pill; others are minimal breathing room.
+ */
+const FIT_CHROME_PADDING = { top: 30, right: 70, bottom: 30, left: 20 } as const;
 
+/**
+ * Compute the LngLatBounds to pass to maplibre fitBounds for a set of sites,
+ * expanding by ~20 km in all directions.
+ */
+const computeSiteFitBounds = (
+  sites: { position: { lat: number; lon: number } }[],
+): [[number, number], [number, number]] | null => {
+  if (!sites.length) return null;
   const lats = sites.map((s) => s.position.lat);
   const lons = sites.map((s) => s.position.lon);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLon = Math.min(...lons);
-  const maxLon = Math.max(...lons);
-
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLon = (minLon + maxLon) / 2;
-  // Apply Mercator cos(lat) correction: at high latitudes 1° of latitude spans
-  // more pixels than at the equator.
-  const cosLat = Math.cos((centerLat * Math.PI) / 180);
-
-  const latSpan = Math.max(0.004, (maxLat - minLat) * 1.4);
-  const lonSpan = Math.max(0.004, (maxLon - minLon) * 1.4);
-
-  const zoomLat = Math.log2((360 * cosLat) / latSpan * (containerHeight / 256));
-  const zoomLon = Math.log2((360 / lonSpan) * (containerWidth / 256));
-  const zoom = clamp(Math.min(zoomLat, zoomLon), 3, 15);
-
-  return { lat: centerLat, lon: centerLon, zoom };
+  const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  // Scale lon padding by 1/cos(lat) so the geographic margin is uniform in km.
+  const lonPad = FIT_PAD_DEG / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  return [
+    [Math.min(...lons) - lonPad, Math.min(...lats) - FIT_PAD_DEG],
+    [Math.max(...lons) + lonPad, Math.max(...lats) + FIT_PAD_DEG],
+  ];
 };
 
 type MapViewProps = {
@@ -1085,7 +1079,9 @@ export function MapView({
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(true);
+  const fitSitesEpoch = useAppStore((state) => state.fitSitesEpoch);
   const [fitControlActive, setFitControlActive] = useState(false);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
   const [armAddSiteOnNextEmptyMapClick, setArmAddSiteOnNextEmptyMapClick] = useState(false);
@@ -1122,6 +1118,22 @@ export function MapView({
       window.removeEventListener("orientationchange", handleViewportChange);
     };
   }, []);
+
+  // When a scenario or simulation loads (fitSitesEpoch increments), fit the map to
+  // all sites with a ~20 km geographic margin and insets for UI chrome.
+  useEffect(() => {
+    if (!fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
+    const bounds = computeSiteFitBounds(sites);
+    if (!bounds) return;
+    mapRef.current.fitBounds(bounds, {
+      padding: FIT_CHROME_PADDING,
+      animate: false,
+      maxZoom: 14,
+    });
+    setInteractionViewState(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitSitesEpoch, isMapLoaded]);
+
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
     [links],
@@ -1552,15 +1564,15 @@ export function MapView({
   };
 
   const fitToNodes = () => {
+    if (!mapRef.current) return;
+    const bounds = computeSiteFitBounds(sites);
+    if (!bounds) return;
     setFitControlActive(true);
-    const container = mapRef.current?.getContainer();
-    const w = container?.clientWidth ?? 800;
-    const h = container?.clientHeight ?? 600;
-    const next = computeFitViewport(sites, w, h);
     setInteractionViewState(null);
-    updateMapViewport({
-      center: { lat: next.lat, lon: next.lon },
-      zoom: next.zoom,
+    mapRef.current.fitBounds(bounds, {
+      padding: FIT_CHROME_PADDING,
+      animate: true,
+      maxZoom: 14,
     });
   };
 
@@ -2530,6 +2542,7 @@ export function MapView({
           zoom: activeViewState.zoom,
         }}
         mapStyle={useFallbackMapStyle ? fallbackMapStyle : resolvedBasemap.style}
+        onLoad={() => setIsMapLoaded(true)}
         onError={() => {
           if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket") {
             setUseFallbackMapStyle(true);

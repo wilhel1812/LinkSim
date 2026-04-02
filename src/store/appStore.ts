@@ -310,6 +310,7 @@ type AppState = {
   systems: RadioSystem[];
   networks: Network[];
   srtmTiles: SrtmTile[];
+  fitSitesEpoch: number;
   isTerrainFetching: boolean;
   isEditorTerrainFetching: boolean;
   isTerrainRecommending: boolean;
@@ -389,6 +390,7 @@ type AppState = {
   setBasemapStylePreset: (value: string) => void;
   selectScenario: (id: string) => void;
   loadDemoScenario: () => void;
+  requestFitToSites: () => void;
   setSelectedLinkId: (id: string) => void;
   setTemporaryDirectionReversed: (value: boolean) => void;
   toggleTemporaryDirectionReversed: () => void;
@@ -1107,6 +1109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   systems: [],
   networks: [],
   srtmTiles: [],
+  fitSitesEpoch: 0,
   isTerrainFetching: false,
   isEditorTerrainFetching: false,
   isTerrainRecommending: false,
@@ -1671,6 +1674,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       endpointPickTarget: null,
       mapViewport: scenario.viewport,
       siteLibrary: libraryBacked.siteLibrary,
+      fitSitesEpoch: get().fitSitesEpoch + 1,
     });
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: scenario.id, savedAtIso: new Date().toISOString() });
     useCoverageStore.getState().recomputeCoverage();
@@ -1681,16 +1685,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (libraryBacked.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
     }
-    const bounds = simulationAreaBoundsForSites(scenario.sites);
-    const viewport = bounds ? boundsToViewport(bounds) : scenario.viewport;
+    // Resolve link selection: both endpoints must be selected for path profile to show.
+    const defaultLink = scenario.links.find((l) => l.id === scenario.defaultLinkId);
+    const selectedSiteIds = defaultLink
+      ? normalizeSelectedSiteIds([defaultLink.fromSiteId, defaultLink.toSiteId], libraryBacked.sites)
+      : scenario.defaultSiteId
+        ? [scenario.defaultSiteId]
+        : [];
     set({
       // selectedScenarioId intentionally not set — demo stays invisible in scenario UI
       sites: libraryBacked.sites,
       links: scenario.links,
       systems: scenario.systems,
       networks: scenario.networks,
-      selectedSiteId: scenario.defaultSiteId,
-      selectedSiteIds: scenario.defaultSiteId ? [scenario.defaultSiteId] : [],
+      selectedSiteId: selectedSiteIds[0] ?? scenario.defaultSiteId,
+      selectedSiteIds,
       selectedLinkId: scenario.defaultLinkId,
       profileCursorIndex: 0,
       temporaryDirectionReversed: false,
@@ -1709,11 +1718,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainLoadEpoch: 0,
       siteDragPreview: {},
       endpointPickTarget: null,
-      mapViewport: viewport,
+      // mapViewport: undefined — fitSitesEpoch triggers proper fit via MapView
+      fitSitesEpoch: get().fitSitesEpoch + 1,
       siteLibrary: libraryBacked.siteLibrary,
+      mapOverlayMode: defaultOverlayModeForSelectionCount(selectedSiteIds.length),
     });
     useCoverageStore.getState().recomputeCoverage();
   },
+  requestFitToSites: () => set((state) => ({ fitSitesEpoch: state.fitSitesEpoch + 1 })),
   setSelectedLinkId: (id) =>
     set((state) => {
       const selectedLink = state.links.find((link) => link.id === id) ?? null;
@@ -2657,6 +2669,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         siteDragPreview: {},
         mapOverlayMode: defaultOverlayModeForSelectionCount(0),
         terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
+        fitSitesEpoch: get().fitSitesEpoch + 1,
       });
       writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: loadedAtIso });
       useCoverageStore.getState().recomputeCoverage();
@@ -2719,6 +2732,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       siteLibrary: libraryBacked.siteLibrary,
       mapOverlayMode: defaultOverlayModeForSelectionCount(selectedSiteId ? 1 : 0),
+      fitSitesEpoch: get().fitSitesEpoch + 1,
     });
     if (libraryBacked.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
