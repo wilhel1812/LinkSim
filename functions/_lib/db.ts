@@ -68,6 +68,20 @@ const slugifyName = (value: string): string =>
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
 
+const DELIMITER_CHARS = /[+<>~\/]/g;
+const VARIATION_SELECTORS = /[\uFE0E\uFE0F]/g;
+
+export const canonicalizeSimulationLookupKey = (value: string): string =>
+  value
+    .trim()
+    .toLocaleLowerCase()
+    .normalize("NFKC")
+    .replace(VARIATION_SELECTORS, "")
+    .replace(DELIMITER_CHARS, "")
+    .replace(/\s+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
 const sanitizeSlugAliasList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -1911,19 +1925,26 @@ export const resolveSimulationIdBySlug = async (
 ): Promise<string | null> => {
   await ensureSchema(env);
   const slug = slugifyName(simulationSlug);
-  if (!slug) return null;
+  const canonicalKey = canonicalizeSimulationLookupKey(simulationSlug);
+  if (!slug && !canonicalKey) return null;
   const rows = await env.DB
     .prepare("SELECT id, name, payload_json FROM simulations LIMIT 8000")
     .all<{ id: string; name: string; payload_json: string }>();
   for (const row of rows.results) {
     const nameSlug = slugifyName(row.name);
-    if (nameSlug === slug) return row.id;
+    if (slug && nameSlug === slug) return row.id;
+    if (canonicalKey && canonicalizeSimulationLookupKey(row.name) === canonicalKey) return row.id;
     try {
       const payload = JSON.parse(row.payload_json) as { slug?: unknown; slugAliases?: unknown };
-      const payloadSlug = typeof payload.slug === "string" ? slugifyName(payload.slug) : "";
-      if (payloadSlug && payloadSlug === slug) return row.id;
-      const aliases = sanitizeSlugAliasList(payload.slugAliases);
-      if (aliases.includes(slug)) return row.id;
+      const payloadSlugRaw = typeof payload.slug === "string" ? payload.slug : "";
+      const payloadSlug = slugifyName(payloadSlugRaw);
+      if (slug && payloadSlug && payloadSlug === slug) return row.id;
+      if (canonicalKey && payloadSlugRaw && canonicalizeSimulationLookupKey(payloadSlugRaw) === canonicalKey) return row.id;
+      const aliases = Array.isArray(payload.slugAliases)
+        ? payload.slugAliases.filter((alias): alias is string => typeof alias === "string" && alias.trim().length > 0)
+        : [];
+      if (slug && aliases.some((alias) => slugifyName(alias) === slug)) return row.id;
+      if (canonicalKey && aliases.some((alias) => canonicalizeSimulationLookupKey(alias) === canonicalKey)) return row.id;
     } catch {
       // ignore invalid payload rows
     }
@@ -1933,7 +1954,7 @@ export const resolveSimulationIdBySlug = async (
 
 export const fetchPublicSimulationBundle = async (
   env: Env,
-  options: { simulationId?: string; simulationSlug?: string },
+  options: { simulationId?: string; simulationSlug?: string; actorId?: string | null },
 ): Promise<
   | { status: "missing" | "forbidden" }
   | {
@@ -1955,7 +1976,17 @@ export const fetchPublicSimulationBundle = async (
     .first<{ id: string; payload_json: string; visibility: DbVisibility }>();
   if (!simulationRow) return { status: "missing" };
   const visibility = visibilityFromDbVisibility(simulationRow.visibility);
-  if (visibility === "private") return { status: "forbidden" };
+
+  let actorSimulationRole: string | null = null;
+  if (visibility === "private") {
+    if (!options.actorId) return { status: "forbidden" };
+    const roleRow = await env.DB
+      .prepare("SELECT role FROM simulation_roles WHERE simulation_id = ? AND user_id = ? LIMIT 1")
+      .bind(resolvedId, options.actorId)
+      .first<{ role: string }>();
+    if (!roleRow) return { status: "forbidden" };
+    actorSimulationRole = roleRow.role;
+  }
 
   let simulation: CloudResourceRecord;
   try {
@@ -1965,7 +1996,7 @@ export const fetchPublicSimulationBundle = async (
   }
   simulation.id = simulationRow.id;
   simulation.visibility = visibility;
-  simulation.effectiveRole = "viewer";
+  simulation.effectiveRole = actorSimulationRole ?? "viewer";
 
   const referencedSiteIds = referencedLibrarySiteIdsFromSimulation(simulation);
   if (!referencedSiteIds.length) {
@@ -1984,7 +2015,9 @@ export const fetchPublicSimulationBundle = async (
     .all<{ id: string; payload_json: string; visibility: DbVisibility }>();
   const sites: CloudResourceRecord[] = [];
   for (const row of rows.results) {
-    if (visibilityFromDbVisibility(row.visibility) === "private") continue;
+    // When actor has an explicit simulation role (private access), include all referenced
+    // sites regardless of their individual visibility — simulation-level access covers its sites.
+    if (actorSimulationRole === null && visibilityFromDbVisibility(row.visibility) === "private") continue;
     try {
       const site = JSON.parse(row.payload_json) as CloudResourceRecord;
       site.id = row.id;

@@ -50,12 +50,16 @@ export const boundsToViewport = (
   pixelWidth = 800,
   pixelHeight = 600,
 ): MapViewport => {
-  const zoomLat = Math.log2((360 / bounds.latSpanDeg) * (pixelHeight / 256));
+  const latCenter = (bounds.minLat + bounds.maxLat) / 2;
+  // Apply Mercator cos(lat) correction: at high latitudes 1° of latitude spans
+  // more pixels than at the equator, so we must scale down the lat zoom accordingly.
+  const cosLat = Math.cos((latCenter * Math.PI) / 180);
+  const zoomLat = Math.log2((360 / bounds.latSpanDeg) * (pixelHeight / 256) * cosLat);
   const zoomLon = Math.log2((360 / bounds.lonSpanDeg) * (pixelWidth / 256));
   const zoom = Math.max(1, Math.floor(Math.min(zoomLat, zoomLon, 20)));
   return {
     center: {
-      lat: (bounds.minLat + bounds.maxLat) / 2,
+      lat: latCenter,
       lon: (bounds.minLon + bounds.maxLon) / 2,
     },
     zoom,

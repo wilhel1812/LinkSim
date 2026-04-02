@@ -26,7 +26,8 @@
 
 ## Release checklist (required when base is `main`)
 
-- [ ] Source branch is `release/vX.Y.Z` (or `hotfix/*` for approved incidents).
+- [ ] Source branch is `staging` (or `hotfix/*` for approved incidents).
 - [ ] Staging verification was done on the exact same commit.
 - [ ] SemVer bump is correct and intentional.
 - [ ] `vX.Y.Z` tag points to the commit being promoted.
+- [ ] Milestone release checklist completed: `docs/milestone-release-checklist.md`.

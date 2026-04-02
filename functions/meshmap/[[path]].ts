@@ -40,9 +40,15 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     },
   });
 
+  const responseHeaders = new Headers(response.headers);
+  if (response.ok) {
+    responseHeaders.set("Cache-Control", "public, max-age=1800");
+  } else {
+    responseHeaders.set("Cache-Control", "no-store");
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers: response.headers,
+    headers: responseHeaders,
   });
 };

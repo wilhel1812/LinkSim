@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { CircleQuestionMark, CircleX } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { CircleQuestionMark, CircleUserRound, CircleX } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -132,9 +132,11 @@ const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl:
 
 type UserAdminPanelProps = {
   onOpenHelp?: () => void;
+  authBootstrapPending?: boolean;
+  extraActions?: ReactNode;
 };
 
-export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
+export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extraActions }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
@@ -670,6 +672,11 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
     window.location.href = "/cdn-cgi/access/logout";
   }, [isLocalRuntime]);
 
+  const handleSignUp = useCallback(() => {
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
+  }, []);
+
   const [syncModalOpen, setSyncModalOpen] = useState(false);
 
   useEffect(() => {
@@ -734,34 +741,52 @@ export function UserAdminPanel({ onOpenHelp }: UserAdminPanelProps) {
   return (
     <>
       <div className="user-chip-row">
-        <button aria-label="Open user settings" className="user-chip" onClick={() => setOpen(true)} type="button">
-          <ProfileAvatar avatarUrl={me?.avatarUrl ?? ""} name={me?.username ?? "User"} />
-          {canModerate && unreadNotifications.length > 0 ? (
-            <span className="notification-badge">{unreadNotifications.length}</span>
-          ) : null}
-        </button>
+        {me ? (
+          <button aria-label="Open user settings" className="user-chip" onClick={() => setOpen(true)} type="button">
+            <ProfileAvatar avatarUrl={me.avatarUrl ?? ""} name={me.username ?? "User"} />
+            {canModerate && unreadNotifications.length > 0 ? (
+              <span className="notification-badge">{unreadNotifications.length}</span>
+            ) : null}
+          </button>
+        ) : authBootstrapPending ? (
+          <div aria-label="Loading account" className="user-chip user-chip-loading" role="status" title="Checking account access">
+            <div className="map-progress-track">
+              <div className="map-progress-fill map-progress-fill-indeterminate" />
+            </div>
+          </div>
+        ) : (
+          <button aria-label="Sign in or sign up" className="user-chip user-chip-signup" onClick={handleSignUp} type="button">
+            <CircleUserRound aria-hidden="true" strokeWidth={1.8} />
+            <span>Sign in / Sign up</span>
+          </button>
+        )}
         <div className="user-chip-actions">
-          <button
-            aria-label={syncIndicator.label}
-            className={`user-icon-button sync-indicator-button ${syncIndicator.className}`}
-            onClick={handleSyncIndicatorClick}
-            title={syncIndicator.title}
-            type="button"
-          >
-            <SyncStatusIcon
-              className={syncIndicator.state === "syncing" ? "sync-icon-pulsing" : undefined}
-              state={syncIndicator.state}
-              title={syncIndicator.label}
-            />
-          </button>
-          <button aria-label="Open user settings" className="user-icon-button" onClick={() => setOpen(true)} type="button">
-            <SettingsIcon title="Settings" />
-          </button>
+          {me ? (
+            <>
+              <button
+                aria-label={syncIndicator.label}
+                className={`user-icon-button sync-indicator-button ${syncIndicator.className}`}
+                onClick={handleSyncIndicatorClick}
+                title={syncIndicator.title}
+                type="button"
+              >
+                <SyncStatusIcon
+                  className={syncIndicator.state === "syncing" ? "sync-icon-pulsing" : undefined}
+                  state={syncIndicator.state}
+                  title={syncIndicator.label}
+                />
+              </button>
+              <button aria-label="Open user settings" className="user-icon-button" onClick={() => setOpen(true)} type="button">
+                <SettingsIcon title="Settings" />
+              </button>
+            </>
+          ) : null}
           {onOpenHelp ? (
             <button aria-label="Open onboarding" className="user-icon-button" onClick={onOpenHelp} type="button">
               <CircleQuestionMark aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
+          {extraActions}
         </div>
       </div>
 

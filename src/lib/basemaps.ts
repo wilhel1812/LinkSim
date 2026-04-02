@@ -1,4 +1,5 @@
 import type { StyleSpecification } from "maplibre-gl";
+import { THEMES } from "../themes";
 import type { UiColorTheme } from "../themes/types";
 
 export type BasemapProvider = "carto" | "maptiler" | "stadia" | "kartverket";
@@ -13,6 +14,7 @@ export type BasemapProviderCapability = {
   label: string;
   group: "global" | "regional";
   attribution: string;
+  attributionUrl?: string;
   requiresKey: boolean;
   keyEnvVar?: string;
   available: boolean;
@@ -23,6 +25,7 @@ export type BasemapProviderCapability = {
 export type BasemapSelectionResolved = {
   style: string | StyleSpecification;
   attribution: string;
+  attributionUrl: string;
   provider: BasemapProvider;
   providerLabel: string;
   presetId: string;
@@ -96,18 +99,10 @@ const cartoThemedTint = (
   colorTheme: UiColorTheme,
   theme: BasemapTheme,
 ): { color: string; opacity: number } => {
-  if (theme === "dark") {
-    if (colorTheme === "pink") return { color: "#8f5678", opacity: 0.1 };
-    if (colorTheme === "red") return { color: "#8d4b4b", opacity: 0.1 };
-    if (colorTheme === "green") return { color: "#4d7f62", opacity: 0.1 };
-    if (colorTheme === "yellow") return { color: "#7c6524", opacity: 0.1 };
-    return { color: "#4f6f9a", opacity: 0.1 };
-  }
-  if (colorTheme === "pink") return { color: "#d379ab", opacity: 0.08 };
-  if (colorTheme === "red") return { color: "#db8a8a", opacity: 0.08 };
-  if (colorTheme === "green") return { color: "#76b28d", opacity: 0.08 };
-  if (colorTheme === "yellow") return { color: "#e8c65f", opacity: 0.08 };
-  return { color: "#7fa7d8", opacity: 0.08 };
+  return {
+    color: THEMES[colorTheme][theme].cssVars["--terrain"],
+    opacity: theme === "dark" ? 0.1 : 0.08,
+  };
 };
 
 const themedCartoStyle = (theme: BasemapTheme, colorTheme: UiColorTheme): StyleSpecification => {
@@ -219,6 +214,7 @@ const providerCapabilities: BasemapProviderCapability[] = [
     label: "CARTO",
     group: "global",
     attribution: CARTO_ATTRIBUTION,
+    attributionUrl: "https://carto.com/attributions",
     requiresKey: false,
     available: true,
     presets: cartoPresets,
@@ -228,6 +224,7 @@ const providerCapabilities: BasemapProviderCapability[] = [
     label: "MapTiler",
     group: "global",
     attribution: "© OpenStreetMap contributors © MapTiler",
+    attributionUrl: "https://www.openstreetmap.org/copyright",
     requiresKey: true,
     keyEnvVar: "VITE_MAPTILER_KEY",
     available: MAPTILER_KEY.length > 0,
@@ -239,6 +236,7 @@ const providerCapabilities: BasemapProviderCapability[] = [
     label: "Stadia",
     group: "global",
     attribution: "© Stadia Maps © OpenMapTiles © OpenStreetMap contributors © Stamen Design",
+    attributionUrl: "https://stadiamaps.com/",
     requiresKey: false,
     keyEnvVar: "VITE_STADIA_KEY",
     available: true,
@@ -249,6 +247,7 @@ const providerCapabilities: BasemapProviderCapability[] = [
     label: "Kartverket",
     group: "regional",
     attribution: "© Kartverket",
+    attributionUrl: "https://kartverket.no/",
     requiresKey: false,
     available: true,
     presets: kartverketPresets,
@@ -309,6 +308,7 @@ export const resolveBasemapSelection = (
   return {
     style: styleForPreset(provider.provider, preset.id, theme, colorTheme),
     attribution: provider.attribution,
+    attributionUrl: provider.attributionUrl ?? "https://www.openstreetmap.org/copyright",
     provider: provider.provider,
     providerLabel: provider.label,
     presetId: preset.id,

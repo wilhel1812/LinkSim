@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -918,32 +918,31 @@ const buildTerrainShadeOverlay = (
   };
 };
 
-const computeFitViewport = (
-  sites: { position: { lat: number; lon: number } }[],
-): { lat: number; lon: number; zoom: number } => {
-  if (!sites.length) return { lat: 59.9, lon: 10.7, zoom: 8 };
-  if (sites.length === 1) {
-    return { lat: sites[0].position.lat, lon: sites[0].position.lon, zoom: 13 };
-  }
+/** ~20 km geographic margin added around sites before fitting. */
+const FIT_PAD_DEG = 0.18;
+/**
+ * Pixel insets reserved for UI chrome inside the map container.
+ * Right accounts for the map controls pill; others are minimal breathing room.
+ */
+const FIT_CHROME_PADDING = { top: 30, right: 70, bottom: 30, left: 20 } as const;
 
+/**
+ * Compute the LngLatBounds to pass to maplibre fitBounds for a set of sites,
+ * expanding by ~20 km in all directions.
+ */
+const computeSiteFitBounds = (
+  sites: { position: { lat: number; lon: number } }[],
+): [[number, number], [number, number]] | null => {
+  if (!sites.length) return null;
   const lats = sites.map((s) => s.position.lat);
   const lons = sites.map((s) => s.position.lon);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLon = Math.min(...lons);
-  const maxLon = Math.max(...lons);
-
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLon = (minLon + maxLon) / 2;
-
-  const latSpan = Math.max(0.004, (maxLat - minLat) * 1.4);
-  const lonSpan = Math.max(0.004, (maxLon - minLon) * 1.4);
-
-  const zoomLat = Math.log2(170 / latSpan);
-  const zoomLon = Math.log2(360 / lonSpan);
-  const zoom = clamp(Math.min(zoomLat, zoomLon), 3, 15);
-
-  return { lat: centerLat, lon: centerLon, zoom };
+  const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  // Scale lon padding by 1/cos(lat) so the geographic margin is uniform in km.
+  const lonPad = FIT_PAD_DEG / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  return [
+    [Math.min(...lons) - lonPad, Math.min(...lats) - FIT_PAD_DEG],
+    [Math.max(...lons) + lonPad, Math.max(...lats) + FIT_PAD_DEG],
+  ];
 };
 
 type MapViewProps = {
@@ -953,7 +952,14 @@ type MapViewProps = {
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
-  onShare?: () => void;
+  inspectorHeaderActions?: ReactNode;
+  notice?: {
+    message: string;
+    tone: "info" | "warning" | "error";
+    onDismiss?: () => void;
+  };
+  /** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
+  fitBottomInset?: number;
 };
 
 type PendingNewSiteDraft = {
@@ -986,7 +992,9 @@ export function MapView({
   readOnly = false,
   canPersist = true,
   onToggleMapExpanded,
-  onShare,
+  inspectorHeaderActions,
+  notice,
+  fitBottomInset = 30,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
@@ -1017,6 +1025,11 @@ export function MapView({
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainLoadingStartedAtMs = useAppStore((state) => state.terrainLoadingStartedAtMs);
+  const terrainProgressPercent = useAppStore((state) => state.terrainProgressPercent);
+  const terrainProgressTilesLoaded = useAppStore((state) => state.terrainProgressTilesLoaded);
+  const terrainProgressTilesTotal = useAppStore((state) => state.terrainProgressTilesTotal);
+  const terrainProgressBytesLoaded = useAppStore((state) => state.terrainProgressBytesLoaded);
+  const terrainProgressBytesEstimated = useAppStore((state) => state.terrainProgressBytesEstimated);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
@@ -1069,7 +1082,9 @@ export function MapView({
   const [showSimulationSummary, setShowSimulationSummary] = useState(false);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(true);
+  const fitSitesEpoch = useAppStore((state) => state.fitSitesEpoch);
   const [fitControlActive, setFitControlActive] = useState(false);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
   const [armAddSiteOnNextEmptyMapClick, setArmAddSiteOnNextEmptyMapClick] = useState(false);
@@ -1106,6 +1121,22 @@ export function MapView({
       window.removeEventListener("orientationchange", handleViewportChange);
     };
   }, []);
+
+  // When a scenario or simulation loads (fitSitesEpoch increments), fit the map to
+  // all sites with a ~20 km geographic margin and insets for UI chrome.
+  useEffect(() => {
+    if (!fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
+    const bounds = computeSiteFitBounds(sites);
+    if (!bounds) return;
+    mapRef.current.fitBounds(bounds, {
+      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
+      animate: false,
+      maxZoom: 14,
+    });
+    setInteractionViewState(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitSitesEpoch, isMapLoaded, fitBottomInset]);
+
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
     [links],
@@ -1184,7 +1215,12 @@ export function MapView({
       .then((result) => {
         if (canceled) return;
         setMqttNodes(result.nodes);
-        setMqttLoadStatus(null);
+        if (result.fromCache && result.networkError) {
+          const ageMin = Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000));
+          setMqttLoadStatus(`Live fetch failed — showing ${result.nodes.length} cached node(s) from ${ageMin} min ago.`);
+        } else {
+          setMqttLoadStatus(null);
+        }
       })
       .catch((error) => {
         if (canceled) return;
@@ -1476,8 +1512,23 @@ export function MapView({
   }, [isTerrainFetching, terrainLoadingStartedAtMs]);
   const keepWorkingSuffix =
     elapsedTerrainLoadingMs > 60_000 ? " — loading will continue in the background, even if you leave the app" : "";
+  const hasTerrainDownloadProgress =
+    terrainProgressTilesLoaded > 0 || terrainProgressBytesLoaded > 0 || terrainProgressBytesEstimated > 0;
+  const formatMb = (bytes: number) => `${(Math.max(0, bytes) / (1024 * 1024)).toFixed(1)} MB`;
+  const terrainProgressLabel =
+    isTerrainFetching && hasTerrainDownloadProgress && terrainProgressTilesTotal > 0
+      ? `Loading terrain ${terrainProgressPercent}% — ${formatMb(terrainProgressBytesLoaded)} of ~${formatMb(
+          terrainProgressBytesEstimated || terrainProgressBytesLoaded,
+        )} (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles)`
+      : null;
+  const terrainPreparingLabel =
+    isTerrainFetching && !hasTerrainDownloadProgress
+      ? terrainProgressTilesTotal > 0
+        ? `Preparing terrain download... (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles queued)`
+        : "Preparing terrain download..."
+      : null;
   const backgroundBusyLabel = (isTerrainFetching
-    ? terrainFetchStatus || "Loading terrain data..."
+    ? terrainProgressLabel || terrainPreparingLabel || terrainFetchStatus || "Loading terrain data..."
     : isTerrainRecommending
       ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : "") + keepWorkingSuffix;
@@ -1516,12 +1567,15 @@ export function MapView({
   };
 
   const fitToNodes = () => {
+    if (!mapRef.current) return;
+    const bounds = computeSiteFitBounds(sites);
+    if (!bounds) return;
     setFitControlActive(true);
-    const next = computeFitViewport(sites);
     setInteractionViewState(null);
-    updateMapViewport({
-      center: { lat: next.lat, lon: next.lon },
-      zoom: next.zoom,
+    mapRef.current.fitBounds(bounds, {
+      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
+      animate: true,
+      maxZoom: 14,
     });
   };
 
@@ -1913,12 +1967,11 @@ export function MapView({
       `Shared/public library sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to simulation.`,
     );
   }
-  if (showDiscoveryMqtt) {
+  if (showDiscoveryMqtt && !mqttLoadStatus) {
     inspectorLines.push(
-      mqttLoadStatus ??
-        (mqttTooDenseInView
-          ? `MQTT nodes in view: ${mqttNodesInView.length}. Zoom in to show markers (limit ${mqttInViewLimit}).`
-          : `MQTT nodes in view: ${mqttNodesInView.length}. Click a marker to open an Add Site draft.`),
+      mqttTooDenseInView
+        ? `MQTT nodes in view: ${mqttNodesInView.length}. Zoom in to show markers (limit ${mqttInViewLimit}).`
+        : `MQTT nodes in view: ${mqttNodesInView.length}. Click a marker to open an Add Site draft.`,
     );
   }
   if (endpointPickTarget && endpointPickError) inspectorLines.push(endpointPickError);
@@ -1962,13 +2015,18 @@ export function MapView({
           >
             {isMapExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
           </button>
-          {onShare ? (
-            <button aria-label="Share" className="map-control-btn map-control-btn-icon" onClick={onShare} title="Share" type="button">
-              <Share aria-hidden="true" strokeWidth={1.8} />
+        </div>
+      </div>
+      {notice ? (
+        <div className={`map-inline-notice map-inline-notice-${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>
+          <span>{notice.message}</span>
+          {notice.onDismiss ? (
+            <button aria-label="Dismiss notice" className="inline-action" onClick={notice.onDismiss} title="Dismiss" type="button">
+              Dismiss
             </button>
           ) : null}
         </div>
-      </div>
+      ) : null}
       {(coverageVizMode !== "none" &&
         (!hasHeatTopology ||
         (coverageVizMode === "relay" && !hasRelayTopology) ||
@@ -1983,6 +2041,9 @@ export function MapView({
       ) : null}
       {showInspector ? (
         <aside className="map-inspector" aria-live="polite">
+          {inspectorHeaderActions ? (
+            <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
+          ) : null}
           {(isSimulationRecomputing || isBackgroundBusy) && backgroundBusyLabel ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">
@@ -1991,6 +2052,8 @@ export function MapView({
               <div className="map-progress-track">
                 {isSimulationRecomputing ? (
                   <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
+                ) : isTerrainFetching && hasTerrainDownloadProgress && terrainProgressTilesTotal > 0 ? (
+                  <div className="map-progress-fill" style={{ width: `${terrainProgressPercent}%` }} />
                 ) : (
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 )}
@@ -2067,6 +2130,31 @@ export function MapView({
                   {line}
                 </p>
               ))}
+            </div>
+          ) : null}
+          {showDiscoveryMqtt && mqttLoadStatus ? (
+            <div className="map-inspector-section">
+              <p className="map-inspector-line">{mqttLoadStatus}</p>
+              {mqttLoadStatus === "Loading MQTT nodes..." ? (
+                <div className="map-progress-track">
+                  <div className="map-progress-fill map-progress-fill-indeterminate" />
+                </div>
+              ) : mqttLoadStatus.includes("failed") ? (
+                <span className="map-inline-actions">
+                  <button
+                    aria-label="Retry MQTT load"
+                    className="map-control-btn"
+                    onClick={() => {
+                      setMqttNodes([]);
+                      setMqttLoadStatus(null);
+                    }}
+                    type="button"
+                  >
+                    <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
+                    <span>Retry</span>
+                  </button>
+                </span>
+              ) : null}
             </div>
           ) : null}
           {mqttDuplicatePrompt ? (
@@ -2455,6 +2543,7 @@ export function MapView({
           zoom: activeViewState.zoom,
         }}
         mapStyle={useFallbackMapStyle ? fallbackMapStyle : resolvedBasemap.style}
+        onLoad={() => setIsMapLoaded(true)}
         onError={() => {
           if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket") {
             setUseFallbackMapStyle(true);
