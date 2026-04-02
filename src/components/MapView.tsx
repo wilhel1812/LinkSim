@@ -920,6 +920,8 @@ const buildTerrainShadeOverlay = (
 
 const computeFitViewport = (
   sites: { position: { lat: number; lon: number } }[],
+  containerWidth = 800,
+  containerHeight = 600,
 ): { lat: number; lon: number; zoom: number } => {
   if (!sites.length) return { lat: 59.9, lon: 10.7, zoom: 8 };
   if (sites.length === 1) {
@@ -935,12 +937,15 @@ const computeFitViewport = (
 
   const centerLat = (minLat + maxLat) / 2;
   const centerLon = (minLon + maxLon) / 2;
+  // Apply Mercator cos(lat) correction: at high latitudes 1° of latitude spans
+  // more pixels than at the equator.
+  const cosLat = Math.cos((centerLat * Math.PI) / 180);
 
   const latSpan = Math.max(0.004, (maxLat - minLat) * 1.4);
   const lonSpan = Math.max(0.004, (maxLon - minLon) * 1.4);
 
-  const zoomLat = Math.log2(170 / latSpan);
-  const zoomLon = Math.log2(360 / lonSpan);
+  const zoomLat = Math.log2((360 * cosLat) / latSpan * (containerHeight / 256));
+  const zoomLon = Math.log2((360 / lonSpan) * (containerWidth / 256));
   const zoom = clamp(Math.min(zoomLat, zoomLon), 3, 15);
 
   return { lat: centerLat, lon: centerLon, zoom };
@@ -1548,7 +1553,10 @@ export function MapView({
 
   const fitToNodes = () => {
     setFitControlActive(true);
-    const next = computeFitViewport(sites);
+    const container = mapRef.current?.getContainer();
+    const w = container?.clientWidth ?? 800;
+    const h = container?.clientHeight ?? 600;
+    const next = computeFitViewport(sites, w, h);
     setInteractionViewState(null);
     updateMapViewport({
       center: { lat: next.lat, lon: next.lon },

@@ -86,6 +86,7 @@ export function AppShell() {
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const sites = useAppStore((state) => state.sites);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
+  const loadDemoScenario = useAppStore((state) => state.loadDemoScenario);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
@@ -101,6 +102,9 @@ export function AppShell() {
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
+  // Derived early so effects below can reference them without temporal dead zone.
+  const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
+  const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const [activeUserId, setActiveUserId] = useState("");
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showOnboardingTutorial, setShowOnboardingTutorial] = useState(false);
@@ -139,7 +143,6 @@ export function AppShell() {
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
     [simulationPresets, selectedScenarioId],
   );
-  const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const publishAppNotice = useCallback((notice: AppNotice) => {
     setAppNotice((current) => {
       if (current && current.id === notice.id && current.message === notice.message) {
@@ -434,6 +437,17 @@ export function AppShell() {
       void runMigrations().then(() => initializeCloudSync());
     }
   }, [accessState, initializeCloudSync]);
+
+  // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink.
+  useEffect(() => {
+    const isAnonNoDeepLink =
+      !deepLinkParse.ok &&
+      (isAnonymousGuestReadonly || (accessState === "locked" && lockedNeedsSignIn));
+    if (isAnonNoDeepLink && sites.length === 0) {
+      loadDemoScenario();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessState, isAnonymousGuestReadonly, lockedNeedsSignIn, deepLinkParse.ok]);
 
   const signOutOrReadonly = useCallback(() => {
     if (isLocalRuntime) {
@@ -1097,7 +1111,6 @@ export function AppShell() {
       ["--mobile-controls-occupied" as string]: `${mobileControlsOccupied}px`,
     };
   }, [isMobileViewport, mobileControlsOccupied]);
-  const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
   const isAnonymousBootstrapShell = accessState === "checking" || (accessState === "locked" && lockedNeedsSignIn);
   const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
 
@@ -1229,9 +1242,17 @@ export function AppShell() {
             <span className="field-help">Checking access in the background. Anonymous mode is available while this resolves.</span>
           </div>
         ) : null}
-        {accessState === "locked" && lockedNeedsSignIn ? (
+        {accessState === "locked" && lockedNeedsSignIn && !deepLinkParse.ok ? (
           <div className="workspace-header-actions">
-            <span className="field-help">You are signed out. Continue in anonymous mode or sign in to unlock your account workspace.</span>
+            <span className="field-help">Exploring in demo mode.</span>
+            <button className="inline-action" onClick={signIn} type="button">
+              Sign in to save your own simulations
+            </button>
+          </div>
+        ) : null}
+        {accessState === "locked" && lockedNeedsSignIn && deepLinkParse.ok ? (
+          <div className="workspace-header-actions">
+            <span className="field-help">Viewing as guest.</span>
             <button className="inline-action" onClick={signIn} type="button">
               Sign In
             </button>
@@ -1256,19 +1277,17 @@ export function AppShell() {
             </div>
           </div>
         ) : null}
-        {workspaceState === "no-simulation" ? (
+        {workspaceState === "no-simulation" && !isReadOnlyShell ? (
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
               <p>Open an existing simulation or create a new one to continue.</p>
-              {!isReadOnlyShell ? (
-                <button
-                  className="inline-action"
-                  onClick={() => setShowSimulationLibraryRequest(true)}
-                  type="button"
-                >
-                  Open Library
-                </button>
-              ) : null}
+              <button
+                className="inline-action"
+                onClick={() => setShowSimulationLibraryRequest(true)}
+                type="button"
+              >
+                Open Library
+              </button>
             </div>
           </div>
         ) : null}
