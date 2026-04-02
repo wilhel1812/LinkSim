@@ -3,6 +3,7 @@ import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, Maximize2, Minimize2 } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   classifyPassFailState,
   computeSourceCentricRxMetrics,
@@ -47,9 +48,15 @@ type LinkProfileChartProps = {
   isExpanded: boolean;
   onToggleExpanded: () => void;
   showExpandToggle?: boolean;
+  panelControls?: ReactNode;
 };
 
-export function LinkProfileChart({ isExpanded, onToggleExpanded, showExpandToggle = true }: LinkProfileChartProps) {
+export function LinkProfileChart({
+  isExpanded,
+  onToggleExpanded,
+  showExpandToggle = true,
+  panelControls,
+}: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
   const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
@@ -679,12 +686,15 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded, showExpandToggl
 
   return (
     <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`} data-profile-revision={profileRevision}>
-      <div className="chart-endpoints" aria-live="polite">
-        <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
-        <span className="chart-endpoint-sep" aria-hidden>
-          →
-        </span>
-        <span className="chart-endpoint chart-endpoint-right">{toSiteName}</span>
+      <div className="chart-panel-header-row">
+        <div className="chart-endpoints" aria-live="polite">
+          <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
+          <span className="chart-endpoint-sep" aria-hidden>
+            →
+          </span>
+          <span className="chart-endpoint chart-endpoint-right">{toSiteName}</span>
+        </div>
+        {panelControls ? <div className="chart-panel-actions">{panelControls}</div> : null}
       </div>
       {!geometry.hasData ? (
         <div className="chart-empty">

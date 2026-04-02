@@ -106,6 +106,7 @@ input {
 .app-shell {
   display: grid;
   --sidebar-overlay-width: clamp(280px, 20vw, 400px);
+  --inspector-overlay-width: clamp(280px, 20vw, 400px);
   grid-template-columns: minmax(0, var(--sidebar-overlay-width)) minmax(0, 1fr);
   --workspace-panel-gap: 18px;
   gap: 18px;
@@ -120,6 +121,10 @@ input {
 
 .app-shell.is-map-expanded,
 .app-shell.is-profile-expanded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell.is-navigator-hidden {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -608,7 +613,7 @@ input {
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(220px, 32vh);
   gap: var(--workspace-panel-gap);
-  padding-right: calc(var(--sidebar-overlay-width) + 18px);
+  padding-right: calc(var(--inspector-overlay-width) + 18px);
   min-height: 0;
   z-index: 30;
   pointer-events: none;
@@ -626,29 +631,29 @@ input {
   display: none;
 }
 
-.panel-visibility-controls {
+.collapsed-panel-controls {
   position: absolute;
   inset: 0;
   z-index: 82;
   pointer-events: none;
 }
 
-.panel-visibility-btn {
+.collapsed-panel-btn {
   position: absolute;
   pointer-events: auto;
 }
 
-.panel-visibility-btn-navigator {
+.collapsed-panel-btn-navigator {
   left: 26px;
-  top: 26px;
+  top: 66px;
 }
 
-.panel-visibility-btn-inspector {
+.collapsed-panel-btn-inspector {
   right: 26px;
-  top: 26px;
+  top: 66px;
 }
 
-.panel-visibility-btn-profile {
+.collapsed-panel-btn-profile {
   left: 50%;
   bottom: calc(max(220px, 32vh) + var(--workspace-panel-gap) + 22px);
   transform: translateX(-50%);
@@ -1012,7 +1017,7 @@ input {
 }
 
 .app-shell:not(.is-map-expanded):not(.is-profile-expanded) .map-control-note {
-  right: calc(var(--sidebar-overlay-width) + 30px);
+  right: calc(var(--inspector-overlay-width) + 30px);
 }
 
 .map-inline-actions {
@@ -1036,7 +1041,7 @@ input {
   bottom: 18px;
   right: 18px;
   z-index: 60;
-  width: min(var(--sidebar-overlay-width), calc(100% - 36px));
+  width: min(var(--inspector-overlay-width), calc(100% - 36px));
   max-height: none;
   overflow: auto;
   border: 1px solid var(--border);
@@ -1053,6 +1058,33 @@ input {
   display: grid;
   gap: 0;
   font-size: 0.76rem;
+}
+
+.map-inspector-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.map-inspector-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-inspector-header-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-right: 4px;
+}
+
+.panel-size-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-panel .maplibregl-ctrl-bottom-right,
@@ -1578,6 +1610,20 @@ input {
   font-family: "IBM Plex Mono", monospace;
 }
 
+.chart-panel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 10px;
+}
+
+.chart-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .chart-endpoint {
   color: var(--text);
   white-space: nowrap;
@@ -1883,7 +1929,7 @@ input {
 
   .mobile-workspace-tabs {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.35fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     padding: 8px;
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
@@ -1909,11 +1955,6 @@ input {
     cursor: pointer;
   }
 
-  .mobile-workspace-tab-cycle {
-    font-size: 0.7rem;
-    letter-spacing: 0.01em;
-  }
-
   .mobile-workspace-tab.is-active {
     border-color: var(--accent);
     background: var(--accent-soft);
@@ -1933,8 +1974,41 @@ input {
   }
 
   .mobile-workspace-panel > * {
+    min-height: 0;
+  }
+
+  .mobile-workspace-panel-shell > :last-child {
     height: 100%;
     min-height: 0;
+    overflow: auto;
+  }
+
+  .mobile-workspace-panel-shell {
+    grid-template-rows: auto minmax(0, 1fr);
+    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+    backdrop-filter: blur(var(--glass-panel-blur));
+    box-shadow: var(--shadow-elev-2);
+    overflow: hidden;
+  }
+
+  .mobile-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px 6px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+  }
+
+  .mobile-panel-header h3 {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text);
   }
 
   .mobile-workspace-panel .chart-panel {
@@ -1944,6 +2018,11 @@ input {
     max-height: 100%;
     grid-row: 1;
     overflow: auto;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+    padding-top: 4px;
   }
 
   .mobile-workspace-panel .chart-svg-wrap {
@@ -1966,6 +2045,10 @@ input {
     max-height: 100%;
     min-height: 100%;
     overflow: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
   }
 
   .app-shell.is-mobile-shell.is-map-expanded .mobile-workspace-panel,
@@ -1975,7 +2058,6 @@ input {
 
   .app-shell.is-mobile-shell.mobile-panel-navigator .map-inspector,
   .app-shell.is-mobile-shell.mobile-panel-profile .map-inspector,
-  .app-shell.is-mobile-shell.mobile-panel-map .map-inspector,
   .app-shell.is-mobile-shell.is-map-expanded .map-inspector {
     display: none;
   }
@@ -1984,14 +2066,11 @@ input {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
     --sidebar-overlay-width: 0px;
+    --inspector-overlay-width: 0px;
     padding: 12px;
     height: auto;
     min-height: 100lvh;
     overflow: auto;
-  }
-
-  .panel-visibility-controls {
-    display: none;
   }
 
   .app-shell.is-mobile-shell {
@@ -2123,7 +2202,8 @@ input {
     z-index: 85;
   }
 
-  .app-shell.is-mobile-shell.mobile-panel-profile .workspace-panel.is-profile-expanded .mobile-workspace-panel {
+  .app-shell.is-mobile-shell.mobile-bottom-full .workspace-panel .mobile-workspace-panel,
+  .app-shell.is-mobile-shell.mobile-bottom-full .workspace-panel .map-inspector {
     top: calc(12px + env(safe-area-inset-top));
     bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-tab-gap));
     height: auto;

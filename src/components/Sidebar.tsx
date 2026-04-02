@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { CircleX, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
 import Map, {
@@ -258,11 +258,19 @@ type SidebarProps = {
   hideLibraryBrowsing?: boolean;
   readOnly?: boolean;
   authBootstrapPending?: boolean;
+  panelToggleControl?: ReactNode;
   /** Override the computed simulation name shown in the Simulation section header. */
   simulationDisplayLabel?: string;
 };
 
-export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = false, authBootstrapPending = false, simulationDisplayLabel }: SidebarProps) {
+export function Sidebar({
+  onOpenHelp,
+  hideLibraryBrowsing = false,
+  readOnly = false,
+  authBootstrapPending = false,
+  panelToggleControl,
+  simulationDisplayLabel,
+}: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
@@ -1780,7 +1788,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
 
   return (
     <aside className="sidebar-panel">
-      <UserAdminPanel authBootstrapPending={authBootstrapPending} onOpenHelp={onOpenHelp} />
+      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} />
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>
