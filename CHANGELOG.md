@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.13.0] - 2026-04-02
+
+### Added
+- Private simulations can now be shared with specific users without elevating them to public. Collaborators are granted viewer or editor access per-user; the simulation and its sites stay private. The share link is auth-gated — only explicitly added users can open it.
+- Share modal redesigned with two equal option cards: "Make Broadly Accessible" (existing public upgrade path) and "Share with Specific Users" (new private collaboration path), each with an icon.
+- Per-collaborator role selector (viewer / editor) in the resource access dialog.
+
+### Fixed
+- Cloud auto-sync no longer fails after sharing a private simulation with specific users. The `simulation_private_site_reference` conflict is suppressed during sync for private simulations; strict validation is kept only when explicitly upgrading a simulation to shared/public.
+- Removed the redundant "Inspector" heading from the inspector panel header.
+- Panel toggle button is now left-aligned on desktop and hidden on mobile; Share button stays right-aligned in both modes.
+- Clipboard permission error when saving collaborators resolved — clipboard write is now registered within the user-gesture context before async operations begin.
+
 ## [0.12.1] - 2026-03-28
 
 ### Fixed
