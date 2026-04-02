@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleX, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share } from "lucide-react";
+import { CircleX, Copy, Globe, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -1710,97 +1710,128 @@ export function AppShell() {
             ) : (
               <>
                 <p className="field-help">This link opens the same simulation, selected path, map view, and overlay mode.</p>
-                <input className="locale-select" readOnly value={currentShareLink} />
+                <div style={{ display: "flex", gap: "0.5em", alignItems: "center" }}>
+                  <input className="locale-select" readOnly style={{ flex: 1, minWidth: 0 }} value={currentShareLink} />
+                  <button
+                    aria-label="Copy link"
+                    className="inline-action inline-action-icon"
+                    onClick={() => void copyCurrentLink()}
+                    title="Copy link"
+                    type="button"
+                  >
+                    <Copy aria-hidden="true" strokeWidth={1.8} />
+                  </button>
+                </div>
                 {toVisibility(activeSimulation.visibility) === "private" ? (
                   <div className="panel-section compact-panel">
                     <h4>Private Simulation</h4>
-                    <p className="field-help">Choose how to share this simulation:</p>
-                    <div className="chip-group">
-                      <button className="inline-action" disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
-                        Upgrade To Shared And Copy Link
-                      </button>
-                    </div>
-                    {referencedPrivateSites.length ? (
-                      <p className="field-help">
-                        Referenced private sites that will also be upgraded: {referencedPrivateSites.length}
-                        {referencedPrivateSites.some((site) => !canEditResource(site)) ? " (some sites require owner access)" : ""}
-                      </p>
-                    ) : null}
-                    <details>
-                      <summary className="field-help" style={{ cursor: "pointer", paddingTop: "0.5em" }}>
-                        Share with specific users only (stays private)
-                      </summary>
-                      <p className="field-help">
-                        Add users by name or email. They must be logged in to access the link.
-                      </p>
-                      <div className="chip-group collaborator-selected-list">
-                        {shareSpecificUsers.map((uid) => {
-                          const user = shareDirectory.find((u) => u.id === uid);
-                          return (
-                            <span className="site-quick-item" key={uid}>
-                              <span>{user?.username ?? uid}</span>
-                              <select
-                                aria-label={`Role for ${user?.username ?? uid}`}
-                                onChange={(e) => setShareSpecificRoles((prev) => ({ ...prev, [uid]: e.target.value as "viewer" | "editor" }))}
-                                value={shareSpecificRoles[uid] ?? "viewer"}
-                              >
-                                <option value="viewer">Viewer</option>
-                                <option value="editor">Editor</option>
-                              </select>
-                              <button
-                                className="inline-action"
-                                onClick={() => setShareSpecificUsers((prev) => prev.filter((id) => id !== uid))}
-                                type="button"
-                              >
-                                Remove
-                              </button>
-                            </span>
-                          );
-                        })}
-                      </div>
-                      <input
-                        onChange={(e) => setShareUserQuery(e.target.value)}
-                        placeholder="Search users by name or email"
-                        type="text"
-                        value={shareUserQuery}
-                      />
-                      <div className="collaborator-candidate-list">
-                        {shareDirectoryBusy ? (
-                          <p className="field-help">Loading users…</p>
-                        ) : (
-                          shareDirectory
-                            .filter((u) => !shareSpecificUsers.includes(u.id) && u.id !== currentUser?.id)
-                            .filter((u) => !shareUserQuery || u.username.toLowerCase().includes(shareUserQuery.toLowerCase()) || u.email.toLowerCase().includes(shareUserQuery.toLowerCase()))
-                            .slice(0, 8)
-                            .map((u) => (
-                              <button
-                                className="site-quick-item"
-                                key={u.id}
-                                onClick={() => {
-                                  setShareSpecificUsers((prev) => prev.includes(u.id) ? prev : [...prev, u.id]);
-                                  setShareUserQuery("");
-                                }}
-                                type="button"
-                              >
-                                <span>{u.username}</span>
-                                <span className="field-help">{u.email}</span>
-                                <span className="inline-action">Add</span>
-                              </button>
-                            ))
-                        )}
-                      </div>
-                      <div className="chip-group">
-                        <button
-                          className="inline-action"
-                          disabled={shareSpecificBusy || !shareSpecificUsers.length}
-                          onClick={() => void runShareWithSpecificUsers()}
-                          type="button"
-                        >
-                          Save & Copy Link
+                    <p className="field-help">This simulation is private. Choose how to share it:</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75em", marginTop: "0.5em" }}>
+                      {/* Option A: Upgrade to shared */}
+                      <div className="panel-section compact-panel" style={{ display: "flex", flexDirection: "column", gap: "0.5em" }}>
+                        <Globe aria-hidden="true" size={22} strokeWidth={1.6} />
+                        <strong>Make Broadly Accessible</strong>
+                        <p className="field-help" style={{ flex: 1 }}>
+                          Anyone with the link can view. The simulation
+                          {referencedPrivateSites.length ? ` and ${referencedPrivateSites.length} referenced site(s)` : ""} will be set to Shared.
+                          {referencedPrivateSites.some((site) => !canEditResource(site)) ? " Some sites require owner access." : ""}
+                        </p>
+                        <button className="inline-action" disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
+                          Upgrade &amp; Copy Link
                         </button>
                       </div>
-                      {shareSpecificStatus ? <p className="field-help">{shareSpecificStatus}</p> : null}
-                    </details>
+                      {/* Option B: Specific users */}
+                      <div className="panel-section compact-panel" style={{ display: "flex", flexDirection: "column", gap: "0.5em" }}>
+                        <Users aria-hidden="true" size={22} strokeWidth={1.6} />
+                        <strong>Share with Specific Users</strong>
+                        <p className="field-help">
+                          Stays private. Only the users you add can access the link when signed in.
+                        </p>
+                        {/* Selected users */}
+                        {shareSpecificUsers.length > 0 ? (
+                          <div className="chip-group collaborator-selected-list">
+                            {shareSpecificUsers.map((uid) => {
+                              const user = shareDirectory.find((u) => u.id === uid);
+                              return (
+                                <span className="site-quick-item" key={uid}>
+                                  <span>{user?.username ?? uid}</span>
+                                  <select
+                                    aria-label={`Role for ${user?.username ?? uid}`}
+                                    onChange={(e) => setShareSpecificRoles((prev) => ({ ...prev, [uid]: e.target.value as "viewer" | "editor" }))}
+                                    value={shareSpecificRoles[uid] ?? "viewer"}
+                                  >
+                                    <option value="viewer">Viewer</option>
+                                    <option value="editor">Editor</option>
+                                  </select>
+                                  <button
+                                    className="inline-action"
+                                    onClick={() => setShareSpecificUsers((prev) => prev.filter((id) => id !== uid))}
+                                    type="button"
+                                  >
+                                    Remove
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        {/* Search */}
+                        <div style={{ display: "flex", gap: "0.4em", alignItems: "center" }}>
+                          <UserRoundSearch aria-hidden="true" size={16} strokeWidth={1.6} style={{ flexShrink: 0 }} />
+                          <input
+                            onChange={(e) => setShareUserQuery(e.target.value)}
+                            placeholder="Search by name or email"
+                            style={{ flex: 1, minWidth: 0 }}
+                            type="text"
+                            value={shareUserQuery}
+                          />
+                        </div>
+                        {/* Candidates — only show when typing */}
+                        {shareUserQuery.trim() ? (
+                          <div className="collaborator-candidate-list">
+                            {shareDirectoryBusy ? (
+                              <p className="field-help">Loading…</p>
+                            ) : (
+                              shareDirectory
+                                .filter((u) => !shareSpecificUsers.includes(u.id) && u.id !== currentUser?.id)
+                                .filter((u) => u.username.toLowerCase().includes(shareUserQuery.toLowerCase()) || u.email.toLowerCase().includes(shareUserQuery.toLowerCase()))
+                                .slice(0, 6)
+                                .map((u) => (
+                                  <button
+                                    className="site-quick-item"
+                                    key={u.id}
+                                    onClick={() => {
+                                      setShareSpecificUsers((prev) => prev.includes(u.id) ? prev : [...prev, u.id]);
+                                      setShareUserQuery("");
+                                    }}
+                                    type="button"
+                                  >
+                                    <UserRoundPlus aria-hidden="true" size={14} strokeWidth={1.6} />
+                                    <span>{u.username}</span>
+                                    {u.email ? <span className="field-help">{u.email}</span> : null}
+                                  </button>
+                                ))
+                            )}
+                            {!shareDirectoryBusy && shareDirectory.filter((u) => !shareSpecificUsers.includes(u.id) && u.id !== currentUser?.id && (u.username.toLowerCase().includes(shareUserQuery.toLowerCase()) || u.email.toLowerCase().includes(shareUserQuery.toLowerCase()))).length === 0 ? (
+                              <p className="field-help">No matching users.</p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <div style={{ marginTop: "auto" }}>
+                          <button
+                            className="inline-action"
+                            disabled={shareSpecificBusy || !shareSpecificUsers.length}
+                            onClick={() => void runShareWithSpecificUsers()}
+                            style={{ display: "flex", alignItems: "center", gap: "0.35em" }}
+                            type="button"
+                          >
+                            <Copy aria-hidden="true" size={14} strokeWidth={1.8} />
+                            Save &amp; Copy Link
+                          </button>
+                        </div>
+                        {shareSpecificStatus ? <p className="field-help">{shareSpecificStatus}</p> : null}
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </>
