@@ -121,15 +121,17 @@ export type CollaboratorDirectoryUser = {
 };
 
 export type DeepLinkStatus = "ok" | "forbidden" | "missing";
-export type DeepLinkStatusResult = { status: DeepLinkStatus; simulationId?: string };
+export type DeepLinkStatusResult = { status: DeepLinkStatus; simulationId?: string; authenticated?: boolean };
 
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const headers = new Headers(init?.headers ?? {});
+  const hasBody = init?.body !== undefined && init.body !== null;
+  if (hasBody && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
   const response = await fetch(path, {
     ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
   if (!response.ok) {
     const raw = await response.text();
@@ -351,7 +353,7 @@ export const fetchDeepLinkStatus = async (input: {
   const params = new URLSearchParams();
   if (input.simulationId?.trim()) params.set("sim", input.simulationId.trim());
   if (input.simulationSlug?.trim()) params.set("slug", input.simulationSlug.trim());
-  const data = await apiCall<{ status?: unknown; simulationId?: unknown }>(
+  const data = await apiCall<{ status?: unknown; simulationId?: unknown; authenticated?: unknown }>(
     `/api/deep-link-status?${params.toString()}`,
     { method: "GET" },
   );
@@ -361,6 +363,7 @@ export const fetchDeepLinkStatus = async (input: {
   return {
     status: normalized,
     simulationId: typeof data.simulationId === "string" && data.simulationId.trim() ? data.simulationId : undefined,
+    authenticated: data.authenticated === true,
   };
 };
 

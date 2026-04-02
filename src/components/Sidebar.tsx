@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel } from "lucide-react";
+import { CircleX, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -11,7 +11,7 @@ import Map, {
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import { useThemeVariant } from "../hooks/useThemeVariant";
-import { t, LOCALE_LABELS, SUPPORTED_LOCALES } from "../i18n/locales";
+import { t } from "../i18n/locales";
 import { fetchElevations } from "../lib/elevationService";
 import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
@@ -40,7 +40,6 @@ import {
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { PRIMARY_ATTRIBUTION } from "../lib/terrainCatalog";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -55,6 +54,7 @@ import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
 import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
+import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
@@ -129,24 +129,11 @@ const meshmapLabelsLayer = (color: string, haloColor: string): LayerProps => ({
   },
 });
 
-const downloadJson = (fileName: string, payload: unknown) => {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.click();
-  URL.revokeObjectURL(url);
-};
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
-const SITE_LIBRARY_KEY = "rmw-site-library-v1";
-const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
-const STORAGE_BOOT_KEY = "rmw-storage-boot-v1";
 const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
 
 const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
   parseDeepLinkFromLocation({ search, pathname }).ok;
-const STORAGE_HEALTH_KEY = "rmw-storage-health-v1";
 
 const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
   { key: "owned", label: "Owned" },
@@ -196,39 +183,6 @@ const selectionLabel = <T extends string>(selected: T[], allValues: T[]): string
 const selectionIsFiltered = <T extends string>(selected: T[], allValues: T[]): boolean => {
   const effective = effectiveSelection(selected, allValues);
   return effective.length !== allValues.length;
-};
-
-type LibraryBackupPayload = {
-  schemaVersion: 1;
-  exportedAtIso: string;
-  origin: string;
-  siteLibrary?: unknown[];
-  simulationPresets?: unknown[];
-};
-
-type StorageHealth = {
-  lastExportIso?: string;
-  lastImportIso?: string;
-  lastRestoreIso?: string;
-};
-
-const readStorageHealth = (): StorageHealth => {
-  try {
-    const raw = localStorage.getItem(STORAGE_HEALTH_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as StorageHealth;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const writeStorageHealth = (value: StorageHealth) => {
-  try {
-    localStorage.setItem(STORAGE_HEALTH_KEY, JSON.stringify(value));
-  } catch {
-    // Best effort only.
-  }
 };
 
 const formatChangeSummary = (action: string, note: string | null): string => {
@@ -299,13 +253,24 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
   return lines;
 };
 
-const getSnapshotCount = (_key: string): number => 0;
-
 type SidebarProps = {
   onOpenHelp?: () => void;
+  hideLibraryBrowsing?: boolean;
+  readOnly?: boolean;
+  authBootstrapPending?: boolean;
+  panelToggleControl?: ReactNode;
+  /** Override the computed simulation name shown in the Simulation section header. */
+  simulationDisplayLabel?: string;
 };
 
-export function Sidebar({ onOpenHelp }: SidebarProps) {
+export function Sidebar({
+  onOpenHelp,
+  hideLibraryBrowsing = false,
+  readOnly = false,
+  authBootstrapPending = false,
+  panelToggleControl,
+  simulationDisplayLabel,
+}: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
@@ -329,7 +294,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const scenarioOptions = useAppStore((state) => state.scenarioOptions);
   const locale = useAppStore((state) => state.locale);
   const networks = useAppStore((state) => state.networks);
-  const setLocale = useAppStore((state) => state.setLocale);
   const selectScenario = useAppStore((state) => state.selectScenario);
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const selectSiteById = useAppStore((state) => state.selectSiteById);
@@ -353,6 +317,9 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const setPropagationModel = useAppStore((state) => state.setPropagationModel);
   const updateLink = useAppStore((state) => state.updateLink);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
+  const updateMapViewport = useAppStore((state) => state.updateMapViewport);
+  const isEditorTerrainFetching = useAppStore((state) => state.isEditorTerrainFetching);
+  const loadTerrainForCoordinate = useAppStore((state) => state.loadTerrainForCoordinate);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
   const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
@@ -369,8 +336,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
   const getSelectedNetwork = useAppStore((state) => state.getSelectedNetwork);
   const model = useAppStore((state) => state.propagationModel);
-  const showSimulationLibraryRequest = useAppStore((state) => state.showSimulationLibraryRequest);
-  const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
   const showNewSimulationRequest = useAppStore((state) => state.showNewSimulationRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
   const showSiteLibraryRequest = useAppStore((state) => state.showSiteLibraryRequest);
@@ -468,7 +433,16 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const [newLibrarySourceMeta, setNewLibrarySourceMeta] = useState<unknown>(undefined);
   const [newLibraryLat, setNewLibraryLat] = useState(60.0);
   const [newLibraryLon, setNewLibraryLon] = useState(10.0);
+  const [newLibraryMapView, setNewLibraryMapView] = useState({
+    longitude: 10.0,
+    latitude: 60.0,
+    zoom: 12,
+    bearing: 0,
+    pitch: 0,
+    padding: { left: 0, right: 0, top: 0, bottom: 0 },
+  });
   const [newLibraryGroundM, setNewLibraryGroundM] = useState(0);
+  const [isNewLibraryElevationUserSet, setIsNewLibraryElevationUserSet] = useState(false);
   const [newLibraryAntennaM, setNewLibraryAntennaM] = useState(2);
   const [newLibraryTxPowerDbm, setNewLibraryTxPowerDbm] = useState(STANDARD_SITE_RADIO.txPowerDbm);
   const [newLibraryTxGainDbi, setNewLibraryTxGainDbi] = useState(STANDARD_SITE_RADIO.txGainDbi);
@@ -526,8 +500,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     }
   };
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
-  const [storageStatus, setStorageStatus] = useState("");
-  const [storageHealth, setStorageHealth] = useState<StorageHealth>(() => readStorageHealth());
   const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
   const [profilePopupBusy, setProfilePopupBusy] = useState(false);
   const [profilePopupStatus, setProfilePopupStatus] = useState("");
@@ -555,6 +527,44 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const [resourceDescriptionDraft, setResourceDescriptionDraft] = useState("");
   const [resourceLatDraft, setResourceLatDraft] = useState(0);
   const [resourceLonDraft, setResourceLonDraft] = useState(0);
+  const [inlineMapView, setInlineMapView] = useState({
+    longitude: resourceLonDraft,
+    latitude: resourceLatDraft,
+    zoom: 12,
+    bearing: 0,
+    pitch: 0,
+    padding: { left: 0, right: 0, top: 0, bottom: 0 },
+  });
+  useEffect(() => {
+    setInlineMapView((prev) => ({
+      ...prev,
+      latitude: resourceLatDraft,
+      longitude: resourceLonDraft,
+    }));
+  }, [resourceLatDraft, resourceLonDraft]);
+  useEffect(() => {
+    setNewLibraryMapView((prev) => ({
+      ...prev,
+      latitude: newLibraryLat,
+      longitude: newLibraryLon,
+      zoom: 12,
+    }));
+  }, [newLibraryLat, newLibraryLon]);
+  // Debounced terrain prefetch for Add Site form; reset user-set flag when coordinates change
+  useEffect(() => {
+    setIsNewLibraryElevationUserSet(false);
+    const timer = setTimeout(() => {
+      loadTerrainForCoordinate(newLibraryLat, newLibraryLon);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [newLibraryLat, newLibraryLon, loadTerrainForCoordinate]);
+  // Debounced terrain prefetch for Edit Site form
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadTerrainForCoordinate(resourceLatDraft, resourceLonDraft);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [resourceLatDraft, resourceLonDraft, loadTerrainForCoordinate]);
   const [resourceGroundDraft, setResourceGroundDraft] = useState(0);
   const [resourceAntennaDraft, setResourceAntennaDraft] = useState(2);
   const [resourceTxPowerDraft, setResourceTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
@@ -562,6 +572,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
   const [resourceRxGainDraft, setResourceRxGainDraft] = useState(STANDARD_SITE_RADIO.rxGainDbi);
   const [resourceCableLossDraft, setResourceCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
   const [resourceCollaboratorUserIds, setResourceCollaboratorUserIds] = useState<string[]>([]);
+  const [resourceCollaboratorRoles, setResourceCollaboratorRoles] = useState<Record<string, "viewer" | "editor">>({});
   const [resourceCollaboratorQuery, setResourceCollaboratorQuery] = useState("");
   const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
   const [resourceCollaboratorDirectoryBusy, setResourceCollaboratorDirectoryBusy] = useState(false);
@@ -573,18 +584,12 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
   } | null>(null);
-  const [storageOriginWarning, setStorageOriginWarning] = useState("");
-  const [storageSnapshotInfo, setStorageSnapshotInfo] = useState(() => ({
-    siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
-    simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
-  }));
   const [deleteConfirm, setDeleteConfirm] = useState<{
     title: string;
     message: string;
     confirmLabel: string;
     onConfirm: () => void;
   } | null>(null);
-  const hasLocalLibraryData = siteLibrary.length > 0 || simulationPresets.length > 0;
   const currentUserId = currentUser?.id ?? null;
   const toggleValue = <T extends string>(values: T[], key: T): T[] =>
     values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
@@ -644,11 +649,58 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       .sort((a, b) => parseTs(b.createdAt) - parseTs(a.createdAt))[0]?.id ?? siteLibrary[0].id;
   }, [siteLibrary]);
   useEffect(() => {
-    if (showSimulationLibraryRequest) {
-      setShowSimulationLibraryManager(true);
-      setShowSimulationLibraryRequest(false);
+    if (showNewSimulationRequest) {
+      if (hideLibraryBrowsing) {
+        setShowNewSimulationRequest(false);
+        return;
+      }
+      setNewSimulationName("");
+      setNewSimulationDescription("");
+      setNewSimulationNameError("");
+      setShowNewSimulationModal(true);
+      setShowNewSimulationRequest(false);
     }
-  }, [showSimulationLibraryRequest, setShowSimulationLibraryRequest]);
+  }, [hideLibraryBrowsing, showNewSimulationRequest, setShowNewSimulationRequest]);
+  useEffect(() => {
+    if (showSiteLibraryRequest) {
+      if (hideLibraryBrowsing) {
+        setShowSiteLibraryRequest(false);
+        return;
+      }
+      setShowSiteLibraryManager(true);
+      setShowSiteLibraryRequest(false);
+    }
+  }, [hideLibraryBrowsing, showSiteLibraryRequest, setShowSiteLibraryRequest]);
+  useEffect(() => {
+    if (showNewSimulationRequest) {
+      setNewSimulationName("");
+      setNewSimulationDescription("");
+      setNewSimulationNameError("");
+      setShowNewSimulationModal(true);
+      setShowNewSimulationRequest(false);
+    }
+  }, [showNewSimulationRequest, setShowNewSimulationRequest]);
+  useEffect(() => {
+    if (showSiteLibraryRequest) {
+      setShowSiteLibraryManager(true);
+      setShowSiteLibraryRequest(false);
+    }
+  }, [showSiteLibraryRequest, setShowSiteLibraryRequest]);
+  useEffect(() => {
+    if (showNewSimulationRequest) {
+      setNewSimulationName("");
+      setNewSimulationDescription("");
+      setNewSimulationNameError("");
+      setShowNewSimulationModal(true);
+      setShowNewSimulationRequest(false);
+    }
+  }, [showNewSimulationRequest, setShowNewSimulationRequest]);
+  useEffect(() => {
+    if (showSiteLibraryRequest) {
+      setShowSiteLibraryManager(true);
+      setShowSiteLibraryRequest(false);
+    }
+  }, [showSiteLibraryRequest, setShowSiteLibraryRequest]);
   useEffect(() => {
     if (showNewSimulationRequest) {
       setNewSimulationName("");
@@ -796,14 +848,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     });
     return filtered.slice(0, 30);
   }, [currentResourceOwnerId, resourceCollaboratorDirectory, resourceCollaboratorUserIds, resourceCollaboratorQuery]);
-  const lastStorageActionLabel = useMemo(() => {
-    const entries = [
-      storageHealth.lastExportIso ? `Export ${formatDate(storageHealth.lastExportIso)}` : null,
-      storageHealth.lastImportIso ? `Import ${formatDate(storageHealth.lastImportIso)}` : null,
-      storageHealth.lastRestoreIso ? `Restore ${formatDate(storageHealth.lastRestoreIso)}` : null,
-    ].filter((entry): entry is string => Boolean(entry));
-    return entries.length ? entries.join(" | ") : "No backup/import/restore actions recorded yet.";
-  }, [storageHealth]);
   useEffect(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -841,6 +885,10 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     setSelectedLinkId(visibleLinks[0].id);
   }, [selectedLinkId, setSelectedLinkId, visibleLinks]);
   useEffect(() => {
+    if (hideLibraryBrowsing) {
+      setResourceCollaboratorDirectory([]);
+      return;
+    }
     let canceled = false;
     const loadDirectory = () => {
       if (canceled) return;
@@ -865,8 +913,13 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       canceled = true;
       window.clearTimeout(timerId);
     };
-  }, []);
+  }, [hideLibraryBrowsing]);
   useEffect(() => {
+    if (hideLibraryBrowsing) {
+      setResourceCollaboratorDirectoryBusy(false);
+      setResourceCollaboratorDirectoryStatus("");
+      return;
+    }
     if (!resourceDetailsPopup) return;
     let canceled = false;
     setResourceCollaboratorDirectoryBusy(true);
@@ -888,7 +941,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     return () => {
       canceled = true;
     };
-  }, [resourceDetailsPopup]);
+  }, [hideLibraryBrowsing, resourceDetailsPopup]);
   const meshmapNodesInView = useMemo(() => {
     const lonSpan = Math.max(0.12, 360 / Math.pow(2, meshmapView.zoom) * 2.2);
     const latSpan = Math.max(0.12, 170 / Math.pow(2, meshmapView.zoom) * 1.8);
@@ -1012,40 +1065,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     loadSimulationPreset,
   ]);
 
-  useEffect(() => {
-    const origin = window.location.origin;
-    const host = window.location.hostname;
-    setStorageOriginWarning(
-      host === "127.0.0.1"
-        ? "You are on 127.0.0.1. Browser storage is origin-scoped; localhost and 127.0.0.1 do not share data."
-        : "",
-    );
-    try {
-      const booted = localStorage.getItem(STORAGE_BOOT_KEY);
-      if (!booted) {
-        localStorage.setItem(STORAGE_BOOT_KEY, JSON.stringify({ firstSeenIso: new Date().toISOString(), origin }));
-        if (!hasLocalLibraryData) {
-          setStorageStatus(
-            "No local library data found yet in this browser origin. Export backups regularly to avoid surprises.",
-          );
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, [hasLocalLibraryData]);
-
-  useEffect(() => {
-    refreshSnapshotInfo();
-  }, [siteLibrary, simulationPresets]);
-
-  const refreshSnapshotInfo = () => {
-    setStorageSnapshotInfo({
-      siteSnapshots: getSnapshotCount(SITE_LIBRARY_KEY),
-      simulationSnapshots: getSnapshotCount(SIM_PRESETS_KEY),
-    });
-  };
-
   const requestDeleteConfirm = (
     title: string,
     message: string,
@@ -1053,24 +1072,6 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     confirmLabel = "Delete",
   ) => {
     setDeleteConfirm({ title, message, confirmLabel, onConfirm });
-  };
-
-  const exportLocalLibraries = () => {
-    const payload: LibraryBackupPayload = {
-      schemaVersion: 1,
-      exportedAtIso: new Date().toISOString(),
-      origin: window.location.origin,
-      siteLibrary,
-      simulationPresets,
-    };
-    const stamp = payload.exportedAtIso.replace(/[:.]/g, "-");
-    downloadJson(`linksim-backup-${stamp}.json`, payload);
-    const nextHealth = { ...storageHealth, lastExportIso: payload.exportedAtIso };
-    setStorageHealth(nextHealth);
-    writeStorageHealth(nextHealth);
-    setStorageStatus(
-      `Exported backup (${siteLibrary.length} site(s), ${simulationPresets.length} simulation(s)) for ${payload.origin}.`,
-    );
   };
 
   const openAddLinkModal = () => {
@@ -1338,6 +1339,12 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     if (!Number.isFinite(elevation)) return null;
     return Math.round(elevation);
   };
+  // Auto-fill Add Site elevation when terrain loads (only if user hasn't manually set a value)
+  useEffect(() => {
+    if (isNewLibraryElevationUserSet) return;
+    const elevation = fetchGroundFromLoadedTerrain(newLibraryLat, newLibraryLon);
+    if (elevation !== null) setNewLibraryGroundM(elevation);
+  }, [srtmTiles]); // eslint-disable-line react-hooks/exhaustive-deps
   const fetchNewLibraryGroundFromTerrain = () => {
     const elevation = fetchGroundFromLoadedTerrain(newLibraryLat, newLibraryLon);
     if (elevation === null) {
@@ -1371,6 +1378,12 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(result.lat);
     setNewLibraryLon(result.lon);
+    setResourceLatDraft(result.lat);
+    setResourceLonDraft(result.lon);
+    updateMapViewport({
+      center: { lat: result.lat, lon: result.lon },
+      zoom: 12,
+    });
     try {
       const [elevation] = await fetchElevations([{ lat: result.lat, lon: result.lon }]);
       if (Number.isFinite(elevation)) {
@@ -1399,7 +1412,9 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       if (result.fromCache) {
         const ageMin = Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000));
         setMeshmapStatus(
-          `Loaded ${formatNumber(result.nodes.length)} node(s) from cached snapshot (${ageMin} min old).`,
+          result.networkError
+            ? `Live fetch failed — showing ${formatNumber(result.nodes.length)} cached node(s) from ${ageMin} min ago.`
+            : `Loaded ${formatNumber(result.nodes.length)} node(s) from cached snapshot (${ageMin} min old).`,
         );
       } else {
         setMeshmapStatus(`Loaded ${formatNumber(result.nodes.length)} node(s) from live feed.`);
@@ -1574,11 +1589,10 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       setResourceRxGainDraft(site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi);
       setResourceCableLossDraft(site?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(normalizeAccessVisibility(site?.visibility));
-      setResourceCollaboratorUserIds(
-        (site?.sharedWith ?? [])
-          .filter((grant) => grant.role === "editor" || grant.role === "admin")
-          .filter((grant) => grant.userId !== site?.ownerUserId)
-          .map((grant) => grant.userId),
+      const siteGrants = (site?.sharedWith ?? []).filter((grant) => grant.userId !== site?.ownerUserId);
+      setResourceCollaboratorUserIds(siteGrants.map((grant) => grant.userId));
+      setResourceCollaboratorRoles(
+        Object.fromEntries(siteGrants.map((grant) => [grant.userId, grant.role === "editor" || grant.role === "admin" ? "editor" : "viewer"])),
       );
     } else {
       const simulation = simulationPresets.find((entry) => entry.id === resourceId);
@@ -1592,11 +1606,10 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       setResourceRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
       setResourceCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(normalizeAccessVisibility(simulation?.visibility));
-      setResourceCollaboratorUserIds(
-        (simulation?.sharedWith ?? [])
-          .filter((grant) => grant.role === "editor" || grant.role === "admin")
-          .filter((grant) => grant.userId !== simulation?.ownerUserId)
-          .map((grant) => grant.userId),
+      const simGrants = (simulation?.sharedWith ?? []).filter((grant) => grant.userId !== simulation?.ownerUserId);
+      setResourceCollaboratorUserIds(simGrants.map((grant) => grant.userId));
+      setResourceCollaboratorRoles(
+        Object.fromEntries(simGrants.map((grant) => [grant.userId, grant.role === "editor" || grant.role === "admin" ? "editor" : "viewer"])),
       );
     }
     setResourceCollaboratorQuery("");
@@ -1641,6 +1654,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       cableLossDb: number;
       visibility: "private" | "public" | "shared";
       collaboratorUserIds: string[];
+      collaboratorRoles: Record<string, "viewer" | "editor">;
     }>,
   ): boolean => {
     if (!resourceDetailsPopup) return false;
@@ -1660,6 +1674,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     const nextRxGainDbi = overrides?.rxGainDbi ?? resourceRxGainDraft;
     const nextCableLossDb = overrides?.cableLossDb ?? resourceCableLossDraft;
     const nextCollaboratorUserIds = overrides?.collaboratorUserIds ?? resourceCollaboratorUserIds;
+    const nextCollaboratorRoles = overrides?.collaboratorRoles ?? resourceCollaboratorRoles;
     const normalizedVisibility = nextVisibility === "public" ? "shared" : nextVisibility;
     const normalizedName = nextName.trim();
     if (!normalizedName) {
@@ -1668,7 +1683,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     }
     const sharedWith = nextCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
-      .map((userId) => ({ userId, role: "editor" as const }));
+      .map((userId) => ({ userId, role: (nextCollaboratorRoles[userId] ?? "viewer") as "viewer" | "editor" }));
     const currentEntry =
       resourceDetailsPopup.kind === "site"
         ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
@@ -1749,7 +1764,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     }
     const sharedWith = resourceCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
-      .map((userId) => ({ userId, role: "editor" as const }));
+      .map((userId) => ({ userId, role: (resourceCollaboratorRoles[userId] ?? "viewer") as "viewer" | "editor" }));
     updateSimulationPresetEntry(pending.simulationId, {
       visibility: pending.targetVisibility,
       sharedWith,
@@ -1772,6 +1787,9 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       ? resourceCollaboratorUserIds
       : [...resourceCollaboratorUserIds, userId];
     setResourceCollaboratorUserIds(nextCollaborators);
+    if (!resourceCollaboratorRoles[userId]) {
+      setResourceCollaboratorRoles((prev) => ({ ...prev, [userId]: "viewer" }));
+    }
     void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
     setResourceCollaboratorQuery("");
   };
@@ -1798,7 +1816,18 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
     }
     const nextCollaborators = resourceCollaboratorUserIds.filter((id) => id !== userId);
     setResourceCollaboratorUserIds(nextCollaborators);
+    setResourceCollaboratorRoles((prev) => {
+      const next = { ...prev };
+      delete next[userId];
+      return next;
+    });
     void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
+  };
+
+  const setCollaboratorRole = (userId: string, role: "viewer" | "editor") => {
+    const nextRoles = { ...resourceCollaboratorRoles, [userId]: role };
+    setResourceCollaboratorRoles(nextRoles);
+    void persistResourceAccessSettings({ collaboratorRoles: nextRoles });
   };
 
   const changeProfileRole = async (nextRole: "admin" | "moderator" | "user" | "pending") => {
@@ -1819,7 +1848,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
 
   return (
     <aside className="sidebar-panel">
-      <UserAdminPanel onOpenHelp={onOpenHelp} />
+      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} />
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>
@@ -1828,37 +1857,43 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
       </header>
       <section className="panel-section section-scenario">
         <div className="section-heading">
-          <h2>Simulation: {activeSimulationLabel}</h2>
+          <h2>Simulation: {simulationDisplayLabel ?? activeSimulationLabel}</h2>
           <InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />
         </div>
         <div className="chip-group simulation-buttons">
-          <button
-            className="inline-action"
-            onClick={() => setShowSimulationLibraryManager(true)}
-            type="button"
-          >
-            Library
-          </button>
-          <button
-            className="inline-action"
-            onClick={() => {
-              setNewSimulationName("");
-              setNewSimulationDescription("");
-              setNewSimulationNameError("");
-              setShowNewSimulationModal(true);
-            }}
-            type="button"
-          >
-            New
-          </button>
-          <button className="inline-action" onClick={saveSimulationAsNew} type="button">
-            Duplicate
-          </button>
-          {selectedSimulationRef.startsWith("saved:") ? (
-            <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
-              Edit
-            </button>
-          ) : null}
+          {!hideLibraryBrowsing ? (
+            <>
+              <button
+                className="inline-action"
+                onClick={() => setShowSimulationLibraryManager(true)}
+                type="button"
+              >
+                Library
+              </button>
+              <button
+                className="inline-action"
+                onClick={() => {
+                  setNewSimulationName("");
+                  setNewSimulationDescription("");
+                  setNewSimulationNameError("");
+                  setShowNewSimulationModal(true);
+                }}
+                type="button"
+              >
+                New
+              </button>
+              <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+                Duplicate
+              </button>
+              {selectedSimulationRef.startsWith("saved:") ? (
+                <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
+                  Edit
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <span className="field-help">Sign in to browse the simulation library.</span>
+          )}
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
       </section>
@@ -1885,32 +1920,38 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           ))}
         </div>
         <div className="chip-group">
-          <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
-            Library
-          </button>
-          {newestSiteLibraryEntryId ? (
-            <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
-              Insert newest
+          {!hideLibraryBrowsing ? (
+            <>
+              <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
+                Library
+              </button>
+              {newestSiteLibraryEntryId ? (
+                <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
+                  Insert newest
+                </button>
+              ) : null}
+              <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+                Edit
+              </button>
+            </>
+          ) : null}
+          {!readOnly ? (
+            <button
+              className="inline-action danger"
+              disabled={sites.length <= 1}
+              onClick={() =>
+                requestDeleteConfirm(
+                  "Remove Site",
+                  `Remove ${selectedSite.name} from the current simulation?`,
+                  () => deleteSite(selectedSite.id),
+                  "Remove",
+                )
+              }
+              type="button"
+            >
+              Remove
             </button>
           ) : null}
-          <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
-            Edit
-          </button>
-          <button
-            className="inline-action danger"
-            disabled={sites.length <= 1}
-            onClick={() =>
-              requestDeleteConfirm(
-                "Remove Site",
-                `Remove ${selectedSite.name} from the current simulation?`,
-                () => deleteSite(selectedSite.id),
-                "Remove",
-              )
-            }
-            type="button"
-          >
-            Remove
-          </button>
         </div>
       </section>
 
@@ -2108,26 +2149,30 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           ))}
         </div>
         <div className="chip-group">
-          <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
-            New
-          </button>
-          <button className="inline-action" onClick={openEditLinkModal} type="button">
-            Edit
-          </button>
-          <button
-            className="inline-action danger"
-            disabled={!links.length}
-            onClick={() =>
-              requestDeleteConfirm(
-                "Delete Link",
-                `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
-                () => deleteLink(selectedLink.id),
-              )
-            }
-            type="button"
-          >
-            Remove
-          </button>
+          {!readOnly ? (
+            <>
+              <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+                New
+              </button>
+              <button className="inline-action" onClick={openEditLinkModal} type="button">
+                Edit
+              </button>
+              <button
+                className="inline-action danger"
+                disabled={!links.length}
+                onClick={() =>
+                  requestDeleteConfirm(
+                    "Delete Link",
+                    `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
+                    () => deleteLink(selectedLink.id),
+                  )
+                }
+                type="button"
+              >
+                Remove
+              </button>
+            </>
+          ) : null}
         </div>
       </section>
 
@@ -2275,73 +2320,45 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
         </ModalOverlay>
       ) : null}
 
-      <section className="panel-section section-more">
-        <details className="compact-details">
-          <summary>More</summary>
-          <div className="section-heading">
-            <p className="field-help">Local Storage Safety</p>
-            <InfoTip text="Your site and simulation libraries are saved in this browser origin. Export backups regularly." />
-          </div>
-          {storageOriginWarning ? <p className="field-help warning-text">{storageOriginWarning}</p> : null}
-          <p className="field-help">{lastStorageActionLabel}</p>
-          <p className="field-help">
-            Snapshot history: {storageSnapshotInfo.siteSnapshots} site snapshot(s),{" "}
-            {storageSnapshotInfo.simulationSnapshots} simulation snapshot(s).
-          </p>
-          <div className="chip-group">
-            <button className="inline-action" onClick={exportLocalLibraries} type="button">
-              Export Library Backup
-            </button>
-          </div>
-          {storageStatus ? <p className="field-help">{storageStatus}</p> : null}
-          <label className="field-grid">
-            <span>Language</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setLocale(event.target.value as (typeof SUPPORTED_LOCALES)[number])}
-              value={locale}
-            >
-              {SUPPORTED_LOCALES.map((code) => (
-                <option key={code} value={code}>
-                  {LOCALE_LABELS[code]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="field-help">References and external resources:</p>
-          <div className="asset-list">
-            <a href="https://github.com/wilhel1812/LinkSim/issues/new/choose" rel="noreferrer" target="_blank">
-              Feedback / Suggestions (GitHub Issues)
-            </a>
-            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md" rel="noreferrer" target="_blank">
-              Privacy Notice
-            </a>
-            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">
-              Terms & Acceptable Use
-            </a>
-            <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/rf-models-and-sampling.md" rel="noreferrer" target="_blank">
-              RF Models & Sampling Guide
-            </a>
-          </div>
-          <details className="compact-details">
-            <summary>Credits & Attribution</summary>
-            <p className="field-help subtle-note">
-              Inspired by{" "}
-              <a href={PRIMARY_ATTRIBUTION.projectUrl} rel="noreferrer" target="_blank">
-                {PRIMARY_ATTRIBUTION.projectName}
-              </a>{" "}
-              by {PRIMARY_ATTRIBUTION.authorName}
-            </p>
-            <p className="field-help subtle-note">
-              Basemap: {resolvedBasemap.providerLabel} · {resolvedBasemap.presetLabel} (provider attribution applies).
-            </p>
-          </details>
-        </details>
-      </section>
       <div className="sidebar-grow" />
       <footer className="sidebar-footer">
-        Build: {buildLabel} (
-        {runtimeEnvironment === "production" ? "live-prod" : runtimeEnvironment === "local" ? "local" : "live-test"})
+        <div className="sidebar-footer-links">
+          <span>©</span>
+          <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
+            {resolvedBasemap.attribution.replace(/©/g, "").trim()}
+          </a>
+          <span>©</span>
+          <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">
+            MapLibre
+          </a>
+        </div>
+        <div className="sidebar-footer-links">
+          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">
+            <Handshake aria-hidden="true" size={13} strokeWidth={1.8} />
+            Terms
+          </a>
+          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md" rel="noreferrer" target="_blank">
+            <HatGlasses aria-hidden="true" size={13} strokeWidth={1.8} />
+            Privacy
+          </a>
+          <a href="https://github.com/wilhel1812/LinkSim" rel="noreferrer" target="_blank">
+            <svg
+              aria-hidden="true"
+              height="13"
+              role="img"
+              viewBox="0 0 24 24"
+              width="13"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d={siGithub.path} fill="currentColor" />
+            </svg>
+            GitHub
+          </a>
+        </div>
+        <div className="sidebar-footer-version">
+          Build: {buildLabel} (
+          {runtimeEnvironment === "production" ? "live-prod" : runtimeEnvironment === "local" ? "local" : "live-test"})
+        </div>
       </footer>
 
       {profilePopupUser ? (
@@ -2605,6 +2622,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                       />
                       <button
                         className="inline-action field-inline-btn"
+                        disabled={isEditorTerrainFetching}
                         onClick={() => {
                           const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
                           if (elevation === null) {
@@ -2619,7 +2637,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                         }}
                         type="button"
                       >
-                        Fetch
+                        {isEditorTerrainFetching ? "Loading…" : "Fetch"}
                       </button>
                     </div>
                   </label>
@@ -2735,10 +2753,25 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                     </label>
                   </div>
                   <Map
-                    initialViewState={{
-                      longitude: resourceLonDraft,
-                      latitude: resourceLatDraft,
-                      zoom: 12,
+                    {...{
+                      longitude: inlineMapView.longitude,
+                      latitude: inlineMapView.latitude,
+                      zoom: inlineMapView.zoom,
+                      bearing: inlineMapView.bearing,
+                      pitch: inlineMapView.pitch,
+                      padding: inlineMapView.padding,
+                      width: 200,
+                      height: 150,
+                    }}
+                    onMoveEnd={(event) => {
+                      setInlineMapView({
+                        longitude: event.viewState.longitude,
+                        latitude: event.viewState.latitude,
+                        zoom: event.viewState.zoom,
+                        bearing: event.viewState.bearing ?? 0,
+                        pitch: event.viewState.pitch ?? 0,
+                        padding: event.viewState.padding as { left: number; right: number; top: number; bottom: number },
+                      });
                     }}
                     mapStyle={resolvedBasemap.style}
                     onClick={(event) => {
@@ -2841,7 +2874,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
               <div className="field-grid user-bio-field collaborator-picker-grid">
                 <span>
                   Collaborators{" "}
-                  <InfoTip text="Collaborators grant edit rights. Editors can add collaborators but cannot remove existing collaborators. Owners/admins can remove." />
+                  <InfoTip text="Add specific users and assign them viewer or editor access. Viewers can view and run; editors can also modify and add collaborators. Owners/admins can remove collaborators." />
                 </span>
                 <div className="collaborator-picker">
                   <div className="chip-group collaborator-selected-list">
@@ -2849,6 +2882,14 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                       selectedCollaboratorUsers.map((user) => (
                         <span className="site-quick-item" key={user.id}>
                           <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                          <select
+                            aria-label={`Role for ${user.username}`}
+                            onChange={(e) => setCollaboratorRole(user.id, e.target.value as "viewer" | "editor")}
+                            value={resourceCollaboratorRoles[user.id] ?? "viewer"}
+                          >
+                            <option value="viewer">Viewer</option>
+                            <option value="editor">Editor</option>
+                          </select>
                           <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
                             Remove
                           </button>
@@ -2885,8 +2926,9 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                 </div>
               </div>
               <p className="field-help">
-                Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
-                collaborators/owner. Owners/admins can remove collaborators.
+                Viewers can view and run the simulation. Editors can also modify it and add collaborators. Owners/admins
+                can remove collaborators. Private simulations remain private — only added collaborators gain access via
+                the share link when logged in.
               </p>
               {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
             </details>
@@ -2923,7 +2965,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           </div>
         </ModalOverlay>
       ) : null}
-      {showNewSimulationModal ? (
+      {showNewSimulationModal && !hideLibraryBrowsing ? (
         <ModalOverlay
           aria-label="New Simulation"
           onClose={() => {
@@ -2994,7 +3036,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
         </ModalOverlay>
       ) : null}
 
-      {showSimulationLibraryManager ? (
+      {showSimulationLibraryManager && !hideLibraryBrowsing ? (
         <ModalOverlay
           aria-label="Simulation Library"
           onClose={() => setShowSimulationLibraryManager(false)}
@@ -3043,7 +3085,7 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
           </div>
         </ModalOverlay>
       ) : null}
-      {showSiteLibraryManager ? (
+      {showSiteLibraryManager && !hideLibraryBrowsing ? (
         <ModalOverlay
           aria-label="Site Library"
           onClose={() => {
@@ -3350,12 +3392,15 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                   <span>Ground elev (m)</span>
                   <div className="field-inline">
                     <input
-                      onChange={(event) => setNewLibraryGroundM(parseNumber(event.target.value))}
+                      onChange={(event) => {
+                        setNewLibraryGroundM(parseNumber(event.target.value));
+                        setIsNewLibraryElevationUserSet(true);
+                      }}
                       type="number"
                       value={newLibraryGroundM}
                     />
-                    <button className="inline-action field-inline-btn" onClick={fetchNewLibraryGroundFromTerrain} type="button">
-                      Fetch
+                    <button className="inline-action field-inline-btn" disabled={isEditorTerrainFetching} onClick={fetchNewLibraryGroundFromTerrain} type="button">
+                      {isEditorTerrainFetching ? "Loading…" : "Fetch"}
                     </button>
                   </div>
                 </label>
@@ -3454,13 +3499,34 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                       {showMeshtasticBrowser ? "Hide Browser" : "Show Browser"}
                     </button>
                   </div>
+                  {meshmapLoading ? (
+                    <div className="map-progress-track" style={{ marginTop: 8 }}>
+                      <div className="map-progress-fill map-progress-fill-indeterminate" />
+                    </div>
+                  ) : null}
                   {meshmapCachedSummary ? (
                     <p className="field-help">
                       Cached snapshot: {formatNumber(meshmapCachedSummary.nodeCount)} node(s) from{" "}
                       {formatDate(meshmapCachedSummary.savedAt)} ({meshmapCachedSummary.sourceUrl})
                     </p>
                   ) : null}
-                  {meshmapStatus ? <p className="field-help">{meshmapStatus}</p> : null}
+                  {meshmapStatus ? (
+                    <p className="field-help">
+                      {meshmapStatus}
+                      {meshmapStatus.includes("failed") ? (
+                        <button
+                          aria-label="Retry loading Meshtastic feed"
+                          className="inline-action"
+                          onClick={() => void loadMeshmapFeed()}
+                          style={{ marginLeft: 8 }}
+                          type="button"
+                        >
+                          <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
+                          <span>Retry</span>
+                        </button>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {showMeshtasticBrowser ? (
                     <div className="meshmap-browser">
                       <div className="meshmap-browser-map">
@@ -3567,10 +3633,22 @@ export function Sidebar({ onOpenHelp }: SidebarProps) {
                       </label>
                     </div>
                     <Map
-                      initialViewState={{
-                        longitude: newLibraryLon,
-                        latitude: newLibraryLat,
-                        zoom: 12,
+                      bearing={newLibraryMapView.bearing}
+                      latitude={newLibraryMapView.latitude}
+                      longitude={newLibraryMapView.longitude}
+                      padding={newLibraryMapView.padding}
+                      pitch={newLibraryMapView.pitch}
+                      zoom={newLibraryMapView.zoom}
+                      onMoveEnd={(event) => {
+                        const p = event.viewState.padding;
+                        setNewLibraryMapView({
+                          longitude: event.viewState.longitude,
+                          latitude: event.viewState.latitude,
+                          zoom: event.viewState.zoom,
+                          bearing: event.viewState.bearing,
+                          pitch: event.viewState.pitch,
+                          padding: { left: p.left ?? 0, right: p.right ?? 0, top: p.top ?? 0, bottom: p.bottom ?? 0 },
+                        });
                       }}
                       mapStyle={resolvedBasemap.style}
                       onClick={(event) => {

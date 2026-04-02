@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchPublicSimulationBundleMock } = vi.hoisted(() => ({
+const { fetchPublicSimulationBundleMock, verifyAuthMock } = vi.hoisted(() => ({
   fetchPublicSimulationBundleMock: vi.fn(),
+  verifyAuthMock: vi.fn(),
 }));
 
 vi.mock("../_lib/db", () => ({
   fetchPublicSimulationBundle: fetchPublicSimulationBundleMock,
+}));
+
+vi.mock("../_lib/auth", () => ({
+  verifyAuth: verifyAuthMock,
 }));
 
 import { onRequestGet } from "./public-simulation";
@@ -15,6 +20,7 @@ const mkCtx = (request: Request) => ({ request, env } as unknown as Parameters<t
 
 beforeEach(() => {
   vi.clearAllMocks();
+  verifyAuthMock.mockResolvedValue(null);
   fetchPublicSimulationBundleMock.mockResolvedValue({
     status: "ok",
     simulationId: "sim-1",
@@ -34,5 +40,29 @@ describe("api/public-simulation", () => {
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?sim=sim-1")));
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("passes actorId null when request is unauthenticated", async () => {
+    verifyAuthMock.mockResolvedValue(null);
+    await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?sim=sim-1")));
+    expect(fetchPublicSimulationBundleMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actorId: null }),
+    );
+  });
+
+  it("passes actorId from auth when request is authenticated", async () => {
+    verifyAuthMock.mockResolvedValue({ userId: "user-42" });
+    await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?sim=sim-1")));
+    expect(fetchPublicSimulationBundleMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actorId: "user-42" }),
+    );
+  });
+
+  it("returns 403 when bundle status is forbidden", async () => {
+    fetchPublicSimulationBundleMock.mockResolvedValue({ status: "forbidden" });
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?sim=sim-1")));
+    expect(res.status).toBe(403);
   });
 });
