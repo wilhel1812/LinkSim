@@ -761,7 +761,6 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           </button>
         )}
         <div className="user-chip-actions">
-          {extraActions}
           {me ? (
             <>
               <button
@@ -787,6 +786,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
               <CircleQuestionMark aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
+          {extraActions}
         </div>
       </div>
 

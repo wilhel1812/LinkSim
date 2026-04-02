@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleX, Maximize2, Minimize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share } from "lucide-react";
+import { CircleX, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -1271,35 +1271,40 @@ export function AppShell() {
   }, [activeSimulation, copyCurrentLink, publishAppNotice]);
 
   const panelSizeControls = useCallback(
-    (labelPrefix: string) => (
+    (labelPrefix: string, variant: "map" | "chart" = "map") => (
       <div className="panel-size-controls">
-        <button
-          aria-label={`Hide ${labelPrefix} panel`}
-          className={`map-control-btn map-control-btn-icon ${mobileBottomPanelMode === "hidden" ? "is-selected" : ""}`}
-          onClick={() => setMobileBottomPanelVisibility("hidden")}
-          title="Hide panel"
-          type="button"
-        >
-          <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
-        </button>
-        <button
-          aria-label={`Set ${labelPrefix} panel to normal size`}
-          className={`map-control-btn map-control-btn-icon ${mobileBottomPanelMode === "normal" ? "is-selected" : ""}`}
-          onClick={() => setMobileBottomPanelVisibility("normal")}
-          title="Normal size"
-          type="button"
-        >
-          <PanelBottom aria-hidden="true" strokeWidth={1.8} />
-        </button>
-        <button
-          aria-label={`Expand ${labelPrefix} panel to full height`}
-          className={`map-control-btn map-control-btn-icon ${mobileBottomPanelMode === "full" ? "is-selected" : ""}`}
-          onClick={() => setMobileBottomPanelVisibility("full")}
-          title="Full size"
-          type="button"
-        >
-          <Maximize2 aria-hidden="true" strokeWidth={1.8} />
-        </button>
+        {mobileBottomPanelMode === "full" ? (
+          <button
+            aria-label={`Set ${labelPrefix} panel to normal size`}
+            className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
+            onClick={() => setMobileBottomPanelVisibility("normal")}
+            title="Normal size"
+            type="button"
+          >
+            <PanelBottom aria-hidden="true" strokeWidth={1.8} />
+          </button>
+        ) : (
+          <>
+            <button
+              aria-label={`Hide ${labelPrefix} panel`}
+              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
+              onClick={() => setMobileBottomPanelVisibility("hidden")}
+              title="Hide panel"
+              type="button"
+            >
+              <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
+            </button>
+            <button
+              aria-label={`Expand ${labelPrefix} panel to full height`}
+              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
+              onClick={() => setMobileBottomPanelVisibility("full")}
+              title="Full size"
+              type="button"
+            >
+              <Maximize2 aria-hidden="true" strokeWidth={1.8} />
+            </button>
+          </>
+        )}
       </div>
     ),
     [mobileBottomPanelMode, setMobileBottomPanelVisibility],
@@ -1322,6 +1327,8 @@ export function AppShell() {
         isNavigatorHidden ? "is-navigator-hidden" : ""
       } ${
         isInspectorHidden ? "is-inspector-hidden" : ""
+      } ${
+        isProfileHidden ? "is-profile-hidden" : ""
       }`}
       style={shellStyle}
     >
@@ -1363,24 +1370,28 @@ export function AppShell() {
         </div>
       ) : null}
       {!isMobileViewport && !isMapExpanded && !isProfileExpanded && !isNavigatorHidden && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
-        <Sidebar
-          authBootstrapPending={accessState === "checking"}
-          hideLibraryBrowsing={isReadOnlyShell}
-          onOpenHelp={openOnboardingTutorial}
-          readOnly={!canPersistWorkspace}
-          panelToggleControl={
-            <button
-              aria-label={isNavigatorHidden ? "Show Navigator panel" : "Hide Navigator panel"}
-              className="user-icon-button"
-              onClick={() => setIsNavigatorHidden((prev) => !prev)}
-              title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
-              type="button"
-            >
-              {isNavigatorHidden ? <PanelLeft aria-hidden="true" strokeWidth={1.8} /> : <PanelLeftClose aria-hidden="true" strokeWidth={1.8} />}
-            </button>
-          }
-          simulationDisplayLabel={
-            isReadOnlyShell && !deepLinkParse.ok && sites.length > 0 ? "Oslo Demo" : undefined
+          <Sidebar
+            authBootstrapPending={accessState === "checking"}
+            hideLibraryBrowsing={isReadOnlyShell}
+            onOpenHelp={openOnboardingTutorial}
+            readOnly={!canPersistWorkspace}
+            panelToggleControl={
+              isMobileViewport ? (
+                panelSizeControls("Navigator")
+              ) : (
+                <button
+                  aria-label={isNavigatorHidden ? "Show Navigator panel" : "Hide Navigator panel"}
+                  className="user-icon-button"
+                  onClick={() => setIsNavigatorHidden((prev) => !prev)}
+                  title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
+                  type="button"
+                >
+                  {isNavigatorHidden ? <PanelLeft aria-hidden="true" strokeWidth={1.8} /> : <PanelLeftClose aria-hidden="true" strokeWidth={1.8} />}
+                </button>
+              )
+            }
+            simulationDisplayLabel={
+              isReadOnlyShell && !deepLinkParse.ok && sites.length > 0 ? "Oslo Demo" : undefined
           }
         />
       ) : null}
@@ -1458,46 +1469,35 @@ export function AppShell() {
           canPersist={canPersistWorkspace}
           inspectorHeaderActions={
             <div className="map-inspector-header-actions">
-              <span className="map-inspector-header-title">Inspector</span>
-              <button
-                aria-label={
-                  isMobileViewport
-                    ? "Hide Inspector panel"
-                    : isInspectorHidden
-                      ? "Show Inspector panel"
-                      : "Hide Inspector panel"
-                }
-                className="map-control-btn map-control-btn-icon"
-                onClick={() => {
-                  if (isMobileViewport) {
-                    setMobileBottomPanelVisibility("hidden");
-                    return;
-                  }
-                  setIsInspectorHidden((prev) => !prev);
-                }}
-                title={
-                  isMobileViewport
-                    ? "Hide Inspector"
-                    : isInspectorHidden
-                      ? "Show Inspector"
-                      : "Hide Inspector"
-                }
-                type="button"
-              >
-                {isInspectorHidden ? <PanelRight aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
-              </button>
-              {isMobileViewport ? panelSizeControls("Inspector") : null}
-              {accessState === "granted" ? (
-                <button
-                  aria-label="Share"
-                  className="map-control-btn map-control-btn-icon"
-                  onClick={openShareModalOrCopy}
-                  title="Share"
-                  type="button"
-                >
-                  <Share aria-hidden="true" strokeWidth={1.8} />
-                </button>
-              ) : null}
+              <div className="map-inspector-header-main">
+                <span className="map-inspector-header-title">Inspector</span>
+                {accessState === "granted" ? (
+                  <button
+                    aria-label="Share"
+                    className="map-control-btn map-control-btn-icon"
+                    onClick={openShareModalOrCopy}
+                    title="Share"
+                    type="button"
+                  >
+                    <Share aria-hidden="true" strokeWidth={1.8} />
+                  </button>
+                ) : null}
+              </div>
+              <div className="map-inspector-header-panel-controls">
+                {isMobileViewport ? (
+                  panelSizeControls("Inspector")
+                ) : (
+                  <button
+                    aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
+                    className="map-control-btn map-control-btn-icon"
+                    onClick={() => setIsInspectorHidden((prev) => !prev)}
+                    title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
+                    type="button"
+                  >
+                    {isInspectorHidden ? <PanelRight aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
+                  </button>
+                )}
+              </div>
             </div>
           }
           readOnly={!canPersistWorkspace}
@@ -1576,63 +1576,51 @@ export function AppShell() {
           <LinkProfileChart
             isExpanded={isProfileExpanded}
             onToggleExpanded={toggleProfileExpanded}
-            showExpandToggle
-            panelControls={
-              <div className="map-inspector-header-actions">
-                <button
-                  aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
-                  className="map-control-btn map-control-btn-icon"
-                  onClick={() => setIsProfileHidden((prev) => !prev)}
-                  title={isProfileHidden ? "Show Profile" : "Hide Profile"}
-                  type="button"
-                >
-                  {isProfileHidden ? <PanelBottom aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
-                </button>
-                <button
-                  aria-label={isProfileExpanded ? "Collapse profile panel" : "Expand profile panel"}
-                  className={`map-control-btn map-control-btn-icon ${isProfileExpanded ? "is-selected" : ""}`}
-                  onClick={toggleProfileExpanded}
-                  title={isProfileExpanded ? "Collapse profile" : "Expand profile"}
-                  type="button"
-                >
-                  {isProfileExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
-                </button>
-              </div>
+            rowControls={
+              <button
+                aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
+                className="chart-endpoint-swap chart-endpoint-icon"
+                onClick={() => {
+                  setIsProfileHidden((prev) => {
+                    const next = !prev;
+                    if (next) setIsProfileExpanded(false);
+                    return next;
+                  });
+                }}
+                title={isProfileHidden ? "Show Profile" : "Hide Profile"}
+                type="button"
+              >
+                {isProfileHidden ? <PanelBottom aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
+              </button>
             }
+            showExpandToggle
           />
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && mobileBottomPanelMode !== "hidden" ? (
           <div className="mobile-workspace-panel mobile-workspace-panel-shell" role="tabpanel" aria-label="Profile panel">
-            <div className="mobile-panel-header">
-              <h3>Profile</h3>
-              {panelSizeControls("Profile")}
-            </div>
             <LinkProfileChart
               isExpanded={mobileBottomPanelMode === "full"}
               onToggleExpanded={toggleProfileExpanded}
+              rowControls={panelSizeControls("Profile", "chart")}
               showExpandToggle={false}
             />
           </div>
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && mobileBottomPanelMode !== "hidden" ? (
           <div className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator" role="tabpanel" aria-label="Navigator panel">
-            <div className="mobile-panel-header">
-              <h3>Navigator</h3>
-              {panelSizeControls("Navigator")}
-            </div>
             {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
               <Sidebar
                 authBootstrapPending={accessState === "checking"}
                 hideLibraryBrowsing={isReadOnlyShell}
                 onOpenHelp={openOnboardingTutorial}
                 readOnly={!canPersistWorkspace}
-                panelToggleControl={null}
+                panelToggleControl={panelSizeControls("Navigator")}
               />
             ) : null}
           </div>
         ) : null}
       </section>
-      {isMapExpanded || isProfileExpanded ? (
+      {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
         <div className="floating-attribution-pill">
           <span>&copy;</span>
           <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">

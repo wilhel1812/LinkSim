@@ -48,14 +48,14 @@ type LinkProfileChartProps = {
   isExpanded: boolean;
   onToggleExpanded: () => void;
   showExpandToggle?: boolean;
-  panelControls?: ReactNode;
+  rowControls?: ReactNode;
 };
 
 export function LinkProfileChart({
   isExpanded,
   onToggleExpanded,
   showExpandToggle = true,
-  panelControls,
+  rowControls,
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
@@ -686,7 +686,7 @@ export function LinkProfileChart({
 
   return (
     <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`} data-profile-revision={profileRevision}>
-      <div className="chart-panel-header-row">
+      <div className="chart-top-row">
         <div className="chart-endpoints" aria-live="polite">
           <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
           <span className="chart-endpoint-sep" aria-hidden>
@@ -694,7 +694,42 @@ export function LinkProfileChart({
           </span>
           <span className="chart-endpoint chart-endpoint-right">{toSiteName}</span>
         </div>
-        {panelControls ? <div className="chart-panel-actions">{panelControls}</div> : null}
+        <div className="chart-action-row-controls">
+          <button
+            aria-label="Reverse path direction for this view"
+            className={`chart-endpoint-swap chart-endpoint-icon ${temporaryDirectionReversed ? "is-active" : ""}`}
+            onClick={toggleTemporaryDirectionReversed}
+            title="Temporarily reverse path direction"
+            type="button"
+          >
+            <ArrowLeftRight aria-hidden="true" strokeWidth={1.8} />
+          </button>
+          {showExpandToggle ? (
+            <button
+              aria-label={isExpanded ? "Exit full screen" : "Full screen"}
+              className={`chart-endpoint-swap chart-endpoint-icon ${isExpanded ? "is-active" : ""}`}
+              onClick={onToggleExpanded}
+              title={isExpanded ? "Exit full screen" : "Full screen"}
+              type="button"
+            >
+              {isExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
+            </button>
+          ) : null}
+          {rowControls}
+        </div>
+      </div>
+      <div className="chart-action-row">
+        <div className="chart-hover-state">
+          {cursorPoint && footerCursorState ? (
+            <>
+              <span className={`state-dot state-dot-${footerCursorState.state}`} aria-hidden />
+              <span>
+                {footerCursorState.label} at {footerCursorState.distanceKm.toFixed(2)} km (
+                {footerCursorState.rxAfterEnvLossDbm.toFixed(1)} dBm after env loss)
+              </span>
+            </>
+          ) : null}
+        </div>
       </div>
       {!geometry.hasData ? (
         <div className="chart-empty">
@@ -805,39 +840,6 @@ export function LinkProfileChart({
         ) : null}
         </div>
       )}
-      <div className="chart-footer-row">
-        <button
-          aria-label="Reverse path direction for this view"
-          className={`chart-endpoint-swap chart-endpoint-icon ${temporaryDirectionReversed ? "is-active" : ""}`}
-          onClick={toggleTemporaryDirectionReversed}
-          title="Temporarily reverse path direction"
-          type="button"
-        >
-          <ArrowLeftRight aria-hidden="true" strokeWidth={1.8} />
-        </button>
-        {showExpandToggle ? (
-          <button
-            aria-label={isExpanded ? "Exit full screen" : "Full screen"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${isExpanded ? "is-active" : ""}`}
-            onClick={onToggleExpanded}
-            title={isExpanded ? "Exit full screen" : "Full screen"}
-            type="button"
-          >
-            {isExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
-          </button>
-        ) : null}
-        <div className="chart-hover-state">
-          {cursorPoint && footerCursorState ? (
-            <>
-              <span className={`state-dot state-dot-${footerCursorState.state}`} aria-hidden />
-              <span>
-                {footerCursorState.label} at {footerCursorState.distanceKm.toFixed(2)} km (
-                {footerCursorState.rxAfterEnvLossDbm.toFixed(1)} dBm after env loss)
-              </span>
-            </>
-          ) : null}
-        </div>
-      </div>
     </section>
   );
 }

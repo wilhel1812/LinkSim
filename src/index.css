@@ -634,7 +634,7 @@ input {
 .collapsed-panel-controls {
   position: absolute;
   inset: 0;
-  z-index: 82;
+  z-index: 108;
   pointer-events: none;
 }
 
@@ -643,20 +643,49 @@ input {
   pointer-events: auto;
 }
 
+.collapsed-panel-btn.map-control-btn-icon {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+  backdrop-filter: blur(var(--glass-panel-blur));
+  box-shadow: var(--shadow-elev-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapsed-panel-btn.map-control-btn-icon:hover,
+.collapsed-panel-btn.map-control-btn-icon:focus-visible {
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
+}
+
 .collapsed-panel-btn-navigator {
   left: 26px;
-  top: 66px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .collapsed-panel-btn-inspector {
   right: 26px;
-  top: 66px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.app-shell:not(.is-profile-hidden) .collapsed-panel-btn-navigator,
+.app-shell:not(.is-profile-hidden) .collapsed-panel-btn-inspector {
+  top: calc((100% - (max(220px, 32vh) + var(--workspace-panel-gap))) / 2);
 }
 
 .collapsed-panel-btn-profile {
   left: 50%;
-  bottom: calc(max(220px, 32vh) + var(--workspace-panel-gap) + 22px);
+  bottom: 70px;
   transform: translateX(-50%);
+  z-index: 109;
 }
 
 .workspace-header-actions {
@@ -1069,8 +1098,10 @@ input {
 }
 
 .map-inspector-header-actions {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  width: 100%;
   gap: 6px;
 }
 
@@ -1085,6 +1116,20 @@ input {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.map-inspector-header-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.map-inspector-header-panel-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-panel .maplibregl-ctrl-bottom-right,
@@ -1599,29 +1644,24 @@ input {
   font-size: 0.83rem;
 }
 
+.chart-top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 2px;
+}
+
 .chart-endpoints {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 10px;
-  padding: 0 10px 2px;
+  padding: 0;
+  min-width: 0;
+  flex: 1 1 auto;
   color: var(--muted);
   font-size: 0.78rem;
   font-family: "IBM Plex Mono", monospace;
-}
-
-.chart-panel-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-right: 10px;
-}
-
-.chart-panel-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .chart-endpoint {
@@ -1704,6 +1744,13 @@ input {
   font-size: 0.78rem;
   color: var(--text);
   padding: 2px 2px 0;
+  min-width: 0;
+}
+
+.chart-hover-state > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chart-hover-popover {
@@ -1753,14 +1800,27 @@ input {
   background: var(--state-fail-blocked);
 }
 
-.chart-footer-row {
+.chart-action-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px;
+  gap: 8px;
+  padding: 0 10px 2px;
 }
 
-.chart-footer-row > .chart-hover-state {
+.chart-action-row-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.chart-action-row-controls .panel-size-controls {
+  justify-content: flex-end;
+}
+
+.chart-action-row > .chart-hover-state {
   min-height: 26px;
   flex: 1;
   min-width: 0;
@@ -1927,6 +1987,10 @@ input {
     z-index: 85;
   }
 
+  .app-shell.is-mobile-shell .map-inspector-header-title {
+    display: none;
+  }
+
   .mobile-workspace-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1984,7 +2048,7 @@ input {
   }
 
   .mobile-workspace-panel-shell {
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
     border-radius: 14px;
     background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
@@ -1992,23 +2056,6 @@ input {
     backdrop-filter: blur(var(--glass-panel-blur));
     box-shadow: var(--shadow-elev-2);
     overflow: hidden;
-  }
-
-  .mobile-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 10px 6px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
-  }
-
-  .mobile-panel-header h3 {
-    margin: 0;
-    font-size: 0.8rem;
-    font-weight: 700;
-    color: var(--text);
   }
 
   .mobile-workspace-panel .chart-panel {
@@ -2144,14 +2191,15 @@ input {
   .map-controls {
     top: var(--mobile-controls-top);
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;
     left: 12px;
     right: 12px;
     gap: 8px;
   }
 
-  .app-shell:not(.is-map-expanded) .map-controls {
+  .app-shell.is-mobile-shell:not(.is-map-expanded):not(.is-profile-expanded) .map-controls {
     left: 12px;
+    right: 12px;
   }
 
   .map-inline-notice {
@@ -2163,19 +2211,25 @@ input {
     min-width: 100%;
   }
 
-  .map-controls-group,
-  .map-controls-group-utility {
-    justify-content: flex-start;
+  .map-controls-icon-only {
+    justify-content: center;
+    overflow-x: visible;
   }
 
   .map-controls-group-utility {
-    align-self: center;
-    width: auto;
     justify-content: center;
+    align-self: center;
+    width: max-content;
   }
 
   .map-controls-utility-pill {
     max-width: calc(100% - 24px);
+    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+    backdrop-filter: blur(var(--glass-panel-blur));
+    box-shadow: var(--shadow-elev-3);
   }
 
   .map-inspector {
