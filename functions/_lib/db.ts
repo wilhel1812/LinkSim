@@ -1954,7 +1954,7 @@ export const resolveSimulationIdBySlug = async (
 
 export const fetchPublicSimulationBundle = async (
   env: Env,
-  options: { simulationId?: string; simulationSlug?: string },
+  options: { simulationId?: string; simulationSlug?: string; actorId?: string | null },
 ): Promise<
   | { status: "missing" | "forbidden" }
   | {
@@ -1976,7 +1976,17 @@ export const fetchPublicSimulationBundle = async (
     .first<{ id: string; payload_json: string; visibility: DbVisibility }>();
   if (!simulationRow) return { status: "missing" };
   const visibility = visibilityFromDbVisibility(simulationRow.visibility);
-  if (visibility === "private") return { status: "forbidden" };
+
+  let actorSimulationRole: string | null = null;
+  if (visibility === "private") {
+    if (!options.actorId) return { status: "forbidden" };
+    const roleRow = await env.DB
+      .prepare("SELECT role FROM simulation_roles WHERE simulation_id = ? AND user_id = ? LIMIT 1")
+      .bind(resolvedId, options.actorId)
+      .first<{ role: string }>();
+    if (!roleRow) return { status: "forbidden" };
+    actorSimulationRole = roleRow.role;
+  }
 
   let simulation: CloudResourceRecord;
   try {
@@ -1986,7 +1996,7 @@ export const fetchPublicSimulationBundle = async (
   }
   simulation.id = simulationRow.id;
   simulation.visibility = visibility;
-  simulation.effectiveRole = "viewer";
+  simulation.effectiveRole = actorSimulationRole ?? "viewer";
 
   const referencedSiteIds = referencedLibrarySiteIdsFromSimulation(simulation);
   if (!referencedSiteIds.length) {
@@ -2005,7 +2015,9 @@ export const fetchPublicSimulationBundle = async (
     .all<{ id: string; payload_json: string; visibility: DbVisibility }>();
   const sites: CloudResourceRecord[] = [];
   for (const row of rows.results) {
-    if (visibilityFromDbVisibility(row.visibility) === "private") continue;
+    // When actor has an explicit simulation role (private access), include all referenced
+    // sites regardless of their individual visibility — simulation-level access covers its sites.
+    if (actorSimulationRole === null && visibilityFromDbVisibility(row.visibility) === "private") continue;
     try {
       const site = JSON.parse(row.payload_json) as CloudResourceRecord;
       site.id = row.id;

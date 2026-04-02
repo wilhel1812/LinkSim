@@ -572,6 +572,7 @@ export function Sidebar({
   const [resourceRxGainDraft, setResourceRxGainDraft] = useState(STANDARD_SITE_RADIO.rxGainDbi);
   const [resourceCableLossDraft, setResourceCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
   const [resourceCollaboratorUserIds, setResourceCollaboratorUserIds] = useState<string[]>([]);
+  const [resourceCollaboratorRoles, setResourceCollaboratorRoles] = useState<Record<string, "viewer" | "editor">>({});
   const [resourceCollaboratorQuery, setResourceCollaboratorQuery] = useState("");
   const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
   const [resourceCollaboratorDirectoryBusy, setResourceCollaboratorDirectoryBusy] = useState(false);
@@ -1543,11 +1544,10 @@ export function Sidebar({
       setResourceRxGainDraft(site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi);
       setResourceCableLossDraft(site?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(normalizeAccessVisibility(site?.visibility));
-      setResourceCollaboratorUserIds(
-        (site?.sharedWith ?? [])
-          .filter((grant) => grant.role === "editor" || grant.role === "admin")
-          .filter((grant) => grant.userId !== site?.ownerUserId)
-          .map((grant) => grant.userId),
+      const siteGrants = (site?.sharedWith ?? []).filter((grant) => grant.userId !== site?.ownerUserId);
+      setResourceCollaboratorUserIds(siteGrants.map((grant) => grant.userId));
+      setResourceCollaboratorRoles(
+        Object.fromEntries(siteGrants.map((grant) => [grant.userId, grant.role === "editor" || grant.role === "admin" ? "editor" : "viewer"])),
       );
     } else {
       const simulation = simulationPresets.find((entry) => entry.id === resourceId);
@@ -1561,11 +1561,10 @@ export function Sidebar({
       setResourceRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
       setResourceCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(normalizeAccessVisibility(simulation?.visibility));
-      setResourceCollaboratorUserIds(
-        (simulation?.sharedWith ?? [])
-          .filter((grant) => grant.role === "editor" || grant.role === "admin")
-          .filter((grant) => grant.userId !== simulation?.ownerUserId)
-          .map((grant) => grant.userId),
+      const simGrants = (simulation?.sharedWith ?? []).filter((grant) => grant.userId !== simulation?.ownerUserId);
+      setResourceCollaboratorUserIds(simGrants.map((grant) => grant.userId));
+      setResourceCollaboratorRoles(
+        Object.fromEntries(simGrants.map((grant) => [grant.userId, grant.role === "editor" || grant.role === "admin" ? "editor" : "viewer"])),
       );
     }
     setResourceCollaboratorQuery("");
@@ -1610,6 +1609,7 @@ export function Sidebar({
       cableLossDb: number;
       visibility: "private" | "public" | "shared";
       collaboratorUserIds: string[];
+      collaboratorRoles: Record<string, "viewer" | "editor">;
     }>,
   ): boolean => {
     if (!resourceDetailsPopup) return false;
@@ -1629,6 +1629,7 @@ export function Sidebar({
     const nextRxGainDbi = overrides?.rxGainDbi ?? resourceRxGainDraft;
     const nextCableLossDb = overrides?.cableLossDb ?? resourceCableLossDraft;
     const nextCollaboratorUserIds = overrides?.collaboratorUserIds ?? resourceCollaboratorUserIds;
+    const nextCollaboratorRoles = overrides?.collaboratorRoles ?? resourceCollaboratorRoles;
     const normalizedVisibility = nextVisibility === "public" ? "shared" : nextVisibility;
     const normalizedName = nextName.trim();
     if (!normalizedName) {
@@ -1637,7 +1638,7 @@ export function Sidebar({
     }
     const sharedWith = nextCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
-      .map((userId) => ({ userId, role: "editor" as const }));
+      .map((userId) => ({ userId, role: (nextCollaboratorRoles[userId] ?? "viewer") as "viewer" | "editor" }));
     const currentEntry =
       resourceDetailsPopup.kind === "site"
         ? siteLibrary.find((entry) => entry.id === resourceDetailsPopup.resourceId)
@@ -1718,7 +1719,7 @@ export function Sidebar({
     }
     const sharedWith = resourceCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
-      .map((userId) => ({ userId, role: "editor" as const }));
+      .map((userId) => ({ userId, role: (resourceCollaboratorRoles[userId] ?? "viewer") as "viewer" | "editor" }));
     updateSimulationPresetEntry(pending.simulationId, {
       visibility: pending.targetVisibility,
       sharedWith,
@@ -1741,6 +1742,9 @@ export function Sidebar({
       ? resourceCollaboratorUserIds
       : [...resourceCollaboratorUserIds, userId];
     setResourceCollaboratorUserIds(nextCollaborators);
+    if (!resourceCollaboratorRoles[userId]) {
+      setResourceCollaboratorRoles((prev) => ({ ...prev, [userId]: "viewer" }));
+    }
     void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
     setResourceCollaboratorQuery("");
   };
@@ -1767,7 +1771,18 @@ export function Sidebar({
     }
     const nextCollaborators = resourceCollaboratorUserIds.filter((id) => id !== userId);
     setResourceCollaboratorUserIds(nextCollaborators);
+    setResourceCollaboratorRoles((prev) => {
+      const next = { ...prev };
+      delete next[userId];
+      return next;
+    });
     void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
+  };
+
+  const setCollaboratorRole = (userId: string, role: "viewer" | "editor") => {
+    const nextRoles = { ...resourceCollaboratorRoles, [userId]: role };
+    setResourceCollaboratorRoles(nextRoles);
+    void persistResourceAccessSettings({ collaboratorRoles: nextRoles });
   };
 
   const changeProfileRole = async (nextRole: "admin" | "moderator" | "user" | "pending") => {
@@ -2814,7 +2829,7 @@ export function Sidebar({
               <div className="field-grid user-bio-field collaborator-picker-grid">
                 <span>
                   Collaborators{" "}
-                  <InfoTip text="Collaborators grant edit rights. Editors can add collaborators but cannot remove existing collaborators. Owners/admins can remove." />
+                  <InfoTip text="Add specific users and assign them viewer or editor access. Viewers can view and run; editors can also modify and add collaborators. Owners/admins can remove collaborators." />
                 </span>
                 <div className="collaborator-picker">
                   <div className="chip-group collaborator-selected-list">
@@ -2822,6 +2837,14 @@ export function Sidebar({
                       selectedCollaboratorUsers.map((user) => (
                         <span className="site-quick-item" key={user.id}>
                           <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                          <select
+                            aria-label={`Role for ${user.username}`}
+                            onChange={(e) => setCollaboratorRole(user.id, e.target.value as "viewer" | "editor")}
+                            value={resourceCollaboratorRoles[user.id] ?? "viewer"}
+                          >
+                            <option value="viewer">Viewer</option>
+                            <option value="editor">Editor</option>
+                          </select>
                           <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
                             Remove
                           </button>
@@ -2858,8 +2881,9 @@ export function Sidebar({
                 </div>
               </div>
               <p className="field-help">
-                Collaborators are granted edit rights. Regular editors can add collaborators but cannot remove existing
-                collaborators/owner. Owners/admins can remove collaborators.
+                Viewers can view and run the simulation. Editors can also modify it and add collaborators. Owners/admins
+                can remove collaborators. Private simulations remain private — only added collaborators gain access via
+                the share link when logged in.
               </p>
               {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
             </details>
