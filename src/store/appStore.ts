@@ -18,7 +18,7 @@ import {
   withClimateDefaults,
 } from "../lib/propagationEnvironment";
 import { analyzeLink, buildProfile } from "../lib/propagation";
-import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
+import { BUILTIN_SCENARIOS, defaultScenario, DEMO_SCENARIO, getScenarioById } from "../lib/scenarios";
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { mergeSrtmTiles } from "../lib/terrainMerge";
@@ -388,6 +388,7 @@ type AppState = {
   setBasemapProvider: (value: BasemapProvider) => void;
   setBasemapStylePreset: (value: string) => void;
   selectScenario: (id: string) => void;
+  loadDemoScenario: () => void;
   setSelectedLinkId: (id: string) => void;
   setTemporaryDirectionReversed: (value: boolean) => void;
   toggleTemporaryDirectionReversed: () => void;
@@ -1672,6 +1673,45 @@ export const useAppStore = create<AppState>((set, get) => ({
       siteLibrary: libraryBacked.siteLibrary,
     });
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: scenario.id, savedAtIso: new Date().toISOString() });
+    useCoverageStore.getState().recomputeCoverage();
+  },
+  loadDemoScenario: () => {
+    const scenario = DEMO_SCENARIO;
+    const libraryBacked = ensureSitesBackedByLibrary(scenario.sites, get().siteLibrary);
+    if (libraryBacked.addedCount > 0) {
+      writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
+    }
+    const bounds = simulationAreaBoundsForSites(scenario.sites);
+    const viewport = bounds ? boundsToViewport(bounds) : scenario.viewport;
+    set({
+      // selectedScenarioId intentionally not set — demo stays invisible in scenario UI
+      sites: libraryBacked.sites,
+      links: scenario.links,
+      systems: scenario.systems,
+      networks: scenario.networks,
+      selectedSiteId: scenario.defaultSiteId,
+      selectedSiteIds: scenario.defaultSiteId ? [scenario.defaultSiteId] : [],
+      selectedLinkId: scenario.defaultLinkId,
+      profileCursorIndex: 0,
+      temporaryDirectionReversed: false,
+      selectedNetworkId: scenario.defaultNetworkId,
+      selectedFrequencyPresetId: scenario.defaultFrequencyPresetId,
+      propagationModel: "ITM",
+      rxSensitivityTargetDbm: -120,
+      environmentLossDb: 0,
+      propagationEnvironment: defaultPropagationEnvironment(),
+      autoPropagationEnvironment: true,
+      propagationEnvironmentReason: "Auto defaults active.",
+      terrainFetchStatus: "",
+      terrainRecommendation: "",
+      isHighResTerrainLoaded: false,
+      terrainLoadingStartedAtMs: 0,
+      terrainLoadEpoch: 0,
+      siteDragPreview: {},
+      endpointPickTarget: null,
+      mapViewport: viewport,
+      siteLibrary: libraryBacked.siteLibrary,
+    });
     useCoverageStore.getState().recomputeCoverage();
   },
   setSelectedLinkId: (id) =>
