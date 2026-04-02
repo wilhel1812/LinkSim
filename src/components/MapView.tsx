@@ -958,6 +958,8 @@ type MapViewProps = {
     tone: "info" | "warning" | "error";
     onDismiss?: () => void;
   };
+  /** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
+  fitBottomInset?: number;
 };
 
 type PendingNewSiteDraft = {
@@ -992,6 +994,7 @@ export function MapView({
   onToggleMapExpanded,
   onShare,
   notice,
+  fitBottomInset = 30,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
@@ -1126,13 +1129,13 @@ export function MapView({
     const bounds = computeSiteFitBounds(sites);
     if (!bounds) return;
     mapRef.current.fitBounds(bounds, {
-      padding: FIT_CHROME_PADDING,
+      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
       animate: false,
       maxZoom: 14,
     });
     setInteractionViewState(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitSitesEpoch, isMapLoaded]);
+  }, [fitSitesEpoch, isMapLoaded, fitBottomInset]);
 
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
@@ -1570,7 +1573,7 @@ export function MapView({
     setFitControlActive(true);
     setInteractionViewState(null);
     mapRef.current.fitBounds(bounds, {
-      padding: FIT_CHROME_PADDING,
+      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
       animate: true,
       maxZoom: 14,
     });

@@ -438,14 +438,22 @@ export function AppShell() {
     }
   }, [accessState, initializeCloudSync]);
 
-  // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink.
+  // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink,
+  // and publish a persistent map notice (uses the existing map-inline-notice UI).
   useEffect(() => {
     const isAnonNoDeepLink =
       !deepLinkParse.ok &&
       (isAnonymousGuestReadonly || (accessState === "locked" && lockedNeedsSignIn));
-    if (isAnonNoDeepLink && sites.length === 0) {
+    if (!isAnonNoDeepLink) return;
+    if (sites.length === 0) {
       loadDemoScenario();
     }
+    publishAppNotice({
+      id: "demo-mode",
+      message: deepLinkParse.ok ? "Viewing as guest." : "Demo workspace — sign in to save your own simulations.",
+      tone: "info",
+      persistent: true,
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessState, isAnonymousGuestReadonly, lockedNeedsSignIn, deepLinkParse.ok]);
 
@@ -1245,26 +1253,6 @@ export function AppShell() {
             <span className="field-help">Checking access in the background. Anonymous mode is available while this resolves.</span>
           </div>
         ) : null}
-        {accessState === "locked" && lockedNeedsSignIn ? (
-          <div className="workspace-header-actions">
-            <span className="field-help">
-              {deepLinkParse.ok ? "Viewing as guest." : "Demo workspace — sign in to save your own simulations."}
-            </span>
-            <button className="inline-action" onClick={signIn} type="button">
-              Sign In
-            </button>
-          </div>
-        ) : null}
-        {isAnonymousGuestReadonly ? (
-          <div className="workspace-header-actions">
-            <span className="field-help">
-              {deepLinkParse.ok ? "Viewing as guest." : "Demo workspace — sign in to save your own simulations."}
-            </span>
-            <button className="inline-action" onClick={signIn} type="button">
-              Sign In
-            </button>
-          </div>
-        ) : null}
         {!isOnline && !offlineBannerDismissed ? (
           <div className="offline-banner" role="status">
             <span>Offline. Changes are saved locally and will sync when connection returns.</span>
@@ -1368,6 +1356,11 @@ export function AppShell() {
                   onDismiss: appNotice.persistent ? () => setAppNotice(null) : undefined,
                 }
               : undefined
+          }
+          fitBottomInset={
+            isMobileViewport || isMapExpanded || isProfileExpanded
+              ? 30
+              : Math.max(220, typeof window !== "undefined" ? window.innerHeight * 0.32 : 220) + 18 + 18
           }
         />
         {isMobileViewport ? (
