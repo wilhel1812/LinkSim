@@ -672,21 +672,6 @@ export function Sidebar({
     }
   }, [hideLibraryBrowsing, showSiteLibraryRequest, setShowSiteLibraryRequest]);
   useEffect(() => {
-    if (showNewSimulationRequest) {
-      setNewSimulationName("");
-      setNewSimulationDescription("");
-      setNewSimulationNameError("");
-      setShowNewSimulationModal(true);
-      setShowNewSimulationRequest(false);
-    }
-  }, [showNewSimulationRequest, setShowNewSimulationRequest]);
-  useEffect(() => {
-    if (showSiteLibraryRequest) {
-      setShowSiteLibraryManager(true);
-      setShowSiteLibraryRequest(false);
-    }
-  }, [showSiteLibraryRequest, setShowSiteLibraryRequest]);
-  useEffect(() => {
     persistLibraryFilterState(SITE_LIBRARY_FILTERS_KEY, siteLibraryFilters);
   }, [siteLibraryFilters]);
   useEffect(() => {
