@@ -69,7 +69,7 @@ export const fetchPublicSimulationLibrary = async (params: {
   };
 };
 
-export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<void> => {
+export const pushCloudLibrary = async (payload: CloudLibraryPayload, opts?: { suppressConflicts?: string[] }): Promise<void> => {
   console.log("[cloudLibrary] Pushing library to cloud:", {
     sites: payload.siteLibrary.length,
     simulations: payload.simulationPresets.length,
@@ -80,12 +80,14 @@ export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<vo
     body: JSON.stringify(payload),
   });
   console.log("[cloudLibrary] Push response:", result);
-  const conflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
-  if (!conflicts.length) {
+  const allConflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
+  const conflicts = allConflicts.filter((c) => !(opts?.suppressConflicts ?? []).includes(c));
+  if (!allConflicts.length) {
     console.log("[cloudLibrary] Push succeeded with no conflicts");
     return;
   }
-  console.log("[cloudLibrary] Push has conflicts:", conflicts);
+  console.log("[cloudLibrary] Push has conflicts:", allConflicts, "fatal:", conflicts);
+  if (!conflicts.length) return;
   if (conflicts.includes("simulation_private_site_reference")) {
     throw new Error(
       "Cannot publish/shared a simulation that references private library sites. Set simulation to Private or use non-private site entries.",

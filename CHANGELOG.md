@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.13.0] - 2026-04-02
+
+### Added
+- Private simulations can now be shared with specific users without elevating them to public. Collaborators are granted viewer or editor access per-user; the simulation and its sites stay private. The share link is auth-gated — only explicitly added users can open it. (#142)
+- Share modal redesigned with two equal option cards: "Make Broadly Accessible" (existing public upgrade path) and "Share with Specific Users" (new private collaboration path), each with an icon. (#142)
+- Per-collaborator role selector (viewer / editor) in the resource access dialog. (#142)
+- Anonymous visitors now land on a demo workspace with four real Oslo-area sites (Tryvannstårnet, Haukåsen, Kikut, Kolsåstoppen) instead of an empty map, giving a clear first impression of the tool. (#346)
+- Meshmap MQTT node data now loads with a progress bar and shows a retry button on failure, consistent with the terrain and simulation loading patterns. (#292, #294)
+
+### Changed
+- Sidebar "More" panel reduced — actions consolidated into more appropriate locations, reducing clutter and improving focus. (#182)
+
+### Fixed
+- Cloud auto-sync no longer fails after sharing a private simulation with specific users. The `simulation_private_site_reference` conflict is suppressed during sync for private simulations; strict validation is kept only when explicitly upgrading a simulation to shared/public. (#142)
+- New sites created in areas without terrain data no longer silently default to elevation 0 — elevation is resolved from live terrain data at creation time. (#181)
+- Path profile fullscreen button no longer triggers map fullscreen; the two controls now operate independently. (#309)
+- "Fit" button now correctly fits the viewport to the simulation area in all cases, including a Mercator cos(lat) correction for accuracy. (#223)
+- Map search in the site editor now pans the map to the selected result immediately. (#95)
+- Mobile map attribution placement is now stable across all panel and tab states. (#240)
+- Meshmap proxy no longer caches error responses (429/5xx) — only successful responses are cached, preventing stale error states. (#294)
+- Map UI pill is now correctly centered in expanded mode. (#300)
+- Removed the redundant "Inspector" heading from the inspector panel header. (#142)
+- Panel toggle button is now left-aligned on desktop and hidden on mobile; Share button stays right-aligned in both modes. (#142)
+- Clipboard permission error when saving collaborators resolved — clipboard write is now registered within the user-gesture context before async operations begin. (#142)
+
 ## [0.12.1] - 2026-03-28
 
 ### Fixed

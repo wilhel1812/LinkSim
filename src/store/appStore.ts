@@ -18,7 +18,7 @@ import {
   withClimateDefaults,
 } from "../lib/propagationEnvironment";
 import { analyzeLink, buildProfile } from "../lib/propagation";
-import { BUILTIN_SCENARIOS, defaultScenario, getScenarioById } from "../lib/scenarios";
+import { BUILTIN_SCENARIOS, defaultScenario, DEMO_SCENARIO, getScenarioById } from "../lib/scenarios";
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { mergeSrtmTiles } from "../lib/terrainMerge";
@@ -30,6 +30,7 @@ import {
   recommendCopernicusDatasetForArea,
   type CopernicusDataset,
   type CopernicusLoadResult,
+  type CopernicusTileProgress,
 } from "../lib/copernicusTerrainClient";
 import {
   normalizeTerrainDataset,
@@ -309,7 +310,9 @@ type AppState = {
   systems: RadioSystem[];
   networks: Network[];
   srtmTiles: SrtmTile[];
+  fitSitesEpoch: number;
   isTerrainFetching: boolean;
+  isEditorTerrainFetching: boolean;
   isTerrainRecommending: boolean;
   selectedLinkId: string;
   profileCursorIndex: number;
@@ -339,6 +342,11 @@ type AppState = {
   isHighResTerrainLoaded: boolean;
   terrainLoadingStartedAtMs: number;
   terrainLoadEpoch: number;
+  terrainProgressPercent: number;
+  terrainProgressTilesLoaded: number;
+  terrainProgressTilesTotal: number;
+  terrainProgressBytesLoaded: number;
+  terrainProgressBytesEstimated: number;
   siteLibrary: SiteLibraryEntry[];
   simulationPresets: SimulationPreset[];
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
@@ -381,6 +389,8 @@ type AppState = {
   setBasemapProvider: (value: BasemapProvider) => void;
   setBasemapStylePreset: (value: string) => void;
   selectScenario: (id: string) => void;
+  loadDemoScenario: () => void;
+  requestFitToSites: () => void;
   setSelectedLinkId: (id: string) => void;
   setTemporaryDirectionReversed: (value: boolean) => void;
   toggleTemporaryDirectionReversed: () => void;
@@ -503,6 +513,7 @@ type AppState = {
   fetchTerrainForCurrentArea: () => Promise<void>;
   recommendAndFetchTerrainForCurrentArea: () => Promise<void>;
   loadTerrainForCurrentArea: () => Promise<void>;
+  loadTerrainForCoordinate: (lat: number, lon: number) => Promise<void>;
   clearTerrainCache: () => Promise<void>;
   getSelectedLink: () => Link;
   getSelectedSite: () => Site;
@@ -1098,7 +1109,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   systems: [],
   networks: [],
   srtmTiles: [],
+  fitSitesEpoch: 0,
   isTerrainFetching: false,
+  isEditorTerrainFetching: false,
   isTerrainRecommending: false,
   selectedLinkId: "",
   profileCursorIndex: 0,
@@ -1128,6 +1141,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   isHighResTerrainLoaded: false,
   terrainLoadingStartedAtMs: 0,
   terrainLoadEpoch: 0,
+  terrainProgressPercent: 0,
+  terrainProgressTilesLoaded: 0,
+  terrainProgressTilesTotal: 0,
+  terrainProgressBytesLoaded: 0,
+  terrainProgressBytesEstimated: 0,
   siteLibrary: initialSiteLibrary,
   simulationPresets: initialSimulationPresets,
   siteDragPreview: {},
@@ -1325,7 +1343,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             simulations: payload.simulationPresets.length,
             skipped: skippedCount,
           });
-          await pushCloudLibrary(payload);
+          await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
           lastSyncedPayloadSignature = signature;
           writeStorage(SYNC_SIGNATURE_KEY, signature);
           console.log("[appStore] Post-init Push SUCCESS");
@@ -1451,7 +1469,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           simulations: payload.simulationPresets.length,
           skipped: skippedCount,
         });
-        await pushCloudLibrary(payload);
+        await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
         lastSyncedPayloadSignature = signature;
         console.log("[appStore] Push SUCCESS");
         const remaining = markSyncedThrough(revisionAtStart);
@@ -1530,7 +1548,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         simulations: editableSims.length,
         skipped: skippedCount,
       });
-      await pushCloudLibrary(payload);
+      await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
       lastSyncedPayloadSignature = payloadSignature;
       writeStorage(SYNC_SIGNATURE_KEY, payloadSignature);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
@@ -1656,10 +1674,58 @@ export const useAppStore = create<AppState>((set, get) => ({
       endpointPickTarget: null,
       mapViewport: scenario.viewport,
       siteLibrary: libraryBacked.siteLibrary,
+      fitSitesEpoch: get().fitSitesEpoch + 1,
     });
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: scenario.id, savedAtIso: new Date().toISOString() });
     useCoverageStore.getState().recomputeCoverage();
   },
+  loadDemoScenario: () => {
+    const scenario = DEMO_SCENARIO;
+    const libraryBacked = ensureSitesBackedByLibrary(scenario.sites, get().siteLibrary);
+    if (libraryBacked.addedCount > 0) {
+      writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
+    }
+    // Resolve link selection: both endpoints must be selected for path profile to show.
+    const defaultLink = scenario.links.find((l) => l.id === scenario.defaultLinkId);
+    const selectedSiteIds = defaultLink
+      ? normalizeSelectedSiteIds([defaultLink.fromSiteId, defaultLink.toSiteId], libraryBacked.sites)
+      : scenario.defaultSiteId
+        ? [scenario.defaultSiteId]
+        : [];
+    set({
+      // selectedScenarioId intentionally not set — demo stays invisible in scenario UI
+      sites: libraryBacked.sites,
+      links: scenario.links,
+      systems: scenario.systems,
+      networks: scenario.networks,
+      selectedSiteId: selectedSiteIds[0] ?? scenario.defaultSiteId,
+      selectedSiteIds,
+      selectedLinkId: scenario.defaultLinkId,
+      profileCursorIndex: 0,
+      temporaryDirectionReversed: false,
+      selectedNetworkId: scenario.defaultNetworkId,
+      selectedFrequencyPresetId: scenario.defaultFrequencyPresetId,
+      propagationModel: "ITM",
+      rxSensitivityTargetDbm: -120,
+      environmentLossDb: 0,
+      propagationEnvironment: defaultPropagationEnvironment(),
+      autoPropagationEnvironment: true,
+      propagationEnvironmentReason: "Auto defaults active.",
+      terrainFetchStatus: "",
+      terrainRecommendation: "",
+      isHighResTerrainLoaded: false,
+      terrainLoadingStartedAtMs: 0,
+      terrainLoadEpoch: 0,
+      siteDragPreview: {},
+      endpointPickTarget: null,
+      // mapViewport: undefined — fitSitesEpoch triggers proper fit via MapView
+      fitSitesEpoch: get().fitSitesEpoch + 1,
+      siteLibrary: libraryBacked.siteLibrary,
+      mapOverlayMode: defaultOverlayModeForSelectionCount(selectedSiteIds.length),
+    });
+    useCoverageStore.getState().recomputeCoverage();
+  },
+  requestFitToSites: () => set((state) => ({ fitSitesEpoch: state.fitSitesEpoch + 1 })),
   setSelectedLinkId: (id) =>
     set((state) => {
       const selectedLink = state.links.find((link) => link.id === id) ?? null;
@@ -2603,6 +2669,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         siteDragPreview: {},
         mapOverlayMode: defaultOverlayModeForSelectionCount(0),
         terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
+        fitSitesEpoch: get().fitSitesEpoch + 1,
       });
       writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: loadedAtIso });
       useCoverageStore.getState().recomputeCoverage();
@@ -2665,6 +2732,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainFetchStatus: `Loaded simulation preset: ${preset.name}`,
       siteLibrary: libraryBacked.siteLibrary,
       mapOverlayMode: defaultOverlayModeForSelectionCount(selectedSiteId ? 1 : 0),
+      fitSitesEpoch: get().fitSitesEpoch + 1,
     });
     if (libraryBacked.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
@@ -3022,7 +3090,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
     },
   ingestSrtmFiles: async (files) => {
-    set({ isTerrainFetching: true });
+    set({
+      isTerrainFetching: true,
+      terrainProgressPercent: 0,
+      terrainProgressTilesLoaded: 0,
+      terrainProgressTilesTotal: 0,
+      terrainProgressBytesLoaded: 0,
+      terrainProgressBytesEstimated: 0,
+    });
     try {
       const list = Array.from(files);
       const parsed = await Promise.all(
@@ -3041,11 +3116,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         srtmTiles: mergeSrtmTiles(state.srtmTiles, parsed),
         isTerrainFetching: false,
+        terrainProgressPercent: 0,
       }));
       clearTerrainLossCache();
       useCoverageStore.getState().recomputeCoverage();
     } finally {
-      set({ isTerrainFetching: false });
+      set({ isTerrainFetching: false, terrainProgressPercent: 0 });
     }
   },
   recommendTerrainDatasetForCurrentArea: async () => {
@@ -3115,7 +3191,53 @@ export const useAppStore = create<AppState>((set, get) => ({
       isTerrainFetching: true,
       isHighResTerrainLoaded: alreadyHasHighRes,
       terrainLoadingStartedAtMs: Date.now(),
+      terrainProgressPercent: 0,
+      terrainProgressTilesLoaded: 0,
+      terrainProgressTilesTotal: isSmallArea ? requiredTileKeys.size : requiredTileKeys.size,
+      terrainProgressBytesLoaded: 0,
+      terrainProgressBytesEstimated: 0,
     });
+
+    let terrainProgressTilesLoaded = 0;
+    let terrainProgressTilesTotal = isSmallArea ? requiredTileKeys.size : requiredTileKeys.size;
+    let terrainProgressBytesLoaded = 0;
+    let terrainProgressMeasuredTiles = 0;
+    const syncTerrainProgress = () => {
+      const estimatedBytes =
+        terrainProgressMeasuredTiles > 0
+          ? Math.round((terrainProgressBytesLoaded / terrainProgressMeasuredTiles) * Math.max(terrainProgressTilesTotal, 1))
+          : 0;
+      const percent =
+        terrainProgressTilesTotal > 0
+          ? Math.min(100, Math.round((terrainProgressTilesLoaded / terrainProgressTilesTotal) * 100))
+          : 0;
+      set({
+        terrainProgressPercent: percent,
+        terrainProgressTilesLoaded,
+        terrainProgressTilesTotal,
+        terrainProgressBytesLoaded,
+        terrainProgressBytesEstimated: estimatedBytes,
+      });
+    };
+    const extendTerrainProgressTotal = (byTiles: number) => {
+      if (byTiles <= 0) return;
+      terrainProgressTilesTotal += byTiles;
+      syncTerrainProgress();
+    };
+    const makeTileProgressHandler = () => {
+      const seen = new Set<string>();
+      return (progress: CopernicusTileProgress) => {
+        const key = progress.tileKey;
+        if (seen.has(key)) return;
+        seen.add(key);
+        terrainProgressTilesLoaded += 1;
+        if (progress.bytes > 0) {
+          terrainProgressBytesLoaded += progress.bytes;
+          terrainProgressMeasuredTiles += 1;
+        }
+        syncTerrainProgress();
+      };
+    };
 
     const loadPhased = async (
       dataset: CopernicusDataset,
@@ -3130,7 +3252,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         bounds.maxLon,
         dataset,
         priorityKeys,
-        { skipRemaining },
+        { skipRemaining, onTileProgress: makeTileProgressHandler() },
       );
 
     const applyTiles = (result: CopernicusLoadResult) => {
@@ -3164,7 +3286,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       if (alreadyHasHighRes) {
-        set({ terrainFetchStatus: formatStatus({ tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] }, TERRAIN_DATASET_FETCH_LABEL.copernicus30), isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
+        set({
+          terrainFetchStatus: formatStatus(
+            { tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] },
+            TERRAIN_DATASET_FETCH_LABEL.copernicus30,
+          ),
+          isTerrainFetching: false,
+          terrainLoadingStartedAtMs: 0,
+          terrainProgressPercent: 100,
+        });
         return;
       }
 
@@ -3180,6 +3310,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           isHighResTerrainLoaded: true,
           terrainLoadingStartedAtMs: 0,
           terrainLoadEpoch: 0,
+          terrainProgressPercent: 100,
         });
         return;
       }
@@ -3194,10 +3325,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       const currentTileKeys = new Set(currentState.srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
       const hasHighResNow = [...requiredTileKeys].every((k) => currentTileKeys.has(k));
       if (hasHighResNow) {
-        set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isTerrainFetching: false, isHighResTerrainLoaded: true, terrainLoadingStartedAtMs: 0 });
+        set({
+          terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90),
+          isTerrainFetching: false,
+          isHighResTerrainLoaded: true,
+          terrainLoadingStartedAtMs: 0,
+          terrainProgressPercent: 100,
+        });
         return;
       }
 
+      extendTerrainProgressTotal(requiredTileKeys.size);
       set({ terrainFetchStatus: "Loading terrain (30m, high-res refinement)...", isHighResTerrainLoaded: false });
       const thirtyPhased = await loadPhased("copernicus30", coreBounds, endpointKeys);
       applyTiles(thirtyPhased.priority);
@@ -3205,6 +3343,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const thirtyResult = mergeLoadResults(thirtyPhased.priority, thirtyPhased.remaining);
 
       if (extendedOnlyKeys.size > 0) {
+        extendTerrainProgressTotal(extendedOnlyKeys.size);
         set({ terrainFetchStatus: "Loading terrain (30m, extended radial area)..." });
         const extendedPhased = await loadPhased("copernicus30", extendedBounds, extendedOnlyKeys, true);
         applyTiles(extendedPhased.priority);
@@ -3215,6 +3354,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isHighResTerrainLoaded: true,
         terrainLoadingStartedAtMs: 0,
         terrainLoadEpoch: 0,
+        terrainProgressPercent: 100,
       });
     } catch (error) {
       const message = getUiErrorMessage(error);
@@ -3222,6 +3362,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   recommendAndFetchTerrainForCurrentArea: () => get().loadTerrainForCurrentArea(),
+  loadTerrainForCoordinate: async (lat: number, lon: number) => {
+    const { isEditorTerrainFetching, srtmTiles, terrainDataset } = get();
+    if (isEditorTerrainFetching) return;
+    if (sampleSrtmElevation(srtmTiles, lat, lon) !== null) return;
+    set({ isEditorTerrainFetching: true });
+    try {
+      const minLat = Math.floor(lat);
+      const minLon = Math.floor(lon);
+      const result = await loadCopernicusTilesForAreaPhased(
+        minLat,
+        minLat + 1,
+        minLon,
+        minLon + 1,
+        terrainDataset ?? "copernicus90",
+      );
+      const incoming = [...result.priority.tiles, ...result.remaining.tiles];
+      if (incoming.length > 0) {
+        set((s) => ({ srtmTiles: mergeSrtmTiles(s.srtmTiles, incoming) }));
+      }
+    } finally {
+      set({ isEditorTerrainFetching: false });
+    }
+  },
   loadTerrainForCurrentArea: async () => {
     if (get().isTerrainFetching) return;
     const { sites } = get();
@@ -3241,6 +3404,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainRecommendation: "Evaluating terrain dataset coverage...",
       terrainFetchStatus: "Loading terrain (90m)...",
       terrainLoadingStartedAtMs: Date.now(),
+      terrainProgressPercent: 0,
+      terrainProgressTilesLoaded: 0,
+      terrainProgressTilesTotal: 0,
+      terrainProgressBytesLoaded: 0,
+      terrainProgressBytesEstimated: 0,
     });
 
     try {
@@ -3267,6 +3435,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isTerrainRecommending: false,
         isTerrainFetching: false,
         terrainLoadingStartedAtMs: 0,
+        terrainProgressPercent: 0,
       });
       return;
     }
@@ -3305,6 +3474,48 @@ export const useAppStore = create<AppState>((set, get) => ({
       isHighResTerrainLoaded: alreadyHasHighRes,
     });
 
+    let terrainProgressTilesLoaded = 0;
+    let terrainProgressTilesTotal = isSmallArea ? requiredTileKeys.size : requiredTileKeys.size;
+    let terrainProgressBytesLoaded = 0;
+    let terrainProgressMeasuredTiles = 0;
+    const syncTerrainProgress = () => {
+      const estimatedBytes =
+        terrainProgressMeasuredTiles > 0
+          ? Math.round((terrainProgressBytesLoaded / terrainProgressMeasuredTiles) * Math.max(terrainProgressTilesTotal, 1))
+          : 0;
+      const percent =
+        terrainProgressTilesTotal > 0
+          ? Math.min(100, Math.round((terrainProgressTilesLoaded / terrainProgressTilesTotal) * 100))
+          : 0;
+      set({
+        terrainProgressPercent: percent,
+        terrainProgressTilesLoaded,
+        terrainProgressTilesTotal,
+        terrainProgressBytesLoaded,
+        terrainProgressBytesEstimated: estimatedBytes,
+      });
+    };
+    syncTerrainProgress();
+    const extendTerrainProgressTotal = (byTiles: number) => {
+      if (byTiles <= 0) return;
+      terrainProgressTilesTotal += byTiles;
+      syncTerrainProgress();
+    };
+    const makeTileProgressHandler = () => {
+      const seen = new Set<string>();
+      return (progress: CopernicusTileProgress) => {
+        const key = progress.tileKey;
+        if (seen.has(key)) return;
+        seen.add(key);
+        terrainProgressTilesLoaded += 1;
+        if (progress.bytes > 0) {
+          terrainProgressBytesLoaded += progress.bytes;
+          terrainProgressMeasuredTiles += 1;
+        }
+        syncTerrainProgress();
+      };
+    };
+
     const loadPhased = async (
       dataset: CopernicusDataset,
       bounds: TerrainFetchBounds,
@@ -3318,7 +3529,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         bounds.maxLon,
         dataset,
         priorityKeys,
-        { skipRemaining },
+        { skipRemaining, onTileProgress: makeTileProgressHandler() },
       );
 
     const applyTiles = (result: CopernicusLoadResult) => {
@@ -3352,7 +3563,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       if (alreadyHasHighRes) {
         if (get().terrainLoadEpoch !== epoch) return;
-        set({ terrainFetchStatus: formatStatus({ tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] }, TERRAIN_DATASET_FETCH_LABEL.copernicus30), isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
+        set({
+          terrainFetchStatus: formatStatus(
+            { tiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [], failedTiles: [] },
+            TERRAIN_DATASET_FETCH_LABEL.copernicus30,
+          ),
+          isTerrainFetching: false,
+          terrainLoadingStartedAtMs: 0,
+          terrainProgressPercent: 100,
+        });
         return;
       }
 
@@ -3368,6 +3587,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           isTerrainFetching: false,
           isHighResTerrainLoaded: true,
           terrainLoadingStartedAtMs: 0,
+          terrainProgressPercent: 100,
         });
         return;
       }
@@ -3382,10 +3602,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       const currentTileKeys = new Set(currentState.srtmTiles.filter((t) => t.sourceId === "copernicus30").map((t) => t.key));
       const hasHighResNow = [...requiredTileKeys].every((k) => currentTileKeys.has(k));
       if (hasHighResNow) {
-        set({ terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90), isTerrainFetching: false, isHighResTerrainLoaded: true, terrainLoadingStartedAtMs: 0 });
+        set({
+          terrainFetchStatus: formatStatus(ninetyResult, TERRAIN_DATASET_FETCH_LABEL.copernicus90),
+          isTerrainFetching: false,
+          isHighResTerrainLoaded: true,
+          terrainLoadingStartedAtMs: 0,
+          terrainProgressPercent: 100,
+        });
         return;
       }
 
+      extendTerrainProgressTotal(requiredTileKeys.size);
       set({ terrainFetchStatus: "Loading terrain (30m, high-res refinement)...", isHighResTerrainLoaded: false });
       const thirtyPhased = await loadPhased("copernicus30", coreBounds, endpointKeys);
       if (get().terrainLoadEpoch !== epoch) return;
@@ -3394,6 +3621,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const thirtyResult = mergeLoadResults(thirtyPhased.priority, thirtyPhased.remaining);
 
       if (extendedOnlyKeys.size > 0) {
+        extendTerrainProgressTotal(extendedOnlyKeys.size);
         set({ terrainFetchStatus: "Loading terrain (30m, extended radial area)..." });
         const extendedPhased = await loadPhased("copernicus30", extendedBounds, extendedOnlyKeys, true);
         if (get().terrainLoadEpoch !== epoch) return;
@@ -3404,14 +3632,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         isTerrainFetching: false,
         isHighResTerrainLoaded: true,
         terrainLoadingStartedAtMs: 0,
+        terrainProgressPercent: 100,
       });
     } catch (error) {
       if (get().terrainLoadEpoch !== epoch) return;
-      set({ terrainFetchStatus: `Terrain fetch failed: ${getUiErrorMessage(error)}`, isTerrainFetching: false, terrainLoadingStartedAtMs: 0 });
+      set({
+        terrainFetchStatus: `Terrain fetch failed: ${getUiErrorMessage(error)}`,
+        isTerrainFetching: false,
+        terrainLoadingStartedAtMs: 0,
+      });
     }
   },
   clearTerrainCache: async () => {
-    set({ isTerrainFetching: true });
+    set({ isTerrainFetching: true, terrainProgressPercent: 0 });
     await clearCopernicusCache();
     clearTerrainLossCache();
     set((state) => ({
@@ -3420,6 +3653,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       isHighResTerrainLoaded: false,
       terrainLoadingStartedAtMs: 0,
       terrainLoadEpoch: 0,
+      terrainProgressPercent: 0,
+      terrainProgressTilesLoaded: 0,
+      terrainProgressTilesTotal: 0,
+      terrainProgressBytesLoaded: 0,
+      terrainProgressBytesEstimated: 0,
       terrainFetchStatus: "Terrain source caches cleared.",
     }));
     useCoverageStore.getState().recomputeCoverage();

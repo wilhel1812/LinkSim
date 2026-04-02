@@ -13,6 +13,14 @@ export type CopernicusLoadResult = {
   fallbackTiles: string[];
 };
 
+export type CopernicusTileProgress = {
+  dataset: CopernicusDataset;
+  tileKey: string;
+  bytes: number;
+  completedTiles: number;
+  totalTiles: number;
+};
+
 type CopernicusRecommendation = {
   dataset: CopernicusDataset;
   completeness: number;
@@ -346,18 +354,27 @@ const getCachedOrFetchTile = async (
   pathPrefix: "30m" | "90m",
   path: string,
   tileKey: string,
-): Promise<{ buffer: ArrayBuffer; fromCache: boolean }> => {
+): Promise<{ buffer: ArrayBuffer; fromCache: boolean; byteLength: number }> => {
   const dataset: CopernicusDataset = pathPrefix === "30m" ? "copernicus30" : "copernicus90";
   const cache = await caches.open(CACHE_NAME);
   const proxiedUrl = `/copernicus/${pathPrefix}/${path}`;
   const localIndex = readTileIndex(dataset);
   if (localIndex.has(tileKey)) {
     const cached = await cache.match(proxiedUrl);
-    if (cached) return { buffer: await cached.arrayBuffer(), fromCache: true };
+    if (cached) {
+      const buffer = await cached.arrayBuffer();
+      return { buffer, fromCache: true, byteLength: buffer.byteLength };
+    }
   }
   const response = await fetchWithRetry(proxiedUrl, TILE_RETRY_POLICY);
+  const contentLength = Number(response.headers.get("content-length") ?? "");
   await cache.put(proxiedUrl, response.clone());
-  return { buffer: await response.arrayBuffer(), fromCache: false };
+  const buffer = await response.arrayBuffer();
+  return {
+    buffer,
+    fromCache: false,
+    byteLength: Number.isFinite(contentLength) && contentLength > 0 ? contentLength : buffer.byteLength,
+  };
 };
 
 const loadTileBatch = async (
@@ -365,6 +382,7 @@ const loadTileBatch = async (
   dataset: CopernicusDataset,
   pathPrefix: "30m" | "90m",
   fallbackDataset?: "copernicus90",
+  onTileProgress?: (progress: CopernicusTileProgress) => void,
 ): Promise<{
   tiles: SrtmTile[];
   failedTiles: string[];
@@ -378,20 +396,36 @@ const loadTileBatch = async (
   const failedTiles = new Set<string>();
   const fallbackTiles: string[] = [];
   const parsedTiles: SrtmTile[] = [];
+  let completedTiles = 0;
+  const totalTiles = keys.length;
+
+  const reportProgress = (tileKey: string, bytes: number, progressDataset: CopernicusDataset) => {
+    completedTiles += 1;
+    onTileProgress?.({
+      dataset: progressDataset,
+      tileKey,
+      bytes,
+      completedTiles,
+      totalTiles,
+    });
+  };
 
   for (const key of keys) {
     const item = tileList[key];
     if (!item) {
       failedTiles.add(key);
+      reportProgress(key, 0, dataset);
       continue;
     }
     try {
-      const { buffer, fromCache } = await getCachedOrFetchTile(pathPrefix, item.path, key);
+      const { buffer, fromCache, byteLength } = await getCachedOrFetchTile(pathPrefix, item.path, key);
       if (fromCache) cacheHits.push(key);
       else fetchedTiles.push(key);
       parsedTiles.push(await parseCopernicusTile(key, dataset, item.path, buffer));
+      reportProgress(key, byteLength, dataset);
     } catch {
       failedTiles.add(key);
+      reportProgress(key, 0, dataset);
     }
   }
 
@@ -401,14 +435,16 @@ const loadTileBatch = async (
       const item = fallbackList[key];
       if (!item) continue;
       try {
-        const { buffer, fromCache } = await getCachedOrFetchTile(DATASET_PATH[fallbackDataset], item.path, key);
+        const { buffer, fromCache, byteLength } = await getCachedOrFetchTile(DATASET_PATH[fallbackDataset], item.path, key);
         if (fromCache) cacheHits.push(key);
         else fetchedTiles.push(key);
         parsedTiles.push(await parseCopernicusTile(key, fallbackDataset, item.path, buffer));
         fallbackTiles.push(key);
         failedTiles.delete(key);
+        reportProgress(key, byteLength, fallbackDataset);
       } catch {
         // keep failed
+        reportProgress(key, 0, fallbackDataset);
       }
     }
   }
@@ -496,7 +532,7 @@ export const loadCopernicusTilesForAreaPhased = async (
   maxLon: number,
   dataset: CopernicusDataset,
   priorityKeys?: Set<string>,
-  options?: { skipRemaining?: boolean },
+  options?: { skipRemaining?: boolean; onTileProgress?: (progress: CopernicusTileProgress) => void },
 ): Promise<CopernicusPhasedLoadResult> => {
   const candidateKeys = tilesForBounds(minLat, maxLat, minLon, maxLon);
   const pathPrefix = DATASET_PATH[dataset];
@@ -509,14 +545,32 @@ export const loadCopernicusTilesForAreaPhased = async (
     const priorityKeysList = candidateKeys.filter((k) => priorityKeys.has(k));
     const remainingKeys = candidateKeys.filter((k) => !priorityKeys.has(k));
 
-    priority = await loadTileBatch(priorityKeysList, dataset, pathPrefix, is30m ? "copernicus90" : undefined);
+    priority = await loadTileBatch(
+      priorityKeysList,
+      dataset,
+      pathPrefix,
+      is30m ? "copernicus90" : undefined,
+      options?.onTileProgress,
+    );
     if (options?.skipRemaining) {
       remaining = { tiles: [], failedTiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [] };
     } else {
-      remaining = await loadTileBatch(remainingKeys, dataset, pathPrefix, is30m ? "copernicus90" : undefined);
+      remaining = await loadTileBatch(
+        remainingKeys,
+        dataset,
+        pathPrefix,
+        is30m ? "copernicus90" : undefined,
+        options?.onTileProgress,
+      );
     }
   } else {
-    priority = await loadTileBatch(candidateKeys, dataset, pathPrefix, is30m ? "copernicus90" : undefined);
+    priority = await loadTileBatch(
+      candidateKeys,
+      dataset,
+      pathPrefix,
+      is30m ? "copernicus90" : undefined,
+      options?.onTileProgress,
+    );
     remaining = { tiles: [], failedTiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [] };
   }
 

@@ -5,7 +5,7 @@ import { RED_THEME } from "./redTheme";
 import { YELLOW_THEME } from "./yellowTheme";
 import type { ThemeDefinition, ThemeVariant, UiColorTheme, UiThemeMode } from "./types";
 
-const THEMES: Record<UiColorTheme, ThemeDefinition> = {
+export const THEMES: Record<UiColorTheme, ThemeDefinition> = {
   blue: BLUE_THEME,
   pink: PINK_THEME,
   red: RED_THEME,
