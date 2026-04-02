@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, Share, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
   type MapRef,
@@ -952,7 +952,7 @@ type MapViewProps = {
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
-  onShare?: () => void;
+  inspectorHeaderActions?: ReactNode;
   notice?: {
     message: string;
     tone: "info" | "warning" | "error";
@@ -992,7 +992,7 @@ export function MapView({
   readOnly = false,
   canPersist = true,
   onToggleMapExpanded,
-  onShare,
+  inspectorHeaderActions,
   notice,
   fitBottomInset = 30,
 }: MapViewProps) {
@@ -2015,11 +2015,6 @@ export function MapView({
           >
             {isMapExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
           </button>
-          {onShare ? (
-            <button aria-label="Share" className="map-control-btn map-control-btn-icon" onClick={onShare} title="Share" type="button">
-              <Share aria-hidden="true" strokeWidth={1.8} />
-            </button>
-          ) : null}
         </div>
       </div>
       {notice ? (
@@ -2046,6 +2041,9 @@ export function MapView({
       ) : null}
       {showInspector ? (
         <aside className="map-inspector" aria-live="polite">
+          {inspectorHeaderActions ? (
+            <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
+          ) : null}
           {(isSimulationRecomputing || isBackgroundBusy) && backgroundBusyLabel ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">

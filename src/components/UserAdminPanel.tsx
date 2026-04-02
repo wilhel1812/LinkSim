@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { CircleQuestionMark, CircleUserRound, CircleX } from "lucide-react";
 import {
   bulkReassignOwnership,
@@ -133,9 +133,10 @@ const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl:
 type UserAdminPanelProps = {
   onOpenHelp?: () => void;
   authBootstrapPending?: boolean;
+  extraActions?: ReactNode;
 };
 
-export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false }: UserAdminPanelProps) {
+export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extraActions }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
@@ -785,6 +786,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false }: Use
               <CircleQuestionMark aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
+          {extraActions}
         </div>
       </div>
 
