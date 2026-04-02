@@ -80,12 +80,14 @@ Deploy from this repo. Pages Functions under `functions/api/*` deploy automatica
 
 ## 8) Verify
 
-- Access protects app URL (unauth users blocked/challenged)
+- Baseline mode: Access protects app URL (unauth users blocked/challenged)
+- Guest deep-link mode (optional): app shell route can load without challenge, but authenticated APIs remain protected
 - Sign in via GitHub (or OTP fallback)
 - Open User Settings and confirm user status
 - For admins: check `/api/schema-diagnostics` and `/api/auth-diagnostics`
 - Trigger `Sync From Cloud`
 - Create/edit site/simulation and confirm cloud sync status updates
+- In guest deep-link mode, verify `/api/public-simulation` is reachable without Access challenge
 
 ## Local Development
 

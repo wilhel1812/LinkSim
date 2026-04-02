@@ -46,20 +46,20 @@ describe("api/deep-link-status", () => {
   it("returns missing when simulation id is missing", async () => {
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status")));
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ status: "missing" });
+    await expect(res.json()).resolves.toEqual({ status: "missing", authenticated: true });
   });
 
   it("returns access status for simulation id", async () => {
     resolveSimulationAccessForUserMock.mockResolvedValueOnce("forbidden");
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status?sim=sim-2")));
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ status: "forbidden", simulationId: "sim-2" });
+    await expect(res.json()).resolves.toEqual({ status: "forbidden", simulationId: "sim-2", authenticated: true });
   });
 
   it("resolves slug to simulation id", async () => {
     resolveSimulationIdBySlugMock.mockResolvedValueOnce("sim-abc");
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status?slug=my-sim")));
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ status: "ok", simulationId: "sim-abc" });
+    await expect(res.json()).resolves.toEqual({ status: "ok", simulationId: "sim-abc", authenticated: true });
   });
 });

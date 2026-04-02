@@ -103,3 +103,91 @@ export const getScenarioById = (id: string): BuiltinScenario | undefined =>
   BUILTIN_SCENARIOS.find((scenario) => scenario.id === id);
 
 export const defaultScenario = BUILTIN_SCENARIOS[0];
+
+/**
+ * Demo workspace shown to anonymous visitors on bare URL.
+ * Not included in BUILTIN_SCENARIOS — invisible in normal scenario UI.
+ */
+export const DEMO_SCENARIO: BuiltinScenario = {
+  id: "demo",
+  name: "Oslo Demo",
+  sites: [
+    {
+      id: "demo-site-tryvanns",
+      name: "Tryvannstårnet",
+      position: { lat: 59.9883, lon: 10.6678 },
+      groundElevationM: 529,
+      antennaHeightM: 118,
+      txPowerDbm: 22,
+      txGainDbi: 5,
+      rxGainDbi: 5,
+      cableLossDb: 1,
+    },
+    {
+      id: "demo-site-haukasen",
+      name: "Haukåsen",
+      position: { lat: 59.904, lon: 10.8972 },
+      groundElevationM: 357,
+      antennaHeightM: 20,
+      txPowerDbm: 22,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    },
+    {
+      id: "demo-site-kikut",
+      name: "Kikut",
+      position: { lat: 60.0844, lon: 10.6442 },
+      groundElevationM: 614,
+      antennaHeightM: 2,
+      txPowerDbm: 22,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    },
+    {
+      id: "demo-site-kolsas",
+      name: "Kolsåstoppen",
+      position: { lat: 59.9291, lon: 10.519 },
+      groundElevationM: 379,
+      antennaHeightM: 2,
+      txPowerDbm: 22,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    },
+  ],
+  links: [
+    {
+      id: "demo-lnk-kikut-kolsas",
+      fromSiteId: "demo-site-kikut",
+      toSiteId: "demo-site-kolsas",
+      frequencyMHz: 869.618,
+    },
+  ],
+  systems: mkSystems(),
+  networks: [
+    {
+      id: "demo-net-1",
+      name: "Demo Channel",
+      frequencyMHz: 869.618,
+      bandwidthKhz: 62,
+      spreadFactor: 8,
+      codingRate: 5,
+      frequencyOverrideMHz: 869.618,
+      regionCode: "EU_868",
+      memberships: [
+        { siteId: "demo-site-tryvanns", systemId: "sys-base" },
+        { siteId: "demo-site-haukasen", systemId: "sys-mobile" },
+        { siteId: "demo-site-kikut", systemId: "sys-mobile" },
+        { siteId: "demo-site-kolsas", systemId: "sys-mobile" },
+      ],
+    },
+  ],
+  // viewport is intentionally minimal — loadDemoScenario() computes it from site bounds
+  viewport: { center: { lat: 59.99, lon: 10.65 }, zoom: 9 },
+  defaultSiteId: "demo-site-kikut",
+  defaultLinkId: "demo-lnk-kikut-kolsas",
+  defaultNetworkId: "demo-net-1",
+  defaultFrequencyPresetId: "oslo-local-869618",
+};

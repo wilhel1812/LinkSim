@@ -9,10 +9,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const auth = await verifyAuth(request, env);
     let actor = { id: "", isAdmin: false, isModerator: false };
+    let authenticated = false;
     if (auth) {
       await ensureUser(env, auth.userId, auth.tokenPayload);
       const me = await fetchUserProfile(env, auth.userId);
       if (me?.accountState !== "revoked") {
+        authenticated = true;
         actor = {
           id: me?.id ?? "",
           isAdmin: Boolean(me?.isAdmin),
@@ -28,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       simulationId = (await resolveSimulationIdBySlug(env, simulationSlug)) ?? "";
     }
     if (!simulationId) {
-      return withCors(request, json({ status: "missing" }));
+      return withCors(request, json({ status: "missing", authenticated }));
     }
 
     const status = await resolveSimulationAccessForUser(
@@ -41,7 +43,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       simulationId,
     );
 
-    return withCors(request, json({ status, simulationId }));
+    return withCors(request, json({ status, simulationId, authenticated }));
   } catch (error) {
     return errorResponse(request, error, 500);
   }

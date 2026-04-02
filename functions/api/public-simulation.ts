@@ -1,3 +1,4 @@
+import { verifyAuth } from "../_lib/auth";
 import { fetchPublicSimulationBundle } from "../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
@@ -15,9 +16,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       return withCors(request, json({ error: "Missing simulation id or slug" }, { status: 400, headers: NO_STORE_HEADERS }));
     }
 
+    const auth = await verifyAuth(request, env).catch(() => null);
+    const actorId = auth?.userId ?? null;
+
     const bundle = await fetchPublicSimulationBundle(env, {
       simulationId: simulationId || undefined,
       simulationSlug: simulationSlug || undefined,
+      actorId,
     });
 
     if (bundle.status !== "ok") {
