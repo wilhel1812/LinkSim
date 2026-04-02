@@ -46,9 +46,10 @@ const earthBulgeM = (distanceKm: number, t: number): number => {
 type LinkProfileChartProps = {
   isExpanded: boolean;
   onToggleExpanded: () => void;
+  showExpandToggle?: boolean;
 };
 
-export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileChartProps) {
+export function LinkProfileChart({ isExpanded, onToggleExpanded, showExpandToggle = true }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
   const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
@@ -804,15 +805,17 @@ export function LinkProfileChart({ isExpanded, onToggleExpanded }: LinkProfileCh
         >
           <ArrowLeftRight aria-hidden="true" strokeWidth={1.8} />
         </button>
-        <button
-          aria-label={isExpanded ? "Exit full screen" : "Full screen"}
-          className={`chart-endpoint-swap chart-endpoint-icon ${isExpanded ? "is-active" : ""}`}
-          onClick={onToggleExpanded}
-          title={isExpanded ? "Exit full screen" : "Full screen"}
-          type="button"
-        >
-          {isExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
-        </button>
+        {showExpandToggle ? (
+          <button
+            aria-label={isExpanded ? "Exit full screen" : "Full screen"}
+            className={`chart-endpoint-swap chart-endpoint-icon ${isExpanded ? "is-active" : ""}`}
+            onClick={onToggleExpanded}
+            title={isExpanded ? "Exit full screen" : "Full screen"}
+            type="button"
+          >
+            {isExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
+          </button>
+        ) : null}
         <div className="chart-hover-state">
           {cursorPoint && footerCursorState ? (
             <>

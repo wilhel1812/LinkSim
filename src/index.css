@@ -626,6 +626,34 @@ input {
   display: none;
 }
 
+.panel-visibility-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 82;
+  pointer-events: none;
+}
+
+.panel-visibility-btn {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.panel-visibility-btn-navigator {
+  left: 26px;
+  top: 26px;
+}
+
+.panel-visibility-btn-inspector {
+  right: 26px;
+  top: 26px;
+}
+
+.panel-visibility-btn-profile {
+  left: 50%;
+  bottom: calc(max(220px, 32vh) + var(--workspace-panel-gap) + 22px);
+  transform: translateX(-50%);
+}
+
 .workspace-header-actions {
   position: absolute;
   top: 26px;
@@ -1855,7 +1883,7 @@ input {
 
   .mobile-workspace-tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.35fr);
     gap: 8px;
     padding: 8px;
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
@@ -1879,6 +1907,11 @@ input {
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
+  }
+
+  .mobile-workspace-tab-cycle {
+    font-size: 0.7rem;
+    letter-spacing: 0.01em;
   }
 
   .mobile-workspace-tab.is-active {
@@ -1923,11 +1956,11 @@ input {
     max-height: none;
   }
 
-  .mobile-workspace-panel-sidebar {
+  .mobile-workspace-panel-navigator {
     padding: 0;
   }
 
-  .mobile-workspace-panel-sidebar .sidebar-panel,
+  .mobile-workspace-panel-navigator .sidebar-panel,
   .mobile-workspace-panel .sidebar-panel {
     height: 100%;
     max-height: 100%;
@@ -1940,8 +1973,9 @@ input {
     display: none;
   }
 
-  .app-shell.is-mobile-shell.mobile-panel-sidebar .map-inspector,
+  .app-shell.is-mobile-shell.mobile-panel-navigator .map-inspector,
   .app-shell.is-mobile-shell.mobile-panel-profile .map-inspector,
+  .app-shell.is-mobile-shell.mobile-panel-map .map-inspector,
   .app-shell.is-mobile-shell.is-map-expanded .map-inspector {
     display: none;
   }
@@ -1954,6 +1988,10 @@ input {
     height: auto;
     min-height: 100lvh;
     overflow: auto;
+  }
+
+  .panel-visibility-controls {
+    display: none;
   }
 
   .app-shell.is-mobile-shell {

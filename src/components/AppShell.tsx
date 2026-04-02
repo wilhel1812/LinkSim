@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleX } from "lucide-react";
+import { CircleX, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose } from "lucide-react";
 import { fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -29,7 +29,8 @@ const MOBILE_WARNING_DISMISS_KEY = "linksim:mobile-warning-dismissed:v1";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
-type MobileWorkspacePanel = "profile" | "inspector" | "sidebar";
+type MobileWorkspacePanel = "navigator" | "map" | "inspector" | "profile";
+type MobileProfileMode = "hidden" | "normal" | "expanded";
 type AppNotice = {
   id: string;
   message: string;
@@ -100,6 +101,9 @@ export function AppShell() {
   const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
+  const [isNavigatorHidden, setIsNavigatorHidden] = useState(false);
+  const [isInspectorHidden, setIsInspectorHidden] = useState(false);
+  const [isProfileHidden, setIsProfileHidden] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   // Derived early so effects below can reference them without temporal dead zone.
@@ -114,7 +118,8 @@ export function AppShell() {
   const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
   const [showMobileWarning, setShowMobileWarning] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
-  const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("profile");
+  const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("map");
+  const [mobileProfileMode, setMobileProfileMode] = useState<MobileProfileMode>("normal");
   const [mobileControlsOccupied, setMobileControlsOccupied] = useState(0);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
@@ -571,7 +576,7 @@ export function AppShell() {
       window.removeEventListener("resize", schedule);
       window.removeEventListener("orientationchange", schedule);
     };
-  }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel]);
+  }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel, mobileProfileMode]);
 
   useEffect(() => {
     const isMobile = window.matchMedia("(max-width: 900px)").matches;
@@ -1222,6 +1227,32 @@ export function AppShell() {
     setIsProfileExpanded((prev) => !prev);
   };
 
+  const setMobileProfileVisibility = useCallback(
+    (nextMode: MobileProfileMode) => {
+      setMobileProfileMode(nextMode);
+      setIsProfileExpanded(nextMode === "expanded");
+      if (nextMode === "hidden" && mobileActivePanel === "profile") {
+        setMobileActivePanel("map");
+      }
+    },
+    [mobileActivePanel],
+  );
+
+  const cycleMobileProfileVisibility = useCallback(() => {
+    setIsMapExpanded(false);
+    if (mobileProfileMode === "hidden") {
+      setMobileActivePanel("profile");
+      setMobileProfileVisibility("normal");
+      return;
+    }
+    if (mobileProfileMode === "normal") {
+      setMobileActivePanel("profile");
+      setMobileProfileVisibility("expanded");
+      return;
+    }
+    setMobileProfileVisibility("hidden");
+  }, [mobileProfileMode, setMobileProfileVisibility]);
+
   return (
     <main
       ref={appShellRef}
@@ -1236,7 +1267,38 @@ export function AppShell() {
       }`}
       style={shellStyle}
     >
-      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
+      {!isMobileViewport && !isMapExpanded && !isProfileExpanded ? (
+        <div className="panel-visibility-controls" aria-label="Panel visibility controls">
+          <button
+            aria-label={isNavigatorHidden ? "Show Navigator panel" : "Hide Navigator panel"}
+            className="map-control-btn map-control-btn-icon panel-visibility-btn panel-visibility-btn-navigator"
+            onClick={() => setIsNavigatorHidden((prev) => !prev)}
+            title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
+            type="button"
+          >
+            {isNavigatorHidden ? <PanelLeft aria-hidden="true" strokeWidth={1.8} /> : <PanelLeftClose aria-hidden="true" strokeWidth={1.8} />}
+          </button>
+          <button
+            aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
+            className="map-control-btn map-control-btn-icon panel-visibility-btn panel-visibility-btn-inspector"
+            onClick={() => setIsInspectorHidden((prev) => !prev)}
+            title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
+            type="button"
+          >
+            {isInspectorHidden ? <PanelRight aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
+          </button>
+          <button
+            aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
+            className="map-control-btn map-control-btn-icon panel-visibility-btn panel-visibility-btn-profile"
+            onClick={() => setIsProfileHidden((prev) => !prev)}
+            title={isProfileHidden ? "Show Profile" : "Hide Profile"}
+            type="button"
+          >
+            {isProfileHidden ? <PanelBottom aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
+          </button>
+        </div>
+      ) : null}
+      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && !isNavigatorHidden && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
         <Sidebar
           authBootstrapPending={accessState === "checking"}
           hideLibraryBrowsing={isReadOnlyShell}
@@ -1311,7 +1373,12 @@ export function AppShell() {
         </div>
         <MapView
           isMapExpanded={isMapExpanded}
-          showInspector={!isMapExpanded && !isProfileExpanded && (!isMobileViewport || mobileActivePanel === "inspector")}
+          showInspector={
+            !isMapExpanded &&
+            !isProfileExpanded &&
+            !isInspectorHidden &&
+            (!isMobileViewport || mobileActivePanel === "inspector")
+          }
           showMultiSelectToggle={isMobileViewport}
           canPersist={canPersistWorkspace}
           onShare={
@@ -1346,6 +1413,9 @@ export function AppShell() {
           readOnly={!canPersistWorkspace}
           onToggleMapExpanded={() => {
             setIsProfileExpanded(false);
+            if (isMobileViewport && mobileProfileMode === "expanded") {
+              setMobileProfileVisibility("normal");
+            }
             setIsMapExpanded((prev) => !prev);
           }}
           notice={
@@ -1358,7 +1428,7 @@ export function AppShell() {
               : undefined
           }
           fitBottomInset={
-            isMobileViewport || isMapExpanded || isProfileExpanded
+            isMobileViewport || isMapExpanded || isProfileExpanded || isProfileHidden
               ? 30
               : Math.max(220, typeof window !== "undefined" ? window.innerHeight * 0.32 : 220) + 18 + 18
           }
@@ -1366,32 +1436,43 @@ export function AppShell() {
         {isMobileViewport ? (
           <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
             <button
-              aria-selected={mobileActivePanel === "sidebar"}
-              className={`mobile-workspace-tab ${mobileActivePanel === "sidebar" ? "is-active" : ""}`}
+              aria-selected={mobileActivePanel === "navigator"}
+              className={`mobile-workspace-tab ${mobileActivePanel === "navigator" ? "is-active" : ""}`}
               onClick={() => {
-                setIsProfileExpanded(false);
-                if (!isMapExpanded && mobileActivePanel === "sidebar") {
-                  setIsMapExpanded(true);
-                  return;
-                }
                 setIsMapExpanded(false);
-                setMobileActivePanel("sidebar");
+                if (mobileProfileMode === "expanded") {
+                  setMobileProfileVisibility("normal");
+                }
+                setMobileActivePanel("navigator");
               }}
               role="tab"
               type="button"
             >
-              Sidebar
+              Navigator
+            </button>
+            <button
+              aria-selected={isMapExpanded || mobileActivePanel === "map"}
+              className={`mobile-workspace-tab ${isMapExpanded || mobileActivePanel === "map" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsMapExpanded(false);
+                if (mobileProfileMode === "expanded") {
+                  setMobileProfileVisibility("normal");
+                }
+                setMobileActivePanel("map");
+              }}
+              role="tab"
+              type="button"
+            >
+              Map
             </button>
             <button
               aria-selected={mobileActivePanel === "inspector"}
               className={`mobile-workspace-tab ${mobileActivePanel === "inspector" ? "is-active" : ""}`}
               onClick={() => {
-                setIsProfileExpanded(false);
-                if (!isMapExpanded && mobileActivePanel === "inspector") {
-                  setIsMapExpanded(true);
-                  return;
-                }
                 setIsMapExpanded(false);
+                if (mobileProfileMode === "expanded") {
+                  setMobileProfileVisibility("normal");
+                }
                 setMobileActivePanel("inspector");
               }}
               role="tab"
@@ -1403,40 +1484,49 @@ export function AppShell() {
               aria-selected={mobileActivePanel === "profile"}
               className={`mobile-workspace-tab ${mobileActivePanel === "profile" ? "is-active" : ""}`}
               onClick={() => {
-                if (isProfileExpanded) {
-                  setIsProfileExpanded(false);
-                  setIsMapExpanded(false);
-                  setMobileActivePanel("profile");
-                } else if (!isMapExpanded && mobileActivePanel === "profile") {
-                  setIsMapExpanded(true);
-                } else {
-                  setIsMapExpanded(false);
-                  setMobileActivePanel("profile");
+                setIsMapExpanded(false);
+                if (mobileProfileMode === "hidden") {
+                  setMobileProfileVisibility("normal");
                 }
+                setMobileActivePanel("profile");
               }}
               role="tab"
               type="button"
             >
-              Path Profile
+              Profile
+            </button>
+            <button
+              aria-label={`Cycle profile panel height. Current mode: ${mobileProfileMode}`}
+              className="mobile-workspace-tab mobile-workspace-tab-cycle"
+              onClick={cycleMobileProfileVisibility}
+              type="button"
+            >
+              {mobileProfileMode === "hidden"
+                ? "Profile Hidden"
+                : mobileProfileMode === "normal"
+                  ? "Profile Normal"
+                  : "Profile Full"}
             </button>
           </div>
         ) : null}
-        {!isMobileViewport && !isMapExpanded ? (
+        {!isMobileViewport && !isMapExpanded && !isProfileHidden ? (
           <LinkProfileChart
             isExpanded={isProfileExpanded}
             onToggleExpanded={toggleProfileExpanded}
+            showExpandToggle
           />
         ) : null}
-        {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" ? (
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && mobileProfileMode !== "hidden" ? (
           <div className="mobile-workspace-panel" role="tabpanel" aria-label="Path profile panel">
             <LinkProfileChart
               isExpanded={isProfileExpanded}
               onToggleExpanded={toggleProfileExpanded}
+              showExpandToggle={false}
             />
           </div>
         ) : null}
-        {isMobileViewport && !isMapExpanded && mobileActivePanel === "sidebar" ? (
-          <div className="mobile-workspace-panel mobile-workspace-panel-sidebar" role="tabpanel" aria-label="Sidebar panel">
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" ? (
+          <div className="mobile-workspace-panel mobile-workspace-panel-navigator" role="tabpanel" aria-label="Navigator panel">
             {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
               <Sidebar
                 authBootstrapPending={accessState === "checking"}
