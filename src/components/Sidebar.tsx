@@ -258,9 +258,11 @@ type SidebarProps = {
   hideLibraryBrowsing?: boolean;
   readOnly?: boolean;
   authBootstrapPending?: boolean;
+  /** Override the computed simulation name shown in the Simulation section header. */
+  simulationDisplayLabel?: string;
 };
 
-export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = false, authBootstrapPending = false }: SidebarProps) {
+export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = false, authBootstrapPending = false, simulationDisplayLabel }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const envBadgeLabel = runtimeEnvironment === "local" ? "LOCAL" : runtimeEnvironment === "staging" ? "STAGING" : "";
@@ -1787,7 +1789,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
       </header>
       <section className="panel-section section-scenario">
         <div className="section-heading">
-          <h2>Simulation: {activeSimulationLabel}</h2>
+          <h2>Simulation: {simulationDisplayLabel ?? activeSimulationLabel}</h2>
           <InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />
         </div>
         <div className="chip-group simulation-buttons">
@@ -1822,7 +1824,7 @@ export function Sidebar({ onOpenHelp, hideLibraryBrowsing = false, readOnly = fa
               ) : null}
             </>
           ) : (
-            <span className="field-help">Shared-link guest mode: library browsing is hidden.</span>
+            <span className="field-help">Sign in to browse the simulation library.</span>
           )}
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
