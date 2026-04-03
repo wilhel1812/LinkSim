@@ -29,7 +29,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       return withCors(request, json({ error: "Search query must be at least 3 characters." }, { status: 400 }));
     }
 
-    const limitPerMinute = parsePerMinuteLimit(env.GEOCODE_RATE_LIMIT_PER_MINUTE, 60);
+    const limitPerMinute = parsePerMinuteLimit(env.GEOCODE_RATE_LIMIT_PER_MINUTE, 120);
     const address = getClientAddress(request);
     const limiter = takeRateLimitToken({ key: `geocode:${address}`, limit: limitPerMinute });
     if (!limiter.allowed) {
@@ -65,6 +65,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const response = await fetch(upstream.toString(), {
       headers: {
         accept: "application/json",
+        "user-agent": "LinkSim/1.0 (https://linksim.link; geocode lookup)",
       },
     });
     if (!response.ok) {
