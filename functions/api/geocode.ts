@@ -1,4 +1,3 @@
-import { getClientAddress, takeRateLimitToken } from "../_lib/rateLimit";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
@@ -7,12 +6,6 @@ type NominatimResult = {
   display_name: string;
   lat: string;
   lon: string;
-};
-
-const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number => {
-  const parsed = Number(raw ?? "");
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(1, Math.floor(parsed));
 };
 
 const CACHE_TTL_SEC = 300;
@@ -27,24 +20,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (!query) return withCors(request, json({ results: [] }));
     if (query.length < 3) {
       return withCors(request, json({ error: "Search query must be at least 3 characters." }, { status: 400 }));
-    }
-
-    const limitPerMinute = parsePerMinuteLimit(env.GEOCODE_RATE_LIMIT_PER_MINUTE, 120);
-    const address = getClientAddress(request);
-    const limiter = takeRateLimitToken({ key: `geocode:${address}`, limit: limitPerMinute });
-    if (!limiter.allowed) {
-      return withCors(
-        request,
-        json(
-          { error: "Geocode rate limit reached. Please wait and try again." },
-          {
-            status: 429,
-            headers: {
-              "retry-after": String(limiter.retryAfterSec),
-            },
-          },
-        ),
-      );
     }
 
     const normalized = query.toLowerCase();
