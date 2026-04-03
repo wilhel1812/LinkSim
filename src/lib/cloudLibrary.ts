@@ -28,18 +28,21 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return (await response.json()) as T;
 };
 
-export const fetchCloudLibrary = async (): Promise<CloudLibraryPayload> => {
-  console.log("[cloudLibrary] Fetching cloud library...");
-  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[] }>("/api/library", {
+export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { isDelta?: boolean }> => {
+  const url = opts?.since ? `/api/library?since=${encodeURIComponent(opts.since)}` : "/api/library";
+  console.log("[cloudLibrary] Fetching cloud library...", opts?.since ? `(delta since ${opts.since})` : "(full)");
+  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; isDelta?: boolean }>(url, {
     method: "GET",
   });
   console.log("[cloudLibrary] Cloud data received:", {
     sites: data.siteLibrary?.length ?? 0,
     simulations: data.simulationPresets?.length ?? 0,
+    isDelta: data.isDelta,
   });
   return {
     siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
     simulationPresets: Array.isArray(data.simulationPresets) ? data.simulationPresets : [],
+    isDelta: data.isDelta,
   };
 };
 
