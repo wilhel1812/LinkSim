@@ -49,6 +49,23 @@ describe("api/library", () => {
     await expect(res.json()).resolves.toMatchObject({ userId: "u1", siteLibrary: [{ id: "s1" }] });
   });
 
+  it("passes since param to fetchLibraryForUser on GET", async () => {
+    const since = "2026-01-01T00:00:00.000Z";
+    const res = await onRequestGet(
+      mkCtx(new Request(`https://example.test/api/library?since=${encodeURIComponent(since)}`)),
+    );
+    expect(res.status).toBe(200);
+    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", { since });
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.isDelta).toBe(true);
+  });
+
+  it("passes undefined since when no query param on GET", async () => {
+    await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", { since: undefined });
+    // isDelta should be falsy
+  });
+
   it("normalizes non-array payloads on PUT", async () => {
     const req = new Request("https://example.test/api/library", {
       method: "PUT",
