@@ -27,6 +27,26 @@ import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 
+const UI_SECTION_KEYS = {
+  mapViewResults: "linksim-ui-mapview-results-v1",
+  mapViewSimSummary: "linksim-ui-mapview-sim-summary-v1",
+  mapViewOverlayGuide: "linksim-ui-mapview-overlay-guide-v1",
+} as const;
+
+const readSectionBool = (key: string, fallback: boolean): boolean => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
+};
+
+const writeSectionBool = (key: string, value: boolean): void => {
+  try { localStorage.setItem(key, String(value)); } catch {}
+};
+
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
   type: "line",
@@ -1078,10 +1098,10 @@ export function MapView({
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
-  const [showResultsSummary, setShowResultsSummary] = useState(true);
-  const [showSimulationSummary, setShowSimulationSummary] = useState(false);
+  const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
+  const [showSimulationSummary, setShowSimulationSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewSimSummary, false));
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [showOverlayGuide, setShowOverlayGuide] = useState(true);
+  const [showOverlayGuide, setShowOverlayGuide] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, true));
   const fitSitesEpoch = useAppStore((state) => state.fitSitesEpoch);
   const [fitControlActive, setFitControlActive] = useState(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -2215,7 +2235,7 @@ export function MapView({
           ) : null}
           <details
             className="compact-details map-inspector-details"
-            onToggle={(event) => setShowOverlayGuide(event.currentTarget.open)}
+            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, v); setShowOverlayGuide(v); }}
             open={showOverlayGuide}
           >
             <summary>Map</summary>
@@ -2477,7 +2497,7 @@ export function MapView({
           </details>
           <details
             className="compact-details map-inspector-details"
-            onToggle={(event) => setShowResultsSummary(event.currentTarget.open)}
+            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
             open={showResultsSummary}
           >
             <summary>Results</summary>
@@ -2485,7 +2505,7 @@ export function MapView({
           </details>
           <details
             className="compact-details map-inspector-details"
-            onToggle={(event) => setShowSimulationSummary(event.currentTarget.open)}
+            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewSimSummary, v); setShowSimulationSummary(v); }}
             open={showSimulationSummary}
           >
             <summary>Simulation Sources</summary>

@@ -28,6 +28,22 @@ const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
+
+const UI_PANEL_KEYS = {
+  navigatorHidden: "linksim-ui-navigator-hidden-v1",
+  inspectorHidden: "linksim-ui-inspector-hidden-v1",
+  profileHidden: "linksim-ui-profile-hidden-v1",
+} as const;
+
+const readPanelBool = (key: string, fallback: boolean): boolean => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
+};
 type MobileWorkspacePanel = "navigator" | "inspector" | "profile";
 type MobileBottomPanelMode = "hidden" | "normal" | "full";
 type AppNotice = {
@@ -116,9 +132,9 @@ export function AppShell() {
   const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
-  const [isNavigatorHidden, setIsNavigatorHidden] = useState(false);
-  const [isInspectorHidden, setIsInspectorHidden] = useState(false);
-  const [isProfileHidden, setIsProfileHidden] = useState(false);
+  const [isNavigatorHidden, setIsNavigatorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.navigatorHidden, false));
+  const [isInspectorHidden, setIsInspectorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.inspectorHidden, false));
+  const [isProfileHidden, setIsProfileHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.profileHidden, false));
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   // Derived early so effects below can reference them without temporal dead zone.
@@ -535,6 +551,18 @@ export function AppShell() {
     const timer = window.setTimeout(() => setAppNotice(null), 5000);
     return () => window.clearTimeout(timer);
   }, [appNotice]);
+
+  useEffect(() => {
+    try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
+  }, [isNavigatorHidden]);
+
+  useEffect(() => {
+    try { localStorage.setItem(UI_PANEL_KEYS.inspectorHidden, String(isInspectorHidden)); } catch {}
+  }, [isInspectorHidden]);
+
+  useEffect(() => {
+    try { localStorage.setItem(UI_PANEL_KEYS.profileHidden, String(isProfileHidden)); } catch {}
+  }, [isProfileHidden]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 980px)");
