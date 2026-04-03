@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
+import { Cable, CircleX, Funnel, Gauge, Globe, Handshake, HatGlasses, MapPin, MapPinCheckInside, MapPinPen, MapPinSearch, MapPlus, MountainSnow, NotebookPen, RadioTower, RefreshCw, SatelliteDish, Save } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -453,6 +453,7 @@ export function Sidebar({
   const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
   const [librarySearchPickBusyId, setLibrarySearchPickBusyId] = useState<string | null>(null);
   const [librarySearchBusy, setLibrarySearchBusy] = useState(false);
+  const [hoveredSearchResultId, setHoveredSearchResultId] = useState<string | null>(null);
   const [showMeshtasticBrowser, setShowMeshtasticBrowser] = useState(false);
   const [meshmapNodes, setMeshmapNodes] = useState<MeshmapNode[]>([]);
   const [meshmapSourceUrl, setMeshmapSourceUrl] = useState(readPreferredMeshmapSourceUrl);
@@ -3303,11 +3304,11 @@ export function Sidebar({
             </div>
             {showAddLibraryForm ? (
               <div className="library-editor">
-                <h3>Add Site</h3>
+                <h3><MapPlus aria-hidden="true" size={16} /> Add Site</h3>
                 <div className="library-editor-split">
                   <div className="library-editor-form resource-site-editor-form">
                 <label className="field-grid">
-                  <span>Name</span>
+                  <span><MapPinPen aria-hidden="true" size={14} /> Name</span>
                   <input
                     className={newLibraryNameError ? "input-error" : ""}
                     onChange={(event) => {
@@ -3321,7 +3322,7 @@ export function Sidebar({
                 </label>
                 {newLibraryNameError ? <p className="field-help field-help-error">{newLibraryNameError}</p> : null}
                 <label className="field-grid">
-                  <span>Description</span>
+                  <span><NotebookPen aria-hidden="true" size={14} /> Description</span>
                   <textarea
                     onChange={(event) => setNewLibraryDescription(event.target.value)}
                     placeholder="Optional site notes"
@@ -3330,7 +3331,7 @@ export function Sidebar({
                   />
                 </label>
                 <label className="field-grid">
-                  <span>Latitude</span>
+                  <span><Globe aria-hidden="true" size={14} /> Latitude</span>
                   <input
                     onChange={(event) => setNewLibraryLat(parseNumber(event.target.value))}
                     step="0.000001"
@@ -3339,7 +3340,7 @@ export function Sidebar({
                   />
                 </label>
                 <label className="field-grid">
-                  <span>Longitude</span>
+                  <span><Globe aria-hidden="true" size={14} /> Longitude</span>
                   <input
                     onChange={(event) => setNewLibraryLon(parseNumber(event.target.value))}
                     step="0.000001"
@@ -3348,7 +3349,7 @@ export function Sidebar({
                   />
                 </label>
                 <label className="field-grid">
-                  <span>Ground elev (m)</span>
+                  <span><MountainSnow aria-hidden="true" size={14} /> Ground elev (m)</span>
                   <div className="field-inline">
                     <input
                       onChange={(event) => {
@@ -3364,7 +3365,7 @@ export function Sidebar({
                   </div>
                 </label>
                 <label className="field-grid">
-                  <span>Antenna (m)</span>
+                  <span><RadioTower aria-hidden="true" size={14} /> Antenna (m)</span>
                   <input
                     onChange={(event) => setNewLibraryAntennaM(parseNumber(event.target.value))}
                     type="number"
@@ -3372,7 +3373,7 @@ export function Sidebar({
                   />
                 </label>
                 <label className="field-grid">
-                  <span>Tx power (dBm)</span>
+                  <span><SatelliteDish aria-hidden="true" size={14} /> Tx power (dBm)</span>
                   <input
                     onChange={(event) => setNewLibraryTxPowerDbm(parseNumber(event.target.value))}
                     type="number"
@@ -3380,7 +3381,7 @@ export function Sidebar({
                   />
                 </label>
                 <label className="field-grid">
-                  <span>Tx gain (dBi)</span>
+                  <span><Gauge aria-hidden="true" size={14} /> Tx gain (dBi)</span>
                   <input
                     onChange={(event) => setNewLibraryTxGainDbi(parseNumber(event.target.value))}
                     type="number"
@@ -3388,7 +3389,7 @@ export function Sidebar({
                   />
                 </label>
                 <label className="field-grid">
-                  <span>Rx gain (dBi)</span>
+                  <span><Gauge aria-hidden="true" size={14} /> Rx gain (dBi)</span>
                   <input
                     onChange={(event) => setNewLibraryRxGainDbi(parseNumber(event.target.value))}
                     type="number"
@@ -3396,7 +3397,7 @@ export function Sidebar({
                   />
                 </label>
                 <label className="field-grid">
-                  <span>Cable loss (dB)</span>
+                  <span><Cable aria-hidden="true" size={14} /> Cable loss (dB)</span>
                   <input
                     onChange={(event) => setNewLibraryCableLossDb(parseNumber(event.target.value))}
                     type="number"
@@ -3404,7 +3405,7 @@ export function Sidebar({
                   />
                 </label>
                 <label className="field-grid">
-                  <span>Map Search</span>
+                  <span><MapPinSearch aria-hidden="true" size={14} /> Map Search</span>
                   <input
                     onChange={(event) => setLibrarySearchQuery(event.target.value)}
                     placeholder="Address or place"
@@ -3424,9 +3425,22 @@ export function Sidebar({
                         disabled={librarySearchPickBusyId !== null}
                         key={result.id}
                         onClick={() => void selectLibrarySearchResult(result)}
+                        onMouseEnter={() => setHoveredSearchResultId(result.id)}
+                        onMouseLeave={() => setHoveredSearchResultId(null)}
                         type="button"
                       >
-                        {librarySearchPickBusyId === result.id ? "Loading..." : `Use: ${result.label}`}
+                        {librarySearchPickBusyId === result.id ? (
+                          "Loading..."
+                        ) : (
+                          <>
+                            {hoveredSearchResultId === result.id ? (
+                              <MapPinCheckInside aria-hidden="true" size={14} />
+                            ) : (
+                              <MapPin aria-hidden="true" size={14} />
+                            )}
+                            {result.label}
+                          </>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -3642,7 +3656,7 @@ export function Sidebar({
                 </div>
                 <div className="chip-group">
                   <button className="inline-action" onClick={addLibraryEntryNow} type="button">
-                    Add To Library
+                    <Save aria-hidden="true" size={14} /> Add To Library
                   </button>
                   <button
                     className="inline-action"
@@ -3655,7 +3669,7 @@ export function Sidebar({
                     }}
                     type="button"
                   >
-                    Cancel
+                    <CircleX aria-hidden="true" size={14} /> Cancel
                   </button>
                 </div>
               </div>
