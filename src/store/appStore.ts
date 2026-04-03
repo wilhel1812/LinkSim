@@ -2428,7 +2428,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const next = state.siteLibrary.filter((entry) => !requested.has(entry.id));
       writeStorage(SITE_LIBRARY_KEY, next);
-      return { siteLibrary: next };
+      const updatedPresets = state.simulationPresets.map((preset) => {
+        const hasRef = preset.snapshot.sites.some((site) => site.libraryEntryId && requested.has(site.libraryEntryId));
+        if (!hasRef) return preset;
+        return {
+          ...preset,
+          snapshot: {
+            ...preset.snapshot,
+            sites: preset.snapshot.sites.map((site) =>
+              site.libraryEntryId && requested.has(site.libraryEntryId)
+                ? { ...site, libraryEntryId: undefined }
+                : site,
+            ),
+          },
+        };
+      });
+      writeStorage(SIM_PRESETS_KEY, updatedPresets);
+      return { siteLibrary: next, simulationPresets: updatedPresets };
     });
   },
   saveCurrentSimulationPreset: (name) => {

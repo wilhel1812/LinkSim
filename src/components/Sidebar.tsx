@@ -129,6 +129,25 @@ const meshmapLabelsLayer = (color: string, haloColor: string): LayerProps => ({
   },
 });
 
+const UI_SECTION_KEYS = {
+  sidebarRadioAdvanced: "linksim-ui-sidebar-radio-advanced-v1",
+  sidebarItmEnv: "linksim-ui-sidebar-itm-env-v1",
+} as const;
+
+const readSectionBool = (key: string, fallback: boolean): boolean => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
+};
+
+const writeSectionBool = (key: string, value: boolean): void => {
+  try { localStorage.setItem(key, String(value)); } catch {}
+};
+
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
 
@@ -585,6 +604,9 @@ export function Sidebar({
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
   } | null>(null);
+  const [sidebarRadioAdvancedOpen, setSidebarRadioAdvancedOpen] = useState(() => readSectionBool(UI_SECTION_KEYS.sidebarRadioAdvanced, false));
+  const [sidebarItmEnvOpen, setSidebarItmEnvOpen] = useState(() => readSectionBool(UI_SECTION_KEYS.sidebarItmEnv, false));
+
   const [deleteConfirm, setDeleteConfirm] = useState<{
     title: string;
     message: string;
@@ -1915,7 +1937,11 @@ export function Sidebar({
       </section>
 
       <section className="panel-section section-radio">
-        <details className="compact-details">
+        <details
+          className="compact-details"
+          open={sidebarRadioAdvancedOpen}
+          onToggle={(e) => { const v = (e.currentTarget as HTMLDetailsElement).open; writeSectionBool(UI_SECTION_KEYS.sidebarRadioAdvanced, v); setSidebarRadioAdvancedOpen(v); }}
+        >
           <summary>Radio & Model (Advanced)</summary>
           <p className="field-help">
             Shared channel profile for all links in this simulation.
@@ -1986,7 +2012,11 @@ export function Sidebar({
               </button>
             ))}
           </div>
-          <details className="compact-details">
+          <details
+            className="compact-details"
+            open={sidebarItmEnvOpen}
+            onToggle={(e) => { const v = (e.currentTarget as HTMLDetailsElement).open; writeSectionBool(UI_SECTION_KEYS.sidebarItmEnv, v); setSidebarItmEnvOpen(v); }}
+          >
             <summary>ITM Environment</summary>
           <p className="field-help">
             These parameters feed terrain-aware path loss. Auto mode derives defaults from current terrain/profile and
@@ -2896,11 +2926,21 @@ export function Sidebar({
               <div className="chip-group">
                 <button
                   className="inline-action danger"
-                  onClick={() =>
+                  onClick={() => {
+                    let siteDeleteMessage = `Delete "${resourceDetailsPopup.label}" from the site library?`;
+                    if (resourceDetailsPopup.kind === "site") {
+                      const affectedSims = simulationPresets.filter((p) =>
+                        p.snapshot.sites.some((s) => s.libraryEntryId === resourceDetailsPopup.resourceId),
+                      );
+                      if (affectedSims.length > 0) {
+                        const names = affectedSims.map((p) => `"${p.name}"`).join(", ");
+                        siteDeleteMessage += ` Referenced in ${affectedSims.length} simulation(s): ${names}. Sites will be detached but simulation data will not be lost.`;
+                      }
+                    }
                     requestDeleteConfirm(
                       resourceDetailsPopup.kind === "site" ? "Delete Site" : "Delete Simulation",
                       resourceDetailsPopup.kind === "site"
-                        ? `Delete "${resourceDetailsPopup.label}" from the site library?`
+                        ? siteDeleteMessage
                         : `Delete simulation "${resourceDetailsPopup.label}"?`,
                       () => {
                         if (resourceDetailsPopup.kind === "site") {
@@ -2913,8 +2953,8 @@ export function Sidebar({
                         }
                         setResourceDetailsPopup(null);
                       },
-                    )
-                  }
+                    );
+                  }}
                   type="button"
                 >
                   Delete
@@ -3286,16 +3326,25 @@ export function Sidebar({
               <button
                 className="inline-action danger"
                 disabled={!selectedLibraryCount}
-                onClick={() =>
+                onClick={() => {
+                  const deletedIds = Array.from(selectedLibraryIds);
+                  const affectedSims = simulationPresets.filter((p) =>
+                    p.snapshot.sites.some((s) => s.libraryEntryId && selectedLibraryIds.has(s.libraryEntryId)),
+                  );
+                  let msg = `Delete ${selectedLibraryCount} selected site(s) from the library? This cannot be undone.`;
+                  if (affectedSims.length > 0) {
+                    const names = affectedSims.map((p) => `"${p.name}"`).join(", ");
+                    msg += ` Referenced in ${affectedSims.length} simulation(s): ${names}. Sites will be detached but simulation data will not be lost.`;
+                  }
                   requestDeleteConfirm(
                     "Delete Sites",
-                    `Delete ${selectedLibraryCount} selected site(s) from the library? This cannot be undone.`,
+                    msg,
                     () => {
-                      deleteSiteLibraryEntries(Array.from(selectedLibraryIds));
+                      deleteSiteLibraryEntries(deletedIds);
                       setSelectedLibraryIds(new Set());
                     },
-                  )
-                }
+                  );
+                }}
                 type="button"
               >
                 Delete Selected ({selectedLibraryCount})
