@@ -452,6 +452,7 @@ export function Sidebar({
   const [librarySearchStatus, setLibrarySearchStatus] = useState("");
   const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
   const [librarySearchPickBusyId, setLibrarySearchPickBusyId] = useState<string | null>(null);
+  const [librarySearchBusy, setLibrarySearchBusy] = useState(false);
   const [showMeshtasticBrowser, setShowMeshtasticBrowser] = useState(false);
   const [meshmapNodes, setMeshmapNodes] = useState<MeshmapNode[]>([]);
   const [meshmapSourceUrl, setMeshmapSourceUrl] = useState(readPreferredMeshmapSourceUrl);
@@ -1315,6 +1316,7 @@ export function Sidebar({
       setLibrarySearchStatus("Enter at least 3 characters to search.");
       return;
     }
+    setLibrarySearchBusy(true);
     setLibrarySearchStatus("Searching...");
     try {
       const results = await searchLocations(librarySearchQuery);
@@ -1323,6 +1325,8 @@ export function Sidebar({
     } catch (error) {
       const message = getUiErrorMessage(error);
       setLibrarySearchStatus(`Search failed: ${message}`);
+    } finally {
+      setLibrarySearchBusy(false);
     }
   };
   const selectLibrarySearchResult = async (result: GeocodeResult) => {
@@ -3408,8 +3412,8 @@ export function Sidebar({
                     value={librarySearchQuery}
                   />
                 </label>
-                <button className="inline-action" onClick={() => void runLibrarySearch()} type="button">
-                  Search
+                <button className="inline-action" disabled={librarySearchBusy} onClick={() => void runLibrarySearch()} type="button">
+                  {librarySearchBusy ? "Searching…" : "Search"}
                 </button>
                 {librarySearchStatus ? <p className="field-help">{librarySearchStatus}</p> : null}
                 {librarySearchResults.length ? (
