@@ -31,3 +31,7 @@
 - [ ] SemVer bump is correct and intentional.
 - [ ] `vX.Y.Z` tag points to the commit being promoted.
 - [ ] Milestone release checklist completed: `docs/milestone-release-checklist.md`.
+
+## Hotfix follow-up (required when source branch is `hotfix/*`)
+
+- [ ] After merge, open a `chore/sync-main-to-staging` PR to bring `main` back into `staging` and prevent ancestry drift on the next milestone release.
