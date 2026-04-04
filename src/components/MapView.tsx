@@ -1110,6 +1110,7 @@ export function MapView({
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
   const [armAddSiteOnNextEmptyMapClick, setArmAddSiteOnNextEmptyMapClick] = useState(false);
   const [pendingSiteMoves, setPendingSiteMoves] = useState<Record<string, PendingSiteMove>>({});
+  const [isDraggingSite, setIsDraggingSite] = useState(false);
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [showDiscoverySites, setShowDiscoverySites] = useState(false);
   const [showDiscoveryMqtt, setShowDiscoveryMqtt] = useState(false);
@@ -1407,6 +1408,9 @@ export function MapView({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
     );
   }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
+  // During a site drag, force low-res (24) to keep overlay recomputations cheap.
+  // On mouse release (isDraggingSite → false) the configured resolution is restored.
+  const effectiveGridSize = isDraggingSite || selectedCoverageResolution !== "high" ? 24 : 42;
   const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "passfail") return null;
     if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
@@ -1424,7 +1428,7 @@ export function MapView({
       environmentLossDb,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       overlayDimensions,
-      24,
+      effectiveGridSize,
       overlayPointMask,
     );
   }, [
@@ -1441,6 +1445,7 @@ export function MapView({
     srtmTiles,
     overlayDimensions,
     overlayPointMask,
+    effectiveGridSize,
   ]);
   const relayCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "relay") return null;
@@ -1455,7 +1460,7 @@ export function MapView({
       environmentLossDb,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       overlayDimensions,
-      24,
+      effectiveGridSize,
       overlayPointMask,
     );
   }, [
@@ -1471,6 +1476,7 @@ export function MapView({
     srtmTiles,
     overlayDimensions,
     overlayPointMask,
+    effectiveGridSize,
   ]);
   const coverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode === "none") return null;
@@ -1687,6 +1693,7 @@ export function MapView({
       setSiteDraftStatus("Dismiss or save the new map site before moving existing sites.");
       return;
     }
+    setIsDraggingSite(true);
     const site = sites.find((candidate) => candidate.id === siteId);
     if (!site) return;
     const nextPosition = {
@@ -1718,6 +1725,7 @@ export function MapView({
   };
 
   const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
+    setIsDraggingSite(false);
     const site = sites.find((candidate) => candidate.id === siteId);
     if (!site) return;
     const nextPosition = {
@@ -2334,7 +2342,7 @@ export function MapView({
                   {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
                 </select>
               </label>
-              {(coverageVizMode === "heatmap" || coverageVizMode === "contours") && (
+              {coverageVizMode !== "none" && (
                 <label className="map-inspector-map-setting">
                   <span>Coverage Detail</span>
                   <select
