@@ -41,6 +41,11 @@ const estimateLoRaSensitivityDbm = (bandwidthKhz: number, spreadFactor: number):
   return noiseFloor + noiseFigure + snrLimit;
 };
 
+const formatFresnelPercent = (percent: number, obstructed: boolean): string => {
+  if (obstructed && Math.abs(percent) > 999) return "< -100% (blocked)";
+  return `${percent.toFixed(0)}%`;
+};
+
 const downloadJson = (fileName: string, payload: unknown) => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -56,6 +61,7 @@ export function SimulationResultsSection() {
   const sites = useAppStore((state) => state.sites);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
+  const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
@@ -79,6 +85,18 @@ export function SimulationResultsSection() {
   const getSelectedNetwork = useAppStore((state) => state.getSelectedNetwork);
   const model = useAppStore((state) => state.propagationModel);
 
+  // Selection topology
+  const selectedSites = useMemo(
+    () =>
+      selectedSiteIds
+        .map((id) => sites.find((s) => s.id === id))
+        .filter((s): s is (typeof sites)[number] => Boolean(s)),
+    [selectedSiteIds, sites],
+  );
+  const selectionCount = selectedSites.length;
+  const hasSavedLink = links.some((l) => l.id === selectedLinkId);
+  const showResults = selectionCount === 2 || (selectionCount === 0 && hasSavedLink);
+
   const selectedLink = useMemo(
     () => getSelectedLink(),
     [getSelectedLink, links, selectedLinkId, sites, networks, selectedNetworkId],
@@ -87,34 +105,59 @@ export function SimulationResultsSection() {
     () => getSelectedNetwork(),
     [getSelectedNetwork, networks, selectedNetworkId],
   );
-  const analysis = useMemo(
-    () => getSelectedAnalysis(),
-    [
-      getSelectedAnalysis,
-      links,
-      selectedLinkId,
-      sites,
-      selectedSiteId,
-      networks,
-      selectedNetworkId,
-      model,
-      srtmTiles,
-      autoPropagationEnvironment,
-      propagationEnvironment,
-      temporaryDirectionReversed,
-    ],
-  );
+
   const effectiveNetworkFrequencyMHz = selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz;
   const selectedFrequencyPreset = FREQUENCY_PRESETS.find((preset) => preset.id === selectedFrequencyPresetId);
   const isLoraEstimateRelevant = (selectedFrequencyPreset?.source ?? "Meshtastic") !== "RadioMobile";
-  const sourceSite = sites.find((site) => site.id === selectedLink.fromSiteId);
-  const destinationSite = sites.find((site) => site.id === selectedLink.toSiteId);
-  const adjustedRxDbm = analysis.rxLevelDbm - environmentLossDb;
-  const linkMarginDb = adjustedRxDbm - rxSensitivityTargetDbm;
-  const loraSensitivitySuggestionDbm = estimateLoRaSensitivityDbm(
-    selectedNetwork.bandwidthKhz,
-    selectedNetwork.spreadFactor,
-  );
+
+  // Selection-aware from/to sites
+  const sourceSite = useMemo(() => {
+    if (selectionCount === 2) {
+      const fromId = temporaryDirectionReversed
+        ? selectedSites[selectedSites.length - 1].id
+        : selectedSites[0].id;
+      return sites.find((s) => s.id === fromId) ?? null;
+    }
+    return sites.find((site) => site.id === selectedLink.fromSiteId) ?? null;
+  }, [selectionCount, selectedSites, temporaryDirectionReversed, sites, selectedLink]);
+
+  const destinationSite = useMemo(() => {
+    if (selectionCount === 2) {
+      const toId = temporaryDirectionReversed
+        ? selectedSites[0].id
+        : selectedSites[selectedSites.length - 1].id;
+      return sites.find((s) => s.id === toId) ?? null;
+    }
+    return sites.find((site) => site.id === selectedLink.toSiteId) ?? null;
+  }, [selectionCount, selectedSites, temporaryDirectionReversed, sites, selectedLink]);
+
+  // Effective link for 2-site selection (saved link for that pair, or temp link)
+  const selectionEffectiveLink = useMemo(() => {
+    if (selectionCount !== 2 || !sourceSite || !destinationSite) return null;
+    const saved = links.find(
+      (l) =>
+        (l.fromSiteId === sourceSite.id && l.toSiteId === destinationSite.id) ||
+        (l.fromSiteId === destinationSite.id && l.toSiteId === sourceSite.id),
+    );
+    if (saved) {
+      return { ...saved, frequencyMHz: effectiveNetworkFrequencyMHz };
+    }
+    return {
+      id: "__selection__",
+      name: `${sourceSite.name} -> ${destinationSite.name}`,
+      fromSiteId: sourceSite.id,
+      toSiteId: destinationSite.id,
+      frequencyMHz: effectiveNetworkFrequencyMHz,
+      txPowerDbm: sourceSite.txPowerDbm,
+      txGainDbi: sourceSite.txGainDbi,
+      rxGainDbi: destinationSite.rxGainDbi,
+      cableLossDb: sourceSite.cableLossDb,
+    };
+  }, [selectionCount, sourceSite, destinationSite, links, effectiveNetworkFrequencyMHz]);
+
+  // The link used for analysis and what-if
+  const activeLink = selectionEffectiveLink ?? selectedLink;
+
   const effectivePropagationEnvironment = useMemo(() => {
     if (!autoPropagationEnvironment || !sourceSite || !destinationSite) return propagationEnvironment;
     return deriveDynamicPropagationEnvironment({
@@ -126,12 +169,51 @@ export function SimulationResultsSection() {
     }).environment;
   }, [autoPropagationEnvironment, sourceSite, destinationSite, propagationEnvironment, srtmTiles]);
 
+  const analysis = useMemo(() => {
+    if (selectionCount === 2 && sourceSite && destinationSite && selectionEffectiveLink) {
+      return analyzeLink(
+        selectionEffectiveLink,
+        sourceSite,
+        destinationSite,
+        model,
+        ({ lat, lon }) => sampleSrtmElevation(srtmTiles, lat, lon),
+        { environment: effectivePropagationEnvironment as PropagationEnvironment },
+      );
+    }
+    return getSelectedAnalysis();
+  }, [
+    selectionCount,
+    selectionEffectiveLink,
+    sourceSite,
+    destinationSite,
+    getSelectedAnalysis,
+    links,
+    selectedLinkId,
+    sites,
+    selectedSiteId,
+    networks,
+    selectedNetworkId,
+    model,
+    srtmTiles,
+    autoPropagationEnvironment,
+    propagationEnvironment,
+    temporaryDirectionReversed,
+    effectivePropagationEnvironment,
+  ]);
+
+  const adjustedRxDbm = analysis.rxLevelDbm - environmentLossDb;
+  const linkMarginDb = adjustedRxDbm - rxSensitivityTargetDbm;
+  const loraSensitivitySuggestionDbm = estimateLoRaSensitivityDbm(
+    selectedNetwork.bandwidthKhz,
+    selectedNetwork.spreadFactor,
+  );
+
   const runWhatIf = (txPowerDeltaDbm = 0, freqScale = 1, antennaDeltaM = 0): number | null => {
     if (!sourceSite || !destinationSite) return null;
-    const effectiveRadio = resolveLinkRadio(selectedLink, sourceSite, destinationSite);
+    const effectiveRadio = resolveLinkRadio(activeLink, sourceSite, destinationSite);
     const alt = analyzeLink(
       {
-        ...selectedLink,
+        ...activeLink,
         txPowerDbm: effectiveRadio.txPowerDbm + txPowerDeltaDbm,
         frequencyMHz: effectiveNetworkFrequencyMHz * freqScale,
       },
@@ -187,6 +269,7 @@ export function SimulationResultsSection() {
       propagationEnvironmentReason,
       terrainTileCount: srtmTiles.length,
       terrainSources,
+      effectiveLink: activeLink,
       selectedAnalysis: analysis,
       linkBudget: {
         targetSensitivityDbm: rxSensitivityTargetDbm,
@@ -200,6 +283,25 @@ export function SimulationResultsSection() {
     downloadJson(`linksim-manifest-${stamp}.json`, manifest);
   };
 
+  // Contextual message when no valid link topology
+  if (!showResults) {
+    const message =
+      selectionCount === 1
+        ? "Select a second site to see link analysis."
+        : selectionCount >= 3
+          ? "Select exactly two sites to see link analysis."
+          : "Select two sites or choose a saved link.";
+    return (
+      <>
+        <div className="section-heading">
+          <h2>Results</h2>
+          <InfoTip text="Computed link budget summary for the selected path and current channel/model settings." />
+        </div>
+        <div className="chart-empty">{message}</div>
+      </>
+    );
+  }
+
   return (
     <>
       <div className="section-heading">
@@ -212,12 +314,13 @@ export function SimulationResultsSection() {
           "LoRa",
           `${(selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz).toFixed(3)} MHz / BW ${selectedNetwork.bandwidthKhz} / SF ${selectedNetwork.spreadFactor} / CR ${selectedNetwork.codingRate}`,
         )}
+        {sourceSite && destinationSite && metric("Path", `${sourceSite.name} → ${destinationSite.name}`)}
         {metric("Distance", `${analysis.distanceKm.toFixed(2)} km`)}
         {metric("Model", analysis.model)}
         {metric("Path loss", `${analysis.pathLossDb.toFixed(1)} dB`)}
         {metric("FSPL", `${analysis.fsplDb.toFixed(1)} dB`)}
         {metric("EIRP", `${analysis.eirpDbm.toFixed(1)} dBm`)}
-        {metric("RX estimate (raw)", `${analysis.rxLevelDbm.toFixed(1)} dBm`)}
+        {environmentLossDb !== 0 && metric("RX estimate (raw)", `${analysis.rxLevelDbm.toFixed(1)} dBm`)}
         {metric("RX estimate (calibrated)", `${adjustedRxDbm.toFixed(1)} dBm`)}
         {metric(
           "LOS status",
@@ -226,8 +329,14 @@ export function SimulationResultsSection() {
         {metric("Earth bulge", `${analysis.midpointEarthBulgeM.toFixed(2)} m`)}
         {metric("F1 radius", `${analysis.firstFresnelRadiusM.toFixed(2)} m`)}
         {metric("Clearance", `${analysis.geometricClearanceM.toFixed(2)} m`)}
-        {metric("Fresnel clearance (midpoint est.)", `${analysis.estimatedFresnelClearancePercent.toFixed(0)}%`)}
-        {metric("Worst Fresnel clearance", `${analysis.worstFresnelClearancePercent.toFixed(0)}%`)}
+        {metric(
+          "Fresnel clearance (midpoint est.)",
+          formatFresnelPercent(analysis.estimatedFresnelClearancePercent, analysis.terrainObstructed),
+        )}
+        {metric(
+          "Worst Fresnel clearance",
+          formatFresnelPercent(analysis.worstFresnelClearancePercent, analysis.terrainObstructed),
+        )}
         {metric("Worst Fresnel gap", `${analysis.worstFresnelClearanceM.toFixed(2)} m`)}
         {metric("Worst Fresnel point", `${analysis.worstFresnelDistanceKm.toFixed(2)} km`)}
       </div>
