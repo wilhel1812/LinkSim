@@ -44,7 +44,7 @@ import type { UiColorTheme } from "../themes/types";
 import { getActiveHolidayTheme } from "../themes/holidayThemes";
 import type { CloudUser } from "../lib/cloudUser";
 import type {
-  CoverageMode,
+  CoverageResolution,
   Link,
   LinkAnalysis,
   MapViewport,
@@ -274,7 +274,7 @@ type SimulationPreset = {
     selectedSiteId: string;
     selectedLinkId: string;
     selectedNetworkId: string;
-    selectedCoverageMode: CoverageMode;
+    selectedCoverageResolution?: CoverageResolution;
     propagationModel: PropagationModel;
     selectedFrequencyPresetId: string;
     rxSensitivityTargetDbm: number;
@@ -352,7 +352,7 @@ type AppState = {
   selectedSiteId: string;
   selectedSiteIds: string[];
   selectedNetworkId: string;
-  selectedCoverageMode: CoverageMode;
+  selectedCoverageResolution: CoverageResolution;
   propagationModel: PropagationModel;
   mapViewport?: MapViewport;
   locale: LocaleCode;
@@ -432,7 +432,7 @@ type AppState = {
   clearActiveSelection: () => void;
   getSelectedSiteIds: () => string[];
   setSelectedNetworkId: (id: string) => void;
-  setSelectedCoverageMode: (mode: CoverageMode) => void;
+  setSelectedCoverageResolution: (resolution: CoverageResolution) => void;
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
   setEnvironmentLossDb: (value: number) => void;
@@ -1151,7 +1151,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedSiteId: "",
   selectedSiteIds: [],
   selectedNetworkId: "",
-  selectedCoverageMode: "BestSite",
+  selectedCoverageResolution: "normal",
   propagationModel: "ITM",
   mapViewport: undefined,
   locale: "eng",
@@ -1919,8 +1919,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedNetworkId: id });
     useCoverageStore.getState().recomputeCoverage();
   },
-  setSelectedCoverageMode: (mode) => {
-    set({ selectedCoverageMode: mode });
+  setSelectedCoverageResolution: (resolution) => {
+    set({ selectedCoverageResolution: resolution });
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
@@ -2477,7 +2477,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSiteId: state.selectedSiteId,
       selectedLinkId: state.selectedLinkId,
       selectedNetworkId: state.selectedNetworkId,
-      selectedCoverageMode: state.selectedCoverageMode,
+      selectedCoverageResolution: state.selectedCoverageResolution,
       propagationModel: state.propagationModel,
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
@@ -2554,7 +2554,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedSiteId: "",
         selectedLinkId: "",
         selectedNetworkId: "",
-        selectedCoverageMode: current.selectedCoverageMode,
+        selectedCoverageResolution: current.selectedCoverageResolution,
         propagationModel: current.propagationModel,
         selectedFrequencyPresetId: current.selectedFrequencyPresetId,
         rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
@@ -2614,7 +2614,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSiteId: state.selectedSiteId,
       selectedLinkId: state.selectedLinkId,
       selectedNetworkId: state.selectedNetworkId,
-      selectedCoverageMode: state.selectedCoverageMode,
+      selectedCoverageResolution: state.selectedCoverageResolution,
       propagationModel: state.propagationModel,
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
@@ -2698,7 +2698,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedSiteId: get().selectedSiteId,
         selectedLinkId: get().selectedLinkId,
         selectedNetworkId: get().selectedNetworkId,
-        selectedCoverageMode: get().selectedCoverageMode,
+        selectedCoverageResolution: get().selectedCoverageResolution,
         propagationModel: get().propagationModel,
         selectedFrequencyPresetId: get().selectedFrequencyPresetId,
         rxSensitivityTargetDbm: get().rxSensitivityTargetDbm,
@@ -2751,13 +2751,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedLinkId: "",
         temporaryDirectionReversed: false,
         selectedNetworkId: "",
-        selectedCoverageMode:
-          snap.selectedCoverageMode === "BestSite" ||
-          snap.selectedCoverageMode === "Polar" ||
-          snap.selectedCoverageMode === "Cartesian" ||
-          snap.selectedCoverageMode === "Route"
-            ? snap.selectedCoverageMode
-            : "BestSite",
+        selectedCoverageResolution:
+          snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
+            ? snap.selectedCoverageResolution
+            : "normal",
         propagationModel:
           snap.propagationModel === "FSPL" || snap.propagationModel === "TwoRay" || snap.propagationModel === "ITM"
             ? snap.propagationModel
@@ -2811,13 +2808,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedLinkId,
       temporaryDirectionReversed: false,
       selectedNetworkId,
-      selectedCoverageMode:
-        snap.selectedCoverageMode === "BestSite" ||
-        snap.selectedCoverageMode === "Polar" ||
-        snap.selectedCoverageMode === "Cartesian" ||
-        snap.selectedCoverageMode === "Route"
-          ? snap.selectedCoverageMode
-          : "BestSite",
+      selectedCoverageResolution:
+        snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
+          ? snap.selectedCoverageResolution
+          : "normal",
       propagationModel:
         snap.propagationModel === "FSPL" || snap.propagationModel === "TwoRay" || snap.propagationModel === "ITM"
           ? snap.propagationModel

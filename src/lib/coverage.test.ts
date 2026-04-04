@@ -53,21 +53,25 @@ const network: Network = {
   ],
 };
 
+const NORMAL_GRID = 24;
+const HIGH_GRID = 42;
+
 describe("buildCoverage", () => {
-  it("creates non-empty coverage in BestSite mode", () => {
-    const result = buildCoverage("BestSite", network, sites, systems, "FSPL", defaultPropagationEnvironment());
+  it("creates non-empty coverage at normal resolution (24×24 grid)", () => {
+    const result = buildCoverage(NORMAL_GRID, network, sites, systems, "FSPL", defaultPropagationEnvironment());
     expect(result.length).toBeGreaterThan(100);
     expect(Number.isFinite(result[0].valueDbm)).toBe(true);
   });
 
-  it("creates route samples in Route mode", () => {
-    const result = buildCoverage("Route", network, sites, systems, "FSPL", defaultPropagationEnvironment());
-    expect(result).toHaveLength(120);
+  it("creates more samples at high resolution (42×42 grid)", () => {
+    const normal = buildCoverage(NORMAL_GRID, network, sites, systems, "FSPL", defaultPropagationEnvironment());
+    const high = buildCoverage(HIGH_GRID, network, sites, systems, "FSPL", defaultPropagationEnvironment());
+    expect(high.length).toBeGreaterThan(normal.length);
   });
 
   it("changes computed values when propagation model changes", () => {
-    const fspl = buildCoverage("Polar", network, sites, systems, "FSPL", defaultPropagationEnvironment());
-    const twoRay = buildCoverage("Polar", network, sites, systems, "TwoRay", defaultPropagationEnvironment());
+    const fspl = buildCoverage(NORMAL_GRID, network, sites, systems, "FSPL", defaultPropagationEnvironment());
+    const twoRay = buildCoverage(NORMAL_GRID, network, sites, systems, "TwoRay", defaultPropagationEnvironment());
     const maxDiff = fspl.reduce((max, sample, index) => {
       const diff = Math.abs(sample.valueDbm - twoRay[index].valueDbm);
       return Math.max(max, diff);
@@ -76,15 +80,15 @@ describe("buildCoverage", () => {
     expect(maxDiff).toBeGreaterThan(0.1);
   });
 
-  it("supports ITM mode generation", () => {
-    const itm = buildCoverage("BestSite", network, sites, systems, "ITM", defaultPropagationEnvironment());
+  it("supports ITM model", () => {
+    const itm = buildCoverage(NORMAL_GRID, network, sites, systems, "ITM", defaultPropagationEnvironment());
     expect(itm.length).toBeGreaterThan(100);
     expect(Number.isFinite(itm[0].valueDbm)).toBe(true);
   });
 
   it("buildCoverageAsync matches sync output shape", async () => {
-    const sync = buildCoverage("Polar", network, sites, systems, "FSPL", defaultPropagationEnvironment());
-    const asyncResult = await buildCoverageAsync("Polar", network, sites, systems, "FSPL", defaultPropagationEnvironment());
+    const sync = buildCoverage(NORMAL_GRID, network, sites, systems, "FSPL", defaultPropagationEnvironment());
+    const asyncResult = await buildCoverageAsync(NORMAL_GRID, network, sites, systems, "FSPL", defaultPropagationEnvironment());
     expect(asyncResult).toHaveLength(sync.length);
     expect(Math.abs(asyncResult[0].valueDbm - sync[0].valueDbm)).toBeLessThan(0.0001);
   });

@@ -1050,7 +1050,6 @@ export function MapView({
   const terrainProgressTilesTotal = useAppStore((state) => state.terrainProgressTilesTotal);
   const terrainProgressBytesLoaded = useAppStore((state) => state.terrainProgressBytesLoaded);
   const terrainProgressBytesEstimated = useAppStore((state) => state.terrainProgressBytesEstimated);
-  const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
@@ -1096,6 +1095,8 @@ export function MapView({
   );
   const coverageVizMode = useAppStore((state) => state.mapOverlayMode);
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
+  const selectedCoverageResolution = useAppStore((state) => state.selectedCoverageResolution);
+  const setSelectedCoverageResolution = useAppStore((state) => state.setSelectedCoverageResolution);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
@@ -2333,6 +2334,19 @@ export function MapView({
                   {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
                 </select>
               </label>
+              {(coverageVizMode === "heatmap" || coverageVizMode === "contours") && (
+                <label className="map-inspector-map-setting">
+                  <span>Coverage Detail</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setSelectedCoverageResolution(event.target.value as "normal" | "high")}
+                    value={selectedCoverageResolution}
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="high">High (slower)</option>
+                  </select>
+                </label>
+              )}
               <label className="map-inspector-map-setting">
                 <span>Visible Sites</span>
                 <select
@@ -2510,7 +2524,7 @@ export function MapView({
           >
             <summary>Simulation Sources</summary>
             <p>
-              Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
+              Model: {propagationModel} / {selectedCoverageResolution} / View: {coverageVizMode}
             </p>
             <p>
               Network: {selectedNetwork?.name ?? "n/a"} @ {" "}

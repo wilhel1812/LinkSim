@@ -58,7 +58,8 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
         if (get().simulationRunToken !== runId) return;
 
         const appState = appStoreBridge!.getState();
-        const selectedCoverageMode = appState.selectedCoverageMode as string;
+        const selectedCoverageResolution = (appState.selectedCoverageResolution as string) === "high" ? "high" : "normal";
+        const gridSize = selectedCoverageResolution === "high" ? 42 : 24;
         const networks = appState.networks as Array<{ id: string; [key: string]: unknown }>;
         const selectedNetworkId = appState.selectedNetworkId as string;
         const sites = appState.sites as Array<{ id: string; [key: string]: unknown }>;
@@ -127,7 +128,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
         set({ simulationProgress: 8 });
         let lastProgress = 8;
         const coverageSamples = await buildCoverageAsync(
-          selectedCoverageMode as Parameters<typeof buildCoverageAsync>[0],
+          gridSize,
           network as Parameters<typeof buildCoverageAsync>[1],
           sites as Parameters<typeof buildCoverageAsync>[2],
           systems as Parameters<typeof buildCoverageAsync>[3],
@@ -146,7 +147,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
                 set({ simulationProgress: next });
               }
             },
-            terrainCacheKey: `${selectedCoverageMode}|${selectedNetworkId}|${propagationModel}|${terrainLoadEpoch}`,
+            terrainCacheKey: `${selectedCoverageResolution}|${selectedNetworkId}|${propagationModel}|${terrainLoadEpoch}`,
           },
         );
         if (get().simulationRunToken !== runId) return;

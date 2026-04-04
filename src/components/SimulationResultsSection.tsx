@@ -64,7 +64,7 @@ export function SimulationResultsSection() {
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
-  const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
+  const selectedCoverageResolution = useAppStore((state) => state.selectedCoverageResolution);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
@@ -250,7 +250,7 @@ export function SimulationResultsSection() {
       scenarioId: selectedScenarioId,
       locale,
       propagationModel: model,
-      selectedCoverageMode,
+      coverageResolution: selectedCoverageResolution,
       selectedFrequencyPresetId,
       terrainDataset,
       terrainRecommendation,
@@ -309,7 +309,7 @@ export function SimulationResultsSection() {
         <InfoTip text="Computed link budget summary for the selected path and current channel/model settings." />
       </div>
       <div className="metrics">
-        {metric("Network", `${selectedNetwork.name} (${selectedCoverageMode})`)}
+        {metric("Network", selectedNetwork.name)}
         {metric(
           "LoRa",
           `${(selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz).toFixed(3)} MHz / BW ${selectedNetwork.bandwidthKhz} / SF ${selectedNetwork.spreadFactor} / CR ${selectedNetwork.codingRate}`,
