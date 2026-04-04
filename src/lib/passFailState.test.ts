@@ -35,35 +35,22 @@ const environment: PropagationEnvironment = {
 };
 
 describe("computeSourceCentricRxMetrics", () => {
-  it("uses the same terrain LOS model for obstruction classification", () => {
+  it("detects terrain obstruction for long flat low-antenna links when terrain sampler is provided", () => {
     const flatSampler = () => 100;
 
-    const itm = computeSourceCentricRxMetrics(
+    const result = computeSourceCentricRxMetrics(
       61.2,
       10.7,
       fromSite,
       link,
       2,
       2,
-      "ITM",
-      flatSampler,
-      64,
-      environment,
-    );
-    const fspl = computeSourceCentricRxMetrics(
-      61.2,
-      10.7,
-      fromSite,
-      link,
-      2,
-      2,
-      "FSPL",
       flatSampler,
       64,
       environment,
     );
 
-    expect(itm.terrainObstructed).toBe(true);
-    expect(fspl.terrainObstructed).toBe(false);
+    expect(result.terrainObstructed).toBe(true);
+    expect(Number.isFinite(result.rxDbm)).toBe(true);
   });
 });
