@@ -53,7 +53,7 @@ import {
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
-import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
+import type { PropagationModel, RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
@@ -304,7 +304,6 @@ export function Sidebar({
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
-  const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
   const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
@@ -317,7 +316,6 @@ export function Sidebar({
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const selectSiteById = useAppStore((state) => state.selectSiteById);
   const setSelectedNetworkId = useAppStore((state) => state.setSelectedNetworkId);
-  const setSelectedCoverageMode = useAppStore((state) => state.setSelectedCoverageMode);
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
   const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
@@ -1005,10 +1003,6 @@ export function Sidebar({
 
   const onModelChange = (next: PropagationModel) => {
     setPropagationModel(next);
-  };
-
-  const onCoverageModeChange = (mode: CoverageMode) => {
-    setSelectedCoverageMode(mode);
   };
 
   useEffect(() => {
@@ -1946,22 +1940,6 @@ export function Sidebar({
           <p className="field-help">
             Shared channel profile for all links in this simulation.
           </p>
-          <div className="section-heading">
-            <p className="field-help">Coverage mode</p>
-            <InfoTip text="BestSite: computes strongest coverage from any site at each sample point. Polar: radial sampling around the selected From site. Cartesian: regular grid sampling over the current simulation area. Route: samples along the selected path corridor." />
-          </div>
-          <div className="chip-group">
-            {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
-              <button
-                className={clsx("chip-button", selectedCoverageMode === mode && "is-selected")}
-                key={mode}
-                onClick={() => onCoverageModeChange(mode)}
-                type="button"
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
           {networks.length > 1 ? (
             <select
               className="locale-select"
