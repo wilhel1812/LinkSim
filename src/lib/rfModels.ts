@@ -1,24 +1,7 @@
-import type { PropagationEnvironment, PropagationModel } from "../types/radio";
+import type { PropagationEnvironment } from "../types/radio";
 
 export const fsplDb = (distanceKm: number, frequencyMHz: number): number =>
   32.44 + 20 * Math.log10(distanceKm) + 20 * Math.log10(frequencyMHz);
-
-export const twoRayDb = (
-  distanceKm: number,
-  frequencyMHz: number,
-  txHeightM: number,
-  rxHeightM: number,
-): number => {
-  const dMeters = distanceKm * 1000;
-  const wavelengthM = 300 / frequencyMHz;
-  const breakpointMeters = (4 * Math.PI * txHeightM * rxHeightM) / wavelengthM;
-
-  if (dMeters <= breakpointMeters) {
-    return fsplDb(distanceKm, frequencyMHz);
-  }
-
-  return 40 * Math.log10(dMeters) - 20 * Math.log10(txHeightM) - 20 * Math.log10(rxHeightM);
-};
 
 // ITM approximation baseline for web-first previews until full Longley-Rice integration is complete.
 export const itmApproxDb = (
@@ -68,15 +51,10 @@ export const itmApproxDb = (
   return fspl + medianExcessLoss;
 };
 
-export const getPathLossByModel = (
-  model: PropagationModel,
+export const getPathLossDb = (
   distanceKm: number,
   frequencyMHz: number,
   txHeightM: number,
   rxHeightM: number,
   environment?: PropagationEnvironment,
-): number => {
-  if (model === "TwoRay") return twoRayDb(distanceKm, frequencyMHz, txHeightM, rxHeightM);
-  if (model === "ITM") return itmApproxDb(distanceKm, frequencyMHz, txHeightM, rxHeightM, environment);
-  return fsplDb(distanceKm, frequencyMHz);
-};
+): number => itmApproxDb(distanceKm, frequencyMHz, txHeightM, rxHeightM, environment);

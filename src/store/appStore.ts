@@ -534,7 +534,6 @@ type AppState = {
   clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
-  setPropagationModel: (model: PropagationModel) => void;
   updateSite: (id: string, patch: Partial<Site>) => void;
   setSiteDragPreview: (id: string, preview: { position: { lat: number; lon: number }; groundElevationM: number }) => void;
   clearSiteDragPreview: (id?: string) => void;
@@ -2755,10 +2754,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
             ? snap.selectedCoverageResolution
             : "normal",
-        propagationModel:
-          snap.propagationModel === "FSPL" || snap.propagationModel === "TwoRay" || snap.propagationModel === "ITM"
-            ? snap.propagationModel
-            : "ITM",
+        propagationModel: "ITM" as const,
         selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
         rxSensitivityTargetDbm: typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
         environmentLossDb: typeof snap.environmentLossDb === "number" ? snap.environmentLossDb : 0,
@@ -2812,10 +2808,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
           ? snap.selectedCoverageResolution
           : "normal",
-      propagationModel:
-        snap.propagationModel === "FSPL" || snap.propagationModel === "TwoRay" || snap.propagationModel === "ITM"
-          ? snap.propagationModel
-          : "ITM",
+      propagationModel: "ITM" as const,
       selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
       rxSensitivityTargetDbm:
         typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
@@ -3080,11 +3073,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
       links: state.links.map((link) => ({ ...link, frequencyMHz: preset.frequencyMHz })),
     }));
-    useCoverageStore.getState().recomputeCoverage();
-    get().updateCurrentSimulationSnapshot();
-  },
-  setPropagationModel: (model) => {
-    set({ propagationModel: model });
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },

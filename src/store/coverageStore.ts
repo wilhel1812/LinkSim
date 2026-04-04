@@ -132,8 +132,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
           network as Parameters<typeof buildCoverageAsync>[1],
           sites as Parameters<typeof buildCoverageAsync>[2],
           systems as Parameters<typeof buildCoverageAsync>[3],
-          propagationModel as Parameters<typeof buildCoverageAsync>[4],
-          effectiveEnvironment as Parameters<typeof buildCoverageAsync>[5],
+          effectiveEnvironment as Parameters<typeof buildCoverageAsync>[4],
           ({ lat, lon }: { lat: number; lon: number }) =>
             sampleSrtmElevation(srtmTiles, lat, lon),
           {

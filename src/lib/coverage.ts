@@ -1,5 +1,5 @@
 import { haversineDistanceKm } from "./geo";
-import { getPathLossByModel } from "./rfModels";
+import { getPathLossDb } from "./rfModels";
 import { simulationAreaBoundsForSites } from "./simulationArea";
 import { estimateTerrainExcessLossDb } from "./terrainLoss";
 import type {
@@ -7,7 +7,6 @@ import type {
   CoverageSample,
   Network,
   PropagationEnvironment,
-  PropagationModel,
   RadioSystem,
   Site,
 } from "../types/radio";
@@ -80,7 +79,6 @@ const evalRx = (
   rxSite: Site,
   txSystem: RadioSystem,
   frequencyMHz: number,
-  model: PropagationModel,
   terrainSamples: number,
   environment: PropagationEnvironment,
   terrainSampler?: (coordinates: Coordinates) => number | null,
@@ -90,8 +88,7 @@ const evalRx = (
     0.001,
     haversineDistanceKm({ lat: sampleLat, lon: sampleLon }, rxSite.position),
   );
-  const loss = getPathLossByModel(
-    model,
+  const loss = getPathLossDb(
     distanceKm,
     frequencyMHz,
     txSystem.antennaHeightM,
@@ -100,7 +97,7 @@ const evalRx = (
   );
   const txGround = terrainSampler ? terrainSampler({ lat: sampleLat, lon: sampleLon }) : null;
   const terrainLoss =
-    model === "ITM" && terrainSampler && txGround !== null
+    terrainSampler && txGround !== null
       ? getMemoizedTerrainLoss(
           terrainLossCacheKeyFor(
             terrainCacheKey ?? "global",
@@ -138,7 +135,6 @@ export const buildCoverage = (
   network: Network,
   sites: Site[],
   systems: RadioSystem[],
-  model: PropagationModel,
   environment: PropagationEnvironment,
   terrainSampler?: (coordinates: Coordinates) => number | null,
   options?: BuildCoverageOptions,
@@ -202,7 +198,6 @@ export const buildCoverage = (
           site,
           system,
           effectiveFrequencyMHz,
-          model,
           terrainSamples,
           environment,
           terrainSampler,
@@ -226,7 +221,6 @@ export const buildCoverageAsync = async (
   network: Network,
   sites: Site[],
   systems: RadioSystem[],
-  model: PropagationModel,
   environment: PropagationEnvironment,
   terrainSampler?: (coordinates: Coordinates) => number | null,
   options?: BuildCoverageOptions,
@@ -292,7 +286,6 @@ export const buildCoverageAsync = async (
           site,
           system,
           effectiveFrequencyMHz,
-          model,
           terrainSamples,
           environment,
           terrainSampler,

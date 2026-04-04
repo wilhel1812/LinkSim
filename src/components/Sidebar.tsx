@@ -53,7 +53,7 @@ import {
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
-import type { PropagationModel, RadioClimate } from "../types/radio";
+import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
@@ -331,7 +331,6 @@ export function Sidebar({
   const applyFrequencyPresetToSelectedNetwork = useAppStore(
     (state) => state.applyFrequencyPresetToSelectedNetwork,
   );
-  const setPropagationModel = useAppStore((state) => state.setPropagationModel);
   const updateLink = useAppStore((state) => state.updateLink);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
@@ -352,7 +351,6 @@ export function Sidebar({
   const getSelectedLink = useAppStore((state) => state.getSelectedLink);
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
   const getSelectedNetwork = useAppStore((state) => state.getSelectedNetwork);
-  const model = useAppStore((state) => state.propagationModel);
   const showNewSimulationRequest = useAppStore((state) => state.showNewSimulationRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
   const showSiteLibraryRequest = useAppStore((state) => state.showSiteLibraryRequest);
@@ -1000,10 +998,6 @@ export function Sidebar({
     }
     clearOpenSiteLibraryEntryRequest();
   }, [pendingSiteLibraryOpenEntryId, siteLibrary, clearOpenSiteLibraryEntryRequest]);
-
-  const onModelChange = (next: PropagationModel) => {
-    setPropagationModel(next);
-  };
 
   useEffect(() => {
     if (startupSimulationApplied) return;
@@ -1974,22 +1968,6 @@ export function Sidebar({
           <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
             Apply Frequency Plan
           </button>
-          <div className="section-heading">
-            <p className="field-help">Propagation model</p>
-            <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: direct + ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: terrain-aware approximation using elevation diffraction penalty in this tool; generally the most realistic option here for hilly/mountain links." />
-          </div>
-          <div className="chip-group">
-            {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
-              <button
-                className={clsx("chip-button", model === candidate && "is-selected")}
-                key={candidate}
-                onClick={() => onModelChange(candidate)}
-                type="button"
-              >
-                {candidate}
-              </button>
-            ))}
-          </div>
           <details
             className="compact-details"
             open={sidebarItmEnvOpen}
