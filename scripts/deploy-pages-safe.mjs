@@ -306,6 +306,14 @@ async function main() {
 
   await writeReleaseManifest(targetName, target.projectName, deployBranch, commit);
 
+  const rawCommitMsg = await getGitRef(["log", "-1", "--format=%s"]);
+  // Cloudflare Pages API requires a pure ASCII commit message string.
+  // Strip or replace any non-ASCII characters before passing it.
+  const commitMessage = rawCommitMsg.replace(/[^\x00-\x7F]/g, (ch) => {
+    const replacements = { "\u00D7": "x", "\u2013": "-", "\u2014": "--", "\u2018": "'", "\u2019": "'", "\u201C": '"', "\u201D": '"' };
+    return replacements[ch] ?? "";
+  });
+
   await withWranglerConfig(target.configPath, async () => {
     await run(wrangler, [
       "pages",
@@ -315,6 +323,8 @@ async function main() {
       target.projectName,
       "--branch",
       deployBranch,
+      "--commit-message",
+      commitMessage || commit,
     ]);
   });
 
