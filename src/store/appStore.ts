@@ -2015,6 +2015,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByUserId: currentUser.id,
         lastEditedByName: currentUser.username,
         lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
+        effectiveRole: "owner" as const,
       };
       const nextLibrary = normalizeSiteLibrary([entry, ...state.siteLibrary]);
       writeStorage(SITE_LIBRARY_KEY, nextLibrary);
@@ -2188,6 +2189,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastEditedByUserId: currentUser.id,
       lastEditedByName: currentUser.username,
       lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
+      effectiveRole: "owner" as const,
     };
     markDirtySite(entry.id);
     set((state) => {
@@ -2520,6 +2522,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByUserId: user.id,
         lastEditedByName: user.username,
         lastEditedByAvatarUrl: user.avatarUrl ?? "",
+        effectiveRole: existing?.effectiveRole ?? "owner",
       };
       markDirtySim(nextPreset.id);
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
@@ -2647,6 +2650,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByUserId: user.id,
         lastEditedByName: user.username,
         lastEditedByAvatarUrl: user.avatarUrl ?? "",
+        effectiveRole: existing.effectiveRole ?? "owner",
       };
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
