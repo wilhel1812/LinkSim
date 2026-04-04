@@ -391,19 +391,6 @@ export function AppShell() {
           setAccessState("readonly");
           return;
         }
-        if (deepLinkParse.ok && !isLocalRuntime) {
-          const deepLinkStatus = await fetchDeepLinkStatus({
-            simulationId: deepLinkParse.payload.simulationId,
-            simulationSlug: deepLinkParse.payload.simulationSlug,
-          });
-          if (!deepLinkStatus.authenticated) {
-            if (cancelled || timedOut) return;
-            window.clearTimeout(timeoutId);
-            setAccessDiagnosticMessage(null);
-            setAccessState("readonly");
-            return;
-          }
-        }
         const profile = await fetchMe();
         if (cancelled || timedOut) return;
         window.clearTimeout(timeoutId);
