@@ -767,79 +767,31 @@ export function AppShell() {
         }
       }
 
-      if (!exists) {
+      if (!exists && accessState !== "readonly") {
         try {
           const status = await fetchDeepLinkStatus({
             simulationId: resolvedSimulationId || undefined,
             simulationSlug: payload.simulationSlug,
           });
           if (status.status === "forbidden") {
+            markDeepLinkFailed();
             publishAppNotice({
               id: "shared-simulation-forbidden",
               message: "You do not have access to this shared simulation.",
               tone: "warning",
               persistent: true,
             });
-            if (accessState === "readonly") {
-              try {
-                const publicBundle = await fetchPublicSimulationLibrary({
-                  simulationId: resolvedSimulationId || undefined,
-                  simulationSlug: payload.simulationSlug,
-                });
-                importLibraryData(
-                  {
-                    siteLibrary: publicBundle.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
-                    simulationPresets: publicBundle.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
-                  },
-                  "merge",
-                );
-                resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
-                exists = Boolean(resolvedSimulationId);
-              } catch {
-                // Keep forbidden notice.
-              }
-            }
-            if (!exists) {
-              markDeepLinkFailed();
-              return;
-            }
+            return;
           }
           if (status.status === "missing") {
-            if (accessState === "readonly") {
-              try {
-                const publicBundle = await fetchPublicSimulationLibrary({
-                  simulationId: resolvedSimulationId || undefined,
-                  simulationSlug: payload.simulationSlug,
-                });
-                importLibraryData(
-                  {
-                    siteLibrary: publicBundle.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
-                    simulationPresets: publicBundle.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
-                  },
-                  "merge",
-                );
-                resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
-                exists = Boolean(resolvedSimulationId);
-              } catch {
-                markDeepLinkFailed();
-                publishAppNotice({
-                  id: "shared-simulation-missing",
-                  message: "This shared simulation no longer exists.",
-                  tone: "warning",
-                  persistent: true,
-                });
-                return;
-              }
-            } else {
-              markDeepLinkFailed();
-              publishAppNotice({
-                id: "shared-simulation-missing",
-                message: "This shared simulation no longer exists.",
-                tone: "warning",
-                persistent: true,
-              });
-              return;
-            }
+            markDeepLinkFailed();
+            publishAppNotice({
+              id: "shared-simulation-missing",
+              message: "This shared simulation no longer exists.",
+              tone: "warning",
+              persistent: true,
+            });
+            return;
           }
           if (status.simulationId) {
             resolvedSimulationId = status.simulationId;
@@ -849,7 +801,7 @@ export function AppShell() {
         }
       }
 
-      if (!exists) {
+      if (!exists && accessState !== "readonly") {
         try {
           const status = await fetchDeepLinkStatus({
             simulationId: resolvedSimulationId || undefined,
