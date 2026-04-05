@@ -1912,7 +1912,7 @@ export function Sidebar({
 
       <section className="panel-section section-path">
         <div className="section-heading">
-          <h2>Links</h2>
+          <h2>Paths</h2>
           <InfoTip text={`Select multiple sites by ${isMac ? "Cmd" : "Ctrl"}+Clicking to instantly view a link. When a link is active on the map, you can save it permanently to this simulation by pressing "Save" in the inspector.`} />
         </div>
         <div className="link-list">
