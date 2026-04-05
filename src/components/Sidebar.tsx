@@ -2297,10 +2297,10 @@ export function Sidebar({
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Edit" onClose={() => setResourceDetailsPopup(null)} tier="raised">
+        <ModalOverlay aria-label="Resource Details" onClose={() => setResourceDetailsPopup(null)} tier="raised">
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
-              <h2>Edit · {resourceDetailsPopup.label}</h2>
+              <h2>Details · {resourceDetailsPopup.label}</h2>
               <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setResourceDetailsPopup(null)} title="Close" type="button">
                 <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
@@ -3847,7 +3847,7 @@ export function Sidebar({
                       }
                       type="button"
                     >
-                      Open
+                      Details
                     </button>
                   </div>
                 </div>

@@ -492,7 +492,7 @@ export default function SimulationLibraryPanel({
                       onClick={() => openResourceDetails(preset)}
                       type="button"
                     >
-                      Open
+                      Details
                     </button>
                   ) : null}
                 </div>
