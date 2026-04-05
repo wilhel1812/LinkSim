@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeLink, buildProfile } from "./propagation";
+import { fsplDb, itmApproxDb } from "./rfModels";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 
 const a: Site = {
@@ -47,36 +48,25 @@ const defaultEnvironment: PropagationEnvironment = {
 };
 
 describe("analyzeLink", () => {
-  it("returns finite RF metrics for FSPL", () => {
-    const result = analyzeLink(link, a, b, "FSPL");
+  it("returns finite RF metrics", () => {
+    const result = analyzeLink(link, a, b, "ITM");
 
     expect(result.distanceKm).toBeGreaterThan(0);
     expect(Number.isFinite(result.pathLossDb)).toBe(true);
     expect(Number.isFinite(result.rxLevelDbm)).toBe(true);
-    expect(result.pathLossDb).toBeCloseTo(result.fsplDb, 6);
   });
 
-  it("returns different path loss for TwoRay at longer paths", () => {
-    const farB: Site = {
-      ...b,
-      position: { lat: 63.1, lon: 14.8 },
-      antennaHeightM: 8,
-    };
-    const lowA: Site = { ...a, antennaHeightM: 10 };
-
-    const fspl = analyzeLink(link, lowA, farB, "FSPL");
-    const twoRay = analyzeLink(link, lowA, farB, "TwoRay");
-
-    expect(twoRay.pathLossDb).not.toBeCloseTo(fspl.pathLossDb, 1);
+  it("ITM adds excess path loss compared to free-space baseline", () => {
+    const distanceKm = 1;
+    const frequencyMHz = 5800;
+    const txH = a.antennaHeightM;
+    const rxH = b.antennaHeightM;
+    expect(itmApproxDb(distanceKm, frequencyMHz, txH, rxH)).toBeGreaterThanOrEqual(
+      fsplDb(distanceKm, frequencyMHz),
+    );
   });
 
-  it("supports ITM mode with additional excess loss compared to FSPL", () => {
-    const itm = analyzeLink(link, a, b, "ITM");
-    const fspl = analyzeLink(link, a, b, "FSPL");
-    expect(itm.pathLossDb).toBeGreaterThanOrEqual(fspl.pathLossDb);
-  });
-
-  it("reports terrain obstruction consistently for long flat low-antenna ITM links", () => {
+  it("reports terrain obstruction for long flat low-antenna links when terrain sampler is provided", () => {
     const farB: Site = {
       ...b,
       position: { lat: 61.2, lon: 10.82 },
@@ -90,17 +80,12 @@ describe("analyzeLink", () => {
     };
     const flatSampler = () => 100;
 
-    const itm = analyzeLink(link, lowA, farB, "ITM", flatSampler, {
-      terrainSamples: 64,
-      environment: defaultEnvironment,
-    });
-    const fspl = analyzeLink(link, lowA, farB, "FSPL", flatSampler, {
+    const result = analyzeLink(link, lowA, farB, "ITM", flatSampler, {
       terrainSamples: 64,
       environment: defaultEnvironment,
     });
 
-    expect(itm.terrainObstructed).toBe(true);
-    expect(fspl.terrainObstructed).toBe(false);
+    expect(result.terrainObstructed).toBe(true);
   });
 });
 

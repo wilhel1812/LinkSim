@@ -1,6 +1,6 @@
 import { haversineDistanceKm, interpolateCoordinate } from "./geo";
 import { resolveLinkRadio } from "./linkRadio";
-import { fsplDb, getPathLossByModel } from "./rfModels";
+import { fsplDb, getPathLossDb } from "./rfModels";
 import {
   atmosphericBendingNUnitsToKFactor,
   estimateTerrainExcessLossDb,
@@ -107,8 +107,7 @@ export const analyzeLink = (
   const clutterHeightM = options?.environment?.clutterHeightM ?? 0;
   const polarization = options?.environment?.polarization ?? "Vertical";
 
-  const basePathLossDb = getPathLossByModel(
-    model,
+  const basePathLossDb = getPathLossDb(
     distanceKm,
     link.frequencyMHz,
     fromSite.antennaHeightM,
@@ -117,7 +116,7 @@ export const analyzeLink = (
   );
 
   let terrainPenaltyDb = 0;
-  if (model === "ITM" && terrainSampler) {
+  if (terrainSampler) {
     terrainPenaltyDb = estimateTerrainExcessLossDb({
       from: fromSite.position,
       to: toSite.position,
@@ -133,7 +132,7 @@ export const analyzeLink = (
   }
 
   const terrainObstructed =
-    model === "ITM" && terrainSampler
+    terrainSampler
       ? isTerrainLineObstructed({
           from: fromSite.position,
           to: toSite.position,
@@ -220,7 +219,6 @@ export const computeBestSiteGrid = (
   center: Coordinates,
   spanKm: number,
   gridSize: number,
-  model: PropagationModel,
   environment?: PropagationEnvironment,
 ): BestSiteCandidate[] => {
   const halfSpanDegLat = spanKm / 111.32;
@@ -241,8 +239,7 @@ export const computeBestSiteGrid = (
           0.001,
           haversineDistanceKm({ lat, lon }, { lat: site.position.lat, lon: site.position.lon }),
         );
-        const pathLoss = getPathLossByModel(
-          model,
+        const pathLoss = getPathLossDb(
           distanceKm,
           frequencyMHz,
           2,

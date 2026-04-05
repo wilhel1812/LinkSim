@@ -44,7 +44,7 @@ import type { UiColorTheme } from "../themes/types";
 import { getActiveHolidayTheme } from "../themes/holidayThemes";
 import type { CloudUser } from "../lib/cloudUser";
 import type {
-  CoverageMode,
+  CoverageResolution,
   Link,
   LinkAnalysis,
   MapViewport,
@@ -90,11 +90,28 @@ const markSyncedThrough = (revision: number = localMutationRevision): number => 
   return Math.max(0, localMutationRevision - syncedMutationRevision);
 };
 
+const LAST_FETCHED_AT_KEY = "linksim-last-fetched-at-v1";
+
+let dirtySiteIds = new Set<string>();
+let dirtySimIds = new Set<string>();
+let requiresFullPush = true;
+
+const markDirtySite = (id: string): void => {
+  dirtySiteIds.add(id);
+};
+const markDirtySim = (id: string): void => {
+  dirtySimIds.add(id);
+};
+
 const resetSyncRevisions = (): void => {
   localMutationRevision = 0;
   syncedMutationRevision = 0;
   lastSyncedPayloadSignature = null;
+  dirtySiteIds = new Set();
+  dirtySimIds = new Set();
+  requiresFullPush = true;
   localStorage.removeItem(SYNC_SIGNATURE_KEY);
+  localStorage.removeItem(LAST_FETCHED_AT_KEY);
 };
 
 const canEditLibraryItem = (
@@ -257,7 +274,7 @@ type SimulationPreset = {
     selectedSiteId: string;
     selectedLinkId: string;
     selectedNetworkId: string;
-    selectedCoverageMode: CoverageMode;
+    selectedCoverageResolution?: CoverageResolution;
     propagationModel: PropagationModel;
     selectedFrequencyPresetId: string;
     rxSensitivityTargetDbm: number;
@@ -304,6 +321,21 @@ const buildEditableSyncPayloadInfo = (
   };
 };
 
+const buildDeltaSyncPayloadInfo = (
+  siteLibrary: SiteLibraryEntry[],
+  simulationPresets: SimulationPreset[],
+  currentUser: CloudUser | null,
+): EditableSyncPayloadInfo => {
+  const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser) && dirtySiteIds.has(site.id));
+  const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser) && dirtySimIds.has(sim.id));
+  const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
+  return {
+    payload,
+    skippedCount: 0,
+    signature: computeSyncPayloadSignature(payload),
+  };
+};
+
 type AppState = {
   sites: Site[];
   links: Link[];
@@ -320,7 +352,7 @@ type AppState = {
   selectedSiteId: string;
   selectedSiteIds: string[];
   selectedNetworkId: string;
-  selectedCoverageMode: CoverageMode;
+  selectedCoverageResolution: CoverageResolution;
   propagationModel: PropagationModel;
   mapViewport?: MapViewport;
   locale: LocaleCode;
@@ -400,7 +432,7 @@ type AppState = {
   clearActiveSelection: () => void;
   getSelectedSiteIds: () => string[];
   setSelectedNetworkId: (id: string) => void;
-  setSelectedCoverageMode: (mode: CoverageMode) => void;
+  setSelectedCoverageResolution: (resolution: CoverageResolution) => void;
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
   setEnvironmentLossDb: (value: number) => void;
@@ -502,7 +534,6 @@ type AppState = {
   clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
-  setPropagationModel: (model: PropagationModel) => void;
   updateSite: (id: string, patch: Partial<Site>) => void;
   setSiteDragPreview: (id: string, preview: { position: { lat: number; lon: number }; groundElevationM: number }) => void;
   clearSiteDragPreview: (id?: string) => void;
@@ -1119,7 +1150,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedSiteId: "",
   selectedSiteIds: [],
   selectedNetworkId: "",
-  selectedCoverageMode: "BestSite",
+  selectedCoverageResolution: "normal",
   propagationModel: "ITM",
   mapViewport: undefined,
   locale: "eng",
@@ -1181,13 +1212,52 @@ export const useAppStore = create<AppState>((set, get) => ({
     console.log("[appStore] initializeCloudSync START - applyStartupSelection:", applyStartupSelection);
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing...", isInitializing: true });
     try {
-      console.log("[appStore] Fetching cloud library...");
-      const cloud = await fetchCloudLibrary();
+      const lastFetchedAt = (() => {
+        try { return localStorage.getItem(LAST_FETCHED_AT_KEY) ?? undefined; } catch { return undefined; }
+      })();
+      console.log("[appStore] Fetching cloud library...", lastFetchedAt ? `(delta since ${lastFetchedAt})` : "(full)");
+      const cloud = await fetchCloudLibrary(lastFetchedAt ? { since: lastFetchedAt } : undefined);
       console.log("[appStore] Cloud data received:", {
         sites: cloud.siteLibrary.length,
         simulations: cloud.simulationPresets.length,
+        isDelta: cloud.isDelta,
       });
 
+      // Delta fetch: merge server items by ID (server wins), keep local items not returned
+      if (cloud.isDelta) {
+        const deltaSites = cloud.siteLibrary as SiteLibraryEntry[];
+        const deltaSims = cloud.simulationPresets as SimulationPreset[];
+        set((state) => {
+          const siteById = new Map(deltaSites.map((s) => [s.id, s]));
+          const simById = new Map(deltaSims.map((s) => [s.id, s]));
+          const mergedSites = state.siteLibrary.map((s) => siteById.get(s.id) ?? s);
+          for (const site of deltaSites) {
+            if (!state.siteLibrary.some((s) => s.id === site.id)) mergedSites.push(site);
+          }
+          const mergedSims = state.simulationPresets.map((s) => simById.get(s.id) ?? s);
+          for (const sim of deltaSims) {
+            if (!state.simulationPresets.some((s) => s.id === sim.id)) mergedSims.push(sim);
+          }
+          writeStorage(SITE_LIBRARY_KEY, mergedSites);
+          writeStorage(SIM_PRESETS_KEY, mergedSims);
+          return { siteLibrary: mergedSites, simulationPresets: mergedSims };
+        });
+        try { localStorage.setItem(LAST_FETCHED_AT_KEY, new Date().toISOString()); } catch { /* ignore */ }
+        hydrated = true;
+        requiresFullPush = false;
+        set({
+          syncPending: false,
+          pendingChangesCount: 0,
+          syncStatus: "synced",
+          syncErrorMessage: null,
+          syncBusy: false,
+          syncStatusMessage: "Up to date",
+          isInitializing: false,
+        });
+        return;
+      }
+
+      // Full fetch path (unchanged)
       const { currentUser, importLibraryData, loadSimulationPreset, selectScenario } = get();
       let remotePayloadSignature: string | null = null;
 
@@ -1219,6 +1289,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         );
         console.log("[appStore] Merge result:", result);
         hydrated = true;
+        try { localStorage.setItem(LAST_FETCHED_AT_KEY, new Date().toISOString()); } catch { /* ignore */ }
         if (applyStartupSelection && typeof window !== "undefined") {
           const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
           const lastRef = (lastRefRaw ?? "").trim();
@@ -1256,6 +1327,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         );
         console.log("[appStore] Merge result:", result);
         hydrated = true;
+        try { localStorage.setItem(LAST_FETCHED_AT_KEY, new Date().toISOString()); } catch { /* ignore */ }
         resetSyncRevisions();
         remotePayloadSignature = buildEditableSyncPayloadInfo(cloudSites, cloudPresets as SimulationPreset[], currentUser).signature;
         set({
@@ -1448,13 +1520,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       syncInFlight = true;
       try {
         const { siteLibrary, simulationPresets, currentUser } = get();
-        const { payload, skippedCount, signature } = buildEditableSyncPayloadInfo(
-          siteLibrary,
-          simulationPresets,
-          currentUser,
-        );
-        if (signature === lastSyncedPayloadSignature) {
+        const isFullPush = requiresFullPush;
+        const { payload, skippedCount, signature } = isFullPush
+          ? buildEditableSyncPayloadInfo(siteLibrary, simulationPresets, currentUser)
+          : buildDeltaSyncPayloadInfo(siteLibrary, simulationPresets, currentUser);
+        const nothingDirty = !isFullPush && payload.siteLibrary.length === 0 && payload.simulationPresets.length === 0;
+        if (signature === lastSyncedPayloadSignature || nothingDirty) {
           const remaining = markSyncedThrough(revisionAtStart);
+          dirtySiteIds = new Set();
+          dirtySimIds = new Set();
+          requiresFullPush = false;
           set({
             syncPending: remaining > 0,
             pendingChangesCount: remaining,
@@ -1468,9 +1543,15 @@ export const useAppStore = create<AppState>((set, get) => ({
           sites: payload.siteLibrary.length,
           simulations: payload.simulationPresets.length,
           skipped: skippedCount,
+          isDelta: !isFullPush,
         });
         await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
-        lastSyncedPayloadSignature = signature;
+        dirtySiteIds = new Set();
+        dirtySimIds = new Set();
+        requiresFullPush = false;
+        // After push, recompute full signature so next push comparison is accurate
+        lastSyncedPayloadSignature = buildEditableSyncPayloadInfo(siteLibrary, simulationPresets, currentUser).signature;
+        writeStorage(SYNC_SIGNATURE_KEY, lastSyncedPayloadSignature);
         console.log("[appStore] Push SUCCESS");
         const remaining = markSyncedThrough(revisionAtStart);
         set({
@@ -1837,8 +1918,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedNetworkId: id });
     useCoverageStore.getState().recomputeCoverage();
   },
-  setSelectedCoverageMode: (mode) => {
-    set({ selectedCoverageMode: mode });
+  setSelectedCoverageResolution: (resolution) => {
+    set({ selectedCoverageResolution: resolution });
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
@@ -1933,6 +2014,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByUserId: currentUser.id,
         lastEditedByName: currentUser.username,
         lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
+        effectiveRole: "owner" as const,
       };
       const nextLibrary = normalizeSiteLibrary([entry, ...state.siteLibrary]);
       writeStorage(SITE_LIBRARY_KEY, nextLibrary);
@@ -2106,7 +2188,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastEditedByUserId: currentUser.id,
       lastEditedByName: currentUser.username,
       lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
+      effectiveRole: "owner" as const,
     };
+    markDirtySite(entry.id);
     set((state) => {
       const next = normalizeSiteLibrary([entry, ...state.siteLibrary]);
       writeStorage(SITE_LIBRARY_KEY, next);
@@ -2290,6 +2374,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.warn(`[appStore] updateSiteLibraryEntry: User ${user.id} cannot edit entry ${entryId}`);
       return;
     }
+    markDirtySite(entryId);
     set((state) => {
       const next = dedupeLibraryEntries(
         state.siteLibrary.map((entry) => {
@@ -2344,7 +2429,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const next = state.siteLibrary.filter((entry) => !requested.has(entry.id));
       writeStorage(SITE_LIBRARY_KEY, next);
-      return { siteLibrary: next };
+      const updatedPresets = state.simulationPresets.map((preset) => {
+        const hasRef = preset.snapshot.sites.some((site) => site.libraryEntryId && requested.has(site.libraryEntryId));
+        if (!hasRef) return preset;
+        return {
+          ...preset,
+          snapshot: {
+            ...preset.snapshot,
+            sites: preset.snapshot.sites.map((site) =>
+              site.libraryEntryId && requested.has(site.libraryEntryId)
+                ? { ...site, libraryEntryId: undefined }
+                : site,
+            ),
+          },
+        };
+      });
+      writeStorage(SIM_PRESETS_KEY, updatedPresets);
+      return { siteLibrary: next, simulationPresets: updatedPresets };
     });
   },
   saveCurrentSimulationPreset: (name) => {
@@ -2375,7 +2476,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSiteId: state.selectedSiteId,
       selectedLinkId: state.selectedLinkId,
       selectedNetworkId: state.selectedNetworkId,
-      selectedCoverageMode: state.selectedCoverageMode,
+      selectedCoverageResolution: state.selectedCoverageResolution,
       propagationModel: state.propagationModel,
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
@@ -2420,7 +2521,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByUserId: user.id,
         lastEditedByName: user.username,
         lastEditedByAvatarUrl: user.avatarUrl ?? "",
+        effectiveRole: existing?.effectiveRole ?? "owner",
       };
+      markDirtySim(nextPreset.id);
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
       if (normalized.addedCount > 0) {
@@ -2450,7 +2553,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedSiteId: "",
         selectedLinkId: "",
         selectedNetworkId: "",
-        selectedCoverageMode: current.selectedCoverageMode,
+        selectedCoverageResolution: current.selectedCoverageResolution,
         propagationModel: current.propagationModel,
         selectedFrequencyPresetId: current.selectedFrequencyPresetId,
         rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
@@ -2510,7 +2613,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSiteId: state.selectedSiteId,
       selectedLinkId: state.selectedLinkId,
       selectedNetworkId: state.selectedNetworkId,
-      selectedCoverageMode: state.selectedCoverageMode,
+      selectedCoverageResolution: state.selectedCoverageResolution,
       propagationModel: state.propagationModel,
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
@@ -2546,6 +2649,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByUserId: user.id,
         lastEditedByName: user.username,
         lastEditedByAvatarUrl: user.avatarUrl ?? "",
+        effectiveRole: existing.effectiveRole ?? "owner",
       };
       const next = [nextPreset, ...current.simulationPresets.filter((preset) => preset.id !== nextPreset.id)];
       writeStorage(SIM_PRESETS_KEY, next);
@@ -2593,7 +2697,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedSiteId: get().selectedSiteId,
         selectedLinkId: get().selectedLinkId,
         selectedNetworkId: get().selectedNetworkId,
-        selectedCoverageMode: get().selectedCoverageMode,
+        selectedCoverageResolution: get().selectedCoverageResolution,
         propagationModel: get().propagationModel,
         selectedFrequencyPresetId: get().selectedFrequencyPresetId,
         rxSensitivityTargetDbm: get().rxSensitivityTargetDbm,
@@ -2617,6 +2721,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (normalizedSites.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, nextSiteLibrary);
     }
+    markDirtySim(selectedScenarioId);
     writeStorage(SIM_PRESETS_KEY, newPresets);
     set({ simulationPresets: newPresets, siteLibrary: nextSiteLibrary, sites: normalizedSites.sites });
     console.log("[appStore] Updated current simulation snapshot");
@@ -2645,17 +2750,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedLinkId: "",
         temporaryDirectionReversed: false,
         selectedNetworkId: "",
-        selectedCoverageMode:
-          snap.selectedCoverageMode === "BestSite" ||
-          snap.selectedCoverageMode === "Polar" ||
-          snap.selectedCoverageMode === "Cartesian" ||
-          snap.selectedCoverageMode === "Route"
-            ? snap.selectedCoverageMode
-            : "BestSite",
-        propagationModel:
-          snap.propagationModel === "FSPL" || snap.propagationModel === "TwoRay" || snap.propagationModel === "ITM"
-            ? snap.propagationModel
-            : "ITM",
+        selectedCoverageResolution:
+          snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
+            ? snap.selectedCoverageResolution
+            : "normal",
+        propagationModel: "ITM" as const,
         selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
         rxSensitivityTargetDbm: typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
         environmentLossDb: typeof snap.environmentLossDb === "number" ? snap.environmentLossDb : 0,
@@ -2705,17 +2804,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedLinkId,
       temporaryDirectionReversed: false,
       selectedNetworkId,
-      selectedCoverageMode:
-        snap.selectedCoverageMode === "BestSite" ||
-        snap.selectedCoverageMode === "Polar" ||
-        snap.selectedCoverageMode === "Cartesian" ||
-        snap.selectedCoverageMode === "Route"
-          ? snap.selectedCoverageMode
-          : "BestSite",
-      propagationModel:
-        snap.propagationModel === "FSPL" || snap.propagationModel === "TwoRay" || snap.propagationModel === "ITM"
-          ? snap.propagationModel
-          : "ITM",
+      selectedCoverageResolution:
+        snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
+          ? snap.selectedCoverageResolution
+          : "normal",
+      propagationModel: "ITM" as const,
       selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
       rxSensitivityTargetDbm:
         typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
@@ -2793,6 +2886,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!candidate) return;
       if (hasDuplicateSimulationName(get().simulationPresets, candidate, presetId)) return;
     }
+    markDirtySim(presetId);
     set((state) => {
       const next = state.simulationPresets.map((preset) => {
         if (preset.id !== presetId) return preset;
@@ -2979,11 +3073,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
       links: state.links.map((link) => ({ ...link, frequencyMHz: preset.frequencyMHz })),
     }));
-    useCoverageStore.getState().recomputeCoverage();
-    get().updateCurrentSimulationSnapshot();
-  },
-  setPropagationModel: (model) => {
-    set({ propagationModel: model });
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },

@@ -53,7 +53,7 @@ import {
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
-import type { CoverageMode, PropagationModel, RadioClimate } from "../types/radio";
+import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
@@ -128,6 +128,7 @@ const meshmapLabelsLayer = (color: string, haloColor: string): LayerProps => ({
     "text-halo-width": 1.3,
   },
 });
+
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
@@ -285,7 +286,6 @@ export function Sidebar({
   const selectedSiteId = useAppStore((state) => state.selectedSiteId);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
-  const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
   const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
@@ -298,7 +298,6 @@ export function Sidebar({
   const setSelectedLinkId = useAppStore((state) => state.setSelectedLinkId);
   const selectSiteById = useAppStore((state) => state.selectSiteById);
   const setSelectedNetworkId = useAppStore((state) => state.setSelectedNetworkId);
-  const setSelectedCoverageMode = useAppStore((state) => state.setSelectedCoverageMode);
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
   const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
@@ -314,7 +313,6 @@ export function Sidebar({
   const applyFrequencyPresetToSelectedNetwork = useAppStore(
     (state) => state.applyFrequencyPresetToSelectedNetwork,
   );
-  const setPropagationModel = useAppStore((state) => state.setPropagationModel);
   const updateLink = useAppStore((state) => state.updateLink);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
@@ -334,8 +332,6 @@ export function Sidebar({
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const getSelectedLink = useAppStore((state) => state.getSelectedLink);
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
-  const getSelectedNetwork = useAppStore((state) => state.getSelectedNetwork);
-  const model = useAppStore((state) => state.propagationModel);
   const showNewSimulationRequest = useAppStore((state) => state.showNewSimulationRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
   const showSiteLibraryRequest = useAppStore((state) => state.showSiteLibraryRequest);
@@ -345,10 +341,7 @@ export function Sidebar({
     [getSelectedLink, links, selectedLinkId, sites, networks, selectedNetworkId],
   );
   const selectedSite = useMemo(() => getSelectedSite(), [getSelectedSite, sites, selectedSiteId]);
-  const selectedNetwork = useMemo(
-    () => getSelectedNetwork(),
-    [getSelectedNetwork, networks, selectedNetworkId],
-  );
+
   const selectedLinkRaw = links.find((link) => link.id === selectedLink.id) ?? null;
   const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const toSite = sites.find((site) => site.id === selectedLink.toSiteId);
@@ -401,6 +394,8 @@ export function Sidebar({
   const [newSimulationDescription, setNewSimulationDescription] = useState("");
   const [newSimulationNameError, setNewSimulationNameError] = useState("");
   const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("private");
+  const [modalFreqPresetId, setModalFreqPresetId] = useState(selectedFrequencyPresetId);
+  const [modalAutoPropEnv, setModalAutoPropEnv] = useState(autoPropagationEnvironment);
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
   const [linkModal, setLinkModal] = useState<{
     mode: "add" | "edit";
@@ -452,6 +447,7 @@ export function Sidebar({
   const [librarySearchStatus, setLibrarySearchStatus] = useState("");
   const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
   const [librarySearchPickBusyId, setLibrarySearchPickBusyId] = useState<string | null>(null);
+  const [librarySearchBusy, setLibrarySearchBusy] = useState(false);
   const [showMeshtasticBrowser, setShowMeshtasticBrowser] = useState(false);
   const [meshmapNodes, setMeshmapNodes] = useState<MeshmapNode[]>([]);
   const [meshmapSourceUrl, setMeshmapSourceUrl] = useState(readPreferredMeshmapSourceUrl);
@@ -584,6 +580,8 @@ export function Sidebar({
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
   } | null>(null);
+
+
   const [deleteConfirm, setDeleteConfirm] = useState<{
     title: string;
     message: string;
@@ -657,6 +655,8 @@ export function Sidebar({
       setNewSimulationName("");
       setNewSimulationDescription("");
       setNewSimulationNameError("");
+      setModalFreqPresetId(selectedFrequencyPresetId);
+      setModalAutoPropEnv(autoPropagationEnvironment);
       setShowNewSimulationModal(true);
       setShowNewSimulationRequest(false);
     }
@@ -980,14 +980,6 @@ export function Sidebar({
     clearOpenSiteLibraryEntryRequest();
   }, [pendingSiteLibraryOpenEntryId, siteLibrary, clearOpenSiteLibraryEntryRequest]);
 
-  const onModelChange = (next: PropagationModel) => {
-    setPropagationModel(next);
-  };
-
-  const onCoverageModeChange = (mode: CoverageMode) => {
-    setSelectedCoverageMode(mode);
-  };
-
   useEffect(() => {
     if (startupSimulationApplied) return;
     if (hasDeepLinkSimulation) {
@@ -1161,6 +1153,9 @@ export function Sidebar({
       return;
     }
     setNewSimulationNameError("");
+    // Apply modal propagation settings to live store before snapshot is taken
+    setSelectedFrequencyPresetId(modalFreqPresetId);
+    setAutoPropagationEnvironment(modalAutoPropEnv);
     const createdId = createBlankSimulationPreset(trimmed, {
       description: newSimulationDescription.trim() || undefined,
       visibility: newSimulationVisibility,
@@ -1315,6 +1310,7 @@ export function Sidebar({
       setLibrarySearchStatus("Enter at least 3 characters to search.");
       return;
     }
+    setLibrarySearchBusy(true);
     setLibrarySearchStatus("Searching...");
     try {
       const results = await searchLocations(librarySearchQuery);
@@ -1323,6 +1319,8 @@ export function Sidebar({
     } catch (error) {
       const message = getUiErrorMessage(error);
       setLibrarySearchStatus(`Search failed: ${message}`);
+    } finally {
+      setLibrarySearchBusy(false);
     }
   };
   const selectLibrarySearchResult = async (result: GeocodeResult) => {
@@ -1831,6 +1829,8 @@ export function Sidebar({
                   setNewSimulationName("");
                   setNewSimulationDescription("");
                   setNewSimulationNameError("");
+                  setModalFreqPresetId(selectedFrequencyPresetId);
+                  setModalAutoPropEnv(autoPropagationEnvironment);
                   setShowNewSimulationModal(true);
                 }}
                 type="button"
@@ -1908,182 +1908,6 @@ export function Sidebar({
             </button>
           ) : null}
         </div>
-      </section>
-
-      <section className="panel-section section-radio">
-        <details className="compact-details">
-          <summary>Radio & Model (Advanced)</summary>
-          <p className="field-help">
-            Shared channel profile for all links in this simulation.
-          </p>
-          <div className="section-heading">
-            <p className="field-help">Coverage mode</p>
-            <InfoTip text="BestSite: computes strongest coverage from any site at each sample point. Polar: radial sampling around the selected From site. Cartesian: regular grid sampling over the current simulation area. Route: samples along the selected path corridor." />
-          </div>
-          <div className="chip-group">
-            {(["BestSite", "Polar", "Cartesian", "Route"] as const).map((mode) => (
-              <button
-                className={clsx("chip-button", selectedCoverageMode === mode && "is-selected")}
-                key={mode}
-                onClick={() => onCoverageModeChange(mode)}
-                type="button"
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-          {networks.length > 1 ? (
-            <select
-              className="locale-select"
-              onChange={(event) => setSelectedNetworkId(event.target.value)}
-              value={selectedNetworkId}
-            >
-              {networks.map((network) => (
-                <option key={network.id} value={network.id}>
-                  {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
-                </option>
-              ))}
-            </select>
-          ) : (
-            <p className="field-help">
-              Active channel profile: <strong>{selectedNetwork.name}</strong>
-            </p>
-          )}
-          <label className="field-grid">
-            <span>Frequency Plan</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
-              value={selectedFrequencyPresetId}
-            >
-              {FREQUENCY_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
-            Apply Frequency Plan
-          </button>
-          <div className="section-heading">
-            <p className="field-help">Propagation model</p>
-            <InfoTip text="FSPL: free-space path loss only (optimistic, no terrain blocking). TwoRay: direct + ground-reflection model for flatter/open paths, still no terrain profile blocking. ITM: terrain-aware approximation using elevation diffraction penalty in this tool; generally the most realistic option here for hilly/mountain links." />
-          </div>
-          <div className="chip-group">
-            {(["FSPL", "TwoRay", "ITM"] as const).map((candidate) => (
-              <button
-                className={clsx("chip-button", model === candidate && "is-selected")}
-                key={candidate}
-                onClick={() => onModelChange(candidate)}
-                type="button"
-              >
-                {candidate}
-              </button>
-            ))}
-          </div>
-          <details className="compact-details">
-            <summary>ITM Environment</summary>
-          <p className="field-help">
-            These parameters feed terrain-aware path loss. Auto mode derives defaults from current terrain/profile and
-            you can override manually.
-          </p>
-          <label className="field-grid">
-            <span>Auto environment defaults</span>
-            <select
-              className="locale-select"
-              onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
-              value={autoPropagationEnvironment ? "auto" : "manual"}
-            >
-              <option value="auto">Auto (recommended)</option>
-              <option value="manual">Manual override</option>
-            </select>
-          </label>
-          <p className="field-help">{propagationEnvironmentReason}</p>
-          <label className="field-grid">
-            <span>Radio Climate</span>
-            <select
-              className="locale-select"
-              disabled={autoPropagationEnvironment}
-              onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
-              value={effectivePropagationEnvironment.radioClimate}
-            >
-              {RADIO_CLIMATE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field-grid">
-            <span>Polarization</span>
-            <select
-              className="locale-select"
-              disabled={autoPropagationEnvironment}
-              onChange={(event) =>
-                setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
-              }
-              value={effectivePropagationEnvironment.polarization}
-            >
-              <option value="Vertical">Vertical</option>
-              <option value="Horizontal">Horizontal</option>
-            </select>
-          </label>
-          <label className="field-grid">
-            <span>Clutter Height (m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={0}
-              onChange={(event) =>
-                setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
-              }
-              type="number"
-              value={effectivePropagationEnvironment.clutterHeightM}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Ground Dielectric (V/m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={1}
-              onChange={(event) =>
-                setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
-              }
-              step="0.1"
-              type="number"
-              value={effectivePropagationEnvironment.groundDielectric}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Ground Conductivity (S/m)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={0}
-              onChange={(event) =>
-                setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
-              }
-              step="0.001"
-              type="number"
-              value={effectivePropagationEnvironment.groundConductivity}
-            />
-          </label>
-          <label className="field-grid">
-            <span>Atmospheric Bending (N-units)</span>
-            <input
-              disabled={autoPropagationEnvironment}
-              min={250}
-              onChange={(event) =>
-                setPropagationEnvironment({
-                  atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
-                })
-              }
-              step="1"
-              type="number"
-              value={effectivePropagationEnvironment.atmosphericBendingNUnits}
-            />
-          </label>
-          </details>
-        </details>
       </section>
 
       <section className="panel-section section-path">
@@ -2888,15 +2712,164 @@ export function Sidebar({
               {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
             </details>
             </fieldset>
+            {resourceDetailsPopup.kind === "simulation" ? (
+              <details className="compact-details">
+                <summary>Propagation & Channel</summary>
+                {networks.length > 1 ? (
+                  <label className="field-grid">
+                    <span>Active network</span>
+                    <select
+                      className="locale-select"
+                      onChange={(event) => setSelectedNetworkId(event.target.value)}
+                      value={selectedNetworkId}
+                    >
+                      {networks.map((network) => (
+                        <option key={network.id} value={network.id}>
+                          {network.name} ({(network.frequencyOverrideMHz ?? network.frequencyMHz).toFixed(3)} MHz)
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <label className="field-grid">
+                  <span>Frequency Plan</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
+                    value={selectedFrequencyPresetId}
+                  >
+                    {FREQUENCY_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
+                  Apply Frequency Plan
+                </button>
+                <details className="compact-details">
+                  <summary>ITM Environment</summary>
+                  <p className="field-help">
+                    These parameters feed terrain-aware path loss. Auto mode derives defaults from current
+                    terrain/profile and you can override manually.
+                  </p>
+                  <label className="field-grid">
+                    <span>Auto environment defaults</span>
+                    <select
+                      className="locale-select"
+                      onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
+                      value={autoPropagationEnvironment ? "auto" : "manual"}
+                    >
+                      <option value="auto">Auto (recommended)</option>
+                      <option value="manual">Manual override</option>
+                    </select>
+                  </label>
+                  <p className="field-help">{propagationEnvironmentReason}</p>
+                  <label className="field-grid">
+                    <span>Radio Climate</span>
+                    <select
+                      className="locale-select"
+                      disabled={autoPropagationEnvironment}
+                      onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
+                      value={effectivePropagationEnvironment.radioClimate}
+                    >
+                      {RADIO_CLIMATE_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field-grid">
+                    <span>Polarization</span>
+                    <select
+                      className="locale-select"
+                      disabled={autoPropagationEnvironment}
+                      onChange={(event) =>
+                        setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
+                      }
+                      value={effectivePropagationEnvironment.polarization}
+                    >
+                      <option value="Vertical">Vertical</option>
+                      <option value="Horizontal">Horizontal</option>
+                    </select>
+                  </label>
+                  <label className="field-grid">
+                    <span>Clutter Height (m)</span>
+                    <input
+                      disabled={autoPropagationEnvironment}
+                      min={0}
+                      onChange={(event) =>
+                        setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
+                      }
+                      type="number"
+                      value={effectivePropagationEnvironment.clutterHeightM}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Ground Dielectric (V/m)</span>
+                    <input
+                      disabled={autoPropagationEnvironment}
+                      min={1}
+                      onChange={(event) =>
+                        setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
+                      }
+                      step="0.1"
+                      type="number"
+                      value={effectivePropagationEnvironment.groundDielectric}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Ground Conductivity (S/m)</span>
+                    <input
+                      disabled={autoPropagationEnvironment}
+                      min={0}
+                      onChange={(event) =>
+                        setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
+                      }
+                      step="0.001"
+                      type="number"
+                      value={effectivePropagationEnvironment.groundConductivity}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Atmospheric Bending (N-units)</span>
+                    <input
+                      disabled={autoPropagationEnvironment}
+                      min={250}
+                      onChange={(event) =>
+                        setPropagationEnvironment({
+                          atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
+                        })
+                      }
+                      step="1"
+                      type="number"
+                      value={effectivePropagationEnvironment.atmosphericBendingNUnits}
+                    />
+                  </label>
+                </details>
+              </details>
+            ) : null}
             {resourceCanWrite ? (
               <div className="chip-group">
                 <button
                   className="inline-action danger"
-                  onClick={() =>
+                  onClick={() => {
+                    let siteDeleteMessage = `Delete "${resourceDetailsPopup.label}" from the site library?`;
+                    if (resourceDetailsPopup.kind === "site") {
+                      const affectedSims = simulationPresets.filter((p) =>
+                        p.snapshot.sites.some((s) => s.libraryEntryId === resourceDetailsPopup.resourceId),
+                      );
+                      if (affectedSims.length > 0) {
+                        const names = affectedSims.map((p) => `"${p.name}"`).join(", ");
+                        siteDeleteMessage += ` Referenced in ${affectedSims.length} simulation(s): ${names}. Sites will be detached but simulation data will not be lost.`;
+                      }
+                    }
                     requestDeleteConfirm(
                       resourceDetailsPopup.kind === "site" ? "Delete Site" : "Delete Simulation",
                       resourceDetailsPopup.kind === "site"
-                        ? `Delete "${resourceDetailsPopup.label}" from the site library?`
+                        ? siteDeleteMessage
                         : `Delete simulation "${resourceDetailsPopup.label}"?`,
                       () => {
                         if (resourceDetailsPopup.kind === "site") {
@@ -2909,8 +2882,8 @@ export function Sidebar({
                         }
                         setResourceDetailsPopup(null);
                       },
-                    )
-                  }
+                    );
+                  }}
                   type="button"
                 >
                   Delete
@@ -2982,6 +2955,123 @@ export function Sidebar({
                 <option value="shared">Shared</option>
               </select>
             </label>
+            <details className="compact-details">
+              <summary>Advanced</summary>
+              <label className="field-grid">
+                <span>Frequency Plan</span>
+                <select
+                  className="locale-select"
+                  onChange={(event) => setModalFreqPresetId(event.target.value)}
+                  value={modalFreqPresetId}
+                >
+                  {FREQUENCY_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <details className="compact-details">
+                <summary>ITM Environment</summary>
+                <p className="field-help">
+                  These parameters feed terrain-aware path loss. Auto mode derives defaults from terrain; you can
+                  override manually.
+                </p>
+                <label className="field-grid">
+                  <span>Auto environment defaults</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setModalAutoPropEnv(event.target.value === "auto")}
+                    value={modalAutoPropEnv ? "auto" : "manual"}
+                  >
+                    <option value="auto">Auto (recommended)</option>
+                    <option value="manual">Manual override</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Radio Climate</span>
+                  <select
+                    className="locale-select"
+                    disabled={modalAutoPropEnv}
+                    onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
+                    value={effectivePropagationEnvironment.radioClimate}
+                  >
+                    {RADIO_CLIMATE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Polarization</span>
+                  <select
+                    className="locale-select"
+                    disabled={modalAutoPropEnv}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
+                    }
+                    value={effectivePropagationEnvironment.polarization}
+                  >
+                    <option value="Vertical">Vertical</option>
+                    <option value="Horizontal">Horizontal</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Clutter Height (m)</span>
+                  <input
+                    disabled={modalAutoPropEnv}
+                    min={0}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
+                    }
+                    type="number"
+                    value={effectivePropagationEnvironment.clutterHeightM}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground Dielectric (V/m)</span>
+                  <input
+                    disabled={modalAutoPropEnv}
+                    min={1}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
+                    }
+                    step="0.1"
+                    type="number"
+                    value={effectivePropagationEnvironment.groundDielectric}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground Conductivity (S/m)</span>
+                  <input
+                    disabled={modalAutoPropEnv}
+                    min={0}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
+                    }
+                    step="0.001"
+                    type="number"
+                    value={effectivePropagationEnvironment.groundConductivity}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Atmospheric Bending (N-units)</span>
+                  <input
+                    disabled={modalAutoPropEnv}
+                    min={250}
+                    onChange={(event) =>
+                      setPropagationEnvironment({
+                        atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
+                      })
+                    }
+                    step="1"
+                    type="number"
+                    value={effectivePropagationEnvironment.atmosphericBendingNUnits}
+                  />
+                </label>
+              </details>
+            </details>
             <div className="chip-group">
               <button className="inline-action" onClick={createBlankSimulation} type="button">
                 Create
@@ -3282,16 +3372,25 @@ export function Sidebar({
               <button
                 className="inline-action danger"
                 disabled={!selectedLibraryCount}
-                onClick={() =>
+                onClick={() => {
+                  const deletedIds = Array.from(selectedLibraryIds);
+                  const affectedSims = simulationPresets.filter((p) =>
+                    p.snapshot.sites.some((s) => s.libraryEntryId && selectedLibraryIds.has(s.libraryEntryId)),
+                  );
+                  let msg = `Delete ${selectedLibraryCount} selected site(s) from the library? This cannot be undone.`;
+                  if (affectedSims.length > 0) {
+                    const names = affectedSims.map((p) => `"${p.name}"`).join(", ");
+                    msg += ` Referenced in ${affectedSims.length} simulation(s): ${names}. Sites will be detached but simulation data will not be lost.`;
+                  }
                   requestDeleteConfirm(
                     "Delete Sites",
-                    `Delete ${selectedLibraryCount} selected site(s) from the library? This cannot be undone.`,
+                    msg,
                     () => {
-                      deleteSiteLibraryEntries(Array.from(selectedLibraryIds));
+                      deleteSiteLibraryEntries(deletedIds);
                       setSelectedLibraryIds(new Set());
                     },
-                  )
-                }
+                  );
+                }}
                 type="button"
               >
                 Delete Selected ({selectedLibraryCount})
@@ -3408,8 +3507,8 @@ export function Sidebar({
                     value={librarySearchQuery}
                   />
                 </label>
-                <button className="inline-action" onClick={() => void runLibrarySearch()} type="button">
-                  Search
+                <button className="inline-action" disabled={librarySearchBusy} onClick={() => void runLibrarySearch()} type="button">
+                  {librarySearchBusy ? "Searching…" : "Search"}
                 </button>
                 {librarySearchStatus ? <p className="field-help">{librarySearchStatus}</p> : null}
                 {librarySearchResults.length ? (

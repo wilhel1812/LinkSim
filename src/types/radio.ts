@@ -28,8 +28,9 @@ export type Link = {
   cableLossDb?: number;
 };
 
-export type PropagationModel = "FSPL" | "TwoRay" | "ITM";
-export type CoverageMode = "BestSite" | "Polar" | "Cartesian" | "Route";
+export type PropagationModel = "ITM";
+export type CoverageMode = "BestSite";
+export type CoverageResolution = "normal" | "high";
 export type Polarization = "Vertical" | "Horizontal";
 export type RadioClimate =
   | "Equatorial"

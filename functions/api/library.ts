@@ -13,12 +13,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (!auth) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
     await ensureUser(env, auth.userId, auth.tokenPayload);
     await assertUserAccess(env, auth.userId);
-    const library = await fetchLibraryForUser(env, auth.userId);
+    const since = new URL(request.url).searchParams.get("since") ?? undefined;
+    const library = await fetchLibraryForUser(env, auth.userId, { since });
     return withCors(
       request,
       json({
         userId: auth.userId,
         ...library,
+        isDelta: !!since,
       }),
     );
   } catch (error) {

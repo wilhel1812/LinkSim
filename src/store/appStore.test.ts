@@ -164,7 +164,7 @@ describe("appStore auth guards", () => {
             selectedSiteId: "",
             selectedLinkId: "",
             selectedNetworkId: "",
-            selectedCoverageMode: "BestSite",
+            selectedCoverageResolution: "normal",
             propagationModel: "ITM",
             selectedFrequencyPresetId: "custom",
             rxSensitivityTargetDbm: -120,
