@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
@@ -976,6 +976,41 @@ type MapViewProps = {
   fitBottomInset?: number;
 };
 
+type MarkerActionButtonProps = {
+  ariaLabel: string;
+  children: ReactNode;
+  className: string;
+  onActivate: (event: MouseEvent<HTMLButtonElement>) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+};
+
+function MarkerActionButton({
+  ariaLabel,
+  children,
+  className,
+  onActivate,
+  onMouseEnter,
+  onMouseLeave,
+}: MarkerActionButtonProps) {
+  return (
+    <button
+      aria-label={ariaLabel}
+      className={className}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onActivate(event);
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
 type PendingNewSiteDraft = {
   lat: number;
   lon: number;
@@ -1896,11 +1931,6 @@ export function MapView({
     setMqttDuplicatePrompt(null);
   };
 
-  const stopMapClickBubbling = (event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
-    event.preventDefault?.();
-    event.stopPropagation?.();
-  };
-
   if (!webglAvailable) {
     return (
       <div className="map-panel map-fallback">
@@ -2675,7 +2705,8 @@ export function MapView({
               onDrag={(event) => onSiteDrag(site.id, event)}
               onDragEnd={(event) => onSiteDragEnd(site.id, event)}
             >
-              <div
+              <MarkerActionButton
+                ariaLabel={site.name}
                 className={`site-pin ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""} ${
                   isFocusNode ? "is-mode-focus" : "is-dimmed"
                 }`}
@@ -2688,22 +2719,13 @@ export function MapView({
                   })
                 }
                 onMouseLeave={() => setOverlayHoverInfo(null)}
-                onClick={(event) => {
-                  stopMapClickBubbling(event);
+                onActivate={(event) => {
                   const nativeEvent = event as unknown as { ctrlKey?: boolean; metaKey?: boolean };
                   onSiteClick(site.id, isMultiSelectMode || Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
                 }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    stopMapClickBubbling(event);
-                    onSiteClick(site.id, isMultiSelectMode);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
               >
                 <span>{site.name}</span>
-              </div>
+              </MarkerActionButton>
             </Marker>
           );
         })}
@@ -2716,7 +2738,8 @@ export function MapView({
                 latitude={entry.position.lat}
                 longitude={entry.position.lon}
               >
-                <div
+                <MarkerActionButton
+                  ariaLabel={entry.name}
                   className="site-pin is-temporary"
                   onMouseEnter={() =>
                     setOverlayHoverInfo({
@@ -2725,23 +2748,13 @@ export function MapView({
                     })
                   }
                   onMouseLeave={() => setOverlayHoverInfo(null)}
-                  onClick={(event) => {
-                    stopMapClickBubbling(event);
+                  onActivate={() => {
                     setArmAddSiteOnNextEmptyMapClick(false);
                     setSelectedDiscoveryLibraryEntryId(entry.id);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      stopMapClickBubbling(event);
-                      setArmAddSiteOnNextEmptyMapClick(false);
-                      setSelectedDiscoveryLibraryEntryId(entry.id);
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
                 >
                   <span>{entry.name}</span>
-                </div>
+                </MarkerActionButton>
               </Marker>
             ))
           : null}
@@ -2749,7 +2762,8 @@ export function MapView({
         {showDiscoveryMqtt
           ? (mqttTooDenseInView ? [] : mqttNodesInView).map((node) => (
               <Marker anchor="bottom" key={`discover-mqtt-${node.nodeId}`} latitude={node.lat} longitude={node.lon}>
-                <div
+                <MarkerActionButton
+                  ariaLabel={node.longName ?? node.shortName ?? node.nodeId}
                   className="site-pin is-temporary"
                   onMouseEnter={() =>
                     setOverlayHoverInfo({
@@ -2759,21 +2773,12 @@ export function MapView({
                     })
                   }
                   onMouseLeave={() => setOverlayHoverInfo(null)}
-                  onClick={(event) => {
-                    stopMapClickBubbling(event);
+                  onActivate={() => {
                     addDiscoveryMqttNodeToSimulation(node);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      stopMapClickBubbling(event);
-                      addDiscoveryMqttNodeToSimulation(node);
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
                 >
                   <span>+ {node.longName ?? node.shortName ?? node.nodeId}</span>
-                </div>
+                </MarkerActionButton>
               </Marker>
             ))
           : null}
@@ -2786,7 +2791,7 @@ export function MapView({
             longitude={pendingNewSiteDraft.lon}
             onDragEnd={onPendingNewSiteDragEnd}
           >
-            <div className="site-pin is-temporary" role="button" tabIndex={0}>
+            <div className="site-pin is-temporary">
               <span>New Site</span>
             </div>
           </Marker>
