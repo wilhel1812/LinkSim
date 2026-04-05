@@ -4,7 +4,12 @@ import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLi
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
-import { type DeepLinkApplyOutcome, isAuthSignInRequiredMessage, shouldRewritePathAfterDeepLinkApply } from "../lib/appShellGuards";
+import {
+  type DeepLinkApplyOutcome,
+  isAuthSignInRequiredMessage,
+  shouldRewritePathAfterDeepLinkApply,
+  shouldUseReadonlyFallbackForAuthBootstrap,
+} from "../lib/appShellGuards";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -422,19 +427,28 @@ export function AppShell() {
         if (cancelled || timedOut) return;
         window.clearTimeout(timeoutId);
         const message = getUiErrorMessage(error);
+        const isOnlineNow = typeof navigator === "undefined" ? true : navigator.onLine;
+        const fallbackToReadonly = shouldUseReadonlyFallbackForAuthBootstrap({
+          message,
+          deepLinkMode: deepLinkParse.ok,
+          isLocalRuntime,
+          isOnline: isOnlineNow,
+          userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,
+        });
         if (deepLinkParse.ok) {
           console.info("[AppShell] Guest deep-link bootstrap using read-only fallback", {
             message,
             isLocalRuntime,
             deepLinkMode: deepLinkParse.ok,
-            online: typeof navigator === "undefined" ? true : navigator.onLine,
+            online: isOnlineNow,
           });
         } else {
           console.error("[AppShell] Access check failed", {
             message,
             isLocalRuntime,
             deepLinkMode: deepLinkParse.ok,
-            online: typeof navigator === "undefined" ? true : navigator.onLine,
+            online: isOnlineNow,
+            fallbackToReadonly,
           });
         }
         setAccessDiagnosticMessage(`Access check failed: ${message}`);
@@ -443,6 +457,11 @@ export function AppShell() {
           return;
         }
         if (deepLinkParse.ok) {
+          setAccessState("readonly");
+          return;
+        }
+        if (fallbackToReadonly) {
+          setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
           setAccessState("readonly");
           return;
         }
