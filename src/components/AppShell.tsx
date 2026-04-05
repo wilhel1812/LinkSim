@@ -57,14 +57,6 @@ const readPanelBool = (key: string, fallback: boolean): boolean => {
     return fallback;
   }
 };
-type MobileWorkspacePanel = "navigator" | "inspector" | "profile";
-type MobileBottomPanelMode = "hidden" | "normal" | "full";
-type AppNotice = {
-  id: string;
-  message: string;
-  tone: "info" | "warning" | "error";
-  persistent: boolean;
-};
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
   value === "shared" || value === "public" ? value : "private";
@@ -1394,99 +1386,6 @@ export function AppShell() {
       </main>
     );
   }
-
-  const toggleProfileExpanded = () => {
-    setIsMapExpanded(false);
-    setMobileActivePanel("profile");
-    setIsProfileExpanded((prev) => !prev);
-  };
-
-  const setMobileBottomPanelVisibility = useCallback((nextMode: MobileBottomPanelMode) => {
-    setMobileBottomPanelMode(nextMode);
-  }, []);
-
-  const closeShareModal = useCallback(() => {
-    setShowShareModal(false);
-    setShareSpecificUsers([]);
-    setShareSpecificRoles({});
-    setShareUserQuery("");
-    setShareSpecificStatus("");
-  }, []);
-
-  const openShareModalOrCopy = useCallback(() => {
-    setAppNotice(null);
-    if (!activeSimulation) {
-      publishAppNotice({
-        id: "share-open-simulation-first",
-        message: "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
-        tone: "warning",
-        persistent: true,
-      });
-      return;
-    }
-    if (toVisibility(activeSimulation.visibility) === "private") {
-      setShareSpecificUsers([]);
-      setShareSpecificRoles({});
-      setShareUserQuery("");
-      setShareSpecificStatus("");
-      setShareDirectory([]);
-      setShareDirectoryBusy(true);
-      setShowShareModal(true);
-      void fetchCollaboratorDirectory()
-        .then((users) => setShareDirectory(users))
-        .catch(() => {})
-        .finally(() => setShareDirectoryBusy(false));
-      return;
-    }
-    void copyCurrentLink().catch((error) => {
-      publishAppNotice({
-        id: "share-copy-failed",
-        message: getUiErrorMessage(error),
-        tone: "error",
-        persistent: true,
-      });
-    });
-  }, [activeSimulation, copyCurrentLink, publishAppNotice]);
-
-  const panelSizeControls = useCallback(
-    (labelPrefix: string, variant: "map" | "chart" = "map") => (
-      <div className="panel-size-controls">
-        {mobileBottomPanelMode === "full" ? (
-          <button
-            aria-label={`Set ${labelPrefix} panel to normal size`}
-            className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
-            onClick={() => setMobileBottomPanelVisibility("normal")}
-            title="Normal size"
-            type="button"
-          >
-            <PanelBottom aria-hidden="true" strokeWidth={1.8} />
-          </button>
-        ) : (
-          <>
-            <button
-              aria-label={`Hide ${labelPrefix} panel`}
-              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
-              onClick={() => setMobileBottomPanelVisibility("hidden")}
-              title="Hide panel"
-              type="button"
-            >
-              <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
-            </button>
-            <button
-              aria-label={`Expand ${labelPrefix} panel to full height`}
-              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
-              onClick={() => setMobileBottomPanelVisibility("full")}
-              title="Full size"
-              type="button"
-            >
-              <Maximize2 aria-hidden="true" strokeWidth={1.8} />
-            </button>
-          </>
-        )}
-      </div>
-    ),
-    [mobileBottomPanelMode, setMobileBottomPanelVisibility],
-  );
 
   return (
     <main
