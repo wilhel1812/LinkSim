@@ -25,6 +25,7 @@ import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
+import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 
 const UI_SECTION_KEYS = {
@@ -1669,9 +1670,9 @@ export function MapView({
   };
 
   const saveSelectedSitesAsLink = () => {
-    if (!canPersist || selectedSites.length < 2) return;
-    const fromSite = selectedSites[0];
-    const toSite = selectedSites[selectedSites.length - 1];
+    if (!canPersist) return;
+    const fromSite = selectedFromSite;
+    const toSite = selectedToSite;
     if (!fromSite || !toSite || fromSite.id === toSite.id) return;
     createLink(fromSite.id, toSite.id);
     setSiteDraftStatus(`Saved link ${fromSite.name} -> ${toSite.name}.`);
@@ -1975,6 +1976,15 @@ export function MapView({
     canPersist &&
     Boolean(selectedDiscoveryLibraryEntry) &&
     !sites.some((site) => site.libraryEntryId === selectedDiscoveryLibraryEntry?.id);
+  const canRemoveSelectedSite = Boolean(selectedSite && canPersist && sites.length > 1);
+  const canSaveSelectedLink = canShowSaveSelectedLinkAction({
+    canPersist,
+    fromSiteId: selectedFromSite?.id ?? null,
+    toSiteId: selectedToSite?.id ?? null,
+  });
+  const hasInspectorActions = Boolean(
+    inspectorPrimaryLibraryEntryId || canAddSelectedDiscoverySite || canRemoveSelectedSite || canSaveSelectedLink,
+  );
   const inspectorLines: string[] = [];
   if (!hasSimulationTerrain) inspectorLines.push("No terrain loaded: simulation currently uses site elevations only.");
   if (resolvedBasemap.fallbackReason && !useFallbackMapStyle) inspectorLines.push(resolvedBasemap.fallbackReason);
@@ -2104,10 +2114,10 @@ export function MapView({
               </span>
             </div>
           ) : null}
-          {inspectorPrimary ? (
+          {inspectorPrimary || hasInspectorActions ? (
             <div className="map-inspector-section">
-              <p className="map-inspector-primary">{inspectorPrimary}</p>
-              {inspectorPrimaryLibraryEntryId || canAddSelectedDiscoverySite || (selectedSite && canPersist && sites.length > 1) || (canPersist && selectedSites.length >= 2) ? (
+              {inspectorPrimary ? <p className="map-inspector-primary">{inspectorPrimary}</p> : null}
+              {hasInspectorActions ? (
                 <div className="chip-group">
                   {inspectorPrimaryLibraryEntryId ? (
                     <button
@@ -2118,7 +2128,7 @@ export function MapView({
                       Open
                     </button>
                   ) : null}
-                  {selectedSite && canPersist && sites.length > 1 ? (
+                  {canRemoveSelectedSite ? (
                     <button className="inline-action danger" onClick={removeSelectedSiteFromSimulation} type="button">
                       Remove From Simulation
                     </button>
@@ -2132,7 +2142,7 @@ export function MapView({
                       Add To Simulation
                     </button>
                   ) : null}
-                  {canPersist && selectedSites.length >= 2 ? (
+                  {canSaveSelectedLink ? (
                     <button className="inline-action" onClick={saveSelectedSitesAsLink} type="button">
                       Save Selected Link
                     </button>
