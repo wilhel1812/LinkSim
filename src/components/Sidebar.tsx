@@ -145,7 +145,7 @@ const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
 
 const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: string }> = [
   { key: "private", label: "Private" },
-  { key: "sharedPublic", label: "Shared/Public" },
+  { key: "sharedPublic", label: "Shared or Public" },
 ];
 const SITE_SOURCE_FILTER_OPTIONS: Array<{ key: LibraryFilterSource; label: string }> = [
   { key: "manual", label: "Manual" },
@@ -1847,7 +1847,7 @@ export function Sidebar({
               ) : null}
             </>
           ) : (
-            <span className="field-help">Sign in to browse the simulation library.</span>
+            <span className="field-help">Sign in to browse the Simulation Library.</span>
           )}
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
@@ -1856,7 +1856,7 @@ export function Sidebar({
       <section className="panel-section section-sites">
         <div className="section-heading">
           <h2>Sites</h2>
-          <InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />
+          <InfoTip text="Add a Site from the Site Library or create a new Site. You can also create or add Sites from the map. A Site can be Private or Shared." />
         </div>
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
         <div className="site-list">
@@ -1886,7 +1886,7 @@ export function Sidebar({
                 </button>
               ) : null}
               <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
-                Edit
+                  Details
               </button>
             </>
           ) : null}
@@ -1934,15 +1934,15 @@ export function Sidebar({
                 New
               </button>
               <button className="inline-action" onClick={openEditLinkModal} type="button">
-                Edit
+                Details
               </button>
               <button
                 className="inline-action danger"
                 disabled={!links.length}
                 onClick={() =>
                   requestDeleteConfirm(
-                    "Delete Link",
-                    `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
+                    "Delete Path",
+                    `Delete selected Path "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
                     () => deleteLink(selectedLink.id),
                   )
                 }
@@ -1956,16 +1956,16 @@ export function Sidebar({
       </section>
 
       {linkModal ? (
-        <ModalOverlay aria-label={linkModal.mode === "add" ? "Add Link" : "Edit Link"} onClose={() => setLinkModal(null)} tier="raised">
+        <ModalOverlay aria-label={linkModal.mode === "add" ? "Add Path" : "Edit Path"} onClose={() => setLinkModal(null)} tier="raised">
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
-              <h2>{linkModal.mode === "add" ? "Add Link" : "Edit Link"}</h2>
+              <h2>{linkModal.mode === "add" ? "Add Path" : "Edit Path"}</h2>
               <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setLinkModal(null)} title="Close" type="button">
                 <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <label className="field-grid">
-              <span>Link name</span>
+              <span>Path name</span>
               <input
                 onChange={(event) =>
                   setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
@@ -2018,7 +2018,7 @@ export function Sidebar({
               </select>
             </label>
             <details className="compact-details">
-              <summary>Link Radio Overrides</summary>
+              <summary>Path Radio Overrides</summary>
               <label className="field-grid">
                 <span>Use site radio defaults</span>
                 <input
@@ -2033,7 +2033,7 @@ export function Sidebar({
               </label>
               {!linkModal.overrideRadio ? (
                 <p className="field-help">
-                  This link uses the selected From/To site radio settings.
+                  This Path uses the selected From/To Site radio settings.
                 </p>
               ) : null}
               {linkModal.overrideRadio ? (
@@ -2091,7 +2091,7 @@ export function Sidebar({
             </details>
             <div className="chip-group">
               <button className="inline-action" onClick={saveLinkModal} type="button">
-                {linkModal.mode === "add" ? "Create Link" : "Save Link"}
+                {linkModal.mode === "add" ? "Create Path" : "Save Path"}
               </button>
             </div>
             {linkModal.status ? <p className="field-help">{linkModal.status}</p> : null}
@@ -2611,7 +2611,7 @@ export function Sidebar({
                 }
                 type="button"
               >
-                Open change log
+                Open Change Log
               </button>
             </div>
             {resourceDetailsPopup.kind === "site" && currentResourceMqttMetaLines.length ? (
@@ -3824,7 +3824,7 @@ export function Sidebar({
                   })()}
                   <div className="library-row-actions">
                     <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
-                      Add to simulation
+                      Add to Simulation
                     </button>
                     <button
                       className="inline-action"

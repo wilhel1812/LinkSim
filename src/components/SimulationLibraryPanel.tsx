@@ -26,7 +26,7 @@ const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
 
 const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: string }> = [
   { key: "private", label: "Private" },
-  { key: "sharedPublic", label: "Shared/Public" },
+  { key: "sharedPublic", label: "Shared or Public" },
 ];
 
 const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
