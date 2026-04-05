@@ -5,6 +5,13 @@ type UseLibraryManagerParams = {
   initialFilters: LibraryFilterState;
 };
 
+export const toggleLibraryIdSelection = (current: Set<string>, entryId: string): Set<string> => {
+  const next = new Set(current);
+  if (next.has(entryId)) next.delete(entryId);
+  else next.add(entryId);
+  return next;
+};
+
 export function useLibraryManager({ initialFilters }: UseLibraryManagerParams) {
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
   const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
@@ -13,12 +20,7 @@ export function useLibraryManager({ initialFilters }: UseLibraryManagerParams) {
   const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
 
   const toggleLibrarySelection = (entryId: string) => {
-    setSelectedLibraryIds((current) => {
-      const next = new Set(current);
-      if (next.has(entryId)) next.delete(entryId);
-      else next.add(entryId);
-      return next;
-    });
+    setSelectedLibraryIds((current) => toggleLibraryIdSelection(current, entryId));
   };
 
   return {

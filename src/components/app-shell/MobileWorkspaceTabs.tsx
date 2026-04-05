@@ -17,6 +17,12 @@ type MobileWorkspaceTabsProps = {
   setMobileBottomPanelVisibility: (mode: MobileBottomPanelMode) => void;
 };
 
+export const isActiveMobilePanelTab = (
+  mode: MobileBottomPanelMode,
+  activePanel: MobileWorkspacePanel,
+  panel: MobileWorkspacePanel,
+) => mode !== "hidden" && activePanel === panel;
+
 export function MobileWorkspaceTabs({
   activePanel,
   mode,
@@ -42,8 +48,8 @@ export function MobileWorkspaceTabs({
     <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
       <button
         aria-controls={navigatorPanelId}
-        aria-selected={mode !== "hidden" && activePanel === "navigator"}
-        className={`mobile-workspace-tab ${mode !== "hidden" && activePanel === "navigator" ? "is-active" : ""}`}
+        aria-selected={isActiveMobilePanelTab(mode, activePanel, "navigator")}
+        className={`mobile-workspace-tab ${isActiveMobilePanelTab(mode, activePanel, "navigator") ? "is-active" : ""}`}
         id={navigatorTabId}
         onClick={() => selectPanel("navigator")}
         role="tab"
@@ -53,8 +59,8 @@ export function MobileWorkspaceTabs({
       </button>
       <button
         aria-controls={inspectorPanelId}
-        aria-selected={mode !== "hidden" && activePanel === "inspector"}
-        className={`mobile-workspace-tab ${mode !== "hidden" && activePanel === "inspector" ? "is-active" : ""}`}
+        aria-selected={isActiveMobilePanelTab(mode, activePanel, "inspector")}
+        className={`mobile-workspace-tab ${isActiveMobilePanelTab(mode, activePanel, "inspector") ? "is-active" : ""}`}
         id={inspectorTabId}
         onClick={() => selectPanel("inspector")}
         role="tab"
@@ -64,8 +70,8 @@ export function MobileWorkspaceTabs({
       </button>
       <button
         aria-controls={profilePanelId}
-        aria-selected={mode !== "hidden" && activePanel === "profile"}
-        className={`mobile-workspace-tab ${mode !== "hidden" && activePanel === "profile" ? "is-active" : ""}`}
+        aria-selected={isActiveMobilePanelTab(mode, activePanel, "profile")}
+        className={`mobile-workspace-tab ${isActiveMobilePanelTab(mode, activePanel, "profile") ? "is-active" : ""}`}
         id={profileTabId}
         onClick={() => selectPanel("profile")}
         role="tab"

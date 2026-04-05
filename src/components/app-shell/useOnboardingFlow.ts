@@ -19,7 +19,7 @@ export function useOnboardingFlow({
   const markSeen = () => {
     if (!activeUserId) return;
     try {
-      localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
+      localStorage.setItem(getOnboardingSeenKey(activeUserId), "1");
     } catch {
       // ignore storage errors
     }
@@ -63,3 +63,5 @@ export function useOnboardingFlow({
     createNewFromWelcome,
   };
 }
+
+export const getOnboardingSeenKey = (userId: string) => `${ONBOARDING_SEEN_KEY_PREFIX}${userId}`;

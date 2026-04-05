@@ -19,6 +19,13 @@ type UseMapControlsParams = {
   updateMapViewport: (patch: { zoom?: number }) => void;
 };
 
+export const computeNextZoom = (
+  currentZoom: number,
+  delta: number,
+  providerMaxZoom: number,
+  clamp: (value: number, min: number, max: number) => number,
+) => clamp(currentZoom + delta, 2, providerMaxZoom);
+
 export function useMapControls({
   activeViewState,
   fitBottomInset,
@@ -36,7 +43,7 @@ export function useMapControls({
 
   const zoomBy = (delta: number) => {
     setFitControlActive(false);
-    const nextZoom = clamp(activeViewState.zoom + delta, 2, providerMaxZoom);
+    const nextZoom = computeNextZoom(activeViewState.zoom, delta, providerMaxZoom, clamp);
     setInteractionViewState(null);
     updateMapViewport({ zoom: nextZoom });
   };
