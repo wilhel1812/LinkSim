@@ -38,7 +38,7 @@ import {
   type MeshmapNode,
 } from "../lib/meshtasticMqtt";
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
-import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
+import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
@@ -59,6 +59,8 @@ import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
+import { useLibraryManager } from "./sidebar/useLibraryManager";
+import { useInspectorActions } from "./sidebar/useInspectorActions";
 
 const parseNumber = (value: string): number => {
   const parsed = Number(value);
@@ -396,31 +398,27 @@ export function Sidebar({
   const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("private");
   const [modalFreqPresetId, setModalFreqPresetId] = useState(selectedFrequencyPresetId);
   const [modalAutoPropEnv, setModalAutoPropEnv] = useState(autoPropagationEnvironment);
-  const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
-  const [linkModal, setLinkModal] = useState<{
-    mode: "add" | "edit";
-    linkId: string | null;
-    name: string;
-    fromSiteId: string;
-    toSiteId: string;
-    overrideRadio: boolean;
-    txPowerDbm: number;
-    txGainDbi: number;
-    rxGainDbi: number;
-    cableLossDb: number;
-    status: string;
-  } | null>(null);
-  const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
-  const [siteLibraryFilters, setSiteLibraryFilters] = useState<LibraryFilterState>(() =>
-    readLibraryFilterState(SITE_LIBRARY_FILTERS_KEY),
-  );
+  const {
+    showSimulationLibraryManager,
+    setShowSimulationLibraryManager,
+    showSiteLibraryManager,
+    setShowSiteLibraryManager,
+    siteLibraryFilters,
+    setSiteLibraryFilters,
+    selectedLibraryIds,
+    setSelectedLibraryIds,
+    selectedLibraryCount,
+    showAddLibraryForm,
+    setShowAddLibraryForm,
+    toggleLibrarySelection,
+  } = useLibraryManager({
+    initialFilters: readLibraryFilterState(SITE_LIBRARY_FILTERS_KEY),
+  });
   const [openSiteFilterGroup, setOpenSiteFilterGroup] = useState<SiteFilterGroupKey | null>(null);
   const [siteRoleDraft, setSiteRoleDraft] = useState<LibraryFilterRole[] | null>(null);
   const [siteVisibilityDraft, setSiteVisibilityDraft] = useState<LibraryFilterVisibility[] | null>(null);
   const [siteSourceDraft, setSiteSourceDraft] = useState<LibraryFilterSource[] | null>(null);
   const siteFilterToolbarRef = useRef<HTMLDivElement | null>(null);
-  const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
-  const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
   const [pendingDraftAutoInsert, setPendingDraftAutoInsert] = useState(false);
   const [newLibraryName, setNewLibraryName] = useState("");
   const [newLibraryDescription, setNewLibraryDescription] = useState("");
@@ -1020,57 +1018,12 @@ export function Sidebar({
   ) => {
     setDeleteConfirm({ title, message, confirmLabel, onConfirm });
   };
-
-  const openAddLinkModal = () => {
-    const hasFromInSites = sites.some((site) => site.id === selectedLink.fromSiteId);
-    const hasToInSites = sites.some((site) => site.id === selectedLink.toSiteId);
-    const fallbackFrom = hasFromInSites ? selectedLink.fromSiteId : sites[0]?.id || "";
-    const fallbackTo = hasToInSites
-      ? selectedLink.toSiteId
-      : sites.find((site) => site.id !== fallbackFrom)?.id || "";
-    const fallbackFromSite = sites.find((site) => site.id === fallbackFrom) ?? selectedSite;
-    const fallbackToSite = sites.find((site) => site.id === fallbackTo) ?? fallbackFromSite;
-    const baseRadio = resolveLinkRadio(selectedLink, fallbackFromSite, fallbackToSite);
-    setLinkModal({
-      mode: "add",
-      linkId: null,
-      name: "",
-      fromSiteId: fallbackFrom,
-      toSiteId: fallbackTo,
-      overrideRadio: false,
-      txPowerDbm: baseRadio.txPowerDbm,
-      txGainDbi: baseRadio.txGainDbi,
-      rxGainDbi: baseRadio.rxGainDbi,
-      cableLossDb: baseRadio.cableLossDb,
-      status: "",
-    });
-  };
-
-  const openEditLinkModal = () => {
-    const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId) ?? null;
-    const toSite = sites.find((site) => site.id === selectedLink.toSiteId) ?? null;
-    const baseRadio = resolveLinkRadio(selectedLink, fromSite, toSite);
-    const hasOverrides = Boolean(
-      selectedLinkRaw &&
-        (typeof selectedLinkRaw.txPowerDbm === "number" ||
-          typeof selectedLinkRaw.txGainDbi === "number" ||
-          typeof selectedLinkRaw.rxGainDbi === "number" ||
-          typeof selectedLinkRaw.cableLossDb === "number"),
-    );
-    setLinkModal({
-      mode: "edit",
-      linkId: selectedLink.id,
-      name: selectedLink.name ?? "",
-      fromSiteId: selectedLink.fromSiteId,
-      toSiteId: selectedLink.toSiteId,
-      overrideRadio: hasOverrides,
-      txPowerDbm: baseRadio.txPowerDbm,
-      txGainDbi: baseRadio.txGainDbi,
-      rxGainDbi: baseRadio.rxGainDbi,
-      cableLossDb: baseRadio.cableLossDb,
-      status: "",
-    });
-  };
+  const { linkModal, setLinkModal, openAddLinkModal, openEditLinkModal } = useInspectorActions({
+    selectedLink,
+    selectedLinkRaw,
+    selectedSite,
+    sites,
+  });
 
   const saveLinkModal = () => {
     if (!linkModal) return;
@@ -1188,18 +1141,6 @@ export function Sidebar({
     const to = sites.find((site) => site.id === link.toSiteId)?.name ?? "Unknown";
     return `${from} ↔ ${to}`;
   };
-  const toggleLibrarySelection = (entryId: string) => {
-    setSelectedLibraryIds((current) => {
-      const next = new Set(current);
-      if (next.has(entryId)) {
-        next.delete(entryId);
-      } else {
-        next.add(entryId);
-      }
-      return next;
-    });
-  };
-  const selectedLibraryCount = selectedLibraryIds.size;
   const openLibraryForSelectedSite = () => {
     setShowSiteLibraryManager(true);
     const matchedEntry = siteLibrary.find(
