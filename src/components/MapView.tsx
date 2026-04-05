@@ -27,6 +27,26 @@ import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 
+const UI_SECTION_KEYS = {
+  mapViewResults: "linksim-ui-mapview-results-v1",
+  mapViewSimSummary: "linksim-ui-mapview-sim-summary-v1",
+  mapViewOverlayGuide: "linksim-ui-mapview-overlay-guide-v1",
+} as const;
+
+const readSectionBool = (key: string, fallback: boolean): boolean => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
+};
+
+const writeSectionBool = (key: string, value: boolean): void => {
+  try { localStorage.setItem(key, String(value)); } catch {}
+};
+
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
   type: "line",
@@ -504,7 +524,6 @@ const computeSourceCentricRxDbm = (
   effectiveLink: Link,
   receiverAntennaHeightM: number,
   receiverRxGainDbi: number,
-  propagationModel: "FSPL" | "TwoRay" | "ITM",
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
   propagationEnvironment: PropagationEnvironment,
@@ -516,7 +535,6 @@ const computeSourceCentricRxDbm = (
     effectiveLink,
     receiverAntennaHeightM,
     receiverRxGainDbi,
-    propagationModel,
     terrainSampler,
     terrainSamples,
     propagationEnvironment,
@@ -590,7 +608,6 @@ const buildSourcePassFailOverlay = (
   effectiveLink: Link,
   receiverAntennaHeightM: number,
   receiverRxGainDbi: number,
-  propagationModel: "FSPL" | "TwoRay" | "ITM",
   propagationEnvironment: PropagationEnvironment,
   rxTargetDbm: number,
   environmentLossDb: number,
@@ -627,13 +644,12 @@ const buildSourcePassFailOverlay = (
         effectiveLink,
         receiverAntennaHeightM,
         receiverRxGainDbi,
-        propagationModel,
         terrainSampler,
         terrainSamples,
         propagationEnvironment,
       );
       const pass = metrics.rxDbm - environmentLossDb >= rxTargetDbm;
-      const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
+      const losBlocked = metrics.terrainObstructed;
       const state = classifyPassFailState(pass, losBlocked);
       const px = (y * width + x) * 4;
       if (state === "pass_clear") {
@@ -674,7 +690,6 @@ const buildRelayCandidateOverlay = (
   fromSite: Site,
   toSite: Site,
   effectiveLink: Link,
-  propagationModel: "FSPL" | "TwoRay" | "ITM",
   propagationEnvironment: PropagationEnvironment,
   environmentLossDb: number,
   terrainSampler: (lat: number, lon: number) => number | null,
@@ -729,7 +744,6 @@ const buildRelayCandidateOverlay = (
         effectiveLink,
         relayAntennaHeightM,
         relaySite.rxGainDbi,
-        propagationModel,
         terrainSampler,
         terrainSamples,
         propagationEnvironment,
@@ -741,7 +755,6 @@ const buildRelayCandidateOverlay = (
         effectiveLink,
         toSite.antennaHeightM,
         toSite.rxGainDbi,
-        propagationModel,
         terrainSampler,
         terrainSamples,
         propagationEnvironment,
@@ -1030,7 +1043,6 @@ export function MapView({
   const terrainProgressTilesTotal = useAppStore((state) => state.terrainProgressTilesTotal);
   const terrainProgressBytesLoaded = useAppStore((state) => state.terrainProgressBytesLoaded);
   const terrainProgressBytesEstimated = useAppStore((state) => state.terrainProgressBytesEstimated);
-  const selectedCoverageMode = useAppStore((state) => state.selectedCoverageMode);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
@@ -1076,12 +1088,14 @@ export function MapView({
   );
   const coverageVizMode = useAppStore((state) => state.mapOverlayMode);
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
+  const selectedCoverageResolution = useAppStore((state) => state.selectedCoverageResolution);
+  const setSelectedCoverageResolution = useAppStore((state) => state.setSelectedCoverageResolution);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
-  const [showResultsSummary, setShowResultsSummary] = useState(true);
-  const [showSimulationSummary, setShowSimulationSummary] = useState(false);
+  const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
+  const [showSimulationSummary, setShowSimulationSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewSimSummary, false));
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [showOverlayGuide, setShowOverlayGuide] = useState(true);
+  const [showOverlayGuide, setShowOverlayGuide] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, true));
   const fitSitesEpoch = useAppStore((state) => state.fitSitesEpoch);
   const [fitControlActive, setFitControlActive] = useState(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -1089,6 +1103,7 @@ export function MapView({
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
   const [armAddSiteOnNextEmptyMapClick, setArmAddSiteOnNextEmptyMapClick] = useState(false);
   const [pendingSiteMoves, setPendingSiteMoves] = useState<Record<string, PendingSiteMove>>({});
+  const [isDraggingSite, setIsDraggingSite] = useState(false);
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [showDiscoverySites, setShowDiscoverySites] = useState(false);
   const [showDiscoveryMqtt, setShowDiscoveryMqtt] = useState(false);
@@ -1386,6 +1401,9 @@ export function MapView({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
     );
   }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
+  // During a site drag, force low-res (24) to keep overlay recomputations cheap.
+  // On mouse release (isDraggingSite → false) the configured resolution is restored.
+  const effectiveGridSize = isDraggingSite || selectedCoverageResolution !== "high" ? 24 : 42;
   const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "passfail") return null;
     if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
@@ -1397,13 +1415,12 @@ export function MapView({
       activeSelectionLink,
       receiverAntennaHeightM,
       receiverRxGainDbi,
-      propagationModel,
       propagationEnvironment,
       rxSensitivityTargetDbm,
       environmentLossDb,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       overlayDimensions,
-      24,
+      effectiveGridSize,
       overlayPointMask,
     );
   }, [
@@ -1413,13 +1430,13 @@ export function MapView({
     selectedFromSite,
     selectedToSite,
     hasPassFailTopology,
-    propagationModel,
     propagationEnvironment,
     rxSensitivityTargetDbm,
     environmentLossDb,
     srtmTiles,
     overlayDimensions,
     overlayPointMask,
+    effectiveGridSize,
   ]);
   const relayCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "relay") return null;
@@ -1429,12 +1446,11 @@ export function MapView({
       selectedFromSite,
       selectedToSite,
       activeSelectionLink,
-      propagationModel,
       propagationEnvironment,
       environmentLossDb,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       overlayDimensions,
-      24,
+      effectiveGridSize,
       overlayPointMask,
     );
   }, [
@@ -1444,12 +1460,12 @@ export function MapView({
     selectedFromSite,
     selectedToSite,
     hasRelayTopology,
-    propagationModel,
     propagationEnvironment,
     environmentLossDb,
     srtmTiles,
     overlayDimensions,
     overlayPointMask,
+    effectiveGridSize,
   ]);
   const coverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode === "none") return null;
@@ -1666,6 +1682,7 @@ export function MapView({
       setSiteDraftStatus("Dismiss or save the new map site before moving existing sites.");
       return;
     }
+    setIsDraggingSite(true);
     const site = sites.find((candidate) => candidate.id === siteId);
     if (!site) return;
     const nextPosition = {
@@ -1697,6 +1714,7 @@ export function MapView({
   };
 
   const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
+    setIsDraggingSite(false);
     const site = sites.find((candidate) => candidate.id === siteId);
     if (!site) return;
     const nextPosition = {
@@ -2215,7 +2233,7 @@ export function MapView({
           ) : null}
           <details
             className="compact-details map-inspector-details"
-            onToggle={(event) => setShowOverlayGuide(event.currentTarget.open)}
+            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, v); setShowOverlayGuide(v); }}
             open={showOverlayGuide}
           >
             <summary>Map</summary>
@@ -2313,6 +2331,19 @@ export function MapView({
                   {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
                 </select>
               </label>
+              {coverageVizMode !== "none" && (
+                <label className="map-inspector-map-setting">
+                  <span>Coverage Detail</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setSelectedCoverageResolution(event.target.value as "normal" | "high")}
+                    value={selectedCoverageResolution}
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="high">High (slower)</option>
+                  </select>
+                </label>
+              )}
               <label className="map-inspector-map-setting">
                 <span>Visible Sites</span>
                 <select
@@ -2477,7 +2508,7 @@ export function MapView({
           </details>
           <details
             className="compact-details map-inspector-details"
-            onToggle={(event) => setShowResultsSummary(event.currentTarget.open)}
+            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
             open={showResultsSummary}
           >
             <summary>Results</summary>
@@ -2485,12 +2516,12 @@ export function MapView({
           </details>
           <details
             className="compact-details map-inspector-details"
-            onToggle={(event) => setShowSimulationSummary(event.currentTarget.open)}
+            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewSimSummary, v); setShowSimulationSummary(v); }}
             open={showSimulationSummary}
           >
             <summary>Simulation Sources</summary>
             <p>
-              Model: {propagationModel} / {selectedCoverageMode} / View: {coverageVizMode}
+              Model: {propagationModel} / {selectedCoverageResolution} / View: {coverageVizMode}
             </p>
             <p>
               Network: {selectedNetwork?.name ?? "n/a"} @ {" "}

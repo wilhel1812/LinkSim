@@ -6,6 +6,42 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
 });
 
+describe("fetchCloudLibrary delta sync", () => {
+  it("calls /api/library with no query params by default", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ siteLibrary: [], simulationPresets: [] }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    await fetchCloudLibrary();
+    const [url] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+    expect(String(url)).toBe("/api/library");
+  });
+
+  it("appends ?since= when since option is provided", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ siteLibrary: [], simulationPresets: [], isDelta: true }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    await fetchCloudLibrary({ since: "2026-01-01T00:00:00.000Z" });
+    const [url] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+    expect(decodeURIComponent(String(url))).toContain("since=2026-01-01T00:00:00.000Z");
+  });
+
+  it("returns isDelta: true when server responds with isDelta", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ siteLibrary: [], simulationPresets: [], isDelta: true }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    const result = await fetchCloudLibrary({ since: "2026-01-01T00:00:00.000Z" });
+    expect(result.isDelta).toBe(true);
+  });
+
+  it("returns isDelta: false/undefined for full fetch", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ siteLibrary: [], simulationPresets: [] }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    const result = await fetchCloudLibrary();
+    expect(result.isDelta).toBeFalsy();
+  });
+});
+
 describe("cloudLibrary client", () => {
   it("returns normalized arrays from API payload", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(

@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.14.0] - 2026-04-05
+
+### Added
+- Cloud library sync now performs background delta pulls and merges remote updates by id, so cross-device changes appear without a reload and manual sync no longer keeps stale local copies. (#113, #374)
+- UI panel visibility (Navigator, Inspector, Profile) now persists in localStorage and is restored across sessions. (#132)
+
+### Changed
+- Radio and model controls were restructured: propagation model selection was removed (ITM is now the only model), and Frequency Plan / ITM Environment / network options moved into New Simulation and Edit Simulation dialogs to reduce sidebar clutter. (#183, #394, #395)
+- Coverage resolution control now applies consistently across heatmap, relay, and pass/fail overlays, including drag-time low-resolution behavior with automatic restore after drag. (#393)
+
+### Fixed
+- Anonymous deep-link loads no longer trigger unnecessary authenticated API calls or CORS noise; readonly bootstrap and access-check fallback behavior is hardened for Firefox and auth bootstrap edge cases. (#385)
+- Newly created Sites and Simulation entries now set owner edit role correctly, preventing creator-owned resources from appearing read-only. (#383)
+- Site library delete flow now handles simulation references deterministically, and shared-link workspace naming/selection-driven results behavior is more consistent during path workflows. (#124, #141, #185)
+- Search rate-limit behavior and terrain loading reliability were hardened, including removal of unreliable in-memory geocode throttling and clearer terrain loading state transitions. (#105, #150)
+
 ## [0.13.0] - 2026-04-02
 
 ### Added

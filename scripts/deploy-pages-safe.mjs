@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 const root = process.cwd();
+const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
 const wranglerProd = path.join(root, "wrangler.toml");
 const wranglerStaging = path.join(root, "wrangler.staging.toml");
 const wranglerBackup = path.join(root, "wrangler.toml.__deploy_backup__");
@@ -172,8 +173,8 @@ const parseWranglerJsonPayload = (stdout) => {
 async function verifyRemoteSchema(targetName, databaseName) {
   if (targetName !== "staging" && targetName !== "prod-main") return;
   const { stdout } = await run(
-    "npx",
-    ["wrangler", "d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(resource_changes);"],
+    wrangler,
+    ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(resource_changes);"],
     { capture: true },
   );
   const parsed = parseWranglerJsonPayload(stdout);
@@ -274,8 +275,8 @@ async function withWranglerConfig(configPath, fn) {
 async function verifyDeployment(projectName, commit) {
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const { stdout } = await run(
-      "npx",
-      ["wrangler", "pages", "deployment", "list", "--project-name", projectName],
+      wrangler,
+      ["pages", "deployment", "list", "--project-name", projectName],
       { capture: true },
     );
     const lines = stdout.split("\n");
@@ -305,9 +306,16 @@ async function main() {
 
   await writeReleaseManifest(targetName, target.projectName, deployBranch, commit);
 
+  const rawCommitMsg = await getGitRef(["log", "-1", "--format=%s"]);
+  // Cloudflare Pages API requires a pure ASCII commit message string.
+  // Strip or replace any non-ASCII characters before passing it.
+  const commitMessage = rawCommitMsg.replace(/[^\x00-\x7F]/g, (ch) => {
+    const replacements = { "\u00D7": "x", "\u2013": "-", "\u2014": "--", "\u2018": "'", "\u2019": "'", "\u201C": '"', "\u201D": '"' };
+    return replacements[ch] ?? "";
+  });
+
   await withWranglerConfig(target.configPath, async () => {
-    await run("npx", [
-      "wrangler",
+    await run(wrangler, [
       "pages",
       "deploy",
       "dist",
@@ -315,6 +323,8 @@ async function main() {
       target.projectName,
       "--branch",
       deployBranch,
+      "--commit-message",
+      commitMessage || commit,
     ]);
   });
 

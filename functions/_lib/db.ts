@@ -1451,6 +1451,7 @@ type LibraryRow = {
 export const fetchLibraryForUser = async (
   env: Env,
   userId: string,
+  opts?: { since?: string },
 ): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] }> => {
   await ensureSchema(env);
   const me = await fetchUserProfile(env, userId);
@@ -1478,12 +1479,12 @@ export const fetchLibraryForUser = async (
        FROM sites s
        LEFT JOIN site_roles r ON r.site_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE ? = 1
+       WHERE (? = 1
           OR s.owner_user_id = ?
           OR s.visibility IN ('public_read', 'public_write')
-          OR (r.user_id IS NOT NULL AND s.visibility != 'private')`,
+          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${opts?.since ? "\n          AND s.updated_at > ?" : ""}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId)
+    .bind(userId, canReadAllResources ? 1 : 0, userId, ...(opts?.since ? [opts.since] : []))
     .all<LibraryRow>();
 
   const simulationRows = await env.DB
@@ -1508,12 +1509,12 @@ export const fetchLibraryForUser = async (
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE ? = 1
+       WHERE (? = 1
           OR s.owner_user_id = ?
           OR s.visibility IN ('public_read', 'public_write')
-          OR (r.user_id IS NOT NULL AND s.visibility != 'private')`,
+          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${opts?.since ? "\n          AND s.updated_at > ?" : ""}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId)
+    .bind(userId, canReadAllResources ? 1 : 0, userId, ...(opts?.since ? [opts.since] : []))
     .all<LibraryRow>();
 
   const mapRows = (rows: LibraryRow[]) =>

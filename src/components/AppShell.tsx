@@ -4,7 +4,12 @@ import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLi
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
-import { type DeepLinkApplyOutcome, isAuthSignInRequiredMessage, shouldRewritePathAfterDeepLinkApply } from "../lib/appShellGuards";
+import {
+  type DeepLinkApplyOutcome,
+  isAuthSignInRequiredMessage,
+  shouldRewritePathAfterDeepLinkApply,
+  shouldUseReadonlyFallbackForAuthBootstrap,
+} from "../lib/appShellGuards";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -35,6 +40,22 @@ type AppNotice = {
   message: string;
   tone: "info" | "warning" | "error";
   persistent: boolean;
+};
+
+const UI_PANEL_KEYS = {
+  navigatorHidden: "linksim-ui-navigator-hidden-v1",
+  inspectorHidden: "linksim-ui-inspector-hidden-v1",
+  profileHidden: "linksim-ui-profile-hidden-v1",
+} as const;
+
+const readPanelBool = (key: string, fallback: boolean): boolean => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
 };
 
 const toVisibility = (value: unknown): "private" | "public" | "shared" =>
@@ -116,9 +137,9 @@ export function AppShell() {
   const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
-  const [isNavigatorHidden, setIsNavigatorHidden] = useState(false);
-  const [isInspectorHidden, setIsInspectorHidden] = useState(false);
-  const [isProfileHidden, setIsProfileHidden] = useState(false);
+  const [isNavigatorHidden, setIsNavigatorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.navigatorHidden, false));
+  const [isInspectorHidden, setIsInspectorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.inspectorHidden, false));
+  const [isProfileHidden, setIsProfileHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.profileHidden, false));
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   // Derived early so effects below can reference them without temporal dead zone.
@@ -419,19 +440,28 @@ export function AppShell() {
         if (cancelled || timedOut) return;
         window.clearTimeout(timeoutId);
         const message = getUiErrorMessage(error);
+        const isOnlineNow = typeof navigator === "undefined" ? true : navigator.onLine;
+        const fallbackToReadonly = shouldUseReadonlyFallbackForAuthBootstrap({
+          message,
+          deepLinkMode: deepLinkParse.ok,
+          isLocalRuntime,
+          isOnline: isOnlineNow,
+          userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,
+        });
         if (deepLinkParse.ok) {
           console.info("[AppShell] Guest deep-link bootstrap using read-only fallback", {
             message,
             isLocalRuntime,
             deepLinkMode: deepLinkParse.ok,
-            online: typeof navigator === "undefined" ? true : navigator.onLine,
+            online: isOnlineNow,
           });
         } else {
           console.error("[AppShell] Access check failed", {
             message,
             isLocalRuntime,
             deepLinkMode: deepLinkParse.ok,
-            online: typeof navigator === "undefined" ? true : navigator.onLine,
+            online: isOnlineNow,
+            fallbackToReadonly,
           });
         }
         setAccessDiagnosticMessage(`Access check failed: ${message}`);
@@ -440,6 +470,11 @@ export function AppShell() {
           return;
         }
         if (deepLinkParse.ok) {
+          setAccessState("readonly");
+          return;
+        }
+        if (fallbackToReadonly) {
+          setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
           setAccessState("readonly");
           return;
         }
@@ -535,6 +570,18 @@ export function AppShell() {
     const timer = window.setTimeout(() => setAppNotice(null), 5000);
     return () => window.clearTimeout(timer);
   }, [appNotice]);
+
+  useEffect(() => {
+    try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
+  }, [isNavigatorHidden]);
+
+  useEffect(() => {
+    try { localStorage.setItem(UI_PANEL_KEYS.inspectorHidden, String(isInspectorHidden)); } catch {}
+  }, [isInspectorHidden]);
+
+  useEffect(() => {
+    try { localStorage.setItem(UI_PANEL_KEYS.profileHidden, String(isProfileHidden)); } catch {}
+  }, [isProfileHidden]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 980px)");
@@ -739,79 +786,31 @@ export function AppShell() {
         }
       }
 
-      if (!exists) {
+      if (!exists && accessState !== "readonly") {
         try {
           const status = await fetchDeepLinkStatus({
             simulationId: resolvedSimulationId || undefined,
             simulationSlug: payload.simulationSlug,
           });
           if (status.status === "forbidden") {
+            markDeepLinkFailed();
             publishAppNotice({
               id: "shared-simulation-forbidden",
               message: "You do not have access to this shared simulation.",
               tone: "warning",
               persistent: true,
             });
-            if (accessState === "readonly") {
-              try {
-                const publicBundle = await fetchPublicSimulationLibrary({
-                  simulationId: resolvedSimulationId || undefined,
-                  simulationSlug: payload.simulationSlug,
-                });
-                importLibraryData(
-                  {
-                    siteLibrary: publicBundle.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
-                    simulationPresets: publicBundle.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
-                  },
-                  "merge",
-                );
-                resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
-                exists = Boolean(resolvedSimulationId);
-              } catch {
-                // Keep forbidden notice.
-              }
-            }
-            if (!exists) {
-              markDeepLinkFailed();
-              return;
-            }
+            return;
           }
           if (status.status === "missing") {
-            if (accessState === "readonly") {
-              try {
-                const publicBundle = await fetchPublicSimulationLibrary({
-                  simulationId: resolvedSimulationId || undefined,
-                  simulationSlug: payload.simulationSlug,
-                });
-                importLibraryData(
-                  {
-                    siteLibrary: publicBundle.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
-                    simulationPresets: publicBundle.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
-                  },
-                  "merge",
-                );
-                resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
-                exists = Boolean(resolvedSimulationId);
-              } catch {
-                markDeepLinkFailed();
-                publishAppNotice({
-                  id: "shared-simulation-missing",
-                  message: "This shared simulation no longer exists.",
-                  tone: "warning",
-                  persistent: true,
-                });
-                return;
-              }
-            } else {
-              markDeepLinkFailed();
-              publishAppNotice({
-                id: "shared-simulation-missing",
-                message: "This shared simulation no longer exists.",
-                tone: "warning",
-                persistent: true,
-              });
-              return;
-            }
+            markDeepLinkFailed();
+            publishAppNotice({
+              id: "shared-simulation-missing",
+              message: "This shared simulation no longer exists.",
+              tone: "warning",
+              persistent: true,
+            });
+            return;
           }
           if (status.simulationId) {
             resolvedSimulationId = status.simulationId;
@@ -821,7 +820,7 @@ export function AppShell() {
         }
       }
 
-      if (!exists) {
+      if (!exists && accessState !== "readonly") {
         try {
           const status = await fetchDeepLinkStatus({
             simulationId: resolvedSimulationId || undefined,
@@ -1201,6 +1200,99 @@ export function AppShell() {
   const isAnonymousBootstrapShell = accessState === "checking" || (accessState === "locked" && lockedNeedsSignIn);
   const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
 
+  const toggleProfileExpanded = () => {
+    setIsMapExpanded(false);
+    setMobileActivePanel("profile");
+    setIsProfileExpanded((prev) => !prev);
+  };
+
+  const setMobileBottomPanelVisibility = useCallback((nextMode: MobileBottomPanelMode) => {
+    setMobileBottomPanelMode(nextMode);
+  }, []);
+
+  const closeShareModal = useCallback(() => {
+    setShowShareModal(false);
+    setShareSpecificUsers([]);
+    setShareSpecificRoles({});
+    setShareUserQuery("");
+    setShareSpecificStatus("");
+  }, []);
+
+  const openShareModalOrCopy = useCallback(() => {
+    setAppNotice(null);
+    if (!activeSimulation) {
+      publishAppNotice({
+        id: "share-open-simulation-first",
+        message: "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
+        tone: "warning",
+        persistent: true,
+      });
+      return;
+    }
+    if (toVisibility(activeSimulation.visibility) === "private") {
+      setShareSpecificUsers([]);
+      setShareSpecificRoles({});
+      setShareUserQuery("");
+      setShareSpecificStatus("");
+      setShareDirectory([]);
+      setShareDirectoryBusy(true);
+      setShowShareModal(true);
+      void fetchCollaboratorDirectory()
+        .then((users) => setShareDirectory(users))
+        .catch(() => {})
+        .finally(() => setShareDirectoryBusy(false));
+      return;
+    }
+    void copyCurrentLink().catch((error) => {
+      publishAppNotice({
+        id: "share-copy-failed",
+        message: getUiErrorMessage(error),
+        tone: "error",
+        persistent: true,
+      });
+    });
+  }, [activeSimulation, copyCurrentLink, publishAppNotice]);
+
+  const panelSizeControls = useCallback(
+    (labelPrefix: string, variant: "map" | "chart" = "map") => (
+      <div className="panel-size-controls">
+        {mobileBottomPanelMode === "full" ? (
+          <button
+            aria-label={`Set ${labelPrefix} panel to normal size`}
+            className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
+            onClick={() => setMobileBottomPanelVisibility("normal")}
+            title="Normal size"
+            type="button"
+          >
+            <PanelBottom aria-hidden="true" strokeWidth={1.8} />
+          </button>
+        ) : (
+          <>
+            <button
+              aria-label={`Hide ${labelPrefix} panel`}
+              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
+              onClick={() => setMobileBottomPanelVisibility("hidden")}
+              title="Hide panel"
+              type="button"
+            >
+              <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
+            </button>
+            <button
+              aria-label={`Expand ${labelPrefix} panel to full height`}
+              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
+              onClick={() => setMobileBottomPanelVisibility("full")}
+              title="Full size"
+              type="button"
+            >
+              <Maximize2 aria-hidden="true" strokeWidth={1.8} />
+            </button>
+          </>
+        )}
+      </div>
+    ),
+    [mobileBottomPanelMode, setMobileBottomPanelVisibility],
+  );
+
   if (accessState === "pending") {
     return (
       <main className="app-shell access-locked-shell">
@@ -1294,99 +1386,6 @@ export function AppShell() {
       </main>
     );
   }
-
-  const toggleProfileExpanded = () => {
-    setIsMapExpanded(false);
-    setMobileActivePanel("profile");
-    setIsProfileExpanded((prev) => !prev);
-  };
-
-  const setMobileBottomPanelVisibility = useCallback((nextMode: MobileBottomPanelMode) => {
-    setMobileBottomPanelMode(nextMode);
-  }, []);
-
-  const closeShareModal = useCallback(() => {
-    setShowShareModal(false);
-    setShareSpecificUsers([]);
-    setShareSpecificRoles({});
-    setShareUserQuery("");
-    setShareSpecificStatus("");
-  }, []);
-
-  const openShareModalOrCopy = useCallback(() => {
-    setAppNotice(null);
-    if (!activeSimulation) {
-      publishAppNotice({
-        id: "share-open-simulation-first",
-        message: "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
-        tone: "warning",
-        persistent: true,
-      });
-      return;
-    }
-    if (toVisibility(activeSimulation.visibility) === "private") {
-      setShareSpecificUsers([]);
-      setShareSpecificRoles({});
-      setShareUserQuery("");
-      setShareSpecificStatus("");
-      setShareDirectory([]);
-      setShareDirectoryBusy(true);
-      setShowShareModal(true);
-      void fetchCollaboratorDirectory()
-        .then((users) => setShareDirectory(users))
-        .catch(() => {})
-        .finally(() => setShareDirectoryBusy(false));
-      return;
-    }
-    void copyCurrentLink().catch((error) => {
-      publishAppNotice({
-        id: "share-copy-failed",
-        message: getUiErrorMessage(error),
-        tone: "error",
-        persistent: true,
-      });
-    });
-  }, [activeSimulation, copyCurrentLink, publishAppNotice]);
-
-  const panelSizeControls = useCallback(
-    (labelPrefix: string, variant: "map" | "chart" = "map") => (
-      <div className="panel-size-controls">
-        {mobileBottomPanelMode === "full" ? (
-          <button
-            aria-label={`Set ${labelPrefix} panel to normal size`}
-            className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
-            onClick={() => setMobileBottomPanelVisibility("normal")}
-            title="Normal size"
-            type="button"
-          >
-            <PanelBottom aria-hidden="true" strokeWidth={1.8} />
-          </button>
-        ) : (
-          <>
-            <button
-              aria-label={`Hide ${labelPrefix} panel`}
-              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
-              onClick={() => setMobileBottomPanelVisibility("hidden")}
-              title="Hide panel"
-              type="button"
-            >
-              <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
-            </button>
-            <button
-              aria-label={`Expand ${labelPrefix} panel to full height`}
-              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
-              onClick={() => setMobileBottomPanelVisibility("full")}
-              title="Full size"
-              type="button"
-            >
-              <Maximize2 aria-hidden="true" strokeWidth={1.8} />
-            </button>
-          </>
-        )}
-      </div>
-    ),
-    [mobileBottomPanelMode, setMobileBottomPanelVisibility],
-  );
 
   return (
     <main

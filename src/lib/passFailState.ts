@@ -1,11 +1,11 @@
 import { haversineDistanceKm } from "./geo";
-import { getPathLossByModel } from "./rfModels";
+import { getPathLossDb } from "./rfModels";
 import {
   atmosphericBendingNUnitsToKFactor,
   estimateTerrainExcessLossDb,
   isTerrainLineObstructed,
 } from "./terrainLoss";
-import type { Link, PropagationEnvironment, PropagationModel, Site } from "../types/radio";
+import type { Link, PropagationEnvironment, Site } from "../types/radio";
 
 export type PassFailState = "pass_clear" | "pass_blocked" | "fail_clear" | "fail_blocked";
 
@@ -36,7 +36,6 @@ export const computeSourceCentricRxMetrics = (
   effectiveLink: Link,
   receiverAntennaHeightM: number,
   receiverRxGainDbi: number,
-  propagationModel: PropagationModel,
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
   environment?: PropagationEnvironment,
@@ -45,8 +44,7 @@ export const computeSourceCentricRxMetrics = (
   const kFactor = atmosphericBendingNUnitsToKFactor(environment?.atmosphericBendingNUnits ?? 301);
   const clutterHeightM = environment?.clutterHeightM ?? 0;
   const polarization = environment?.polarization ?? "Vertical";
-  const baseLoss = getPathLossByModel(
-    propagationModel,
+  const baseLoss = getPathLossDb(
     distanceKm,
     effectiveLink.frequencyMHz,
     fromSite.antennaHeightM,
@@ -56,32 +54,30 @@ export const computeSourceCentricRxMetrics = (
 
   let terrainPenaltyDb = 0;
   let terrainObstructed = false;
-  if (propagationModel === "ITM") {
-    const rxGround = terrainSampler(lat, lon);
-    if (rxGround !== null) {
-      terrainPenaltyDb = estimateTerrainExcessLossDb({
-        from: fromSite.position,
-        to: { lat, lon },
-        fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
-        toAntennaAbsM: rxGround + receiverAntennaHeightM,
-        frequencyMHz: effectiveLink.frequencyMHz,
-        terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
-        samples: terrainSamples,
-        kFactor,
-        clutterHeightM,
-        polarization,
-      });
-      terrainObstructed = isTerrainLineObstructed({
-        from: fromSite.position,
-        to: { lat, lon },
-        fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
-        toAntennaAbsM: rxGround + receiverAntennaHeightM,
-        terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
-        samples: Math.max(12, Math.round(terrainSamples * 0.66)),
-        kFactor,
-        clutterHeightM,
-      });
-    }
+  const rxGround = terrainSampler(lat, lon);
+  if (rxGround !== null) {
+    terrainPenaltyDb = estimateTerrainExcessLossDb({
+      from: fromSite.position,
+      to: { lat, lon },
+      fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
+      toAntennaAbsM: rxGround + receiverAntennaHeightM,
+      frequencyMHz: effectiveLink.frequencyMHz,
+      terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
+      samples: terrainSamples,
+      kFactor,
+      clutterHeightM,
+      polarization,
+    });
+    terrainObstructed = isTerrainLineObstructed({
+      from: fromSite.position,
+      to: { lat, lon },
+      fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
+      toAntennaAbsM: rxGround + receiverAntennaHeightM,
+      terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
+      samples: Math.max(12, Math.round(terrainSamples * 0.66)),
+      kFactor,
+      clutterHeightM,
+    });
   }
 
   const txPowerDbm = effectiveLink.txPowerDbm ?? fromSite.txPowerDbm;

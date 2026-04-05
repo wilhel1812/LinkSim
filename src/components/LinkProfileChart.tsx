@@ -358,13 +358,12 @@ export function LinkProfileChart({
           effectiveLink,
           selectedToSiteEffective.antennaHeightM,
           selectedToSiteEffective.rxGainDbi,
-          propagationModel,
           sampleTerrain,
           24,
           propagationEnvironment,
         );
         const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
-        const losBlocked = propagationModel === "ITM" && metrics.terrainObstructed;
+        const losBlocked = metrics.terrainObstructed;
         nextStates[index - 1] = classifyPassFailState(pass, losBlocked);
         index += 1;
         const now = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -447,13 +446,12 @@ export function LinkProfileChart({
       effectiveLink,
       selectedToSiteEffective.antennaHeightM,
       selectedToSiteEffective.rxGainDbi,
-      propagationModel,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
     );
     const forwardPass = forward.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
-    const forwardBlocked = propagationModel === "ITM" && forward.terrainObstructed;
+    const forwardBlocked = forward.terrainObstructed;
     states.set("from-to-cursor", classifyPassFailState(forwardPass, forwardBlocked));
 
     if (isSplitHoverMode) {
@@ -464,13 +462,12 @@ export function LinkProfileChart({
         effectiveLink,
         selectedFromSiteEffective.antennaHeightM,
         selectedFromSiteEffective.rxGainDbi,
-        propagationModel,
         (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
         24,
         propagationEnvironment,
       );
       const reversePass = reverse.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
-      const reverseBlocked = propagationModel === "ITM" && reverse.terrainObstructed;
+      const reverseBlocked = reverse.terrainObstructed;
       states.set("to-to-cursor", classifyPassFailState(reversePass, reverseBlocked));
     }
 
@@ -539,13 +536,12 @@ export function LinkProfileChart({
       effectiveLink,
       selectedToSiteEffective.antennaHeightM,
       selectedToSiteEffective.rxGainDbi,
-      propagationModel,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
     );
     const forwardPass = forwardMetrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
-    const forwardBlocked = propagationModel === "ITM" && forwardMetrics.terrainObstructed;
+    const forwardBlocked = forwardMetrics.terrainObstructed;
     const forwardState = classifyPassFailState(forwardPass, forwardBlocked);
     const totalDistanceKm = profile[profile.length - 1]?.distanceKm ?? 0;
     const nextStates = [
@@ -568,13 +564,12 @@ export function LinkProfileChart({
       effectiveLink,
       selectedFromSiteEffective.antennaHeightM,
       selectedFromSiteEffective.rxGainDbi,
-      propagationModel,
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
     );
     const reversePass = reverseMetrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
-    const reverseBlocked = propagationModel === "ITM" && reverseMetrics.terrainObstructed;
+    const reverseBlocked = reverseMetrics.terrainObstructed;
     const reverseState = classifyPassFailState(reversePass, reverseBlocked);
     nextStates.push({
       key: "to",

@@ -26,3 +26,20 @@ export const isAuthSignInRequiredMessage = (message: string | null | undefined):
     normalized.includes("not authenticated")
   );
 };
+
+export const shouldUseReadonlyFallbackForAuthBootstrap = (input: {
+  message: string | null | undefined;
+  deepLinkMode: boolean;
+  isLocalRuntime: boolean;
+  isOnline: boolean;
+  userAgent: string;
+}): boolean => {
+  if (input.deepLinkMode) return false;
+  if (input.isLocalRuntime) return false;
+  if (!input.isOnline) return false;
+  const normalized = String(input.message ?? "").trim().toLowerCase();
+  if (!normalized) return false;
+  const isFirefox = /firefox/i.test(input.userAgent);
+  if (!isFirefox) return false;
+  return normalized.includes("networkerror when attempting to fetch resource");
+};
