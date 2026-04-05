@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.14.1] - 2026-04-05
+
+### Fixed
+- Restored the map inspector **Save Selected Link** action for valid two-site selections by basing eligibility on the effective selected endpoints and not on fragile raw selection-count state. (#415)
+- Decoupled inspector action chip rendering from optional primary inspector text so permanent link creation remains available when selection context is valid. (#415)
+
 ## [0.14.0] - 2026-04-05
 
 ### Added
