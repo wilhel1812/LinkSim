@@ -27,6 +27,7 @@ import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import { SimulationResultsSection } from "./SimulationResultsSection";
+import { useMapControls } from "./map/useMapControls";
 
 const UI_SECTION_KEYS = {
   mapViewResults: "linksim-ui-mapview-results-v1",
@@ -1130,10 +1131,8 @@ export function MapView({
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
   const [showSimulationSummary, setShowSimulationSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewSimSummary, false));
-  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, true));
   const fitSitesEpoch = useAppStore((state) => state.fitSitesEpoch);
-  const [fitControlActive, setFitControlActive] = useState(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
@@ -1611,26 +1610,6 @@ export function MapView({
     });
   };
 
-  const zoomBy = (delta: number) => {
-    setFitControlActive(false);
-    const nextZoom = clamp(activeViewState.zoom + delta, 2, providerMaxZoom);
-    setInteractionViewState(null);
-    updateMapViewport({ zoom: nextZoom });
-  };
-
-  const fitToNodes = () => {
-    if (!mapRef.current) return;
-    const bounds = computeSiteFitBounds(sites);
-    if (!bounds) return;
-    setFitControlActive(true);
-    setInteractionViewState(null);
-    mapRef.current.fitBounds(bounds, {
-      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
-      animate: true,
-      maxZoom: 14,
-    });
-  };
-
   const onSiteClick = (siteId: string, additive = false) => {
     setArmAddSiteOnNextEmptyMapClick(false);
     setSelectedDiscoveryLibraryEntryId(null);
@@ -1965,6 +1944,18 @@ export function MapView({
         return 22;
     }
   }, [resolvedBasemap.provider]);
+  const { isMultiSelectMode, setIsMultiSelectMode, fitControlActive, clearFitControlActive, zoomBy, fitToNodes } = useMapControls({
+    activeViewState,
+    fitBottomInset,
+    mapRef,
+    providerMaxZoom,
+    sites,
+    computeSiteFitBounds,
+    fitChromePadding: FIT_CHROME_PADDING,
+    clamp,
+    setInteractionViewState,
+    updateMapViewport,
+  });
   const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "passfail" | "relay">>(() => {
     if (selectionCount <= 0) return ["none", "heatmap", "contours"];
     if (selectionCount === 1) return ["none", "passfail", "heatmap", "contours"];
@@ -2636,7 +2627,7 @@ export function MapView({
         }}
         onMove={(event) => {
           if (event.originalEvent) {
-            setFitControlActive(false);
+            clearFitControlActive();
           }
           setInteractionViewState({
             longitude: event.viewState.longitude,
