@@ -104,11 +104,7 @@ If instructions conflict, apply this order:
   1. Merge workflow that produces the check.
   2. Then add it to branch protection required checks.
 
-## 12) Model Guidance
-- Use Codex 5.3 for high-quality, broad implementation passes.
-- Use Big Pickle / MiMo V2 Pro Free as default for moderate work.
-
-## 13) Maintenance of This File
+## 12) Maintenance of This File
 - Suggestions are welcome, but rule changes require explicit approval.
 - Keep this file concise, strict, and sufficient for zero-context handoff.
 - Do not rely on undocumented tribal knowledge.
