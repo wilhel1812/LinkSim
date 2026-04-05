@@ -1992,7 +1992,7 @@ export function MapView({
   if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
   if (showDiscoverySites) {
     inspectorLines.push(
-      `Shared/public library sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to simulation.`,
+      `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`,
     );
   }
   if (showDiscoveryMqtt && !mqttLoadStatus) {
@@ -2125,7 +2125,7 @@ export function MapView({
                       onClick={() => requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId)}
                       type="button"
                     >
-                      Open
+                      Details
                     </button>
                   ) : null}
                   {canRemoveSelectedSite ? (
@@ -2139,12 +2139,12 @@ export function MapView({
                       onClick={() => addDiscoveryLibrarySiteToSimulation(selectedDiscoveryLibraryEntry.id)}
                       type="button"
                     >
-                      Add To Simulation
+                      Add to Simulation
                     </button>
                   ) : null}
                   {canSaveSelectedLink ? (
                     <button className="inline-action" onClick={saveSelectedSitesAsLink} type="button">
-                      Save Selected Link
+                      Save Selected Path
                     </button>
                   ) : null}
                 </div>
