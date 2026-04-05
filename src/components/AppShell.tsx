@@ -25,6 +25,8 @@ import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
+import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
+import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 
 initializeMigrations();
 
@@ -146,8 +148,6 @@ export function AppShell() {
   const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
   const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const [activeUserId, setActiveUserId] = useState("");
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const [showOnboardingTutorial, setShowOnboardingTutorial] = useState(false);
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
@@ -172,6 +172,21 @@ export function AppShell() {
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
+  const {
+    showWelcomeModal,
+    setShowWelcomeModal,
+    showOnboardingTutorial,
+    setShowOnboardingTutorial,
+    closeWelcome,
+    openOnboardingTutorial,
+    openWelcomeFromWelcome,
+    openLibraryFromWelcome,
+    createNewFromWelcome,
+  } = useOnboardingFlow({
+    activeUserId,
+    setShowSimulationLibraryRequest,
+    setShowNewSimulationRequest,
+  });
 
   const { theme, colorTheme, variant } = useThemeVariant();
   const basemapProvider = useAppStore((state) => state.basemapProvider);
@@ -977,45 +992,6 @@ export function AppShell() {
     publishAppNotice,
   ]);
 
-  const closeWelcome = () => {
-    setShowWelcomeModal(false);
-    if (!activeUserId) return;
-    try {
-      localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
-    } catch {
-      // ignore storage errors
-    }
-  };
-
-  const openOnboardingTutorial = () => {
-    setShowOnboardingTutorial(true);
-  };
-
-  const openWelcomeFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowOnboardingTutorial(true);
-  };
-
-  const openLibraryFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowSimulationLibraryRequest(true);
-    try {
-      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
-    } catch {
-      // ignore
-    }
-  };
-
-  const createNewFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowNewSimulationRequest(true);
-    try {
-      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
-    } catch {
-      // ignore
-    }
-  };
-
   useEffect(() => {
     if (libraryAutoOpened) return;
     if (workspaceState !== "no-simulation") return;
@@ -1609,59 +1585,19 @@ export function AppShell() {
           }
         />
         {isMobileViewport ? (
-          <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
-            <button
-              aria-controls={mobileNavigatorPanelId}
-              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator"}
-              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator" ? "is-active" : ""}`}
-              id={mobileNavigatorTabId}
-              onClick={() => {
-                setIsMapExpanded(false);
-                setMobileActivePanel("navigator");
-                if (mobileBottomPanelMode === "hidden") {
-                  setMobileBottomPanelVisibility("normal");
-                }
-              }}
-              role="tab"
-              type="button"
-            >
-              Navigator
-            </button>
-            <button
-              aria-controls={mobileInspectorPanelId}
-              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector"}
-              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector" ? "is-active" : ""}`}
-              id={mobileInspectorTabId}
-              onClick={() => {
-                setIsMapExpanded(false);
-                setMobileActivePanel("inspector");
-                if (mobileBottomPanelMode === "hidden") {
-                  setMobileBottomPanelVisibility("normal");
-                }
-              }}
-              role="tab"
-              type="button"
-            >
-              Inspector
-            </button>
-            <button
-              aria-controls={mobileProfilePanelId}
-              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile"}
-              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile" ? "is-active" : ""}`}
-              id={mobileProfileTabId}
-              onClick={() => {
-                setIsMapExpanded(false);
-                setMobileActivePanel("profile");
-                if (mobileBottomPanelMode === "hidden") {
-                  setMobileBottomPanelVisibility("normal");
-                }
-              }}
-              role="tab"
-              type="button"
-            >
-              Profile
-            </button>
-          </div>
+          <MobileWorkspaceTabs
+            activePanel={mobileActivePanel}
+            inspectorPanelId={mobileInspectorPanelId}
+            inspectorTabId={mobileInspectorTabId}
+            mode={mobileBottomPanelMode}
+            navigatorPanelId={mobileNavigatorPanelId}
+            navigatorTabId={mobileNavigatorTabId}
+            profilePanelId={mobileProfilePanelId}
+            profileTabId={mobileProfileTabId}
+            setIsMapExpanded={setIsMapExpanded}
+            setMobileActivePanel={setMobileActivePanel}
+            setMobileBottomPanelVisibility={setMobileBottomPanelVisibility}
+          />
         ) : null}
         {!isMobileViewport && !isMapExpanded && !isProfileHidden ? (
           <LinkProfileChart
