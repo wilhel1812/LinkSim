@@ -207,6 +207,12 @@ export function AppShell() {
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
+  const mobileNavigatorTabId = "mobile-workspace-tab-navigator";
+  const mobileInspectorTabId = "mobile-workspace-tab-inspector";
+  const mobileProfileTabId = "mobile-workspace-tab-profile";
+  const mobileNavigatorPanelId = "mobile-workspace-panel-navigator";
+  const mobileInspectorPanelId = "mobile-workspace-panel-inspector";
+  const mobileProfilePanelId = "mobile-workspace-panel-profile";
   const selectedLink = useMemo(
     () => links.find((link) => link.id === selectedLinkId) ?? null,
     [links, selectedLinkId],
@@ -1472,7 +1478,13 @@ export function AppShell() {
           }
         />
       ) : null}
-      <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
+      <section
+        aria-hidden={isMobileViewport ? mobileBottomPanelMode === "hidden" || mobileActivePanel !== "inspector" : undefined}
+        aria-labelledby={isMobileViewport ? mobileInspectorTabId : undefined}
+        className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}
+        id={isMobileViewport ? mobileInspectorPanelId : undefined}
+        role={isMobileViewport ? "tabpanel" : undefined}
+      >
         {accessState === "checking" ? (
           <div className="workspace-header-actions">
             <span className="field-help">Checking access in the background. Anonymous mode is available while this resolves.</span>
@@ -1599,8 +1611,10 @@ export function AppShell() {
         {isMobileViewport ? (
           <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
             <button
+              aria-controls={mobileNavigatorPanelId}
               aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator"}
               className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator" ? "is-active" : ""}`}
+              id={mobileNavigatorTabId}
               onClick={() => {
                 setIsMapExpanded(false);
                 setMobileActivePanel("navigator");
@@ -1614,8 +1628,10 @@ export function AppShell() {
               Navigator
             </button>
             <button
+              aria-controls={mobileInspectorPanelId}
               aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector"}
               className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector" ? "is-active" : ""}`}
+              id={mobileInspectorTabId}
               onClick={() => {
                 setIsMapExpanded(false);
                 setMobileActivePanel("inspector");
@@ -1629,8 +1645,10 @@ export function AppShell() {
               Inspector
             </button>
             <button
+              aria-controls={mobileProfilePanelId}
               aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile"}
               className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile" ? "is-active" : ""}`}
+              id={mobileProfileTabId}
               onClick={() => {
                 setIsMapExpanded(false);
                 setMobileActivePanel("profile");
@@ -1670,7 +1688,12 @@ export function AppShell() {
           />
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && mobileBottomPanelMode !== "hidden" ? (
-          <div className="mobile-workspace-panel mobile-workspace-panel-shell" role="tabpanel" aria-label="Profile panel">
+          <div
+            aria-labelledby={mobileProfileTabId}
+            className="mobile-workspace-panel mobile-workspace-panel-shell"
+            id={mobileProfilePanelId}
+            role="tabpanel"
+          >
             <LinkProfileChart
               isExpanded={mobileBottomPanelMode === "full"}
               onToggleExpanded={toggleProfileExpanded}
@@ -1680,7 +1703,12 @@ export function AppShell() {
           </div>
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && mobileBottomPanelMode !== "hidden" ? (
-          <div className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator" role="tabpanel" aria-label="Navigator panel">
+          <div
+            aria-labelledby={mobileNavigatorTabId}
+            className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator"
+            id={mobileNavigatorPanelId}
+            role="tabpanel"
+          >
             {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
               <Sidebar
                 authBootstrapPending={accessState === "checking"}
