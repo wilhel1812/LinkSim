@@ -5,7 +5,7 @@ Use this checklist before opening a normal production promotion PR (`staging` ->
 ## Scope and freeze
 - [ ] Milestone scope is frozen for release.
 - [ ] No new feature PRs are merged into `staging` after sign-off.
-- [ ] All in-scope issues are labeled `in-staging` or `released`.
+- [ ] All in-scope issues are either closed after staging sign-off or explicitly labeled `released`.
 
 ## Verification
 - [ ] `npm test` passes on the release candidate.
