@@ -133,6 +133,18 @@ const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser |
   return currentUser;
 };
 
+const isAuthRelatedErrorMessage = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("401") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("access denied") ||
+    normalized.includes("auth") ||
+    normalized.includes("sign in") ||
+    normalized.includes("session revoked")
+  );
+};
+
 const canEditItem = (
   item: { ownerUserId?: string; effectiveRole?: string },
   currentUser: CloudUser | null,
@@ -213,6 +225,7 @@ const adoptOrphanedSimulations = (
 };
 
 export type MapOverlayMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
+export type AuthSessionState = "checking" | "signed_in" | "signed_out";
 
 type SiteLibraryEntry = {
   id: string;
@@ -402,6 +415,7 @@ type AppState = {
   syncBusy: boolean;
   syncStatusMessage: string;
   currentUser: CloudUser | null;
+  authState: AuthSessionState;
   isInitializing: boolean;
   initializeCloudSync: () => Promise<void>;
   performCloudSyncPush: () => void;
@@ -411,6 +425,7 @@ type AppState = {
   setLastSyncedAt: (iso: string | null) => void;
   setSyncErrorMessage: (message: string | null) => void;
   setCurrentUser: (user: CloudUser | null) => void;
+  setAuthState: (value: AuthSessionState) => void;
   setIsOnline: (value: boolean) => void;
   triggerSync: () => void;
   setIsInitializing: (value: boolean) => void;
@@ -1198,12 +1213,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncBusy: false,
   syncStatusMessage: "",
   currentUser: null,
+  authState: "checking",
   isInitializing: false,
   setLocale: (locale) => set({ locale }),
   setSyncStatus: (status: "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
-  setCurrentUser: (user) => set({ currentUser: user }),
+  setCurrentUser: (user) =>
+    set({
+      currentUser: user,
+      authState: user ? "signed_in" : "signed_out",
+    }),
+  setAuthState: (value) => set({ authState: value }),
   setIsOnline: (value) => set({ isOnline: value }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   setIsInitializing: (value: boolean) => set({ isInitializing: value }),
@@ -1447,6 +1468,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error("[appStore] initializeCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
+      if (isAuthRelatedErrorMessage(message)) {
+        set({ currentUser: null, authState: "signed_out" });
+      }
       set({
         syncPending: true,
         syncStatus: "error",
@@ -1477,6 +1501,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const pendingChangesCount = recordLocalMutation();
+    if (get().authState === "signed_out" || !get().currentUser?.id) {
+      set({
+        syncPending: true,
+        syncStatus: "error",
+        syncErrorMessage: "Not signed in.",
+        syncStatusMessage: "Not signed in; cloud sync unavailable. Sign in and open Sync Status to recover pending changes.",
+        pendingChangesCount,
+      });
+      return;
+    }
     if (!get().isOnline) {
       set({
         syncPending: true,
@@ -1565,14 +1599,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (error) {
         console.error("[appStore] Auto-push FAILED:", error);
         const message = getUiErrorMessage(error);
-        const isAuthError = message.includes("401") || message.includes("Unauthorized") || message.includes("Access denied");
+        const isAuthError = isAuthRelatedErrorMessage(message);
         if (isAuthError) {
           console.log("[appStore] Auth error - keeping pending changes until auth is restored");
           set({
+            currentUser: null,
+            authState: "signed_out",
             syncPending: true,
             syncStatus: "error",
             syncErrorMessage: message,
-            syncStatusMessage: "Authentication error while syncing. Re-authenticate and open Sync Status.",
+            syncStatusMessage: "Not signed in; cloud sync unavailable. Sign in and open Sync Status to recover pending changes.",
           });
         } else {
           set({
@@ -1605,6 +1641,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         syncStatus: "error",
         syncErrorMessage: null,
         syncStatusMessage: "Offline. Changes are saved locally and will sync when reconnected.",
+      });
+      return;
+    }
+    if (get().authState === "signed_out" || !get().currentUser?.id) {
+      set({
+        syncPending: true,
+        syncStatus: "error",
+        syncErrorMessage: "Not signed in.",
+        syncStatusMessage: "Not signed in; cloud sync unavailable. Sign in and open Sync Status to recover pending changes.",
       });
       return;
     }
@@ -1664,6 +1709,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error("[appStore] performManualCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
+      if (isAuthRelatedErrorMessage(message)) {
+        set({ currentUser: null, authState: "signed_out" });
+      }
       set({
         syncPending: true,
         syncStatus: "error",

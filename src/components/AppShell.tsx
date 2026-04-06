@@ -15,6 +15,7 @@ import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { initializeMigrations, runMigrations } from "../lib/migrations";
 import { resolveBasemapSelection } from "../lib/basemaps";
+import { APP_BUILD_LABEL } from "../lib/buildInfo";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
@@ -103,6 +104,31 @@ const copyToClipboard = async (textOrPromise: string | Promise<string>): Promise
   document.body.removeChild(textarea);
 };
 
+const downloadRecoveryWorkspace = (): void => {
+  const state = useAppStore.getState();
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    reason: "session-loss-recovery",
+    build: APP_BUILD_LABEL,
+    selectedScenarioId: state.selectedScenarioId,
+    siteLibrary: state.siteLibrary,
+    simulationPresets: state.simulationPresets,
+    sites: state.sites,
+    links: state.links,
+    systems: state.systems,
+    networks: state.networks,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const anchor = document.createElement("a");
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = `linksim-session-recovery-${stamp}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(anchor.href);
+};
+
 export function AppShell() {
   const srtmTilesCount = useAppStore((state) => state.srtmTiles.length);
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
@@ -129,7 +155,10 @@ export function AppShell() {
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const setAuthState = useAppStore((state) => state.setAuthState);
+  const authState = useAppStore((state) => state.authState);
   const currentUser = useAppStore((state) => state.currentUser);
+  const pendingChangesCount = useAppStore((state) => state.pendingChangesCount);
   const isOnline = useAppStore((state) => state.isOnline);
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
@@ -375,6 +404,7 @@ export function AppShell() {
   useEffect(() => {
     let cancelled = false;
     let timedOut = false;
+    setAuthState("checking");
     const timeoutId = window.setTimeout(() => {
       if (cancelled) return;
       timedOut = true;
@@ -388,6 +418,8 @@ export function AppShell() {
       setAccessDiagnosticMessage(
         "Access check timed out. Reload the page. If this continues, open the console and share the startup error.",
       );
+      setCurrentUser(null);
+      setAuthState("signed_out");
       setAccessState("locked");
     }, ACCESS_CHECK_TIMEOUT_MS);
 
@@ -414,6 +446,8 @@ export function AppShell() {
           if (cancelled || timedOut) return;
           window.clearTimeout(timeoutId);
           setAccessDiagnosticMessage(null);
+          setCurrentUser(null);
+          setAuthState("signed_out");
           setAccessState("readonly");
           return;
         }
@@ -426,6 +460,8 @@ export function AppShell() {
             if (cancelled || timedOut) return;
             window.clearTimeout(timeoutId);
             setAccessDiagnosticMessage(null);
+            setCurrentUser(null);
+            setAuthState("signed_out");
             setAccessState("readonly");
             return;
           }
@@ -435,6 +471,7 @@ export function AppShell() {
         window.clearTimeout(timeoutId);
         setAccessDiagnosticMessage(null);
         setCurrentUser(profile);
+        setAuthState("signed_in");
         setActiveUserId(profile.id);
         try {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
@@ -486,6 +523,8 @@ export function AppShell() {
           });
         }
         setAccessDiagnosticMessage(`Access check failed: ${message}`);
+        setCurrentUser(null);
+        setAuthState("signed_out");
         if (message.includes("Session revoked by admin")) {
           window.location.href = "/cdn-cgi/access/logout";
           return;
@@ -511,7 +550,14 @@ export function AppShell() {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [deepLinkParse, isLocalRuntime, isInitializing, setCurrentUser]);
+  }, [deepLinkParse, isLocalRuntime, isInitializing, setAuthState, setCurrentUser]);
+
+  useEffect(() => {
+    if (authState !== "signed_out") return;
+    if (accessState === "checking") return;
+    setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
+    setAccessState("locked");
+  }, [accessState, authState]);
 
   useEffect(() => {
     if (accessState === "granted") {
@@ -540,6 +586,8 @@ export function AppShell() {
   }, [accessState, isAnonymousGuestReadonly, lockedNeedsSignIn, deepLinkParse.ok]);
 
   const signOutOrReadonly = useCallback(() => {
+    setCurrentUser(null);
+    setAuthState("signed_out");
     if (isLocalRuntime) {
       try {
         localStorage.setItem(LOCAL_FORCE_READONLY_KEY, "1");
@@ -554,7 +602,7 @@ export function AppShell() {
       return;
     }
     window.location.href = "/cdn-cgi/access/logout";
-  }, [deepLinkParse.ok, isLocalRuntime]);
+  }, [deepLinkParse.ok, isLocalRuntime, setAuthState, setCurrentUser]);
 
   const signIn = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -1335,10 +1383,34 @@ export function AppShell() {
             </>
           )}
           <div className="chip-group">
-            {lockedNeedsSignIn ? (
-              <button className="inline-action" onClick={signIn} type="button">
-                Sign In
-              </button>
+          {lockedNeedsSignIn ? (
+              <>
+                <button className="inline-action" onClick={signIn} type="button">
+                  Sign In
+                </button>
+                {pendingChangesCount > 0 ? (
+                  <>
+                    <button
+                      className="inline-action"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent(OPEN_SYNC_MODAL_EVENT));
+                      }}
+                      type="button"
+                    >
+                      Open Sync Status
+                    </button>
+                    <button
+                      className="inline-action"
+                      onClick={() => {
+                        downloadRecoveryWorkspace();
+                      }}
+                      type="button"
+                    >
+                      Export Current Workspace
+                    </button>
+                  </>
+                ) : null}
+              </>
             ) : (
               <button className="inline-action" onClick={signOutOrReadonly} type="button">
                 Sign Out
@@ -1362,6 +1434,11 @@ export function AppShell() {
             ) : null}
           </div>
           {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
+          {lockedNeedsSignIn && pendingChangesCount > 0 ? (
+            <p className="field-help">
+              You are signed out. Unsynced local changes are preserved on this device. Sign in, open Sync Status, and retry sync.
+            </p>
+          ) : null}
         </section>
         <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
         <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />

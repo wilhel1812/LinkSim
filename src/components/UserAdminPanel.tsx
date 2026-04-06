@@ -26,6 +26,7 @@ import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotificat
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
+import { deriveSyncIndicator } from "../lib/syncIndicator";
 import { useAppStore } from "../store/appStore";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import type { UiColorTheme } from "../themes/types";
@@ -49,15 +50,6 @@ const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
-
-type SyncIndicatorState = "local" | "offline" | "pending" | "syncing" | "synced" | "error";
-
-type SyncIndicator = {
-  state: SyncIndicatorState;
-  className: string;
-  label: string;
-  title: string;
-};
 
 const readDismissedNotificationIds = (): Set<string> => {
   try {
@@ -151,6 +143,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const authState = useAppStore((state) => state.authState);
+  const setAuthState = useAppStore((state) => state.setAuthState);
+  const currentUser = useAppStore((state) => state.currentUser);
   const { activeHolidayTheme } = useThemeVariant();
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
@@ -205,6 +200,8 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           : "pending";
   const canEditAccessRequestNote = Boolean(canModerate || !me?.isApproved);
   const showAccessRequestNoteField = Boolean(canModerate || !me?.isApproved);
+  const isSignedIn = authState === "signed_in" && Boolean(currentUser);
+  const displayUser = me ?? currentUser;
 
   const refreshAdminData = async () => {
     if (!canModerate) return;
@@ -291,6 +288,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       const current = await fetchMe();
       setMe(current);
       setCurrentUser(current);
+      setAuthState("signed_in");
       setNameDraft(current.username);
       setEmailDraft(current.email ?? "");
       setNameError("");
@@ -329,14 +327,21 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     } catch (error) {
       const message = getUiErrorMessage(error);
       setStatus(`User load failed: ${message}`);
+      setMe(null);
+      setCurrentUser(null);
+      setAuthState("signed_out");
     } finally {
       setBusy(false);
     }
   };
 
   useEffect(() => {
+    if (authState === "signed_out") {
+      setMe(null);
+      return;
+    }
     void load();
-  }, []);
+  }, [authState]);
 
   useEffect(() => {
     if (!canModerate) {
@@ -414,6 +419,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       });
       setMe(updated);
       setCurrentUser(updated);
+      setAuthState("signed_in");
       setNameDraft(updated.username);
       setEmailDraft(updated.email ?? "");
       setBioDraft(updated.bio ?? "");
@@ -446,6 +452,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       setAvatarDraft(uploaded.user.avatarUrl ?? "");
       setMe(uploaded.user);
       setCurrentUser(uploaded.user);
+      setAuthState("signed_in");
       setAvatarStatus("Avatar uploaded and saved.");
       setStatus("Avatar uploaded and saved.");
     } catch (error) {
@@ -669,8 +676,11 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       window.location.reload();
       return;
     }
+    setMe(null);
+    setCurrentUser(null);
+    setAuthState("signed_out");
     window.location.href = "/cdn-cgi/access/logout";
-  }, [isLocalRuntime]);
+  }, [isLocalRuntime, setAuthState, setCurrentUser]);
 
   const handleSignUp = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -687,51 +697,16 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     };
   }, []);
 
-  const getSyncIndicator = (): SyncIndicator => {
-    const timeLabel = lastSyncedAt
-      ? `Up to date (synced ${new Date(lastSyncedAt).toLocaleTimeString()})`
-      : "Up to date";
-
-    if (isLocalRuntime) {
-      return { state: "local", className: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
-    }
-
-    if (!isOnline) {
-      return {
-        state: "offline",
-        className: "sync-offline",
-        label: "Offline",
-        title: `Offline. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}. Open Sync Status for details.`,
-      };
-    }
-
-    if (syncPending) {
-      return {
-        state: "pending",
-        className: "sync-pending",
-        label: "Sync pending",
-        title: `${timeLabel}. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}.`,
-      };
-    }
-
-    switch (syncStatus) {
-      case "syncing":
-        return { state: "syncing", className: "sync-syncing", label: "Syncing...", title: timeLabel };
-      case "synced":
-        return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
-      case "error":
-        return {
-          state: "error",
-          className: "sync-error",
-          label: "Sync failed",
-          title: `${timeLabel}. ${syncErrorMessage ?? "Open Sync Status for details."}`,
-        };
-      default:
-        return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
-    }
-  };
-
-  const syncIndicator = getSyncIndicator();
+  const syncIndicator = deriveSyncIndicator({
+    isLocalRuntime,
+    isOnline,
+    authState,
+    syncStatus,
+    syncPending,
+    pendingChangesCount,
+    syncErrorMessage,
+    lastSyncedAt,
+  });
 
   const handleSyncIndicatorClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -741,9 +716,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   return (
     <>
       <div className="user-chip-row">
-        {me ? (
+        {isSignedIn && displayUser ? (
           <button aria-label="Open user settings" className="user-chip" onClick={() => setOpen(true)} type="button">
-            <ProfileAvatar avatarUrl={me.avatarUrl ?? ""} name={me.username ?? "User"} />
+            <ProfileAvatar avatarUrl={displayUser.avatarUrl ?? ""} name={displayUser.username ?? "User"} />
             {canModerate && unreadNotifications.length > 0 ? (
               <span className="notification-badge">{unreadNotifications.length}</span>
             ) : null}
@@ -761,7 +736,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           </button>
         )}
         <div className="user-chip-actions">
-          {me ? (
+          {isSignedIn ? (
             <>
               <button
                 aria-label={syncIndicator.label}
