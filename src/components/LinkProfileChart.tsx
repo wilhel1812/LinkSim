@@ -294,6 +294,42 @@ export function LinkProfileChart({
     const onWindowResize = () => updateSize("window-resize");
     window.addEventListener("resize", onWindowResize);
 
+    const appShell = element.closest(".app-shell");
+    const workspacePanelElement = element.closest(".workspace-panel");
+    const onTransitionEnd = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        target.closest(".workspace-panel") ||
+        target.closest(".map-inspector") ||
+        target.closest(".chart-panel")
+      ) {
+        updateSize("transition-end");
+      }
+    };
+    window.addEventListener("transitionend", onTransitionEnd, true);
+
+    const mutationObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes") {
+          updateSize("class-mutation");
+          break;
+        }
+      }
+    });
+    if (appShell) {
+      mutationObserver.observe(appShell, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+    }
+    if (workspacePanelElement) {
+      mutationObserver.observe(workspacePanelElement, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+    }
+
     if (typeof ResizeObserver === "undefined") {
       return () => {
         cancelAnimationFrame(rafIdA);
@@ -303,6 +339,8 @@ export function LinkProfileChart({
         window.clearTimeout(followUpTimerC);
         window.clearTimeout(followUpTimerD);
         window.removeEventListener("resize", onWindowResize);
+        window.removeEventListener("transitionend", onTransitionEnd, true);
+        mutationObserver.disconnect();
       };
     }
 
@@ -311,8 +349,7 @@ export function LinkProfileChart({
     if (element.parentElement) observer.observe(element.parentElement);
     const chartPanel = element.closest(".chart-panel");
     if (chartPanel instanceof HTMLElement) observer.observe(chartPanel);
-    const workspacePanel = element.closest(".workspace-panel");
-    if (workspacePanel instanceof HTMLElement) observer.observe(workspacePanel);
+    if (workspacePanelElement instanceof HTMLElement) observer.observe(workspacePanelElement);
 
     return () => {
       cancelAnimationFrame(rafIdA);
@@ -322,6 +359,8 @@ export function LinkProfileChart({
       window.clearTimeout(followUpTimerC);
       window.clearTimeout(followUpTimerD);
       window.removeEventListener("resize", onWindowResize);
+      window.removeEventListener("transitionend", onTransitionEnd, true);
+      mutationObserver.disconnect();
       observer.disconnect();
     };
   }, [debugSizing, isExpanded, profile.length]);
