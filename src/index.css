@@ -138,6 +138,23 @@ input {
   margin-top: 28px;
 }
 
+.access-locked-alert-icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 2px 0 8px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.access-locked-alert-icon svg {
+  width: 48px;
+  height: 48px;
+}
+
 .access-pending-list {
   margin: 0;
   padding-left: 18px;
@@ -2297,6 +2314,9 @@ input {
   color: var(--text);
   padding: 8px 10px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .inline-action.danger {
