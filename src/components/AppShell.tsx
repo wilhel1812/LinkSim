@@ -19,7 +19,6 @@ import { initializeMigrations, runMigrations } from "../lib/migrations";
 import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
-import { nextProfileHiddenForSelectionChange } from "./app-shell/profilePanelVisibility";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
@@ -641,19 +640,6 @@ export function AppShell() {
   useEffect(() => {
     try { localStorage.setItem(UI_PANEL_KEYS.profileHidden, String(isProfileHidden)); } catch {}
   }, [isProfileHidden]);
-
-  useEffect(() => {
-    const selectedSiteCount = selectedSiteIds.length;
-    setIsProfileHidden((currentHidden) =>
-      nextProfileHiddenForSelectionChange({
-        currentHidden,
-        nextSelectedSiteCount: selectedSiteCount,
-      }),
-    );
-    if (selectedSiteCount !== 1 && selectedSiteCount !== 2) {
-      setIsProfileExpanded(false);
-    }
-  }, [selectedSiteIds.length]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 980px)");
