@@ -487,6 +487,63 @@ describe("appStore blank simulation loading", () => {
   });
 });
 
+describe("appStore owner-scoped simulation naming", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+    useAppStore.setState({
+      currentUser: {
+        id: "owner-a",
+        username: "owner-a",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+      },
+      simulationPresets: [],
+      selectedScenarioId: "",
+    });
+  });
+
+  it("blocks duplicate names for the same owner", () => {
+    const firstId = useAppStore.getState().createBlankSimulationPreset("Relay Plan", {
+      ownerUserId: "owner-a",
+      visibility: "private",
+    });
+    const duplicateId = useAppStore.getState().createBlankSimulationPreset("Relay Plan", {
+      ownerUserId: "owner-a",
+      visibility: "private",
+    });
+
+    expect(firstId).toBeTruthy();
+    expect(duplicateId).toBeNull();
+  });
+
+  it("allows duplicate names for different owners", () => {
+    const firstId = useAppStore.getState().createBlankSimulationPreset("Relay Plan", {
+      ownerUserId: "owner-a",
+      visibility: "private",
+    });
+    const secondOwnerId = useAppStore.getState().createBlankSimulationPreset("Relay Plan", {
+      ownerUserId: "owner-b",
+      visibility: "private",
+    });
+
+    expect(firstId).toBeTruthy();
+    expect(secondOwnerId).toBeTruthy();
+    expect(secondOwnerId).not.toBe(firstId);
+  });
+});
+
 describe("appStore selected pair link resolution", () => {
   beforeEach(() => {
     storage.mock.clear();

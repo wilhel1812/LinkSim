@@ -40,6 +40,7 @@ import {
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
+import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -519,6 +520,7 @@ export function Sidebar({
   } | null>(null);
   const [resourceAccessVisibility, setResourceAccessVisibility] = useState<"private" | "public" | "shared">("shared");
   const [resourceNameDraft, setResourceNameDraft] = useState("");
+  const [resourceNameError, setResourceNameError] = useState("");
   const [resourceDescriptionDraft, setResourceDescriptionDraft] = useState("");
   const [resourceLatDraft, setResourceLatDraft] = useState(0);
   const [resourceLonDraft, setResourceLonDraft] = useState(0);
@@ -1134,6 +1136,12 @@ export function Sidebar({
       setSimulationSaveStatus("");
       return;
     }
+    if (hasDuplicateSimulationNameForOwner(simulationPresets, trimmed, currentUser.id)) {
+      const duplicateMessage = duplicateSimulationNameMessage(trimmed);
+      setNewSimulationNameError(duplicateMessage);
+      setSimulationSaveStatus(duplicateMessage);
+      return;
+    }
     setNewSimulationNameError("");
     // Apply modal propagation settings to live store before snapshot is taken
     setSelectedFrequencyPresetId(modalFreqPresetId);
@@ -1150,7 +1158,7 @@ export function Sidebar({
       lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
     });
     if (!createdId) {
-      setSimulationSaveStatus("Failed creating simulation.");
+      setSimulationSaveStatus(duplicateSimulationNameMessage(trimmed));
       return;
     }
     loadSimulationPreset(createdId);
@@ -1537,6 +1545,7 @@ export function Sidebar({
     }
     setResourceCollaboratorQuery("");
     setResourceAccessStatus("");
+    setResourceNameError("");
     const resolvedCreatedAvatar =
       createdByAvatarUrl.trim() || (createdByUserId && createdByUserId === lastEditedByUserId ? lastEditedByAvatarUrl : "");
     const resolvedLastEditedAvatar =
@@ -1601,9 +1610,11 @@ export function Sidebar({
     const normalizedVisibility = nextVisibility === "public" ? "shared" : nextVisibility;
     const normalizedName = nextName.trim();
     if (!normalizedName) {
+      setResourceNameError("Name is required.");
       setResourceAccessStatus("Name is required.");
       return false;
     }
+    setResourceNameError("");
     const sharedWith = nextCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
       .map((userId) => ({ userId, role: (nextCollaboratorRoles[userId] ?? "viewer") as "viewer" | "editor" }));
@@ -1641,6 +1652,22 @@ export function Sidebar({
         });
       } else {
         const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
+        const simulationOwnerUserId = simulationEntry?.ownerUserId ?? currentUser?.id ?? "";
+        if (
+          simulationEntry &&
+          simulationOwnerUserId &&
+          hasDuplicateSimulationNameForOwner(
+            simulationPresets,
+            normalizedName,
+            simulationOwnerUserId,
+            simulationEntry.id,
+          )
+        ) {
+          const duplicateMessage = duplicateSimulationNameMessage(normalizedName);
+          setResourceNameError(duplicateMessage);
+          setResourceAccessStatus(duplicateMessage);
+          return false;
+        }
         const referencedPrivateSiteIds =
           normalizedVisibility === "private"
             ? []
@@ -2287,7 +2314,11 @@ export function Sidebar({
                 <label className="field-grid">
                   <span>Name</span>
                   <input
-                    onChange={(event) => setResourceNameDraft(event.target.value)}
+                    className={resourceNameError ? "input-error" : ""}
+                    onChange={(event) => {
+                      setResourceNameDraft(event.target.value);
+                      if (resourceNameError) setResourceNameError("");
+                    }}
                     onBlur={() => {
                       void persistResourceAccessSettings();
                     }}
@@ -2295,6 +2326,7 @@ export function Sidebar({
                     value={resourceNameDraft}
                   />
                 </label>
+                {resourceNameError ? <p className="field-help field-help-error">{resourceNameError}</p> : null}
                 <label className="field-grid">
                   <span>Description</span>
                   <textarea
@@ -2315,7 +2347,11 @@ export function Sidebar({
                   <label className="field-grid">
                     <span>Name</span>
                     <input
-                      onChange={(event) => setResourceNameDraft(event.target.value)}
+                      className={resourceNameError ? "input-error" : ""}
+                      onChange={(event) => {
+                        setResourceNameDraft(event.target.value);
+                        if (resourceNameError) setResourceNameError("");
+                      }}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
@@ -2323,6 +2359,7 @@ export function Sidebar({
                       value={resourceNameDraft}
                     />
                   </label>
+                  {resourceNameError ? <p className="field-help field-help-error">{resourceNameError}</p> : null}
                   <label className="field-grid">
                     <span>Description</span>
                     <textarea
