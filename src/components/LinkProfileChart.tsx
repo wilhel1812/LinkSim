@@ -227,8 +227,24 @@ export function LinkProfileChart({
     const updateSize = () => {
       const hostRect = element.getBoundingClientRect();
       const parentRect = element.parentElement?.getBoundingClientRect();
-      const measuredWidth = Math.round(hostRect.width || parentRect?.width || 0);
-      const measuredHeight = Math.round(hostRect.height || parentRect?.height || 0);
+      const widthCandidates = [
+        hostRect.width,
+        element.clientWidth,
+        element.offsetWidth,
+        parentRect?.width ?? 0,
+        element.parentElement?.clientWidth ?? 0,
+        element.parentElement?.offsetWidth ?? 0,
+      ];
+      const heightCandidates = [
+        hostRect.height,
+        element.clientHeight,
+        element.offsetHeight,
+        parentRect?.height ?? 0,
+        element.parentElement?.clientHeight ?? 0,
+        element.parentElement?.offsetHeight ?? 0,
+      ];
+      const measuredWidth = Math.round(Math.max(...widthCandidates, 0));
+      const measuredHeight = Math.round(Math.max(...heightCandidates, 0));
       const nextWidth = Math.max(220, measuredWidth);
       const nextHeight = Math.max(140, measuredHeight);
       setChartSize((current) =>
@@ -243,6 +259,8 @@ export function LinkProfileChart({
     const rafIdB = requestAnimationFrame(() => requestAnimationFrame(updateSize));
     const followUpTimerA = window.setTimeout(updateSize, 120);
     const followUpTimerB = window.setTimeout(updateSize, 280);
+    const startupPollTimer = window.setInterval(updateSize, 120);
+    const startupPollStopTimer = window.setTimeout(() => window.clearInterval(startupPollTimer), 2600);
     window.addEventListener("resize", updateSize);
 
     if (typeof ResizeObserver === "undefined") {
@@ -251,6 +269,8 @@ export function LinkProfileChart({
         cancelAnimationFrame(rafIdB);
         window.clearTimeout(followUpTimerA);
         window.clearTimeout(followUpTimerB);
+        window.clearInterval(startupPollTimer);
+        window.clearTimeout(startupPollStopTimer);
         window.removeEventListener("resize", updateSize);
       };
     }
@@ -268,6 +288,8 @@ export function LinkProfileChart({
       cancelAnimationFrame(rafIdB);
       window.clearTimeout(followUpTimerA);
       window.clearTimeout(followUpTimerB);
+      window.clearInterval(startupPollTimer);
+      window.clearTimeout(startupPollStopTimer);
       window.removeEventListener("resize", updateSize);
       observer.disconnect();
     };

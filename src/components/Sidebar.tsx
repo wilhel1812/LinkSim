@@ -68,7 +68,7 @@ const parseNumber = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
-const PATH_MODAL_AUTOSAVE_DEBOUNCE_MS = 350;
+const PATH_MODAL_AUTOSAVE_DEBOUNCE_MS = 2000;
 
 const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
   if (value === "shared" || value === "public_write") return "shared";
