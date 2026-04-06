@@ -534,8 +534,8 @@ export function AppShell() {
           return;
         }
         if (fallbackToReadonly) {
-          setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
-          setAccessState("readonly");
+          setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
+          setAccessState("locked");
           return;
         }
         if (isAuthSignInRequiredMessage(message)) {
@@ -1363,12 +1363,13 @@ export function AppShell() {
   }
 
   if (accessState === "locked") {
+    const shouldPromptSignIn = lockedNeedsSignIn || authState === "signed_out";
     return (
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
-          <h2>Access unavailable</h2>
+          <h2>{shouldPromptSignIn ? "Signed out" : "Access unavailable"}</h2>
           {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
-          {lockedNeedsSignIn ? (
+          {shouldPromptSignIn ? (
             <p className="field-help">Sign in with your approved account to continue.</p>
           ) : (
             <>
@@ -1381,7 +1382,7 @@ export function AppShell() {
             </>
           )}
           <div className="chip-group">
-          {lockedNeedsSignIn ? (
+          {shouldPromptSignIn ? (
               <>
                 <button className="inline-action" onClick={signIn} type="button">
                   Sign In
@@ -1432,7 +1433,7 @@ export function AppShell() {
             ) : null}
           </div>
           {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
-          {lockedNeedsSignIn && pendingChangesCount > 0 ? (
+          {shouldPromptSignIn && pendingChangesCount > 0 ? (
             <p className="field-help">
               You are signed out. Unsynced local changes are preserved on this device. Sign in, open Sync Status, and retry sync.
             </p>
