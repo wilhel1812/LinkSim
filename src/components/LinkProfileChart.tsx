@@ -10,6 +10,7 @@ import {
   passFailStateLabel,
   type PassFailState,
 } from "../lib/passFailState";
+import { buildProfileChartSvgProps } from "../lib/profileChartSvg";
 import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
 import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
 import { buildProfile } from "../lib/propagation";
@@ -302,6 +303,7 @@ export function LinkProfileChart({
       }),
     };
   }, [profile, chartWidth, chartHeight]);
+  const svgProps = useMemo(() => buildProfileChartSvgProps(chartWidth, chartHeight), [chartWidth, chartHeight]);
 
   const segmentStateKey = useMemo(
     () =>
@@ -728,7 +730,14 @@ export function LinkProfileChart({
         </div>
       ) : (
         <div className="chart-svg-wrap" ref={chartHostRef}>
-        <svg aria-label="Link profile" role="img" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
+        <svg
+          aria-label="Link profile"
+          height={svgProps.height}
+          preserveAspectRatio={svgProps.preserveAspectRatio}
+          role="img"
+          viewBox={svgProps.viewBox}
+          width={svgProps.width}
+        >
           <defs>
             <linearGradient
               gradientUnits="userSpaceOnUse"
