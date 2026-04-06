@@ -1242,11 +1242,19 @@ export function AppShell() {
     mobileActivePanel,
     mobileBottomPanelMode,
   ].join("|");
+  const emitProfileLayoutPulse = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const fire = () => window.dispatchEvent(new CustomEvent("linksim-profile-layout-pulse"));
+    fire();
+    window.requestAnimationFrame(fire);
+    window.setTimeout(fire, 120);
+  }, []);
 
   const toggleProfileExpanded = () => {
     setIsMapExpanded(false);
     setMobileActivePanel("profile");
     setIsProfileExpanded((prev) => !prev);
+    emitProfileLayoutPulse();
   };
 
   const setMobileBottomPanelVisibility = useCallback((nextMode: MobileBottomPanelMode) => {
@@ -1467,7 +1475,10 @@ export function AppShell() {
             <button
               aria-label="Show Navigator panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-navigator"
-              onClick={() => setIsNavigatorHidden(false)}
+              onClick={() => {
+                setIsNavigatorHidden(false);
+                emitProfileLayoutPulse();
+              }}
               title="Show Navigator"
               type="button"
             >
@@ -1478,7 +1489,10 @@ export function AppShell() {
             <button
               aria-label="Show Inspector panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-inspector"
-              onClick={() => setIsInspectorHidden(false)}
+              onClick={() => {
+                setIsInspectorHidden(false);
+                emitProfileLayoutPulse();
+              }}
               title="Show Inspector"
               type="button"
             >
@@ -1489,7 +1503,10 @@ export function AppShell() {
             <button
               aria-label="Show Profile panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-profile"
-              onClick={() => setIsProfileHidden(false)}
+              onClick={() => {
+                setIsProfileHidden(false);
+                emitProfileLayoutPulse();
+              }}
               title="Show Profile"
               type="button"
             >
@@ -1511,7 +1528,10 @@ export function AppShell() {
                 <button
                   aria-label={isNavigatorHidden ? "Show Navigator panel" : "Hide Navigator panel"}
                   className="user-icon-button"
-                  onClick={() => setIsNavigatorHidden((prev) => !prev)}
+                  onClick={() => {
+                    setIsNavigatorHidden((prev) => !prev);
+                    emitProfileLayoutPulse();
+                  }}
                   title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
                   type="button"
                 >
@@ -1606,7 +1626,10 @@ export function AppShell() {
                 <button
                   aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
                   className="map-control-btn map-control-btn-icon"
-                  onClick={() => setIsInspectorHidden((prev) => !prev)}
+                  onClick={() => {
+                    setIsInspectorHidden((prev) => !prev);
+                    emitProfileLayoutPulse();
+                  }}
                   title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
                   type="button"
                 >
@@ -1636,6 +1659,7 @@ export function AppShell() {
               setMobileBottomPanelVisibility("normal");
             }
             setIsMapExpanded((prev) => !prev);
+            emitProfileLayoutPulse();
           }}
           notice={
             appNotice
@@ -1682,6 +1706,7 @@ export function AppShell() {
                     if (next) setIsProfileExpanded(false);
                     return next;
                   });
+                  emitProfileLayoutPulse();
                 }}
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
                 type="button"

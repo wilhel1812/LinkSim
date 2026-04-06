@@ -78,6 +78,7 @@ export function LinkProfileChart({
         .__LINKSIM_DEBUG_PROFILE_CHART_SIZING__ === true;
     return localStorageEnabled || runtimeEnabled;
   });
+  const [layoutPulseRevision, setLayoutPulseRevision] = useState(0);
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
   const chartWidth = chartSize.width;
@@ -108,6 +109,13 @@ export function LinkProfileChart({
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onLayoutPulse = () => setLayoutPulseRevision((current) => current + 1);
+    window.addEventListener("linksim-profile-layout-pulse", onLayoutPulse);
+    return () => window.removeEventListener("linksim-profile-layout-pulse", onLayoutPulse);
+  }, []);
 
   const baseProfile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? null;
@@ -364,7 +372,7 @@ export function LinkProfileChart({
       mutationObserver.disconnect();
       observer.disconnect();
     };
-  }, [debugSizing, isExpanded, layoutRevision, profile.length]);
+  }, [debugSizing, isExpanded, layoutPulseRevision, layoutRevision, profile.length]);
 
   const geometry = useMemo(() => {
     if (profile.length < 2) {
