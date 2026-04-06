@@ -61,7 +61,7 @@ export function LinkProfileChart({
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
-  const [chartSize, setChartSize] = useState({ width: 1, height: 1 });
+  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
   const chartWidth = chartSize.width;
@@ -221,24 +221,44 @@ export function LinkProfileChart({
   }, [profile.length, selectedLinkId, temporaryDirectionReversed, setProfileCursorIndex]);
 
   useEffect(() => {
-    if (profile.length < 2) return;
     const element = chartHostRef.current;
     if (!element) return;
+
     const updateSize = () => {
-      const nextWidth = Math.max(220, Math.round(element.clientWidth));
-      const nextHeight = Math.max(140, Math.round(element.clientHeight));
+      const hostRect = element.getBoundingClientRect();
+      const parentRect = element.parentElement?.getBoundingClientRect();
+      const measuredWidth = Math.round(hostRect.width || parentRect?.width || 0);
+      const measuredHeight = Math.round(hostRect.height || parentRect?.height || 0);
+      const nextWidth = Math.max(220, measuredWidth);
+      const nextHeight = Math.max(140, measuredHeight);
       setChartSize((current) =>
         Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1
           ? { width: nextWidth, height: nextHeight }
           : current,
       );
     };
+
     updateSize();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => updateSize());
+    const rafId = requestAnimationFrame(updateSize);
+    window.addEventListener("resize", updateSize);
+
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        cancelAnimationFrame(rafId);
+        window.removeEventListener("resize", updateSize);
+      };
+    }
+
+    const observer = new ResizeObserver(updateSize);
     observer.observe(element);
-    return () => observer.disconnect();
-  }, [profile.length]);
+    if (element.parentElement) observer.observe(element.parentElement);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", updateSize);
+      observer.disconnect();
+    };
+  }, [isExpanded, profile.length]);
 
   const geometry = useMemo(() => {
     if (profile.length < 2) {

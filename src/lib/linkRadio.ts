@@ -31,8 +31,6 @@ const pickModeNumber = (values: number[]): number | null => {
   return bestValue;
 };
 
-const sameNumber = (a: number, b: number): boolean => Math.abs(a - b) < 1e-9;
-
 export const withSiteRadioDefaults = (site: Site): Site => ({
   ...site,
   txPowerDbm:
@@ -69,30 +67,14 @@ export const stripRedundantLinkRadioOverrides = (
   fromSite?: Site | null,
   toSite?: Site | null,
 ): Link => {
-  const baseline = {
-    txPowerDbm: fromSite?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm,
-    txGainDbi: fromSite?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi,
-    rxGainDbi: toSite?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi,
-    cableLossDb: fromSite?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb,
-  };
+  void fromSite;
+  void toSite;
   return {
     ...link,
-    txPowerDbm:
-      typeof link.txPowerDbm === "number" && !sameNumber(link.txPowerDbm, baseline.txPowerDbm)
-        ? link.txPowerDbm
-        : undefined,
-    txGainDbi:
-      typeof link.txGainDbi === "number" && !sameNumber(link.txGainDbi, baseline.txGainDbi)
-        ? link.txGainDbi
-        : undefined,
-    rxGainDbi:
-      typeof link.rxGainDbi === "number" && !sameNumber(link.rxGainDbi, baseline.rxGainDbi)
-        ? link.rxGainDbi
-        : undefined,
-    cableLossDb:
-      typeof link.cableLossDb === "number" && !sameNumber(link.cableLossDb, baseline.cableLossDb)
-        ? link.cableLossDb
-        : undefined,
+    txPowerDbm: typeof link.txPowerDbm === "number" ? link.txPowerDbm : undefined,
+    txGainDbi: typeof link.txGainDbi === "number" ? link.txGainDbi : undefined,
+    rxGainDbi: typeof link.rxGainDbi === "number" ? link.rxGainDbi : undefined,
+    cableLossDb: typeof link.cableLossDb === "number" ? link.cableLossDb : undefined,
   };
 };
 
