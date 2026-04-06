@@ -2,7 +2,7 @@ import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, Maximize2, Minimize2 } from "lucide-react";
 import type { MouseEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   classifyPassFailState,
@@ -224,7 +224,7 @@ export function LinkProfileChart({
     setProfileCursorIndex(profile.length - 1);
   }, [profile.length, selectedLinkId, temporaryDirectionReversed, setProfileCursorIndex]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (profile.length < 2) return;
     const element = chartHostRef.current;
     if (!element) return;
