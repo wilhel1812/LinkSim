@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Link, Site } from "../types/radio";
+import type { Site } from "../types/radio";
 import { buildSelectionEffectiveLink } from "./selectionEffectiveLink";
 
 const siteA: Site = {
@@ -27,64 +27,38 @@ const siteB: Site = {
 };
 
 describe("buildSelectionEffectiveLink", () => {
-  it("uses saved link for selected pair and preserves saved radio overrides", () => {
-    const links: Link[] = [
-      {
-        id: "saved",
-        name: "A-B",
-        fromSiteId: "site-a",
-        toSiteId: "site-b",
-        frequencyMHz: 433,
-        txPowerDbm: 30,
-        txGainDbi: 9,
-        rxGainDbi: 7,
-        cableLossDb: 0.5,
-      },
-    ];
-
+  it("builds temporary link from Site radio defaults", () => {
     const effective = buildSelectionEffectiveLink({
-      links,
       fromSite: siteA,
       toSite: siteB,
       frequencyMHz: 868,
     });
 
     expect(effective).toMatchObject({
-      id: "saved",
+      id: "__selection__",
       fromSiteId: "site-a",
       toSiteId: "site-b",
       frequencyMHz: 868,
-      txPowerDbm: 30,
-      txGainDbi: 9,
-      rxGainDbi: 7,
-      cableLossDb: 0.5,
+      txPowerDbm: siteA.txPowerDbm,
+      txGainDbi: siteA.txGainDbi,
+      rxGainDbi: siteB.rxGainDbi,
+      cableLossDb: siteA.cableLossDb,
     });
   });
 
-  it("matches saved link regardless of selected direction", () => {
-    const links: Link[] = [
-      {
-        id: "saved",
-        fromSiteId: "site-a",
-        toSiteId: "site-b",
-        frequencyMHz: 433,
-      },
-    ];
-
+  it("keeps temporary selection id regardless of selected direction", () => {
     const effective = buildSelectionEffectiveLink({
-      links,
       fromSite: siteB,
       toSite: siteA,
       frequencyMHz: 868,
     });
 
-    expect(effective?.id).toBe("saved");
+    expect(effective?.id).toBe("__selection__");
     expect(effective?.frequencyMHz).toBe(868);
   });
 
   it("builds temporary link from Site radio when no saved pair exists", () => {
     const effective = buildSelectionEffectiveLink({
-      links: [],
       fromSite: siteA,
       toSite: siteB,
       frequencyMHz: 868,

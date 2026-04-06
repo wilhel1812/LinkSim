@@ -134,13 +134,10 @@ export function SimulationResultsSection() {
   // Effective link for 2-site selection (saved link for that pair, or temp link)
   const selectionEffectiveLink = useMemo(() => {
     if (selectionCount !== 2 || !sourceSite || !destinationSite) return null;
-    const saved = links.find(
-      (l) =>
-        (l.fromSiteId === sourceSite.id && l.toSiteId === destinationSite.id) ||
-        (l.fromSiteId === destinationSite.id && l.toSiteId === sourceSite.id),
-    );
-    if (saved) {
-      return { ...saved, frequencyMHz: effectiveNetworkFrequencyMHz };
+    const explicitSavedSelection =
+      selectedLinkId && links.find((link) => link.id === selectedLinkId && link.id === selectedLink.id);
+    if (explicitSavedSelection) {
+      return { ...explicitSavedSelection, frequencyMHz: effectiveNetworkFrequencyMHz };
     }
     return {
       id: "__selection__",
@@ -153,7 +150,7 @@ export function SimulationResultsSection() {
       rxGainDbi: destinationSite.rxGainDbi,
       cableLossDb: sourceSite.cableLossDb,
     };
-  }, [selectionCount, sourceSite, destinationSite, links, effectiveNetworkFrequencyMHz]);
+  }, [selectionCount, sourceSite, destinationSite, links, selectedLinkId, selectedLink, effectiveNetworkFrequencyMHz]);
 
   // The link used for analysis and what-if
   const activeLink = selectionEffectiveLink ?? selectedLink;

@@ -630,7 +630,17 @@ describe("appStore selected pair link resolution", () => {
     });
   });
 
-  it("returns saved pair link overrides when two-site selection has no selectedLinkId", () => {
+  it("uses temporary Site defaults when selecting two sites without selecting a saved path", () => {
+    const selectedLink = useAppStore.getState().getSelectedLink();
+    expect(selectedLink.id).toBe("__selection__");
+    expect(selectedLink.txPowerDbm).toBe(21);
+    expect(selectedLink.txGainDbi).toBe(3);
+    expect(selectedLink.rxGainDbi).toBe(2);
+    expect(selectedLink.cableLossDb).toBe(2);
+  });
+
+  it("uses saved path overrides when a saved path is explicitly selected", () => {
+    useAppStore.setState({ selectedLinkId: "link-primary" });
     const selectedLink = useAppStore.getState().getSelectedLink();
     expect(selectedLink.id).toBe("link-primary");
     expect(selectedLink.txPowerDbm).toBe(30);
@@ -639,7 +649,8 @@ describe("appStore selected pair link resolution", () => {
     expect(selectedLink.cableLossDb).toBe(0.5);
   });
 
-  it("reflects updated Path overrides in selected-pair analysis state", () => {
+  it("reflects updated overrides when a saved path is selected", () => {
+    useAppStore.setState({ selectedLinkId: "link-primary" });
     useAppStore.getState().updateLink("link-primary", {
       txPowerDbm: 33,
       txGainDbi: 11,

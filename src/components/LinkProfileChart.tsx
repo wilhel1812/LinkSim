@@ -154,12 +154,11 @@ export function LinkProfileChart({
     }
     if (!selectedFromSite || !selectedToSite) return null;
     return buildSelectionEffectiveLink({
-      links,
       fromSite: selectedFromSite,
       toSite: selectedToSite,
       frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
     });
-  }, [selectedLink, selectedNetwork, selectedFromSite, selectedToSite, links]);
+  }, [selectedLink, selectedNetwork, selectedFromSite, selectedToSite]);
   const profile = useMemo(() => {
     if (!effectiveLink || !selectedFromSiteEffective || !selectedToSiteEffective) return baseProfile;
     const hasPreview =

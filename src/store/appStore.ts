@@ -3815,17 +3815,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       const toId = selectedPair[selectedPair.length - 1];
       const effectiveFromId = temporaryDirectionReversed ? toId : fromId;
       const effectiveToId = temporaryDirectionReversed ? fromId : toId;
-      const pairLink = links.find(
-        (candidate) =>
-          (candidate.fromSiteId === effectiveFromId && candidate.toSiteId === effectiveToId) ||
-          (candidate.fromSiteId === effectiveToId && candidate.toSiteId === effectiveFromId),
-      );
-      if (pairLink) {
-        const fromSite = sites.find((site) => site.id === pairLink.fromSiteId) ?? null;
-        const toSite = sites.find((site) => site.id === pairLink.toSiteId) ?? null;
-        const radio = resolveLinkRadio(pairLink, fromSite, toSite);
-        return { ...pairLink, ...radio };
-      }
       const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
       const inheritedFrequencyMHz =
         selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 869.618;
