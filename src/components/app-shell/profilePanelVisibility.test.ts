@@ -23,6 +23,7 @@ describe("nextProfileHiddenForSelectionChange", () => {
   it("auto-hides profile when selection transitions from two to three sites", () => {
     expect(
       nextProfileHiddenForSelectionChange({
+        currentHidden: false,
         nextSelectedSiteCount: 3,
       }),
     ).toBe(true);
@@ -31,22 +32,25 @@ describe("nextProfileHiddenForSelectionChange", () => {
   it("auto-hides profile when selection transitions from two sites to zero", () => {
     expect(
       nextProfileHiddenForSelectionChange({
+        currentHidden: false,
         nextSelectedSiteCount: 0,
       }),
     ).toBe(true);
   });
 
-  it("auto-unhides profile when selection becomes valid", () => {
+  it("does not auto-unhide profile when selection becomes valid", () => {
     expect(
       nextProfileHiddenForSelectionChange({
+        currentHidden: true,
         nextSelectedSiteCount: 1,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("keeps profile open for valid selection when it is already visible", () => {
     expect(
       nextProfileHiddenForSelectionChange({
+        currentHidden: false,
         nextSelectedSiteCount: 2,
       }),
     ).toBe(false);
