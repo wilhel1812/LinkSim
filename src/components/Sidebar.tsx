@@ -61,7 +61,7 @@ import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
 import { useLibraryManager } from "./sidebar/useLibraryManager";
-import { useInspectorActions } from "./sidebar/useInspectorActions";
+import { type LinkModalState, useInspectorActions } from "./sidebar/useInspectorActions";
 
 const parseNumber = (value: string): number => {
   const parsed = Number(value);
@@ -1019,12 +1019,40 @@ export function Sidebar({
   ) => {
     setDeleteConfirm({ title, message, confirmLabel, onConfirm });
   };
-  const { linkModal, setLinkModal, openAddLinkModal, openEditLinkModal } = useInspectorActions({
+  const { linkModal, setLinkModal, openAddLinkModal, openEditLinkModal, canEditExistingPath } = useInspectorActions({
     selectedLink,
     selectedLinkRaw,
     selectedSite,
     sites,
   });
+
+  const persistEditedPathFromModal = (modal: LinkModalState) => {
+    if (!modal || modal.mode !== "edit" || !modal.linkId) return;
+    if (!links.some((link) => link.id === modal.linkId)) return;
+    const fromExists = sites.some((site) => site.id === modal.fromSiteId);
+    const toExists = sites.some((site) => site.id === modal.toSiteId);
+    if (!fromExists || !toExists || modal.fromSiteId === modal.toSiteId) return;
+    updateLink(modal.linkId, {
+      name: modal.name.trim() || undefined,
+      fromSiteId: modal.fromSiteId,
+      toSiteId: modal.toSiteId,
+      txPowerDbm: modal.overrideRadio ? modal.txPowerDbm : undefined,
+      txGainDbi: modal.overrideRadio ? modal.txGainDbi : undefined,
+      rxGainDbi: modal.overrideRadio ? modal.rxGainDbi : undefined,
+      cableLossDb: modal.overrideRadio ? modal.cableLossDb : undefined,
+    });
+  };
+
+  const setLinkModalWithAutosave = (updater: (current: NonNullable<LinkModalState>) => NonNullable<LinkModalState>) => {
+    setLinkModal((current) => {
+      if (!current) return current;
+      const next = updater(current);
+      if (next.mode === "edit" && next.linkId) {
+        queueMicrotask(() => persistEditedPathFromModal(next));
+      }
+      return next;
+    });
+  };
 
   const saveLinkModal = () => {
     if (!linkModal) return;
@@ -1056,30 +1084,30 @@ export function Sidebar({
         return;
       }
       if (createdId) {
-        updateLink(createdId, {
-          name: linkModal.name.trim() || undefined,
-          fromSiteId: linkModal.fromSiteId,
-          toSiteId: linkModal.toSiteId,
-          txPowerDbm: linkModal.overrideRadio ? linkModal.txPowerDbm : undefined,
-          txGainDbi: linkModal.overrideRadio ? linkModal.txGainDbi : undefined,
-          rxGainDbi: linkModal.overrideRadio ? linkModal.rxGainDbi : undefined,
-          cableLossDb: linkModal.overrideRadio ? linkModal.cableLossDb : undefined,
-        });
+        const createdModal: NonNullable<LinkModalState> = {
+          ...linkModal,
+          mode: "edit",
+          linkId: createdId,
+          status: "Path created. Further edits auto-save.",
+        };
+        persistEditedPathFromModal(createdModal);
+        setLinkModal(createdModal);
+      } else {
+        setLinkModal((current) =>
+          current ? { ...current, status: "Path created, but could not open it for editing." } : current,
+        );
       }
-      setLinkModal(null);
       return;
     }
-    if (!linkModal.linkId) return;
-    updateLink(linkModal.linkId, {
-      name: linkModal.name.trim() || undefined,
-      fromSiteId: linkModal.fromSiteId,
-      toSiteId: linkModal.toSiteId,
-      txPowerDbm: linkModal.overrideRadio ? linkModal.txPowerDbm : undefined,
-      txGainDbi: linkModal.overrideRadio ? linkModal.txGainDbi : undefined,
-      rxGainDbi: linkModal.overrideRadio ? linkModal.rxGainDbi : undefined,
-      cableLossDb: linkModal.overrideRadio ? linkModal.cableLossDb : undefined,
-    });
-    setLinkModal(null);
+  };
+
+  const updateLinkModalField = (updater: (current: NonNullable<LinkModalState>) => NonNullable<LinkModalState>) => {
+    if (!linkModal) return;
+    if (linkModal.mode === "add") {
+      setLinkModal((current) => (current ? updater(current) : current));
+      return;
+    }
+    setLinkModalWithAutosave(updater);
   };
   const saveSimulationAsNew = () => {
     const trimmed = newPresetName.trim();
@@ -1875,7 +1903,7 @@ export function Sidebar({
               <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
                 New
               </button>
-              <button className="inline-action" onClick={openEditLinkModal} type="button">
+              <button className="inline-action" disabled={!canEditExistingPath} onClick={openEditLinkModal} type="button">
                 Details
               </button>
               <button
@@ -1909,9 +1937,7 @@ export function Sidebar({
             <label className="field-grid">
               <span>Path name</span>
               <input
-                onChange={(event) =>
-                  setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
-                }
+                onChange={(event) => updateLinkModalField((current) => ({ ...current, name: event.target.value, status: "" }))}
                 placeholder="Backhaul A"
                 type="text"
                 value={linkModal.name}
@@ -1922,7 +1948,7 @@ export function Sidebar({
               <select
                 className="locale-select"
                 onChange={(event) =>
-                  setLinkModal((current) => {
+                  updateLinkModalField((current) => {
                     if (!current) return current;
                     const nextFrom = event.target.value;
                     const nextTo =
@@ -1946,7 +1972,7 @@ export function Sidebar({
               <select
                 className="locale-select"
                 onChange={(event) =>
-                  setLinkModal((current) => (current ? { ...current, toSiteId: event.target.value, status: "" } : current))
+                  updateLinkModalField((current) => ({ ...current, toSiteId: event.target.value, status: "" }))
                 }
                 value={linkModal.toSiteId}
               >
@@ -1959,82 +1985,85 @@ export function Sidebar({
                   ))}
               </select>
             </label>
-            <details className="compact-details">
-              <summary>Path Radio Overrides</summary>
-              <label className="field-grid">
-                <span>Use site radio defaults</span>
-                <input
-                  checked={!linkModal.overrideRadio}
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, overrideRadio: !event.target.checked, status: "" } : current,
-                    )
-                  }
-                  type="checkbox"
-                />
-              </label>
-              {!linkModal.overrideRadio ? (
-                <p className="field-help">
-                  This Path uses the selected From/To Site radio settings.
-                </p>
-              ) : null}
-              {linkModal.overrideRadio ? (
-                <>
-              <label className="field-grid">
-                <span>Tx power (dBm)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, txPowerDbm: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.txPowerDbm}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Tx gain (dBi)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, txGainDbi: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.txGainDbi}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Rx gain (dBi)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, rxGainDbi: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.rxGainDbi}
-                />
-              </label>
-              <label className="field-grid">
-                <span>Cable loss (dB)</span>
-                <input
-                  onChange={(event) =>
-                    setLinkModal((current) =>
-                      current ? { ...current, cableLossDb: parseNumber(event.target.value), status: "" } : current,
-                    )
-                  }
-                  type="number"
-                  value={linkModal.cableLossDb}
-                />
-              </label>
-                </>
-              ) : null}
-            </details>
+            <label className="checkbox-field">
+              <input
+                checked={linkModal.overrideRadio}
+                onChange={(event) =>
+                  updateLinkModalField((current) => ({ ...current, overrideRadio: event.target.checked, status: "" }))
+                }
+                type="checkbox"
+              />
+              <span>Override site settings</span>
+            </label>
+            {!linkModal.overrideRadio ? <p className="field-help">This Path currently uses Site defaults.</p> : null}
+            <label className="field-grid">
+              <span>Tx power (dBm)</span>
+              <input
+                disabled={!linkModal.overrideRadio}
+                onChange={(event) =>
+                  updateLinkModalField((current) => ({
+                    ...current,
+                    txPowerDbm: parseNumber(event.target.value),
+                    status: "",
+                  }))
+                }
+                type="number"
+                value={linkModal.txPowerDbm}
+              />
+            </label>
+            <label className="field-grid">
+              <span>Tx gain (dBi)</span>
+              <input
+                disabled={!linkModal.overrideRadio}
+                onChange={(event) =>
+                  updateLinkModalField((current) => ({
+                    ...current,
+                    txGainDbi: parseNumber(event.target.value),
+                    status: "",
+                  }))
+                }
+                type="number"
+                value={linkModal.txGainDbi}
+              />
+            </label>
+            <label className="field-grid">
+              <span>Rx gain (dBi)</span>
+              <input
+                disabled={!linkModal.overrideRadio}
+                onChange={(event) =>
+                  updateLinkModalField((current) => ({
+                    ...current,
+                    rxGainDbi: parseNumber(event.target.value),
+                    status: "",
+                  }))
+                }
+                type="number"
+                value={linkModal.rxGainDbi}
+              />
+            </label>
+            <label className="field-grid">
+              <span>Cable loss (dB)</span>
+              <input
+                disabled={!linkModal.overrideRadio}
+                onChange={(event) =>
+                  updateLinkModalField((current) => ({
+                    ...current,
+                    cableLossDb: parseNumber(event.target.value),
+                    status: "",
+                  }))
+                }
+                type="number"
+                value={linkModal.cableLossDb}
+              />
+            </label>
             <div className="chip-group">
-              <button className="inline-action" onClick={saveLinkModal} type="button">
-                {linkModal.mode === "add" ? "Create Path" : "Save Path"}
-              </button>
+              {linkModal.mode === "add" ? (
+                <button className="inline-action" onClick={saveLinkModal} type="button">
+                  Create Path
+                </button>
+              ) : (
+                <p className="field-help">Edits auto-save.</p>
+              )}
             </div>
             {linkModal.status ? <p className="field-help">{linkModal.status}</p> : null}
           </div>
