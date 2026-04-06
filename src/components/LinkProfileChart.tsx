@@ -61,7 +61,7 @@ export function LinkProfileChart({
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
-  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
+  const [chartSize, setChartSize] = useState({ width: 1, height: 1 });
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
   const chartWidth = chartSize.width;
@@ -225,8 +225,8 @@ export function LinkProfileChart({
     const element = chartHostRef.current;
     if (!element) return;
     const updateSize = () => {
-      const nextWidth = Math.max(480, Math.round(element.clientWidth));
-      const nextHeight = Math.max(150, Math.round(element.clientHeight));
+      const nextWidth = Math.max(220, Math.round(element.clientWidth));
+      const nextHeight = Math.max(140, Math.round(element.clientHeight));
       setChartSize((current) =>
         Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1
           ? { width: nextWidth, height: nextHeight }
@@ -272,6 +272,10 @@ export function LinkProfileChart({
 
     const x = scaleLinear().domain(safeDistanceDomain).range([M.l, chartWidth - M.r]);
     const y = scaleLinear().domain([safeElevMin - 5, adjustedMax + 5]).range([chartHeight - M.b, M.t]);
+    const chartInnerWidth = Math.max(1, chartWidth - M.l - M.r);
+    const chartInnerHeight = Math.max(1, chartHeight - M.t - M.b);
+    const xTickCount = clamp(Math.round(chartInnerWidth / 140) + 1, 3, 10);
+    const yTickCount = clamp(Math.round(chartInnerHeight / 72) + 1, 3, 7);
 
     const terrainPoints = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.terrainM) }));
     const terrainLineSegments = terrainPoints.slice(1).map((point, i) => ({
@@ -286,18 +290,20 @@ export function LinkProfileChart({
       terrainPath: `${linePath(terrainPoints)} L${chartWidth - M.r},${chartHeight - M.b} L${M.l},${chartHeight - M.b} Z`,
       terrainStrokePath: linePath(terrainPoints),
       terrainLineSegments,
-      yTicks: Array.from({ length: 5 }, (_, i) => {
-        const value = safeElevMin - 5 + ((adjustedMax - safeElevMin + 10) * i) / 4;
+      yTicks: Array.from({ length: yTickCount }, (_, i) => {
+        const value =
+          safeElevMin - 5 + ((adjustedMax - safeElevMin + 10) * i) / Math.max(1, yTickCount - 1);
         return { value, py: y(value) };
       }),
-      xTicks: Array.from({ length: 6 }, (_, i) => {
+      xTicks: Array.from({ length: xTickCount }, (_, i) => {
         const value =
           safeDistanceDomain[0] +
-          ((safeDistanceDomain[1] - safeDistanceDomain[0]) * i) / 5;
+          ((safeDistanceDomain[1] - safeDistanceDomain[0]) * i) / Math.max(1, xTickCount - 1);
         return {
           value,
           px: x(value),
-          anchor: (i === 0 ? "start" : i === 5 ? "end" : "middle") as "start" | "middle" | "end",
+          anchor:
+            (i === 0 ? "start" : i === xTickCount - 1 ? "end" : "middle") as "start" | "middle" | "end",
         };
       }),
     };
