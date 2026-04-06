@@ -138,10 +138,17 @@ const isAuthRelatedErrorMessage = (message: string): boolean => {
   return (
     normalized.includes("401") ||
     normalized.includes("unauthorized") ||
+    normalized.includes("forbidden") ||
     normalized.includes("access denied") ||
     normalized.includes("auth") ||
     normalized.includes("sign in") ||
-    normalized.includes("session revoked")
+    normalized.includes("session revoked") ||
+    normalized.includes("load failed") ||
+    normalized.includes("failed to fetch") ||
+    normalized.includes("networkerror when attempting to fetch resource") ||
+    normalized.includes("cloudflare access") ||
+    normalized.includes("not authenticated") ||
+    normalized.includes("unexpected token <")
   );
 };
 
