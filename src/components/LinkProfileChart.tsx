@@ -13,6 +13,7 @@ import {
 import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
 import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
 import { buildProfile } from "../lib/propagation";
+import { buildSelectionEffectiveLink } from "../lib/selectionEffectiveLink";
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
@@ -151,18 +152,13 @@ export function LinkProfileChart({
       };
     }
     if (!selectedFromSite || !selectedToSite) return null;
-    return {
-      id: "__selection__",
-      name: `${selectedFromSite.name} -> ${selectedToSite.name}`,
-      fromSiteId: selectedFromSite.id,
-      toSiteId: selectedToSite.id,
+    return buildSelectionEffectiveLink({
+      links,
+      fromSite: selectedFromSite,
+      toSite: selectedToSite,
       frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
-      txPowerDbm: selectedFromSite.txPowerDbm,
-      txGainDbi: selectedFromSite.txGainDbi,
-      rxGainDbi: selectedToSite.rxGainDbi,
-      cableLossDb: selectedFromSite.cableLossDb,
-    };
-  }, [selectedLink, selectedNetwork, selectedFromSite, selectedToSite]);
+    });
+  }, [selectedLink, selectedNetwork, selectedFromSite, selectedToSite, links]);
   const profile = useMemo(() => {
     if (!effectiveLink || !selectedFromSiteEffective || !selectedToSiteEffective) return baseProfile;
     const hasPreview =
