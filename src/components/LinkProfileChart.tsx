@@ -2,7 +2,7 @@ import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, Maximize2, Minimize2 } from "lucide-react";
 import type { MouseEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   classifyPassFailState,
@@ -220,7 +220,7 @@ export function LinkProfileChart({
     setProfileCursorIndex(profile.length - 1);
   }, [profile.length, selectedLinkId, temporaryDirectionReversed, setProfileCursorIndex]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = chartHostRef.current;
     if (!element) return;
 
@@ -239,12 +239,18 @@ export function LinkProfileChart({
     };
 
     updateSize();
-    const rafId = requestAnimationFrame(updateSize);
+    const rafIdA = requestAnimationFrame(updateSize);
+    const rafIdB = requestAnimationFrame(() => requestAnimationFrame(updateSize));
+    const followUpTimerA = window.setTimeout(updateSize, 120);
+    const followUpTimerB = window.setTimeout(updateSize, 280);
     window.addEventListener("resize", updateSize);
 
     if (typeof ResizeObserver === "undefined") {
       return () => {
-        cancelAnimationFrame(rafId);
+        cancelAnimationFrame(rafIdA);
+        cancelAnimationFrame(rafIdB);
+        window.clearTimeout(followUpTimerA);
+        window.clearTimeout(followUpTimerB);
         window.removeEventListener("resize", updateSize);
       };
     }
@@ -252,9 +258,16 @@ export function LinkProfileChart({
     const observer = new ResizeObserver(updateSize);
     observer.observe(element);
     if (element.parentElement) observer.observe(element.parentElement);
+    const chartPanel = element.closest(".chart-panel");
+    if (chartPanel instanceof HTMLElement) observer.observe(chartPanel);
+    const workspacePanel = element.closest(".workspace-panel");
+    if (workspacePanel instanceof HTMLElement) observer.observe(workspacePanel);
 
     return () => {
-      cancelAnimationFrame(rafId);
+      cancelAnimationFrame(rafIdA);
+      cancelAnimationFrame(rafIdB);
+      window.clearTimeout(followUpTimerA);
+      window.clearTimeout(followUpTimerB);
       window.removeEventListener("resize", updateSize);
       observer.disconnect();
     };

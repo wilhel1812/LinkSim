@@ -68,6 +68,7 @@ const parseNumber = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+const PATH_MODAL_AUTOSAVE_DEBOUNCE_MS = 350;
 
 const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
   if (value === "shared" || value === "public_write") return "shared";
@@ -1027,6 +1028,8 @@ export function Sidebar({
     selectedSite,
     sites,
   });
+  const pathAutosaveTimerRef = useRef<number | null>(null);
+  const pendingPathAutosaveRef = useRef<NonNullable<LinkModalState> | null>(null);
 
   const persistEditedPathFromModal = (modal: LinkModalState) => {
     if (!modal || modal.mode !== "edit" || !modal.linkId) return;
@@ -1045,16 +1048,49 @@ export function Sidebar({
     });
   };
 
+  const flushPendingPathAutosave = () => {
+    if (pathAutosaveTimerRef.current !== null) {
+      window.clearTimeout(pathAutosaveTimerRef.current);
+      pathAutosaveTimerRef.current = null;
+    }
+    if (!pendingPathAutosaveRef.current) return;
+    persistEditedPathFromModal(pendingPathAutosaveRef.current);
+    pendingPathAutosaveRef.current = null;
+  };
+
+  const closeLinkModal = () => {
+    flushPendingPathAutosave();
+    setLinkModal(null);
+  };
+
   const setLinkModalWithAutosave = (updater: (current: NonNullable<LinkModalState>) => NonNullable<LinkModalState>) => {
     setLinkModal((current) => {
       if (!current) return current;
       const next = updater(current);
       if (next.mode === "edit" && next.linkId) {
-        queueMicrotask(() => persistEditedPathFromModal(next));
+        pendingPathAutosaveRef.current = next;
+        if (pathAutosaveTimerRef.current !== null) {
+          window.clearTimeout(pathAutosaveTimerRef.current);
+        }
+        pathAutosaveTimerRef.current = window.setTimeout(() => {
+          pathAutosaveTimerRef.current = null;
+          if (!pendingPathAutosaveRef.current) return;
+          persistEditedPathFromModal(pendingPathAutosaveRef.current);
+          pendingPathAutosaveRef.current = null;
+        }, PATH_MODAL_AUTOSAVE_DEBOUNCE_MS);
       }
       return next;
     });
   };
+
+  useEffect(
+    () => () => {
+      if (pathAutosaveTimerRef.current !== null) {
+        window.clearTimeout(pathAutosaveTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const saveLinkModal = () => {
     if (!linkModal) return;
@@ -1953,11 +1989,11 @@ export function Sidebar({
       </section>
 
       {linkModal ? (
-        <ModalOverlay aria-label={linkModal.mode === "add" ? "Add Path" : "Edit Path"} onClose={() => setLinkModal(null)} tier="raised">
+        <ModalOverlay aria-label={linkModal.mode === "add" ? "Add Path" : "Edit Path"} onClose={closeLinkModal} tier="raised">
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>{linkModal.mode === "add" ? "Add Path" : "Edit Path"}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setLinkModal(null)} title="Close" type="button">
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeLinkModal} title="Close" type="button">
                 <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
