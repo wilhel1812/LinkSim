@@ -1,11 +1,12 @@
 import type { CloudResourceRecord, DbVisibility, Env, Grant, ResourceRole, UserRole, Visibility } from "./types";
+import { findPresetById } from "../../src/lib/frequencyPlans";
 
 const VISIBILITIES: Visibility[] = ["private", "public", "shared"];
 const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write"];
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
-const SCHEMA_VERSION = "2026-03-15a";
+const SCHEMA_VERSION = "2026-04-07a";
 type AccountState = "pending" | "approved" | "revoked";
 
 const dbVisibilityFromVisibility = (value: Visibility): DbVisibility => {
@@ -161,6 +162,16 @@ const sanitizeAvatar = (value: unknown): string | null => {
   }
 };
 
+const sanitizeDefaultFrequencyPresetId = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string") throw new Error("Default frequency preset must be a string or null.");
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!findPresetById(trimmed)) throw new Error("Unknown default frequency preset.");
+  return trimmed;
+};
+
 const deriveDefaultName = (userId: string, tokenPayload?: Record<string, unknown>): string => {
   const fromName = sanitizeName(tokenPayload?.name);
   if (fromName) return fromName;
@@ -221,6 +232,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     "idp_email_verified",
     "avatar_url",
     "email_public",
+    "default_frequency_preset_id",
     "avatar_object_key",
     "avatar_thumb_key",
     "avatar_hash",
@@ -314,6 +326,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
             idp_email_verified INTEGER NOT NULL DEFAULT 0,
             avatar_url TEXT,
             email_public INTEGER NOT NULL DEFAULT 1,
+            default_frequency_preset_id TEXT,
             avatar_object_key TEXT,
             avatar_thumb_key TEXT,
             avatar_hash TEXT,
@@ -448,6 +461,7 @@ type UserRow = {
   idp_email_verified: number;
   avatar_url: string | null;
   email_public: number;
+  default_frequency_preset_id: string | null;
   avatar_object_key: string | null;
   avatar_thumb_key: string | null;
   avatar_hash: string | null;
@@ -500,6 +514,7 @@ const toUserProfile = (row: UserRow) => ({
   idpEmailVerified: row.idp_email_verified === 1,
   avatarUrl: row.avatar_url ?? "",
   emailPublic: row.email_public === 1,
+  defaultFrequencyPresetId: row.default_frequency_preset_id,
   avatarObjectKey: row.avatar_object_key ?? "",
   avatarThumbKey: row.avatar_thumb_key ?? "",
   avatarHash: row.avatar_hash ?? "",
@@ -532,7 +547,7 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
@@ -548,7 +563,7 @@ const reconcileUserIdentityByIdpEmail = async (
 
   const rows = await env.DB
     .prepare(
-      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
+      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
               CASE
                 WHEN lower(idp_email) = lower(?) AND idp_email_verified = 1 THEN 'verified_idp_email'
                 WHEN lower(email) = lower(?) THEN 'legacy_email'
@@ -754,6 +769,7 @@ export const updateUserProfile = async (
     accessRequestNote?: unknown;
     avatarUrl?: unknown;
     emailPublic?: unknown;
+    defaultFrequencyPresetId?: unknown;
   },
 ) => {
   const existing = await readUserRow(env, userId);
@@ -769,6 +785,10 @@ export const updateUserProfile = async (
   const nextAvatar = patch.avatarUrl === undefined ? existing.avatar_url ?? "" : sanitizeAvatar(patch.avatarUrl);
   const nextEmailPublic =
     patch.emailPublic === undefined ? existing.email_public === 1 : sanitizeBoolean(patch.emailPublic, true);
+  const nextDefaultFrequencyPresetId =
+    patch.defaultFrequencyPresetId === undefined
+      ? (existing.default_frequency_preset_id ?? null)
+      : sanitizeDefaultFrequencyPresetId(patch.defaultFrequencyPresetId);
   const shouldClearAvatarMetadata =
     patch.avatarUrl !== undefined && (nextAvatar ?? "") !== (existing.avatar_url ?? "");
 
@@ -784,6 +804,7 @@ export const updateUserProfile = async (
          access_request_note = ?,
          avatar_url = ?,
          email_public = ?,
+         default_frequency_preset_id = ?,
          avatar_object_key = ?,
          avatar_thumb_key = ?,
          avatar_hash = ?,
@@ -799,6 +820,7 @@ export const updateUserProfile = async (
       nextAccessRequestNote,
       nextAvatar ?? "",
       nextEmailPublic ? 1 : 0,
+      nextDefaultFrequencyPresetId ?? null,
       shouldClearAvatarMetadata ? null : existing.avatar_object_key,
       shouldClearAvatarMetadata ? null : existing.avatar_thumb_key,
       shouldClearAvatarMetadata ? null : existing.avatar_hash,
@@ -875,7 +897,7 @@ export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map(toUserProfile);

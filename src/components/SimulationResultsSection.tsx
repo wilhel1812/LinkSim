@@ -108,7 +108,7 @@ export function SimulationResultsSection() {
 
   const effectiveNetworkFrequencyMHz = selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz;
   const selectedFrequencyPreset = FREQUENCY_PRESETS.find((preset) => preset.id === selectedFrequencyPresetId);
-  const isLoraEstimateRelevant = (selectedFrequencyPreset?.source ?? "Meshtastic") !== "RadioMobile";
+  const isLoraEstimateRelevant = (selectedFrequencyPreset?.sourceFamily ?? "meshtastic") !== "reference";
 
   // Selection-aware from/to sites
   const sourceSite = useMemo(() => {
@@ -134,10 +134,13 @@ export function SimulationResultsSection() {
   // Effective link for 2-site selection (saved link for that pair, or temp link)
   const selectionEffectiveLink = useMemo(() => {
     if (selectionCount !== 2 || !sourceSite || !destinationSite) return null;
-    const explicitSavedSelection =
-      selectedLinkId && links.find((link) => link.id === selectedLinkId && link.id === selectedLink.id);
-    if (explicitSavedSelection) {
-      return { ...explicitSavedSelection, frequencyMHz: effectiveNetworkFrequencyMHz };
+    const saved = links.find(
+      (l) =>
+        (l.fromSiteId === sourceSite.id && l.toSiteId === destinationSite.id) ||
+        (l.fromSiteId === destinationSite.id && l.toSiteId === sourceSite.id),
+    );
+    if (saved) {
+      return { ...saved, frequencyMHz: effectiveNetworkFrequencyMHz };
     }
     return {
       id: "__selection__",
@@ -150,7 +153,7 @@ export function SimulationResultsSection() {
       rxGainDbi: destinationSite.rxGainDbi,
       cableLossDb: sourceSite.cableLossDb,
     };
-  }, [selectionCount, sourceSite, destinationSite, links, selectedLinkId, selectedLink, effectiveNetworkFrequencyMHz]);
+  }, [selectionCount, sourceSite, destinationSite, links, effectiveNetworkFrequencyMHz]);
 
   // The link used for analysis and what-if
   const activeLink = selectionEffectiveLink ?? selectedLink;
@@ -367,7 +370,7 @@ export function SimulationResultsSection() {
         </div>
       ) : (
         <p className="field-help">
-          LoRa RX estimate helper is hidden for Radio Mobile presets. Switch to a Meshtastic/Local frequency plan to
+          LoRa RX estimate helper is hidden for reference presets. Switch to a Meshtastic/Local frequency plan to
           use it.
         </p>
       )}

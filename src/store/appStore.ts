@@ -19,7 +19,6 @@ import {
 } from "../lib/propagationEnvironment";
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { BUILTIN_SCENARIOS, defaultScenario, DEMO_SCENARIO, getScenarioById } from "../lib/scenarios";
-import { hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { mergeSrtmTiles } from "../lib/terrainMerge";
@@ -134,22 +133,23 @@ const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser |
   return currentUser;
 };
 
+const FALLBACK_NEW_SIMULATION_PRESET_ID = "oslo-local-869618";
+
+const resolveDefaultFrequencyPresetIdForNewSimulation = (currentUser: CloudUser | null): string => {
+  const preferred = currentUser?.defaultFrequencyPresetId;
+  if (typeof preferred === "string" && findPresetById(preferred)) return preferred;
+  return FALLBACK_NEW_SIMULATION_PRESET_ID;
+};
+
 const isAuthRelatedErrorMessage = (message: string): boolean => {
   const normalized = message.toLowerCase();
   return (
     normalized.includes("401") ||
     normalized.includes("unauthorized") ||
-    normalized.includes("forbidden") ||
     normalized.includes("access denied") ||
     normalized.includes("auth") ||
     normalized.includes("sign in") ||
-    normalized.includes("session revoked") ||
-    normalized.includes("load failed") ||
-    normalized.includes("failed to fetch") ||
-    normalized.includes("networkerror when attempting to fetch resource") ||
-    normalized.includes("cloudflare access") ||
-    normalized.includes("not authenticated") ||
-    normalized.includes("unexpected token <")
+    normalized.includes("session revoked")
   );
 };
 
@@ -433,6 +433,7 @@ type AppState = {
   setLastSyncedAt: (iso: string | null) => void;
   setSyncErrorMessage: (message: string | null) => void;
   setCurrentUser: (user: CloudUser | null) => void;
+  getDefaultFrequencyPresetIdForNewSimulation: () => string;
   setAuthState: (value: AuthSessionState) => void;
   setIsOnline: (value: boolean) => void;
   triggerSync: () => void;
@@ -514,6 +515,7 @@ type AppState = {
     name: string,
     options?: {
       description?: string;
+      frequencyPresetId?: string;
       visibility?: "private" | "public" | "shared";
       ownerUserId?: string;
       createdByUserId?: string;
@@ -636,6 +638,16 @@ const slugifyValue = (value: string): string =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
+
+const hasDuplicateSimulationName = (
+  presets: SimulationPreset[],
+  name: string,
+  ignorePresetId?: string,
+): boolean => {
+  const target = name.trim().toLowerCase();
+  if (!target) return false;
+  return presets.some((preset) => preset.id !== ignorePresetId && preset.name.trim().toLowerCase() === target);
+};
 
 const legacyDemoSiteFingerprint = new Set([
   "bislett|59.925000|10.732000",
@@ -1222,6 +1234,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       currentUser: user,
       authState: user ? "signed_in" : "signed_out",
     }),
+  getDefaultFrequencyPresetIdForNewSimulation: () => {
+    const state = get();
+    return resolveDefaultFrequencyPresetIdForNewSimulation(state.currentUser);
+  },
   setAuthState: (value) => set({ authState: value }),
   setIsOnline: (value) => set({ isOnline: value }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
@@ -2589,8 +2605,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!user) return null;
     const presetName = name.trim();
     if (!presetName) return null;
-    const ownerUserId = options?.ownerUserId ?? user.id;
-    if (hasDuplicateSimulationNameForOwner(get().simulationPresets, presetName, ownerUserId)) return null;
+    if (hasDuplicateSimulationName(get().simulationPresets, presetName)) return null;
+    const defaultPresetId = resolveDefaultFrequencyPresetIdForNewSimulation(user);
+    const selectedPresetId =
+      typeof options?.frequencyPresetId === "string" && findPresetById(options.frequencyPresetId)
+        ? options.frequencyPresetId
+        : defaultPresetId;
     set((current) => {
       const snapshot: SimulationPreset["snapshot"] = {
         sites: [],
@@ -2602,7 +2622,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedNetworkId: "",
         selectedCoverageResolution: current.selectedCoverageResolution,
         propagationModel: current.propagationModel,
-        selectedFrequencyPresetId: current.selectedFrequencyPresetId,
+        selectedFrequencyPresetId: selectedPresetId,
         rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
         environmentLossDb: current.environmentLossDb,
         propagationEnvironment: current.propagationEnvironment,
@@ -2891,8 +2911,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const nextName = name.trim();
     if (!nextName) return;
-    const ownerUserId = existing?.ownerUserId ?? user.id;
-    if (hasDuplicateSimulationNameForOwner(get().simulationPresets, nextName, ownerUserId, presetId)) return;
+    if (hasDuplicateSimulationName(get().simulationPresets, nextName, presetId)) return;
     set((state) => {
       const next = state.simulationPresets.map((preset) =>
         preset.id === presetId
@@ -2932,8 +2951,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (typeof patch.name === "string") {
       const candidate = patch.name.trim();
       if (!candidate) return;
-      const ownerUserId = existing?.ownerUserId ?? user.id;
-      if (hasDuplicateSimulationNameForOwner(get().simulationPresets, candidate, ownerUserId, presetId)) return;
+      if (hasDuplicateSimulationName(get().simulationPresets, candidate, presetId)) return;
     }
     markDirtySim(presetId);
     set((state) => {
@@ -3801,38 +3819,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     useCoverageStore.getState().recomputeCoverage();
   },
   getSelectedLink: () => {
-    const { links, selectedLinkId, selectedSiteIds, temporaryDirectionReversed, sites, networks, selectedNetworkId } = get();
+    const { links, selectedLinkId, sites, networks, selectedNetworkId } = get();
     const link = links.find((candidate) => candidate.id === selectedLinkId);
     if (link) {
       const fromSite = sites.find((site) => site.id === link.fromSiteId) ?? null;
       const toSite = sites.find((site) => site.id === link.toSiteId) ?? null;
       const radio = resolveLinkRadio(link, fromSite, toSite);
       return { ...link, ...radio };
-    }
-    const selectedPair = normalizeSelectedSiteIds(selectedSiteIds, sites);
-    if (selectedPair.length >= 2) {
-      const fromId = selectedPair[0];
-      const toId = selectedPair[selectedPair.length - 1];
-      const effectiveFromId = temporaryDirectionReversed ? toId : fromId;
-      const effectiveToId = temporaryDirectionReversed ? fromId : toId;
-      const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
-      const inheritedFrequencyMHz =
-        selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 869.618;
-      const fromSite = sites.find((site) => site.id === effectiveFromId) ?? null;
-      const toSite = sites.find((site) => site.id === effectiveToId) ?? null;
-      if (fromSite && toSite) {
-        return {
-          id: "__selection__",
-          name: `${fromSite.name} -> ${toSite.name}`,
-          fromSiteId: fromSite.id,
-          toSiteId: toSite.id,
-          frequencyMHz: inheritedFrequencyMHz,
-          txPowerDbm: fromSite.txPowerDbm,
-          txGainDbi: fromSite.txGainDbi,
-          rxGainDbi: toSite.rxGainDbi,
-          cableLossDb: fromSite.cableLossDb,
-        };
-      }
     }
     if (links[0]) {
       const base = links[0];

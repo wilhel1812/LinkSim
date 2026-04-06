@@ -24,6 +24,7 @@ import {
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
+import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../lib/frequencyPlans";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
 import { deriveSyncIndicator } from "../lib/syncIndicator";
@@ -159,6 +160,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   const [avatarDraft, setAvatarDraft] = useState("");
   const [avatarStatus, setAvatarStatus] = useState("");
   const [emailPublicDraft, setEmailPublicDraft] = useState(true);
+  const [defaultFrequencyPresetIdDraft, setDefaultFrequencyPresetIdDraft] = useState<string | null>(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState("");
@@ -291,6 +293,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       setEmailPublicDraft(current.emailPublic ?? true);
+      setDefaultFrequencyPresetIdDraft(current.defaultFrequencyPresetId ?? null);
       if (current.isAdmin) {
         const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
@@ -410,6 +413,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
         bio: bioDraft,
         accessRequestNote: accessRequestNoteDraft,
         emailPublic: emailPublicDraft,
+        defaultFrequencyPresetId: defaultFrequencyPresetIdDraft,
       });
       setMe(updated);
       setCurrentUser(updated);
@@ -420,6 +424,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       setAccessRequestNoteDraft(updated.accessRequestNote ?? "");
       setAvatarDraft(updated.avatarUrl ?? "");
       setEmailPublicDraft(updated.emailPublic ?? true);
+      setDefaultFrequencyPresetIdDraft(updated.defaultFrequencyPresetId ?? null);
       setStatus("Profile updated. Account settings save immediately (separate from simulation sync).");
       if (canModerate) {
         await refreshAdminData();
@@ -946,6 +951,30 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     {activeHolidayTheme ? (
                       <option value="yellow">{activeHolidayTheme.title.replace(" Theme", "")}</option>
                     ) : null}
+                  </select>
+                </div>
+                <div className="field-grid user-field-grid">
+                  <span>
+                    Default preset for new simulations{" "}
+                    <InfoTip text="This cloud setting applies when you create a new simulation. Existing simulations keep their own saved channel settings." />
+                  </span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) =>
+                      setDefaultFrequencyPresetIdDraft(event.target.value ? event.target.value : null)
+                    }
+                    value={defaultFrequencyPresetIdDraft ?? ""}
+                  >
+                    <option value="">App default (Oslo Local 869.618)</option>
+                    {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
+                      <optgroup key={groupEntry.group} label={groupEntry.group}>
+                        {groupEntry.presets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </div>
                 <div className="field-grid user-field-grid">

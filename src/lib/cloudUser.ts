@@ -8,6 +8,7 @@ export type CloudUser = {
   idpEmailVerified?: boolean;
   avatarUrl: string;
   emailPublic?: boolean;
+  defaultFrequencyPresetId?: string | null;
   isAdmin: boolean;
   isModerator?: boolean;
   isApproved: boolean;
@@ -178,6 +179,7 @@ export const updateMyProfile = async (patch: {
   accessRequestNote?: string;
   avatarUrl?: string;
   emailPublic?: boolean;
+  defaultFrequencyPresetId?: string | null;
 }): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>("/api/me", {
     method: "PATCH",
@@ -235,6 +237,7 @@ export const updateUserProfile = async (
     accessRequestNote?: string;
     avatarUrl?: string;
     emailPublic?: boolean;
+    defaultFrequencyPresetId?: string | null;
   },
 ): Promise<CloudUser> => {
   const data = await apiCall<{ user: CloudUser }>(`/api/users/${encodeURIComponent(id)}`, {
