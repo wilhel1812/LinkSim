@@ -63,7 +63,7 @@ export function LinkProfileChart({
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
-  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
+  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
   const [debugSizing] = useState(() => {
     if (typeof window === "undefined") return false;
     const localStorageEnabled = (() => {
@@ -81,8 +81,8 @@ export function LinkProfileChart({
   const [layoutPulseRevision, setLayoutPulseRevision] = useState(0);
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
-  const chartWidth = chartSize?.width ?? 220;
-  const chartHeight = chartSize?.height ?? 150;
+  const chartWidth = chartSize.width;
+  const chartHeight = chartSize.height;
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -258,9 +258,7 @@ export function LinkProfileChart({
       const nextHeight = Math.max(140, measuredHeight);
       setChartSize((current) => {
         const changed =
-          !current ||
-          Math.abs(current.width - nextWidth) > 1 ||
-          Math.abs(current.height - nextHeight) > 1;
+          Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1;
         const next = changed ? { width: nextWidth, height: nextHeight } : current;
         if (debugSizing) {
           const chartPanelRect = element.closest(".chart-panel")?.getBoundingClientRect();
@@ -291,7 +289,7 @@ export function LinkProfileChart({
             isExpanded,
           });
         }
-        return next ?? current;
+        return next;
       });
     };
 
@@ -871,7 +869,6 @@ export function LinkProfileChart({
         </div>
       ) : (
         <div className={`chart-svg-wrap ${debugSizing ? "chart-svg-wrap-debug-sizing" : ""}`} ref={chartHostRef}>
-        {chartSize ? (
         <svg
           aria-label="Link profile"
           height={svgProps.height}
@@ -959,7 +956,6 @@ export function LinkProfileChart({
             onMouseLeave={onSvgLeave}
           />
         </svg>
-        ) : null}
         {splitHoverPopoverPosition && cursorStates && cursorStates.length > 1 ? (
           <div
             className="chart-hover-popover"
