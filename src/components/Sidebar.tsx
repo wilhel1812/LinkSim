@@ -50,6 +50,7 @@ import {
   type LibraryFilterState,
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
+import { handleSimulationLibraryLoad } from "../lib/simulationLibraryLoad";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
@@ -3030,8 +3031,12 @@ export function Sidebar({
           <SimulationLibraryPanel
             onClose={() => setShowSimulationLibraryManager(false)}
             onLoadSimulation={(presetId) => {
-              loadSimulationPreset(presetId);
-              persistSelectedSimulationRef(`saved:${presetId}`);
+              handleSimulationLibraryLoad({
+                presetId,
+                loadSimulationPreset,
+                persistSimulationRef: (loadedPresetId) => persistSelectedSimulationRef(`saved:${loadedPresetId}`),
+                closeLibraryModal: () => setShowSimulationLibraryManager(false),
+              });
             }}
             onOpenDetails={openResourceDetailsPopup}
           />
