@@ -644,9 +644,8 @@ export function AppShell() {
 
   useEffect(() => {
     const selectedSiteCount = selectedSiteIds.length;
-    setIsProfileHidden((currentHidden) =>
+    setIsProfileHidden(
       nextProfileHiddenForSelectionChange({
-        currentHidden,
         nextSelectedSiteCount: selectedSiteCount,
       }),
     );
