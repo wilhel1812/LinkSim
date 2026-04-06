@@ -733,9 +733,7 @@ export function LinkProfileChart({
         <svg
           aria-label="Link profile"
           height={svgProps.height}
-          preserveAspectRatio={svgProps.preserveAspectRatio}
           role="img"
-          viewBox={svgProps.viewBox}
           width={svgProps.width}
         >
           <defs>
