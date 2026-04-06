@@ -30,6 +30,7 @@ export function useInspectorActions({
   sites,
 }: UseInspectorActionsParams) {
   const [linkModal, setLinkModal] = useState<LinkModalState>(null);
+  const canEditExistingPath = Boolean(selectedLinkRaw && !selectedLinkRaw.id.startsWith("__"));
 
   const openAddLinkModal = () => {
     const hasFromInSites = sites.some((site) => site.id === selectedLink.fromSiteId);
@@ -57,6 +58,7 @@ export function useInspectorActions({
   };
 
   const openEditLinkModal = () => {
+    if (!canEditExistingPath || !selectedLinkRaw) return;
     const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId) ?? null;
     const toSite = sites.find((site) => site.id === selectedLink.toSiteId) ?? null;
     const baseRadio = resolveLinkRadio(selectedLink, fromSite, toSite);
@@ -69,7 +71,7 @@ export function useInspectorActions({
     );
     setLinkModal({
       mode: "edit",
-      linkId: selectedLink.id,
+      linkId: selectedLinkRaw.id,
       name: selectedLink.name ?? "",
       fromSiteId: selectedLink.fromSiteId,
       toSiteId: selectedLink.toSiteId,
@@ -87,5 +89,6 @@ export function useInspectorActions({
     setLinkModal,
     openAddLinkModal,
     openEditLinkModal,
+    canEditExistingPath,
   };
 }

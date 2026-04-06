@@ -492,6 +492,24 @@ describe("appStore selected pair link resolution", () => {
     storage.mock.clear();
     vi.restoreAllMocks();
     useAppStore.setState({
+      currentUser: {
+        id: "owner-1",
+        username: "owner",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+      },
+      selectedScenarioId: "",
       selectedLinkId: "",
       selectedSiteIds: ["site-2", "site-1"],
       sites: [
@@ -562,6 +580,22 @@ describe("appStore selected pair link resolution", () => {
     expect(selectedLink.txGainDbi).toBe(9);
     expect(selectedLink.rxGainDbi).toBe(8);
     expect(selectedLink.cableLossDb).toBe(0.5);
+  });
+
+  it("reflects updated Path overrides in selected-pair analysis state", () => {
+    useAppStore.getState().updateLink("link-primary", {
+      txPowerDbm: 33,
+      txGainDbi: 11,
+      rxGainDbi: 10,
+      cableLossDb: 0.2,
+    });
+
+    const selectedLink = useAppStore.getState().getSelectedLink();
+    expect(selectedLink.id).toBe("link-primary");
+    expect(selectedLink.txPowerDbm).toBe(33);
+    expect(selectedLink.txGainDbi).toBe(11);
+    expect(selectedLink.rxGainDbi).toBe(10);
+    expect(selectedLink.cableLossDb).toBe(0.2);
   });
 });
 

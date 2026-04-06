@@ -69,23 +69,28 @@ export const stripRedundantLinkRadioOverrides = (
   fromSite?: Site | null,
   toSite?: Site | null,
 ): Link => {
-  const resolved = resolveLinkRadio(link, fromSite, toSite);
+  const baseline = {
+    txPowerDbm: fromSite?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm,
+    txGainDbi: fromSite?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi,
+    rxGainDbi: toSite?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi,
+    cableLossDb: fromSite?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb,
+  };
   return {
     ...link,
     txPowerDbm:
-      typeof link.txPowerDbm === "number" && !sameNumber(link.txPowerDbm, resolved.txPowerDbm)
+      typeof link.txPowerDbm === "number" && !sameNumber(link.txPowerDbm, baseline.txPowerDbm)
         ? link.txPowerDbm
         : undefined,
     txGainDbi:
-      typeof link.txGainDbi === "number" && !sameNumber(link.txGainDbi, resolved.txGainDbi)
+      typeof link.txGainDbi === "number" && !sameNumber(link.txGainDbi, baseline.txGainDbi)
         ? link.txGainDbi
         : undefined,
     rxGainDbi:
-      typeof link.rxGainDbi === "number" && !sameNumber(link.rxGainDbi, resolved.rxGainDbi)
+      typeof link.rxGainDbi === "number" && !sameNumber(link.rxGainDbi, baseline.rxGainDbi)
         ? link.rxGainDbi
         : undefined,
     cableLossDb:
-      typeof link.cableLossDb === "number" && !sameNumber(link.cableLossDb, resolved.cableLossDb)
+      typeof link.cableLossDb === "number" && !sameNumber(link.cableLossDb, baseline.cableLossDb)
         ? link.cableLossDb
         : undefined,
   };
