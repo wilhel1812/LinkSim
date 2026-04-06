@@ -1631,6 +1631,21 @@ input {
   position: relative;
 }
 
+.chart-panel-debug-sizing {
+  outline: 2px dashed var(--danger);
+  outline-offset: -2px;
+}
+
+.chart-panel-debug-sizing .chart-svg-wrap-debug-sizing {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.chart-panel-debug-sizing .chart-svg-wrap-debug-sizing > svg {
+  outline: 2px dashed var(--success);
+  outline-offset: -2px;
+}
+
 .chart-header {
   display: flex;
   justify-content: space-between;
