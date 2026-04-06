@@ -7,6 +7,7 @@ import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
   type DeepLinkApplyOutcome,
   isAuthSignInRequiredMessage,
+  shouldCloseSimulationLibraryOnLoad,
   shouldRewritePathAfterDeepLinkApply,
   shouldUseReadonlyFallbackForAuthBootstrap,
 } from "../lib/appShellGuards";
@@ -1722,6 +1723,9 @@ export function AppShell() {
             onClose={() => setShowLibraryFromRequest(false)}
             onLoadSimulation={(presetId) => {
               loadSimulationPreset(presetId);
+              if (shouldCloseSimulationLibraryOnLoad({ presetId })) {
+                setShowLibraryFromRequest(false);
+              }
               try {
                 localStorage.setItem(LAST_SIMULATION_REF_KEY, `saved:${presetId}`);
               } catch {
