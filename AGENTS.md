@@ -24,6 +24,12 @@
   - For normal releases, promote to production only via a direct PR from `staging` into `main` (no release branch).
   - Use `hotfix/<slug>` only for explicitly approved incidents.
   - This staging-integration model is the default unless the user explicitly overrides it.
+- Branch/worktree cleanup routine (default after each completed pass):
+  - Keep only long-lived branches locally/remotely: `main`, `staging` (unless an active pass needs additional branches).
+  - After merge/deploy, prune refs: `git fetch --prune origin`.
+  - Delete merged local branches (except `main`/`staging`): `git branch --merged origin/staging | egrep -v '(^\\*|main|staging)' | xargs -n 1 git branch -d` (skip if no matches).
+  - Delete remote merged issue/chore/hotfix branches once no longer needed.
+  - Remove temporary worktrees for completed branches; keep only active worktrees.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
 - Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.
 - Never commit or push directly to `main`; always create/use a separate branch for changes and push that branch.
