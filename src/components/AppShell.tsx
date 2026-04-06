@@ -569,9 +569,7 @@ export function AppShell() {
   // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink,
   // and publish a persistent map notice (uses the existing map-inline-notice UI).
   useEffect(() => {
-    const isAnonNoDeepLink =
-      !deepLinkParse.ok &&
-      (isAnonymousGuestReadonly || (accessState === "locked" && lockedNeedsSignIn));
+    const isAnonNoDeepLink = !deepLinkParse.ok && isAnonymousGuestReadonly;
     if (!isAnonNoDeepLink) return;
     if (sites.length === 0) {
       loadDemoScenario();
@@ -583,7 +581,7 @@ export function AppShell() {
       persistent: true,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessState, isAnonymousGuestReadonly, lockedNeedsSignIn, deepLinkParse.ok]);
+  }, [isAnonymousGuestReadonly, deepLinkParse.ok]);
 
   const signOutOrReadonly = useCallback(() => {
     setCurrentUser(null);
@@ -1227,7 +1225,7 @@ export function AppShell() {
     isProfileExpanded,
     mobileControlsOccupied,
   ]);
-  const isAnonymousBootstrapShell = accessState === "checking" || (accessState === "locked" && lockedNeedsSignIn);
+  const isAnonymousBootstrapShell = accessState === "checking";
   const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
 
   const toggleProfileExpanded = () => {
@@ -1364,7 +1362,7 @@ export function AppShell() {
     );
   }
 
-  if (accessState === "locked" && !lockedNeedsSignIn) {
+  if (accessState === "locked") {
     return (
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
@@ -1526,9 +1524,7 @@ export function AppShell() {
                 </button>
               )
             }
-            simulationDisplayLabel={
-              isReadOnlyShell && !deepLinkParse.ok && sites.length > 0 ? "Oslo Demo" : undefined
-          }
+            simulationDisplayLabel={undefined}
         />
       ) : null}
       <section
