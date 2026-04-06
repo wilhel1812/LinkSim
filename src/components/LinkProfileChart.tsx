@@ -22,8 +22,6 @@ import { tilesForBounds } from "../lib/terrainTiles";
 import { useAppStore } from "../store/appStore";
 
 const M = { t: 14, r: 28, b: 34, l: 50 };
-const MIN_CHART_RENDER_WIDTH = 220;
-const MIN_CHART_RENDER_HEIGHT = 150;
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 const linePath = (points: { x: number; y: number }[]): string =>
@@ -72,7 +70,7 @@ export function LinkProfileChart({
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
-  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
+  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
   const [debugSizing] = useState(() => {
     if (typeof window === "undefined") return false;
     const localStorageEnabled = (() => {
@@ -90,9 +88,8 @@ export function LinkProfileChart({
   const [layoutPulseRevision, setLayoutPulseRevision] = useState(0);
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
-  const hasMeasuredSize = chartSize !== null;
-  const chartWidth = chartSize?.width ?? 0;
-  const chartHeight = chartSize?.height ?? 0;
+  const chartWidth = chartSize.width;
+  const chartHeight = chartSize.height;
   const [debugTrace] = useState(() => {
     if (typeof window === "undefined") return false;
     const localStorageEnabled = (() => {
@@ -173,11 +170,11 @@ export function LinkProfileChart({
           })()
         : null,
       layoutState: {
-        chartSizeWidth: chartSize?.width ?? null,
-        chartSizeHeight: chartSize?.height ?? null,
+        chartSizeWidth: chartSize.width,
+        chartSizeHeight: chartSize.height,
         chartWidthUsed: chartWidth,
         chartHeightUsed: chartHeight,
-        fallbackUsed: chartSize === null,
+        fallbackUsed: chartSize.width === 1200 && chartSize.height === 190,
       },
     };
   };
@@ -367,25 +364,16 @@ export function LinkProfileChart({
       const parentRect = element.parentElement?.getBoundingClientRect();
       const measuredWidth = Math.round(hostRect.width || parentRect?.width || 0);
       const measuredHeight = Math.round(hostRect.height || parentRect?.height || 0);
-      const isRenderableSize =
-        measuredWidth >= MIN_CHART_RENDER_WIDTH && measuredHeight >= MIN_CHART_RENDER_HEIGHT;
+      const nextWidth = Math.max(220, measuredWidth);
+      const nextHeight = Math.max(140, measuredHeight);
       pushTrace("measure", {
         measuredWidth,
         measuredHeight,
-        minRenderableWidth: MIN_CHART_RENDER_WIDTH,
-        minRenderableHeight: MIN_CHART_RENDER_HEIGHT,
-        isRenderableSize,
+        nextWidth,
+        nextHeight,
         ...getDomSnapshot(),
       });
       setChartSize((current) => {
-        if (!isRenderableSize) {
-          return current;
-        }
-        const nextWidth = measuredWidth;
-        const nextHeight = measuredHeight;
-        if (!current) {
-          return { width: nextWidth, height: nextHeight };
-        }
         const changed =
           Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1;
         const next = changed ? { width: nextWidth, height: nextHeight } : current;
@@ -544,10 +532,10 @@ export function LinkProfileChart({
       profileLength: profile.length,
       chartWidthUsed: chartWidth,
       chartHeightUsed: chartHeight,
-      fallbackUsed: chartSize === null,
+      fallbackUsed: chartWidth === 1200 && chartHeight === 190,
       ...getDomSnapshot(),
     });
-    if (!hasMeasuredSize || profile.length < 2) {
+    if (profile.length < 2) {
       const noDataGeometry = {
         hasData: false,
         xForDistance: () => M.l,
@@ -627,10 +615,10 @@ export function LinkProfileChart({
       yTickCount: computed.yTicks.length,
       chartWidthUsed: chartWidth,
       chartHeightUsed: chartHeight,
-      fallbackUsed: chartSize === null,
+      fallbackUsed: chartWidth === 1200 && chartHeight === 190,
     });
     return computed;
-  }, [profile, chartWidth, chartHeight, hasMeasuredSize, chartSize]);
+  }, [profile, chartWidth, chartHeight]);
   const svgProps = useMemo(() => buildProfileChartSvgProps(chartWidth, chartHeight), [chartWidth, chartHeight]);
 
   const segmentStateKey = useMemo(
@@ -1052,15 +1040,12 @@ export function LinkProfileChart({
           ) : null}
         </div>
       </div>
-      <div className={`chart-svg-wrap ${debugSizing ? "chart-svg-wrap-debug-sizing" : ""}`} ref={chartHostRef}>
-      {!hasMeasuredSize ? (
-        <div className="chart-empty" aria-hidden="true" />
-      ) : !geometry.hasData ? (
+      {!geometry.hasData ? (
         <div className="chart-empty">
           <p>Path profile unavailable for the selected link.</p>
         </div>
       ) : (
-        <>
+        <div className={`chart-svg-wrap ${debugSizing ? "chart-svg-wrap-debug-sizing" : ""}`} ref={chartHostRef}>
         <svg
           aria-label="Link profile"
           height={svgProps.height}
@@ -1167,9 +1152,8 @@ export function LinkProfileChart({
             ))}
           </div>
         ) : null}
-        </>
+        </div>
       )}
-      </div>
     </section>
   );
 }
