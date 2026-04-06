@@ -10,6 +10,15 @@ type CloudPushResult = {
   conflicts?: string[];
 };
 
+const listSimulationNames = (payload: CloudLibraryPayload): string[] =>
+  payload.simulationPresets
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return "";
+      const candidate = (entry as { name?: unknown }).name;
+      return typeof candidate === "string" ? candidate.trim() : "";
+    })
+    .filter(Boolean);
+
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   console.log("[cloudLibrary] API call:", init?.method ?? "GET", path);
   const response = await fetch(path, {
@@ -92,12 +101,16 @@ export const pushCloudLibrary = async (payload: CloudLibraryPayload, opts?: { su
   console.log("[cloudLibrary] Push has conflicts:", allConflicts, "fatal:", conflicts);
   if (!conflicts.length) return;
   if (conflicts.includes("simulation_private_site_reference")) {
+    const simulationNames = listSimulationNames(payload);
+    const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
     throw new Error(
-      "Cannot publish/shared a simulation that references private library sites. Set simulation to Private or use non-private site entries.",
+      `Cannot publish/shared simulation(s) with private Library Site references${suffix}. Set Simulation visibility to Private or use non-private Site entries.`,
     );
   }
   if (conflicts.includes("simulation_name_taken")) {
-    throw new Error("Simulation name already exists. Use a unique simulation name.");
+    const simulationNames = listSimulationNames(payload);
+    const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
+    throw new Error(`Simulation name already exists${suffix}. Use unique Simulation names.`);
   }
   throw new Error(`Cloud rejected ${conflicts.length} item(s): ${conflicts.join(", ")}`);
 };
