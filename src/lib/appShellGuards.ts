@@ -43,3 +43,6 @@ export const shouldUseReadonlyFallbackForAuthBootstrap = (input: {
   if (!isFirefox) return false;
   return normalized.includes("networkerror when attempting to fetch resource");
 };
+
+export const shouldCloseSimulationLibraryOnLoad = (input: { presetId: string | null | undefined }): boolean =>
+  String(input.presetId ?? "").trim().length > 0;
