@@ -51,6 +51,7 @@ type LinkProfileChartProps = {
   onToggleExpanded: () => void;
   showExpandToggle?: boolean;
   rowControls?: ReactNode;
+  layoutRevision?: string;
 };
 
 export function LinkProfileChart({
@@ -58,11 +59,25 @@ export function LinkProfileChart({
   onToggleExpanded,
   showExpandToggle = true,
   rowControls,
+  layoutRevision = "",
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
   const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
-  const [debugSizing, setDebugSizing] = useState(false);
+  const [debugSizing] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const localStorageEnabled = (() => {
+      try {
+        return window.localStorage.getItem("linksim-debug-profile-chart-sizing") === "1";
+      } catch {
+        return false;
+      }
+    })();
+    const runtimeEnabled =
+      (window as typeof window & { __LINKSIM_DEBUG_PROFILE_CHART_SIZING__?: boolean })
+        .__LINKSIM_DEBUG_PROFILE_CHART_SIZING__ === true;
+    return localStorageEnabled || runtimeEnabled;
+  });
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
   const chartWidth = chartSize.width;
@@ -94,20 +109,6 @@ export function LinkProfileChart({
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
   );
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const localStorageEnabled = (() => {
-      try {
-        return window.localStorage.getItem("linksim-debug-profile-chart-sizing") === "1";
-      } catch {
-        return false;
-      }
-    })();
-    const runtimeEnabled =
-      (window as typeof window & { __LINKSIM_DEBUG_PROFILE_CHART_SIZING__?: boolean })
-        .__LINKSIM_DEBUG_PROFILE_CHART_SIZING__ === true;
-    setDebugSizing(localStorageEnabled || runtimeEnabled);
-  }, []);
   const baseProfile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? null;
   const selectedSites = useMemo(
@@ -363,7 +364,7 @@ export function LinkProfileChart({
       mutationObserver.disconnect();
       observer.disconnect();
     };
-  }, [debugSizing, isExpanded, profile.length]);
+  }, [debugSizing, isExpanded, layoutRevision, profile.length]);
 
   const geometry = useMemo(() => {
     if (profile.length < 2) {
