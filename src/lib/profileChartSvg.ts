@@ -1,8 +1,6 @@
 export type ProfileChartSvgProps = {
   width: number;
   height: number;
-  viewBox: string;
-  preserveAspectRatio: "none";
 };
 
 const toSafeSize = (value: number): number => {
@@ -16,7 +14,5 @@ export const buildProfileChartSvgProps = (width: number, height: number): Profil
   return {
     width: safeWidth,
     height: safeHeight,
-    viewBox: `0 0 ${safeWidth} ${safeHeight}`,
-    preserveAspectRatio: "none",
   };
 };
