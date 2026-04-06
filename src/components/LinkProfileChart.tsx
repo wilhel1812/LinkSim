@@ -246,6 +246,7 @@ export function LinkProfileChart({
   }, [profile.length, selectedLinkId, temporaryDirectionReversed, setProfileCursorIndex]);
 
   useLayoutEffect(() => {
+    if (profile.length < 2) return;
     const element = chartHostRef.current;
     if (!element) return;
 
