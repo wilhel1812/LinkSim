@@ -63,7 +63,7 @@ export function LinkProfileChart({
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
-  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
+  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
   const [debugSizing] = useState(() => {
     if (typeof window === "undefined") return false;
     const localStorageEnabled = (() => {
@@ -81,8 +81,8 @@ export function LinkProfileChart({
   const [layoutPulseRevision, setLayoutPulseRevision] = useState(0);
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
-  const chartWidth = chartSize?.width ?? 1;
-  const chartHeight = chartSize?.height ?? 1;
+  const chartWidth = chartSize.width;
+  const chartHeight = chartSize.height;
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -246,6 +246,7 @@ export function LinkProfileChart({
   }, [profile.length, selectedLinkId, temporaryDirectionReversed, setProfileCursorIndex]);
 
   useLayoutEffect(() => {
+    if (profile.length < 2) return;
     const element = chartHostRef.current;
     if (!element) return;
 
@@ -254,14 +255,11 @@ export function LinkProfileChart({
       const parentRect = element.parentElement?.getBoundingClientRect();
       const measuredWidth = Math.round(hostRect.width || parentRect?.width || 0);
       const measuredHeight = Math.round(hostRect.height || parentRect?.height || 0);
-      if (measuredWidth <= 1 || measuredHeight <= 1) return;
-      const nextWidth = measuredWidth;
-      const nextHeight = measuredHeight;
+      const nextWidth = Math.max(220, measuredWidth);
+      const nextHeight = Math.max(140, measuredHeight);
       setChartSize((current) => {
         const changed =
-          !current ||
-          Math.abs(current.width - nextWidth) > 1 ||
-          Math.abs(current.height - nextHeight) > 1;
+          Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1;
         const next = changed ? { width: nextWidth, height: nextHeight } : current;
         if (debugSizing) {
           const chartPanelRect = element.closest(".chart-panel")?.getBoundingClientRect();
@@ -292,7 +290,7 @@ export function LinkProfileChart({
             isExpanded,
           });
         }
-        return next ?? current;
+        return next;
       });
     };
 
@@ -866,14 +864,13 @@ export function LinkProfileChart({
           ) : null}
         </div>
       </div>
-      <div className={`chart-svg-wrap ${debugSizing ? "chart-svg-wrap-debug-sizing" : ""}`} ref={chartHostRef}>
-        {!geometry.hasData ? (
-          <div className="chart-empty">
-            <p>Path profile unavailable for the selected link.</p>
-          </div>
-        ) : chartSize ? (
-        <>
-          <svg
+      {!geometry.hasData ? (
+        <div className="chart-empty">
+          <p>Path profile unavailable for the selected link.</p>
+        </div>
+      ) : (
+        <div className={`chart-svg-wrap ${debugSizing ? "chart-svg-wrap-debug-sizing" : ""}`} ref={chartHostRef}>
+        <svg
           aria-label="Link profile"
           height={svgProps.height}
           role="img"
@@ -959,8 +956,8 @@ export function LinkProfileChart({
             onMouseMove={onSvgMove}
             onMouseLeave={onSvgLeave}
           />
-          </svg>
-          {splitHoverPopoverPosition && cursorStates && cursorStates.length > 1 ? (
+        </svg>
+        {splitHoverPopoverPosition && cursorStates && cursorStates.length > 1 ? (
           <div
             className="chart-hover-popover"
             role="status"
@@ -978,10 +975,9 @@ export function LinkProfileChart({
               </div>
             ))}
           </div>
-          ) : null}
-        </>
         ) : null}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
