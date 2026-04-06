@@ -46,6 +46,13 @@ const earthBulgeM = (distanceKm: number, t: number): number => {
   return (x * (dTotalM - x)) / (2 * earthRadiusM);
 };
 
+type ProfileTraceEvent = {
+  seq: number;
+  tMs: number;
+  event: string;
+  payload: Record<string, unknown>;
+};
+
 type LinkProfileChartProps = {
   isExpanded: boolean;
   onToggleExpanded: () => void;
@@ -83,6 +90,24 @@ export function LinkProfileChart({
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
   const chartWidth = chartSize.width;
   const chartHeight = chartSize.height;
+  const [debugTrace] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const localStorageEnabled = (() => {
+      try {
+        return window.localStorage.getItem("linksim-debug-profile-trace") === "1";
+      } catch {
+        return false;
+      }
+    })();
+    const runtimeEnabled =
+      (window as typeof window & { __LINKSIM_DEBUG_PROFILE_TRACE__?: boolean })
+        .__LINKSIM_DEBUG_PROFILE_TRACE__ === true;
+    return localStorageEnabled || runtimeEnabled;
+  });
+  const traceSeqRef = useRef(0);
+  const traceStartRef = useRef<number | null>(null);
+  const firstCorrectedByRef = useRef<string | null>(null);
+  const lastSizeSourceRef = useRef<string>("init");
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -110,11 +135,90 @@ export function LinkProfileChart({
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
   );
 
+  const getDomSnapshot = () => {
+    const host = chartHostRef.current;
+    const panel = host?.closest(".chart-panel") as HTMLElement | null;
+    const svg = host?.querySelector("svg");
+    const hostRect = host?.getBoundingClientRect();
+    const panelRect = panel?.getBoundingClientRect();
+    return {
+      host: hostRect
+        ? {
+            width: Math.round(hostRect.width),
+            height: Math.round(hostRect.height),
+            clientWidth: host?.clientWidth ?? 0,
+            clientHeight: host?.clientHeight ?? 0,
+          }
+        : null,
+      panel: panelRect
+        ? {
+            width: Math.round(panelRect.width),
+            height: Math.round(panelRect.height),
+          }
+        : null,
+      svgAttrs: svg
+        ? {
+            width: svg.getAttribute("width"),
+            height: svg.getAttribute("height"),
+            viewBox: svg.getAttribute("viewBox"),
+          }
+        : null,
+      svgRect: svg
+        ? (() => {
+            const rect = svg.getBoundingClientRect();
+            return { width: Math.round(rect.width), height: Math.round(rect.height) };
+          })()
+        : null,
+      layoutState: {
+        chartSizeWidth: chartSize.width,
+        chartSizeHeight: chartSize.height,
+        chartWidthUsed: chartWidth,
+        chartHeightUsed: chartHeight,
+        fallbackUsed: chartSize.width === 1200 && chartSize.height === 190,
+      },
+    };
+  };
+
+  const pushTrace = (event: string, payload: Record<string, unknown>) => {
+    if (!debugTrace || typeof window === "undefined") return;
+    const now = performance.now();
+    if (traceStartRef.current === null) traceStartRef.current = now;
+    const tMs = Math.round(now - traceStartRef.current);
+    const traceEvent: ProfileTraceEvent = {
+      seq: ++traceSeqRef.current,
+      tMs,
+      event,
+      payload,
+    };
+    const traceWindow = window as typeof window & {
+      __LINKSIM_PROFILE_TRACE__?: { events: ProfileTraceEvent[] };
+    };
+    const store = traceWindow.__LINKSIM_PROFILE_TRACE__ ?? { events: [] };
+    store.events.push(traceEvent);
+    if (store.events.length > 1200) {
+      store.events.splice(0, store.events.length - 1200);
+    }
+    traceWindow.__LINKSIM_PROFILE_TRACE__ = store;
+  };
+
+  pushTrace("render", {
+    profileLength: profileRevision,
+    ...getDomSnapshot(),
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return;
+    pushTrace("useEffect-layout-pulse-subscribe", {
+      ...getDomSnapshot(),
+    });
     const onLayoutPulse = () => setLayoutPulseRevision((current) => current + 1);
     window.addEventListener("linksim-profile-layout-pulse", onLayoutPulse);
-    return () => window.removeEventListener("linksim-profile-layout-pulse", onLayoutPulse);
+    return () => {
+      pushTrace("useEffect-layout-pulse-cleanup", {
+        ...getDomSnapshot(),
+      });
+      window.removeEventListener("linksim-profile-layout-pulse", onLayoutPulse);
+    };
   }, []);
 
   const baseProfile = getSelectedProfile();
@@ -246,26 +350,43 @@ export function LinkProfileChart({
   }, [profile.length, selectedLinkId, temporaryDirectionReversed, setProfileCursorIndex]);
 
   useLayoutEffect(() => {
+    pushTrace("useLayoutEffect-enter", {
+      profileLength: profile.length,
+      ...getDomSnapshot(),
+    });
     if (profile.length < 2) return;
     const element = chartHostRef.current;
     if (!element) return;
 
     const updateSize = (source: string) => {
+      lastSizeSourceRef.current = source;
       const hostRect = element.getBoundingClientRect();
       const parentRect = element.parentElement?.getBoundingClientRect();
       const measuredWidth = Math.round(hostRect.width || parentRect?.width || 0);
       const measuredHeight = Math.round(hostRect.height || parentRect?.height || 0);
       const nextWidth = Math.max(220, measuredWidth);
       const nextHeight = Math.max(140, measuredHeight);
+      pushTrace("measure", {
+        measuredWidth,
+        measuredHeight,
+        nextWidth,
+        nextHeight,
+        ...getDomSnapshot(),
+      });
       setChartSize((current) => {
         const changed =
           Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1;
         const next = changed ? { width: nextWidth, height: nextHeight } : current;
+        pushTrace("setChartSize", {
+          changed,
+          current,
+          next,
+          ...getDomSnapshot(),
+        });
         if (debugSizing) {
           const chartPanelRect = element.closest(".chart-panel")?.getBoundingClientRect();
           const workspaceRect = element.closest(".workspace-panel")?.getBoundingClientRect();
           console.info("[profile-chart-sizing]", {
-            source,
             changed,
             current,
             next,
@@ -362,6 +483,9 @@ export function LinkProfileChart({
     if (workspacePanelElement instanceof HTMLElement) observer.observe(workspacePanelElement);
 
     return () => {
+      pushTrace("useLayoutEffect-cleanup", {
+        ...getDomSnapshot(),
+      });
       cancelAnimationFrame(rafIdA);
       cancelAnimationFrame(rafIdB);
       window.clearTimeout(followUpTimerA);
@@ -375,9 +499,44 @@ export function LinkProfileChart({
     };
   }, [debugSizing, isExpanded, layoutPulseRevision, layoutRevision, profile.length]);
 
+  useEffect(() => {
+    pushTrace("useEffect-post-commit", {
+      profileLength: profile.length,
+      ...getDomSnapshot(),
+    });
+  }, [profile.length, chartWidth, chartHeight, layoutRevision, isExpanded]);
+
+  useEffect(() => {
+    const host = chartHostRef.current;
+    const svg = host?.querySelector("svg");
+    if (!host || !svg) return;
+    const hostRect = host.getBoundingClientRect();
+    const attrWidth = Number(svg.getAttribute("width") ?? "0");
+    const attrHeight = Number(svg.getAttribute("height") ?? "0");
+    const widthAligned = Number.isFinite(attrWidth) && Math.abs(attrWidth - hostRect.width) <= 1;
+    const heightAligned = Number.isFinite(attrHeight) && Math.abs(attrHeight - hostRect.height) <= 1;
+    if (!widthAligned || !heightAligned || firstCorrectedByRef.current) return;
+    firstCorrectedByRef.current = lastSizeSourceRef.current;
+    pushTrace("first-corrected", {
+      correctedBySource: firstCorrectedByRef.current,
+      hostWidth: Math.round(hostRect.width),
+      hostHeight: Math.round(hostRect.height),
+      attrWidth,
+      attrHeight,
+      ...getDomSnapshot(),
+    });
+  }, [chartWidth, chartHeight, profile.length, layoutRevision, isExpanded]);
+
   const geometry = useMemo(() => {
+    pushTrace("geometry-compute-enter", {
+      profileLength: profile.length,
+      chartWidthUsed: chartWidth,
+      chartHeightUsed: chartHeight,
+      fallbackUsed: chartWidth === 1200 && chartHeight === 190,
+      ...getDomSnapshot(),
+    });
     if (profile.length < 2) {
-      return {
+      const noDataGeometry = {
         hasData: false,
         xForDistance: () => M.l,
         yForElevation: () => chartHeight - M.b,
@@ -387,6 +546,14 @@ export function LinkProfileChart({
         yTicks: [] as { value: number; py: number }[],
         xTicks: [] as { value: number; px: number; anchor: "start" | "middle" | "end" }[],
       };
+      pushTrace("geometry-compute-exit", {
+        hasData: false,
+        xTickCount: 0,
+        yTickCount: 0,
+        chartWidthUsed: chartWidth,
+        chartHeightUsed: chartHeight,
+      });
+      return noDataGeometry;
     }
 
     const rawDistanceDomain = extent(profile, (p) => p.distanceKm);
@@ -418,7 +585,7 @@ export function LinkProfileChart({
       state: "pass_clear" as PassFailState,
     }));
 
-    return {
+    const computed = {
       hasData: true,
       xForDistance: (distanceKm: number) => x(distanceKm),
       yForElevation: (elevation: number) => y(elevation),
@@ -442,6 +609,15 @@ export function LinkProfileChart({
         };
       }),
     };
+    pushTrace("geometry-compute-exit", {
+      hasData: true,
+      xTickCount: computed.xTicks.length,
+      yTickCount: computed.yTicks.length,
+      chartWidthUsed: chartWidth,
+      chartHeightUsed: chartHeight,
+      fallbackUsed: chartWidth === 1200 && chartHeight === 190,
+    });
+    return computed;
   }, [profile, chartWidth, chartHeight]);
   const svgProps = useMemo(() => buildProfileChartSvgProps(chartWidth, chartHeight), [chartWidth, chartHeight]);
 
