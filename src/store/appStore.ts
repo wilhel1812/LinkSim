@@ -3807,13 +3807,49 @@ export const useAppStore = create<AppState>((set, get) => ({
     useCoverageStore.getState().recomputeCoverage();
   },
   getSelectedLink: () => {
-    const { links, selectedLinkId, sites, networks, selectedNetworkId } = get();
+    const { links, selectedLinkId, selectedSiteIds, temporaryDirectionReversed, sites, networks, selectedNetworkId } = get();
     const link = links.find((candidate) => candidate.id === selectedLinkId);
     if (link) {
       const fromSite = sites.find((site) => site.id === link.fromSiteId) ?? null;
       const toSite = sites.find((site) => site.id === link.toSiteId) ?? null;
       const radio = resolveLinkRadio(link, fromSite, toSite);
       return { ...link, ...radio };
+    }
+    const selectedPair = normalizeSelectedSiteIds(selectedSiteIds, sites);
+    if (selectedPair.length >= 2) {
+      const fromId = selectedPair[0];
+      const toId = selectedPair[selectedPair.length - 1];
+      const effectiveFromId = temporaryDirectionReversed ? toId : fromId;
+      const effectiveToId = temporaryDirectionReversed ? fromId : toId;
+      const pairLink = links.find(
+        (candidate) =>
+          (candidate.fromSiteId === effectiveFromId && candidate.toSiteId === effectiveToId) ||
+          (candidate.fromSiteId === effectiveToId && candidate.toSiteId === effectiveFromId),
+      );
+      if (pairLink) {
+        const fromSite = sites.find((site) => site.id === pairLink.fromSiteId) ?? null;
+        const toSite = sites.find((site) => site.id === pairLink.toSiteId) ?? null;
+        const radio = resolveLinkRadio(pairLink, fromSite, toSite);
+        return { ...pairLink, ...radio };
+      }
+      const selectedNetwork = networks.find((network) => network.id === selectedNetworkId);
+      const inheritedFrequencyMHz =
+        selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 869.618;
+      const fromSite = sites.find((site) => site.id === effectiveFromId) ?? null;
+      const toSite = sites.find((site) => site.id === effectiveToId) ?? null;
+      if (fromSite && toSite) {
+        return {
+          id: "__selection__",
+          name: `${fromSite.name} -> ${toSite.name}`,
+          fromSiteId: fromSite.id,
+          toSiteId: toSite.id,
+          frequencyMHz: inheritedFrequencyMHz,
+          txPowerDbm: fromSite.txPowerDbm,
+          txGainDbi: fromSite.txGainDbi,
+          rxGainDbi: toSite.rxGainDbi,
+          cableLossDb: fromSite.cableLossDb,
+        };
+      }
     }
     if (links[0]) {
       const base = links[0];

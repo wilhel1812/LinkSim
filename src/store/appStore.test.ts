@@ -487,6 +487,84 @@ describe("appStore blank simulation loading", () => {
   });
 });
 
+describe("appStore selected pair link resolution", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+    useAppStore.setState({
+      selectedLinkId: "",
+      selectedSiteIds: ["site-2", "site-1"],
+      sites: [
+        {
+          id: "site-1",
+          name: "Alpha",
+          position: { lat: 1, lon: 1 },
+          groundElevationM: 100,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+        {
+          id: "site-2",
+          name: "Beta",
+          position: { lat: 2, lon: 2 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 21,
+          txGainDbi: 3,
+          rxGainDbi: 3,
+          cableLossDb: 2,
+        },
+      ],
+      links: [
+        {
+          id: "link-other",
+          fromSiteId: "site-9",
+          toSiteId: "site-10",
+          frequencyMHz: 869.618,
+          txPowerDbm: 5,
+          txGainDbi: 1,
+          rxGainDbi: 1,
+          cableLossDb: 9,
+        },
+        {
+          id: "link-primary",
+          fromSiteId: "site-1",
+          toSiteId: "site-2",
+          frequencyMHz: 869.618,
+          txPowerDbm: 30,
+          txGainDbi: 9,
+          rxGainDbi: 8,
+          cableLossDb: 0.5,
+        },
+      ],
+      networks: [
+        {
+          id: "network-1",
+          name: "n1",
+          frequencyMHz: 869.618,
+          bandwidthKhz: 125,
+          spreadFactor: 7,
+          codingRate: 5,
+          memberships: [],
+        },
+      ],
+      selectedNetworkId: "network-1",
+    });
+  });
+
+  it("returns saved pair link overrides when two-site selection has no selectedLinkId", () => {
+    const selectedLink = useAppStore.getState().getSelectedLink();
+    expect(selectedLink.id).toBe("link-primary");
+    expect(selectedLink.txPowerDbm).toBe(30);
+    expect(selectedLink.txGainDbi).toBe(9);
+    expect(selectedLink.rxGainDbi).toBe(8);
+    expect(selectedLink.cableLossDb).toBe(0.5);
+  });
+});
+
 describe("appStore blank simulation loading", () => {
   beforeEach(() => {
     storage.mock.clear();
