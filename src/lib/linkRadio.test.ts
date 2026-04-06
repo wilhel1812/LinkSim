@@ -53,7 +53,7 @@ describe("stripRedundantLinkRadioOverrides", () => {
     expect(result.cableLossDb).toBe(0.2);
   });
 
-  it("removes overrides when values match Site defaults", () => {
+  it("keeps explicit overrides when values match Site defaults", () => {
     const result = stripRedundantLinkRadioOverrides(
       {
         ...baseLink,
@@ -66,9 +66,9 @@ describe("stripRedundantLinkRadioOverrides", () => {
       toSite,
     );
 
-    expect(result.txPowerDbm).toBeUndefined();
-    expect(result.txGainDbi).toBeUndefined();
-    expect(result.rxGainDbi).toBeUndefined();
-    expect(result.cableLossDb).toBeUndefined();
+    expect(result.txPowerDbm).toBe(fromSite.txPowerDbm);
+    expect(result.txGainDbi).toBe(fromSite.txGainDbi);
+    expect(result.rxGainDbi).toBe(toSite.rxGainDbi);
+    expect(result.cableLossDb).toBe(fromSite.cableLossDb);
   });
 });
