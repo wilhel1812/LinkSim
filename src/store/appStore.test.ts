@@ -38,6 +38,37 @@ vi.mock("../lib/elevationService", () => ({
 import { useAppStore } from "./appStore";
 import { fetchElevations } from "../lib/elevationService";
 
+describe("appStore auth session state", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("marks auth state signed_in when current user is set and signed_out when cleared", () => {
+    useAppStore.getState().setCurrentUser({
+      id: "user-1",
+      username: "User One",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+    expect(useAppStore.getState().authState).toBe("signed_in");
+
+    useAppStore.getState().setCurrentUser(null);
+    expect(useAppStore.getState().authState).toBe("signed_out");
+  });
+});
+
 describe("appStore auth guards", () => {
   beforeEach(() => {
     storage.mock.clear();
