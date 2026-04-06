@@ -11,6 +11,7 @@ import {
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
 import { formatDate } from "../lib/locale";
+import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
 
 type FilterGroupKey = "role" | "visibility";
@@ -223,6 +224,12 @@ export default function SimulationLibraryPanel({
       setSimulationSaveStatus("");
       return;
     }
+    if (hasDuplicateSimulationNameForOwner(simulationPresets, trimmed, currentUser.id)) {
+      const duplicateMessage = duplicateSimulationNameMessage(trimmed);
+      setNewSimulationNameError(duplicateMessage);
+      setSimulationSaveStatus(duplicateMessage);
+      return;
+    }
     setNewSimulationNameError("");
     const createdId = createBlankSimulationPreset(trimmed, {
       description: newSimulationDescription.trim() || undefined,
@@ -236,7 +243,7 @@ export default function SimulationLibraryPanel({
       lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
     });
     if (!createdId) {
-      setSimulationSaveStatus("Failed creating simulation.");
+      setSimulationSaveStatus(duplicateSimulationNameMessage(trimmed));
       return;
     }
     loadSimulationPreset(createdId);

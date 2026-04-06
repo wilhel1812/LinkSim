@@ -19,6 +19,7 @@ import {
 } from "../lib/propagationEnvironment";
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { BUILTIN_SCENARIOS, defaultScenario, DEMO_SCENARIO, getScenarioById } from "../lib/scenarios";
+import { hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { mergeSrtmTiles } from "../lib/terrainMerge";
@@ -635,16 +636,6 @@ const slugifyValue = (value: string): string =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
-
-const hasDuplicateSimulationName = (
-  presets: SimulationPreset[],
-  name: string,
-  ignorePresetId?: string,
-): boolean => {
-  const target = name.trim().toLowerCase();
-  if (!target) return false;
-  return presets.some((preset) => preset.id !== ignorePresetId && preset.name.trim().toLowerCase() === target);
-};
 
 const legacyDemoSiteFingerprint = new Set([
   "bislett|59.925000|10.732000",
@@ -2598,7 +2589,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!user) return null;
     const presetName = name.trim();
     if (!presetName) return null;
-    if (hasDuplicateSimulationName(get().simulationPresets, presetName)) return null;
+    const ownerUserId = options?.ownerUserId ?? user.id;
+    if (hasDuplicateSimulationNameForOwner(get().simulationPresets, presetName, ownerUserId)) return null;
     set((current) => {
       const snapshot: SimulationPreset["snapshot"] = {
         sites: [],
@@ -2899,7 +2891,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const nextName = name.trim();
     if (!nextName) return;
-    if (hasDuplicateSimulationName(get().simulationPresets, nextName, presetId)) return;
+    const ownerUserId = existing?.ownerUserId ?? user.id;
+    if (hasDuplicateSimulationNameForOwner(get().simulationPresets, nextName, ownerUserId, presetId)) return;
     set((state) => {
       const next = state.simulationPresets.map((preset) =>
         preset.id === presetId
@@ -2939,7 +2932,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (typeof patch.name === "string") {
       const candidate = patch.name.trim();
       if (!candidate) return;
-      if (hasDuplicateSimulationName(get().simulationPresets, candidate, presetId)) return;
+      const ownerUserId = existing?.ownerUserId ?? user.id;
+      if (hasDuplicateSimulationNameForOwner(get().simulationPresets, candidate, ownerUserId, presetId)) return;
     }
     markDirtySim(presetId);
     set((state) => {
