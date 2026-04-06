@@ -51,6 +51,7 @@ type LinkProfileChartProps = {
   onToggleExpanded: () => void;
   showExpandToggle?: boolean;
   rowControls?: ReactNode;
+  layoutRevision?: string;
 };
 
 export function LinkProfileChart({
@@ -58,14 +59,30 @@ export function LinkProfileChart({
   onToggleExpanded,
   showExpandToggle = true,
   rowControls,
+  layoutRevision = "",
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
-  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
+  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
+  const [debugSizing] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const localStorageEnabled = (() => {
+      try {
+        return window.localStorage.getItem("linksim-debug-profile-chart-sizing") === "1";
+      } catch {
+        return false;
+      }
+    })();
+    const runtimeEnabled =
+      (window as typeof window & { __LINKSIM_DEBUG_PROFILE_CHART_SIZING__?: boolean })
+        .__LINKSIM_DEBUG_PROFILE_CHART_SIZING__ === true;
+    return localStorageEnabled || runtimeEnabled;
+  });
+  const [layoutPulseRevision, setLayoutPulseRevision] = useState(0);
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
-  const chartWidth = chartSize?.width ?? 220;
-  const chartHeight = chartSize?.height ?? 150;
+  const chartWidth = chartSize.width;
+  const chartHeight = chartSize.height;
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -92,6 +109,13 @@ export function LinkProfileChart({
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onLayoutPulse = () => setLayoutPulseRevision((current) => current + 1);
+    window.addEventListener("linksim-profile-layout-pulse", onLayoutPulse);
+    return () => window.removeEventListener("linksim-profile-layout-pulse", onLayoutPulse);
+  }, []);
 
   const baseProfile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? null;
@@ -225,36 +249,130 @@ export function LinkProfileChart({
     const element = chartHostRef.current;
     if (!element) return;
 
-    const commitSize = (width: number, height: number) => {
-      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
-      const nextWidth = Math.max(220, Math.round(width));
-      const nextHeight = Math.max(140, Math.round(height));
+    const updateSize = (source: string) => {
+      const hostRect = element.getBoundingClientRect();
+      const parentRect = element.parentElement?.getBoundingClientRect();
+      const measuredWidth = Math.round(hostRect.width || parentRect?.width || 0);
+      const measuredHeight = Math.round(hostRect.height || parentRect?.height || 0);
+      const nextWidth = Math.max(220, measuredWidth);
+      const nextHeight = Math.max(140, measuredHeight);
       setChartSize((current) => {
-        if (
-          current &&
-          Math.abs(current.width - nextWidth) <= 1 &&
-          Math.abs(current.height - nextHeight) <= 1
-        ) {
-          return current;
+        const changed =
+          Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1;
+        const next = changed ? { width: nextWidth, height: nextHeight } : current;
+        if (debugSizing) {
+          const chartPanelRect = element.closest(".chart-panel")?.getBoundingClientRect();
+          const workspaceRect = element.closest(".workspace-panel")?.getBoundingClientRect();
+          console.info("[profile-chart-sizing]", {
+            source,
+            changed,
+            current,
+            next,
+            host: {
+              width: Math.round(hostRect.width),
+              height: Math.round(hostRect.height),
+              clientWidth: element.clientWidth,
+              clientHeight: element.clientHeight,
+              offsetWidth: element.offsetWidth,
+              offsetHeight: element.offsetHeight,
+            },
+            parent: parentRect
+              ? { width: Math.round(parentRect.width), height: Math.round(parentRect.height) }
+              : null,
+            chartPanel: chartPanelRect
+              ? { width: Math.round(chartPanelRect.width), height: Math.round(chartPanelRect.height) }
+              : null,
+            workspacePanel: workspaceRect
+              ? { width: Math.round(workspaceRect.width), height: Math.round(workspaceRect.height) }
+              : null,
+            profileLength: profile.length,
+            isExpanded,
+          });
         }
-        return { width: nextWidth, height: nextHeight };
+        return next;
       });
     };
 
-    const hostRect = element.getBoundingClientRect();
-    commitSize(hostRect.width, hostRect.height);
+    updateSize("layout-effect-init");
+    const rafIdA = requestAnimationFrame(() => updateSize("raf-1"));
+    const rafIdB = requestAnimationFrame(() => requestAnimationFrame(() => updateSize("raf-2")));
+    const followUpTimerA = window.setTimeout(() => updateSize("timer-120ms"), 120);
+    const followUpTimerB = window.setTimeout(() => updateSize("timer-280ms"), 280);
+    const followUpTimerC = window.setTimeout(() => updateSize("timer-1000ms"), 1000);
+    const followUpTimerD = window.setTimeout(() => updateSize("timer-1800ms"), 1800);
+    const onWindowResize = () => updateSize("window-resize");
+    window.addEventListener("resize", onWindowResize);
 
-    if (typeof ResizeObserver === "undefined") return;
+    const appShell = element.closest(".app-shell");
+    const workspacePanelElement = element.closest(".workspace-panel");
+    const onTransitionEnd = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        target.closest(".workspace-panel") ||
+        target.closest(".map-inspector") ||
+        target.closest(".chart-panel")
+      ) {
+        updateSize("transition-end");
+      }
+    };
+    window.addEventListener("transitionend", onTransitionEnd, true);
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      commitSize(entry.contentRect.width, entry.contentRect.height);
+    const mutationObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes") {
+          updateSize("class-mutation");
+          break;
+        }
+      }
     });
-    observer.observe(element);
+    if (appShell) {
+      mutationObserver.observe(appShell, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+    }
+    if (workspacePanelElement) {
+      mutationObserver.observe(workspacePanelElement, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+    }
 
-    return () => observer.disconnect();
-  }, [profile.length]);
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        cancelAnimationFrame(rafIdA);
+        cancelAnimationFrame(rafIdB);
+        window.clearTimeout(followUpTimerA);
+        window.clearTimeout(followUpTimerB);
+        window.clearTimeout(followUpTimerC);
+        window.clearTimeout(followUpTimerD);
+        window.removeEventListener("resize", onWindowResize);
+        window.removeEventListener("transitionend", onTransitionEnd, true);
+        mutationObserver.disconnect();
+      };
+    }
+
+    const observer = new ResizeObserver(() => updateSize("resize-observer"));
+    observer.observe(element);
+    if (element.parentElement) observer.observe(element.parentElement);
+    const chartPanel = element.closest(".chart-panel");
+    if (chartPanel instanceof HTMLElement) observer.observe(chartPanel);
+    if (workspacePanelElement instanceof HTMLElement) observer.observe(workspacePanelElement);
+
+    return () => {
+      cancelAnimationFrame(rafIdA);
+      cancelAnimationFrame(rafIdB);
+      window.clearTimeout(followUpTimerA);
+      window.clearTimeout(followUpTimerB);
+      window.clearTimeout(followUpTimerC);
+      window.clearTimeout(followUpTimerD);
+      window.removeEventListener("resize", onWindowResize);
+      window.removeEventListener("transitionend", onTransitionEnd, true);
+      mutationObserver.disconnect();
+      observer.disconnect();
+    };
+  }, [debugSizing, isExpanded, layoutPulseRevision, layoutRevision, profile.length]);
 
   const geometry = useMemo(() => {
     if (profile.length < 2) {
@@ -699,7 +817,7 @@ export function LinkProfileChart({
   }
 
   return (
-    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`} data-profile-revision={profileRevision}>
+    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${debugSizing ? "chart-panel-debug-sizing" : ""}`} data-profile-revision={profileRevision}>
       <div className="chart-top-row">
         <div className="chart-endpoints" aria-live="polite">
           <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
@@ -750,9 +868,13 @@ export function LinkProfileChart({
           <p>Path profile unavailable for the selected link.</p>
         </div>
       ) : (
-        <div className="chart-svg-wrap" ref={chartHostRef}>
-        {chartSize ? (
-        <svg aria-label="Link profile" height={svgProps.height} role="img" width={svgProps.width}>
+        <div className={`chart-svg-wrap ${debugSizing ? "chart-svg-wrap-debug-sizing" : ""}`} ref={chartHostRef}>
+        <svg
+          aria-label="Link profile"
+          height={svgProps.height}
+          role="img"
+          width={svgProps.width}
+        >
           <defs>
             <linearGradient
               gradientUnits="userSpaceOnUse"
@@ -834,7 +956,6 @@ export function LinkProfileChart({
             onMouseLeave={onSvgLeave}
           />
         </svg>
-        ) : null}
         {splitHoverPopoverPosition && cursorStates && cursorStates.length > 1 ? (
           <div
             className="chart-hover-popover"
