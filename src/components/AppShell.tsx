@@ -5,6 +5,7 @@ import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } fro
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
+  formatPrivateSiteReferenceBlockMessage,
   type DeepLinkApplyOutcome,
   isAuthSignInRequiredMessage,
   shouldCloseSimulationLibraryOnLoad,
@@ -1156,6 +1157,12 @@ export function AppShell() {
 
   const runShareWithSpecificUsers = useCallback(async () => {
     if (!activeSimulation || !currentUser) return;
+    if (toVisibility(activeSimulation.visibility) !== "private" && referencedPrivateSites.length) {
+      setShareSpecificStatus(
+        formatPrivateSiteReferenceBlockMessage(referencedPrivateSites.map((site) => site.name)),
+      );
+      return;
+    }
     if (!shareSpecificUsers.length) {
       setShareSpecificStatus("Add at least one user first.");
       return;
@@ -1193,7 +1200,15 @@ export function AppShell() {
     } finally {
       setShareSpecificBusy(false);
     }
-  }, [activeSimulation, currentShareLink, currentUser, shareSpecificRoles, shareSpecificUsers, updateSimulationPresetEntry]);
+  }, [
+    activeSimulation,
+    currentShareLink,
+    currentUser,
+    referencedPrivateSites,
+    shareSpecificRoles,
+    shareSpecificUsers,
+    updateSimulationPresetEntry,
+  ]);
 
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     const style: CSSProperties = {

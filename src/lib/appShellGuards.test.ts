@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatPrivateSiteReferenceBlockMessage,
   isAuthSignInRequiredMessage,
   shouldCloseSimulationLibraryOnLoad,
   shouldRewritePathAfterDeepLinkApply,
@@ -110,5 +111,13 @@ describe("shouldCloseSimulationLibraryOnLoad", () => {
   it("does not close for empty simulation selection", () => {
     expect(shouldCloseSimulationLibraryOnLoad({ presetId: "" })).toBe(false);
     expect(shouldCloseSimulationLibraryOnLoad({ presetId: "   " })).toBe(false);
+  });
+});
+
+describe("formatPrivateSiteReferenceBlockMessage", () => {
+  it("lists private Library Site names in the validation message", () => {
+    expect(formatPrivateSiteReferenceBlockMessage(["Alpha", "Beta"])).toBe(
+      "Cannot share this Simulation while private Library Site references exist (Alpha, Beta). Set Simulation visibility to Private or use non-private Site entries.",
+    );
   });
 });
