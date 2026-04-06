@@ -70,7 +70,7 @@ export function LinkProfileChart({
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
-  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
+  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [debugSizing] = useState(() => {
     if (typeof window === "undefined") return false;
     const localStorageEnabled = (() => {
@@ -88,8 +88,9 @@ export function LinkProfileChart({
   const [layoutPulseRevision, setLayoutPulseRevision] = useState(0);
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
-  const chartWidth = chartSize.width;
-  const chartHeight = chartSize.height;
+  const hasMeasuredSize = Boolean(chartSize && chartSize.width > 1 && chartSize.height > 1);
+  const chartWidth = chartSize?.width ?? 0;
+  const chartHeight = chartSize?.height ?? 0;
   const [debugTrace] = useState(() => {
     if (typeof window === "undefined") return false;
     const localStorageEnabled = (() => {
@@ -170,11 +171,11 @@ export function LinkProfileChart({
           })()
         : null,
       layoutState: {
-        chartSizeWidth: chartSize.width,
-        chartSizeHeight: chartSize.height,
+        chartSizeWidth: chartSize?.width ?? null,
+        chartSizeHeight: chartSize?.height ?? null,
         chartWidthUsed: chartWidth,
         chartHeightUsed: chartHeight,
-        fallbackUsed: chartSize.width === 1200 && chartSize.height === 190,
+        fallbackUsed: !chartSize,
       },
     };
   };
@@ -354,7 +355,6 @@ export function LinkProfileChart({
       profileLength: profile.length,
       ...getDomSnapshot(),
     });
-    if (profile.length < 2) return;
     const element = chartHostRef.current;
     if (!element) return;
 
@@ -364,9 +364,11 @@ export function LinkProfileChart({
       const parentRect = element.parentElement?.getBoundingClientRect();
       const measuredWidth = Math.round(hostRect.width || parentRect?.width || 0);
       const measuredHeight = Math.round(hostRect.height || parentRect?.height || 0);
-      const nextWidth = Math.max(220, measuredWidth);
-      const nextHeight = Math.max(140, measuredHeight);
+      if (measuredWidth <= 1 || measuredHeight <= 1) return;
+      const nextWidth = measuredWidth;
+      const nextHeight = measuredHeight;
       pushTrace("measure", {
+        source,
         measuredWidth,
         measuredHeight,
         nextWidth,
@@ -375,9 +377,12 @@ export function LinkProfileChart({
       });
       setChartSize((current) => {
         const changed =
-          Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1;
+          !current ||
+          Math.abs(current.width - nextWidth) > 1 ||
+          Math.abs(current.height - nextHeight) > 1;
         const next = changed ? { width: nextWidth, height: nextHeight } : current;
         pushTrace("setChartSize", {
+          source,
           changed,
           current,
           next,
@@ -387,6 +392,7 @@ export function LinkProfileChart({
           const chartPanelRect = element.closest(".chart-panel")?.getBoundingClientRect();
           const workspaceRect = element.closest(".workspace-panel")?.getBoundingClientRect();
           console.info("[profile-chart-sizing]", {
+            source,
             changed,
             current,
             next,
@@ -411,90 +417,35 @@ export function LinkProfileChart({
             isExpanded,
           });
         }
-        return next;
+        return next ?? current;
       });
     };
 
     updateSize("layout-effect-init");
-    const rafIdA = requestAnimationFrame(() => updateSize("raf-1"));
-    const rafIdB = requestAnimationFrame(() => requestAnimationFrame(() => updateSize("raf-2")));
-    const followUpTimerA = window.setTimeout(() => updateSize("timer-120ms"), 120);
-    const followUpTimerB = window.setTimeout(() => updateSize("timer-280ms"), 280);
-    const followUpTimerC = window.setTimeout(() => updateSize("timer-1000ms"), 1000);
-    const followUpTimerD = window.setTimeout(() => updateSize("timer-1800ms"), 1800);
+    const rafId = requestAnimationFrame(() => updateSize("raf-1"));
+    const lateGuardTimer = window.setTimeout(() => updateSize("timer-200ms"), 200);
     const onWindowResize = () => updateSize("window-resize");
     window.addEventListener("resize", onWindowResize);
 
-    const appShell = element.closest(".app-shell");
-    const workspacePanelElement = element.closest(".workspace-panel");
-    const onTransitionEnd = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (
-        target.closest(".workspace-panel") ||
-        target.closest(".map-inspector") ||
-        target.closest(".chart-panel")
-      ) {
-        updateSize("transition-end");
-      }
-    };
-    window.addEventListener("transitionend", onTransitionEnd, true);
-
-    const mutationObserver = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === "attributes") {
-          updateSize("class-mutation");
-          break;
-        }
-      }
-    });
-    if (appShell) {
-      mutationObserver.observe(appShell, {
-        attributes: true,
-        attributeFilter: ["class", "style"],
-      });
-    }
-    if (workspacePanelElement) {
-      mutationObserver.observe(workspacePanelElement, {
-        attributes: true,
-        attributeFilter: ["class", "style"],
-      });
-    }
-
     if (typeof ResizeObserver === "undefined") {
       return () => {
-        cancelAnimationFrame(rafIdA);
-        cancelAnimationFrame(rafIdB);
-        window.clearTimeout(followUpTimerA);
-        window.clearTimeout(followUpTimerB);
-        window.clearTimeout(followUpTimerC);
-        window.clearTimeout(followUpTimerD);
+        cancelAnimationFrame(rafId);
+        window.clearTimeout(lateGuardTimer);
         window.removeEventListener("resize", onWindowResize);
-        window.removeEventListener("transitionend", onTransitionEnd, true);
-        mutationObserver.disconnect();
       };
     }
 
     const observer = new ResizeObserver(() => updateSize("resize-observer"));
     observer.observe(element);
     if (element.parentElement) observer.observe(element.parentElement);
-    const chartPanel = element.closest(".chart-panel");
-    if (chartPanel instanceof HTMLElement) observer.observe(chartPanel);
-    if (workspacePanelElement instanceof HTMLElement) observer.observe(workspacePanelElement);
 
     return () => {
       pushTrace("useLayoutEffect-cleanup", {
         ...getDomSnapshot(),
       });
-      cancelAnimationFrame(rafIdA);
-      cancelAnimationFrame(rafIdB);
-      window.clearTimeout(followUpTimerA);
-      window.clearTimeout(followUpTimerB);
-      window.clearTimeout(followUpTimerC);
-      window.clearTimeout(followUpTimerD);
+      cancelAnimationFrame(rafId);
+      window.clearTimeout(lateGuardTimer);
       window.removeEventListener("resize", onWindowResize);
-      window.removeEventListener("transitionend", onTransitionEnd, true);
-      mutationObserver.disconnect();
       observer.disconnect();
     };
   }, [debugSizing, isExpanded, layoutPulseRevision, layoutRevision, profile.length]);
@@ -532,10 +483,10 @@ export function LinkProfileChart({
       profileLength: profile.length,
       chartWidthUsed: chartWidth,
       chartHeightUsed: chartHeight,
-      fallbackUsed: chartWidth === 1200 && chartHeight === 190,
+      fallbackUsed: !hasMeasuredSize,
       ...getDomSnapshot(),
     });
-    if (profile.length < 2) {
+    if (!hasMeasuredSize || profile.length < 2) {
       const noDataGeometry = {
         hasData: false,
         xForDistance: () => M.l,
@@ -615,10 +566,10 @@ export function LinkProfileChart({
       yTickCount: computed.yTicks.length,
       chartWidthUsed: chartWidth,
       chartHeightUsed: chartHeight,
-      fallbackUsed: chartWidth === 1200 && chartHeight === 190,
+      fallbackUsed: !hasMeasuredSize,
     });
     return computed;
-  }, [profile, chartWidth, chartHeight]);
+  }, [profile, chartWidth, chartHeight, hasMeasuredSize]);
   const svgProps = useMemo(() => buildProfileChartSvgProps(chartWidth, chartHeight), [chartWidth, chartHeight]);
 
   const segmentStateKey = useMemo(
@@ -1040,12 +991,13 @@ export function LinkProfileChart({
           ) : null}
         </div>
       </div>
-      {!geometry.hasData ? (
+      <div className={`chart-svg-wrap ${debugSizing ? "chart-svg-wrap-debug-sizing" : ""}`} ref={chartHostRef}>
+      {profile.length < 2 ? (
         <div className="chart-empty">
           <p>Path profile unavailable for the selected link.</p>
         </div>
-      ) : (
-        <div className={`chart-svg-wrap ${debugSizing ? "chart-svg-wrap-debug-sizing" : ""}`} ref={chartHostRef}>
+      ) : hasMeasuredSize && geometry.hasData ? (
+        <>
         <svg
           aria-label="Link profile"
           height={svgProps.height}
@@ -1152,8 +1104,9 @@ export function LinkProfileChart({
             ))}
           </div>
         ) : null}
-        </div>
-      )}
+        </>
+      ) : null}
+      </div>
     </section>
   );
 }
