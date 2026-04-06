@@ -435,6 +435,13 @@ const ensureSchema = async (env: Env): Promise<void> => {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_identity_audit_target ON user_identity_audit(target_user_id, created_at DESC)"),
       ]);
 
+      // Backfill additive user columns for existing databases before strict diagnostics.
+      const userTableInfo = await env.DB.prepare("PRAGMA table_info(users)").all<{ name: string }>();
+      const userColumns = new Set(userTableInfo.results.map((column) => column.name));
+      if (!userColumns.has("default_frequency_preset_id")) {
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN default_frequency_preset_id TEXT").run();
+      }
+
       const diagnostics = await getSchemaDiagnostics(env);
       if (!diagnostics.ok) {
         const summary = diagnostics.missing
