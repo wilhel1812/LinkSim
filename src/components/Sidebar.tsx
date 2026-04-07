@@ -57,7 +57,6 @@ import { useAppStore } from "../store/appStore";
 import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
-import { ModalCardHeader } from "./ModalCardHeader";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
@@ -1951,7 +1950,12 @@ export function Sidebar({
       {linkModal ? (
         <ModalOverlay aria-label={linkModal.mode === "add" ? "Add Link" : "Edit Link"} onClose={() => setLinkModal(null)} tier="raised">
           <div className="library-manager-card user-profile-popup">
-            <ModalCardHeader onClose={() => setLinkModal(null)} title={linkModal.mode === "add" ? "Add Link" : "Edit Link"} />
+            <div className="library-manager-header">
+              <h2>{linkModal.mode === "add" ? "Add Link" : "Edit Link"}</h2>
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setLinkModal(null)} title="Close" type="button">
+                <CircleX aria-hidden="true" strokeWidth={1.8} />
+              </button>
+            </div>
             <label className="field-grid">
               <span>Link name</span>
               <input
@@ -2701,8 +2705,7 @@ export function Sidebar({
             </details>
             </fieldset>
             {resourceDetailsPopup.kind === "simulation" ? (
-              <details className="compact-details">
-                <summary>Propagation & Channel</summary>
+              <div className="compact-details">
                 {networks.length > 1 ? (
                   <label className="field-grid">
                     <span>Active network</span>
@@ -2723,7 +2726,10 @@ export function Sidebar({
                   <span>Frequency Plan</span>
                   <select
                     className="locale-select"
-                    onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
+                    onChange={(event) => {
+                      setSelectedFrequencyPresetId(event.target.value);
+                      applyFrequencyPresetToSelectedNetwork();
+                    }}
                     value={selectedFrequencyPresetId}
                   >
                     {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
@@ -2737,111 +2743,105 @@ export function Sidebar({
                     ))}
                   </select>
                 </label>
-                <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
-                  Apply Frequency Plan
-                </button>
-                <details className="compact-details">
-                  <summary>ITM Environment</summary>
-                  <p className="field-help">
-                    These parameters feed terrain-aware path loss. Auto mode derives defaults from current
-                    terrain/profile and you can override manually.
-                  </p>
-                  <label className="field-grid">
-                    <span>Auto environment defaults</span>
-                    <select
-                      className="locale-select"
-                      onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
-                      value={autoPropagationEnvironment ? "auto" : "manual"}
-                    >
-                      <option value="auto">Auto (recommended)</option>
-                      <option value="manual">Manual override</option>
-                    </select>
-                  </label>
-                  <p className="field-help">{propagationEnvironmentReason}</p>
-                  <label className="field-grid">
-                    <span>Radio Climate</span>
-                    <select
-                      className="locale-select"
-                      disabled={autoPropagationEnvironment}
-                      onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
-                      value={effectivePropagationEnvironment.radioClimate}
-                    >
-                      {RADIO_CLIMATE_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field-grid">
-                    <span>Polarization</span>
-                    <select
-                      className="locale-select"
-                      disabled={autoPropagationEnvironment}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
-                      }
-                      value={effectivePropagationEnvironment.polarization}
-                    >
-                      <option value="Vertical">Vertical</option>
-                      <option value="Horizontal">Horizontal</option>
-                    </select>
-                  </label>
-                  <label className="field-grid">
-                    <span>Clutter Height (m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={0}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
-                      }
-                      type="number"
-                      value={effectivePropagationEnvironment.clutterHeightM}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Ground Dielectric (V/m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={1}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
-                      }
-                      step="0.1"
-                      type="number"
-                      value={effectivePropagationEnvironment.groundDielectric}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Ground Conductivity (S/m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={0}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
-                      }
-                      step="0.001"
-                      type="number"
-                      value={effectivePropagationEnvironment.groundConductivity}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Atmospheric Bending (N-units)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={250}
-                      onChange={(event) =>
-                        setPropagationEnvironment({
-                          atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
-                        })
-                      }
-                      step="1"
-                      type="number"
-                      value={effectivePropagationEnvironment.atmosphericBendingNUnits}
-                    />
-                  </label>
-                </details>
-              </details>
+                <p className="field-help">
+                  These parameters feed terrain-aware path loss. Auto mode derives defaults from current
+                  terrain/profile and you can override manually.
+                </p>
+                <label className="field-grid">
+                  <span>Auto environment defaults</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
+                    value={autoPropagationEnvironment ? "auto" : "manual"}
+                  >
+                    <option value="auto">Auto (recommended)</option>
+                    <option value="manual">Manual override</option>
+                  </select>
+                </label>
+                <p className="field-help">{propagationEnvironmentReason}</p>
+                <label className="field-grid">
+                  <span>Radio Climate</span>
+                  <select
+                    className="locale-select"
+                    disabled={autoPropagationEnvironment}
+                    onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
+                    value={effectivePropagationEnvironment.radioClimate}
+                  >
+                    {RADIO_CLIMATE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Polarization</span>
+                  <select
+                    className="locale-select"
+                    disabled={autoPropagationEnvironment}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
+                    }
+                    value={effectivePropagationEnvironment.polarization}
+                  >
+                    <option value="Vertical">Vertical</option>
+                    <option value="Horizontal">Horizontal</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Clutter Height (m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={0}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
+                    }
+                    type="number"
+                    value={effectivePropagationEnvironment.clutterHeightM}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground Dielectric (V/m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={1}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
+                    }
+                    step="0.1"
+                    type="number"
+                    value={effectivePropagationEnvironment.groundDielectric}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground Conductivity (S/m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={0}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
+                    }
+                    step="0.001"
+                    type="number"
+                    value={effectivePropagationEnvironment.groundConductivity}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Atmospheric Bending (N-units)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={250}
+                    onChange={(event) =>
+                      setPropagationEnvironment({
+                        atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
+                      })
+                    }
+                    step="1"
+                    type="number"
+                    value={effectivePropagationEnvironment.atmosphericBendingNUnits}
+                  />
+                </label>
+              </div>
             ) : null}
             {resourceCanWrite ? (
               <div className="chip-group">
@@ -2947,8 +2947,7 @@ export function Sidebar({
                 <option value="shared">Shared</option>
               </select>
             </label>
-            <details className="compact-details">
-              <summary>Advanced</summary>
+            <div className="compact-details">
               <label className="field-grid">
                 <span>Frequency Plan</span>
                 <select
@@ -2967,8 +2966,6 @@ export function Sidebar({
                   ))}
                 </select>
               </label>
-              <details className="compact-details">
-                <summary>ITM Environment</summary>
                 <p className="field-help">
                   These parameters feed terrain-aware path loss. Auto mode derives defaults from terrain; you can
                   override manually.
@@ -3066,8 +3063,7 @@ export function Sidebar({
                     value={effectivePropagationEnvironment.atmosphericBendingNUnits}
                   />
                 </label>
-              </details>
-            </details>
+            </div>
             <div className="chip-group">
               <button className="inline-action" onClick={createBlankSimulation} type="button">
                 Create

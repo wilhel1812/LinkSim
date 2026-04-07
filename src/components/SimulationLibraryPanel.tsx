@@ -12,8 +12,8 @@ import {
 } from "../lib/libraryFilters";
 import { formatDate } from "../lib/locale";
 import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
+import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
-import { ModalCardHeader } from "./ModalCardHeader";
 
 type FilterGroupKey = "role" | "visibility";
 
@@ -28,7 +28,7 @@ const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
 
 const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: string }> = [
   { key: "private", label: "Private" },
-  { key: "sharedPublic", label: "Shared/Public" },
+  { key: "sharedPublic", label: "Shared or Public" },
 ];
 
 const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
@@ -212,6 +212,12 @@ export default function SimulationLibraryPanel({
       setSimulationSaveStatus("");
       return;
     }
+    if (hasDuplicateSimulationNameForOwner(simulationPresets, trimmed, currentUser.id)) {
+      const duplicateMessage = duplicateSimulationNameMessage(trimmed);
+      setNewSimulationNameError(duplicateMessage);
+      setSimulationSaveStatus(duplicateMessage);
+      return;
+    }
     setNewSimulationNameError("");
     const createdId = createBlankSimulationPreset(trimmed, {
       description: newSimulationDescription.trim() || undefined,
@@ -225,7 +231,7 @@ export default function SimulationLibraryPanel({
       lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
     });
     if (!createdId) {
-      setSimulationSaveStatus("Failed creating simulation.");
+      setSimulationSaveStatus(duplicateSimulationNameMessage(trimmed));
       return;
     }
     loadSimulationPreset(createdId);
@@ -262,7 +268,12 @@ export default function SimulationLibraryPanel({
 
   return (
     <div className="library-manager-card">
-      <ModalCardHeader onClose={onClose} title="Simulation Library" />
+      <div className="library-manager-header">
+        <h2>Simulation Library</h2>
+        <button aria-label="Close" className="inline-action inline-action-icon" onClick={onClose} title="Close" type="button">
+          <CircleX aria-hidden="true" strokeWidth={1.8} />
+        </button>
+      </div>
       <p className="field-help">
         Manage saved simulations here. Site/node editing still happens in the main workspace.
       </p>
@@ -476,7 +487,7 @@ export default function SimulationLibraryPanel({
                       onClick={() => openResourceDetails(preset)}
                       type="button"
                     >
-                      Open
+                      Details
                     </button>
                   ) : null}
                 </div>
