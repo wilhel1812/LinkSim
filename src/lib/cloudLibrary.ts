@@ -20,7 +20,6 @@ const listSimulationNames = (payload: CloudLibraryPayload): string[] =>
     .filter(Boolean);
 
 const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
-  console.log("[cloudLibrary] API call:", init?.method ?? "GET", path);
   const response = await fetch(path, {
     ...init,
     headers: {
@@ -28,10 +27,8 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
       ...(init?.headers ?? {}),
     },
   });
-  console.log("[cloudLibrary] Response:", response.status, response.statusText);
   if (!response.ok) {
     const message = await parseApiErrorMessage(response);
-    console.log("[cloudLibrary] Error response:", message);
     throw new Error(`${response.status} ${response.statusText}: ${message}`);
   }
   return (await response.json()) as T;
@@ -39,14 +36,8 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
 
 export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { isDelta?: boolean }> => {
   const url = opts?.since ? `/api/library?since=${encodeURIComponent(opts.since)}` : "/api/library";
-  console.log("[cloudLibrary] Fetching cloud library...", opts?.since ? `(delta since ${opts.since})` : "(full)");
   const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; isDelta?: boolean }>(url, {
     method: "GET",
-  });
-  console.log("[cloudLibrary] Cloud data received:", {
-    sites: data.siteLibrary?.length ?? 0,
-    simulations: data.simulationPresets?.length ?? 0,
-    isDelta: data.isDelta,
   });
   return {
     siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
@@ -62,18 +53,12 @@ export const fetchPublicSimulationLibrary = async (params: {
   const query = new URLSearchParams();
   if (params.simulationId?.trim()) query.set("sim", params.simulationId.trim());
   if (params.simulationSlug?.trim()) query.set("slug", params.simulationSlug.trim());
-  console.log("[cloudLibrary] Fetching public simulation:", query.toString());
   const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; simulationId?: unknown }>(
     `/api/public-simulation?${query.toString()}`,
     {
       method: "GET",
     },
   );
-  console.log("[cloudLibrary] Public simulation data received:", {
-    sites: data.siteLibrary?.length ?? 0,
-    simulations: data.simulationPresets?.length ?? 0,
-    simulationId: data.simulationId,
-  });
   return {
     siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
     simulationPresets: Array.isArray(data.simulationPresets) ? data.simulationPresets : [],
@@ -82,23 +67,13 @@ export const fetchPublicSimulationLibrary = async (params: {
 };
 
 export const pushCloudLibrary = async (payload: CloudLibraryPayload, opts?: { suppressConflicts?: string[] }): Promise<void> => {
-  console.log("[cloudLibrary] Pushing library to cloud:", {
-    sites: payload.siteLibrary.length,
-    simulations: payload.simulationPresets.length,
-    payloadSize: JSON.stringify(payload).length,
-  });
   const result = await apiCall<CloudPushResult>("/api/library", {
     method: "PUT",
     body: JSON.stringify(payload),
   });
-  console.log("[cloudLibrary] Push response:", result);
   const allConflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
   const conflicts = allConflicts.filter((c) => !(opts?.suppressConflicts ?? []).includes(c));
-  if (!allConflicts.length) {
-    console.log("[cloudLibrary] Push succeeded with no conflicts");
-    return;
-  }
-  console.log("[cloudLibrary] Push has conflicts:", allConflicts, "fatal:", conflicts);
+  if (!allConflicts.length) return;
   if (!conflicts.length) return;
   if (conflicts.includes("simulation_private_site_reference")) {
     const simulationNames = listSimulationNames(payload);

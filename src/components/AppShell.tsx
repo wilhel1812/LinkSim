@@ -346,11 +346,8 @@ export function AppShell() {
 
   useEffect(() => {
     if (isInitializing) {
-      console.log("[AppShell] Skipping sync - initialization in progress");
       return;
     }
-    console.log("[AppShell] siteLibrary/simulationPresets/sites changed, calling performCloudSyncPush");
-    console.log("[AppShell] siteLibrary length:", siteLibrary.length, "simulationPresets length:", simulationPresets.length, "sites length:", sites.length);
     void performCloudSyncPush();
   }, [performCloudSyncPush, isInitializing, siteLibrary, simulationPresets, sites]);
 
@@ -551,7 +548,6 @@ export function AppShell() {
 
   useEffect(() => {
     if (accessState === "granted") {
-      console.log("[AppShell] Access granted, running migrations and initializing cloud sync...");
       void runMigrations().then(() => initializeCloudSync());
     }
   }, [accessState, initializeCloudSync]);

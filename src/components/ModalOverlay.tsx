@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 type ModalOverlayProps = {
@@ -14,6 +14,8 @@ let modalLayerSeed = 0;
 
 export function ModalOverlay({ children, onClose, tier = "base", ...rest }: ModalOverlayProps) {
   const modalId = useId();
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const layer = useMemo(() => {
     modalLayerSeed += 1;
     return modalLayerSeed;
@@ -32,10 +34,10 @@ export function ModalOverlay({ children, onClose, tier = "base", ...rest }: Moda
       if (event.key !== "Escape") return;
       const top = openModalStack[openModalStack.length - 1];
       if (top !== modalId) return;
-      if (!onClose) return;
+      if (!onCloseRef.current) return;
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      onCloseRef.current();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -47,18 +49,18 @@ export function ModalOverlay({ children, onClose, tier = "base", ...rest }: Moda
         document.body.style.overflow = previousOverflow;
       }
     };
-  }, [modalId, onClose]);
+  }, [modalId]);
 
   return createPortal(
     <div
       aria-modal="true"
       className="library-manager-overlay"
       onMouseDown={(event) => {
-        if (!onClose) return;
+        if (!onCloseRef.current) return;
         if (event.target !== event.currentTarget) return;
         const top = openModalStack[openModalStack.length - 1];
         if (top !== modalId) return;
-        onClose();
+        onCloseRef.current();
       }}
       role="dialog"
       style={{ zIndex }}
