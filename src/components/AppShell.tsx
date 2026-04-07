@@ -20,6 +20,7 @@ import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
+import { ActionButton } from "./ActionButton";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
@@ -1355,18 +1356,18 @@ export function AppShell() {
           </ul>
           {isLocalRuntime ? (
             <div className="chip-group">
-              <button className="inline-action" onClick={() => void switchLocalRole("admin")} type="button">
+              <ActionButton onClick={() => void switchLocalRole("admin")} type="button">
                 Use Admin (Local)
-              </button>
-              <button className="inline-action" onClick={() => void switchLocalRole("moderator")} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => void switchLocalRole("moderator")} type="button">
                 Use Moderator (Local)
-              </button>
-              <button className="inline-action" onClick={() => void switchLocalRole("user")} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => void switchLocalRole("user")} type="button">
                 Use User (Local)
-              </button>
-              <button className="inline-action" onClick={() => void switchLocalRole("pending")} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => void switchLocalRole("pending")} type="button">
                 Use Pending (Local)
-              </button>
+              </ActionButton>
             </div>
           ) : null}
            {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
@@ -1404,30 +1405,30 @@ export function AppShell() {
           <div className="chip-group">
           {shouldPromptSignIn ? (
               <>
-                <button className="inline-action" onClick={signIn} type="button">
+                <ActionButton onClick={signIn} type="button">
                   <CircleUserRound aria-hidden="true" strokeWidth={1.8} />
                   <span>Sign In</span>
-                </button>
+                </ActionButton>
               </>
             ) : (
-              <button className="inline-action" onClick={signOutOrReadonly} type="button">
+              <ActionButton onClick={signOutOrReadonly} type="button">
                 Sign Out
-              </button>
+              </ActionButton>
             )}
             {isLocalRuntime ? (
               <>
-                <button className="inline-action" onClick={() => void switchLocalRole("admin")} type="button">
+                <ActionButton onClick={() => void switchLocalRole("admin")} type="button">
                   Use Admin (Local)
-                </button>
-                <button className="inline-action" onClick={() => void switchLocalRole("moderator")} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => void switchLocalRole("moderator")} type="button">
                   Use Moderator (Local)
-                </button>
-                <button className="inline-action" onClick={() => void switchLocalRole("user")} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => void switchLocalRole("user")} type="button">
                   Use User (Local)
-                </button>
-                <button className="inline-action" onClick={() => void switchLocalRole("pending")} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => void switchLocalRole("pending")} type="button">
                   Use Pending (Local)
-                </button>
+                </ActionButton>
               </>
             ) : null}
           </div>
@@ -1550,18 +1551,17 @@ export function AppShell() {
           <div className="offline-banner" role="status">
             <span>Offline. Changes are saved locally and will sync when connection returns.</span>
             <div className="chip-group">
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => {
                   window.dispatchEvent(new CustomEvent(OPEN_SYNC_MODAL_EVENT));
                 }}
                 type="button"
               >
                 Open Sync Status
-              </button>
-              <button className="inline-action" onClick={() => setOfflineBannerDismissed(true)} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => setOfflineBannerDismissed(true)} type="button">
                 Dismiss
-              </button>
+              </ActionButton>
             </div>
           </div>
         ) : null}
@@ -1569,13 +1569,12 @@ export function AppShell() {
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
               <p>Open an existing simulation or create a new one to continue.</p>
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => setShowSimulationLibraryRequest(true)}
                 type="button"
               >
                 Open Library
-              </button>
+              </ActionButton>
             </div>
           </div>
         ) : null}
@@ -1586,8 +1585,7 @@ export function AppShell() {
         ) : null}
         <div className="workspace-header-actions">
           {accessState === "readonly" && isLocalRuntime ? (
-            <button
-              className="inline-action"
+            <ActionButton
               onClick={() => {
                 try {
                   localStorage.removeItem(LOCAL_FORCE_READONLY_KEY);
@@ -1599,7 +1597,7 @@ export function AppShell() {
               type="button"
             >
               Return to Local User
-            </button>
+            </ActionButton>
           ) : null}
         </div>
         <MapView
@@ -1818,9 +1816,9 @@ export function AppShell() {
                           {referencedPrivateSites.length ? ` and ${referencedPrivateSites.length} referenced site(s)` : ""} will be set to Shared.
                           {referencedPrivateSites.some((site) => !canEditResource(site)) ? " Some sites require owner access." : ""}
                         </p>
-                        <button className="inline-action" disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
+                        <ActionButton disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
                           Upgrade &amp; Copy Link
-                        </button>
+                        </ActionButton>
                       </div>
                       {/* Option B: Specific users */}
                       <div className="panel-section compact-panel" style={{ display: "flex", flexDirection: "column", gap: "0.5em" }}>
@@ -1845,13 +1843,12 @@ export function AppShell() {
                                     <option value="viewer">Viewer</option>
                                     <option value="editor">Editor</option>
                                   </select>
-                                  <button
-                                    className="inline-action"
+                                  <ActionButton
                                     onClick={() => setShareSpecificUsers((prev) => prev.filter((id) => id !== uid))}
                                     type="button"
                                   >
                                     Remove
-                                  </button>
+                                  </ActionButton>
                                 </span>
                               );
                             })}
@@ -1900,8 +1897,7 @@ export function AppShell() {
                           </div>
                         ) : null}
                         <div style={{ marginTop: "auto" }}>
-                          <button
-                            className="inline-action"
+                          <ActionButton
                             disabled={shareSpecificBusy || !shareSpecificUsers.length}
                             onClick={() => void runShareWithSpecificUsers()}
                             style={{ display: "flex", alignItems: "center", gap: "0.35em" }}
@@ -1909,7 +1905,7 @@ export function AppShell() {
                           >
                             <Copy aria-hidden="true" size={14} strokeWidth={1.8} />
                             Save &amp; Copy Link
-                          </button>
+                          </ActionButton>
                         </div>
                         {shareSpecificStatus ? <p className="field-help">{shareSpecificStatus}</p> : null}
                       </div>

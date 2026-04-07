@@ -63,6 +63,7 @@ import { useAppStore } from "../store/appStore";
 import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
+import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
@@ -1782,15 +1783,13 @@ export function Sidebar({
         <div className="chip-group simulation-buttons">
           {!hideLibraryBrowsing ? (
             <>
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => setShowSimulationLibraryManager(true)}
                 type="button"
               >
                 Library
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 onClick={() => {
                   setNewSimulationName("");
                   setNewSimulationDescription("");
@@ -1802,14 +1801,14 @@ export function Sidebar({
                 type="button"
               >
                 New
-              </button>
-              <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+              </ActionButton>
+              <ActionButton onClick={saveSimulationAsNew} type="button">
                 Duplicate
-              </button>
+              </ActionButton>
               {selectedSimulationRef.startsWith("saved:") ? (
-                <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
+                <ActionButton onClick={openActiveSimulationDetails} type="button">
                   Edit
-                </button>
+                </ActionButton>
               ) : null}
             </>
           ) : (
@@ -1843,22 +1842,21 @@ export function Sidebar({
         <div className="chip-group">
           {!hideLibraryBrowsing ? (
             <>
-              <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
+              <ActionButton onClick={() => setShowSiteLibraryManager(true)} type="button">
                 Library
-              </button>
+              </ActionButton>
               {newestSiteLibraryEntryId ? (
-                <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
+                <ActionButton onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
                   Insert newest
-                </button>
+                </ActionButton>
               ) : null}
-              <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+              <ActionButton onClick={openLibraryForSelectedSite} type="button">
                 Edit
-              </button>
+              </ActionButton>
             </>
           ) : null}
           {!readOnly ? (
-            <button
-              className="inline-action danger"
+            <ActionButton
               disabled={sites.length <= 1}
               onClick={() =>
                 requestDeleteConfirm(
@@ -1869,9 +1867,10 @@ export function Sidebar({
                 )
               }
               type="button"
+              variant="danger"
             >
               Remove
-            </button>
+            </ActionButton>
           ) : null}
         </div>
       </section>
@@ -1896,14 +1895,13 @@ export function Sidebar({
         <div className="chip-group">
           {!readOnly ? (
             <>
-              <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+              <ActionButton disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
                 New
-              </button>
-              <button className="inline-action" onClick={openEditLinkModal} type="button">
+              </ActionButton>
+              <ActionButton onClick={openEditLinkModal} type="button">
                 Edit
-              </button>
-              <button
-                className="inline-action danger"
+              </ActionButton>
+              <ActionButton
                 disabled={!links.length}
                 onClick={() =>
                   requestDeleteConfirm(
@@ -1913,9 +1911,10 @@ export function Sidebar({
                   )
                 }
                 type="button"
+                variant="danger"
               >
                 Remove
-              </button>
+              </ActionButton>
             </>
           ) : null}
         </div>
@@ -2054,9 +2053,9 @@ export function Sidebar({
               ) : null}
             </details>
             <div className="chip-group">
-              <button className="inline-action" onClick={saveLinkModal} type="button">
+              <ActionButton onClick={saveLinkModal} type="button">
                 {linkModal.mode === "add" ? "Create Link" : "Save Link"}
-              </button>
+              </ActionButton>
             </div>
             {linkModal.status ? <p className="field-help">{linkModal.status}</p> : null}
           </div>
@@ -2170,14 +2169,13 @@ export function Sidebar({
                 </select>
               </label>
               {!profilePopupUser.isApproved ? (
-                <button
-                  className="inline-action"
+                <ActionButton
                   disabled={profilePopupBusy}
                   onClick={() => void changeProfileRole("user")}
                   type="button"
                 >
                   Approve Access
-                </button>
+                </ActionButton>
               ) : null}
             </div>
             {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
@@ -3680,22 +3678,21 @@ export function Sidebar({
                   </div>
                 </div>
                 <div className="chip-group">
-                  <button className="inline-action" onClick={addLibraryEntryNow} type="button">
-                    Add To Library
-                  </button>
-                  <button
-                    className="inline-action"
-                    onClick={() => {
-                      setShowAddLibraryForm(false);
-                      setNewLibraryNameError("");
+                <ActionButton onClick={addLibraryEntryNow} type="button">
+                  Add To Library
+                </ActionButton>
+                <ActionButton
+                  onClick={() => {
+                    setShowAddLibraryForm(false);
+                    setNewLibraryNameError("");
                       setNewLibraryDescription("");
                       setNewLibrarySourceMeta(undefined);
                       setPendingDraftAutoInsert(false);
-                    }}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </ActionButton>
                 </div>
               </div>
             ) : null}
@@ -3765,11 +3762,10 @@ export function Sidebar({
                     );
                   })()}
                   <div className="library-row-actions">
-                    <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                    <ActionButton onClick={() => insertSiteFromLibrary(entry.id)} type="button">
                       Add to simulation
-                    </button>
-                    <button
-                      className="inline-action"
+                    </ActionButton>
+                    <ActionButton
                       onClick={() =>
                         openResourceDetailsPopup({
                           kind: "site",
@@ -3790,7 +3786,7 @@ export function Sidebar({
                       type="button"
                     >
                       Open
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
               ))}
@@ -3808,20 +3804,20 @@ export function Sidebar({
             </div>
             <p className="field-help">{deleteConfirm.message}</p>
             <div className="chip-group">
-              <button className="inline-action" onClick={() => setDeleteConfirm(null)} type="button">
+              <ActionButton onClick={() => setDeleteConfirm(null)} type="button">
                 Cancel
-              </button>
-              <button
-                className="inline-action danger"
+              </ActionButton>
+              <ActionButton
                 onClick={() => {
                   const action = deleteConfirm.onConfirm;
                   setDeleteConfirm(null);
                   action();
                 }}
                 type="button"
+                variant="danger"
               >
                 {deleteConfirm.confirmLabel}
-              </button>
+              </ActionButton>
             </div>
           </div>
         </ModalOverlay>
