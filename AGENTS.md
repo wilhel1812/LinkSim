@@ -134,10 +134,20 @@
   - Freeze milestone scope at sign-off: no new feature work lands on `staging` until production deploy completes.
   - After production deploy, continue new issue work from the updated `origin/staging` baseline.
 
+
 ## Branch Protection Rollout Safety
 - When introducing a new required status check, roll it out in two phases to avoid PR deadlocks:
   1. merge the workflow that produces the check
   2. then add that check to branch protection required checks
+
+## Code Size / Abstraction Control
+- Prefer the smallest clean change.
+- Prefer editing existing code over creating new files.
+- Do not add abstractions for hypothetical future use.
+- Only add a new helper, hook, component, utility, type, or config when it clearly reduces repetition or complexity in current code.
+- Remove obsolete code as part of the same pass.
+- Match existing codebase patterns before introducing a new one.
+- After implementation, do a cleanup pass to remove unnecessary indirection, dead code, and one-use abstractions without changing behavior.
 
 ## Model Selection
 - **Codex 5.3** — use for full implementation passes where quality and breadth of change matter most. Expensive; reserve for when the work warrants it.

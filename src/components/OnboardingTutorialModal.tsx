@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { CircleX } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import onboardingMarkdown from "../../docs/onboarding.md?raw";
+import { ModalCardHeader } from "./ModalCardHeader";
 import { ModalOverlay } from "./ModalOverlay";
 
 const FEEDBACK_ISSUES_URL = "https://github.com/wilhel1812/LinkSim/issues/new/choose";
@@ -41,14 +41,7 @@ export default function OnboardingTutorialModal({
   return (
     <ModalOverlay aria-label="Onboarding Tutorial" onClose={onClose} tier="raised">
       <div className="library-manager-card tutorial-modal-card">
-        <div className="library-manager-header">
-          <h2>Getting Started</h2>
-          <div className="chip-group">
-            <button aria-label="Close" className="inline-action inline-action-icon" onClick={onClose} title="Close" type="button">
-              <CircleX aria-hidden="true" strokeWidth={1.8} />
-            </button>
-          </div>
-        </div>
+        <ModalCardHeader actionsWrapperClassName="chip-group" onClose={onClose} title="Getting Started" />
         <div className="tutorial-markdown">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}

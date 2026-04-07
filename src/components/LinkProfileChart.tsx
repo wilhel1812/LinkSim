@@ -2,7 +2,7 @@ import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, Maximize2, Minimize2 } from "lucide-react";
 import type { MouseEvent } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   classifyPassFailState,
@@ -10,11 +10,9 @@ import {
   passFailStateLabel,
   type PassFailState,
 } from "../lib/passFailState";
-import { buildProfileChartSvgProps } from "../lib/profileChartSvg";
 import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
 import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
 import { buildProfile } from "../lib/propagation";
-import { buildSelectionEffectiveLink } from "../lib/selectionEffectiveLink";
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
@@ -60,12 +58,11 @@ export function LinkProfileChart({
   rowControls,
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
-  const [hostAttachRevision, setHostAttachRevision] = useState(0);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
-  const hasMeasuredSize = Boolean(chartSize && chartSize.width > 1 && chartSize.height > 1);
+  const hasMeasuredSize = chartSize !== null && chartSize.width > 1 && chartSize.height > 1;
   const chartWidth = chartSize?.width ?? 0;
   const chartHeight = chartSize?.height ?? 0;
   const sites = useAppStore((state) => state.sites);
@@ -94,13 +91,6 @@ export function LinkProfileChart({
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
   );
-
-  const setChartHostElement = useCallback((element: HTMLDivElement | null) => {
-    if (chartHostRef.current === element) return;
-    chartHostRef.current = element;
-    setHostAttachRevision((current) => current + 1);
-  }, []);
-
   const baseProfile = getSelectedProfile();
   const selectedLink = links.find((link) => link.id === selectedLinkId) ?? null;
   const selectedSites = useMemo(
@@ -162,11 +152,17 @@ export function LinkProfileChart({
       };
     }
     if (!selectedFromSite || !selectedToSite) return null;
-    return buildSelectionEffectiveLink({
-      fromSite: selectedFromSite,
-      toSite: selectedToSite,
+    return {
+      id: "__selection__",
+      name: `${selectedFromSite.name} -> ${selectedToSite.name}`,
+      fromSiteId: selectedFromSite.id,
+      toSiteId: selectedToSite.id,
       frequencyMHz: selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz,
-    });
+      txPowerDbm: selectedFromSite.txPowerDbm,
+      txGainDbi: selectedFromSite.txGainDbi,
+      rxGainDbi: selectedToSite.rxGainDbi,
+      cableLossDb: selectedFromSite.cableLossDb,
+    };
   }, [selectedLink, selectedNetwork, selectedFromSite, selectedToSite]);
   const profile = useMemo(() => {
     if (!effectiveLink || !selectedFromSiteEffective || !selectedToSiteEffective) return baseProfile;
@@ -234,40 +230,29 @@ export function LinkProfileChart({
     if (!element) return;
 
     const updateSize = () => {
-      const hostRect = element.getBoundingClientRect();
-      const parentRect = element.parentElement?.getBoundingClientRect();
-      const measuredWidth = Math.round(hostRect.width || parentRect?.width || 0);
-      const measuredHeight = Math.round(hostRect.height || parentRect?.height || 0);
-      if (measuredWidth <= 1 || measuredHeight <= 1) return;
-      const nextWidth = measuredWidth;
-      const nextHeight = measuredHeight;
+      const nextWidth = Math.round(element.clientWidth);
+      const nextHeight = Math.round(element.clientHeight);
+      if (nextWidth <= 1 || nextHeight <= 1) return;
       setChartSize((current) => {
-        const changed =
-          !current ||
-          Math.abs(current.width - nextWidth) > 1 ||
-          Math.abs(current.height - nextHeight) > 1;
-        return changed ? { width: nextWidth, height: nextHeight } : current;
+        if (!current) return { width: nextWidth, height: nextHeight };
+        return Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1
+          ? { width: nextWidth, height: nextHeight }
+          : current;
       });
     };
 
     updateSize();
     const rafId = requestAnimationFrame(updateSize);
-
-    if (typeof ResizeObserver === "undefined") {
-      return () => {
-        cancelAnimationFrame(rafId);
-      };
-    }
-
-    const observer = new ResizeObserver(updateSize);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => updateSize());
     observer.observe(element);
-    if (element.parentElement) observer.observe(element.parentElement);
-
+    window.addEventListener("resize", updateSize);
     return () => {
       cancelAnimationFrame(rafId);
       observer.disconnect();
+      window.removeEventListener("resize", updateSize);
     };
-  }, [profile.length, hasMinimumTopology, hostAttachRevision]);
+  }, [isExpanded, profile.length, selectedLinkId, selectedSiteIds]);
 
   const geometry = useMemo(() => {
     if (!hasMeasuredSize || profile.length < 2) {
@@ -301,10 +286,6 @@ export function LinkProfileChart({
 
     const x = scaleLinear().domain(safeDistanceDomain).range([M.l, chartWidth - M.r]);
     const y = scaleLinear().domain([safeElevMin - 5, adjustedMax + 5]).range([chartHeight - M.b, M.t]);
-    const chartInnerWidth = Math.max(1, chartWidth - M.l - M.r);
-    const chartInnerHeight = Math.max(1, chartHeight - M.t - M.b);
-    const xTickCount = clamp(Math.round(chartInnerWidth / 140) + 1, 3, 10);
-    const yTickCount = clamp(Math.round(chartInnerHeight / 72) + 1, 3, 7);
 
     const terrainPoints = profile.map((p) => ({ x: x(p.distanceKm), y: y(p.terrainM) }));
     const terrainLineSegments = terrainPoints.slice(1).map((point, i) => ({
@@ -319,25 +300,22 @@ export function LinkProfileChart({
       terrainPath: `${linePath(terrainPoints)} L${chartWidth - M.r},${chartHeight - M.b} L${M.l},${chartHeight - M.b} Z`,
       terrainStrokePath: linePath(terrainPoints),
       terrainLineSegments,
-      yTicks: Array.from({ length: yTickCount }, (_, i) => {
-        const value =
-          safeElevMin - 5 + ((adjustedMax - safeElevMin + 10) * i) / Math.max(1, yTickCount - 1);
+      yTicks: Array.from({ length: 5 }, (_, i) => {
+        const value = safeElevMin - 5 + ((adjustedMax - safeElevMin + 10) * i) / 4;
         return { value, py: y(value) };
       }),
-      xTicks: Array.from({ length: xTickCount }, (_, i) => {
+      xTicks: Array.from({ length: 6 }, (_, i) => {
         const value =
           safeDistanceDomain[0] +
-          ((safeDistanceDomain[1] - safeDistanceDomain[0]) * i) / Math.max(1, xTickCount - 1);
+          ((safeDistanceDomain[1] - safeDistanceDomain[0]) * i) / 5;
         return {
           value,
           px: x(value),
-          anchor:
-            (i === 0 ? "start" : i === xTickCount - 1 ? "end" : "middle") as "start" | "middle" | "end",
+          anchor: (i === 0 ? "start" : i === 5 ? "end" : "middle") as "start" | "middle" | "end",
         };
       }),
     };
   }, [profile, chartWidth, chartHeight, hasMeasuredSize]);
-  const svgProps = useMemo(() => buildProfileChartSvgProps(chartWidth, chartHeight), [chartWidth, chartHeight]);
 
   const segmentStateKey = useMemo(
     () =>
@@ -758,19 +736,16 @@ export function LinkProfileChart({
           ) : null}
         </div>
       </div>
-      <div className="chart-svg-wrap" ref={setChartHostElement}>
-      {profile.length < 2 ? (
+      <div className="chart-svg-wrap" ref={chartHostRef}>
+      {!hasMeasuredSize ? (
+        <div className="chart-empty" aria-hidden="true" />
+      ) : !geometry.hasData ? (
         <div className="chart-empty">
           <p>Path profile unavailable for the selected link.</p>
         </div>
-      ) : hasMeasuredSize && geometry.hasData ? (
+      ) : (
         <>
-        <svg
-          aria-label="Link profile"
-          height={svgProps.height}
-          role="img"
-          width={svgProps.width}
-        >
+        <svg aria-label="Link profile" role="img" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
           <defs>
             <linearGradient
               gradientUnits="userSpaceOnUse"
@@ -872,8 +847,6 @@ export function LinkProfileChart({
           </div>
         ) : null}
         </>
-      ) : (
-        <div className="chart-empty" aria-hidden="true" />
       )}
       </div>
     </section>
