@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchNotifications, type NotificationFeed, type PendingApprovalUser } from "../lib/cloudNotifications";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
+import { ActionButton } from "./ActionButton";
 
 const POLL_MS = 30_000;
 
@@ -57,9 +58,9 @@ export function NotificationsPanel() {
         <div className="notifications-popover">
           <div className="section-heading">
             <p className="field-help">Moderator/Admin notifications</p>
-            <button className="inline-action" onClick={() => void load()} type="button">
+            <ActionButton onClick={() => void load()}>
               Refresh
-            </button>
+            </ActionButton>
           </div>
           {busy ? <p className="field-help">Loading…</p> : null}
           {status ? <p className="field-help">{status}</p> : null}
