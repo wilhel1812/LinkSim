@@ -927,7 +927,6 @@ export function Sidebar({
   useEffect(() => {
     if (!pendingSiteLibraryOpenEntryId) return;
     const entry = siteLibrary.find((candidate) => candidate.id === pendingSiteLibraryOpenEntryId);
-    setShowSiteLibraryManager(true);
     if (entry) {
       openResourceDetailsPopup({
         kind: "site",
@@ -940,6 +939,8 @@ export function Sidebar({
         lastEditedByName: (entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
         lastEditedByAvatarUrl: (entry as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
       });
+    } else {
+      setShowSiteLibraryManager(true);
     }
     clearOpenSiteLibraryEntryRequest();
   }, [pendingSiteLibraryOpenEntryId, siteLibrary, clearOpenSiteLibraryEntryRequest]);
