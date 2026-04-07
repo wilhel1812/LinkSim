@@ -1603,8 +1603,17 @@ input {
 }
 
 .chart-panel {
-  background: linear-gradient(160deg, var(--surface), var(--surface-2));
-  padding: 8px 0 6px;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--surface) var(--glass-panel-opacity), transparent),
+    color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent)
+  );
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+  backdrop-filter: blur(var(--glass-panel-blur));
+  padding: 10px 10px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1653,7 +1662,8 @@ input {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 10px 2px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
 }
 
 .chart-endpoints {
@@ -1809,7 +1819,8 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px 2px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
 }
 
 .chart-action-row-controls {
@@ -1817,7 +1828,7 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
