@@ -20,6 +20,7 @@ import { formatDate } from "../lib/locale";
 import { toAccessVisibility } from "../lib/uiFormatting";
 import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
+import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 
@@ -263,27 +264,26 @@ export default function SimulationLibraryPanel({
       <div className="library-filter-toolbar" ref={filterToolbarRef}>
         <span className="library-filter-row-label">Filters:</span>
         <div className="library-filter-menu">
-          <button
-            className={clsx("inline-action", "library-filter-trigger", {
+          <ActionButton
+            className={clsx("library-filter-trigger", {
               "library-filter-trigger-active": selectionIsFiltered(filters.roleFilters, ALL_ROLE_FILTERS),
             })}
             onClick={openRoleEditor}
-            type="button"
           >
             Ownership {selectionLabel(filters.roleFilters, ALL_ROLE_FILTERS)}
             <span className="library-filter-trigger-chevron" aria-hidden="true">
               <Funnel aria-hidden="true" strokeWidth={1.8} />
             </span>
-          </button>
+          </ActionButton>
           {openFilterGroup === "role" ? (
             <div className="library-filter-popover">
               <div className="library-filter-popover-actions">
-                <button className="inline-action" onClick={() => commitRoleFilters(ALL_ROLE_FILTERS)} type="button">
+                <ActionButton onClick={() => commitRoleFilters(ALL_ROLE_FILTERS)}>
                   All
-                </button>
-                <button className="inline-action" onClick={() => setRoleDraft([])} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => setRoleDraft([])}>
                   None
-                </button>
+                </ActionButton>
               </div>
               <div className="library-filter-popover-options">
                 {ROLE_FILTER_OPTIONS.map((option) => {
@@ -310,27 +310,26 @@ export default function SimulationLibraryPanel({
         </div>
 
         <div className="library-filter-menu">
-          <button
-            className={clsx("inline-action", "library-filter-trigger", {
+          <ActionButton
+            className={clsx("library-filter-trigger", {
               "library-filter-trigger-active": selectionIsFiltered(filters.visibilityFilters, ALL_VISIBILITY_FILTERS),
             })}
             onClick={openVisibilityEditor}
-            type="button"
           >
             Access level {selectionLabel(filters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
             <span className="library-filter-trigger-chevron" aria-hidden="true">
               <Funnel aria-hidden="true" strokeWidth={1.8} />
             </span>
-          </button>
+          </ActionButton>
           {openFilterGroup === "visibility" ? (
             <div className="library-filter-popover">
               <div className="library-filter-popover-actions">
-                <button className="inline-action" onClick={() => commitVisibilityFilters(ALL_VISIBILITY_FILTERS)} type="button">
+                <ActionButton onClick={() => commitVisibilityFilters(ALL_VISIBILITY_FILTERS)}>
                   All
-                </button>
-                <button className="inline-action" onClick={() => setVisibilityDraft([])} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => setVisibilityDraft([])}>
                   None
-                </button>
+                </ActionButton>
               </div>
               <div className="library-filter-popover-options">
                 {VISIBILITY_FILTER_OPTIONS.map((option) => {
@@ -357,16 +356,14 @@ export default function SimulationLibraryPanel({
           ) : null}
         </div>
 
-        <button
-          className="inline-action"
+        <ActionButton
           onClick={() => {
             setFilters(DEFAULT_LIBRARY_FILTER_STATE);
             closeFilterEditors();
           }}
-          type="button"
         >
           Clear Filters
-        </button>
+        </ActionButton>
       </div>
       {!hideSaveCopy ? (
         <>
@@ -385,37 +382,33 @@ export default function SimulationLibraryPanel({
           </label>
           {newPresetNameError ? <p className="field-help field-help-error">{newPresetNameError}</p> : null}
           <div className="chip-group">
-            <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+            <ActionButton onClick={saveSimulationAsNew}>
               Save Copy
-            </button>
-            <button
-              className="inline-action"
+            </ActionButton>
+            <ActionButton
               onClick={() => {
                 setNewSimulationName("");
                 setNewSimulationDescription("");
                 setNewSimulationNameError("");
                 setShowNewSimulationModal(true);
               }}
-              type="button"
             >
               New Simulation
-            </button>
+            </ActionButton>
           </div>
         </>
       ) : (
         <div className="chip-group">
-          <button
-            className="inline-action"
+          <ActionButton
             onClick={() => {
               setNewSimulationName("");
               setNewSimulationDescription("");
               setNewSimulationNameError("");
               setShowNewSimulationModal(true);
             }}
-            type="button"
           >
             New Simulation
-          </button>
+          </ActionButton>
         </div>
       )}
       {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
@@ -449,21 +442,17 @@ export default function SimulationLibraryPanel({
                   </span>
                 </span>
                 <div className="library-row-actions">
-                  <button
-                    className="inline-action"
+                  <ActionButton
                     onClick={() => onLoadSimulation(preset.id)}
-                    type="button"
                   >
                     Load
-                  </button>
+                  </ActionButton>
                   {onOpenDetails ? (
-                    <button
-                      className="inline-action"
+                    <ActionButton
                       onClick={() => openResourceDetails(preset)}
-                      type="button"
                     >
                       Details
-                    </button>
+                    </ActionButton>
                   ) : null}
                 </div>
               </div>
@@ -520,9 +509,9 @@ export default function SimulationLibraryPanel({
               </select>
             </label>
             <div className="chip-group">
-              <button className="inline-action" onClick={createBlankSimulation} type="button">
+              <ActionButton onClick={createBlankSimulation}>
                 Create
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>
