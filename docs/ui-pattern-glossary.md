@@ -15,6 +15,33 @@ Status labels:
 
 ## Standard Patterns
 
+### Panel Shells
+- Role: structural app chrome shells that host content families; shell naming is independent from the feature content rendered inside.
+- Use when: discussing layout/frame behavior (left side, right side, bottom shell) instead of feature-specific content.
+- Do not use when: describing the internals of a feature module (map settings, profile chart details, library forms).
+- Variants:
+  - `LeftSidePanel` (current shell class: `sidebar-panel`)
+  - `RightSidePanel` (current shell class: `map-inspector`, legacy name retained temporarily)
+  - `BottomPanel` (current shell class: `chart-panel`, mobile host: `mobile-workspace-panel`)
+- Known examples/files:
+  - `src/components/AppShell.tsx`
+  - `src/components/MapView.tsx`
+  - `src/components/LinkProfileChart.tsx`
+  - `src/index.css` (`.sidebar-panel`, `.map-inspector`, `.chart-panel`, `.mobile-workspace-panel*`)
+- Status: `under migration`
+
+Shell concerns vs content concerns:
+- Shell concerns:
+  - panel placement, visibility/expand/collapse, mobile tab hosting, shell spacing/chrome
+- Content concerns:
+  - Sidebar sections (Simulation/Site/Path/Radio/Data)
+  - Right-panel inspector/details/map settings content
+  - Bottom-panel path profile chart content
+
+Legacy names to keep temporarily for stability:
+- Keep `map-inspector` class/props for now (widely used selectors/props), but treat it as `RightSidePanel` in planning vocabulary.
+- Keep `profile` naming for the bottom chart shell toggles/keys in current code until a dedicated rename pass is scoped.
+
 ### ActionButton
 - Role: standard app action control (inline actions in modals, panels, and inspector actions).
 - Use when: triggering an app action like Save, Load, Details, Create, Dismiss, or Remove.

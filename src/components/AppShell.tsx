@@ -38,6 +38,10 @@ const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
+// Shell vocabulary mapping for cleanup work:
+// - navigator => LeftSidePanel
+// - inspector => RightSidePanel (legacy term retained in code for stability)
+// - profile => BottomPanel shell (legacy term retained in code for stability)
 type MobileWorkspacePanel = "navigator" | "inspector" | "profile";
 type MobileBottomPanelMode = "hidden" | "normal" | "full";
 type AppNotice = {
@@ -48,6 +52,7 @@ type AppNotice = {
 };
 
 const UI_PANEL_KEYS = {
+  // Storage keys keep legacy names to avoid migration churn.
   navigatorHidden: "linksim-ui-navigator-hidden-v1",
   inspectorHidden: "linksim-ui-inspector-hidden-v1",
   profileHidden: "linksim-ui-profile-hidden-v1",

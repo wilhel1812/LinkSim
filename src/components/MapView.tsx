@@ -968,6 +968,7 @@ type MapViewProps = {
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
+  // Legacy prop name retained for stability; this renders in the RightSidePanel shell.
   inspectorHeaderActions?: ReactNode;
   notice?: {
     message: string;
