@@ -27,6 +27,7 @@ import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import { SimulationResultsSection } from "./SimulationResultsSection";
+import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
 
 const UI_SECTION_KEYS = {
@@ -2070,9 +2071,9 @@ export function MapView({
         <div className={`map-inline-notice map-inline-notice-${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>
           <span>{notice.message}</span>
           {notice.onDismiss ? (
-            <button aria-label="Dismiss notice" className="inline-action" onClick={notice.onDismiss} title="Dismiss" type="button">
+            <ActionButton aria-label="Dismiss notice" onClick={notice.onDismiss} title="Dismiss">
               Dismiss
-            </button>
+            </ActionButton>
           ) : null}
         </div>
       ) : null}
@@ -2141,32 +2142,28 @@ export function MapView({
               {hasInspectorActions ? (
                 <div className="chip-group">
                   {inspectorPrimaryLibraryEntryId ? (
-                    <button
-                      className="inline-action"
+                    <ActionButton
                       onClick={() => requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId)}
-                      type="button"
                     >
                       Details
-                    </button>
+                    </ActionButton>
                   ) : null}
                   {canRemoveSelectedSite ? (
-                    <button className="inline-action danger" onClick={removeSelectedSiteFromSimulation} type="button">
+                    <ActionButton onClick={removeSelectedSiteFromSimulation} variant="danger">
                       Remove From Simulation
-                    </button>
+                    </ActionButton>
                   ) : null}
                   {canAddSelectedDiscoverySite && selectedDiscoveryLibraryEntry ? (
-                    <button
-                      className="inline-action"
+                    <ActionButton
                       onClick={() => addDiscoveryLibrarySiteToSimulation(selectedDiscoveryLibraryEntry.id)}
-                      type="button"
                     >
                       Add to Simulation
-                    </button>
+                    </ActionButton>
                   ) : null}
                   {canSaveSelectedLink ? (
-                    <button className="inline-action" onClick={saveSelectedSitesAsLink} type="button">
+                    <ActionButton onClick={saveSelectedSitesAsLink}>
                       Save Selected Path
-                    </button>
+                    </ActionButton>
                   ) : null}
                 </div>
               ) : null}
