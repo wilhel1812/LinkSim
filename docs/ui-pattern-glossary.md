@@ -8,6 +8,10 @@ Status labels:
 - `exception`: intentional non-standard case
 - `legacy`: older pattern retained until migrated
 
+Current snapshot (after ActionButton consolidation + shell/header/action-row convergence pass):
+- Role boundaries are now mostly stable for `ActionButton` vs `ToolButton` vs `SelectionSurface`.
+- Remaining legacy `inline-action` usage is concentrated in Sidebar library/filter/editor utility zones and explicit exceptions.
+
 ## Proposed Outline
 1. Standard patterns
 2. Exceptions and specialized controls
@@ -55,6 +59,10 @@ Legacy names to keep temporarily for stability:
   - `src/components/MapView.tsx` (inspector action group + inline notice dismiss)
 - Status: `under migration`
 
+Boundary (stabilized):
+- Includes standard app actions in side panels, inspector sections, dialogs, and modal form actions.
+- Excludes tool/map controls, icon-only close controls, tab controls, selectable rows/cards, and link-style low-emphasis actions.
+
 ### ToolButton
 - Role: map/workspace overlay controls and view tools.
 - Use when: zooming, fitting, panel show/hide, map mode toggles, and map-side helper actions tied to overlay/tool context.
@@ -68,6 +76,10 @@ Legacy names to keep temporarily for stability:
   - `src/components/AppShell.tsx`
   - `src/index.css` (`.map-control-btn*`)
 - Status: `standard`
+
+Boundary (stabilized):
+- Includes map/workspace overlay controls and panel visibility/resize controls in workspace chrome.
+- Must not be used for form submit/cancel/app-flow actions inside panel/modal content.
 
 ### SelectionSurface
 - Role: selectable rows/cards/items representing entities or choices.
@@ -83,6 +95,10 @@ Legacy names to keep temporarily for stability:
   - `src/components/UserAdminPanel.tsx`
   - `src/index.css` (`.site-row`, `.link-item`, `.site-quick-item`, `.library-row`)
 - Status: `standard`
+
+Boundary (stabilized):
+- Handles entity selection state (selected/active rows/cards).
+- Must not be used as a substitute for command actions.
 
 ### TabButton
 - Role: panel-switching tabs with tab semantics.
@@ -110,6 +126,10 @@ Legacy names to keep temporarily for stability:
   - `src/components/UserAdminPanel.tsx`
   - `src/components/Sidebar.tsx`
 - Status: `standard`
+
+Shell/header/action-row convergence note:
+- Panel headers (`section-heading`, `library-manager-header`, inspector/chart top rows) now follow a shared header rhythm baseline.
+- Form action rows (`chip-group` in panel/modal action contexts) now follow a shared action-row cadence baseline.
 
 ### Form Field + Action Group
 - Role: consistent pairing of field layout and nearby actions.
@@ -139,6 +159,10 @@ Legacy names to keep temporarily for stability:
   - `src/index.css` (`.inline-link-button`)
 - Status: `exception`
 
+Exception policy:
+- Keep as exception when visual intent is contextual/link-like and intentionally lower emphasis than ActionButton.
+- Do not migrate to ActionButton unless the control should read as a primary/standard command.
+
 ### Specialized Triggers
 - Role: controls with distinct meaning and visual behavior that should not be forced into generic button taxonomy.
 - Use when: control carries unique domain meaning (account chip, bell/badge trigger, upload label, info tip).
@@ -155,6 +179,10 @@ Legacy names to keep temporarily for stability:
   - `src/index.css`
 - Status: `exception`
 
+Exception policy:
+- Keep distinct when control communicates a unique role (user chip, badge trigger, upload affordance, info-tip).
+- Avoid forcing these into ActionButton/ToolButton unless repeated usage proves a shared family is needed.
+
 ### Close Icon Button Primitive
 - Role: standardized close affordance for modal/header dismiss actions.
 - Use when: explicit close/dismiss icon is needed in modal/header contexts.
@@ -166,9 +194,24 @@ Legacy names to keep temporarily for stability:
   - reused across `Sidebar`, `SimulationLibraryPanel`, `UserAdminPanel`, `AppShell`
 - Status: `standard`
 
+Exception policy:
+- Icon-only close remains a dedicated primitive and is not part of ActionButton family.
+
 ## Borderline / Too Early to Standardize
-- `inline-action` usages outside `ActionButton` are still mixed across Sidebar/AppShell/UserAdmin/Welcome/Results.
-- Some inspector-local actions currently use `map-control-btn` and remain intentionally tied to tool-control language.
-- `LinkButton` may become `standard` later, but current usage is sparse and context-specific.
+- Sidebar library/filter/editor utility controls still contain mixed `inline-action` patterns (`library-filter-trigger`, `field-inline-btn`, mesh/search utility actions).
+- Compact welcome/tutorial actions remain intentionally distinct; keep until a dedicated compact-action policy pass exists.
+- Some utility controls in mixed data/editor contexts are visually near ActionButton but still role-ambiguous; defer until role boundary is explicit.
 
 Recommendation: keep this glossary compact until ActionButton migration coverage is broader and ToolButton vs ActionButton boundaries are fully settled.
+
+## Migration Coverage Snapshot
+- `ActionButton` migrated:
+  - `SimulationLibraryPanel` standard actions
+  - `MapView` inspector standard actions
+  - broad standard actions in `AppShell`, `UserAdminPanel`, and core `Sidebar` section actions
+- Intentionally not migrated:
+  - `ToolButton` (`map-control-btn*`) families
+  - icon-only close/action primitives
+  - tab controls, selection surfaces, link-style actions, specialized triggers
+- Remaining legacy concentration:
+  - Sidebar library manager/filter/editor utility subflows

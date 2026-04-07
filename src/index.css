@@ -22,6 +22,11 @@
   --state-fail-clear: color-mix(in srgb, var(--warning) 45%, var(--danger));
   --state-fail-blocked: var(--danger);
   --panel-shell-divider: color-mix(in srgb, var(--border) 84%, transparent);
+  --panel-header-row-gap: 10px;
+  --panel-header-row-min-height: 34px;
+  --panel-header-row-padding-bottom: 9px;
+  --panel-action-row-gap: 8px;
+  --panel-action-row-min-height: 34px;
 }
 
 * {
@@ -322,7 +327,10 @@ input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding-bottom: var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .info-tip {
@@ -372,7 +380,19 @@ input {
 .chip-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--panel-action-row-gap);
+}
+
+.panel-section > .chip-group,
+.library-manager-card > .chip-group,
+.map-inspector-section > .chip-group {
+  align-items: center;
+  min-height: var(--panel-action-row-min-height);
+}
+
+.panel-section > .chip-group,
+.library-manager-card > .chip-group {
+  justify-content: flex-end;
 }
 
 .chip-button {
@@ -1107,8 +1127,9 @@ input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 8px;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding-bottom: var(--panel-header-row-padding-bottom);
   border-bottom: 1px solid var(--panel-shell-divider);
 }
 
@@ -1130,7 +1151,8 @@ input {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-panel .maplibregl-ctrl-bottom-right,
@@ -1648,8 +1670,9 @@ input {
 .chart-top-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 0 8px;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding: 0 0 var(--panel-header-row-padding-bottom);
   border-bottom: 1px solid var(--panel-shell-divider);
 }
 
@@ -1805,8 +1828,9 @@ input {
 .chart-action-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 0 8px;
+  gap: var(--panel-action-row-gap);
+  min-height: var(--panel-action-row-min-height);
+  padding: 0 0 var(--panel-header-row-padding-bottom);
   border-bottom: 1px solid var(--panel-shell-divider);
 }
 
@@ -1815,7 +1839,7 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--panel-action-row-gap);
   flex: 0 0 auto;
 }
 
@@ -3123,7 +3147,10 @@ input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding-bottom: var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .library-manager-header h2 {
