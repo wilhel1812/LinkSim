@@ -595,11 +595,6 @@ export function AppShell() {
     window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
   }, []);
 
-  const signIn = useCallback(() => {
-    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
-  }, []);
-
   const switchLocalRole = useCallback(
     async (role: "admin" | "moderator" | "user" | "pending") => {
       try {
@@ -1030,79 +1025,6 @@ export function AppShell() {
     updateMapViewport,
     publishAppNotice,
   ]);
-
-  useEffect(() => {
-    if (libraryAutoOpened) return;
-    if (workspaceState !== "no-simulation") return;
-    if (showWelcomeModal) return;
-    if (accessState !== "granted" && accessState !== "readonly") return;
-    if (!activeUserId) return;
-    try {
-      const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`);
-      if (!seen) return;
-    } catch {
-      return;
-    }
-    setLibraryAutoOpened(true);
-    setShowSimulationLibraryRequest(true);
-  }, [libraryAutoOpened, workspaceState, showWelcomeModal, accessState, activeUserId, setShowSimulationLibraryRequest]);
-
-  useEffect(() => {
-    if (!showSimulationLibraryRequest) return;
-    setShowSimulationLibraryRequest(false);
-    setShowLibraryFromRequest(true);
-  }, [showSimulationLibraryRequest, setShowSimulationLibraryRequest]);
-
-  useEffect(() => {
-    if (libraryAutoOpened) return;
-    if (workspaceState !== "no-simulation") return;
-    if (showWelcomeModal) return;
-    if (accessState !== "granted" && accessState !== "readonly") return;
-    if (!activeUserId) return;
-    try {
-      const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`);
-      if (!seen) return;
-    } catch {
-      return;
-    }
-    setLibraryAutoOpened(true);
-    setShowSimulationLibraryRequest(true);
-  }, [libraryAutoOpened, workspaceState, showWelcomeModal, accessState, activeUserId, setShowSimulationLibraryRequest]);
-
-  useEffect(() => {
-    if (!showSimulationLibraryRequest) return;
-    setShowSimulationLibraryRequest(false);
-    setShowLibraryFromRequest(true);
-  }, [showSimulationLibraryRequest, setShowSimulationLibraryRequest]);
-
-  const openOnboardingTutorial = () => {
-    setShowOnboardingTutorial(true);
-  };
-
-  const openWelcomeFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowOnboardingTutorial(true);
-  };
-
-  const openLibraryFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowSimulationLibraryRequest(true);
-    try {
-      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
-    } catch {
-      // ignore
-    }
-  };
-
-  const createNewFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowNewSimulationRequest(true);
-    try {
-      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
-    } catch {
-      // ignore
-    }
-  };
 
   useEffect(() => {
     if (libraryAutoOpened) return;
