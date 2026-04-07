@@ -1,22 +1,21 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleUserRound, CircleX, CloudAlert, Copy, Globe, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
+import { CircleX, Copy, Globe, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
-  formatPrivateSiteReferenceBlockMessage,
   type DeepLinkApplyOutcome,
   isAuthSignInRequiredMessage,
   shouldRewritePathAfterDeepLinkApply,
   shouldUseReadonlyFallbackForAuthBootstrap,
 } from "../lib/appShellGuards";
-import { handleSimulationLibraryLoad } from "../lib/simulationLibraryLoad";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { initializeMigrations, runMigrations } from "../lib/migrations";
 import { resolveBasemapSelection } from "../lib/basemaps";
+import { APP_BUILD_LABEL } from "../lib/buildInfo";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
@@ -27,8 +26,6 @@ import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
-import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
-import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 
 initializeMigrations();
 
@@ -105,6 +102,31 @@ const copyToClipboard = async (textOrPromise: string | Promise<string>): Promise
   document.body.removeChild(textarea);
 };
 
+const downloadRecoveryWorkspace = (): void => {
+  const state = useAppStore.getState();
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    reason: "session-loss-recovery",
+    build: APP_BUILD_LABEL,
+    selectedScenarioId: state.selectedScenarioId,
+    siteLibrary: state.siteLibrary,
+    simulationPresets: state.simulationPresets,
+    sites: state.sites,
+    links: state.links,
+    systems: state.systems,
+    networks: state.networks,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const anchor = document.createElement("a");
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = `linksim-session-recovery-${stamp}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(anchor.href);
+};
+
 export function AppShell() {
   const srtmTilesCount = useAppStore((state) => state.srtmTiles.length);
   const recommendAndFetchTerrainForCurrentArea = useAppStore(
@@ -134,6 +156,7 @@ export function AppShell() {
   const setAuthState = useAppStore((state) => state.setAuthState);
   const authState = useAppStore((state) => state.authState);
   const currentUser = useAppStore((state) => state.currentUser);
+  const pendingChangesCount = useAppStore((state) => state.pendingChangesCount);
   const isOnline = useAppStore((state) => state.isOnline);
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
@@ -152,6 +175,8 @@ export function AppShell() {
   const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
   const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const [activeUserId, setActiveUserId] = useState("");
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [showOnboardingTutorial, setShowOnboardingTutorial] = useState(false);
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
@@ -176,22 +201,6 @@ export function AppShell() {
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
-  const hadAuthenticatedSessionRef = useRef(false);
-  const {
-    showWelcomeModal,
-    setShowWelcomeModal,
-    showOnboardingTutorial,
-    setShowOnboardingTutorial,
-    closeWelcome,
-    openOnboardingTutorial,
-    openWelcomeFromWelcome,
-    openLibraryFromWelcome,
-    createNewFromWelcome,
-  } = useOnboardingFlow({
-    activeUserId,
-    setShowSimulationLibraryRequest,
-    setShowNewSimulationRequest,
-  });
 
   const { theme, colorTheme, variant } = useThemeVariant();
   const basemapProvider = useAppStore((state) => state.basemapProvider);
@@ -227,12 +236,6 @@ export function AppShell() {
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
-  const mobileNavigatorTabId = "mobile-workspace-tab-navigator";
-  const mobileInspectorTabId = "mobile-workspace-tab-inspector";
-  const mobileProfileTabId = "mobile-workspace-tab-profile";
-  const mobileNavigatorPanelId = "mobile-workspace-panel-navigator";
-  const mobileInspectorPanelId = "mobile-workspace-panel-inspector";
-  const mobileProfilePanelId = "mobile-workspace-panel-profile";
   const selectedLink = useMemo(
     () => links.find((link) => link.id === selectedLinkId) ?? null,
     [links, selectedLinkId],
@@ -448,7 +451,6 @@ export function AppShell() {
         setAccessDiagnosticMessage(null);
         setCurrentUser(profile);
         setAuthState("signed_in");
-        hadAuthenticatedSessionRef.current = true;
         setActiveUserId(profile.id);
         try {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
@@ -500,11 +502,8 @@ export function AppShell() {
           });
         }
         setAccessDiagnosticMessage(`Access check failed: ${message}`);
-        const hadAuthenticatedSession = hadAuthenticatedSessionRef.current;
-        if (hadAuthenticatedSession) {
-          setCurrentUser(null);
-          setAuthState("signed_out");
-        }
+        setCurrentUser(null);
+        setAuthState("signed_out");
         if (message.includes("Session revoked by admin")) {
           window.location.href = "/cdn-cgi/access/logout";
           return;
@@ -514,22 +513,13 @@ export function AppShell() {
           return;
         }
         if (fallbackToReadonly) {
-          if (hadAuthenticatedSession) {
-            setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
-            setAccessState("locked");
-          } else {
-            setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
-            setAccessState("readonly");
-          }
+          setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
+          setAccessState("readonly");
           return;
         }
         if (isAuthSignInRequiredMessage(message)) {
-          if (hadAuthenticatedSession) {
-            setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
-            setAccessState("locked");
-          } else {
-            setAccessState("readonly");
-          }
+          setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
+          setAccessState("locked");
           return;
         }
         setAccessState("locked");
@@ -544,7 +534,6 @@ export function AppShell() {
   useEffect(() => {
     if (authState !== "signed_out") return;
     if (accessState === "checking") return;
-    if (!hadAuthenticatedSessionRef.current) return;
     setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
     setAccessState("locked");
   }, [accessState, authState]);
@@ -559,7 +548,9 @@ export function AppShell() {
   // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink,
   // and publish a persistent map notice (uses the existing map-inline-notice UI).
   useEffect(() => {
-    const isAnonNoDeepLink = !deepLinkParse.ok && isAnonymousGuestReadonly;
+    const isAnonNoDeepLink =
+      !deepLinkParse.ok &&
+      (isAnonymousGuestReadonly || (accessState === "locked" && lockedNeedsSignIn));
     if (!isAnonNoDeepLink) return;
     if (sites.length === 0) {
       loadDemoScenario();
@@ -571,12 +562,11 @@ export function AppShell() {
       persistent: true,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnonymousGuestReadonly, deepLinkParse.ok]);
+  }, [accessState, isAnonymousGuestReadonly, lockedNeedsSignIn, deepLinkParse.ok]);
 
   const signOutOrReadonly = useCallback(() => {
     setCurrentUser(null);
     setAuthState("signed_out");
-    hadAuthenticatedSessionRef.current = true;
     if (isLocalRuntime) {
       try {
         localStorage.setItem(LOCAL_FORCE_READONLY_KEY, "1");
@@ -1029,27 +1019,44 @@ export function AppShell() {
     publishAppNotice,
   ]);
 
-  useEffect(() => {
-    if (libraryAutoOpened) return;
-    if (workspaceState !== "no-simulation") return;
-    if (showWelcomeModal) return;
-    if (accessState !== "granted" && accessState !== "readonly") return;
+  const closeWelcome = () => {
+    setShowWelcomeModal(false);
     if (!activeUserId) return;
     try {
-      const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`);
-      if (!seen) return;
+      localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
     } catch {
-      return;
+      // ignore storage errors
     }
-    setLibraryAutoOpened(true);
-    setShowSimulationLibraryRequest(true);
-  }, [libraryAutoOpened, workspaceState, showWelcomeModal, accessState, activeUserId, setShowSimulationLibraryRequest]);
+  };
 
-  useEffect(() => {
-    if (!showSimulationLibraryRequest) return;
-    setShowSimulationLibraryRequest(false);
-    setShowLibraryFromRequest(true);
-  }, [showSimulationLibraryRequest, setShowSimulationLibraryRequest]);
+  const openOnboardingTutorial = () => {
+    setShowOnboardingTutorial(true);
+  };
+
+  const openWelcomeFromWelcome = () => {
+    setShowWelcomeModal(false);
+    setShowOnboardingTutorial(true);
+  };
+
+  const openLibraryFromWelcome = () => {
+    setShowWelcomeModal(false);
+    setShowSimulationLibraryRequest(true);
+    try {
+      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
+    } catch {
+      // ignore
+    }
+  };
+
+  const createNewFromWelcome = () => {
+    setShowWelcomeModal(false);
+    setShowNewSimulationRequest(true);
+    try {
+      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     if (libraryAutoOpened) return;
@@ -1179,12 +1186,6 @@ export function AppShell() {
 
   const runShareWithSpecificUsers = useCallback(async () => {
     if (!activeSimulation || !currentUser) return;
-    if (toVisibility(activeSimulation.visibility) !== "private" && referencedPrivateSites.length) {
-      setShareSpecificStatus(
-        formatPrivateSiteReferenceBlockMessage(referencedPrivateSites.map((site) => site.name)),
-      );
-      return;
-    }
     if (!shareSpecificUsers.length) {
       setShareSpecificStatus("Add at least one user first.");
       return;
@@ -1222,15 +1223,7 @@ export function AppShell() {
     } finally {
       setShareSpecificBusy(false);
     }
-  }, [
-    activeSimulation,
-    currentShareLink,
-    currentUser,
-    referencedPrivateSites,
-    shareSpecificRoles,
-    shareSpecificUsers,
-    updateSimulationPresetEntry,
-  ]);
+  }, [activeSimulation, currentShareLink, currentUser, shareSpecificRoles, shareSpecificUsers, updateSimulationPresetEntry]);
 
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     const style: CSSProperties = {
@@ -1252,21 +1245,13 @@ export function AppShell() {
     isProfileExpanded,
     mobileControlsOccupied,
   ]);
-  const isAnonymousBootstrapShell = accessState === "checking";
+  const isAnonymousBootstrapShell = accessState === "checking" || (accessState === "locked" && lockedNeedsSignIn);
   const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
-  const emitProfileLayoutPulse = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const fire = () => window.dispatchEvent(new CustomEvent("linksim-profile-layout-pulse"));
-    fire();
-    window.requestAnimationFrame(fire);
-    window.setTimeout(fire, 120);
-  }, []);
 
   const toggleProfileExpanded = () => {
     setIsMapExpanded(false);
     setMobileActivePanel("profile");
     setIsProfileExpanded((prev) => !prev);
-    emitProfileLayoutPulse();
   };
 
   const setMobileBottomPanelVisibility = useCallback((nextMode: MobileBottomPanelMode) => {
@@ -1397,20 +1382,14 @@ export function AppShell() {
     );
   }
 
-  if (accessState === "locked") {
-    const shouldPromptSignIn = lockedNeedsSignIn || authState === "signed_out";
+  if (accessState === "locked" && !lockedNeedsSignIn) {
     return (
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
-          {shouldPromptSignIn ? (
-            <div className="access-locked-alert-icon sync-error" aria-hidden="true">
-              <CloudAlert strokeWidth={1.8} />
-            </div>
-          ) : null}
-          <h2>{shouldPromptSignIn ? "Signed out" : "Access unavailable"}</h2>
+          <h2>Access unavailable</h2>
           {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
-          {shouldPromptSignIn ? (
-            <p className="field-help">Sign in again to continue where you left off.</p>
+          {lockedNeedsSignIn ? (
+            <p className="field-help">Sign in with your approved account to continue.</p>
           ) : (
             <>
               <p className="field-help">
@@ -1422,12 +1401,33 @@ export function AppShell() {
             </>
           )}
           <div className="chip-group">
-          {shouldPromptSignIn ? (
+          {lockedNeedsSignIn ? (
               <>
                 <button className="inline-action" onClick={signIn} type="button">
-                  <CircleUserRound aria-hidden="true" strokeWidth={1.8} />
-                  <span>Sign In</span>
+                  Sign In
                 </button>
+                {pendingChangesCount > 0 ? (
+                  <>
+                    <button
+                      className="inline-action"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent(OPEN_SYNC_MODAL_EVENT));
+                      }}
+                      type="button"
+                    >
+                      Open Sync Status
+                    </button>
+                    <button
+                      className="inline-action"
+                      onClick={() => {
+                        downloadRecoveryWorkspace();
+                      }}
+                      type="button"
+                    >
+                      Export Current Workspace
+                    </button>
+                  </>
+                ) : null}
               </>
             ) : (
               <button className="inline-action" onClick={signOutOrReadonly} type="button">
@@ -1452,6 +1452,11 @@ export function AppShell() {
             ) : null}
           </div>
           {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
+          {lockedNeedsSignIn && pendingChangesCount > 0 ? (
+            <p className="field-help">
+              You are signed out. Unsynced local changes are preserved on this device. Sign in, open Sync Status, and retry sync.
+            </p>
+          ) : null}
         </section>
         <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
         <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
@@ -1487,10 +1492,7 @@ export function AppShell() {
             <button
               aria-label="Show Navigator panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-navigator"
-              onClick={() => {
-                setIsNavigatorHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={() => setIsNavigatorHidden(false)}
               title="Show Navigator"
               type="button"
             >
@@ -1501,10 +1503,7 @@ export function AppShell() {
             <button
               aria-label="Show Inspector panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-inspector"
-              onClick={() => {
-                setIsInspectorHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={() => setIsInspectorHidden(false)}
               title="Show Inspector"
               type="button"
             >
@@ -1515,10 +1514,7 @@ export function AppShell() {
             <button
               aria-label="Show Profile panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-profile"
-              onClick={() => {
-                setIsProfileHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={() => setIsProfileHidden(false)}
               title="Show Profile"
               type="button"
             >
@@ -1540,10 +1536,7 @@ export function AppShell() {
                 <button
                   aria-label={isNavigatorHidden ? "Show Navigator panel" : "Hide Navigator panel"}
                   className="user-icon-button"
-                  onClick={() => {
-                    setIsNavigatorHidden((prev) => !prev);
-                    emitProfileLayoutPulse();
-                  }}
+                  onClick={() => setIsNavigatorHidden((prev) => !prev)}
                   title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
                   type="button"
                 >
@@ -1551,16 +1544,12 @@ export function AppShell() {
                 </button>
               )
             }
-            simulationDisplayLabel={undefined}
+            simulationDisplayLabel={
+              isReadOnlyShell && !deepLinkParse.ok && sites.length > 0 ? "Oslo Demo" : undefined
+          }
         />
       ) : null}
-      <section
-        aria-hidden={isMobileViewport ? mobileBottomPanelMode === "hidden" || mobileActivePanel !== "inspector" : undefined}
-        aria-labelledby={isMobileViewport ? mobileInspectorTabId : undefined}
-        className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}
-        id={isMobileViewport ? mobileInspectorPanelId : undefined}
-        role={isMobileViewport ? "tabpanel" : undefined}
-      >
+      <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
         {accessState === "checking" ? (
           <div className="workspace-header-actions">
             <span className="field-help">Checking access in the background. Anonymous mode is available while this resolves.</span>
@@ -1638,10 +1627,7 @@ export function AppShell() {
                 <button
                   aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
                   className="map-control-btn map-control-btn-icon"
-                  onClick={() => {
-                    setIsInspectorHidden((prev) => !prev);
-                    emitProfileLayoutPulse();
-                  }}
+                  onClick={() => setIsInspectorHidden((prev) => !prev)}
                   title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
                   type="button"
                 >
@@ -1671,7 +1657,6 @@ export function AppShell() {
               setMobileBottomPanelVisibility("normal");
             }
             setIsMapExpanded((prev) => !prev);
-            emitProfileLayoutPulse();
           }}
           notice={
             appNotice
@@ -1689,19 +1674,53 @@ export function AppShell() {
           }
         />
         {isMobileViewport ? (
-          <MobileWorkspaceTabs
-            activePanel={mobileActivePanel}
-            inspectorPanelId={mobileInspectorPanelId}
-            inspectorTabId={mobileInspectorTabId}
-            mode={mobileBottomPanelMode}
-            navigatorPanelId={mobileNavigatorPanelId}
-            navigatorTabId={mobileNavigatorTabId}
-            profilePanelId={mobileProfilePanelId}
-            profileTabId={mobileProfileTabId}
-            setIsMapExpanded={setIsMapExpanded}
-            setMobileActivePanel={setMobileActivePanel}
-            setMobileBottomPanelVisibility={setMobileBottomPanelVisibility}
-          />
+          <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
+            <button
+              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator"}
+              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsMapExpanded(false);
+                setMobileActivePanel("navigator");
+                if (mobileBottomPanelMode === "hidden") {
+                  setMobileBottomPanelVisibility("normal");
+                }
+              }}
+              role="tab"
+              type="button"
+            >
+              Navigator
+            </button>
+            <button
+              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector"}
+              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsMapExpanded(false);
+                setMobileActivePanel("inspector");
+                if (mobileBottomPanelMode === "hidden") {
+                  setMobileBottomPanelVisibility("normal");
+                }
+              }}
+              role="tab"
+              type="button"
+            >
+              Inspector
+            </button>
+            <button
+              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile"}
+              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile" ? "is-active" : ""}`}
+              onClick={() => {
+                setIsMapExpanded(false);
+                setMobileActivePanel("profile");
+                if (mobileBottomPanelMode === "hidden") {
+                  setMobileBottomPanelVisibility("normal");
+                }
+              }}
+              role="tab"
+              type="button"
+            >
+              Profile
+            </button>
+          </div>
         ) : null}
         {!isMobileViewport && !isMapExpanded && !isProfileHidden ? (
           <LinkProfileChart
@@ -1717,7 +1736,6 @@ export function AppShell() {
                     if (next) setIsProfileExpanded(false);
                     return next;
                   });
-                  emitProfileLayoutPulse();
                 }}
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
                 type="button"
@@ -1729,12 +1747,7 @@ export function AppShell() {
           />
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && mobileBottomPanelMode !== "hidden" ? (
-          <div
-            aria-labelledby={mobileProfileTabId}
-            className="mobile-workspace-panel mobile-workspace-panel-shell"
-            id={mobileProfilePanelId}
-            role="tabpanel"
-          >
+          <div className="mobile-workspace-panel mobile-workspace-panel-shell" role="tabpanel" aria-label="Profile panel">
             <LinkProfileChart
               isExpanded={mobileBottomPanelMode === "full"}
               onToggleExpanded={toggleProfileExpanded}
@@ -1744,12 +1757,7 @@ export function AppShell() {
           </div>
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && mobileBottomPanelMode !== "hidden" ? (
-          <div
-            aria-labelledby={mobileNavigatorTabId}
-            className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator"
-            id={mobileNavigatorPanelId}
-            role="tabpanel"
-          >
+          <div className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator" role="tabpanel" aria-label="Navigator panel">
             {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
               <Sidebar
                 authBootstrapPending={accessState === "checking"}
@@ -1784,18 +1792,12 @@ export function AppShell() {
           <SimulationLibraryPanel
             onClose={() => setShowLibraryFromRequest(false)}
             onLoadSimulation={(presetId) => {
-              handleSimulationLibraryLoad({
-                presetId,
-                loadSimulationPreset,
-                persistSimulationRef: (loadedPresetId) => {
-                  try {
-                    localStorage.setItem(LAST_SIMULATION_REF_KEY, `saved:${loadedPresetId}`);
-                  } catch {
-                    // ignore storage errors
-                  }
-                },
-                closeLibraryModal: () => setShowLibraryFromRequest(false),
-              });
+              loadSimulationPreset(presetId);
+              try {
+                localStorage.setItem(LAST_SIMULATION_REF_KEY, `saved:${presetId}`);
+              } catch {
+                // ignore storage errors
+              }
             }}
           />
         </ModalOverlay>

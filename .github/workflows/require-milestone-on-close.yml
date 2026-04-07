@@ -6,7 +6,7 @@ on:
 
 jobs:
   enforce-milestone:
-    if: github.event.issue.state_reason == 'completed' && github.event.issue.milestone == null && !contains(toJson(github.event.issue.labels), '\"name\":\"no-milestone-close-ok\"')
+    if: github.event.issue.state_reason == 'completed' && github.event.issue.milestone == null && !contains(github.event.issue.labels.*.name, 'no-milestone-close-ok')
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -18,4 +18,4 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           gh issue reopen "$ISSUE_NUMBER" --repo "$REPO"
-          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "⚠️ Issues closed as completed must have a milestone assigned. Please assign a milestone before closing, or add label \`no-milestone-close-ok\` for an approved exception."
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "⚠️ Issues closed as completed must have a milestone assigned. Please assign a milestone before closing, or add label \`no-milestone-close-ok\` if this closure is an approved exception."
