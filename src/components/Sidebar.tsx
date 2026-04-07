@@ -1193,7 +1193,6 @@ export function Sidebar({
   };
   const selectedLibraryCount = selectedLibraryIds.size;
   const openLibraryForSelectedSite = () => {
-    setShowSiteLibraryManager(true);
     const matchedEntry = siteLibrary.find(
       (entry) =>
         entry.name === selectedSite.name &&
@@ -1218,6 +1217,7 @@ export function Sidebar({
       });
       return;
     }
+    setShowSiteLibraryManager(true);
     setShowAddLibraryForm(true);
     setNewLibraryName("");
     setNewLibraryDescription("");
