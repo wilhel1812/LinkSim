@@ -2127,13 +2127,13 @@ export function MapView({
               </p>
               <span className="map-inline-actions">
                 {isHolidayThemeForced ? (
-                  <button className="map-control-btn" onClick={revertHolidayThemeForWindow} type="button">
+                  <ActionButton onClick={revertHolidayThemeForWindow}>
                     Revert Theme
-                  </button>
+                  </ActionButton>
                 ) : null}
-                <button className="map-control-btn" onClick={dismissHolidayThemeNotice} type="button">
+                <ActionButton onClick={dismissHolidayThemeNotice}>
                   Dismiss
-                </button>
+                </ActionButton>
               </span>
             </div>
           ) : null}
@@ -2188,18 +2188,16 @@ export function MapView({
                 </div>
               ) : mqttLoadStatus.includes("failed") ? (
                 <span className="map-inline-actions">
-                  <button
+                  <ActionButton
                     aria-label="Retry MQTT load"
-                    className="map-control-btn"
                     onClick={() => {
                       setMqttNodes([]);
                       setMqttLoadStatus(null);
                     }}
-                    type="button"
                   >
                     <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
                     <span>Retry</span>
-                  </button>
+                  </ActionButton>
                 </span>
               ) : null}
             </div>
@@ -2210,15 +2208,15 @@ export function MapView({
                 This MQTT node is already in your library as <strong>{mqttDuplicatePrompt.existingName}</strong>.
               </p>
               <span className="map-inline-actions">
-                <button className="map-control-btn" onClick={addExistingDuplicateMqttNode} type="button">
+                <ActionButton onClick={addExistingDuplicateMqttNode}>
                   Add Existing
-                </button>
-                <button className="map-control-btn" onClick={createDuplicateMqttCopy} type="button">
+                </ActionButton>
+                <ActionButton onClick={createDuplicateMqttCopy}>
                   Create Copy
-                </button>
-                <button className="map-control-btn" onClick={() => setMqttDuplicatePrompt(null)} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => setMqttDuplicatePrompt(null)}>
                   Cancel
-                </button>
+                </ActionButton>
               </span>
             </div>
           ) : null}
@@ -2230,13 +2228,13 @@ export function MapView({
               </p>
               <span className="map-inline-actions">
                 {canPersist ? (
-                  <button className="map-control-btn" onClick={() => void savePendingNewSiteDraft()} type="button">
+                  <ActionButton onClick={() => void savePendingNewSiteDraft()}>
                     Save To Library
-                  </button>
+                  </ActionButton>
                 ) : null}
-                <button className="map-control-btn" onClick={dismissPendingNewSiteDraft} type="button">
+                <ActionButton onClick={dismissPendingNewSiteDraft}>
                   Dismiss
-                </button>
+                </ActionButton>
               </span>
             </div>
           ) : null}
@@ -2250,13 +2248,13 @@ export function MapView({
               </p>
               <span className="map-inline-actions">
                 {canPersist ? (
-                  <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
+                  <ActionButton onClick={savePendingSiteMove}>
                     Save Positions
-                  </button>
+                  </ActionButton>
                 ) : null}
-                <button className="map-control-btn" onClick={dismissPendingSiteMove} type="button">
+                <ActionButton onClick={dismissPendingSiteMove}>
                   {canPersist ? "Dismiss" : "Revert"}
-                </button>
+                </ActionButton>
               </span>
             </div>
           ) : null}
