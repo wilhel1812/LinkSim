@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel } from "lucide-react";
+import { Funnel } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -21,6 +21,7 @@ import { toAccessVisibility } from "../lib/uiFormatting";
 import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
 import { AvatarBadge } from "./AvatarBadge";
+import { InlineCloseIconButton } from "./InlineCloseIconButton";
 
 type FilterGroupKey = "role" | "visibility";
 
@@ -245,9 +246,7 @@ export default function SimulationLibraryPanel({
     <div className="library-manager-card">
       <div className="library-manager-header">
         <h2>Simulation Library</h2>
-        <button aria-label="Close" className="inline-action inline-action-icon" onClick={onClose} title="Close" type="button">
-          <CircleX aria-hidden="true" strokeWidth={1.8} />
-        </button>
+        <InlineCloseIconButton onClick={onClose} />
       </div>
       <p className="field-help">
         Manage saved simulations here. Site/node editing still happens in the main workspace.
@@ -479,18 +478,12 @@ export default function SimulationLibraryPanel({
           <div className="library-manager-card user-profile-popup welcome-modal-new-simulation">
             <div className="library-manager-header">
               <h2>New Simulation</h2>
-              <button
-                aria-label="Close"
-                className="inline-action inline-action-icon"
+              <InlineCloseIconButton
                 onClick={() => {
                   setShowNewSimulationModal(false);
                   setNewSimulationNameError("");
                 }}
-                title="Close"
-                type="button"
-              >
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              />
             </div>
             <label className="field-grid">
               <span>Name</span>

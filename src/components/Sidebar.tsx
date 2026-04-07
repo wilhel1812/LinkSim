@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
+import { Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -64,6 +64,7 @@ import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { AvatarBadge } from "./AvatarBadge";
+import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
@@ -1924,9 +1925,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>{linkModal.mode === "add" ? "Add Link" : "Edit Link"}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setLinkModal(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setLinkModal(null)} />
             </div>
             <label className="field-grid">
               <span>Link name</span>
@@ -2109,9 +2108,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>User Profile</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setProfilePopupUser(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setProfilePopupUser(null)} />
             </div>
             <p className="field-help">
               <strong>
@@ -2192,9 +2189,7 @@ export function Sidebar({
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Change Log · {changeLogPopup.label}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setChangeLogPopup(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setChangeLogPopup(null)} />
             </div>
             {changeLogPopup.busy ? <p className="field-help">Loading changes...</p> : null}
             {changeLogPopup.status ? <p className="field-help">{changeLogPopup.status}</p> : null}
@@ -2265,9 +2260,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
               <h2>Edit · {resourceDetailsPopup.label}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setResourceDetailsPopup(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setResourceDetailsPopup(null)} />
             </div>
             <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
             <p className="field-help">ID: {resourceDetailsPopup.resourceId}</p>
@@ -2869,18 +2862,12 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>New Simulation</h2>
-                <button
-                  aria-label="Close"
-                  className="inline-action inline-action-icon"
+                <InlineCloseIconButton
                   onClick={() => {
                     setShowNewSimulationModal(false);
                     setNewSimulationNameError("");
                   }}
-                  title="Close"
-                  type="button"
-                >
-                  <CircleX aria-hidden="true" strokeWidth={1.8} />
-                </button>
+                />
             </div>
             <label className="field-grid">
               <span>Name</span>
@@ -3070,9 +3057,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>Visibility Change Confirmation</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setPendingSimulationVisibilityPrompt(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setPendingSimulationVisibilityPrompt(null)} />
             </div>
             <p className="field-help">
               You are setting this simulation to{" "}
@@ -3106,19 +3091,13 @@ export function Sidebar({
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Site Library</h2>
-              <button
-                aria-label="Close"
-                className="inline-action inline-action-icon"
+              <InlineCloseIconButton
                 onClick={() => {
                   setShowSiteLibraryManager(false);
                   setPendingDraftAutoInsert(false);
                   closeSiteFilterEditors();
                 }}
-                title="Close"
-                type="button"
-              >
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              />
             </div>
             <p className="field-help">
               Built for large libraries. Select one or more entries to add into this simulation.
@@ -3824,9 +3803,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>{deleteConfirm.title}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setDeleteConfirm(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setDeleteConfirm(null)} />
             </div>
             <p className="field-help">{deleteConfirm.message}</p>
             <div className="chip-group">

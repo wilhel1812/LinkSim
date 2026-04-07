@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
-import { CircleQuestionMark, CircleUserRound, CircleX } from "lucide-react";
+import { CircleQuestionMark, CircleUserRound } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -33,6 +33,7 @@ import { useThemeVariant } from "../hooks/useThemeVariant";
 import type { UiColorTheme } from "../themes/types";
 import { AvatarBadge } from "./AvatarBadge";
 import { InfoTip } from "./InfoTip";
+import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
 import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
 
@@ -769,9 +770,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           <div className="library-manager-card sync-modal">
             <div className="library-manager-header">
               <h2>Cloud Sync</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setSyncModalOpen(false)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setSyncModalOpen(false)} />
             </div>
             <div className="sync-modal-content">
               <div className="sync-info-grid">
@@ -867,9 +866,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 <button className="inline-action" onClick={handleSignOut} type="button">
                   Sign Out
                 </button>
-                <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setOpen(false)} title="Close" type="button">
-                  <CircleX aria-hidden="true" strokeWidth={1.8} />
-                </button>
+                <InlineCloseIconButton onClick={() => setOpen(false)} />
               </div>
             </div>
 
@@ -1284,9 +1281,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 <div className="library-manager-card user-profile-popup">
                   <div className="library-manager-header">
                     <h2>User Profile</h2>
-                    <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeManagedUser} title="Close" type="button">
-                      <CircleX aria-hidden="true" strokeWidth={1.8} />
-                    </button>
+                    <InlineCloseIconButton onClick={closeManagedUser} />
                   </div>
                   <div className="user-list-row">
                     <ProfileAvatar avatarUrl={managedUser.avatarUrl} name={managedUser.username} size="large" />
