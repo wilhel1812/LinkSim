@@ -6,6 +6,7 @@ type AvatarBadgeProps = {
   imageClassName: string;
   fallbackClassName?: string;
   fallbackAs?: "span" | "div";
+  fallbackRawText?: boolean;
 };
 
 export function AvatarBadge({
@@ -14,9 +15,13 @@ export function AvatarBadge({
   imageClassName,
   fallbackClassName,
   fallbackAs = "span",
+  fallbackRawText = false,
 }: AvatarBadgeProps) {
   if (avatarUrl && avatarUrl.trim()) {
     return <img alt={name} className={imageClassName} src={avatarUrl} />;
+  }
+  if (fallbackRawText) {
+    return <>{toInitials(name)}</>;
   }
   const className = fallbackClassName ?? imageClassName;
   if (fallbackAs === "div") {
