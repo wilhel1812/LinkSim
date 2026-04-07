@@ -4,12 +4,18 @@ import { CircleX, Funnel } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
-  parsePersistedLibraryFilterState,
-  serializeLibraryFilterState,
   type LibraryFilterRole,
   type LibraryFilterState,
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
+import {
+  effectiveSelection,
+  persistLibraryFilterState,
+  readLibraryFilterState,
+  selectionIsFiltered,
+  selectionLabel,
+  toggleValue,
+} from "../lib/libraryFilterUi";
 import { formatDate } from "../lib/locale";
 import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
 import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
@@ -33,38 +39,6 @@ const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: st
 
 const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
 const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.key);
-
-const effectiveSelection = <T extends string>(selected: T[], allValues: T[]): T[] =>
-  selected.length ? selected : allValues;
-
-const selectionLabel = <T extends string>(selected: T[], allValues: T[]): string => {
-  const effective = effectiveSelection(selected, allValues);
-  return `${effective.length}/${allValues.length}`;
-};
-
-const selectionIsFiltered = <T extends string>(selected: T[], allValues: T[]): boolean => {
-  const effective = effectiveSelection(selected, allValues);
-  return effective.length !== allValues.length;
-};
-
-const toggleValue = <T extends string>(values: T[], key: T): T[] =>
-  values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
-
-const readLibraryFilterState = (key: string): LibraryFilterState => {
-  try {
-    return parsePersistedLibraryFilterState(localStorage.getItem(key), DEFAULT_LIBRARY_FILTER_STATE);
-  } catch {
-    return DEFAULT_LIBRARY_FILTER_STATE;
-  }
-};
-
-const persistLibraryFilterState = (key: string, state: LibraryFilterState): void => {
-  try {
-    localStorage.setItem(key, serializeLibraryFilterState(state));
-  } catch {
-    // Best effort only.
-  }
-};
 
 type ResourceOpenParams = {
   kind: "site" | "simulation";
