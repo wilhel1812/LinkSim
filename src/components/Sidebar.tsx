@@ -40,7 +40,7 @@ import {
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
-import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
+import { toAccessVisibility } from "../lib/uiFormatting";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -63,6 +63,7 @@ import { useAppStore } from "../store/appStore";
 import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
+import { AvatarBadge } from "./AvatarBadge";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
@@ -74,11 +75,7 @@ const parseNumber = (value: string): number => {
 
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
-    {avatarUrl && avatarUrl.trim() ? (
-      <img alt={name} className="profile-avatar" src={avatarUrl} />
-    ) : (
-      <span className="profile-avatar">{toInitials(name)}</span>
-    )}
+    <AvatarBadge avatarUrl={avatarUrl} imageClassName="profile-avatar" name={name} />
     <span>{name}</span>
   </span>
 );
@@ -3752,15 +3749,7 @@ export function Sidebar({
                       title={`Owner: ${owner.name}`}
                       type="button"
                     >
-                      {owner.avatarUrl ? (
-                        <img
-                          alt={owner.name}
-                          className="row-avatar-image"
-                          src={owner.avatarUrl}
-                        />
-                      ) : (
-                        toInitials(owner.name)
-                      )}
+                      <AvatarBadge avatarUrl={owner.avatarUrl} imageClassName="row-avatar-image" name={owner.name} />
                     </button>
                     {((entry.sharedWith ?? [])
                       .filter((grant) => grant.userId !== (entry as { ownerUserId?: string }).ownerUserId)
@@ -3777,11 +3766,7 @@ export function Sidebar({
                             title={name}
                             type="button"
                           >
-                            {avatarUrl ? (
-                              <img alt={name} className="row-avatar-image" src={avatarUrl} />
-                            ) : (
-                              toInitials(name)
-                            )}
+                            <AvatarBadge avatarUrl={avatarUrl} imageClassName="row-avatar-image" name={name} />
                           </button>
                         );
                       }))}

@@ -17,9 +17,10 @@ import {
   toggleValue,
 } from "../lib/libraryFilterUi";
 import { formatDate } from "../lib/locale";
-import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
+import { toAccessVisibility } from "../lib/uiFormatting";
 import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
+import { AvatarBadge } from "./AvatarBadge";
 
 type FilterGroupKey = "role" | "visibility";
 
@@ -440,11 +441,7 @@ export default function SimulationLibraryPanel({
                     {toAccessVisibility((preset as { visibility?: unknown }).visibility)}
                   </span>
                   <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
-                    {owner.avatarUrl ? (
-                      <img alt={owner.name} className="row-avatar-image" src={owner.avatarUrl} />
-                    ) : (
-                      toInitials(owner.name)
-                    )}
+                    <AvatarBadge avatarUrl={owner.avatarUrl} imageClassName="row-avatar-image" name={owner.name} />
                   </span>
                 </span>
                 <div className="library-row-actions">

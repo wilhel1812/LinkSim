@@ -28,10 +28,10 @@ import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../lib/frequencyPlans"
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
 import { deriveSyncIndicator } from "../lib/syncIndicator";
-import { toInitials } from "../lib/uiFormatting";
 import { useAppStore } from "../store/appStore";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import type { UiColorTheme } from "../themes/types";
+import { AvatarBadge } from "./AvatarBadge";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
@@ -1420,8 +1420,12 @@ function ProfileAvatar({
   size?: "small" | "large";
 }) {
   const className = size === "large" ? "profile-avatar profile-avatar-large" : "profile-avatar";
-  if (avatarUrl.trim()) {
-    return <img alt={name} className={className} src={avatarUrl} />;
-  }
-  return <div className={className}>{toInitials(name)}</div>;
+  return (
+    <AvatarBadge
+      avatarUrl={avatarUrl}
+      fallbackAs="div"
+      imageClassName={className}
+      name={name}
+    />
+  );
 }
