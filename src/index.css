@@ -191,6 +191,7 @@ input {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  font-family: "Space Grotesk", "Avenir Next", sans-serif;
   max-height: calc(100vh - 36px);
   overflow: auto;
 }
@@ -1104,6 +1105,7 @@ input {
   display: grid;
   gap: 0;
   font-size: 0.76rem;
+  font-family: "Space Grotesk", "Avenir Next", sans-serif;
 }
 
 .map-inspector-header-row {
