@@ -3749,7 +3749,12 @@ export function Sidebar({
                       title={`Owner: ${owner.name}`}
                       type="button"
                     >
-                      <AvatarBadge avatarUrl={owner.avatarUrl} imageClassName="row-avatar-image" name={owner.name} />
+                      <AvatarBadge
+                        avatarUrl={owner.avatarUrl}
+                        fallbackRawText
+                        imageClassName="row-avatar-image"
+                        name={owner.name}
+                      />
                     </button>
                     {((entry.sharedWith ?? [])
                       .filter((grant) => grant.userId !== (entry as { ownerUserId?: string }).ownerUserId)
@@ -3766,7 +3771,12 @@ export function Sidebar({
                             title={name}
                             type="button"
                           >
-                            <AvatarBadge avatarUrl={avatarUrl} imageClassName="row-avatar-image" name={name} />
+                            <AvatarBadge
+                              avatarUrl={avatarUrl}
+                              fallbackRawText
+                              imageClassName="row-avatar-image"
+                              name={name}
+                            />
                           </button>
                         );
                       }))}

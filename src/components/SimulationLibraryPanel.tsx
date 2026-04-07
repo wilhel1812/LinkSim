@@ -441,7 +441,12 @@ export default function SimulationLibraryPanel({
                     {toAccessVisibility((preset as { visibility?: unknown }).visibility)}
                   </span>
                   <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
-                    <AvatarBadge avatarUrl={owner.avatarUrl} imageClassName="row-avatar-image" name={owner.name} />
+                    <AvatarBadge
+                      avatarUrl={owner.avatarUrl}
+                      fallbackRawText
+                      imageClassName="row-avatar-image"
+                      name={owner.name}
+                    />
                   </span>
                 </span>
                 <div className="library-row-actions">
