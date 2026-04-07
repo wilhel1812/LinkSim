@@ -16,7 +16,7 @@ export function ActionButton({
   return (
     <button
       {...buttonProps}
-      className={clsx("inline-action", variant === "danger" && "danger", className)}
+      className={clsx("inline-action", "action-button", variant === "danger" && "danger", className)}
       type={type}
     >
       {children}

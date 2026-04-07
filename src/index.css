@@ -2319,6 +2319,12 @@ input {
   gap: 8px;
 }
 
+.action-button {
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-height: 34px;
+}
+
 .inline-action.danger {
   border-color: color-mix(in srgb, var(--danger) 78%, var(--border));
   background: var(--danger);
