@@ -47,6 +47,15 @@ const NOTIFICATION_POLL_MS = 30_000;
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 
+type SyncIndicatorState = "local" | "offline" | "pending" | "syncing" | "synced" | "error";
+
+type SyncIndicator = {
+  state: SyncIndicatorState;
+  className: string;
+  label: string;
+  title: string;
+};
+
 const readDismissedNotificationIds = (): Set<string> => {
   try {
     const raw = window.localStorage.getItem(NOTIFICATION_DISMISS_KEY);
@@ -681,6 +690,11 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     setAuthState("signed_out");
     window.location.href = "/cdn-cgi/access/logout";
   }, [isLocalRuntime, setAuthState, setCurrentUser]);
+
+  const handleSignUp = useCallback(() => {
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
+  }, []);
 
   const handleSignUp = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
