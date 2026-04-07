@@ -1254,16 +1254,6 @@ export function AppShell() {
   ]);
   const isAnonymousBootstrapShell = accessState === "checking";
   const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
-  const profileChartLayoutRevision = [
-    isMobileViewport ? "mobile" : "desktop",
-    isMapExpanded ? "map-expanded" : "map-normal",
-    isProfileExpanded ? "profile-expanded" : "profile-normal",
-    isNavigatorHidden ? "nav-hidden" : "nav-visible",
-    isInspectorHidden ? "inspector-hidden" : "inspector-visible",
-    isProfileHidden ? "profile-hidden" : "profile-visible",
-    mobileActivePanel,
-    mobileBottomPanelMode,
-  ].join("|");
   const emitProfileLayoutPulse = useCallback(() => {
     if (typeof window === "undefined") return;
     const fire = () => window.dispatchEvent(new CustomEvent("linksim-profile-layout-pulse"));
@@ -1716,7 +1706,6 @@ export function AppShell() {
         {!isMobileViewport && !isMapExpanded && !isProfileHidden ? (
           <LinkProfileChart
             isExpanded={isProfileExpanded}
-            layoutRevision={profileChartLayoutRevision}
             onToggleExpanded={toggleProfileExpanded}
             rowControls={
               <button
@@ -1748,7 +1737,6 @@ export function AppShell() {
           >
             <LinkProfileChart
               isExpanded={mobileBottomPanelMode === "full"}
-              layoutRevision={profileChartLayoutRevision}
               onToggleExpanded={toggleProfileExpanded}
               rowControls={panelSizeControls("Profile", "chart")}
               showExpandToggle={false}
