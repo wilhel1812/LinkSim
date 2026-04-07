@@ -11,6 +11,7 @@ import {
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
 import { formatDate } from "../lib/locale";
+import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
 import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
 
@@ -32,19 +33,6 @@ const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: st
 
 const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
 const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.key);
-
-const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
-  if (value === "shared" || value === "public_write") return "shared";
-  if (value === "public" || value === "public_read") return "public";
-  return "private";
-};
-
-const initialsForUser = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
 
 const effectiveSelection = <T extends string>(selected: T[], allValues: T[]): T[] =>
   selected.length ? selected : allValues;
@@ -475,13 +463,13 @@ export default function SimulationLibraryPanel({
                 </span>
                 <span className="library-row-meta">
                   <span className="access-badge">
-                    {normalizeAccessVisibility((preset as { visibility?: unknown }).visibility)}
+                    {toAccessVisibility((preset as { visibility?: unknown }).visibility)}
                   </span>
                   <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
                     {owner.avatarUrl ? (
                       <img alt={owner.name} className="row-avatar-image" src={owner.avatarUrl} />
                     ) : (
-                      initialsForUser(owner.name)
+                      toInitials(owner.name)
                     )}
                   </span>
                 </span>

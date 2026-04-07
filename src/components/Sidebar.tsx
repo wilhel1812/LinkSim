@@ -40,6 +40,7 @@ import {
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
+import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
 import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
@@ -70,25 +71,12 @@ const parseNumber = (value: string): number => {
 };
 const PATH_MODAL_AUTOSAVE_DEBOUNCE_MS = 2000;
 
-const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
-  if (value === "shared" || value === "public_write") return "shared";
-  if (value === "public" || value === "public_read") return "public";
-  return "private";
-};
-
-const initialsForUser = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
-
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
     {avatarUrl && avatarUrl.trim() ? (
       <img alt={name} className="profile-avatar" src={avatarUrl} />
     ) : (
-      <span className="profile-avatar">{initialsForUser(name)}</span>
+      <span className="profile-avatar">{toInitials(name)}</span>
     )}
     <span>{name}</span>
   </span>
@@ -711,7 +699,7 @@ export function Sidebar({
     if (!selectedSimulationRef.startsWith("saved:")) return "shared";
     const presetId = selectedSimulationRef.replace("saved:", "");
     const preset = simulationPresets.find((candidate) => candidate.id === presetId);
-    return normalizeAccessVisibility(preset?.visibility);
+    return toAccessVisibility(preset?.visibility);
   }, [selectedSimulationRef, simulationPresets]);
   const openActiveSimulationDetails = () => {
     if (!selectedSimulationRef.startsWith("saved:")) return;
@@ -1555,7 +1543,7 @@ export function Sidebar({
       setResourceTxGainDraft(site?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi);
       setResourceRxGainDraft(site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi);
       setResourceCableLossDraft(site?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
-      setResourceAccessVisibility(normalizeAccessVisibility(site?.visibility));
+      setResourceAccessVisibility(toAccessVisibility(site?.visibility));
       const siteGrants = (site?.sharedWith ?? []).filter((grant) => grant.userId !== site?.ownerUserId);
       setResourceCollaboratorUserIds(siteGrants.map((grant) => grant.userId));
       setResourceCollaboratorRoles(
@@ -1572,7 +1560,7 @@ export function Sidebar({
       setResourceTxGainDraft(STANDARD_SITE_RADIO.txGainDbi);
       setResourceRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
       setResourceCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
-      setResourceAccessVisibility(normalizeAccessVisibility(simulation?.visibility));
+      setResourceAccessVisibility(toAccessVisibility(simulation?.visibility));
       const simGrants = (simulation?.sharedWith ?? []).filter((grant) => grant.userId !== simulation?.ownerUserId);
       setResourceCollaboratorUserIds(simGrants.map((grant) => grant.userId));
       setResourceCollaboratorRoles(
@@ -3823,7 +3811,7 @@ export function Sidebar({
                     {entry.name} ({entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)})
                   </span>
                   <span className="library-row-meta">
-                    <span className="access-badge">{normalizeAccessVisibility((entry as { visibility?: unknown }).visibility)}</span>
+                    <span className="access-badge">{toAccessVisibility((entry as { visibility?: unknown }).visibility)}</span>
                     {(entry as { sourceMeta?: { sourceType?: string } }).sourceMeta?.sourceType === "mqtt-feed" ? (
                       <span className="access-badge mqtt-source-badge">MQTT</span>
                     ) : null}
@@ -3840,7 +3828,7 @@ export function Sidebar({
                           src={owner.avatarUrl}
                         />
                       ) : (
-                        initialsForUser(owner.name)
+                        toInitials(owner.name)
                       )}
                     </button>
                     {((entry.sharedWith ?? [])
@@ -3861,7 +3849,7 @@ export function Sidebar({
                             {avatarUrl ? (
                               <img alt={name} className="row-avatar-image" src={avatarUrl} />
                             ) : (
-                              initialsForUser(name)
+                              toInitials(name)
                             )}
                           </button>
                         );
