@@ -8,6 +8,7 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { useAppStore } from "../store/appStore";
 import type { PropagationEnvironment } from "../types/radio";
 import { InfoTip } from "./InfoTip";
+import { ActionButton } from "./ActionButton";
 
 const metric = (label: string, value: string) => (
   <div className="metric-row" key={label}>
@@ -359,13 +360,11 @@ export function SimulationResultsSection() {
       </label>
       {isLoraEstimateRelevant ? (
         <div className="section-heading">
-          <button
-            className="inline-action"
+          <ActionButton
             onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
-            type="button"
           >
             Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
-          </button>
+          </ActionButton>
           <InfoTip text="Sets RX target to a LoRa sensitivity estimate from current BW and SF (noise floor + NF + SF SNR limit). This is a helper target, not a measured receiver spec." />
         </div>
       ) : (
@@ -390,9 +389,9 @@ export function SimulationResultsSection() {
           </div>
         ))}
       </div>
-      <button className="inline-action" onClick={exportManifest} type="button">
+      <ActionButton onClick={exportManifest}>
         Export Simulation Manifest
-      </button>
+      </ActionButton>
     </>
   );
 }
