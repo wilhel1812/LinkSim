@@ -13,7 +13,7 @@ import Map, {
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { t } from "../i18n/locales";
 import { fetchElevations } from "../lib/elevationService";
-import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
+import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
@@ -38,10 +38,9 @@ import {
   type MeshmapNode,
 } from "../lib/meshtasticMqtt";
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
-import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
+import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
-import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -52,7 +51,6 @@ import {
   type LibraryFilterState,
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
-import { handleSimulationLibraryLoad } from "../lib/simulationLibraryLoad";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
@@ -62,14 +60,11 @@ import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
-import { useLibraryManager } from "./sidebar/useLibraryManager";
-import { type LinkModalState, useInspectorActions } from "./sidebar/useInspectorActions";
 
 const parseNumber = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
-const PATH_MODAL_AUTOSAVE_DEBOUNCE_MS = 2000;
 
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
@@ -138,7 +133,7 @@ const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
 
 const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: string }> = [
   { key: "private", label: "Private" },
-  { key: "sharedPublic", label: "Shared or Public" },
+  { key: "sharedPublic", label: "Shared/Public" },
 ];
 const SITE_SOURCE_FILTER_OPTIONS: Array<{ key: LibraryFilterSource; label: string }> = [
   { key: "manual", label: "Manual" },
@@ -327,6 +322,9 @@ export function Sidebar({
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
   const showNewSimulationRequest = useAppStore((state) => state.showNewSimulationRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
+  const getDefaultFrequencyPresetIdForNewSimulation = useAppStore(
+    (state) => state.getDefaultFrequencyPresetIdForNewSimulation,
+  );
   const showSiteLibraryRequest = useAppStore((state) => state.showSiteLibraryRequest);
   const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
   const selectedLink = useMemo(
@@ -389,27 +387,31 @@ export function Sidebar({
   const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("private");
   const [modalFreqPresetId, setModalFreqPresetId] = useState(selectedFrequencyPresetId);
   const [modalAutoPropEnv, setModalAutoPropEnv] = useState(autoPropagationEnvironment);
-  const {
-    showSimulationLibraryManager,
-    setShowSimulationLibraryManager,
-    showSiteLibraryManager,
-    setShowSiteLibraryManager,
-    siteLibraryFilters,
-    setSiteLibraryFilters,
-    selectedLibraryIds,
-    setSelectedLibraryIds,
-    selectedLibraryCount,
-    showAddLibraryForm,
-    setShowAddLibraryForm,
-    toggleLibrarySelection,
-  } = useLibraryManager({
-    initialFilters: readLibraryFilterState(SITE_LIBRARY_FILTERS_KEY),
-  });
+  const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
+  const [linkModal, setLinkModal] = useState<{
+    mode: "add" | "edit";
+    linkId: string | null;
+    name: string;
+    fromSiteId: string;
+    toSiteId: string;
+    overrideRadio: boolean;
+    txPowerDbm: number;
+    txGainDbi: number;
+    rxGainDbi: number;
+    cableLossDb: number;
+    status: string;
+  } | null>(null);
+  const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
+  const [siteLibraryFilters, setSiteLibraryFilters] = useState<LibraryFilterState>(() =>
+    readLibraryFilterState(SITE_LIBRARY_FILTERS_KEY),
+  );
   const [openSiteFilterGroup, setOpenSiteFilterGroup] = useState<SiteFilterGroupKey | null>(null);
   const [siteRoleDraft, setSiteRoleDraft] = useState<LibraryFilterRole[] | null>(null);
   const [siteVisibilityDraft, setSiteVisibilityDraft] = useState<LibraryFilterVisibility[] | null>(null);
   const [siteSourceDraft, setSiteSourceDraft] = useState<LibraryFilterSource[] | null>(null);
   const siteFilterToolbarRef = useRef<HTMLDivElement | null>(null);
+  const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
+  const [showAddLibraryForm, setShowAddLibraryForm] = useState(false);
   const [pendingDraftAutoInsert, setPendingDraftAutoInsert] = useState(false);
   const [newLibraryName, setNewLibraryName] = useState("");
   const [newLibraryDescription, setNewLibraryDescription] = useState("");
@@ -509,7 +511,6 @@ export function Sidebar({
   } | null>(null);
   const [resourceAccessVisibility, setResourceAccessVisibility] = useState<"private" | "public" | "shared">("shared");
   const [resourceNameDraft, setResourceNameDraft] = useState("");
-  const [resourceNameError, setResourceNameError] = useState("");
   const [resourceDescriptionDraft, setResourceDescriptionDraft] = useState("");
   const [resourceLatDraft, setResourceLatDraft] = useState(0);
   const [resourceLonDraft, setResourceLonDraft] = useState(0);
@@ -645,12 +646,12 @@ export function Sidebar({
       setNewSimulationName("");
       setNewSimulationDescription("");
       setNewSimulationNameError("");
-      setModalFreqPresetId(selectedFrequencyPresetId);
+      setModalFreqPresetId(getDefaultFrequencyPresetIdForNewSimulation());
       setModalAutoPropEnv(autoPropagationEnvironment);
       setShowNewSimulationModal(true);
       setShowNewSimulationRequest(false);
     }
-  }, [hideLibraryBrowsing, showNewSimulationRequest, setShowNewSimulationRequest]);
+  }, [hideLibraryBrowsing, showNewSimulationRequest, setShowNewSimulationRequest, getDefaultFrequencyPresetIdForNewSimulation]);
   useEffect(() => {
     if (showSiteLibraryRequest) {
       if (hideLibraryBrowsing) {
@@ -1010,75 +1011,57 @@ export function Sidebar({
   ) => {
     setDeleteConfirm({ title, message, confirmLabel, onConfirm });
   };
-  const { linkModal, setLinkModal, openAddLinkModal, openEditLinkModal, canEditExistingPath } = useInspectorActions({
-    selectedLink,
-    selectedLinkRaw,
-    selectedSite,
-    sites,
-  });
-  const pathAutosaveTimerRef = useRef<number | null>(null);
-  const pendingPathAutosaveRef = useRef<NonNullable<LinkModalState> | null>(null);
 
-  const persistEditedPathFromModal = (modal: LinkModalState) => {
-    if (!modal || modal.mode !== "edit" || !modal.linkId) return;
-    if (!links.some((link) => link.id === modal.linkId)) return;
-    const fromExists = sites.some((site) => site.id === modal.fromSiteId);
-    const toExists = sites.some((site) => site.id === modal.toSiteId);
-    if (!fromExists || !toExists || modal.fromSiteId === modal.toSiteId) return;
-    updateLink(modal.linkId, {
-      name: modal.name.trim() || undefined,
-      fromSiteId: modal.fromSiteId,
-      toSiteId: modal.toSiteId,
-      txPowerDbm: modal.overrideRadio ? modal.txPowerDbm : undefined,
-      txGainDbi: modal.overrideRadio ? modal.txGainDbi : undefined,
-      rxGainDbi: modal.overrideRadio ? modal.rxGainDbi : undefined,
-      cableLossDb: modal.overrideRadio ? modal.cableLossDb : undefined,
+  const openAddLinkModal = () => {
+    const hasFromInSites = sites.some((site) => site.id === selectedLink.fromSiteId);
+    const hasToInSites = sites.some((site) => site.id === selectedLink.toSiteId);
+    const fallbackFrom = hasFromInSites ? selectedLink.fromSiteId : sites[0]?.id || "";
+    const fallbackTo = hasToInSites
+      ? selectedLink.toSiteId
+      : sites.find((site) => site.id !== fallbackFrom)?.id || "";
+    const fallbackFromSite = sites.find((site) => site.id === fallbackFrom) ?? selectedSite;
+    const fallbackToSite = sites.find((site) => site.id === fallbackTo) ?? fallbackFromSite;
+    const baseRadio = resolveLinkRadio(selectedLink, fallbackFromSite, fallbackToSite);
+    setLinkModal({
+      mode: "add",
+      linkId: null,
+      name: "",
+      fromSiteId: fallbackFrom,
+      toSiteId: fallbackTo,
+      overrideRadio: false,
+      txPowerDbm: baseRadio.txPowerDbm,
+      txGainDbi: baseRadio.txGainDbi,
+      rxGainDbi: baseRadio.rxGainDbi,
+      cableLossDb: baseRadio.cableLossDb,
+      status: "",
     });
   };
 
-  const flushPendingPathAutosave = () => {
-    if (pathAutosaveTimerRef.current !== null) {
-      window.clearTimeout(pathAutosaveTimerRef.current);
-      pathAutosaveTimerRef.current = null;
-    }
-    if (!pendingPathAutosaveRef.current) return;
-    persistEditedPathFromModal(pendingPathAutosaveRef.current);
-    pendingPathAutosaveRef.current = null;
-  };
-
-  const closeLinkModal = () => {
-    flushPendingPathAutosave();
-    setLinkModal(null);
-  };
-
-  const setLinkModalWithAutosave = (updater: (current: NonNullable<LinkModalState>) => NonNullable<LinkModalState>) => {
-    setLinkModal((current) => {
-      if (!current) return current;
-      const next = updater(current);
-      if (next.mode === "edit" && next.linkId) {
-        pendingPathAutosaveRef.current = next;
-        if (pathAutosaveTimerRef.current !== null) {
-          window.clearTimeout(pathAutosaveTimerRef.current);
-        }
-        pathAutosaveTimerRef.current = window.setTimeout(() => {
-          pathAutosaveTimerRef.current = null;
-          if (!pendingPathAutosaveRef.current) return;
-          persistEditedPathFromModal(pendingPathAutosaveRef.current);
-          pendingPathAutosaveRef.current = null;
-        }, PATH_MODAL_AUTOSAVE_DEBOUNCE_MS);
-      }
-      return next;
+  const openEditLinkModal = () => {
+    const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId) ?? null;
+    const toSite = sites.find((site) => site.id === selectedLink.toSiteId) ?? null;
+    const baseRadio = resolveLinkRadio(selectedLink, fromSite, toSite);
+    const hasOverrides = Boolean(
+      selectedLinkRaw &&
+        (typeof selectedLinkRaw.txPowerDbm === "number" ||
+          typeof selectedLinkRaw.txGainDbi === "number" ||
+          typeof selectedLinkRaw.rxGainDbi === "number" ||
+          typeof selectedLinkRaw.cableLossDb === "number"),
+    );
+    setLinkModal({
+      mode: "edit",
+      linkId: selectedLink.id,
+      name: selectedLink.name ?? "",
+      fromSiteId: selectedLink.fromSiteId,
+      toSiteId: selectedLink.toSiteId,
+      overrideRadio: hasOverrides,
+      txPowerDbm: baseRadio.txPowerDbm,
+      txGainDbi: baseRadio.txGainDbi,
+      rxGainDbi: baseRadio.rxGainDbi,
+      cableLossDb: baseRadio.cableLossDb,
+      status: "",
     });
   };
-
-  useEffect(
-    () => () => {
-      if (pathAutosaveTimerRef.current !== null) {
-        window.clearTimeout(pathAutosaveTimerRef.current);
-      }
-    },
-    [],
-  );
 
   const saveLinkModal = () => {
     if (!linkModal) return;
@@ -1110,30 +1093,30 @@ export function Sidebar({
         return;
       }
       if (createdId) {
-        const createdModal: NonNullable<LinkModalState> = {
-          ...linkModal,
-          mode: "edit",
-          linkId: createdId,
-          status: "Path created. Further edits auto-save.",
-        };
-        persistEditedPathFromModal(createdModal);
-        setLinkModal(createdModal);
-      } else {
-        setLinkModal((current) =>
-          current ? { ...current, status: "Path created, but could not open it for editing." } : current,
-        );
+        updateLink(createdId, {
+          name: linkModal.name.trim() || undefined,
+          fromSiteId: linkModal.fromSiteId,
+          toSiteId: linkModal.toSiteId,
+          txPowerDbm: linkModal.overrideRadio ? linkModal.txPowerDbm : undefined,
+          txGainDbi: linkModal.overrideRadio ? linkModal.txGainDbi : undefined,
+          rxGainDbi: linkModal.overrideRadio ? linkModal.rxGainDbi : undefined,
+          cableLossDb: linkModal.overrideRadio ? linkModal.cableLossDb : undefined,
+        });
       }
+      setLinkModal(null);
       return;
     }
-  };
-
-  const updateLinkModalField = (updater: (current: NonNullable<LinkModalState>) => NonNullable<LinkModalState>) => {
-    if (!linkModal) return;
-    if (linkModal.mode === "add") {
-      setLinkModal((current) => (current ? updater(current) : current));
-      return;
-    }
-    setLinkModalWithAutosave(updater);
+    if (!linkModal.linkId) return;
+    updateLink(linkModal.linkId, {
+      name: linkModal.name.trim() || undefined,
+      fromSiteId: linkModal.fromSiteId,
+      toSiteId: linkModal.toSiteId,
+      txPowerDbm: linkModal.overrideRadio ? linkModal.txPowerDbm : undefined,
+      txGainDbi: linkModal.overrideRadio ? linkModal.txGainDbi : undefined,
+      rxGainDbi: linkModal.overrideRadio ? linkModal.rxGainDbi : undefined,
+      cableLossDb: linkModal.overrideRadio ? linkModal.cableLossDb : undefined,
+    });
+    setLinkModal(null);
   };
   const saveSimulationAsNew = () => {
     const trimmed = newPresetName.trim();
@@ -1160,17 +1143,12 @@ export function Sidebar({
       setSimulationSaveStatus("");
       return;
     }
-    if (hasDuplicateSimulationNameForOwner(simulationPresets, trimmed, currentUser.id)) {
-      const duplicateMessage = duplicateSimulationNameMessage(trimmed);
-      setNewSimulationNameError(duplicateMessage);
-      setSimulationSaveStatus(duplicateMessage);
-      return;
-    }
     setNewSimulationNameError("");
     // Apply modal propagation settings to live store before snapshot is taken
     setSelectedFrequencyPresetId(modalFreqPresetId);
     setAutoPropagationEnvironment(modalAutoPropEnv);
     const createdId = createBlankSimulationPreset(trimmed, {
+      frequencyPresetId: modalFreqPresetId,
       description: newSimulationDescription.trim() || undefined,
       visibility: newSimulationVisibility,
       ownerUserId: currentUser.id,
@@ -1182,7 +1160,7 @@ export function Sidebar({
       lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
     });
     if (!createdId) {
-      setSimulationSaveStatus(duplicateSimulationNameMessage(trimmed));
+      setSimulationSaveStatus("Failed creating simulation.");
       return;
     }
     loadSimulationPreset(createdId);
@@ -1202,6 +1180,18 @@ export function Sidebar({
     const to = sites.find((site) => site.id === link.toSiteId)?.name ?? "Unknown";
     return `${from} ↔ ${to}`;
   };
+  const toggleLibrarySelection = (entryId: string) => {
+    setSelectedLibraryIds((current) => {
+      const next = new Set(current);
+      if (next.has(entryId)) {
+        next.delete(entryId);
+      } else {
+        next.add(entryId);
+      }
+      return next;
+    });
+  };
+  const selectedLibraryCount = selectedLibraryIds.size;
   const openLibraryForSelectedSite = () => {
     setShowSiteLibraryManager(true);
     const matchedEntry = siteLibrary.find(
@@ -1569,7 +1559,6 @@ export function Sidebar({
     }
     setResourceCollaboratorQuery("");
     setResourceAccessStatus("");
-    setResourceNameError("");
     const resolvedCreatedAvatar =
       createdByAvatarUrl.trim() || (createdByUserId && createdByUserId === lastEditedByUserId ? lastEditedByAvatarUrl : "");
     const resolvedLastEditedAvatar =
@@ -1634,11 +1623,9 @@ export function Sidebar({
     const normalizedVisibility = nextVisibility === "public" ? "shared" : nextVisibility;
     const normalizedName = nextName.trim();
     if (!normalizedName) {
-      setResourceNameError("Name is required.");
       setResourceAccessStatus("Name is required.");
       return false;
     }
-    setResourceNameError("");
     const sharedWith = nextCollaboratorUserIds
       .filter((userId) => userId !== currentResourceOwnerId)
       .map((userId) => ({ userId, role: (nextCollaboratorRoles[userId] ?? "viewer") as "viewer" | "editor" }));
@@ -1676,22 +1663,6 @@ export function Sidebar({
         });
       } else {
         const simulationEntry = simulationPresets.find((entry) => entry.id === resourceDetailsPopup.resourceId);
-        const simulationOwnerUserId = simulationEntry?.ownerUserId ?? currentUser?.id ?? "";
-        if (
-          simulationEntry &&
-          simulationOwnerUserId &&
-          hasDuplicateSimulationNameForOwner(
-            simulationPresets,
-            normalizedName,
-            simulationOwnerUserId,
-            simulationEntry.id,
-          )
-        ) {
-          const duplicateMessage = duplicateSimulationNameMessage(normalizedName);
-          setResourceNameError(duplicateMessage);
-          setResourceAccessStatus(duplicateMessage);
-          return false;
-        }
         const referencedPrivateSiteIds =
           normalizedVisibility === "private"
             ? []
@@ -1850,7 +1821,7 @@ export function Sidebar({
                   setNewSimulationName("");
                   setNewSimulationDescription("");
                   setNewSimulationNameError("");
-                  setModalFreqPresetId(selectedFrequencyPresetId);
+                  setModalFreqPresetId(getDefaultFrequencyPresetIdForNewSimulation());
                   setModalAutoPropEnv(autoPropagationEnvironment);
                   setShowNewSimulationModal(true);
                 }}
@@ -1868,7 +1839,7 @@ export function Sidebar({
               ) : null}
             </>
           ) : (
-            <span className="field-help">Sign in to browse the Simulation Library.</span>
+            <span className="field-help">Sign in to browse the simulation library.</span>
           )}
         </div>
         {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
@@ -1877,7 +1848,7 @@ export function Sidebar({
       <section className="panel-section section-sites">
         <div className="section-heading">
           <h2>Sites</h2>
-          <InfoTip text="Add a Site from the Site Library or create a new Site. You can also create or add Sites from the map. A Site can be Private or Shared." />
+          <InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />
         </div>
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
         <div className="site-list">
@@ -1907,7 +1878,7 @@ export function Sidebar({
                 </button>
               ) : null}
               <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
-                  Details
+                Edit
               </button>
             </>
           ) : null}
@@ -1933,7 +1904,7 @@ export function Sidebar({
 
       <section className="panel-section section-path">
         <div className="section-heading">
-          <h2>Paths</h2>
+          <h2>Links</h2>
           <InfoTip text={`Select multiple sites by ${isMac ? "Cmd" : "Ctrl"}+Clicking to instantly view a link. When a link is active on the map, you can save it permanently to this simulation by pressing "Save" in the inspector.`} />
         </div>
         <div className="link-list">
@@ -1954,16 +1925,16 @@ export function Sidebar({
               <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
                 New
               </button>
-              <button className="inline-action" disabled={!canEditExistingPath} onClick={openEditLinkModal} type="button">
-                Details
+              <button className="inline-action" onClick={openEditLinkModal} type="button">
+                Edit
               </button>
               <button
                 className="inline-action danger"
                 disabled={!links.length}
                 onClick={() =>
                   requestDeleteConfirm(
-                    "Delete Path",
-                    `Delete selected Path "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
+                    "Delete Link",
+                    `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
                     () => deleteLink(selectedLink.id),
                   )
                 }
@@ -1977,18 +1948,20 @@ export function Sidebar({
       </section>
 
       {linkModal ? (
-        <ModalOverlay aria-label={linkModal.mode === "add" ? "Add Path" : "Edit Path"} onClose={closeLinkModal} tier="raised">
+        <ModalOverlay aria-label={linkModal.mode === "add" ? "Add Link" : "Edit Link"} onClose={() => setLinkModal(null)} tier="raised">
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
-              <h2>{linkModal.mode === "add" ? "Add Path" : "Edit Path"}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeLinkModal} title="Close" type="button">
+              <h2>{linkModal.mode === "add" ? "Add Link" : "Edit Link"}</h2>
+              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setLinkModal(null)} title="Close" type="button">
                 <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
             </div>
             <label className="field-grid">
-              <span>Path name</span>
+              <span>Link name</span>
               <input
-                onChange={(event) => updateLinkModalField((current) => ({ ...current, name: event.target.value, status: "" }))}
+                onChange={(event) =>
+                  setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
+                }
                 placeholder="Backhaul A"
                 type="text"
                 value={linkModal.name}
@@ -1999,7 +1972,7 @@ export function Sidebar({
               <select
                 className="locale-select"
                 onChange={(event) =>
-                  updateLinkModalField((current) => {
+                  setLinkModal((current) => {
                     if (!current) return current;
                     const nextFrom = event.target.value;
                     const nextTo =
@@ -2023,7 +1996,7 @@ export function Sidebar({
               <select
                 className="locale-select"
                 onChange={(event) =>
-                  updateLinkModalField((current) => ({ ...current, toSiteId: event.target.value, status: "" }))
+                  setLinkModal((current) => (current ? { ...current, toSiteId: event.target.value, status: "" } : current))
                 }
                 value={linkModal.toSiteId}
               >
@@ -2036,85 +2009,82 @@ export function Sidebar({
                   ))}
               </select>
             </label>
-            <label className="checkbox-field">
-              <input
-                checked={linkModal.overrideRadio}
-                onChange={(event) =>
-                  updateLinkModalField((current) => ({ ...current, overrideRadio: event.target.checked, status: "" }))
-                }
-                type="checkbox"
-              />
-              <span>Override site settings</span>
-            </label>
-            {!linkModal.overrideRadio ? <p className="field-help">This Path currently uses Site defaults.</p> : null}
-            <label className="field-grid">
-              <span>Tx power (dBm)</span>
-              <input
-                disabled={!linkModal.overrideRadio}
-                onChange={(event) =>
-                  updateLinkModalField((current) => ({
-                    ...current,
-                    txPowerDbm: parseNumber(event.target.value),
-                    status: "",
-                  }))
-                }
-                type="number"
-                value={linkModal.txPowerDbm}
-              />
-            </label>
-            <label className="field-grid">
-              <span>Tx gain (dBi)</span>
-              <input
-                disabled={!linkModal.overrideRadio}
-                onChange={(event) =>
-                  updateLinkModalField((current) => ({
-                    ...current,
-                    txGainDbi: parseNumber(event.target.value),
-                    status: "",
-                  }))
-                }
-                type="number"
-                value={linkModal.txGainDbi}
-              />
-            </label>
-            <label className="field-grid">
-              <span>Rx gain (dBi)</span>
-              <input
-                disabled={!linkModal.overrideRadio}
-                onChange={(event) =>
-                  updateLinkModalField((current) => ({
-                    ...current,
-                    rxGainDbi: parseNumber(event.target.value),
-                    status: "",
-                  }))
-                }
-                type="number"
-                value={linkModal.rxGainDbi}
-              />
-            </label>
-            <label className="field-grid">
-              <span>Cable loss (dB)</span>
-              <input
-                disabled={!linkModal.overrideRadio}
-                onChange={(event) =>
-                  updateLinkModalField((current) => ({
-                    ...current,
-                    cableLossDb: parseNumber(event.target.value),
-                    status: "",
-                  }))
-                }
-                type="number"
-                value={linkModal.cableLossDb}
-              />
-            </label>
+            <details className="compact-details">
+              <summary>Link Radio Overrides</summary>
+              <label className="field-grid">
+                <span>Use site radio defaults</span>
+                <input
+                  checked={!linkModal.overrideRadio}
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, overrideRadio: !event.target.checked, status: "" } : current,
+                    )
+                  }
+                  type="checkbox"
+                />
+              </label>
+              {!linkModal.overrideRadio ? (
+                <p className="field-help">
+                  This link uses the selected From/To site radio settings.
+                </p>
+              ) : null}
+              {linkModal.overrideRadio ? (
+                <>
+              <label className="field-grid">
+                <span>Tx power (dBm)</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, txPowerDbm: parseNumber(event.target.value), status: "" } : current,
+                    )
+                  }
+                  type="number"
+                  value={linkModal.txPowerDbm}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Tx gain (dBi)</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, txGainDbi: parseNumber(event.target.value), status: "" } : current,
+                    )
+                  }
+                  type="number"
+                  value={linkModal.txGainDbi}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Rx gain (dBi)</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, rxGainDbi: parseNumber(event.target.value), status: "" } : current,
+                    )
+                  }
+                  type="number"
+                  value={linkModal.rxGainDbi}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Cable loss (dB)</span>
+                <input
+                  onChange={(event) =>
+                    setLinkModal((current) =>
+                      current ? { ...current, cableLossDb: parseNumber(event.target.value), status: "" } : current,
+                    )
+                  }
+                  type="number"
+                  value={linkModal.cableLossDb}
+                />
+              </label>
+                </>
+              ) : null}
+            </details>
             <div className="chip-group">
-              {linkModal.mode === "add" ? (
-                <button className="inline-action" onClick={saveLinkModal} type="button">
-                  Create Path
-                </button>
-              ) : (
-                <p className="field-help">Edits auto-save.</p>
-              )}
+              <button className="inline-action" onClick={saveLinkModal} type="button">
+                {linkModal.mode === "add" ? "Create Link" : "Save Link"}
+              </button>
             </div>
             {linkModal.status ? <p className="field-help">{linkModal.status}</p> : null}
           </div>
@@ -2319,10 +2289,10 @@ export function Sidebar({
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Details" onClose={() => setResourceDetailsPopup(null)} tier="raised">
+        <ModalOverlay aria-label="Resource Edit" onClose={() => setResourceDetailsPopup(null)} tier="raised">
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
-              <h2>Details · {resourceDetailsPopup.label}</h2>
+              <h2>Edit · {resourceDetailsPopup.label}</h2>
               <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setResourceDetailsPopup(null)} title="Close" type="button">
                 <CircleX aria-hidden="true" strokeWidth={1.8} />
               </button>
@@ -2338,11 +2308,7 @@ export function Sidebar({
                 <label className="field-grid">
                   <span>Name</span>
                   <input
-                    className={resourceNameError ? "input-error" : ""}
-                    onChange={(event) => {
-                      setResourceNameDraft(event.target.value);
-                      if (resourceNameError) setResourceNameError("");
-                    }}
+                    onChange={(event) => setResourceNameDraft(event.target.value)}
                     onBlur={() => {
                       void persistResourceAccessSettings();
                     }}
@@ -2350,7 +2316,6 @@ export function Sidebar({
                     value={resourceNameDraft}
                   />
                 </label>
-                {resourceNameError ? <p className="field-help field-help-error">{resourceNameError}</p> : null}
                 <label className="field-grid">
                   <span>Description</span>
                   <textarea
@@ -2371,11 +2336,7 @@ export function Sidebar({
                   <label className="field-grid">
                     <span>Name</span>
                     <input
-                      className={resourceNameError ? "input-error" : ""}
-                      onChange={(event) => {
-                        setResourceNameDraft(event.target.value);
-                        if (resourceNameError) setResourceNameError("");
-                      }}
+                      onChange={(event) => setResourceNameDraft(event.target.value)}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
@@ -2383,7 +2344,6 @@ export function Sidebar({
                       value={resourceNameDraft}
                     />
                   </label>
-                  {resourceNameError ? <p className="field-help field-help-error">{resourceNameError}</p> : null}
                   <label className="field-grid">
                     <span>Description</span>
                     <textarea
@@ -2643,7 +2603,7 @@ export function Sidebar({
                 }
                 type="button"
               >
-                Open Change Log
+                Open change log
               </button>
             </div>
             {resourceDetailsPopup.kind === "site" && currentResourceMqttMetaLines.length ? (
@@ -2745,8 +2705,7 @@ export function Sidebar({
             </details>
             </fieldset>
             {resourceDetailsPopup.kind === "simulation" ? (
-              <details className="compact-details">
-                <summary>Propagation & Channel</summary>
+              <div className="compact-details">
                 {networks.length > 1 ? (
                   <label className="field-grid">
                     <span>Active network</span>
@@ -2767,121 +2726,122 @@ export function Sidebar({
                   <span>Frequency Plan</span>
                   <select
                     className="locale-select"
-                    onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
+                    onChange={(event) => {
+                      setSelectedFrequencyPresetId(event.target.value);
+                      applyFrequencyPresetToSelectedNetwork();
+                    }}
                     value={selectedFrequencyPresetId}
                   >
-                    {FREQUENCY_PRESETS.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label}
+                    {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
+                      <optgroup key={groupEntry.group} label={groupEntry.group}>
+                        {groupEntry.presets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+                <p className="field-help">
+                  These parameters feed terrain-aware path loss. Auto mode derives defaults from current
+                  terrain/profile and you can override manually.
+                </p>
+                <label className="field-grid">
+                  <span>Auto environment defaults</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
+                    value={autoPropagationEnvironment ? "auto" : "manual"}
+                  >
+                    <option value="auto">Auto (recommended)</option>
+                    <option value="manual">Manual override</option>
+                  </select>
+                </label>
+                <p className="field-help">{propagationEnvironmentReason}</p>
+                <label className="field-grid">
+                  <span>Radio Climate</span>
+                  <select
+                    className="locale-select"
+                    disabled={autoPropagationEnvironment}
+                    onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
+                    value={effectivePropagationEnvironment.radioClimate}
+                  >
+                    {RADIO_CLIMATE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
                       </option>
                     ))}
                   </select>
                 </label>
-                <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
-                  Apply Frequency Plan
-                </button>
-                <details className="compact-details">
-                  <summary>ITM Environment</summary>
-                  <p className="field-help">
-                    These parameters feed terrain-aware path loss. Auto mode derives defaults from current
-                    terrain/profile and you can override manually.
-                  </p>
-                  <label className="field-grid">
-                    <span>Auto environment defaults</span>
-                    <select
-                      className="locale-select"
-                      onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
-                      value={autoPropagationEnvironment ? "auto" : "manual"}
-                    >
-                      <option value="auto">Auto (recommended)</option>
-                      <option value="manual">Manual override</option>
-                    </select>
-                  </label>
-                  <p className="field-help">{propagationEnvironmentReason}</p>
-                  <label className="field-grid">
-                    <span>Radio Climate</span>
-                    <select
-                      className="locale-select"
-                      disabled={autoPropagationEnvironment}
-                      onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
-                      value={effectivePropagationEnvironment.radioClimate}
-                    >
-                      {RADIO_CLIMATE_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field-grid">
-                    <span>Polarization</span>
-                    <select
-                      className="locale-select"
-                      disabled={autoPropagationEnvironment}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
-                      }
-                      value={effectivePropagationEnvironment.polarization}
-                    >
-                      <option value="Vertical">Vertical</option>
-                      <option value="Horizontal">Horizontal</option>
-                    </select>
-                  </label>
-                  <label className="field-grid">
-                    <span>Clutter Height (m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={0}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
-                      }
-                      type="number"
-                      value={effectivePropagationEnvironment.clutterHeightM}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Ground Dielectric (V/m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={1}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
-                      }
-                      step="0.1"
-                      type="number"
-                      value={effectivePropagationEnvironment.groundDielectric}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Ground Conductivity (S/m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={0}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
-                      }
-                      step="0.001"
-                      type="number"
-                      value={effectivePropagationEnvironment.groundConductivity}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Atmospheric Bending (N-units)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={250}
-                      onChange={(event) =>
-                        setPropagationEnvironment({
-                          atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
-                        })
-                      }
-                      step="1"
-                      type="number"
-                      value={effectivePropagationEnvironment.atmosphericBendingNUnits}
-                    />
-                  </label>
-                </details>
-              </details>
+                <label className="field-grid">
+                  <span>Polarization</span>
+                  <select
+                    className="locale-select"
+                    disabled={autoPropagationEnvironment}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
+                    }
+                    value={effectivePropagationEnvironment.polarization}
+                  >
+                    <option value="Vertical">Vertical</option>
+                    <option value="Horizontal">Horizontal</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Clutter Height (m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={0}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
+                    }
+                    type="number"
+                    value={effectivePropagationEnvironment.clutterHeightM}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground Dielectric (V/m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={1}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
+                    }
+                    step="0.1"
+                    type="number"
+                    value={effectivePropagationEnvironment.groundDielectric}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground Conductivity (S/m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={0}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
+                    }
+                    step="0.001"
+                    type="number"
+                    value={effectivePropagationEnvironment.groundConductivity}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Atmospheric Bending (N-units)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={250}
+                    onChange={(event) =>
+                      setPropagationEnvironment({
+                        atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
+                      })
+                    }
+                    step="1"
+                    type="number"
+                    value={effectivePropagationEnvironment.atmosphericBendingNUnits}
+                  />
+                </label>
+              </div>
             ) : null}
             {resourceCanWrite ? (
               <div className="chip-group">
@@ -2987,8 +2947,7 @@ export function Sidebar({
                 <option value="shared">Shared</option>
               </select>
             </label>
-            <details className="compact-details">
-              <summary>Advanced</summary>
+            <div className="compact-details">
               <label className="field-grid">
                 <span>Frequency Plan</span>
                 <select
@@ -2996,15 +2955,17 @@ export function Sidebar({
                   onChange={(event) => setModalFreqPresetId(event.target.value)}
                   value={modalFreqPresetId}
                 >
-                  {FREQUENCY_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
+                  {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
+                    <optgroup key={groupEntry.group} label={groupEntry.group}>
+                      {groupEntry.presets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
-              <details className="compact-details">
-                <summary>ITM Environment</summary>
                 <p className="field-help">
                   These parameters feed terrain-aware path loss. Auto mode derives defaults from terrain; you can
                   override manually.
@@ -3102,8 +3063,7 @@ export function Sidebar({
                     value={effectivePropagationEnvironment.atmosphericBendingNUnits}
                   />
                 </label>
-              </details>
-            </details>
+            </div>
             <div className="chip-group">
               <button className="inline-action" onClick={createBlankSimulation} type="button">
                 Create
@@ -3121,12 +3081,8 @@ export function Sidebar({
           <SimulationLibraryPanel
             onClose={() => setShowSimulationLibraryManager(false)}
             onLoadSimulation={(presetId) => {
-              handleSimulationLibraryLoad({
-                presetId,
-                loadSimulationPreset,
-                persistSimulationRef: (loadedPresetId) => persistSelectedSimulationRef(`saved:${loadedPresetId}`),
-                closeLibraryModal: () => setShowSimulationLibraryManager(false),
-              });
+              loadSimulationPreset(presetId);
+              persistSelectedSimulationRef(`saved:${presetId}`);
             }}
             onOpenDetails={openResourceDetailsPopup}
           />
@@ -3860,7 +3816,7 @@ export function Sidebar({
                   })()}
                   <div className="library-row-actions">
                     <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
-                      Add to Simulation
+                      Add to simulation
                     </button>
                     <button
                       className="inline-action"
@@ -3883,7 +3839,7 @@ export function Sidebar({
                       }
                       type="button"
                     >
-                      Details
+                      Open
                     </button>
                   </div>
                 </div>

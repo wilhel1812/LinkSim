@@ -487,64 +487,7 @@ describe("appStore blank simulation loading", () => {
   });
 });
 
-describe("appStore owner-scoped simulation naming", () => {
-  beforeEach(() => {
-    storage.mock.clear();
-    vi.restoreAllMocks();
-    useAppStore.setState({
-      currentUser: {
-        id: "owner-a",
-        username: "owner-a",
-        avatarUrl: "",
-        role: "user",
-        accountState: "approved",
-        isApproved: true,
-        isAdmin: false,
-        isModerator: false,
-        createdAt: "",
-        updatedAt: null,
-        approvedAt: null,
-        approvedByUserId: null,
-        email: undefined,
-        emailPublic: true,
-        bio: "",
-      },
-      simulationPresets: [],
-      selectedScenarioId: "",
-    });
-  });
-
-  it("blocks duplicate names for the same owner", () => {
-    const firstId = useAppStore.getState().createBlankSimulationPreset("Relay Plan", {
-      ownerUserId: "owner-a",
-      visibility: "private",
-    });
-    const duplicateId = useAppStore.getState().createBlankSimulationPreset("Relay Plan", {
-      ownerUserId: "owner-a",
-      visibility: "private",
-    });
-
-    expect(firstId).toBeTruthy();
-    expect(duplicateId).toBeNull();
-  });
-
-  it("allows duplicate names for different owners", () => {
-    const firstId = useAppStore.getState().createBlankSimulationPreset("Relay Plan", {
-      ownerUserId: "owner-a",
-      visibility: "private",
-    });
-    const secondOwnerId = useAppStore.getState().createBlankSimulationPreset("Relay Plan", {
-      ownerUserId: "owner-b",
-      visibility: "private",
-    });
-
-    expect(firstId).toBeTruthy();
-    expect(secondOwnerId).toBeTruthy();
-    expect(secondOwnerId).not.toBe(firstId);
-  });
-});
-
-describe("appStore selected pair link resolution", () => {
+describe("appStore new simulation default frequency preset", () => {
   beforeEach(() => {
     storage.mock.clear();
     vi.restoreAllMocks();
@@ -565,105 +508,35 @@ describe("appStore selected pair link resolution", () => {
         email: undefined,
         emailPublic: true,
         bio: "",
+        defaultFrequencyPresetId: "meshcore-us-narrow-910525-sf7-bw625-cr5",
       },
-      selectedScenarioId: "",
-      selectedLinkId: "",
-      selectedSiteIds: ["site-2", "site-1"],
-      sites: [
-        {
-          id: "site-1",
-          name: "Alpha",
-          position: { lat: 1, lon: 1 },
-          groundElevationM: 100,
-          antennaHeightM: 2,
-          txPowerDbm: 20,
-          txGainDbi: 2,
-          rxGainDbi: 2,
-          cableLossDb: 1,
-        },
-        {
-          id: "site-2",
-          name: "Beta",
-          position: { lat: 2, lon: 2 },
-          groundElevationM: 120,
-          antennaHeightM: 2,
-          txPowerDbm: 21,
-          txGainDbi: 3,
-          rxGainDbi: 3,
-          cableLossDb: 2,
-        },
-      ],
-      links: [
-        {
-          id: "link-other",
-          fromSiteId: "site-9",
-          toSiteId: "site-10",
-          frequencyMHz: 869.618,
-          txPowerDbm: 5,
-          txGainDbi: 1,
-          rxGainDbi: 1,
-          cableLossDb: 9,
-        },
-        {
-          id: "link-primary",
-          fromSiteId: "site-1",
-          toSiteId: "site-2",
-          frequencyMHz: 869.618,
-          txPowerDbm: 30,
-          txGainDbi: 9,
-          rxGainDbi: 8,
-          cableLossDb: 0.5,
-        },
-      ],
-      networks: [
-        {
-          id: "network-1",
-          name: "n1",
-          frequencyMHz: 869.618,
-          bandwidthKhz: 125,
-          spreadFactor: 7,
-          codingRate: 5,
-          memberships: [],
-        },
-      ],
-      selectedNetworkId: "network-1",
+      selectedScenarioId: "starter-default",
+      sites: [],
+      links: [],
+      simulationPresets: [],
     });
   });
 
-  it("uses temporary Site defaults when selecting two sites without selecting a saved path", () => {
-    const selectedLink = useAppStore.getState().getSelectedLink();
-    expect(selectedLink.id).toBe("__selection__");
-    expect(selectedLink.txPowerDbm).toBe(21);
-    expect(selectedLink.txGainDbi).toBe(3);
-    expect(selectedLink.rxGainDbi).toBe(2);
-    expect(selectedLink.cableLossDb).toBe(2);
+  it("uses cloud default preset when creating blank simulation", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Cloud Default Session", { visibility: "private", ownerUserId: "owner-1" });
+    expect(createdId).toBeTruthy();
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.snapshot.selectedFrequencyPresetId).toBe("meshcore-us-narrow-910525-sf7-bw625-cr5");
   });
 
-  it("uses saved path overrides when a saved path is explicitly selected", () => {
-    useAppStore.setState({ selectedLinkId: "link-primary" });
-    const selectedLink = useAppStore.getState().getSelectedLink();
-    expect(selectedLink.id).toBe("link-primary");
-    expect(selectedLink.txPowerDbm).toBe(30);
-    expect(selectedLink.txGainDbi).toBe(9);
-    expect(selectedLink.rxGainDbi).toBe(8);
-    expect(selectedLink.cableLossDb).toBe(0.5);
-  });
-
-  it("reflects updated overrides when a saved path is selected", () => {
-    useAppStore.setState({ selectedLinkId: "link-primary" });
-    useAppStore.getState().updateLink("link-primary", {
-      txPowerDbm: 33,
-      txGainDbi: 11,
-      rxGainDbi: 10,
-      cableLossDb: 0.2,
-    });
-
-    const selectedLink = useAppStore.getState().getSelectedLink();
-    expect(selectedLink.id).toBe("link-primary");
-    expect(selectedLink.txPowerDbm).toBe(33);
-    expect(selectedLink.txGainDbi).toBe(11);
-    expect(selectedLink.rxGainDbi).toBe(10);
-    expect(selectedLink.cableLossDb).toBe(0.2);
+  it("falls back to app default when cloud default is invalid", () => {
+    useAppStore.setState((state) => ({
+      currentUser: state.currentUser
+        ? { ...state.currentUser, defaultFrequencyPresetId: "not-a-real-preset" }
+        : state.currentUser,
+    }));
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Fallback Session", { visibility: "private", ownerUserId: "owner-1" });
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.snapshot.selectedFrequencyPresetId).toBe("oslo-local-869618");
   });
 });
 
