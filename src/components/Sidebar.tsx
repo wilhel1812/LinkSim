@@ -41,7 +41,6 @@ import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironme
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
-import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
