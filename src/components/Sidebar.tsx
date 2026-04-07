@@ -44,13 +44,19 @@ import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
-  parsePersistedLibraryFilterState,
-  serializeLibraryFilterState,
   type LibraryFilterRole,
   type LibraryFilterSource,
   type LibraryFilterState,
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
+import {
+  effectiveSelection,
+  persistLibraryFilterState,
+  readLibraryFilterState,
+  selectionIsFiltered,
+  selectionLabel,
+  toggleValue,
+} from "../lib/libraryFilterUi";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
@@ -144,35 +150,6 @@ const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.
 const ALL_SITE_SOURCE_FILTERS = SITE_SOURCE_FILTER_OPTIONS.map((option) => option.key);
 
 type SiteFilterGroupKey = "role" | "visibility" | "source";
-
-const readLibraryFilterState = (key: string): LibraryFilterState => {
-  try {
-    return parsePersistedLibraryFilterState(localStorage.getItem(key), DEFAULT_LIBRARY_FILTER_STATE);
-  } catch {
-    return DEFAULT_LIBRARY_FILTER_STATE;
-  }
-};
-
-const persistLibraryFilterState = (key: string, state: LibraryFilterState): void => {
-  try {
-    localStorage.setItem(key, serializeLibraryFilterState(state));
-  } catch {
-    // Best effort only.
-  }
-};
-
-const effectiveSelection = <T extends string>(selected: T[], allValues: T[]): T[] =>
-  selected.length ? selected : allValues;
-
-const selectionLabel = <T extends string>(selected: T[], allValues: T[]): string => {
-  const effective = effectiveSelection(selected, allValues);
-  return `${effective.length}/${allValues.length}`;
-};
-
-const selectionIsFiltered = <T extends string>(selected: T[], allValues: T[]): boolean => {
-  const effective = effectiveSelection(selected, allValues);
-  return effective.length !== allValues.length;
-};
 
 const formatChangeSummary = (action: string, note: string | null): string => {
   if (note && note.trim()) return note;
@@ -580,8 +557,6 @@ export function Sidebar({
     onConfirm: () => void;
   } | null>(null);
   const currentUserId = currentUser?.id ?? null;
-  const toggleValue = <T extends string>(values: T[], key: T): T[] =>
-    values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
   const commitSiteRoleFilters = (roleFilters: LibraryFilterRole[]) => {
     if (!roleFilters.length) return;
     setSiteLibraryFilters((state) => ({ ...state, roleFilters }));
