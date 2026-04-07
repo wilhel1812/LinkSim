@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleUserRound, CircleX, CloudAlert, Copy, Globe, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
+import { CircleUserRound, CloudAlert, Copy, Globe, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -20,6 +20,7 @@ import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
+import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
 import OnboardingTutorialModal from "./OnboardingTutorialModal";
@@ -1801,9 +1802,7 @@ export function AppShell() {
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Share Simulation</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeShareModal} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={closeShareModal} />
             </div>
             {!activeSimulation ? (
               <p className="field-help">Open a saved simulation first. Unsaved workspace state cannot be deep-linked.</p>
