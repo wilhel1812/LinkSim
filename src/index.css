@@ -1606,7 +1606,7 @@ input {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 0;
+  min-height: 220px;
   position: relative;
   z-index: 35;
   grid-row: 2;
@@ -1626,24 +1626,9 @@ input {
 
 .chart-svg-wrap {
   flex: 1;
-  min-height: 150px;
+  min-height: 90px;
   width: 100%;
   position: relative;
-}
-
-.chart-panel-debug-sizing {
-  outline: 2px dashed var(--danger);
-  outline-offset: -2px;
-}
-
-.chart-panel-debug-sizing .chart-svg-wrap-debug-sizing {
-  outline: 2px dashed var(--accent);
-  outline-offset: -2px;
-}
-
-.chart-panel-debug-sizing .chart-svg-wrap-debug-sizing > svg {
-  outline: 2px dashed var(--success);
-  outline-offset: -2px;
 }
 
 .chart-header {
@@ -1701,8 +1686,8 @@ input {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 150px;
-  max-height: 240px;
+  min-height: 90px;
+  max-height: none;
 }
 
 .chart-panel.is-expanded .chart-svg-wrap {
@@ -1847,7 +1832,7 @@ input {
 .chart-empty {
   display: grid;
   place-items: center;
-  min-height: 180px;
+  min-height: 120px;
   color: var(--muted);
   font-size: 0.9rem;
 }

@@ -11,6 +11,7 @@ const distDir = path.join(root, "dist");
 const releaseManifestPath = path.join(distDir, "release.json");
 const ALLOWED_DIRTY_PATHS = new Set(["src/lib/buildInfo.ts", "functions/_lib/buildInfo.ts"]);
 const ENV_FILES_FOR_VITE = [".env", ".env.local", ".env.production", ".env.production.local"];
+const LINK_PROFILE_CHART_PATH = path.join(root, "src", "components", "LinkProfileChart.tsx");
 
 const REQUIRED_ENV_BY_TARGET = {
   staging: ["VITE_MAPTILER_KEY"],
@@ -158,6 +159,26 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+async function verifyChartRegressionGuards() {
+  const chartSource = await readFile(LINK_PROFILE_CHART_PATH, "utf8");
+  const forbiddenPatterns = [
+    {
+      pattern: "useState({ width: 1200, height: 190 })",
+      message:
+        "Preflight failed: LinkProfileChart.tsx reintroduced hardcoded fallback chartSize 1200x190.",
+    },
+    {
+      pattern: "{ width: 1200, height: 190 }",
+      message:
+        "Preflight failed: LinkProfileChart.tsx contains hardcoded fallback dimensions 1200x190.",
+    },
+  ];
+
+  for (const { pattern, message } of forbiddenPatterns) {
+    assert(!chartSource.includes(pattern), message);
+  }
+}
+
 const parseWranglerJsonPayload = (stdout) => {
   const start = stdout.indexOf("[");
   const end = stdout.lastIndexOf("]");
@@ -245,6 +266,8 @@ async function preflight(targetName, target) {
   if (targetName === "prod-main") {
     await run("node", ["scripts/validate-prod-release.mjs"]);
   }
+
+  await verifyChartRegressionGuards();
 
   return { branch, commit };
 }
