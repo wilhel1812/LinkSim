@@ -32,6 +32,7 @@ import { useAppStore } from "../store/appStore";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import type { UiColorTheme } from "../themes/types";
 import { AvatarBadge } from "./AvatarBadge";
+import { ActionButton } from "./ActionButton";
 import { InfoTip } from "./InfoTip";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
@@ -840,8 +841,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
               </div>
               <div className="chip-group">
                 {syncStatus !== "syncing" ? (
-                  <button
-                    className="inline-action"
+                  <ActionButton
                     disabled={!isOnline}
                     onClick={() => {
                       void performManualCloudSync();
@@ -849,7 +849,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     type="button"
                   >
                     Sync Now
-                  </button>
+                  </ActionButton>
                 ) : null}
               </div>
             </div>
@@ -863,9 +863,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
             <div className="library-manager-header">
               <h2>User Settings</h2>
               <div className="chip-group">
-                <button className="inline-action" onClick={handleSignOut} type="button">
+                <ActionButton onClick={handleSignOut} type="button">
                   Sign Out
-                </button>
+                </ActionButton>
                 <InlineCloseIconButton onClick={() => setOpen(false)} />
               </div>
             </div>
@@ -1010,17 +1010,16 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                   </label>
                 ) : null}
                 <div className="chip-group">
-                  <button
-                    className="inline-action"
+                  <ActionButton
                     disabled={busy || !nameDraft.trim() || !emailDraft.trim()}
                     onClick={() => void saveMyProfile()}
                     type="button"
                   >
                     Save Profile
-                  </button>
-                  <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
+                  </ActionButton>
+                  <ActionButton disabled={busy} onClick={() => void load()} type="button">
                     Refresh
-                  </button>
+                  </ActionButton>
                 </div>
               </div>
             </div>
@@ -1030,12 +1029,12 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 <div className="section-heading">
                   <p className="field-help">System diagnostics</p>
                   <div className="chip-group">
-                    <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
+                    <ActionButton disabled={busy} onClick={() => void load()} type="button">
                       Refresh
-                    </button>
-                    <button className="inline-action" disabled={busy} onClick={() => void repairMetadata()} type="button">
+                    </ActionButton>
+                    <ActionButton disabled={busy} onClick={() => void repairMetadata()} type="button">
                       Repair Metadata
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
                 {authWarnings.length ? (
@@ -1066,9 +1065,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 <div className="section-heading">
                   <p className="field-help">Admin ownership tools</p>
                   <div className="chip-group">
-                    <button className="inline-action" disabled={busy || auditBusy} onClick={() => void loadAdminAudit()} type="button">
+                    <ActionButton disabled={busy || auditBusy} onClick={() => void loadAdminAudit()} type="button">
                       Refresh Audit
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
                 <label className="field-grid user-field-grid">
@@ -1101,9 +1100,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     value={ownershipNewOwnerId}
                   />
                 </label>
-                <button className="inline-action" disabled={busy} onClick={() => void runOwnerReassign()} type="button">
+                <ActionButton disabled={busy} onClick={() => void runOwnerReassign()} type="button">
                   Reassign Owner
-                </button>
+                </ActionButton>
 
                 <label className="field-grid user-field-grid">
                   <span>Bulk from owner ID</span>
@@ -1125,9 +1124,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     value={bulkToOwnerId}
                   />
                 </label>
-                <button className="inline-action" disabled={busy} onClick={() => void runBulkOwnerReassign()} type="button">
+                <ActionButton disabled={busy} onClick={() => void runBulkOwnerReassign()} type="button">
                   Bulk Reassign Ownership
-                </button>
+                </ActionButton>
 
                 <p className="field-help">Recent admin audit events</p>
                 {auditBusy ? <p className="field-help">Loading audit events…</p> : null}
@@ -1165,12 +1164,12 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 <div className="section-heading">
                   <p className="field-help">Notification Center</p>
                   <div className="chip-group">
-                    <button className="inline-action" onClick={() => setNotificationOpen((prev) => !prev)} type="button">
+                    <ActionButton onClick={() => setNotificationOpen((prev) => !prev)} type="button">
                       {notificationOpen ? "Hide" : "Open"}
-                    </button>
-                    <button className="inline-action" onClick={() => void loadNotifications()} type="button">
+                    </ActionButton>
+                    <ActionButton onClick={() => void loadNotifications()} type="button">
                       Refresh
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
                 {notificationOpen ? (
@@ -1187,14 +1186,13 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                               <p className="field-help">{item.message}</p>
                               <p className="field-help">Updated: {fmtDate(item.createdAt)}</p>
                               <div className="chip-group">
-                                <button
-                                  className="inline-action"
+                                <ActionButton
                                   disabled={isDismissed}
                                   onClick={() => dismissNotification(item.id)}
                                   type="button"
                                 >
                                   {isDismissed ? "Dismissed" : "Dismiss Badge"}
-                                </button>
+                                </ActionButton>
                               </div>
                             </div>
                           );
@@ -1266,9 +1264,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     <p className="field-help">Deleted: {fmtDate(entry.deletedAt)}</p>
                     <p className="field-help">Deleted by: {entry.deletedByUserId ?? "-"}</p>
                     <div className="chip-group">
-                      <button className="inline-action" onClick={() => void restoreDeletedUser(entry.id)} type="button">
+                      <ActionButton onClick={() => void restoreDeletedUser(entry.id)} type="button">
                         Restore
-                      </button>
+                      </ActionButton>
                     </div>
                   </div>
                 ))}
@@ -1333,13 +1331,12 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     <p className="field-help">No access request note.</p>
                   )}
                   <div className="chip-group">
-                    <button
-                      className="inline-action"
+                    <ActionButton
                       onClick={() => void saveManagedProfile(managedUser, { username: managedNameDraft, email: managedEmailDraft })}
                       type="button"
                     >
                       Save Profile
-                    </button>
+                    </ActionButton>
                     <label className="field-grid user-field-grid">
                       <span>
                         Role{" "}
@@ -1370,23 +1367,22 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                       </select>
                     </label>
                     {!managedUser.isApproved ? (
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         onClick={() => void updateRole(managedUser, "user")}
                         type="button"
                       >
                         Approve Access
-                      </button>
+                      </ActionButton>
                     ) : null}
                     {canAdmin ? (
-                      <button
-                        className="inline-action danger"
+                      <ActionButton
                         disabled={managedUser.id === me?.id || resolveRole(managedUser) === "admin"}
                         onClick={() => void deleteUserAccount(managedUser)}
                         type="button"
+                        variant="danger"
                       >
                         Delete User
-                      </button>
+                      </ActionButton>
                     ) : null}
                   </div>
                   <p className="field-help">
