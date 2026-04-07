@@ -2,7 +2,7 @@ import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, Maximize2, Minimize2 } from "lucide-react";
 import type { MouseEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   classifyPassFailState,
@@ -59,11 +59,12 @@ export function LinkProfileChart({
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
-  const [chartSize, setChartSize] = useState({ width: 1200, height: 190 });
+  const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [terrainSegmentStates, setTerrainSegmentStates] = useState<PassFailState[]>([]);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
-  const chartWidth = chartSize.width;
-  const chartHeight = chartSize.height;
+  const hasMeasuredSize = chartSize !== null && chartSize.width > 1 && chartSize.height > 1;
+  const chartWidth = chartSize?.width ?? 0;
+  const chartHeight = chartSize?.height ?? 0;
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -224,28 +225,37 @@ export function LinkProfileChart({
     setProfileCursorIndex(profile.length - 1);
   }, [profile.length, selectedLinkId, temporaryDirectionReversed, setProfileCursorIndex]);
 
-  useEffect(() => {
-    if (profile.length < 2) return;
+  useLayoutEffect(() => {
     const element = chartHostRef.current;
     if (!element) return;
+
     const updateSize = () => {
-      const nextWidth = Math.max(480, Math.round(element.clientWidth));
-      const nextHeight = Math.max(150, Math.round(element.clientHeight));
-      setChartSize((current) =>
-        Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1
+      const nextWidth = Math.round(element.clientWidth);
+      const nextHeight = Math.round(element.clientHeight);
+      if (nextWidth <= 1 || nextHeight <= 1) return;
+      setChartSize((current) => {
+        if (!current) return { width: nextWidth, height: nextHeight };
+        return Math.abs(current.width - nextWidth) > 1 || Math.abs(current.height - nextHeight) > 1
           ? { width: nextWidth, height: nextHeight }
-          : current,
-      );
+          : current;
+      });
     };
+
     updateSize();
+    const rafId = requestAnimationFrame(updateSize);
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => updateSize());
     observer.observe(element);
-    return () => observer.disconnect();
-  }, [profile.length]);
+    window.addEventListener("resize", updateSize);
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+      window.removeEventListener("resize", updateSize);
+    };
+  }, [isExpanded, profile.length, selectedLinkId, selectedSiteIds]);
 
   const geometry = useMemo(() => {
-    if (profile.length < 2) {
+    if (!hasMeasuredSize || profile.length < 2) {
       return {
         hasData: false,
         xForDistance: () => M.l,
@@ -305,7 +315,7 @@ export function LinkProfileChart({
         };
       }),
     };
-  }, [profile, chartWidth, chartHeight]);
+  }, [profile, chartWidth, chartHeight, hasMeasuredSize]);
 
   const segmentStateKey = useMemo(
     () =>
@@ -726,12 +736,15 @@ export function LinkProfileChart({
           ) : null}
         </div>
       </div>
-      {!geometry.hasData ? (
+      <div className="chart-svg-wrap" ref={chartHostRef}>
+      {!hasMeasuredSize ? (
+        <div className="chart-empty" aria-hidden="true" />
+      ) : !geometry.hasData ? (
         <div className="chart-empty">
           <p>Path profile unavailable for the selected link.</p>
         </div>
       ) : (
-        <div className="chart-svg-wrap" ref={chartHostRef}>
+        <>
         <svg aria-label="Link profile" role="img" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
           <defs>
             <linearGradient
@@ -833,8 +846,9 @@ export function LinkProfileChart({
             ))}
           </div>
         ) : null}
-        </div>
+        </>
       )}
+      </div>
     </section>
   );
 }

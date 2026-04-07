@@ -24,6 +24,12 @@
   - For normal releases, promote to production only via a direct PR from `staging` into `main` (no release branch).
   - Use `hotfix/<slug>` only for explicitly approved incidents.
   - This staging-integration model is the default unless the user explicitly overrides it.
+- Branch/worktree cleanup routine (default after each completed pass):
+  - Keep only long-lived branches locally/remotely: `main`, `staging` (unless an active pass needs additional branches).
+  - After merge/deploy, prune refs: `git fetch --prune origin`.
+  - Delete merged local branches (except `main`/`staging`): `git branch --merged origin/staging | egrep -v '(^\\*|main|staging)' | xargs -n 1 git branch -d` (skip if no matches).
+  - Delete remote merged issue/chore/hotfix branches once no longer needed.
+  - Remove temporary worktrees for completed branches; keep only active worktrees.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
 - Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.
 - Never commit or push directly to `main`; always create/use a separate branch for changes and push that branch.
@@ -125,10 +131,20 @@
   - Freeze milestone scope at sign-off: no new feature work lands on `staging` until production deploy completes.
   - After production deploy, continue new issue work from the updated `origin/staging` baseline.
 
+
 ## Branch Protection Rollout Safety
 - When introducing a new required status check, roll it out in two phases to avoid PR deadlocks:
   1. merge the workflow that produces the check
   2. then add that check to branch protection required checks
+
+## Code Size / Abstraction Control
+- Prefer the smallest clean change.
+- Prefer editing existing code over creating new files.
+- Do not add abstractions for hypothetical future use.
+- Only add a new helper, hook, component, utility, type, or config when it clearly reduces repetition or complexity in current code.
+- Remove obsolete code as part of the same pass.
+- Match existing codebase patterns before introducing a new one.
+- After implementation, do a cleanup pass to remove unnecessary indirection, dead code, and one-use abstractions without changing behavior.
 
 ## Model Selection
 - **Codex 5.3** — use for full implementation passes where quality and breadth of change matter most. Expensive; reserve for when the work warrants it.

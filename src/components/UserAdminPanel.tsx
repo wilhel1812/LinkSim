@@ -24,21 +24,17 @@ import {
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
+import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../lib/frequencyPlans";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
+import { deriveSyncIndicator } from "../lib/syncIndicator";
+import { toInitials } from "../lib/uiFormatting";
 import { useAppStore } from "../store/appStore";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import type { UiColorTheme } from "../themes/types";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
-
-const initialsFor = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
 
 const fmtDate = (iso: string | null | undefined): string => {
   if (!iso) return "-";
@@ -49,15 +45,6 @@ const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
-
-type SyncIndicatorState = "local" | "offline" | "pending" | "syncing" | "synced" | "error";
-
-type SyncIndicator = {
-  state: SyncIndicatorState;
-  className: string;
-  label: string;
-  title: string;
-};
 
 const readDismissedNotificationIds = (): Set<string> => {
   try {
@@ -151,6 +138,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const authState = useAppStore((state) => state.authState);
+  const setAuthState = useAppStore((state) => state.setAuthState);
+  const currentUser = useAppStore((state) => state.currentUser);
   const { activeHolidayTheme } = useThemeVariant();
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
@@ -170,6 +160,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   const [avatarDraft, setAvatarDraft] = useState("");
   const [avatarStatus, setAvatarStatus] = useState("");
   const [emailPublicDraft, setEmailPublicDraft] = useState(true);
+  const [defaultFrequencyPresetIdDraft, setDefaultFrequencyPresetIdDraft] = useState<string | null>(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState("");
@@ -205,6 +196,8 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           : "pending";
   const canEditAccessRequestNote = Boolean(canModerate || !me?.isApproved);
   const showAccessRequestNoteField = Boolean(canModerate || !me?.isApproved);
+  const isSignedIn = authState === "signed_in" && Boolean(currentUser);
+  const displayUser = me ?? currentUser;
 
   const refreshAdminData = async () => {
     if (!canModerate) return;
@@ -291,6 +284,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       const current = await fetchMe();
       setMe(current);
       setCurrentUser(current);
+      setAuthState("signed_in");
       setNameDraft(current.username);
       setEmailDraft(current.email ?? "");
       setNameError("");
@@ -299,6 +293,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       setEmailPublicDraft(current.emailPublic ?? true);
+      setDefaultFrequencyPresetIdDraft(current.defaultFrequencyPresetId ?? null);
       if (current.isAdmin) {
         const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
@@ -329,14 +324,21 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     } catch (error) {
       const message = getUiErrorMessage(error);
       setStatus(`User load failed: ${message}`);
+      setMe(null);
+      setCurrentUser(null);
+      setAuthState("signed_out");
     } finally {
       setBusy(false);
     }
   };
 
   useEffect(() => {
+    if (authState === "signed_out") {
+      setMe(null);
+      return;
+    }
     void load();
-  }, []);
+  }, [authState]);
 
   useEffect(() => {
     if (!canModerate) {
@@ -411,15 +413,18 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
         bio: bioDraft,
         accessRequestNote: accessRequestNoteDraft,
         emailPublic: emailPublicDraft,
+        defaultFrequencyPresetId: defaultFrequencyPresetIdDraft,
       });
       setMe(updated);
       setCurrentUser(updated);
+      setAuthState("signed_in");
       setNameDraft(updated.username);
       setEmailDraft(updated.email ?? "");
       setBioDraft(updated.bio ?? "");
       setAccessRequestNoteDraft(updated.accessRequestNote ?? "");
       setAvatarDraft(updated.avatarUrl ?? "");
       setEmailPublicDraft(updated.emailPublic ?? true);
+      setDefaultFrequencyPresetIdDraft(updated.defaultFrequencyPresetId ?? null);
       setStatus("Profile updated. Account settings save immediately (separate from simulation sync).");
       if (canModerate) {
         await refreshAdminData();
@@ -446,6 +451,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       setAvatarDraft(uploaded.user.avatarUrl ?? "");
       setMe(uploaded.user);
       setCurrentUser(uploaded.user);
+      setAuthState("signed_in");
       setAvatarStatus("Avatar uploaded and saved.");
       setStatus("Avatar uploaded and saved.");
     } catch (error) {
@@ -669,8 +675,11 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       window.location.reload();
       return;
     }
+    setMe(null);
+    setCurrentUser(null);
+    setAuthState("signed_out");
     window.location.href = "/cdn-cgi/access/logout";
-  }, [isLocalRuntime]);
+  }, [isLocalRuntime, setAuthState, setCurrentUser]);
 
   const handleSignUp = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -687,51 +696,16 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     };
   }, []);
 
-  const getSyncIndicator = (): SyncIndicator => {
-    const timeLabel = lastSyncedAt
-      ? `Up to date (synced ${new Date(lastSyncedAt).toLocaleTimeString()})`
-      : "Up to date";
-
-    if (isLocalRuntime) {
-      return { state: "local", className: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
-    }
-
-    if (!isOnline) {
-      return {
-        state: "offline",
-        className: "sync-offline",
-        label: "Offline",
-        title: `Offline. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}. Open Sync Status for details.`,
-      };
-    }
-
-    if (syncPending) {
-      return {
-        state: "pending",
-        className: "sync-pending",
-        label: "Sync pending",
-        title: `${timeLabel}. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}.`,
-      };
-    }
-
-    switch (syncStatus) {
-      case "syncing":
-        return { state: "syncing", className: "sync-syncing", label: "Syncing...", title: timeLabel };
-      case "synced":
-        return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
-      case "error":
-        return {
-          state: "error",
-          className: "sync-error",
-          label: "Sync failed",
-          title: `${timeLabel}. ${syncErrorMessage ?? "Open Sync Status for details."}`,
-        };
-      default:
-        return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
-    }
-  };
-
-  const syncIndicator = getSyncIndicator();
+  const syncIndicator = deriveSyncIndicator({
+    isLocalRuntime,
+    isOnline,
+    authState,
+    syncStatus,
+    syncPending,
+    pendingChangesCount,
+    syncErrorMessage,
+    lastSyncedAt,
+  });
 
   const handleSyncIndicatorClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -741,9 +715,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   return (
     <>
       <div className="user-chip-row">
-        {me ? (
+        {isSignedIn && displayUser ? (
           <button aria-label="Open user settings" className="user-chip" onClick={() => setOpen(true)} type="button">
-            <ProfileAvatar avatarUrl={me.avatarUrl ?? ""} name={me.username ?? "User"} />
+            <ProfileAvatar avatarUrl={displayUser.avatarUrl ?? ""} name={displayUser.username ?? "User"} />
             {canModerate && unreadNotifications.length > 0 ? (
               <span className="notification-badge">{unreadNotifications.length}</span>
             ) : null}
@@ -761,7 +735,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           </button>
         )}
         <div className="user-chip-actions">
-          {me ? (
+          {isSignedIn ? (
             <>
               <button
                 aria-label={syncIndicator.label}
@@ -977,6 +951,30 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     {activeHolidayTheme ? (
                       <option value="yellow">{activeHolidayTheme.title.replace(" Theme", "")}</option>
                     ) : null}
+                  </select>
+                </div>
+                <div className="field-grid user-field-grid">
+                  <span>
+                    Default preset for new simulations{" "}
+                    <InfoTip text="This cloud setting applies when you create a new simulation. Existing simulations keep their own saved channel settings." />
+                  </span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) =>
+                      setDefaultFrequencyPresetIdDraft(event.target.value ? event.target.value : null)
+                    }
+                    value={defaultFrequencyPresetIdDraft ?? ""}
+                  >
+                    <option value="">App default (Oslo Local 869.618)</option>
+                    {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
+                      <optgroup key={groupEntry.group} label={groupEntry.group}>
+                        {groupEntry.presets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </div>
                 <div className="field-grid user-field-grid">
@@ -1425,5 +1423,5 @@ function ProfileAvatar({
   if (avatarUrl.trim()) {
     return <img alt={name} className={className} src={avatarUrl} />;
   }
-  return <div className={className}>{initialsFor(name)}</div>;
+  return <div className={className}>{toInitials(name)}</div>;
 }

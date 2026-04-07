@@ -108,7 +108,7 @@ export function SimulationResultsSection() {
 
   const effectiveNetworkFrequencyMHz = selectedNetwork.frequencyOverrideMHz ?? selectedNetwork.frequencyMHz;
   const selectedFrequencyPreset = FREQUENCY_PRESETS.find((preset) => preset.id === selectedFrequencyPresetId);
-  const isLoraEstimateRelevant = (selectedFrequencyPreset?.source ?? "Meshtastic") !== "RadioMobile";
+  const isLoraEstimateRelevant = (selectedFrequencyPreset?.sourceFamily ?? "meshtastic") !== "reference";
 
   // Selection-aware from/to sites
   const sourceSite = useMemo(() => {
@@ -370,7 +370,7 @@ export function SimulationResultsSection() {
         </div>
       ) : (
         <p className="field-help">
-          LoRa RX estimate helper is hidden for Radio Mobile presets. Switch to a Meshtastic/Local frequency plan to
+          LoRa RX estimate helper is hidden for reference presets. Switch to a Meshtastic/Local frequency plan to
           use it.
         </p>
       )}

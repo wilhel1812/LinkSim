@@ -11,7 +11,9 @@ import {
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
 import { formatDate } from "../lib/locale";
+import { toAccessVisibility, toInitials } from "../lib/uiFormatting";
 import { useAppStore } from "../store/appStore";
+import { ModalCardHeader } from "./ModalCardHeader";
 
 type FilterGroupKey = "role" | "visibility";
 
@@ -31,19 +33,6 @@ const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: st
 
 const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
 const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.key);
-
-const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
-  if (value === "shared" || value === "public_write") return "shared";
-  if (value === "public" || value === "public_read") return "public";
-  return "private";
-};
-
-const initialsForUser = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
 
 const effectiveSelection = <T extends string>(selected: T[], allValues: T[]): T[] =>
   selected.length ? selected : allValues;
@@ -273,12 +262,7 @@ export default function SimulationLibraryPanel({
 
   return (
     <div className="library-manager-card">
-      <div className="library-manager-header">
-        <h2>Simulation Library</h2>
-        <button aria-label="Close" className="inline-action inline-action-icon" onClick={onClose} title="Close" type="button">
-          <CircleX aria-hidden="true" strokeWidth={1.8} />
-        </button>
-      </div>
+      <ModalCardHeader onClose={onClose} title="Simulation Library" />
       <p className="field-help">
         Manage saved simulations here. Site/node editing still happens in the main workspace.
       </p>
@@ -468,13 +452,13 @@ export default function SimulationLibraryPanel({
                 </span>
                 <span className="library-row-meta">
                   <span className="access-badge">
-                    {normalizeAccessVisibility((preset as { visibility?: unknown }).visibility)}
+                    {toAccessVisibility((preset as { visibility?: unknown }).visibility)}
                   </span>
                   <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
                     {owner.avatarUrl ? (
                       <img alt={owner.name} className="row-avatar-image" src={owner.avatarUrl} />
                     ) : (
-                      initialsForUser(owner.name)
+                      toInitials(owner.name)
                     )}
                   </span>
                 </span>
