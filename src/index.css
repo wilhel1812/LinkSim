@@ -21,6 +21,7 @@
   --state-pass-blocked: var(--warning);
   --state-fail-clear: color-mix(in srgb, var(--warning) 45%, var(--danger));
   --state-fail-blocked: var(--danger);
+  --panel-shell-divider: color-mix(in srgb, var(--border) 84%, transparent);
 }
 
 * {
@@ -174,17 +175,22 @@ input {
   }
 }
 
-.sidebar-panel {
+.sidebar-panel,
+.map-inspector,
+.chart-panel {
+  border: 1px solid var(--border);
+  border-radius: 18px;
   background: linear-gradient(
     160deg,
     color-mix(in srgb, var(--surface) var(--glass-panel-opacity), transparent),
     color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent)
   );
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
+  box-shadow: var(--shadow);
+}
+
+.sidebar-panel {
   padding: 18px;
   position: relative;
   z-index: 40;
@@ -811,8 +817,7 @@ input {
   text-decoration: underline;
 }
 
-.map-panel,
-.chart-panel {
+.map-panel {
   border: 1px solid var(--border);
   border-radius: 18px;
   overflow: hidden;
@@ -1091,16 +1096,6 @@ input {
   width: min(var(--inspector-overlay-width), calc(100% - 36px));
   max-height: none;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--surface) var(--glass-panel-opacity), transparent),
-    color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent)
-  );
-  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
-  backdrop-filter: blur(var(--glass-panel-blur));
-  box-shadow: var(--shadow);
   padding: 18px;
   display: grid;
   gap: 0;
@@ -1112,8 +1107,9 @@ input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .map-inspector-header-actions {
@@ -1208,7 +1204,7 @@ input {
 }
 
 .map-inspector-section + .map-inspector-section {
-  border-top: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-top: 1px solid var(--panel-shell-divider);
 }
 
 .map-holiday-note {
@@ -1603,16 +1599,7 @@ input {
 }
 
 .chart-panel {
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--surface) var(--glass-panel-opacity), transparent),
-    color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent)
-  );
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
-  backdrop-filter: blur(var(--glass-panel-blur));
+  overflow: hidden;
   padding: 10px 10px 8px;
   display: flex;
   flex-direction: column;
@@ -1663,7 +1650,7 @@ input {
   align-items: center;
   gap: 10px;
   padding: 0 0 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .chart-endpoints {
@@ -1820,7 +1807,7 @@ input {
   align-items: center;
   gap: 8px;
   padding: 0 0 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .chart-action-row-controls {
@@ -2333,6 +2320,7 @@ input {
 }
 
 .action-button {
+  font-family: "Space Grotesk", "Avenir Next", sans-serif;
   font-size: 0.82rem;
   font-weight: 600;
   min-height: 34px;
