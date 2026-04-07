@@ -1,0 +1,147 @@
+# UI Pattern Glossary (v1)
+
+Purpose: shared vocabulary for UI cleanup and convergence work, grounded in current LinkSim usage.
+
+Status labels:
+- `standard`: preferred pattern for new work in this role
+- `under migration`: actively converging to this pattern
+- `exception`: intentional non-standard case
+- `legacy`: older pattern retained until migrated
+
+## Proposed Outline
+1. Standard patterns
+2. Exceptions and specialized controls
+3. Borderline/early categories (not standardized yet)
+
+## Standard Patterns
+
+### ActionButton
+- Role: standard app action control (inline actions in modals, panels, and inspector actions).
+- Use when: triggering an app action like Save, Load, Details, Create, Dismiss, or Remove.
+- Do not use when: the control is a map/workspace tool control, a selection row/card, tab, or specialized trigger.
+- Variants:
+  - `default`
+  - `danger`
+- Known examples/files:
+  - `src/components/ActionButton.tsx`
+  - `src/components/SimulationLibraryPanel.tsx`
+  - `src/components/MapView.tsx` (inspector action group + inline notice dismiss)
+- Status: `under migration`
+
+### ToolButton
+- Role: map/workspace overlay controls and view tools.
+- Use when: zooming, fitting, panel show/hide, map mode toggles, and map-side helper actions tied to overlay/tool context.
+- Do not use when: action belongs to standard app action family (ActionButton) in forms/modals/normal panel flows.
+- Variants:
+  - `map-control-btn`
+  - `map-control-btn map-control-btn-icon`
+  - selected state via `is-selected`
+- Known examples/files:
+  - `src/components/MapView.tsx`
+  - `src/components/AppShell.tsx`
+  - `src/index.css` (`.map-control-btn*`)
+- Status: `standard`
+
+### SelectionSurface
+- Role: selectable rows/cards/items representing entities or choices.
+- Use when: selecting a Site, Path, user row, or candidate item.
+- Do not use when: action is command-like (Save/Delete/Apply).
+- Variants:
+  - `site-row`
+  - `link-item`
+  - `library-row user-list-row-btn`
+  - `site-quick-item`
+- Known examples/files:
+  - `src/components/Sidebar.tsx`
+  - `src/components/UserAdminPanel.tsx`
+  - `src/index.css` (`.site-row`, `.link-item`, `.site-quick-item`, `.library-row`)
+- Status: `standard`
+
+### TabButton
+- Role: panel-switching tabs with tab semantics.
+- Use when: switching mobile workspace panels.
+- Do not use when: action is command-like or selection-card-like.
+- Variants:
+  - `mobile-workspace-tab`
+  - `mobile-workspace-tab is-active`
+- Known examples/files:
+  - `src/components/app-shell/MobileWorkspaceTabs.tsx`
+  - `src/index.css` (`.mobile-workspace-tab`)
+- Status: `standard`
+
+### Modal/Panel Shell
+- Role: reusable overlay and card shell patterns for dialogs/popup workflows.
+- Use when: presenting focused modal content with dismiss behavior.
+- Do not use when: inline section can stay in normal layout without overlay interruption.
+- Variants:
+  - `ModalOverlay` tier `base`
+  - `ModalOverlay` tier `raised`
+  - card shell via `library-manager-card` and context-specific card classes
+- Known examples/files:
+  - `src/components/ModalOverlay.tsx`
+  - `src/components/SimulationLibraryPanel.tsx`
+  - `src/components/UserAdminPanel.tsx`
+  - `src/components/Sidebar.tsx`
+- Status: `standard`
+
+### Form Field + Action Group
+- Role: consistent pairing of field layout and nearby actions.
+- Use when: presenting label/input pairs with local action groups (filter actions, save/create groups).
+- Do not use when: data is purely presentational or should be list/card selection.
+- Variants:
+  - `field-grid`
+  - `chip-group` for clustered actions
+- Known examples/files:
+  - `src/components/SimulationLibraryPanel.tsx`
+  - `src/components/UserAdminPanel.tsx`
+  - `src/index.css` (`.field-grid`, `.chip-group`)
+- Status: `standard`
+
+## Exceptions and Specialized Controls
+
+### LinkButton (text-link style action)
+- Role: inline, low-emphasis action styled as text link.
+- Use when: action should read as contextual/link-like rather than primary button.
+- Do not use when: user must clearly notice a primary action.
+- Variants:
+  - `inline-link-button`
+  - tutorial/document links (`tutorial-inline-link`, anchor styles)
+- Known examples/files:
+  - `src/components/Sidebar.tsx`
+  - `src/components/OnboardingTutorialModal.tsx`
+  - `src/index.css` (`.inline-link-button`)
+- Status: `exception`
+
+### Specialized Triggers
+- Role: controls with distinct meaning and visual behavior that should not be forced into generic button taxonomy.
+- Use when: control carries unique domain meaning (account chip, bell/badge trigger, upload label, info tip).
+- Do not use when: a standard ActionButton or ToolButton already fits.
+- Variants:
+  - `user-chip`
+  - `notification-bell`
+  - `upload-button`
+  - `info-tip`
+- Known examples/files:
+  - `src/components/UserAdminPanel.tsx`
+  - `src/components/NotificationsPanel.tsx`
+  - `src/components/InfoTip.tsx`
+  - `src/index.css`
+- Status: `exception`
+
+### Close Icon Button Primitive
+- Role: standardized close affordance for modal/header dismiss actions.
+- Use when: explicit close/dismiss icon is needed in modal/header contexts.
+- Do not use when: control is a generic action button.
+- Variants:
+  - `InlineCloseIconButton` (built on `inline-action inline-action-icon`)
+- Known examples/files:
+  - `src/components/InlineCloseIconButton.tsx`
+  - reused across `Sidebar`, `SimulationLibraryPanel`, `UserAdminPanel`, `AppShell`
+- Status: `standard`
+
+## Borderline / Too Early to Standardize
+- `inline-action` usages outside `ActionButton` are still mixed across Sidebar/AppShell/UserAdmin/Welcome/Results.
+- Some inspector-local actions currently use `map-control-btn` and remain intentionally tied to tool-control language.
+- `LinkButton` may become `standard` later, but current usage is sparse and context-specific.
+
+Recommendation: keep this glossary compact until ActionButton migration coverage is broader and ToolButton vs ActionButton boundaries are fully settled.
