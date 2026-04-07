@@ -27,19 +27,13 @@ import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
 import { deriveSyncIndicator } from "../lib/syncIndicator";
+import { toInitials } from "../lib/uiFormatting";
 import { useAppStore } from "../store/appStore";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import type { UiColorTheme } from "../themes/types";
 import { InfoTip } from "./InfoTip";
 import { ModalOverlay } from "./ModalOverlay";
 import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
-
-const initialsFor = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
 
 const fmtDate = (iso: string | null | undefined): string => {
   if (!iso) return "-";
@@ -1400,5 +1394,5 @@ function ProfileAvatar({
   if (avatarUrl.trim()) {
     return <img alt={name} className={className} src={avatarUrl} />;
   }
-  return <div className={className}>{initialsFor(name)}</div>;
+  return <div className={className}>{toInitials(name)}</div>;
 }
