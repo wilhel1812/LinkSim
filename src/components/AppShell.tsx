@@ -69,6 +69,8 @@ type NotificationDebugWindow = Window & {
   };
 };
 const DISMISS_ALL_THRESHOLD = 4;
+const MANUAL_DISMISS_EXIT_MS = 220;
+const AUTO_DISMISS_EXIT_MS = 1000;
 
 const UI_PANEL_KEYS = {
   // Storage keys keep legacy names to avoid migration churn.
@@ -190,6 +192,7 @@ export function AppShell() {
   const [uiNotifications, setUiNotifications] = useState<UiNotification[]>([]);
   const uiNotificationsRef = useRef<UiNotification[]>([]);
   const [pausedNotificationIds, setPausedNotificationIds] = useState<string[]>([]);
+  const [dismissingNotificationIds, setDismissingNotificationIds] = useState<Record<string, "manual" | "auto">>({});
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
   const [mobileBottomPanelMode, setMobileBottomPanelMode] = useState<MobileBottomPanelMode>("normal");
@@ -251,12 +254,33 @@ export function AppShell() {
       return next;
     });
     setPausedNotificationIds((current) => current.filter((entry) => entry !== id));
+    setDismissingNotificationIds((current) => {
+      if (!current[id]) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
   }, []);
+  const requestDismissNotification = useCallback(
+    (id: string, reason: "manual" | "auto") => {
+      if (dismissingNotificationIds[id]) return;
+      setDismissingNotificationIds((current) => {
+        if (current[id]) return current;
+        return { ...current, [id]: reason };
+      });
+      window.setTimeout(
+        () => dismissNotification(id),
+        reason === "auto" ? AUTO_DISMISS_EXIT_MS : MANUAL_DISMISS_EXIT_MS,
+      );
+    },
+    [dismissNotification, dismissingNotificationIds],
+  );
   const clearNotifications = useCallback(() => {
     const next = clearUiNotifications();
     setUiNotifications(next);
     uiNotificationsRef.current = next;
     setPausedNotificationIds([]);
+    setDismissingNotificationIds({});
   }, []);
   const setNotificationPaused = useCallback((id: string, isPaused: boolean) => {
     setPausedNotificationIds((current) => {
@@ -680,14 +704,14 @@ export function AppShell() {
     for (const notification of uiNotifications) {
       if (notification.dismissMode !== "auto") continue;
       if (pausedNotificationIds.includes(notification.id)) continue;
-      timers.push(window.setTimeout(() => dismissNotification(notification.id), notification.durationMs));
+      timers.push(window.setTimeout(() => requestDismissNotification(notification.id, "auto"), notification.durationMs));
     }
     return () => {
       for (const timer of timers) {
         window.clearTimeout(timer);
       }
     };
-  }, [dismissNotification, pausedNotificationIds, uiNotifications]);
+  }, [pausedNotificationIds, requestDismissNotification, uiNotifications]);
 
   useEffect(() => {
     if (runtimeEnvironment === "production") return;
@@ -707,9 +731,7 @@ export function AppShell() {
         setUiNotifications(next);
       },
       dismiss: (id) => {
-        const next = dismissUiNotification(uiNotificationsRef.current, id);
-        uiNotificationsRef.current = next;
-        setUiNotifications(next);
+        requestDismissNotification(id, "manual");
       },
       clear: () => {
         uiNotificationsRef.current = [];
@@ -720,7 +742,7 @@ export function AppShell() {
     return () => {
       delete target.linksimNotifications;
     };
-  }, [runtimeEnvironment]);
+  }, [requestDismissNotification, runtimeEnvironment]);
 
   useEffect(() => {
     try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
@@ -1826,13 +1848,18 @@ export function AppShell() {
           <div className="app-notification-stack-list">
             {uiNotifications.map((notification) => (
               <div
-                className={`app-notification-item app-notification-item-${notification.tone}`}
+                data-dismiss-kind={dismissingNotificationIds[notification.id] ?? undefined}
                 key={notification.id}
                 onBlurCapture={() => setNotificationPaused(notification.id, false)}
                 onFocusCapture={() => setNotificationPaused(notification.id, true)}
                 onMouseEnter={() => setNotificationPaused(notification.id, true)}
                 onMouseLeave={() => setNotificationPaused(notification.id, false)}
                 role={notification.tone === "error" ? "alert" : "status"}
+                aria-live={notification.tone === "error" ? "assertive" : "polite"}
+                aria-atomic="true"
+                className={`app-notification-item app-notification-item-${notification.tone} ${
+                  dismissingNotificationIds[notification.id] ? "is-dismissing" : ""
+                }`}
               >
                 <span className="app-notification-glyph" aria-hidden="true">
                   {notification.tone === "warning" ? <CircleAlert size={14} strokeWidth={2} /> : null}
@@ -1846,7 +1873,7 @@ export function AppShell() {
                 <button
                   aria-label="Dismiss notification"
                   className="app-notification-dismiss"
-                  onClick={() => dismissNotification(notification.id)}
+                  onClick={() => requestDismissNotification(notification.id, "manual")}
                   title="Dismiss"
                   type="button"
                 >

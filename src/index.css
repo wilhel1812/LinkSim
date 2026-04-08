@@ -985,6 +985,19 @@ input {
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
   padding: 5px 8px;
+  animation: notification-enter 240ms ease both;
+}
+
+.app-notification-item.is-dismissing {
+  pointer-events: none;
+}
+
+.app-notification-item.is-dismissing[data-dismiss-kind="manual"] {
+  animation: notification-exit-fast 220ms ease forwards;
+}
+
+.app-notification-item.is-dismissing[data-dismiss-kind="auto"] {
+  animation: notification-exit-slow 1000ms ease forwards;
 }
 
 .app-notification-item-warning {
@@ -1000,29 +1013,22 @@ input {
 }
 
 .app-notification-glyph {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--accent) 46%, var(--border));
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
 }
 
 .app-notification-item-warning .app-notification-glyph {
-  border-color: color-mix(in srgb, var(--warning) 46%, var(--border));
-  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
 }
 
 .app-notification-item-error .app-notification-glyph {
-  border-color: color-mix(in srgb, var(--danger) 46%, var(--border));
-  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
 }
 
 .app-notification-item-success .app-notification-glyph {
-  border-color: color-mix(in srgb, var(--success) 46%, var(--border));
-  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
 }
 
 .app-notification-copy {
@@ -1075,6 +1081,42 @@ input {
   right: auto;
   width: 100%;
   max-width: none;
+}
+
+@keyframes notification-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes notification-exit-fast {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.985);
+  }
+}
+
+@keyframes notification-exit-slow {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.975);
+  }
 }
 
 .map-controls-icon-only {
@@ -3766,7 +3808,7 @@ input {
 
 @media (max-width: 980px) {
   .app-notification-stack {
-    top: calc(var(--mobile-controls-top) + 52px);
+    top: calc(var(--mobile-controls-top) + 68px);
     width: min(460px, calc(100% - 16px));
   }
 }
