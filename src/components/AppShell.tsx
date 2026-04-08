@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleUserRound, CloudAlert, Copy, Globe, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -68,7 +68,7 @@ type NotificationDebugWindow = Window & {
     list: () => UiNotification[];
   };
 };
-const MAX_VISIBLE_NOTIFICATIONS = 3;
+const DISMISS_ALL_THRESHOLD = 4;
 
 const UI_PANEL_KEYS = {
   // Storage keys keep legacy names to avoid migration churn.
@@ -188,7 +188,6 @@ export function AppShell() {
   const [shareSpecificBusy, setShareSpecificBusy] = useState(false);
   const [shareSpecificStatus, setShareSpecificStatus] = useState("");
   const [uiNotifications, setUiNotifications] = useState<UiNotification[]>([]);
-  const [notificationsExpanded, setNotificationsExpanded] = useState(false);
   const [pausedNotificationIds, setPausedNotificationIds] = useState<string[]>([]);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
@@ -247,7 +246,6 @@ export function AppShell() {
   const clearNotifications = useCallback(() => {
     setUiNotifications(clearUiNotifications());
     setPausedNotificationIds([]);
-    setNotificationsExpanded(false);
   }, []);
   const setNotificationPaused = useCallback((id: string, isPaused: boolean) => {
     setPausedNotificationIds((current) => {
@@ -679,12 +677,6 @@ export function AppShell() {
       }
     };
   }, [dismissNotification, pausedNotificationIds, uiNotifications]);
-
-  useEffect(() => {
-    if (uiNotifications.length <= MAX_VISIBLE_NOTIFICATIONS) {
-      setNotificationsExpanded(false);
-    }
-  }, [uiNotifications.length]);
 
   useEffect(() => {
     if (runtimeEnvironment === "production") return;
@@ -1805,7 +1797,7 @@ export function AppShell() {
       {uiNotifications.length ? (
         <section aria-label="App notifications" className="app-notification-stack">
           <div className="app-notification-stack-list">
-            {(notificationsExpanded ? uiNotifications : uiNotifications.slice(0, MAX_VISIBLE_NOTIFICATIONS)).map((notification) => (
+            {uiNotifications.map((notification) => (
               <div
                 className={`app-notification-item app-notification-item-${notification.tone}`}
                 key={notification.id}
@@ -1815,32 +1807,31 @@ export function AppShell() {
                 onMouseLeave={() => setNotificationPaused(notification.id, false)}
                 role={notification.tone === "error" ? "alert" : "status"}
               >
+                <span className="app-notification-glyph" aria-hidden="true">
+                  {notification.tone === "warning" ? <CircleAlert size={14} strokeWidth={2} /> : null}
+                  {notification.tone === "error" ? <CircleX size={14} strokeWidth={2} /> : null}
+                  {notification.tone === "success" ? <CircleCheck size={14} strokeWidth={2} /> : null}
+                  {notification.tone === "info" ? <Info size={14} strokeWidth={2} /> : null}
+                </span>
                 <div className="app-notification-copy">
-                  {notification.title ? <strong>{notification.title}</strong> : null}
                   <span>{notification.message}</span>
                 </div>
-                <div className="chip-group app-notification-actions">
-                  {notification.actions?.map((action) => (
-                    <ActionButton key={action.label} onClick={action.onClick} type="button">
-                      {action.label}
-                    </ActionButton>
-                  ))}
-                  {notification.dismissMode === "manual" ? (
-                    <ActionButton onClick={() => dismissNotification(notification.id)} type="button">
-                      Dismiss
-                    </ActionButton>
-                  ) : null}
-                </div>
+                <button
+                  aria-label="Dismiss notification"
+                  className="app-notification-dismiss"
+                  onClick={() => dismissNotification(notification.id)}
+                  title="Dismiss"
+                  type="button"
+                >
+                  <X aria-hidden="true" size={14} strokeWidth={2} />
+                </button>
               </div>
             ))}
           </div>
-          {uiNotifications.length > MAX_VISIBLE_NOTIFICATIONS ? (
+          {uiNotifications.length >= DISMISS_ALL_THRESHOLD ? (
             <div className="app-notification-stack-controls">
-              <ActionButton onClick={() => setNotificationsExpanded((current) => !current)} type="button">
-                {notificationsExpanded ? "Show Less" : `Show More (${uiNotifications.length - MAX_VISIBLE_NOTIFICATIONS})`}
-              </ActionButton>
               <ActionButton onClick={clearNotifications} type="button">
-                Clear All
+                Dismiss all
               </ActionButton>
             </div>
           ) : null}

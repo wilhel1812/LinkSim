@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Layers, Maximize2, Minus, PanelRightClose, Plus, RefreshCw } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleX, Info, Layers, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
 import { ActionButton } from "./ActionButton";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
@@ -273,34 +273,52 @@ export function UiGalleryPage() {
               <div className="app-notification-stack app-notification-stack-gallery">
                 <div className="app-notification-stack-list">
                   <div className="app-notification-item app-notification-item-info" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <Info size={14} strokeWidth={2} />
+                    </span>
                     <div className="app-notification-copy">
                       <span>Share link copied.</span>
                     </div>
+                    <button aria-label="Dismiss notification" className="app-notification-dismiss" type="button">
+                      <X aria-hidden="true" size={14} strokeWidth={2} />
+                    </button>
                   </div>
                   <div className="app-notification-item app-notification-item-warning" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
                     <div className="app-notification-copy">
-                      <strong>Offline mode</strong>
-                      <span>Changes are stored locally until sync resumes.</span>
+                      <span>Retrying tile 12/41.</span>
                     </div>
-                    <div className="chip-group app-notification-actions">
-                      <ActionButton>Open Sync Status</ActionButton>
-                      <ActionButton>Dismiss</ActionButton>
-                    </div>
+                    <button aria-label="Dismiss notification" className="app-notification-dismiss" type="button">
+                      <X aria-hidden="true" size={14} strokeWidth={2} />
+                    </button>
                   </div>
                   <div className="app-notification-item app-notification-item-error" role="alert">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleX size={14} strokeWidth={2} />
+                    </span>
                     <div className="app-notification-copy">
-                      <span>Failed to copy link. Try again.</span>
+                      <span>Elevation API slow.</span>
                     </div>
+                    <button aria-label="Dismiss notification" className="app-notification-dismiss" type="button">
+                      <X aria-hidden="true" size={14} strokeWidth={2} />
+                    </button>
                   </div>
-                  <div className="app-notification-item app-notification-item-info" role="status">
+                  <div className="app-notification-item app-notification-item-success" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleCheck size={14} strokeWidth={2} />
+                    </span>
                     <div className="app-notification-copy">
-                      <span>Additional queued notice (overflow example).</span>
+                      <span>Profile updated.</span>
                     </div>
+                    <button aria-label="Dismiss notification" className="app-notification-dismiss" type="button">
+                      <X aria-hidden="true" size={14} strokeWidth={2} />
+                    </button>
                   </div>
                 </div>
                 <div className="app-notification-stack-controls">
-                  <ActionButton>Show More (1)</ActionButton>
-                  <ActionButton>Clear All</ActionButton>
+                  <ActionButton>Dismiss all</ActionButton>
                 </div>
               </div>
             </PatternCard>
