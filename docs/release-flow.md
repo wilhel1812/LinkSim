@@ -33,6 +33,7 @@
 - Deploy the exact verified staging commit to production (no extra code changes in between).
 - Use explicit guarded command only: `npm run deploy:prod:main`.
 - After production deploy, continue all new work from updated `origin/staging`.
+- If direct `staging` -> `main` promotion is blocked and a `hotfix/*` reconcile/snapshot PR to `main` is used, treat that as an exception path and immediately run main->staging sync before starting any new work.
 
 ## Guardrails
 - No direct production hotfixes unless explicitly requested by the user.
@@ -124,6 +125,12 @@
 - Issue branches must be created from latest `origin/staging`.
 - PRs into `staging` or `main` must be up-to-date with the base branch before merge.
 - Never promote from `issue/*` or `chore/*` directly into `main`.
+- After any `hotfix/*` merge into `main` (including release-reconcile fallback), immediately:
+  1. create `chore/sync-main-to-staging` from `origin/staging`
+  2. `git merge origin/main -X ours --no-edit`
+  3. PR and merge into `staging`
+  4. `npm run deploy:staging` and verify deployment
+  5. close the drift issue
 
 ## Deploy Targets Reference
 | Target | URL | Description |

@@ -75,6 +75,7 @@
   - Normal production promotion PR must be `staging` -> `main`.
   - Hotfix promotion PR may be `hotfix/<slug>` -> `main` only with explicit user approval in-thread.
 - **After any hotfix merges to main**: immediately create a `chore/sync-main-to-staging` branch from `origin/staging`, run `git merge origin/main -X ours --no-edit`, PR into `staging`, merge, and redeploy staging. Do not start new feature work until staging is back in sync. The `detect-staging-drift` workflow will open a GitHub Issue as a reminder if this is missed.
+- **Release-reconcile fallback rule**: if production promotion cannot be completed via direct `staging` -> `main` and uses a `hotfix/*` snapshot/reconcile PR instead, the same pass is not complete until `main` is synced back into `staging`, staging is redeployed, and the drift issue is closed.
 - Local run reliability:
   - Restart local server whenever runtime/config/env changes can affect behavior.
   - Re-verify affected flows after restart before marking work as done.
