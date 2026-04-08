@@ -3,6 +3,7 @@ import { Layers, Maximize2, Minus, PanelRightClose, Plus, RefreshCw } from "luci
 import { ActionButton } from "./ActionButton";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
+import type { UiColorTheme } from "../themes/types";
 
 type GalleryStatus = "standard" | "exception" | "legacy" | "under migration" | "mapped only";
 type GalleryTab = "actions" | "panels" | "forms" | "notifications" | "states" | "meta-map-ui";
@@ -41,10 +42,12 @@ const PatternCard = ({
 );
 
 export function UiGalleryPage() {
-  const { theme, variant } = useThemeVariant();
+  const { theme, variant, colorTheme, activeHolidayTheme } = useThemeVariant();
   const [activeTab, setActiveTab] = useState<GalleryTab>("actions");
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
+  const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
+  const colorThemes: UiColorTheme[] = ["blue", "pink", "red", "green", "yellow"];
 
   useEffect(() => {
     const root = document.documentElement;
@@ -75,6 +78,24 @@ export function UiGalleryPage() {
             Dark
           </ActionButton>
         </div>
+        <div className="chip-group ui-gallery-theme-toggle">
+          {colorThemes.map((entry) => (
+            <ActionButton
+              aria-pressed={colorTheme === entry}
+              key={entry}
+              onClick={() => setUiColorTheme(entry)}
+              type="button"
+            >
+              {entry[0].toUpperCase()}
+              {entry.slice(1)}
+            </ActionButton>
+          ))}
+          {activeHolidayTheme ? (
+            <span className="access-badge" title="Holiday palette is active and may override your selected color theme">
+              Holiday: {activeHolidayTheme.title}
+            </span>
+          ) : null}
+        </div>
         <nav className="ui-gallery-tabs" aria-label="UI gallery tabs">
           {GALLERY_TABS.map((tab) => (
             <ActionButton
@@ -101,16 +122,16 @@ export function UiGalleryPage() {
                 <ActionButton variant="danger">Remove From Simulation</ActionButton>
               </div>
             </PatternCard>
-            <PatternCard name="ToolButton (true overlay controls only)" status="standard">
+            <PatternCard name="OverlayIconControl (map controls pill)" status="standard">
               <div className="chip-group">
-                <button className="map-control-btn" type="button">
-                  Pass/Fail
+                <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" title="Zoom out" type="button">
+                  <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
                 </button>
-                <button className="map-control-btn is-selected" type="button">
-                  Heatmap
+                <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" title="Zoom in" type="button">
+                  <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
                 </button>
-                <button className="map-control-btn" type="button">
-                  Fit
+                <button aria-label="Fit bounds" className="map-control-btn map-control-btn-icon" title="Fit bounds" type="button">
+                  <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
                 </button>
               </div>
             </PatternCard>
@@ -119,7 +140,7 @@ export function UiGalleryPage() {
                 Open change log
               </button>
             </PatternCard>
-            <PatternCard name="Icon-only utility controls" status="mapped only">
+            <PatternCard name="Overlay icon controls (mapped inventory)" status="mapped only">
               <div className="chip-group">
                 <button className="map-control-btn map-control-btn-icon" title="Zoom out" type="button">
                   <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
@@ -234,10 +255,10 @@ export function UiGalleryPage() {
               </label>
             </PatternCard>
             <PatternCard name="Badges/Chips/Pills" status="standard">
-              <div className="chip-group">
+              <div className="chip-group ui-gallery-chip-specimen">
                 <span className="access-badge">shared</span>
                 <span className="access-badge mqtt-source-badge">MQTT</span>
-                <span className="ui-pattern-status is-standard">standard</span>
+                <span className="map-band-chip">Mesh</span>
               </div>
             </PatternCard>
           </div>
@@ -248,13 +269,42 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Notifications</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="Map inline notice" status="under migration">
-              <div className="map-inline-notice map-inline-notice-warning" role="status">
-                <span>Offline mode active. Changes will sync later.</span>
-                <ActionButton>Dismiss</ActionButton>
+            <PatternCard name="Unified app notification stack (auto/manual + overflow)" status="under migration">
+              <div className="app-notification-stack app-notification-stack-gallery">
+                <div className="app-notification-stack-list">
+                  <div className="app-notification-item app-notification-item-info" role="status">
+                    <div className="app-notification-copy">
+                      <span>Share link copied.</span>
+                    </div>
+                  </div>
+                  <div className="app-notification-item app-notification-item-warning" role="status">
+                    <div className="app-notification-copy">
+                      <strong>Offline mode</strong>
+                      <span>Changes are stored locally until sync resumes.</span>
+                    </div>
+                    <div className="chip-group app-notification-actions">
+                      <ActionButton>Open Sync Status</ActionButton>
+                      <ActionButton>Dismiss</ActionButton>
+                    </div>
+                  </div>
+                  <div className="app-notification-item app-notification-item-error" role="alert">
+                    <div className="app-notification-copy">
+                      <span>Failed to copy link. Try again.</span>
+                    </div>
+                  </div>
+                  <div className="app-notification-item app-notification-item-info" role="status">
+                    <div className="app-notification-copy">
+                      <span>Additional queued notice (overflow example).</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="app-notification-stack-controls">
+                  <ActionButton>Show More (1)</ActionButton>
+                  <ActionButton>Clear All</ActionButton>
+                </div>
               </div>
             </PatternCard>
-            <PatternCard name="Banner notice" status="under migration">
+            <PatternCard name="Notification banner (legacy)" status="legacy">
               <div className="notification-banner" role="status">
                 <strong>2 moderator notifications</strong> need review.
               </div>
@@ -262,7 +312,15 @@ export function UiGalleryPage() {
                 <strong>Schema warning:</strong> missing optional index metadata.
               </div>
             </PatternCard>
-            <PatternCard name="Offline banner" status="under migration">
+            <PatternCard name="Map inline notice baseline" status="exception">
+              <div className="ui-gallery-map-notice-stage">
+                <div className="map-inline-notice map-inline-notice-warning" role="status">
+                  <span>Offline mode active. Changes will sync later.</span>
+                  <ActionButton>Dismiss</ActionButton>
+                </div>
+              </div>
+            </PatternCard>
+            <PatternCard name="Offline banner (legacy)" status="legacy">
               <div className="offline-banner" role="status">
                 <span>Offline. Changes are saved locally and will sync when connection returns.</span>
                 <div className="chip-group">
@@ -338,7 +396,7 @@ export function UiGalleryPage() {
               </footer>
             </PatternCard>
             <PatternCard name="Icon-only controls policy" status="mapped only">
-              <p className="field-help">Mapped for taxonomy coverage only in this pass. No visual convergence applied.</p>
+              <p className="field-help">Mapped for taxonomy coverage only in this pass. No visual convergence or restyling is applied.</p>
             </PatternCard>
           </div>
         </section>

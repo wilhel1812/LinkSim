@@ -11,8 +11,9 @@ Status labels:
 
 Current snapshot (after tabbed gallery and broad action convergence pass):
 - Normal text-bearing app actions continue converging into one shared `ActionButton` family.
-- `ToolButton` is restricted to true map/workspace overlay controls.
-- Icon-only controls are mapped and tracked (`mapped only`) but not visually converged in this run.
+- `ToolButton` currently maps to icon-only map/workspace overlay controls in production UI.
+- No active text-bearing ToolButton family is in use.
+- Icon-only controls outside true overlay controls are mapped and tracked (`mapped only`) but not visually converged in this run.
 
 ## Proposed Outline
 1. Standard patterns
@@ -67,12 +68,10 @@ Boundary (simplified):
 
 ### ToolButton
 - Role: map/workspace overlay controls and view tools.
-- Use when: zooming, fitting, panel show/hide, map mode toggles, and map-side helper actions tied to overlay/tool context.
+- Use when: zooming, fitting, panel show/hide, and map-side helper actions tied to overlay/tool context.
 - Do not use when: action belongs to standard app action family (ActionButton) in forms/modals/normal panel flows.
 - Variants:
-  - `map-control-btn`
   - `map-control-btn map-control-btn-icon`
-  - selected state via `is-selected`
 - Known examples/files:
   - `src/components/MapView.tsx`
   - `src/components/AppShell.tsx`
@@ -182,14 +181,13 @@ Exception policy:
 Policy:
 - Mapped and tracked in gallery for coverage.
 - Out of scope for visual convergence in the current pass.
+- True map/workspace overlay icon controls are standardized under `ToolButton`; non-overlay icon controls remain mapped-only.
 
 ## Notification / Notice Inventory
 
-### Should converge next
-- `map-inline-notice`
-- `offline-banner`
-- `notification-banner`
-- shared helper/error container rhythm around sync/status messaging blocks
+### Converged now
+- AppShell transient/persistent notices now use one unified app-level notification stack (always visible, multi-item, auto/manual dismiss, overflow expand/collapse).
+- Existing `publishAppNotice` publication points now route into this unified system.
 
 ### Intentional exceptions
 - `notification-bell` + `notification-badge` (trigger/badge behavior pattern)
@@ -200,7 +198,7 @@ Policy:
 - domain-specific status tiles (`margin-status`, `terrain-alert`) that encode simulation semantics
 
 Recommended next cleanup pass:
-- Introduce one shared notice container baseline (surface/border/padding/title-row/action-slot) and migrate `map-inline-notice`, `offline-banner`, and `notification-banner` to it while keeping bell/badge and domain tiles as exceptions.
+- Migrate remaining standalone notice surfaces (`notification-banner`, selected offline/status blocks) onto the same notification container language where semantics match, while keeping bell/badge and domain tiles as exceptions.
 
 ### Specialized Triggers
 - Role: controls with distinct meaning and visual behavior that should not be forced into generic button taxonomy.

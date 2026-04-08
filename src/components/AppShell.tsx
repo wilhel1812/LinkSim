@@ -15,6 +15,13 @@ import { handleSimulationLibraryLoad } from "../lib/simulationLibraryLoad";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
+import {
+  clearUiNotifications,
+  dismissUiNotification,
+  type UiNotification,
+  type UiNotificationInput,
+  upsertUiNotification,
+} from "../lib/uiNotifications";
 import { initializeMigrations, runMigrations } from "../lib/migrations";
 import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
@@ -51,6 +58,7 @@ type AppNotice = {
   tone: "info" | "warning" | "error";
   persistent: boolean;
 };
+const MAX_VISIBLE_NOTIFICATIONS = 3;
 
 const UI_PANEL_KEYS = {
   // Storage keys keep legacy names to avoid migration churn.
@@ -169,7 +177,9 @@ export function AppShell() {
   const [shareUserQuery, setShareUserQuery] = useState("");
   const [shareSpecificBusy, setShareSpecificBusy] = useState(false);
   const [shareSpecificStatus, setShareSpecificStatus] = useState("");
-  const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
+  const [uiNotifications, setUiNotifications] = useState<UiNotification[]>([]);
+  const [notificationsExpanded, setNotificationsExpanded] = useState(false);
+  const [pausedNotificationIds, setPausedNotificationIds] = useState<string[]>([]);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
   const [mobileBottomPanelMode, setMobileBottomPanelMode] = useState<MobileBottomPanelMode>("normal");
@@ -217,14 +227,34 @@ export function AppShell() {
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
     [simulationPresets, selectedScenarioId],
   );
-  const publishAppNotice = useCallback((notice: AppNotice) => {
-    setAppNotice((current) => {
-      if (current && current.id === notice.id && current.message === notice.message) {
-        return current;
-      }
-      return notice;
+  const pushNotification = useCallback((notice: UiNotificationInput) => {
+    setUiNotifications((current) => upsertUiNotification(current, notice));
+  }, []);
+  const dismissNotification = useCallback((id: string) => {
+    setUiNotifications((current) => dismissUiNotification(current, id));
+    setPausedNotificationIds((current) => current.filter((entry) => entry !== id));
+  }, []);
+  const clearNotifications = useCallback(() => {
+    setUiNotifications(clearUiNotifications());
+    setPausedNotificationIds([]);
+    setNotificationsExpanded(false);
+  }, []);
+  const setNotificationPaused = useCallback((id: string, isPaused: boolean) => {
+    setPausedNotificationIds((current) => {
+      const hasId = current.includes(id);
+      if (isPaused && !hasId) return [...current, id];
+      if (!isPaused && hasId) return current.filter((entry) => entry !== id);
+      return current;
     });
   }, []);
+  const publishAppNotice = useCallback((notice: AppNotice) => {
+    pushNotification({
+      id: notice.id,
+      message: notice.message,
+      tone: notice.tone,
+      dismissMode: notice.persistent ? "manual" : "auto",
+    });
+  }, [pushNotification]);
   const publishTransientNotice = useCallback(
     (id: string, message: string, tone: AppNotice["tone"] = "info") => {
       publishAppNotice({ id, message, tone, persistent: false });
@@ -627,10 +657,24 @@ export function AppShell() {
   );
 
   useEffect(() => {
-    if (!appNotice || appNotice.persistent) return;
-    const timer = window.setTimeout(() => setAppNotice(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [appNotice]);
+    const timers: number[] = [];
+    for (const notification of uiNotifications) {
+      if (notification.dismissMode !== "auto") continue;
+      if (pausedNotificationIds.includes(notification.id)) continue;
+      timers.push(window.setTimeout(() => dismissNotification(notification.id), notification.durationMs));
+    }
+    return () => {
+      for (const timer of timers) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [dismissNotification, pausedNotificationIds, uiNotifications]);
+
+  useEffect(() => {
+    if (uiNotifications.length <= MAX_VISIBLE_NOTIFICATIONS) {
+      setNotificationsExpanded(false);
+    }
+  }, [uiNotifications.length]);
 
   useEffect(() => {
     try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
@@ -1263,7 +1307,7 @@ export function AppShell() {
   }, []);
 
   const openShareModalOrCopy = useCallback(() => {
-    setAppNotice(null);
+    clearNotifications();
     if (!activeSimulation) {
       publishAppNotice({
         id: "share-open-simulation-first",
@@ -1295,7 +1339,7 @@ export function AppShell() {
         persistent: true,
       });
     });
-  }, [activeSimulation, copyCurrentLink, publishAppNotice]);
+  }, [activeSimulation, clearNotifications, copyCurrentLink, publishAppNotice]);
 
   const panelSizeControls = useCallback(
     (labelPrefix: string, variant: "map" | "chart" = "map") => (
@@ -1578,7 +1622,7 @@ export function AppShell() {
             </div>
           </div>
         ) : null}
-        {workspaceState === "blank-simulation" && !appNotice ? (
+        {workspaceState === "blank-simulation" && uiNotifications.length === 0 ? (
           <div className="workspace-header-actions">
             <span className="field-help">This Simulation is blank. Add sites from the map or Site Library to continue.</span>
           </div>
@@ -1651,15 +1695,6 @@ export function AppShell() {
             setIsMapExpanded((prev) => !prev);
             emitProfileLayoutPulse();
           }}
-          notice={
-            appNotice
-              ? {
-                  message: appNotice.message,
-                  tone: appNotice.tone,
-                  onDismiss: appNotice.persistent ? () => setAppNotice(null) : undefined,
-                }
-              : undefined
-          }
           fitBottomInset={
             isMobileViewport || isMapExpanded || isProfileExpanded || isProfileHidden
               ? 30
@@ -1740,6 +1775,50 @@ export function AppShell() {
           </div>
         ) : null}
       </section>
+      {uiNotifications.length ? (
+        <section aria-label="App notifications" className="app-notification-stack">
+          <div className="app-notification-stack-list">
+            {(notificationsExpanded ? uiNotifications : uiNotifications.slice(0, MAX_VISIBLE_NOTIFICATIONS)).map((notification) => (
+              <div
+                className={`app-notification-item app-notification-item-${notification.tone}`}
+                key={notification.id}
+                onBlurCapture={() => setNotificationPaused(notification.id, false)}
+                onFocusCapture={() => setNotificationPaused(notification.id, true)}
+                onMouseEnter={() => setNotificationPaused(notification.id, true)}
+                onMouseLeave={() => setNotificationPaused(notification.id, false)}
+                role={notification.tone === "error" ? "alert" : "status"}
+              >
+                <div className="app-notification-copy">
+                  {notification.title ? <strong>{notification.title}</strong> : null}
+                  <span>{notification.message}</span>
+                </div>
+                <div className="chip-group app-notification-actions">
+                  {notification.actions?.map((action) => (
+                    <ActionButton key={action.label} onClick={action.onClick} type="button">
+                      {action.label}
+                    </ActionButton>
+                  ))}
+                  {notification.dismissMode === "manual" ? (
+                    <ActionButton onClick={() => dismissNotification(notification.id)} type="button">
+                      Dismiss
+                    </ActionButton>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+          {uiNotifications.length > MAX_VISIBLE_NOTIFICATIONS ? (
+            <div className="app-notification-stack-controls">
+              <ActionButton onClick={() => setNotificationsExpanded((current) => !current)} type="button">
+                {notificationsExpanded ? "Show Less" : `Show More (${uiNotifications.length - MAX_VISIBLE_NOTIFICATIONS})`}
+              </ActionButton>
+              <ActionButton onClick={clearNotifications} type="button">
+                Clear All
+              </ActionButton>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
         <div className="floating-attribution-pill">
           <span>&copy;</span>
