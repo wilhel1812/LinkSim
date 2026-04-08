@@ -1094,6 +1094,13 @@ export function MapView({
   const terrainProgressTilesTotal = useAppStore((state) => state.terrainProgressTilesTotal);
   const terrainProgressBytesLoaded = useAppStore((state) => state.terrainProgressBytesLoaded);
   const terrainProgressBytesEstimated = useAppStore((state) => state.terrainProgressBytesEstimated);
+  const terrainProgressTransientDecodeBytesEstimated = useAppStore(
+    (state) => state.terrainProgressTransientDecodeBytesEstimated,
+  );
+  const terrainProgressPhaseLabel = useAppStore((state) => state.terrainProgressPhaseLabel);
+  const terrainProgressPhaseIndex = useAppStore((state) => state.terrainProgressPhaseIndex);
+  const terrainProgressPhaseTotal = useAppStore((state) => state.terrainProgressPhaseTotal);
+  const terrainMemoryDiagnostics = useAppStore((state) => state.terrainMemoryDiagnostics);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
@@ -1715,16 +1722,24 @@ export function MapView({
   const hasTerrainDownloadProgress =
     terrainProgressTilesLoaded > 0 || terrainProgressBytesLoaded > 0 || terrainProgressBytesEstimated > 0;
   const formatMb = (bytes: number) => `${(Math.max(0, bytes) / (1024 * 1024)).toFixed(1)} MB`;
+  const terrainPhasePrefix =
+    isTerrainFetching && terrainProgressPhaseTotal > 0
+      ? `Phase ${Math.max(1, terrainProgressPhaseIndex)}/${terrainProgressPhaseTotal}${
+          terrainProgressPhaseLabel ? `: ${terrainProgressPhaseLabel}` : ""
+        }`
+      : null;
   const terrainProgressLabel =
     isTerrainFetching && hasTerrainDownloadProgress && terrainProgressTilesTotal > 0
-      ? `Loading terrain ${terrainProgressPercent}% — ${formatMb(terrainProgressBytesLoaded)} of ~${formatMb(
+      ? `${terrainPhasePrefix ? `${terrainPhasePrefix} — ` : ""}Loading terrain ${terrainProgressPercent}% — ${formatMb(
+          terrainProgressBytesLoaded,
+        )} of ~${formatMb(
           terrainProgressBytesEstimated || terrainProgressBytesLoaded,
         )} (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles)`
       : null;
   const terrainPreparingLabel =
     isTerrainFetching && !hasTerrainDownloadProgress
       ? terrainProgressTilesTotal > 0
-        ? `Preparing terrain download... (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles queued)`
+        ? `${terrainPhasePrefix ? `${terrainPhasePrefix} — ` : ""}Preparing terrain download... (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles queued)`
         : "Preparing terrain download..."
       : null;
   const backgroundBusyLabel = (isTerrainFetching
@@ -1732,6 +1747,18 @@ export function MapView({
     : isTerrainRecommending
       ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : "") + keepWorkingSuffix;
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const rawThresholdMb = localStorage.getItem("linksim-dev-terrain-memory-warn-mb");
+    const thresholdMb = Number(rawThresholdMb ?? "4096");
+    if (!Number.isFinite(thresholdMb) || thresholdMb <= 0) return;
+    const retainedMb = terrainMemoryDiagnostics.retainedBytesTotal / (1024 * 1024);
+    if (retainedMb < thresholdMb) return;
+    console.warn(
+      `[terrain-memory] retained decoded terrain is ${retainedMb.toFixed(1)} MB (threshold ${thresholdMb} MB)`,
+      terrainMemoryDiagnostics,
+    );
+  }, [terrainMemoryDiagnostics]);
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -2736,6 +2763,26 @@ export function MapView({
             <p>Site elevations: Simulation values</p>
             <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
             <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
+            {import.meta.env.DEV ? (
+              <>
+                <p>
+                  Terrain memory (retained decoded): {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [
+                  30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, 90m{" "}
+                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus90)}, manual{" "}
+                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
+                </p>
+                <p>
+                  Terrain tiles by dataset: 30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, 90m{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.copernicus90}, manual{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.other}
+                </p>
+                <p>
+                  Terrain decode overhead (in-flight estimate):{" "}
+                  {formatMb(terrainProgressTransientDecodeBytesEstimated)}
+                </p>
+              </>
+            ) : null}
             <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
             {largeAreaOptimizationActive ? (
               <p>
