@@ -95,7 +95,7 @@
 - Promotion must use the same verified staging commit SHA.
 - If any code changes after staging sign-off, restart staging verification before production.
 - Before opening the promotion PR, require:
-  - all in-scope milestone issues are `in-staging` or `released`
+  - all in-scope milestone issues are either closed after staging sign-off or explicitly labeled `released`
   - `npm test` passes
   - `npm run build` passes
   - `CHANGELOG.md` includes a human-readable entry for the release
@@ -110,7 +110,8 @@
   - `in-progress`
   - `in-staging`
   - `released`
-- Close issue only when release is deployed and verified in production.
+- Default closure policy: close issue after staging verification and explicit user sign-off.
+- Milestone production release policy: apply `released` label during the milestone release sweep for shipped issues.
 
 ## CI/CD Controls
 - GitHub Actions deploy workflow is manual (`workflow_dispatch`) with explicit target selection:

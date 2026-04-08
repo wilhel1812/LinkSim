@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatPrivateSiteReferenceBlockMessage,
   isAuthSignInRequiredMessage,
+  shouldCloseSimulationLibraryOnLoad,
   shouldRewritePathAfterDeepLinkApply,
   shouldUseReadonlyFallbackForAuthBootstrap,
 } from "./appShellGuards";
@@ -98,5 +100,24 @@ describe("shouldUseReadonlyFallbackForAuthBootstrap", () => {
         userAgent: "Mozilla/5.0 Firefox/124.0",
       }),
     ).toBe(false);
+  });
+});
+
+describe("shouldCloseSimulationLibraryOnLoad", () => {
+  it("closes the simulation library modal after selecting a simulation", () => {
+    expect(shouldCloseSimulationLibraryOnLoad({ presetId: "sim-123" })).toBe(true);
+  });
+
+  it("does not close for empty simulation selection", () => {
+    expect(shouldCloseSimulationLibraryOnLoad({ presetId: "" })).toBe(false);
+    expect(shouldCloseSimulationLibraryOnLoad({ presetId: "   " })).toBe(false);
+  });
+});
+
+describe("formatPrivateSiteReferenceBlockMessage", () => {
+  it("lists private Library Site names in the validation message", () => {
+    expect(formatPrivateSiteReferenceBlockMessage(["Alpha", "Beta"])).toBe(
+      "Cannot share this Simulation while private Library Site references exist (Alpha, Beta). Set Simulation visibility to Private or use non-private Site entries.",
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
@@ -27,6 +27,8 @@ import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import { SimulationResultsSection } from "./SimulationResultsSection";
+import { ActionButton } from "./ActionButton";
+import { useMapControls } from "./map/useMapControls";
 
 const UI_SECTION_KEYS = {
   mapViewResults: "linksim-ui-mapview-results-v1",
@@ -966,6 +968,7 @@ type MapViewProps = {
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
+  // Legacy prop name retained for stability; this renders in the RightSidePanel shell.
   inspectorHeaderActions?: ReactNode;
   notice?: {
     message: string;
@@ -975,6 +978,41 @@ type MapViewProps = {
   /** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
   fitBottomInset?: number;
 };
+
+type MarkerActionButtonProps = {
+  ariaLabel: string;
+  children: ReactNode;
+  className: string;
+  onActivate: (event: MouseEvent<HTMLButtonElement>) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+};
+
+function MarkerActionButton({
+  ariaLabel,
+  children,
+  className,
+  onActivate,
+  onMouseEnter,
+  onMouseLeave,
+}: MarkerActionButtonProps) {
+  return (
+    <button
+      aria-label={ariaLabel}
+      className={className}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onActivate(event);
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
 
 type PendingNewSiteDraft = {
   lat: number;
@@ -1095,10 +1133,8 @@ export function MapView({
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
   const [showSimulationSummary, setShowSimulationSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewSimSummary, false));
-  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showOverlayGuide, setShowOverlayGuide] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, true));
   const fitSitesEpoch = useAppStore((state) => state.fitSitesEpoch);
-  const [fitControlActive, setFitControlActive] = useState(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [endpointPickError, setEndpointPickError] = useState<string | null>(null);
   const [pendingNewSiteDraft, setPendingNewSiteDraft] = useState<PendingNewSiteDraft | null>(null);
@@ -1576,26 +1612,6 @@ export function MapView({
     });
   };
 
-  const zoomBy = (delta: number) => {
-    setFitControlActive(false);
-    const nextZoom = clamp(activeViewState.zoom + delta, 2, providerMaxZoom);
-    setInteractionViewState(null);
-    updateMapViewport({ zoom: nextZoom });
-  };
-
-  const fitToNodes = () => {
-    if (!mapRef.current) return;
-    const bounds = computeSiteFitBounds(sites);
-    if (!bounds) return;
-    setFitControlActive(true);
-    setInteractionViewState(null);
-    mapRef.current.fitBounds(bounds, {
-      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
-      animate: true,
-      maxZoom: 14,
-    });
-  };
-
   const onSiteClick = (siteId: string, additive = false) => {
     setArmAddSiteOnNextEmptyMapClick(false);
     setSelectedDiscoveryLibraryEntryId(null);
@@ -1896,11 +1912,6 @@ export function MapView({
     setMqttDuplicatePrompt(null);
   };
 
-  const stopMapClickBubbling = (event: { stopPropagation?: () => void; preventDefault?: () => void }) => {
-    event.preventDefault?.();
-    event.stopPropagation?.();
-  };
-
   if (!webglAvailable) {
     return (
       <div className="map-panel map-fallback">
@@ -1935,6 +1946,18 @@ export function MapView({
         return 22;
     }
   }, [resolvedBasemap.provider]);
+  const { isMultiSelectMode, setIsMultiSelectMode, fitControlActive, clearFitControlActive, zoomBy, fitToNodes } = useMapControls({
+    activeViewState,
+    fitBottomInset,
+    mapRef,
+    providerMaxZoom,
+    sites,
+    computeSiteFitBounds,
+    fitChromePadding: FIT_CHROME_PADDING,
+    clamp,
+    setInteractionViewState,
+    updateMapViewport,
+  });
   const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "passfail" | "relay">>(() => {
     if (selectionCount <= 0) return ["none", "heatmap", "contours"];
     if (selectionCount === 1) return ["none", "passfail", "heatmap", "contours"];
@@ -1992,7 +2015,7 @@ export function MapView({
   if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
   if (showDiscoverySites) {
     inspectorLines.push(
-      `Shared/public library sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to simulation.`,
+      `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`,
     );
   }
   if (showDiscoveryMqtt && !mqttLoadStatus) {
@@ -2049,9 +2072,9 @@ export function MapView({
         <div className={`map-inline-notice map-inline-notice-${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>
           <span>{notice.message}</span>
           {notice.onDismiss ? (
-            <button aria-label="Dismiss notice" className="inline-action" onClick={notice.onDismiss} title="Dismiss" type="button">
+            <ActionButton aria-label="Dismiss notice" onClick={notice.onDismiss} title="Dismiss">
               Dismiss
-            </button>
+            </ActionButton>
           ) : null}
         </div>
       ) : null}
@@ -2104,13 +2127,13 @@ export function MapView({
               </p>
               <span className="map-inline-actions">
                 {isHolidayThemeForced ? (
-                  <button className="map-control-btn" onClick={revertHolidayThemeForWindow} type="button">
+                  <ActionButton onClick={revertHolidayThemeForWindow}>
                     Revert Theme
-                  </button>
+                  </ActionButton>
                 ) : null}
-                <button className="map-control-btn" onClick={dismissHolidayThemeNotice} type="button">
+                <ActionButton onClick={dismissHolidayThemeNotice}>
                   Dismiss
-                </button>
+                </ActionButton>
               </span>
             </div>
           ) : null}
@@ -2120,32 +2143,28 @@ export function MapView({
               {hasInspectorActions ? (
                 <div className="chip-group">
                   {inspectorPrimaryLibraryEntryId ? (
-                    <button
-                      className="inline-action"
+                    <ActionButton
                       onClick={() => requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId)}
-                      type="button"
                     >
-                      Open
-                    </button>
+                      Details
+                    </ActionButton>
                   ) : null}
                   {canRemoveSelectedSite ? (
-                    <button className="inline-action danger" onClick={removeSelectedSiteFromSimulation} type="button">
+                    <ActionButton onClick={removeSelectedSiteFromSimulation} variant="danger">
                       Remove From Simulation
-                    </button>
+                    </ActionButton>
                   ) : null}
                   {canAddSelectedDiscoverySite && selectedDiscoveryLibraryEntry ? (
-                    <button
-                      className="inline-action"
+                    <ActionButton
                       onClick={() => addDiscoveryLibrarySiteToSimulation(selectedDiscoveryLibraryEntry.id)}
-                      type="button"
                     >
-                      Add To Simulation
-                    </button>
+                      Add to Simulation
+                    </ActionButton>
                   ) : null}
                   {canSaveSelectedLink ? (
-                    <button className="inline-action" onClick={saveSelectedSitesAsLink} type="button">
-                      Save Selected Link
-                    </button>
+                    <ActionButton onClick={saveSelectedSitesAsLink}>
+                      Save Selected Path
+                    </ActionButton>
                   ) : null}
                 </div>
               ) : null}
@@ -2169,18 +2188,16 @@ export function MapView({
                 </div>
               ) : mqttLoadStatus.includes("failed") ? (
                 <span className="map-inline-actions">
-                  <button
+                  <ActionButton
                     aria-label="Retry MQTT load"
-                    className="map-control-btn"
                     onClick={() => {
                       setMqttNodes([]);
                       setMqttLoadStatus(null);
                     }}
-                    type="button"
                   >
                     <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
                     <span>Retry</span>
-                  </button>
+                  </ActionButton>
                 </span>
               ) : null}
             </div>
@@ -2191,15 +2208,15 @@ export function MapView({
                 This MQTT node is already in your library as <strong>{mqttDuplicatePrompt.existingName}</strong>.
               </p>
               <span className="map-inline-actions">
-                <button className="map-control-btn" onClick={addExistingDuplicateMqttNode} type="button">
+                <ActionButton onClick={addExistingDuplicateMqttNode}>
                   Add Existing
-                </button>
-                <button className="map-control-btn" onClick={createDuplicateMqttCopy} type="button">
+                </ActionButton>
+                <ActionButton onClick={createDuplicateMqttCopy}>
                   Create Copy
-                </button>
-                <button className="map-control-btn" onClick={() => setMqttDuplicatePrompt(null)} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => setMqttDuplicatePrompt(null)}>
                   Cancel
-                </button>
+                </ActionButton>
               </span>
             </div>
           ) : null}
@@ -2211,13 +2228,13 @@ export function MapView({
               </p>
               <span className="map-inline-actions">
                 {canPersist ? (
-                  <button className="map-control-btn" onClick={() => void savePendingNewSiteDraft()} type="button">
+                  <ActionButton onClick={() => void savePendingNewSiteDraft()}>
                     Save To Library
-                  </button>
+                  </ActionButton>
                 ) : null}
-                <button className="map-control-btn" onClick={dismissPendingNewSiteDraft} type="button">
+                <ActionButton onClick={dismissPendingNewSiteDraft}>
                   Dismiss
-                </button>
+                </ActionButton>
               </span>
             </div>
           ) : null}
@@ -2231,13 +2248,13 @@ export function MapView({
               </p>
               <span className="map-inline-actions">
                 {canPersist ? (
-                  <button className="map-control-btn" onClick={savePendingSiteMove} type="button">
+                  <ActionButton onClick={savePendingSiteMove}>
                     Save Positions
-                  </button>
+                  </ActionButton>
                 ) : null}
-                <button className="map-control-btn" onClick={dismissPendingSiteMove} type="button">
+                <ActionButton onClick={dismissPendingSiteMove}>
                   {canPersist ? "Dismiss" : "Revert"}
-                </button>
+                </ActionButton>
               </span>
             </div>
           ) : null}
@@ -2606,7 +2623,7 @@ export function MapView({
         }}
         onMove={(event) => {
           if (event.originalEvent) {
-            setFitControlActive(false);
+            clearFitControlActive();
           }
           setInteractionViewState({
             longitude: event.viewState.longitude,
@@ -2675,7 +2692,8 @@ export function MapView({
               onDrag={(event) => onSiteDrag(site.id, event)}
               onDragEnd={(event) => onSiteDragEnd(site.id, event)}
             >
-              <div
+              <MarkerActionButton
+                ariaLabel={site.name}
                 className={`site-pin ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""} ${
                   isFocusNode ? "is-mode-focus" : "is-dimmed"
                 }`}
@@ -2688,22 +2706,13 @@ export function MapView({
                   })
                 }
                 onMouseLeave={() => setOverlayHoverInfo(null)}
-                onClick={(event) => {
-                  stopMapClickBubbling(event);
+                onActivate={(event) => {
                   const nativeEvent = event as unknown as { ctrlKey?: boolean; metaKey?: boolean };
                   onSiteClick(site.id, isMultiSelectMode || Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
                 }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    stopMapClickBubbling(event);
-                    onSiteClick(site.id, isMultiSelectMode);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
               >
                 <span>{site.name}</span>
-              </div>
+              </MarkerActionButton>
             </Marker>
           );
         })}
@@ -2716,7 +2725,8 @@ export function MapView({
                 latitude={entry.position.lat}
                 longitude={entry.position.lon}
               >
-                <div
+                <MarkerActionButton
+                  ariaLabel={entry.name}
                   className="site-pin is-temporary"
                   onMouseEnter={() =>
                     setOverlayHoverInfo({
@@ -2725,23 +2735,13 @@ export function MapView({
                     })
                   }
                   onMouseLeave={() => setOverlayHoverInfo(null)}
-                  onClick={(event) => {
-                    stopMapClickBubbling(event);
+                  onActivate={() => {
                     setArmAddSiteOnNextEmptyMapClick(false);
                     setSelectedDiscoveryLibraryEntryId(entry.id);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      stopMapClickBubbling(event);
-                      setArmAddSiteOnNextEmptyMapClick(false);
-                      setSelectedDiscoveryLibraryEntryId(entry.id);
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
                 >
                   <span>{entry.name}</span>
-                </div>
+                </MarkerActionButton>
               </Marker>
             ))
           : null}
@@ -2749,7 +2749,8 @@ export function MapView({
         {showDiscoveryMqtt
           ? (mqttTooDenseInView ? [] : mqttNodesInView).map((node) => (
               <Marker anchor="bottom" key={`discover-mqtt-${node.nodeId}`} latitude={node.lat} longitude={node.lon}>
-                <div
+                <MarkerActionButton
+                  ariaLabel={node.longName ?? node.shortName ?? node.nodeId}
                   className="site-pin is-temporary"
                   onMouseEnter={() =>
                     setOverlayHoverInfo({
@@ -2759,21 +2760,12 @@ export function MapView({
                     })
                   }
                   onMouseLeave={() => setOverlayHoverInfo(null)}
-                  onClick={(event) => {
-                    stopMapClickBubbling(event);
+                  onActivate={() => {
                     addDiscoveryMqttNodeToSimulation(node);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      stopMapClickBubbling(event);
-                      addDiscoveryMqttNodeToSimulation(node);
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
                 >
                   <span>+ {node.longName ?? node.shortName ?? node.nodeId}</span>
-                </div>
+                </MarkerActionButton>
               </Marker>
             ))
           : null}
@@ -2786,7 +2778,7 @@ export function MapView({
             longitude={pendingNewSiteDraft.lon}
             onDragEnd={onPendingNewSiteDragEnd}
           >
-            <div className="site-pin is-temporary" role="button" tabIndex={0}>
+            <div className="site-pin is-temporary">
               <span>New Site</span>
             </div>
           </Marker>

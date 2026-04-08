@@ -24,15 +24,23 @@
   - For normal releases, promote to production only via a direct PR from `staging` into `main` (no release branch).
   - Use `hotfix/<slug>` only for explicitly approved incidents.
   - This staging-integration model is the default unless the user explicitly overrides it.
+- Branch/worktree cleanup routine (default after each completed pass):
+  - Keep only long-lived branches locally/remotely: `main`, `staging` (unless an active pass needs additional branches).
+  - After merge/deploy, prune refs: `git fetch --prune origin`.
+  - Delete merged local branches (except `main`/`staging`): `git branch --merged origin/staging | egrep -v '(^\\*|main|staging)' | xargs -n 1 git branch -d` (skip if no matches).
+  - Delete remote merged issue/chore/hotfix branches once no longer needed.
+  - Remove temporary worktrees for completed branches; keep only active worktrees.
 - Prefer stabilization work (consistency, hardening, tests, UX cleanup) over net-new features unless explicitly requested.
 - Ship in batches: implement, run `npm test` and `npm run build`, then commit and push.
 - Never commit or push directly to `main`; always create/use a separate branch for changes and push that branch.
 - Use TDD methodology for changes and new features: write/update failing tests first, implement the minimal fix to pass, then refactor with tests green.
 - Keep terminology consistent: use `Simulation`, `Site`, `Library`, `Path`, and `Channel` terms across UI and docs.
+- Do not introduce hardcoded UI colors in code; use existing theme variables/tokens. If a new semantic color is truly required, define it in the shared theme system first.
 - Icon accessibility rule: every UI icon must include accessible text. For icon-only controls, require an explicit `aria-label` on the interactive element (and matching `title` where applicable). Decorative inline icons should be `aria-hidden="true"`.
 - Any modal/popover that can open on top of another dialog must use `tier="raised"` in `ModalOverlay`.
 - When catching UI errors, use `getUiErrorMessage()` from `src/lib/uiError.ts` for consistent messaging.
-- Do not leave issue status in an ambiguous state. Close issues only when code and verification are done.
+- Do not leave issue status in an ambiguous state.
+- Default closure policy: once work is verified on shared staging and the user confirms staging sign-off, close the issue (do not wait for production deploy).
 - Do not start newly created or newly requested issues without explicit user confirmation in the current thread.
 - Maintain GitHub Issues in close dialogue with the user: confirm wording/scope before starting newly added user items, and confirm completion criteria before closing them.
 - Batch size policy:
@@ -84,8 +92,9 @@
   - Treat GitHub Issues as the canonical backlog for open and completed work.
   - Use issue titles as the default source of task naming.
   - Prefer one issue per discrete task unless the user explicitly wants a grouped batch.
-  - Maintain explicit status labels: `pending-discussion` -> `in-progress` -> `in-staging` -> `released`.
+  - Maintain explicit status labels: `pending-discussion` -> `in-progress` -> `in-staging` (while open) -> issue closed after staging sign-off -> `released` label applied during milestone production release sweep.
   - After every staging merge/deploy, automatically update the related GitHub Issue(s) label from `in-progress` to `in-staging`. Do not wait for the user to ask.
+  - Milestone release policy: at production release time, apply `released` to the milestone's shipped issues (including already-closed staging-verified issues).
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
 
 ## Staging-First Milestone Workflow (Single Source)

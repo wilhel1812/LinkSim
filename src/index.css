@@ -21,6 +21,12 @@
   --state-pass-blocked: var(--warning);
   --state-fail-clear: color-mix(in srgb, var(--warning) 45%, var(--danger));
   --state-fail-blocked: var(--danger);
+  --panel-shell-divider: color-mix(in srgb, var(--border) 84%, transparent);
+  --panel-header-row-gap: 10px;
+  --panel-header-row-min-height: 34px;
+  --panel-header-row-padding-bottom: 9px;
+  --panel-action-row-gap: 8px;
+  --panel-action-row-min-height: 34px;
 }
 
 * {
@@ -116,7 +122,9 @@ input {
   height: 100dvh;
   min-height: 100dvh;
   overflow: hidden;
+  opacity: 1;
   animation: fade-in 260ms ease;
+  animation-fill-mode: both;
 }
 
 .app-shell.is-map-expanded,
@@ -138,6 +146,23 @@ input {
   margin-top: 28px;
 }
 
+.access-locked-alert-icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 2px 0 8px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.access-locked-alert-icon svg {
+  width: 48px;
+  height: 48px;
+}
+
 .access-pending-list {
   margin: 0;
   padding-left: 18px;
@@ -157,23 +182,29 @@ input {
   }
 }
 
-.sidebar-panel {
+.sidebar-panel,
+.map-inspector,
+.chart-panel {
+  border: 1px solid var(--border);
+  border-radius: 18px;
   background: linear-gradient(
     160deg,
     color-mix(in srgb, var(--surface) var(--glass-panel-opacity), transparent),
     color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent)
   );
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
+  box-shadow: var(--shadow);
+}
+
+.sidebar-panel {
   padding: 18px;
   position: relative;
   z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  font-family: "Space Grotesk", "Avenir Next", sans-serif;
   max-height: calc(100vh - 36px);
   overflow: auto;
 }
@@ -298,7 +329,10 @@ input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding-bottom: var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .info-tip {
@@ -348,7 +382,19 @@ input {
 .chip-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--panel-action-row-gap);
+}
+
+.panel-section > .chip-group,
+.library-manager-card > .chip-group,
+.map-inspector-section > .chip-group {
+  align-items: center;
+  min-height: var(--panel-action-row-min-height);
+}
+
+.panel-section > .chip-group,
+.library-manager-card > .chip-group {
+  justify-content: flex-end;
 }
 
 .chip-button {
@@ -793,8 +839,7 @@ input {
   text-decoration: underline;
 }
 
-.map-panel,
-.chart-panel {
+.map-panel {
   border: 1px solid var(--border);
   border-radius: 18px;
   overflow: hidden;
@@ -899,6 +944,186 @@ input {
 .map-inline-notice .inline-action {
   white-space: nowrap;
   padding: 4px 10px;
+}
+
+.app-notification-stack {
+  position: absolute;
+  top: calc(18px + 36px + (var(--workspace-panel-gap) * 2));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 36px), calc(100% - (var(--sidebar-overlay-width) * 2) - 60px));
+  z-index: 58;
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.app-shell.is-map-expanded .app-notification-stack,
+.app-shell.is-profile-expanded .app-notification-stack {
+  width: min(520px, calc(100% - 36px));
+}
+
+.app-notification-stack-list {
+  display: grid;
+  gap: 6px;
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  padding: 26px 18px;
+  margin: 0;
+  scrollbar-gutter: stable;
+}
+
+.app-notification-item {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  box-shadow: var(--shadow-elev-3);
+  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
+  backdrop-filter: blur(var(--glass-panel-blur));
+  padding: 5px 8px;
+  animation: notification-enter 240ms ease both;
+}
+
+.app-notification-item.is-dismissing {
+  pointer-events: none;
+}
+
+.app-notification-item.is-dismissing[data-dismiss-kind="manual"] {
+  animation: notification-exit-fast 220ms ease forwards;
+}
+
+.app-notification-item.is-dismissing[data-dismiss-kind="auto"] {
+  animation: notification-exit-slow 1000ms ease forwards;
+}
+
+.app-notification-item-static {
+  grid-template-columns: auto minmax(0, 1fr);
+  padding-right: 10px;
+}
+
+.app-notification-item-static .app-notification-copy span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.app-notification-item-warning {
+  border-color: color-mix(in srgb, var(--warning) 56%, var(--border));
+}
+
+.app-notification-item-error {
+  border-color: color-mix(in srgb, var(--danger) 62%, var(--border));
+}
+
+.app-notification-item-success {
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+}
+
+.app-notification-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.app-notification-item-warning .app-notification-glyph {
+  color: var(--warning);
+}
+
+.app-notification-item-error .app-notification-glyph {
+  color: var(--danger);
+}
+
+.app-notification-item-success .app-notification-glyph {
+  color: var(--success);
+}
+
+.app-notification-copy {
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.app-notification-copy span {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.app-notification-dismiss {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.app-notification-dismiss:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.app-notification-dismiss:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 1px;
+}
+
+.app-notification-stack-controls {
+  pointer-events: auto;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.app-notification-stack-gallery {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 100%;
+  max-width: none;
+}
+
+@keyframes notification-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes notification-exit-fast {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes notification-exit-slow {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
 }
 
 .map-controls-icon-only {
@@ -1073,28 +1298,21 @@ input {
   width: min(var(--inspector-overlay-width), calc(100% - 36px));
   max-height: none;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--surface) var(--glass-panel-opacity), transparent),
-    color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent)
-  );
-  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
-  backdrop-filter: blur(var(--glass-panel-blur));
-  box-shadow: var(--shadow);
   padding: 18px;
   display: grid;
   gap: 0;
   font-size: 0.76rem;
+  font-family: "Space Grotesk", "Avenir Next", sans-serif;
 }
 
 .map-inspector-header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding-bottom: var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .map-inspector-header-actions {
@@ -1115,7 +1333,8 @@ input {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-panel .maplibregl-ctrl-bottom-right,
@@ -1189,7 +1408,7 @@ input {
 }
 
 .map-inspector-section + .map-inspector-section {
-  border-top: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-top: 1px solid var(--panel-shell-divider);
 }
 
 .map-holiday-note {
@@ -1584,12 +1803,12 @@ input {
 }
 
 .chart-panel {
-  background: linear-gradient(160deg, var(--surface), var(--surface-2));
-  padding: 8px 0 6px;
+  overflow: hidden;
+  padding: 10px 10px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 0;
+  min-height: 220px;
   position: relative;
   z-index: 35;
   grid-row: 2;
@@ -1609,7 +1828,7 @@ input {
 
 .chart-svg-wrap {
   flex: 1;
-  min-height: 150px;
+  min-height: 90px;
   width: 100%;
   position: relative;
 }
@@ -1633,8 +1852,10 @@ input {
 .chart-top-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px 2px;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding: 0 0 var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .chart-endpoints {
@@ -1669,8 +1890,8 @@ input {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 150px;
-  max-height: 240px;
+  min-height: 90px;
+  max-height: none;
 }
 
 .chart-panel.is-expanded .chart-svg-wrap {
@@ -1789,8 +2010,10 @@ input {
 .chart-action-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px 2px;
+  gap: var(--panel-action-row-gap);
+  min-height: var(--panel-action-row-min-height);
+  padding: 0 0 var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .chart-action-row-controls {
@@ -1798,7 +2021,7 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--panel-action-row-gap);
   flex: 0 0 auto;
 }
 
@@ -1815,7 +2038,7 @@ input {
 .chart-empty {
   display: grid;
   place-items: center;
-  min-height: 180px;
+  min-height: 120px;
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -2297,6 +2520,17 @@ input {
   color: var(--text);
   padding: 8px 10px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-button {
+  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.1;
+  min-height: 34px;
 }
 
 .inline-action.danger {
@@ -3061,19 +3295,6 @@ input {
   gap: 8px;
 }
 
-.welcome-compact-button {
-  padding: 10px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  text-align: left;
-  font-size: 0.92rem;
-}
-
-.welcome-compact-button:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-}
-
 .welcome-modal-new-simulation-backdrop {
   position: fixed;
   inset: 0;
@@ -3095,7 +3316,10 @@ input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding-bottom: var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .library-manager-header h2 {
@@ -3425,4 +3649,173 @@ input {
 
 .whatif-row:nth-child(even) {
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+
+.ui-gallery-page {
+  min-height: 100vh;
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.ui-gallery-topbar {
+  position: sticky;
+  top: 12px;
+  z-index: 4;
+}
+
+.ui-gallery-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ui-gallery-tab-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ui-gallery-section {
+  display: grid;
+  gap: 10px;
+}
+
+.ui-gallery-section h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+}
+
+.ui-pattern-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.ui-pattern-grid-shells {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
+.ui-pattern-card {
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.ui-pattern-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ui-pattern-card-body {
+  display: grid;
+  gap: 10px;
+}
+
+.ui-pattern-status {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.ui-pattern-status.is-standard {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+}
+
+.ui-pattern-status.is-under-migration {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.ui-pattern-status.is-exception {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.ui-pattern-status.is-legacy {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.ui-pattern-status.is-mapped-only {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.ui-gallery-theme-toggle .action-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ui-gallery-page .sidebar-panel,
+.ui-gallery-page .map-inspector,
+.ui-gallery-page .chart-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  max-height: none;
+  min-height: 0;
+}
+
+.ui-gallery-page .sidebar-panel {
+  gap: 10px;
+  padding: 12px;
+}
+
+.ui-gallery-page .map-inspector {
+  overflow: visible;
+  padding: 12px;
+}
+
+.ui-gallery-page .chart-panel {
+  padding: 12px;
+  gap: 10px;
+}
+
+.ui-gallery-page .offline-banner {
+  position: relative;
+}
+
+.ui-gallery-page .map-controls {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+}
+
+.ui-gallery-chip-specimen {
+  align-items: center;
+}
+
+.ui-gallery-map-notice-stage {
+  position: relative;
+  min-height: 86px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  overflow: hidden;
+}
+
+.ui-gallery-map-notice-stage .map-inline-notice {
+  left: 12px;
+  right: 12px;
+  top: 12px;
+  transform: none;
+  max-width: calc(100% - 24px);
+}
+
+@media (max-width: 980px) {
+  .app-notification-stack {
+    top: calc(var(--mobile-controls-top) + 68px);
+    width: min(460px, calc(100% - 16px));
+  }
 }

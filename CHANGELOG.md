@@ -2,11 +2,21 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
-## [0.14.1] - 2026-04-05
+## [0.15.0] - 2026-04-08
+
+### Added
+- Added an in-app `/ui-gallery` visual inventory with tabbed families (Actions, Panels, Forms, Notifications, States, Meta/Map UI), status labeling, and gallery-local theme controls aligned with real app styling. (#539)
+- Added a unified app-level notification queue with debug hooks for local/staging (`window.linksimNotifications`) to support iterative UI verification without code edits. (#539)
+
+### Changed
+- Converged standard text-bearing app actions toward the shared `ActionButton` family across Simulation Library and inspector surfaces, reducing mixed legacy button language. (#521, #523, #525, #529)
+- Aligned panel shell language across left/right/bottom surfaces and improved shell/header rhythm consistency while preserving intentional structural differences. (#529)
+- Updated UI taxonomy and glossary coverage to better map real production families and migration status for future cleanup passes. (#527, #529, #539)
 
 ### Fixed
-- Restored the map inspector **Save Selected Link** action for valid two-site selections by basing eligibility on the effective selected endpoints and not on fragile raw selection-count state. (#415)
-- Decoupled inspector action chip rendering from optional primary inspector text so permanent link creation remains available when selection context is valid. (#415)
+- Unified banner-like transient notices into the mini-bar notification system and removed remaining duplicate notice styles in app shell/admin contexts. (#539)
+- Fixed staging/prod shell visibility regression where `.app-shell` could remain at `opacity: 0` after animation path mismatch. (#539)
+- Fixed notification mini-bar clipping regressions (shadow clipping and mobile spacing under controls) and refined fade/reflow behavior for manual vs timed dismissals. (#539)
 
 ## [0.14.0] - 2026-04-05
 

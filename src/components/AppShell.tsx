@@ -1,23 +1,34 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleX, Copy, Globe, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
+  formatPrivateSiteReferenceBlockMessage,
   type DeepLinkApplyOutcome,
   isAuthSignInRequiredMessage,
   shouldRewritePathAfterDeepLinkApply,
   shouldUseReadonlyFallbackForAuthBootstrap,
 } from "../lib/appShellGuards";
+import { handleSimulationLibraryLoad } from "../lib/simulationLibraryLoad";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
+import {
+  clearUiNotifications,
+  dismissUiNotification,
+  type UiNotification,
+  type UiNotificationInput,
+  upsertUiNotification,
+} from "../lib/uiNotifications";
 import { initializeMigrations, runMigrations } from "../lib/migrations";
 import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
+import { ActionButton } from "./ActionButton";
+import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
 import OnboardingTutorialModal from "./OnboardingTutorialModal";
@@ -25,14 +36,22 @@ import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
+import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
+import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 
 initializeMigrations();
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
-const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
+const ACCESS_CHECKING_NOTICE_ID = "access-checking";
+const OFFLINE_SYNC_NOTICE_ID = "offline-sync";
+const BLANK_SIM_NOTICE_ID = "blank-simulation-guidance";
+// Shell vocabulary mapping for cleanup work:
+// - navigator => LeftSidePanel
+// - inspector => RightSidePanel (legacy term retained in code for stability)
+// - profile => BottomPanel shell (legacy term retained in code for stability)
 type MobileWorkspacePanel = "navigator" | "inspector" | "profile";
 type MobileBottomPanelMode = "hidden" | "normal" | "full";
 type AppNotice = {
@@ -42,7 +61,21 @@ type AppNotice = {
   persistent: boolean;
 };
 
+type NotificationDebugWindow = Window & {
+  linksimNotifications?: {
+    push: (notice: UiNotificationInput) => void;
+    pushMany: (notices: UiNotificationInput[]) => void;
+    dismiss: (id: string) => void;
+    clear: () => void;
+    list: () => UiNotification[];
+  };
+};
+const DISMISS_ALL_THRESHOLD = 4;
+const MANUAL_DISMISS_EXIT_MS = 220;
+const AUTO_DISMISS_EXIT_MS = 1000;
+
 const UI_PANEL_KEYS = {
+  // Storage keys keep legacy names to avoid migration churn.
   navigatorHidden: "linksim-ui-navigator-hidden-v1",
   inspectorHidden: "linksim-ui-inspector-hidden-v1",
   profileHidden: "linksim-ui-profile-hidden-v1",
@@ -127,6 +160,8 @@ export function AppShell() {
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const setAuthState = useAppStore((state) => state.setAuthState);
+  const authState = useAppStore((state) => state.authState);
   const currentUser = useAppStore((state) => state.currentUser);
   const isOnline = useAppStore((state) => state.isOnline);
   const setIsOnline = useAppStore((state) => state.setIsOnline);
@@ -146,8 +181,6 @@ export function AppShell() {
   const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
   const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const [activeUserId, setActiveUserId] = useState("");
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const [showOnboardingTutorial, setShowOnboardingTutorial] = useState(false);
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
@@ -158,7 +191,10 @@ export function AppShell() {
   const [shareUserQuery, setShareUserQuery] = useState("");
   const [shareSpecificBusy, setShareSpecificBusy] = useState(false);
   const [shareSpecificStatus, setShareSpecificStatus] = useState("");
-  const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
+  const [uiNotifications, setUiNotifications] = useState<UiNotification[]>([]);
+  const uiNotificationsRef = useRef<UiNotification[]>([]);
+  const [pausedNotificationIds, setPausedNotificationIds] = useState<string[]>([]);
+  const [dismissingNotificationIds, setDismissingNotificationIds] = useState<Record<string, "manual" | "auto">>({});
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
   const [mobileBottomPanelMode, setMobileBottomPanelMode] = useState<MobileBottomPanelMode>("normal");
@@ -172,6 +208,22 @@ export function AppShell() {
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
+  const hadAuthenticatedSessionRef = useRef(false);
+  const {
+    showWelcomeModal,
+    setShowWelcomeModal,
+    showOnboardingTutorial,
+    setShowOnboardingTutorial,
+    closeWelcome,
+    openOnboardingTutorial,
+    openWelcomeFromWelcome,
+    openLibraryFromWelcome,
+    createNewFromWelcome,
+  } = useOnboardingFlow({
+    activeUserId,
+    setShowSimulationLibraryRequest,
+    setShowNewSimulationRequest,
+  });
 
   const { theme, colorTheme, variant } = useThemeVariant();
   const basemapProvider = useAppStore((state) => state.basemapProvider);
@@ -190,14 +242,78 @@ export function AppShell() {
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
     [simulationPresets, selectedScenarioId],
   );
-  const publishAppNotice = useCallback((notice: AppNotice) => {
-    setAppNotice((current) => {
-      if (current && current.id === notice.id && current.message === notice.message) {
-        return current;
-      }
-      return notice;
+  const pushNotification = useCallback((notice: UiNotificationInput) => {
+    setUiNotifications((current) => {
+      const next = upsertUiNotification(current, notice);
+      uiNotificationsRef.current = next;
+      return next;
     });
   }, []);
+  const dismissNotification = useCallback((id: string) => {
+    setUiNotifications((current) => {
+      const next = dismissUiNotification(current, id);
+      uiNotificationsRef.current = next;
+      return next;
+    });
+    setPausedNotificationIds((current) => current.filter((entry) => entry !== id));
+    setDismissingNotificationIds((current) => {
+      if (!current[id]) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }, []);
+  const requestDismissNotification = useCallback(
+    (id: string, reason: "manual" | "auto") => {
+      if (dismissingNotificationIds[id]) return;
+      setDismissingNotificationIds((current) => {
+        if (current[id]) return current;
+        return { ...current, [id]: reason };
+      });
+      window.setTimeout(
+        () => dismissNotification(id),
+        reason === "auto" ? AUTO_DISMISS_EXIT_MS : MANUAL_DISMISS_EXIT_MS,
+      );
+    },
+    [dismissNotification, dismissingNotificationIds],
+  );
+  const clearNotifications = useCallback(() => {
+    const next = clearUiNotifications();
+    setUiNotifications(next);
+    uiNotificationsRef.current = next;
+    setPausedNotificationIds([]);
+    setDismissingNotificationIds({});
+  }, []);
+  const removeNotificationImmediately = useCallback((id: string) => {
+    setUiNotifications((current) => {
+      const next = dismissUiNotification(current, id);
+      uiNotificationsRef.current = next;
+      return next;
+    });
+    setPausedNotificationIds((current) => current.filter((entry) => entry !== id));
+    setDismissingNotificationIds((current) => {
+      if (!current[id]) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }, []);
+  const setNotificationPaused = useCallback((id: string, isPaused: boolean) => {
+    setPausedNotificationIds((current) => {
+      const hasId = current.includes(id);
+      if (isPaused && !hasId) return [...current, id];
+      if (!isPaused && hasId) return current.filter((entry) => entry !== id);
+      return current;
+    });
+  }, []);
+  const publishAppNotice = useCallback((notice: AppNotice) => {
+    pushNotification({
+      id: notice.id,
+      message: notice.message,
+      tone: notice.tone,
+      dismissMode: notice.persistent ? "manual" : "auto",
+    });
+  }, [pushNotification]);
   const publishTransientNotice = useCallback(
     (id: string, message: string, tone: AppNotice["tone"] = "info") => {
       publishAppNotice({ id, message, tone, persistent: false });
@@ -207,6 +323,12 @@ export function AppShell() {
   const canPersistWorkspace =
     accessState === "granted" && (!activeSimulation || canEditResource(activeSimulation));
   const workspaceState = emptyWorkspaceState(sites.length, Boolean(activeSimulation));
+  const mobileNavigatorTabId = "mobile-workspace-tab-navigator";
+  const mobileInspectorTabId = "mobile-workspace-tab-inspector";
+  const mobileProfileTabId = "mobile-workspace-tab-profile";
+  const mobileNavigatorPanelId = "mobile-workspace-panel-navigator";
+  const mobileInspectorPanelId = "mobile-workspace-panel-inspector";
+  const mobileProfilePanelId = "mobile-workspace-panel-profile";
   const selectedLink = useMemo(
     () => links.find((link) => link.id === selectedLinkId) ?? null,
     [links, selectedLinkId],
@@ -320,11 +442,8 @@ export function AppShell() {
 
   useEffect(() => {
     if (isInitializing) {
-      console.log("[AppShell] Skipping sync - initialization in progress");
       return;
     }
-    console.log("[AppShell] siteLibrary/simulationPresets/sites changed, calling performCloudSyncPush");
-    console.log("[AppShell] siteLibrary length:", siteLibrary.length, "simulationPresets length:", simulationPresets.length, "sites length:", sites.length);
     void performCloudSyncPush();
   }, [performCloudSyncPush, isInitializing, siteLibrary, simulationPresets, sites]);
 
@@ -354,6 +473,7 @@ export function AppShell() {
   useEffect(() => {
     let cancelled = false;
     let timedOut = false;
+    setAuthState("checking");
     const timeoutId = window.setTimeout(() => {
       if (cancelled) return;
       timedOut = true;
@@ -367,6 +487,8 @@ export function AppShell() {
       setAccessDiagnosticMessage(
         "Access check timed out. Reload the page. If this continues, open the console and share the startup error.",
       );
+      setCurrentUser(null);
+      setAuthState("signed_out");
       setAccessState("locked");
     }, ACCESS_CHECK_TIMEOUT_MS);
 
@@ -393,6 +515,8 @@ export function AppShell() {
           if (cancelled || timedOut) return;
           window.clearTimeout(timeoutId);
           setAccessDiagnosticMessage(null);
+          setCurrentUser(null);
+          setAuthState("signed_out");
           setAccessState("readonly");
           return;
         }
@@ -405,6 +529,8 @@ export function AppShell() {
             if (cancelled || timedOut) return;
             window.clearTimeout(timeoutId);
             setAccessDiagnosticMessage(null);
+            setCurrentUser(null);
+            setAuthState("signed_out");
             setAccessState("readonly");
             return;
           }
@@ -414,6 +540,8 @@ export function AppShell() {
         window.clearTimeout(timeoutId);
         setAccessDiagnosticMessage(null);
         setCurrentUser(profile);
+        setAuthState("signed_in");
+        hadAuthenticatedSessionRef.current = true;
         setActiveUserId(profile.id);
         try {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
@@ -465,6 +593,11 @@ export function AppShell() {
           });
         }
         setAccessDiagnosticMessage(`Access check failed: ${message}`);
+        const hadAuthenticatedSession = hadAuthenticatedSessionRef.current;
+        if (hadAuthenticatedSession) {
+          setCurrentUser(null);
+          setAuthState("signed_out");
+        }
         if (message.includes("Session revoked by admin")) {
           window.location.href = "/cdn-cgi/access/logout";
           return;
@@ -474,13 +607,22 @@ export function AppShell() {
           return;
         }
         if (fallbackToReadonly) {
-          setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
-          setAccessState("readonly");
+          if (hadAuthenticatedSession) {
+            setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
+            setAccessState("locked");
+          } else {
+            setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
+            setAccessState("readonly");
+          }
           return;
         }
         if (isAuthSignInRequiredMessage(message)) {
-          setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
-          setAccessState("locked");
+          if (hadAuthenticatedSession) {
+            setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
+            setAccessState("locked");
+          } else {
+            setAccessState("readonly");
+          }
           return;
         }
         setAccessState("locked");
@@ -490,11 +632,18 @@ export function AppShell() {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [deepLinkParse, isLocalRuntime, isInitializing, setCurrentUser]);
+  }, [deepLinkParse, isLocalRuntime, isInitializing, setAuthState, setCurrentUser]);
+
+  useEffect(() => {
+    if (authState !== "signed_out") return;
+    if (accessState === "checking") return;
+    if (!hadAuthenticatedSessionRef.current) return;
+    setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
+    setAccessState("locked");
+  }, [accessState, authState]);
 
   useEffect(() => {
     if (accessState === "granted") {
-      console.log("[AppShell] Access granted, running migrations and initializing cloud sync...");
       void runMigrations().then(() => initializeCloudSync());
     }
   }, [accessState, initializeCloudSync]);
@@ -502,9 +651,7 @@ export function AppShell() {
   // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink,
   // and publish a persistent map notice (uses the existing map-inline-notice UI).
   useEffect(() => {
-    const isAnonNoDeepLink =
-      !deepLinkParse.ok &&
-      (isAnonymousGuestReadonly || (accessState === "locked" && lockedNeedsSignIn));
+    const isAnonNoDeepLink = !deepLinkParse.ok && isAnonymousGuestReadonly;
     if (!isAnonNoDeepLink) return;
     if (sites.length === 0) {
       loadDemoScenario();
@@ -516,9 +663,12 @@ export function AppShell() {
       persistent: true,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessState, isAnonymousGuestReadonly, lockedNeedsSignIn, deepLinkParse.ok]);
+  }, [isAnonymousGuestReadonly, deepLinkParse.ok]);
 
   const signOutOrReadonly = useCallback(() => {
+    setCurrentUser(null);
+    setAuthState("signed_out");
+    hadAuthenticatedSessionRef.current = true;
     if (isLocalRuntime) {
       try {
         localStorage.setItem(LOCAL_FORCE_READONLY_KEY, "1");
@@ -533,7 +683,7 @@ export function AppShell() {
       return;
     }
     window.location.href = "/cdn-cgi/access/logout";
-  }, [deepLinkParse.ok, isLocalRuntime]);
+  }, [deepLinkParse.ok, isLocalRuntime, setAuthState, setCurrentUser]);
 
   const signIn = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -566,10 +716,91 @@ export function AppShell() {
   );
 
   useEffect(() => {
-    if (!appNotice || appNotice.persistent) return;
-    const timer = window.setTimeout(() => setAppNotice(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [appNotice]);
+    const timers: number[] = [];
+    for (const notification of uiNotifications) {
+      if (notification.dismissMode !== "auto") continue;
+      if (pausedNotificationIds.includes(notification.id)) continue;
+      timers.push(window.setTimeout(() => requestDismissNotification(notification.id, "auto"), notification.durationMs));
+    }
+    return () => {
+      for (const timer of timers) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [pausedNotificationIds, requestDismissNotification, uiNotifications]);
+
+  useEffect(() => {
+    if (accessState === "checking") {
+      pushNotification({
+        id: ACCESS_CHECKING_NOTICE_ID,
+        message: "Checking access in the background. Anonymous mode is available while this resolves.",
+        tone: "info",
+        dismissMode: "manual",
+      });
+      return;
+    }
+    removeNotificationImmediately(ACCESS_CHECKING_NOTICE_ID);
+  }, [accessState, pushNotification, removeNotificationImmediately]);
+
+  useEffect(() => {
+    if (!isOnline && !offlineBannerDismissed) {
+      pushNotification({
+        id: OFFLINE_SYNC_NOTICE_ID,
+        message: "Offline. Changes are saved locally and will sync when connection returns.",
+        tone: "warning",
+        dismissMode: "manual",
+      });
+      return;
+    }
+    removeNotificationImmediately(OFFLINE_SYNC_NOTICE_ID);
+    if (isOnline && offlineBannerDismissed) {
+      setOfflineBannerDismissed(false);
+    }
+  }, [isOnline, offlineBannerDismissed, pushNotification, removeNotificationImmediately]);
+
+  useEffect(() => {
+    if (workspaceState === "blank-simulation" && !(isAnonymousGuestReadonly || accessState === "checking")) {
+      pushNotification({
+        id: BLANK_SIM_NOTICE_ID,
+        message: "This Simulation is blank. Add sites from the map or Site Library to continue.",
+        tone: "info",
+        dismissMode: "manual",
+      });
+      return;
+    }
+    removeNotificationImmediately(BLANK_SIM_NOTICE_ID);
+  }, [accessState, isAnonymousGuestReadonly, pushNotification, removeNotificationImmediately, workspaceState]);
+
+  useEffect(() => {
+    if (runtimeEnvironment === "production") return;
+    const target = window as NotificationDebugWindow;
+    target.linksimNotifications = {
+      push: (notice) => {
+        const next = upsertUiNotification(uiNotificationsRef.current, notice);
+        uiNotificationsRef.current = next;
+        setUiNotifications(next);
+      },
+      pushMany: (notices) => {
+        let next = uiNotificationsRef.current;
+        for (const notice of notices) {
+          next = upsertUiNotification(next, notice);
+        }
+        uiNotificationsRef.current = next;
+        setUiNotifications(next);
+      },
+      dismiss: (id) => {
+        requestDismissNotification(id, "manual");
+      },
+      clear: () => {
+        uiNotificationsRef.current = [];
+        setUiNotifications([]);
+      },
+      list: () => [...uiNotificationsRef.current],
+    };
+    return () => {
+      delete target.linksimNotifications;
+    };
+  }, [requestDismissNotification, runtimeEnvironment]);
 
   useEffect(() => {
     try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
@@ -971,45 +1202,6 @@ export function AppShell() {
     publishAppNotice,
   ]);
 
-  const closeWelcome = () => {
-    setShowWelcomeModal(false);
-    if (!activeUserId) return;
-    try {
-      localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
-    } catch {
-      // ignore storage errors
-    }
-  };
-
-  const openOnboardingTutorial = () => {
-    setShowOnboardingTutorial(true);
-  };
-
-  const openWelcomeFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowOnboardingTutorial(true);
-  };
-
-  const openLibraryFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowSimulationLibraryRequest(true);
-    try {
-      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
-    } catch {
-      // ignore
-    }
-  };
-
-  const createNewFromWelcome = () => {
-    setShowWelcomeModal(false);
-    setShowNewSimulationRequest(true);
-    try {
-      if (activeUserId) localStorage.setItem(`${ONBOARDING_SEEN_KEY_PREFIX}${activeUserId}`, "1");
-    } catch {
-      // ignore
-    }
-  };
-
   useEffect(() => {
     if (libraryAutoOpened) return;
     if (workspaceState !== "no-simulation") return;
@@ -1138,6 +1330,12 @@ export function AppShell() {
 
   const runShareWithSpecificUsers = useCallback(async () => {
     if (!activeSimulation || !currentUser) return;
+    if (toVisibility(activeSimulation.visibility) !== "private" && referencedPrivateSites.length) {
+      setShareSpecificStatus(
+        formatPrivateSiteReferenceBlockMessage(referencedPrivateSites.map((site) => site.name)),
+      );
+      return;
+    }
     if (!shareSpecificUsers.length) {
       setShareSpecificStatus("Add at least one user first.");
       return;
@@ -1175,7 +1373,15 @@ export function AppShell() {
     } finally {
       setShareSpecificBusy(false);
     }
-  }, [activeSimulation, currentShareLink, currentUser, shareSpecificRoles, shareSpecificUsers, updateSimulationPresetEntry]);
+  }, [
+    activeSimulation,
+    currentShareLink,
+    currentUser,
+    referencedPrivateSites,
+    shareSpecificRoles,
+    shareSpecificUsers,
+    updateSimulationPresetEntry,
+  ]);
 
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     const style: CSSProperties = {
@@ -1197,13 +1403,21 @@ export function AppShell() {
     isProfileExpanded,
     mobileControlsOccupied,
   ]);
-  const isAnonymousBootstrapShell = accessState === "checking" || (accessState === "locked" && lockedNeedsSignIn);
+  const isAnonymousBootstrapShell = accessState === "checking";
   const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
+  const emitProfileLayoutPulse = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const fire = () => window.dispatchEvent(new CustomEvent("linksim-profile-layout-pulse"));
+    fire();
+    window.requestAnimationFrame(fire);
+    window.setTimeout(fire, 120);
+  }, []);
 
   const toggleProfileExpanded = () => {
     setIsMapExpanded(false);
     setMobileActivePanel("profile");
     setIsProfileExpanded((prev) => !prev);
+    emitProfileLayoutPulse();
   };
 
   const setMobileBottomPanelVisibility = useCallback((nextMode: MobileBottomPanelMode) => {
@@ -1219,7 +1433,7 @@ export function AppShell() {
   }, []);
 
   const openShareModalOrCopy = useCallback(() => {
-    setAppNotice(null);
+    clearNotifications();
     if (!activeSimulation) {
       publishAppNotice({
         id: "share-open-simulation-first",
@@ -1251,7 +1465,7 @@ export function AppShell() {
         persistent: true,
       });
     });
-  }, [activeSimulation, copyCurrentLink, publishAppNotice]);
+  }, [activeSimulation, clearNotifications, copyCurrentLink, publishAppNotice]);
 
   const panelSizeControls = useCallback(
     (labelPrefix: string, variant: "map" | "chart" = "map") => (
@@ -1312,18 +1526,18 @@ export function AppShell() {
           </ul>
           {isLocalRuntime ? (
             <div className="chip-group">
-              <button className="inline-action" onClick={() => void switchLocalRole("admin")} type="button">
+              <ActionButton onClick={() => void switchLocalRole("admin")} type="button">
                 Use Admin (Local)
-              </button>
-              <button className="inline-action" onClick={() => void switchLocalRole("moderator")} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => void switchLocalRole("moderator")} type="button">
                 Use Moderator (Local)
-              </button>
-              <button className="inline-action" onClick={() => void switchLocalRole("user")} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => void switchLocalRole("user")} type="button">
                 Use User (Local)
-              </button>
-              <button className="inline-action" onClick={() => void switchLocalRole("pending")} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => void switchLocalRole("pending")} type="button">
                 Use Pending (Local)
-              </button>
+              </ActionButton>
             </div>
           ) : null}
            {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
@@ -1334,14 +1548,20 @@ export function AppShell() {
     );
   }
 
-  if (accessState === "locked" && !lockedNeedsSignIn) {
+  if (accessState === "locked") {
+    const shouldPromptSignIn = lockedNeedsSignIn || authState === "signed_out";
     return (
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
-          <h2>Access unavailable</h2>
+          {shouldPromptSignIn ? (
+            <div className="access-locked-alert-icon sync-error" aria-hidden="true">
+              <CloudAlert strokeWidth={1.8} />
+            </div>
+          ) : null}
+          <h2>{shouldPromptSignIn ? "Signed out" : "Access unavailable"}</h2>
           {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
-          {lockedNeedsSignIn ? (
-            <p className="field-help">Sign in with your approved account to continue.</p>
+          {shouldPromptSignIn ? (
+            <p className="field-help">Sign in again to continue where you left off.</p>
           ) : (
             <>
               <p className="field-help">
@@ -1353,29 +1573,32 @@ export function AppShell() {
             </>
           )}
           <div className="chip-group">
-            {lockedNeedsSignIn ? (
-              <button className="inline-action" onClick={signIn} type="button">
-                Sign In
-              </button>
+          {shouldPromptSignIn ? (
+              <>
+                <ActionButton onClick={signIn} type="button">
+                  <CircleUserRound aria-hidden="true" strokeWidth={1.8} />
+                  <span>Sign In</span>
+                </ActionButton>
+              </>
             ) : (
-              <button className="inline-action" onClick={signOutOrReadonly} type="button">
+              <ActionButton onClick={signOutOrReadonly} type="button">
                 Sign Out
-              </button>
+              </ActionButton>
             )}
             {isLocalRuntime ? (
               <>
-                <button className="inline-action" onClick={() => void switchLocalRole("admin")} type="button">
+                <ActionButton onClick={() => void switchLocalRole("admin")} type="button">
                   Use Admin (Local)
-                </button>
-                <button className="inline-action" onClick={() => void switchLocalRole("moderator")} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => void switchLocalRole("moderator")} type="button">
                   Use Moderator (Local)
-                </button>
-                <button className="inline-action" onClick={() => void switchLocalRole("user")} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => void switchLocalRole("user")} type="button">
                   Use User (Local)
-                </button>
-                <button className="inline-action" onClick={() => void switchLocalRole("pending")} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => void switchLocalRole("pending")} type="button">
                   Use Pending (Local)
-                </button>
+                </ActionButton>
               </>
             ) : null}
           </div>
@@ -1415,7 +1638,10 @@ export function AppShell() {
             <button
               aria-label="Show Navigator panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-navigator"
-              onClick={() => setIsNavigatorHidden(false)}
+              onClick={() => {
+                setIsNavigatorHidden(false);
+                emitProfileLayoutPulse();
+              }}
               title="Show Navigator"
               type="button"
             >
@@ -1426,7 +1652,10 @@ export function AppShell() {
             <button
               aria-label="Show Inspector panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-inspector"
-              onClick={() => setIsInspectorHidden(false)}
+              onClick={() => {
+                setIsInspectorHidden(false);
+                emitProfileLayoutPulse();
+              }}
               title="Show Inspector"
               type="button"
             >
@@ -1437,7 +1666,10 @@ export function AppShell() {
             <button
               aria-label="Show Profile panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-profile"
-              onClick={() => setIsProfileHidden(false)}
+              onClick={() => {
+                setIsProfileHidden(false);
+                emitProfileLayoutPulse();
+              }}
               title="Show Profile"
               type="button"
             >
@@ -1459,7 +1691,10 @@ export function AppShell() {
                 <button
                   aria-label={isNavigatorHidden ? "Show Navigator panel" : "Hide Navigator panel"}
                   className="user-icon-button"
-                  onClick={() => setIsNavigatorHidden((prev) => !prev)}
+                  onClick={() => {
+                    setIsNavigatorHidden((prev) => !prev);
+                    emitProfileLayoutPulse();
+                  }}
                   title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
                   type="button"
                 >
@@ -1467,59 +1702,32 @@ export function AppShell() {
                 </button>
               )
             }
-            simulationDisplayLabel={
-              isReadOnlyShell && !deepLinkParse.ok && sites.length > 0 ? "Oslo Demo" : undefined
-          }
+            simulationDisplayLabel={undefined}
         />
       ) : null}
-      <section className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}>
-        {accessState === "checking" ? (
-          <div className="workspace-header-actions">
-            <span className="field-help">Checking access in the background. Anonymous mode is available while this resolves.</span>
-          </div>
-        ) : null}
-        {!isOnline && !offlineBannerDismissed ? (
-          <div className="offline-banner" role="status">
-            <span>Offline. Changes are saved locally and will sync when connection returns.</span>
-            <div className="chip-group">
-              <button
-                className="inline-action"
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent(OPEN_SYNC_MODAL_EVENT));
-                }}
-                type="button"
-              >
-                Open Sync Status
-              </button>
-              <button className="inline-action" onClick={() => setOfflineBannerDismissed(true)} type="button">
-                Dismiss
-              </button>
-            </div>
-          </div>
-        ) : null}
+      <section
+        aria-hidden={isMobileViewport ? mobileBottomPanelMode === "hidden" || mobileActivePanel !== "inspector" : undefined}
+        aria-labelledby={isMobileViewport ? mobileInspectorTabId : undefined}
+        className={`workspace-panel ${isMapExpanded ? "is-map-expanded" : ""} ${isProfileExpanded ? "is-profile-expanded" : ""}`}
+        id={isMobileViewport ? mobileInspectorPanelId : undefined}
+        role={isMobileViewport ? "tabpanel" : undefined}
+      >
         {workspaceState === "no-simulation" && !isReadOnlyShell ? (
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
               <p>Open an existing simulation or create a new one to continue.</p>
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => setShowSimulationLibraryRequest(true)}
                 type="button"
               >
                 Open Library
-              </button>
+              </ActionButton>
             </div>
-          </div>
-        ) : null}
-        {workspaceState === "blank-simulation" && !appNotice ? (
-          <div className="workspace-header-actions">
-            <span className="field-help">This Simulation is blank. Add sites from the map or Site Library to continue.</span>
           </div>
         ) : null}
         <div className="workspace-header-actions">
           {accessState === "readonly" && isLocalRuntime ? (
-            <button
-              className="inline-action"
+            <ActionButton
               onClick={() => {
                 try {
                   localStorage.removeItem(LOCAL_FORCE_READONLY_KEY);
@@ -1531,7 +1739,7 @@ export function AppShell() {
               type="button"
             >
               Return to Local User
-            </button>
+            </ActionButton>
           ) : null}
         </div>
         <MapView
@@ -1550,7 +1758,10 @@ export function AppShell() {
                 <button
                   aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
                   className="map-control-btn map-control-btn-icon"
-                  onClick={() => setIsInspectorHidden((prev) => !prev)}
+                  onClick={() => {
+                    setIsInspectorHidden((prev) => !prev);
+                    emitProfileLayoutPulse();
+                  }}
                   title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
                   type="button"
                 >
@@ -1580,16 +1791,8 @@ export function AppShell() {
               setMobileBottomPanelVisibility("normal");
             }
             setIsMapExpanded((prev) => !prev);
+            emitProfileLayoutPulse();
           }}
-          notice={
-            appNotice
-              ? {
-                  message: appNotice.message,
-                  tone: appNotice.tone,
-                  onDismiss: appNotice.persistent ? () => setAppNotice(null) : undefined,
-                }
-              : undefined
-          }
           fitBottomInset={
             isMobileViewport || isMapExpanded || isProfileExpanded || isProfileHidden
               ? 30
@@ -1597,53 +1800,19 @@ export function AppShell() {
           }
         />
         {isMobileViewport ? (
-          <div className="mobile-workspace-tabs" role="tablist" aria-label="Mobile workspace panels">
-            <button
-              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator"}
-              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "navigator" ? "is-active" : ""}`}
-              onClick={() => {
-                setIsMapExpanded(false);
-                setMobileActivePanel("navigator");
-                if (mobileBottomPanelMode === "hidden") {
-                  setMobileBottomPanelVisibility("normal");
-                }
-              }}
-              role="tab"
-              type="button"
-            >
-              Navigator
-            </button>
-            <button
-              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector"}
-              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "inspector" ? "is-active" : ""}`}
-              onClick={() => {
-                setIsMapExpanded(false);
-                setMobileActivePanel("inspector");
-                if (mobileBottomPanelMode === "hidden") {
-                  setMobileBottomPanelVisibility("normal");
-                }
-              }}
-              role="tab"
-              type="button"
-            >
-              Inspector
-            </button>
-            <button
-              aria-selected={mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile"}
-              className={`mobile-workspace-tab ${mobileBottomPanelMode !== "hidden" && mobileActivePanel === "profile" ? "is-active" : ""}`}
-              onClick={() => {
-                setIsMapExpanded(false);
-                setMobileActivePanel("profile");
-                if (mobileBottomPanelMode === "hidden") {
-                  setMobileBottomPanelVisibility("normal");
-                }
-              }}
-              role="tab"
-              type="button"
-            >
-              Profile
-            </button>
-          </div>
+          <MobileWorkspaceTabs
+            activePanel={mobileActivePanel}
+            inspectorPanelId={mobileInspectorPanelId}
+            inspectorTabId={mobileInspectorTabId}
+            mode={mobileBottomPanelMode}
+            navigatorPanelId={mobileNavigatorPanelId}
+            navigatorTabId={mobileNavigatorTabId}
+            profilePanelId={mobileProfilePanelId}
+            profileTabId={mobileProfileTabId}
+            setIsMapExpanded={setIsMapExpanded}
+            setMobileActivePanel={setMobileActivePanel}
+            setMobileBottomPanelVisibility={setMobileBottomPanelVisibility}
+          />
         ) : null}
         {!isMobileViewport && !isMapExpanded && !isProfileHidden ? (
           <LinkProfileChart
@@ -1659,6 +1828,7 @@ export function AppShell() {
                     if (next) setIsProfileExpanded(false);
                     return next;
                   });
+                  emitProfileLayoutPulse();
                 }}
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
                 type="button"
@@ -1670,7 +1840,12 @@ export function AppShell() {
           />
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && mobileBottomPanelMode !== "hidden" ? (
-          <div className="mobile-workspace-panel mobile-workspace-panel-shell" role="tabpanel" aria-label="Profile panel">
+          <div
+            aria-labelledby={mobileProfileTabId}
+            className="mobile-workspace-panel mobile-workspace-panel-shell"
+            id={mobileProfilePanelId}
+            role="tabpanel"
+          >
             <LinkProfileChart
               isExpanded={mobileBottomPanelMode === "full"}
               onToggleExpanded={toggleProfileExpanded}
@@ -1680,7 +1855,12 @@ export function AppShell() {
           </div>
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && mobileBottomPanelMode !== "hidden" ? (
-          <div className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator" role="tabpanel" aria-label="Navigator panel">
+          <div
+            aria-labelledby={mobileNavigatorTabId}
+            className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator"
+            id={mobileNavigatorPanelId}
+            role="tabpanel"
+          >
             {(accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
               <Sidebar
                 authBootstrapPending={accessState === "checking"}
@@ -1693,6 +1873,59 @@ export function AppShell() {
           </div>
         ) : null}
       </section>
+      {uiNotifications.length ? (
+        <section aria-label="App notifications" className="app-notification-stack">
+          <div className="app-notification-stack-list">
+            {uiNotifications.map((notification) => (
+              <div
+                data-dismiss-kind={dismissingNotificationIds[notification.id] ?? undefined}
+                key={notification.id}
+                onBlurCapture={() => setNotificationPaused(notification.id, false)}
+                onFocusCapture={() => setNotificationPaused(notification.id, true)}
+                onMouseEnter={() => setNotificationPaused(notification.id, true)}
+                onMouseLeave={() => setNotificationPaused(notification.id, false)}
+                role={notification.tone === "error" ? "alert" : "status"}
+                aria-live={notification.tone === "error" ? "assertive" : "polite"}
+                aria-atomic="true"
+                className={`app-notification-item app-notification-item-${notification.tone} ${
+                  dismissingNotificationIds[notification.id] ? "is-dismissing" : ""
+                }`}
+              >
+                <span className="app-notification-glyph" aria-hidden="true">
+                  {notification.tone === "warning" ? <CircleAlert size={14} strokeWidth={2} /> : null}
+                  {notification.tone === "error" ? <CircleX size={14} strokeWidth={2} /> : null}
+                  {notification.tone === "success" ? <CircleCheck size={14} strokeWidth={2} /> : null}
+                  {notification.tone === "info" ? <Info size={14} strokeWidth={2} /> : null}
+                </span>
+                <div className="app-notification-copy">
+                  <span>{notification.message}</span>
+                </div>
+                <button
+                  aria-label="Dismiss notification"
+                  className="app-notification-dismiss"
+                  onClick={() => {
+                    if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
+                      setOfflineBannerDismissed(true);
+                    }
+                    requestDismissNotification(notification.id, "manual");
+                  }}
+                  title="Dismiss"
+                  type="button"
+                >
+                  <X aria-hidden="true" size={14} strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+          {uiNotifications.length >= DISMISS_ALL_THRESHOLD ? (
+            <div className="app-notification-stack-controls">
+              <ActionButton onClick={clearNotifications} type="button">
+                Dismiss all
+              </ActionButton>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
         <div className="floating-attribution-pill">
           <span>&copy;</span>
@@ -1715,12 +1948,18 @@ export function AppShell() {
           <SimulationLibraryPanel
             onClose={() => setShowLibraryFromRequest(false)}
             onLoadSimulation={(presetId) => {
-              loadSimulationPreset(presetId);
-              try {
-                localStorage.setItem(LAST_SIMULATION_REF_KEY, `saved:${presetId}`);
-              } catch {
-                // ignore storage errors
-              }
+              handleSimulationLibraryLoad({
+                presetId,
+                loadSimulationPreset,
+                persistSimulationRef: (loadedPresetId) => {
+                  try {
+                    localStorage.setItem(LAST_SIMULATION_REF_KEY, `saved:${loadedPresetId}`);
+                  } catch {
+                    // ignore storage errors
+                  }
+                },
+                closeLibraryModal: () => setShowLibraryFromRequest(false),
+              });
             }}
           />
         </ModalOverlay>
@@ -1730,9 +1969,7 @@ export function AppShell() {
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Share Simulation</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeShareModal} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={closeShareModal} />
             </div>
             {!activeSimulation ? (
               <p className="field-help">Open a saved simulation first. Unsaved workspace state cannot be deep-linked.</p>
@@ -1765,9 +2002,9 @@ export function AppShell() {
                           {referencedPrivateSites.length ? ` and ${referencedPrivateSites.length} referenced site(s)` : ""} will be set to Shared.
                           {referencedPrivateSites.some((site) => !canEditResource(site)) ? " Some sites require owner access." : ""}
                         </p>
-                        <button className="inline-action" disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
+                        <ActionButton disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
                           Upgrade &amp; Copy Link
-                        </button>
+                        </ActionButton>
                       </div>
                       {/* Option B: Specific users */}
                       <div className="panel-section compact-panel" style={{ display: "flex", flexDirection: "column", gap: "0.5em" }}>
@@ -1792,13 +2029,12 @@ export function AppShell() {
                                     <option value="viewer">Viewer</option>
                                     <option value="editor">Editor</option>
                                   </select>
-                                  <button
-                                    className="inline-action"
+                                  <ActionButton
                                     onClick={() => setShareSpecificUsers((prev) => prev.filter((id) => id !== uid))}
                                     type="button"
                                   >
                                     Remove
-                                  </button>
+                                  </ActionButton>
                                 </span>
                               );
                             })}
@@ -1847,8 +2083,7 @@ export function AppShell() {
                           </div>
                         ) : null}
                         <div style={{ marginTop: "auto" }}>
-                          <button
-                            className="inline-action"
+                          <ActionButton
                             disabled={shareSpecificBusy || !shareSpecificUsers.length}
                             onClick={() => void runShareWithSpecificUsers()}
                             style={{ display: "flex", alignItems: "center", gap: "0.35em" }}
@@ -1856,7 +2091,7 @@ export function AppShell() {
                           >
                             <Copy aria-hidden="true" size={14} strokeWidth={1.8} />
                             Save &amp; Copy Link
-                          </button>
+                          </ActionButton>
                         </div>
                         {shareSpecificStatus ? <p className="field-help">{shareSpecificStatus}</p> : null}
                       </div>

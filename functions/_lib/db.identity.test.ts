@@ -13,6 +13,7 @@ const makeCandidate = (patch: Partial<Candidate>): Candidate => ({
   idp_email_verified: patch.idp_email_verified ?? 0,
   avatar_url: patch.avatar_url ?? null,
   email_public: patch.email_public ?? 1,
+  default_frequency_preset_id: patch.default_frequency_preset_id ?? null,
   avatar_object_key: patch.avatar_object_key ?? null,
   avatar_thumb_key: patch.avatar_thumb_key ?? null,
   avatar_hash: patch.avatar_hash ?? null,

@@ -63,9 +63,30 @@ describe("cloudLibrary client", () => {
       }),
     );
 
-    await expect(pushCloudLibrary({ siteLibrary: [], simulationPresets: [] })).rejects.toThrow(
-      "Cannot publish/shared a simulation that references private library sites.",
+    await expect(
+      pushCloudLibrary({
+        siteLibrary: [],
+        simulationPresets: [{ id: "sim-1", name: "North Link" }],
+      }),
+    ).rejects.toThrow(
+      "Cannot publish/shared simulation(s) with private Library Site references: North Link.",
     );
+  });
+
+  it("includes simulation names for simulation_name_taken conflicts", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: false, conflicts: ["simulation_name_taken"] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(
+      pushCloudLibrary({
+        siteLibrary: [],
+        simulationPresets: [{ id: "sim-2", name: "Relay Plan" }],
+      }),
+    ).rejects.toThrow("Simulation name already exists: Relay Plan. Use unique Simulation names.");
   });
 
   it("throws parsed API error for non-OK responses", async () => {

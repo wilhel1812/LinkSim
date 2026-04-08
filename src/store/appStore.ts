@@ -133,6 +133,26 @@ const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser |
   return currentUser;
 };
 
+const FALLBACK_NEW_SIMULATION_PRESET_ID = "oslo-local-869618";
+
+const resolveDefaultFrequencyPresetIdForNewSimulation = (currentUser: CloudUser | null): string => {
+  const preferred = currentUser?.defaultFrequencyPresetId;
+  if (typeof preferred === "string" && findPresetById(preferred)) return preferred;
+  return FALLBACK_NEW_SIMULATION_PRESET_ID;
+};
+
+const isAuthRelatedErrorMessage = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("401") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("access denied") ||
+    normalized.includes("auth") ||
+    normalized.includes("sign in") ||
+    normalized.includes("session revoked")
+  );
+};
+
 const canEditItem = (
   item: { ownerUserId?: string; effectiveRole?: string },
   currentUser: CloudUser | null,
@@ -213,6 +233,7 @@ const adoptOrphanedSimulations = (
 };
 
 export type MapOverlayMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
+export type AuthSessionState = "checking" | "signed_in" | "signed_out";
 
 type SiteLibraryEntry = {
   id: string;
@@ -402,6 +423,7 @@ type AppState = {
   syncBusy: boolean;
   syncStatusMessage: string;
   currentUser: CloudUser | null;
+  authState: AuthSessionState;
   isInitializing: boolean;
   initializeCloudSync: () => Promise<void>;
   performCloudSyncPush: () => void;
@@ -411,6 +433,8 @@ type AppState = {
   setLastSyncedAt: (iso: string | null) => void;
   setSyncErrorMessage: (message: string | null) => void;
   setCurrentUser: (user: CloudUser | null) => void;
+  getDefaultFrequencyPresetIdForNewSimulation: () => string;
+  setAuthState: (value: AuthSessionState) => void;
   setIsOnline: (value: boolean) => void;
   triggerSync: () => void;
   setIsInitializing: (value: boolean) => void;
@@ -491,6 +515,7 @@ type AppState = {
     name: string,
     options?: {
       description?: string;
+      frequencyPresetId?: string;
       visibility?: "private" | "public" | "shared";
       ownerUserId?: string;
       createdByUserId?: string;
@@ -1198,12 +1223,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncBusy: false,
   syncStatusMessage: "",
   currentUser: null,
+  authState: "checking",
   isInitializing: false,
   setLocale: (locale) => set({ locale }),
   setSyncStatus: (status: "syncing" | "synced" | "error") => set({ syncStatus: status }),
   setLastSyncedAt: (iso: string | null) => set({ lastSyncedAt: iso }),
   setSyncErrorMessage: (message: string | null) => set({ syncErrorMessage: message }),
-  setCurrentUser: (user) => set({ currentUser: user }),
+  setCurrentUser: (user) =>
+    set({
+      currentUser: user,
+      authState: user ? "signed_in" : "signed_out",
+    }),
+  getDefaultFrequencyPresetIdForNewSimulation: () => {
+    const state = get();
+    return resolveDefaultFrequencyPresetIdForNewSimulation(state.currentUser);
+  },
+  setAuthState: (value) => set({ authState: value }),
   setIsOnline: (value) => set({ isOnline: value }),
   triggerSync: () => set((state) => ({ syncTrigger: state.syncTrigger + 1 })),
   setIsInitializing: (value: boolean) => set({ isInitializing: value }),
@@ -1447,6 +1482,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error("[appStore] initializeCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
+      if (isAuthRelatedErrorMessage(message)) {
+        set({ currentUser: null, authState: "signed_out" });
+      }
       set({
         syncPending: true,
         syncStatus: "error",
@@ -1477,6 +1515,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const pendingChangesCount = recordLocalMutation();
+    if (get().authState === "signed_out" || !get().currentUser?.id) {
+      set({
+        syncPending: true,
+        syncStatus: "error",
+        syncErrorMessage: "Not signed in.",
+        syncStatusMessage: "Not signed in; cloud sync unavailable. Sign in and open Sync Status to recover pending changes.",
+        pendingChangesCount,
+      });
+      return;
+    }
     if (!get().isOnline) {
       set({
         syncPending: true,
@@ -1565,14 +1613,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (error) {
         console.error("[appStore] Auto-push FAILED:", error);
         const message = getUiErrorMessage(error);
-        const isAuthError = message.includes("401") || message.includes("Unauthorized") || message.includes("Access denied");
+        const isAuthError = isAuthRelatedErrorMessage(message);
         if (isAuthError) {
           console.log("[appStore] Auth error - keeping pending changes until auth is restored");
           set({
+            currentUser: null,
+            authState: "signed_out",
             syncPending: true,
             syncStatus: "error",
             syncErrorMessage: message,
-            syncStatusMessage: "Authentication error while syncing. Re-authenticate and open Sync Status.",
+            syncStatusMessage: "Not signed in; cloud sync unavailable. Sign in and open Sync Status to recover pending changes.",
           });
         } else {
           set({
@@ -1605,6 +1655,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         syncStatus: "error",
         syncErrorMessage: null,
         syncStatusMessage: "Offline. Changes are saved locally and will sync when reconnected.",
+      });
+      return;
+    }
+    if (get().authState === "signed_out" || !get().currentUser?.id) {
+      set({
+        syncPending: true,
+        syncStatus: "error",
+        syncErrorMessage: "Not signed in.",
+        syncStatusMessage: "Not signed in; cloud sync unavailable. Sign in and open Sync Status to recover pending changes.",
       });
       return;
     }
@@ -1664,6 +1723,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error("[appStore] performManualCloudSync FAILED:", error);
       const message = getUiErrorMessage(error);
+      if (isAuthRelatedErrorMessage(message)) {
+        set({ currentUser: null, authState: "signed_out" });
+      }
       set({
         syncPending: true,
         syncStatus: "error",
@@ -2544,6 +2606,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const presetName = name.trim();
     if (!presetName) return null;
     if (hasDuplicateSimulationName(get().simulationPresets, presetName)) return null;
+    const defaultPresetId = resolveDefaultFrequencyPresetIdForNewSimulation(user);
+    const selectedPresetId =
+      typeof options?.frequencyPresetId === "string" && findPresetById(options.frequencyPresetId)
+        ? options.frequencyPresetId
+        : defaultPresetId;
     set((current) => {
       const snapshot: SimulationPreset["snapshot"] = {
         sites: [],
@@ -2555,7 +2622,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedNetworkId: "",
         selectedCoverageResolution: current.selectedCoverageResolution,
         propagationModel: current.propagationModel,
-        selectedFrequencyPresetId: current.selectedFrequencyPresetId,
+        selectedFrequencyPresetId: selectedPresetId,
         rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
         environmentLossDb: current.environmentLossDb,
         propagationEnvironment: current.propagationEnvironment,
