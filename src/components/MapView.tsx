@@ -26,6 +26,7 @@ import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
+import { resolveSingleSiteBonusRadiusKm } from "../lib/singleSiteBonusRadius";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
@@ -35,6 +36,7 @@ const UI_SECTION_KEYS = {
   mapViewSimSummary: "linksim-ui-mapview-sim-summary-v1",
   mapViewOverlayGuide: "linksim-ui-mapview-overlay-guide-v1",
 } as const;
+const SINGLE_SITE_BONUS_DEBOUNCE_MS = 220;
 
 const readSectionBool = (key: string, fallback: boolean): boolean => {
   try {
@@ -1147,6 +1149,7 @@ export function MapView({
   const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
   const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
+  const [singleSiteBonusRadiusKm, setSingleSiteBonusRadiusKm] = useState(20);
   const [selectedDiscoveryLibraryEntryId, setSelectedDiscoveryLibraryEntryId] = useState<string | null>(null);
   const [mqttDuplicatePrompt, setMqttDuplicatePrompt] = useState<{
     node: MeshmapNode;
@@ -1282,11 +1285,31 @@ export function MapView({
       canceled = true;
     };
   }, [showDiscoveryMqtt, mqttNodes.length]);
+  useEffect(() => {
+    if (selectedSites.length !== 1 || isTerrainFetching) {
+      setSingleSiteBonusRadiusKm(20);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const nextRadius = resolveSingleSiteBonusRadiusKm(selectedSites[0], srtmTiles, {
+        baseRadiusKm: 20,
+        maxRadiusKm: 100,
+      });
+      setSingleSiteBonusRadiusKm((current) => (current === nextRadius ? current : nextRadius));
+    }, SINGLE_SITE_BONUS_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [selectedSites, srtmTiles, isTerrainFetching]);
   const hasPassFailTopology = selectionCount >= 1;
   const hasRelayTopology = selectionCount >= 2;
   const hasMinimumTopology = sites.length >= 1;
-  const analysisTargetSites = sites;
-  const overlayMaskArea = useMemo(() => buildBufferedSelectionArea(analysisTargetSites, 20), [analysisTargetSites]);
+  const analysisTargetSites = selectionCount === 1 ? selectedSites : sites;
+  const overlayRadiusKm = selectionCount === 1 ? singleSiteBonusRadiusKm : 20;
+  const overlayMaskArea = useMemo(
+    () => buildBufferedSelectionArea(analysisTargetSites, overlayRadiusKm),
+    [analysisTargetSites, overlayRadiusKm],
+  );
   const overlayPointMask = overlayMaskArea?.contains;
   const analysisBounds = useMemo(() => {
     if (overlayMaskArea) return overlayMaskArea.bounds;

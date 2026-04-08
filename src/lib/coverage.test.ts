@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCoverage, buildCoverageAsync } from "./coverage";
+import { haversineDistanceKm } from "./geo";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import type { Network, RadioSystem, Site } from "../types/radio";
 
@@ -74,5 +75,20 @@ describe("buildCoverage", () => {
     const asyncResult = await buildCoverageAsync(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
     expect(asyncResult).toHaveLength(sync.length);
     expect(Math.abs(asyncResult[0].valueDbm - sync[0].valueDbm)).toBeLessThan(0.0001);
+  });
+
+  it("uses single-site radius override for sampling bounds", () => {
+    const singleSite = [sites[0]];
+    const base = buildCoverage(NORMAL_GRID, network, singleSite, systems, defaultPropagationEnvironment());
+    const expanded = buildCoverage(NORMAL_GRID, network, singleSite, systems, defaultPropagationEnvironment(), undefined, {
+      singleSiteRadiusKm: 60,
+    });
+    const farthestBase = Math.max(
+      ...base.map((sample) => haversineDistanceKm(sample, singleSite[0].position)),
+    );
+    const farthestExpanded = Math.max(
+      ...expanded.map((sample) => haversineDistanceKm(sample, singleSite[0].position)),
+    );
+    expect(farthestExpanded).toBeGreaterThan(farthestBase + 20);
   });
 });
