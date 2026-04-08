@@ -122,7 +122,9 @@ input {
   height: 100dvh;
   min-height: 100dvh;
   overflow: hidden;
+  opacity: 1;
   animation: fade-in 260ms ease;
+  animation-fill-mode: both;
 }
 
 .app-shell.is-map-expanded,
