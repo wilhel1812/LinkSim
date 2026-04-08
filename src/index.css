@@ -947,14 +947,20 @@ input {
 }
 
 .app-notification-stack {
-  position: fixed;
-  top: max(14px, env(safe-area-inset-top, 0px) + 8px);
-  right: max(14px, env(safe-area-inset-right, 0px) + 8px);
-  width: min(440px, calc(100vw - 28px));
-  z-index: 980;
+  position: absolute;
+  top: calc(18px + 36px + (var(--workspace-panel-gap) * 2));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 36px), calc(100% - (var(--sidebar-overlay-width) * 2) - 60px));
+  z-index: 58;
   display: grid;
   gap: 8px;
   pointer-events: none;
+}
+
+.app-shell.is-map-expanded .app-notification-stack,
+.app-shell.is-profile-expanded .app-notification-stack {
+  width: min(520px, calc(100% - 36px));
 }
 
 .app-notification-stack-list {
@@ -3711,9 +3717,7 @@ input {
 
 @media (max-width: 980px) {
   .app-notification-stack {
-    top: calc(var(--mobile-controls-top) + 46px);
-    right: 8px;
-    left: 8px;
-    width: auto;
+    top: calc(var(--mobile-controls-top) + 52px);
+    width: min(460px, calc(100% - 16px));
   }
 }

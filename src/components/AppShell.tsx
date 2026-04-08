@@ -58,6 +58,16 @@ type AppNotice = {
   tone: "info" | "warning" | "error";
   persistent: boolean;
 };
+
+type NotificationDebugWindow = Window & {
+  linksimNotifications?: {
+    push: (notice: UiNotificationInput) => void;
+    pushMany: (notices: UiNotificationInput[]) => void;
+    dismiss: (id: string) => void;
+    clear: () => void;
+    list: () => UiNotification[];
+  };
+};
 const MAX_VISIBLE_NOTIFICATIONS = 3;
 
 const UI_PANEL_KEYS = {
@@ -675,6 +685,23 @@ export function AppShell() {
       setNotificationsExpanded(false);
     }
   }, [uiNotifications.length]);
+
+  useEffect(() => {
+    if (import.meta.env.PROD) return;
+    const target = window as NotificationDebugWindow;
+    target.linksimNotifications = {
+      push: (notice) => pushNotification(notice),
+      pushMany: (notices) => {
+        for (const notice of notices) pushNotification(notice);
+      },
+      dismiss: (id) => dismissNotification(id),
+      clear: () => clearNotifications(),
+      list: () => [...uiNotifications],
+    };
+    return () => {
+      delete target.linksimNotifications;
+    };
+  }, [clearNotifications, dismissNotification, pushNotification, uiNotifications]);
 
   useEffect(() => {
     try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
