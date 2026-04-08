@@ -15,6 +15,7 @@ export type BuildCoverageOptions = {
   sampleMultiplier?: number;
   terrainSamples?: number;
   onProgress?: (progress: number) => void;
+  onSampleProgress?: (processed: number, total: number) => void;
   terrainCacheKey?: string;
   overlayRadiusKm?: number;
   singleSiteRadiusKm?: number;
@@ -214,7 +215,7 @@ export const buildCoverage = (
     }
   }
 
-  onProgress?.(0.1);
+  onProgress?.(0);
   const total = Math.max(1, samples.length);
   const notifyEvery = Math.max(1, Math.floor(total / 40));
   const results: CoverageSample[] = [];
@@ -243,7 +244,7 @@ export const buildCoverage = (
 
     results.push({ ...sample, valueDbm });
     if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
-      onProgress?.(0.1 + ((i + 1) / total) * 0.9);
+      onProgress?.((i + 1) / total);
     }
   }
   return results;
@@ -296,11 +297,12 @@ export const buildCoverageAsync = async (
     }
   }
 
-  onProgress?.(0.1);
+  onProgress?.(0);
   const total = Math.max(1, samples.length);
   const notifyEvery = Math.max(1, Math.floor(total / 40));
   const results: CoverageSample[] = [];
-  const chunkSize = 48;
+  const chunkSize = 8;
+  let chunkStartedAt = performance.now();
 
   for (let i = 0; i < samples.length; i += 1) {
     const sample = samples[i];
@@ -327,9 +329,10 @@ export const buildCoverageAsync = async (
 
     results.push({ ...sample, valueDbm });
     if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
-      onProgress?.(0.1 + ((i + 1) / total) * 0.9);
+      onProgress?.((i + 1) / total);
     }
-    if ((i + 1) % chunkSize === 0) {
+    options?.onSampleProgress?.(i + 1, total);
+    if ((i + 1) % chunkSize === 0 || performance.now() - chunkStartedAt > 7) {
       await new Promise<void>((resolve) => {
         if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
           window.requestAnimationFrame(() => resolve());
@@ -337,6 +340,7 @@ export const buildCoverageAsync = async (
         }
         setTimeout(resolve, 0);
       });
+      chunkStartedAt = performance.now();
     }
   }
   return results;

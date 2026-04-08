@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { buildCoverageAsync } from "../lib/coverage";
+import { buildCoverageAsync, computeCoverageGridDimensions } from "../lib/coverage";
+import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import {
   deriveDynamicPropagationEnvironment,
 } from "../lib/propagationEnvironment";
@@ -32,6 +33,10 @@ export type CoverageState = {
   coverageSamples: CoverageSample[];
   isSimulationRecomputing: boolean;
   simulationProgress: number;
+  simulationProgressMode: "determinate" | "indeterminate";
+  simulationStepLabel: string;
+  simulationSamplesDone: number;
+  simulationSamplesTotal: number;
   simulationRunToken: string;
   recomputeCoverage: () => void;
 };
@@ -40,6 +45,10 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
   coverageSamples: [],
   isSimulationRecomputing: false,
   simulationProgress: 0,
+  simulationProgressMode: "indeterminate",
+  simulationStepLabel: "",
+  simulationSamplesDone: 0,
+  simulationSamplesTotal: 0,
   simulationRunToken: "",
   recomputeCoverage: () => {
     if (!appStoreBridge) return;
@@ -48,7 +57,11 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
     set({
       simulationRunToken: runId,
       isSimulationRecomputing: true,
-      simulationProgress: 3,
+      simulationProgress: 0,
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "Preparing simulation bounds...",
+      simulationSamplesDone: 0,
+      simulationSamplesTotal: 0,
     });
 
     if (coverageRecomputeTimer !== null) {
@@ -100,6 +113,10 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
               coverageSamples: [],
               isSimulationRecomputing: false,
               simulationProgress: 100,
+              simulationProgressMode: "determinate",
+              simulationStepLabel: "",
+              simulationSamplesDone: 0,
+              simulationSamplesTotal: 0,
             });
             window.setTimeout(() => {
               if (get().simulationRunToken === runId) {
@@ -168,8 +185,18 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
         );
         const effectiveOverlayRadiusKm = Math.min(targetRadiusKm, overlayRadiusKm, loadedRadiusCapKm);
 
-        set({ simulationProgress: 8 });
-        let lastProgress = 8;
+        const boundsForCount = simulationAreaBoundsForSites(sites, { overlayRadiusKm: effectiveOverlayRadiusKm });
+        const sampleCount = boundsForCount
+          ? computeCoverageGridDimensions(gridSize, boundsForCount, 1).totalSamples
+          : 0;
+        set({
+          simulationProgress: 0,
+          simulationProgressMode: "determinate",
+          simulationStepLabel: "Sampling simulation grid...",
+          simulationSamplesDone: 0,
+          simulationSamplesTotal: sampleCount,
+        });
+        let lastProgress = 0;
         const coverageSamples = await buildCoverageAsync(
           gridSize,
           network as Parameters<typeof buildCoverageAsync>[1],
@@ -184,22 +211,38 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
             overlayRadiusKm: effectiveOverlayRadiusKm,
             onProgress: (progress: number) => {
               if (get().simulationRunToken !== runId) return;
-              const next = Math.round(8 + progress * 84);
+              const next = Math.round(progress * 100);
               if (next - lastProgress >= 2 || next >= 99) {
                 lastProgress = next;
                 set({ simulationProgress: next });
               }
             },
+            onSampleProgress: (processed, total) => {
+              if (get().simulationRunToken !== runId) return;
+              set({
+                simulationStepLabel: `Sampling simulation grid (${processed}/${total})`,
+                simulationSamplesDone: processed,
+                simulationSamplesTotal: total,
+              });
+            },
             terrainCacheKey: `${selectedCoverageResolution}|${selectedNetworkId}|${propagationModel}|${terrainLoadEpoch}`,
           },
         );
         if (get().simulationRunToken !== runId) return;
+        set({
+          simulationProgressMode: "indeterminate",
+          simulationStepLabel: "Finalizing simulation overlay...",
+        });
         const finalize = () => {
           if (get().simulationRunToken === runId) {
             set({
               coverageSamples,
               isSimulationRecomputing: false,
               simulationProgress: 100,
+              simulationProgressMode: "determinate",
+              simulationStepLabel: "",
+              simulationSamplesDone: 0,
+              simulationSamplesTotal: 0,
             });
             window.setTimeout(() => {
               if (get().simulationRunToken === runId) {

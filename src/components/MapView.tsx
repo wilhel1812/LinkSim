@@ -1108,6 +1108,8 @@ export function MapView({
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
   const isSimulationRecomputing = useCoverageStore((state) => state.isSimulationRecomputing);
   const simulationProgress = useCoverageStore((state) => state.simulationProgress);
+  const simulationProgressMode = useCoverageStore((state) => state.simulationProgressMode);
+  const simulationStepLabel = useCoverageStore((state) => state.simulationStepLabel);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
@@ -1681,7 +1683,7 @@ export function MapView({
           : "Relay";
 
   const simulationTerrainOverlay = useMemo(() => {
-    if (!hasSimulationTerrain || !analysisBounds) return null;
+    if (!showTerrainOverlay || !hasSimulationTerrain || !analysisBounds) return null;
     const bounds = analysisBounds;
     return buildTerrainShadeOverlay(
       bounds,
@@ -1689,7 +1691,7 @@ export function MapView({
       overlayDimensions,
       overlayPointMask,
     );
-  }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions, overlayPointMask]);
+  }, [showTerrainOverlay, hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions, overlayPointMask]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending;
@@ -2286,12 +2288,18 @@ export function MapView({
             <div className="map-inspector-section">
               <p className="map-inspector-line">
                 {isSimulationRecomputing
-                  ? `Recalculating simulation... ${simulationProgress}%`
+                  ? simulationProgressMode === "determinate"
+                    ? `${simulationStepLabel || "Sampling simulation grid..."} ${simulationProgress}%`
+                    : simulationStepLabel || "Recalculating simulation..."
                   : (backgroundBusyLabel ?? "Working in background...")}
               </p>
               <div className="map-progress-track">
                 {isSimulationRecomputing ? (
-                  <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
+                  simulationProgressMode === "determinate" ? (
+                    <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
+                  ) : (
+                    <div className="map-progress-fill map-progress-fill-indeterminate" />
+                  )
                 ) : isTerrainFetching && hasTerrainDownloadProgress && terrainProgressTilesTotal > 0 ? (
                   <div className="map-progress-fill" style={{ width: `${terrainProgressPercent}%` }} />
                 ) : (
