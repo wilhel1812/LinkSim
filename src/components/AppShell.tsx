@@ -188,6 +188,7 @@ export function AppShell() {
   const [shareSpecificBusy, setShareSpecificBusy] = useState(false);
   const [shareSpecificStatus, setShareSpecificStatus] = useState("");
   const [uiNotifications, setUiNotifications] = useState<UiNotification[]>([]);
+  const uiNotificationsRef = useRef<UiNotification[]>([]);
   const [pausedNotificationIds, setPausedNotificationIds] = useState<string[]>([]);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
@@ -237,14 +238,24 @@ export function AppShell() {
     [simulationPresets, selectedScenarioId],
   );
   const pushNotification = useCallback((notice: UiNotificationInput) => {
-    setUiNotifications((current) => upsertUiNotification(current, notice));
+    setUiNotifications((current) => {
+      const next = upsertUiNotification(current, notice);
+      uiNotificationsRef.current = next;
+      return next;
+    });
   }, []);
   const dismissNotification = useCallback((id: string) => {
-    setUiNotifications((current) => dismissUiNotification(current, id));
+    setUiNotifications((current) => {
+      const next = dismissUiNotification(current, id);
+      uiNotificationsRef.current = next;
+      return next;
+    });
     setPausedNotificationIds((current) => current.filter((entry) => entry !== id));
   }, []);
   const clearNotifications = useCallback(() => {
-    setUiNotifications(clearUiNotifications());
+    const next = clearUiNotifications();
+    setUiNotifications(next);
+    uiNotificationsRef.current = next;
     setPausedNotificationIds([]);
   }, []);
   const setNotificationPaused = useCallback((id: string, isPaused: boolean) => {
@@ -688,12 +699,12 @@ export function AppShell() {
       },
       dismiss: (id) => dismissNotification(id),
       clear: () => clearNotifications(),
-      list: () => [...uiNotifications],
+      list: () => [...uiNotificationsRef.current],
     };
     return () => {
       delete target.linksimNotifications;
     };
-  }, [clearNotifications, dismissNotification, pushNotification, runtimeEnvironment, uiNotifications]);
+  }, [clearNotifications, dismissNotification, pushNotification, runtimeEnvironment]);
 
   useEffect(() => {
     try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
