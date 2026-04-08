@@ -39,6 +39,11 @@ import {
   type TerrainDataset,
 } from "../lib/terrainDataset";
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
+import {
+  defaultOptionForSelectionCount,
+  isOverlayRadiusOption,
+  type SimulationOverlayRadiusOption,
+} from "../lib/simulationOverlayRadius";
 import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
 import { getActiveHolidayTheme } from "../themes/holidayThemes";
@@ -296,6 +301,7 @@ type SimulationPreset = {
     selectedLinkId: string;
     selectedNetworkId: string;
     selectedCoverageResolution?: CoverageResolution;
+    selectedOverlayRadiusOption?: SimulationOverlayRadiusOption;
     propagationModel: PropagationModel;
     selectedFrequencyPresetId: string;
     rxSensitivityTargetDbm: number;
@@ -374,6 +380,7 @@ type AppState = {
   selectedSiteIds: string[];
   selectedNetworkId: string;
   selectedCoverageResolution: CoverageResolution;
+  selectedOverlayRadiusOption: SimulationOverlayRadiusOption;
   propagationModel: PropagationModel;
   mapViewport?: MapViewport;
   locale: LocaleCode;
@@ -457,6 +464,7 @@ type AppState = {
   getSelectedSiteIds: () => string[];
   setSelectedNetworkId: (id: string) => void;
   setSelectedCoverageResolution: (resolution: CoverageResolution) => void;
+  setSelectedOverlayRadiusOption: (value: SimulationOverlayRadiusOption) => void;
   setSelectedFrequencyPresetId: (id: string) => void;
   setRxSensitivityTargetDbm: (value: number) => void;
   setEnvironmentLossDb: (value: number) => void;
@@ -1176,6 +1184,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedSiteIds: [],
   selectedNetworkId: "",
   selectedCoverageResolution: "normal",
+  selectedOverlayRadiusOption: "20",
   propagationModel: "ITM",
   mapViewport: undefined,
   locale: "eng",
@@ -1985,6 +1994,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
+  setSelectedOverlayRadiusOption: (value) => {
+    set({ selectedOverlayRadiusOption: value });
+    useCoverageStore.getState().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
+  },
   setSelectedFrequencyPresetId: (id) => {
     set({ selectedFrequencyPresetId: id });
     get().updateCurrentSimulationSnapshot();
@@ -2539,6 +2553,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedLinkId: state.selectedLinkId,
       selectedNetworkId: state.selectedNetworkId,
       selectedCoverageResolution: state.selectedCoverageResolution,
+      selectedOverlayRadiusOption: state.selectedOverlayRadiusOption,
       propagationModel: state.propagationModel,
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
@@ -2621,6 +2636,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedLinkId: "",
         selectedNetworkId: "",
         selectedCoverageResolution: current.selectedCoverageResolution,
+        selectedOverlayRadiusOption: current.selectedOverlayRadiusOption,
         propagationModel: current.propagationModel,
         selectedFrequencyPresetId: selectedPresetId,
         rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
@@ -2681,6 +2697,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedLinkId: state.selectedLinkId,
       selectedNetworkId: state.selectedNetworkId,
       selectedCoverageResolution: state.selectedCoverageResolution,
+      selectedOverlayRadiusOption: state.selectedOverlayRadiusOption,
       propagationModel: state.propagationModel,
       selectedFrequencyPresetId: state.selectedFrequencyPresetId,
       rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
@@ -2765,6 +2782,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedLinkId: get().selectedLinkId,
         selectedNetworkId: get().selectedNetworkId,
         selectedCoverageResolution: get().selectedCoverageResolution,
+        selectedOverlayRadiusOption: get().selectedOverlayRadiusOption,
         propagationModel: get().propagationModel,
         selectedFrequencyPresetId: get().selectedFrequencyPresetId,
         rxSensitivityTargetDbm: get().rxSensitivityTargetDbm,
@@ -2821,6 +2839,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
             ? snap.selectedCoverageResolution
             : "normal",
+        selectedOverlayRadiusOption: isOverlayRadiusOption(snap.selectedOverlayRadiusOption)
+          ? snap.selectedOverlayRadiusOption
+          : defaultOptionForSelectionCount(0),
         propagationModel: "ITM" as const,
         selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
         rxSensitivityTargetDbm: typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
@@ -2875,6 +2896,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
           ? snap.selectedCoverageResolution
           : "normal",
+      selectedOverlayRadiusOption: isOverlayRadiusOption(snap.selectedOverlayRadiusOption)
+        ? snap.selectedOverlayRadiusOption
+        : defaultOptionForSelectionCount(selectedSiteId ? 1 : 0),
       propagationModel: "ITM" as const,
       selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
       rxSensitivityTargetDbm:

@@ -15,6 +15,7 @@ const LON_PAD_DEG = 0.15;
 const MAX_SPAN_DEG = 5;
 
 export type SimulationAreaOptions = {
+  overlayRadiusKm?: number;
   singleSiteRadiusKm?: number;
 };
 
@@ -23,19 +24,34 @@ export const simulationAreaBoundsForSites = (
   options?: SimulationAreaOptions,
 ): SimulationAreaBounds | null => {
   if (!sites.length) return null;
-  if (sites.length === 1 && typeof options?.singleSiteRadiusKm === "number") {
-    const radiusKm = Math.max(1, options.singleSiteRadiusKm);
-    const centerLat = sites[0].position.lat;
-    const centerLon = sites[0].position.lon;
+  const radiusOverrideKm =
+    typeof options?.overlayRadiusKm === "number"
+      ? options.overlayRadiusKm
+      : sites.length === 1 && typeof options?.singleSiteRadiusKm === "number"
+        ? options.singleSiteRadiusKm
+        : undefined;
+  if (typeof radiusOverrideKm === "number") {
+    const radiusKm = Math.max(1, radiusOverrideKm);
+    const lats = sites.map((site) => site.position.lat);
+    const lons = sites.map((site) => site.position.lon);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const centerLat = (minLat + maxLat) / 2;
     const latDelta = Math.max(0.01, radiusKm / 111.32);
     const lonDelta = Math.max(0.01, radiusKm / (111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180))));
+    const outMinLat = minLat - latDelta;
+    const outMaxLat = maxLat + latDelta;
+    const outMinLon = minLon - lonDelta;
+    const outMaxLon = maxLon + lonDelta;
     return {
-      minLat: centerLat - latDelta,
-      maxLat: centerLat + latDelta,
-      minLon: centerLon - lonDelta,
-      maxLon: centerLon + lonDelta,
-      latSpanDeg: latDelta * 2,
-      lonSpanDeg: lonDelta * 2,
+      minLat: outMinLat,
+      maxLat: outMaxLat,
+      minLon: outMinLon,
+      maxLon: outMaxLon,
+      latSpanDeg: outMaxLat - outMinLat,
+      lonSpanDeg: outMaxLon - outMinLon,
       isCapped: false,
     };
   }

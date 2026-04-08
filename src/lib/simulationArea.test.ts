@@ -21,5 +21,16 @@ describe("simulationAreaBoundsForSites", () => {
     expect(bounds).not.toBeNull();
     expect((bounds?.latSpanDeg ?? 0) * 111.32).toBeLessThan(70);
   });
-});
 
+  it("applies overlayRadiusKm buffer for multi-site selections", () => {
+    const bounds = simulationAreaBoundsForSites(
+      [
+        { position: { lat: 59.9, lon: 10.7 } },
+        { position: { lat: 60.0, lon: 10.8 } },
+      ],
+      { overlayRadiusKm: 100 },
+    );
+    expect(bounds).not.toBeNull();
+    expect((bounds?.latSpanDeg ?? 0) * 111.32).toBeGreaterThan(200);
+  });
+});

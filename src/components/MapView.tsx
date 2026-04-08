@@ -26,7 +26,12 @@ import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
-import { resolveSingleSiteBonusRadiusKm } from "../lib/singleSiteBonusRadius";
+import {
+  normalizeOverlayRadiusOptionForSelectionCount,
+  optionsForSelectionCount,
+  resolveEffectiveOverlayRadiusKm,
+  type SimulationOverlayRadiusOption,
+} from "../lib/simulationOverlayRadius";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
@@ -1131,6 +1136,8 @@ export function MapView({
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const selectedCoverageResolution = useAppStore((state) => state.selectedCoverageResolution);
   const setSelectedCoverageResolution = useAppStore((state) => state.setSelectedCoverageResolution);
+  const selectedOverlayRadiusOption = useAppStore((state) => state.selectedOverlayRadiusOption);
+  const setSelectedOverlayRadiusOption = useAppStore((state) => state.setSelectedOverlayRadiusOption);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
@@ -1286,26 +1293,58 @@ export function MapView({
     };
   }, [showDiscoveryMqtt, mqttNodes.length]);
   useEffect(() => {
-    if (selectedSites.length !== 1 || isTerrainFetching) {
+    const normalized = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
+    if (normalized !== selectedOverlayRadiusOption) {
+      setSelectedOverlayRadiusOption(normalized);
+    }
+  }, [selectionCount, selectedOverlayRadiusOption, setSelectedOverlayRadiusOption]);
+
+  useEffect(() => {
+    const normalizedOption = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
+    if (selectionCount !== 1 || normalizedOption !== "auto" || isTerrainFetching) {
       setSingleSiteBonusRadiusKm(20);
       return;
     }
     const timer = window.setTimeout(() => {
-      const nextRadius = resolveSingleSiteBonusRadiusKm(selectedSites[0], srtmTiles, {
-        baseRadiusKm: 20,
-        maxRadiusKm: 100,
+      const nextRadius = resolveEffectiveOverlayRadiusKm({
+        selectionCount: 1,
+        option: "auto",
+        selectedSingleSite: selectedSites[0],
+        srtmTiles,
+        isTerrainFetching: false,
       });
       setSingleSiteBonusRadiusKm((current) => (current === nextRadius ? current : nextRadius));
     }, SINGLE_SITE_BONUS_DEBOUNCE_MS);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [selectedSites, srtmTiles, isTerrainFetching]);
+  }, [selectionCount, selectedSites, srtmTiles, isTerrainFetching, selectedOverlayRadiusOption]);
   const hasPassFailTopology = selectionCount >= 1;
   const hasRelayTopology = selectionCount >= 2;
   const hasMinimumTopology = sites.length >= 1;
   const analysisTargetSites = selectionCount === 1 ? selectedSites : sites;
-  const overlayRadiusKm = selectionCount === 1 ? singleSiteBonusRadiusKm : 20;
+  const normalizedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
+  const overlayRadiusKm = useMemo(
+    () =>
+      normalizedOverlayRadiusOption === "auto"
+        ? singleSiteBonusRadiusKm
+        : resolveEffectiveOverlayRadiusKm({
+            selectionCount,
+            option: normalizedOverlayRadiusOption,
+            selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
+            srtmTiles,
+            isTerrainFetching,
+          }),
+    [
+      normalizedOverlayRadiusOption,
+      singleSiteBonusRadiusKm,
+      selectionCount,
+      selectedSites,
+      srtmTiles,
+      isTerrainFetching,
+    ],
+  );
+  const overlayRadiusOptions = optionsForSelectionCount(selectionCount);
   const overlayMaskArea = useMemo(
     () => buildBufferedSelectionArea(analysisTargetSites, overlayRadiusKm),
     [analysisTargetSites, overlayRadiusKm],
@@ -2391,6 +2430,23 @@ export function MapView({
                   >
                     <option value="normal">Normal</option>
                     <option value="high">High (slower)</option>
+                  </select>
+                </label>
+              )}
+              {coverageVizMode !== "none" && (
+                <label className="map-inspector-map-setting">
+                  <span>Simulation Radius</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) =>
+                      setSelectedOverlayRadiusOption(event.target.value as SimulationOverlayRadiusOption)}
+                    value={normalizedOverlayRadiusOption}
+                  >
+                    {overlayRadiusOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option === "auto" ? "Auto (current behavior)" : `${option} km`}
+                      </option>
+                    ))}
                   </select>
                 </label>
               )}

@@ -91,4 +91,18 @@ describe("buildCoverage", () => {
     );
     expect(farthestExpanded).toBeGreaterThan(farthestBase + 20);
   });
+
+  it("uses overlay radius override for multi-site sampling bounds", () => {
+    const base = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
+    const expanded = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment(), undefined, {
+      overlayRadiusKm: 100,
+    });
+    const center = {
+      lat: (sites[0].position.lat + sites[1].position.lat) / 2,
+      lon: (sites[0].position.lon + sites[1].position.lon) / 2,
+    };
+    const farthestBase = Math.max(...base.map((sample) => haversineDistanceKm(sample, center)));
+    const farthestExpanded = Math.max(...expanded.map((sample) => haversineDistanceKm(sample, center)));
+    expect(farthestExpanded).toBeGreaterThan(farthestBase + 30);
+  });
 });
