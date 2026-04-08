@@ -4,6 +4,8 @@ import {
   normalizeOverlayRadiusOptionForSelectionCount,
   optionsForSelectionCount,
   resolveEffectiveOverlayRadiusKm,
+  resolveLoadedOverlayRadiusCapKm,
+  resolveTargetOverlayRadiusKm,
 } from "./simulationOverlayRadius";
 import type { Site, SrtmTile } from "../types/radio";
 
@@ -62,5 +64,15 @@ describe("simulationOverlayRadius", () => {
     });
     expect(radius).toBe(100);
   });
-});
 
+  it("resolves target radius by context and option", () => {
+    expect(resolveTargetOverlayRadiusKm(1, "auto")).toBe(100);
+    expect(resolveTargetOverlayRadiusKm(1, "500")).toBe(500);
+    expect(resolveTargetOverlayRadiusKm(3, "100")).toBe(100);
+  });
+
+  it("caps loaded radius conservatively to available 30m tiles", () => {
+    const capped = resolveLoadedOverlayRadiusCapKm([site], 500, [mkTile("N59E010")], 20);
+    expect(capped).toBe(20);
+  });
+});

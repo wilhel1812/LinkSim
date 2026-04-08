@@ -11,6 +11,7 @@ import Map, {
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
+import { computeCoverageGridDimensions } from "../lib/coverage";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -30,8 +31,12 @@ import {
   normalizeOverlayRadiusOptionForSelectionCount,
   optionsForSelectionCount,
   resolveEffectiveOverlayRadiusKm,
+  resolveLoadedOverlayRadiusCapKm,
+  resolveTargetOverlayRadiusKm,
   type SimulationOverlayRadiusOption,
 } from "../lib/simulationOverlayRadius";
+import { simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { tilesForBounds } from "../lib/terrainTiles";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
@@ -1136,6 +1141,7 @@ export function MapView({
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const selectedCoverageResolution = useAppStore((state) => state.selectedCoverageResolution);
   const setSelectedCoverageResolution = useAppStore((state) => state.setSelectedCoverageResolution);
+  const recommendAndFetchTerrainForCurrentArea = useAppStore((state) => state.recommendAndFetchTerrainForCurrentArea);
   const selectedOverlayRadiusOption = useAppStore((state) => state.selectedOverlayRadiusOption);
   const setSelectedOverlayRadiusOption = useAppStore((state) => state.setSelectedOverlayRadiusOption);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
@@ -1324,20 +1330,36 @@ export function MapView({
   const hasMinimumTopology = sites.length >= 1;
   const analysisTargetSites = selectionCount === 1 ? selectedSites : sites;
   const normalizedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
+  const targetRadiusKm = useMemo(
+    () => resolveTargetOverlayRadiusKm(selectionCount, normalizedOverlayRadiusOption),
+    [selectionCount, normalizedOverlayRadiusOption],
+  );
+  const loadedRadiusCapKm = useMemo(
+    () => resolveLoadedOverlayRadiusCapKm(analysisTargetSites, targetRadiusKm, srtmTiles, 20),
+    [analysisTargetSites, targetRadiusKm, srtmTiles],
+  );
   const overlayRadiusKm = useMemo(
     () =>
-      normalizedOverlayRadiusOption === "auto"
-        ? singleSiteBonusRadiusKm
-        : resolveEffectiveOverlayRadiusKm({
-            selectionCount,
-            option: normalizedOverlayRadiusOption,
-            selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
-            srtmTiles,
-            isTerrainFetching,
-          }),
+      Math.min(
+        targetRadiusKm,
+        normalizedOverlayRadiusOption === "auto"
+          ? singleSiteBonusRadiusKm
+          : Math.min(
+              loadedRadiusCapKm,
+              resolveEffectiveOverlayRadiusKm({
+                selectionCount,
+                option: normalizedOverlayRadiusOption,
+                selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
+                srtmTiles,
+                isTerrainFetching,
+              }),
+            ),
+      ),
     [
+      targetRadiusKm,
       normalizedOverlayRadiusOption,
       singleSiteBonusRadiusKm,
+      loadedRadiusCapKm,
       selectionCount,
       selectedSites,
       srtmTiles,
@@ -1345,6 +1367,60 @@ export function MapView({
     ],
   );
   const overlayRadiusOptions = optionsForSelectionCount(selectionCount);
+  const loaded30mTileKeys = useMemo(
+    () => new Set(srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key)),
+    [srtmTiles],
+  );
+  const targetRadiusBounds = useMemo(
+    () => simulationAreaBoundsForSites(analysisTargetSites, { overlayRadiusKm: targetRadiusKm }),
+    [analysisTargetSites, targetRadiusKm],
+  );
+  const requiredTargetRadiusTileKeys = useMemo(
+    () =>
+      targetRadiusBounds
+        ? tilesForBounds(
+            targetRadiusBounds.minLat,
+            targetRadiusBounds.maxLat,
+            targetRadiusBounds.minLon,
+            targetRadiusBounds.maxLon,
+          )
+        : [],
+    [targetRadiusBounds],
+  );
+  const missingTargetRadiusTileCount = useMemo(
+    () => requiredTargetRadiusTileKeys.filter((key) => !loaded30mTileKeys.has(key)).length,
+    [requiredTargetRadiusTileKeys, loaded30mTileKeys],
+  );
+  const targetRadiusTerrainSignature = `${targetRadiusKm}|${requiredTargetRadiusTileKeys.join(",")}`;
+  const targetRadiusFetchAttemptRef = useRef("");
+  useEffect(() => {
+    if (coverageVizMode === "none") {
+      targetRadiusFetchAttemptRef.current = "";
+      return;
+    }
+    if (normalizedOverlayRadiusOption === "auto") {
+      targetRadiusFetchAttemptRef.current = "";
+      return;
+    }
+    if (!analysisTargetSites.length || missingTargetRadiusTileCount <= 0) {
+      targetRadiusFetchAttemptRef.current = "";
+      return;
+    }
+    if (isTerrainFetching || isTerrainRecommending) return;
+    if (targetRadiusFetchAttemptRef.current === targetRadiusTerrainSignature) return;
+    targetRadiusFetchAttemptRef.current = targetRadiusTerrainSignature;
+    void recommendAndFetchTerrainForCurrentArea(targetRadiusKm);
+  }, [
+    coverageVizMode,
+    analysisTargetSites.length,
+    missingTargetRadiusTileCount,
+    isTerrainFetching,
+    isTerrainRecommending,
+    normalizedOverlayRadiusOption,
+    targetRadiusTerrainSignature,
+    recommendAndFetchTerrainForCurrentArea,
+    targetRadiusKm,
+  ]);
   const overlayMaskArea = useMemo(
     () => buildBufferedSelectionArea(analysisTargetSites, overlayRadiusKm),
     [analysisTargetSites, overlayRadiusKm],
@@ -1386,7 +1462,6 @@ export function MapView({
     () => (boundedCoverageSamples.length >= 6 ? boundedCoverageSamples : coverageSamples),
     [boundedCoverageSamples, coverageSamples],
   );
-
   const lineFeatures = useMemo(
     () => {
       const showSelectionHighlights = !armAddSiteOnNextEmptyMapClick;
@@ -1483,6 +1558,16 @@ export function MapView({
   }, [analysisBounds, samplesForOverlay, overlayResolutionScale]);
 
   const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
+  const normalResolutionLabel = useMemo(() => {
+    if (!overlayBounds) return "Normal (576 samples)";
+    const dims = computeCoverageGridDimensions(24, overlayBounds, 1);
+    return `Normal (${dims.totalSamples} samples)`;
+  }, [overlayBounds]);
+  const highResolutionLabel = useMemo(() => {
+    if (!overlayBounds) return "High (1764 samples, slower)";
+    const dims = computeCoverageGridDimensions(42, overlayBounds, 1);
+    return `High (${dims.totalSamples} samples, slower)`;
+  }, [overlayBounds]);
   const effectiveBandStepDb = useMemo(() => {
     if (!overlayBounds) return 5;
     return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, overlayBounds) : bandStepMode;
@@ -2422,14 +2507,14 @@ export function MapView({
               </label>
               {coverageVizMode !== "none" && (
                 <label className="map-inspector-map-setting">
-                  <span>Coverage Detail</span>
+                  <span>Simulation Resolution</span>
                   <select
                     className="locale-select"
                     onChange={(event) => setSelectedCoverageResolution(event.target.value as "normal" | "high")}
                     value={selectedCoverageResolution}
                   >
-                    <option value="normal">Normal</option>
-                    <option value="high">High (slower)</option>
+                    <option value="normal">{normalResolutionLabel}</option>
+                    <option value="high">{highResolutionLabel}</option>
                   </select>
                 </label>
               )}

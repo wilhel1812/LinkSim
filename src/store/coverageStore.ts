@@ -5,7 +5,9 @@ import {
 } from "../lib/propagationEnvironment";
 import {
   normalizeOverlayRadiusOptionForSelectionCount,
+  resolveLoadedOverlayRadiusCapKm,
   resolveEffectiveOverlayRadiusKm,
+  resolveTargetOverlayRadiusKm,
 } from "../lib/simulationOverlayRadius";
 import { sampleSrtmElevation } from "../lib/srtm";
 import type { Site, SrtmTile } from "../types/radio";
@@ -148,6 +150,14 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
           srtmTiles,
           isTerrainFetching,
         });
+        const targetRadiusKm = resolveTargetOverlayRadiusKm(selectionCount, selectedOverlayRadiusOption);
+        const loadedRadiusCapKm = resolveLoadedOverlayRadiusCapKm(
+          selectionCount === 1 && selectedSingleSite ? [selectedSingleSite] : sites,
+          targetRadiusKm,
+          srtmTiles,
+          20,
+        );
+        const effectiveOverlayRadiusKm = Math.min(targetRadiusKm, overlayRadiusKm, loadedRadiusCapKm);
 
         set({ simulationProgress: 8 });
         let lastProgress = 8;
@@ -162,7 +172,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
           {
             sampleMultiplier: 1,
             terrainSamples: 20,
-            overlayRadiusKm,
+            overlayRadiusKm: effectiveOverlayRadiusKm,
             onProgress: (progress: number) => {
               if (get().simulationRunToken !== runId) return;
               const next = Math.round(8 + progress * 84);
