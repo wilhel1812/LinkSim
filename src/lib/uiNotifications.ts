@@ -8,8 +8,6 @@ export type UiNotification = {
   dismissMode: UiNotificationDismissMode;
   durationMs: number;
   createdAt: number;
-  title?: string;
-  actions?: Array<{ label: string; onClick: () => void }>;
 };
 
 export type UiNotificationInput = {
@@ -18,8 +16,6 @@ export type UiNotificationInput = {
   tone?: UiNotificationTone;
   dismissMode?: UiNotificationDismissMode;
   durationMs?: number;
-  title?: string;
-  actions?: Array<{ label: string; onClick: () => void }>;
 };
 
 const DEFAULT_DURATION_MS = 5_000;
@@ -31,8 +27,6 @@ export const createUiNotification = (input: UiNotificationInput, now = Date.now(
   dismissMode: input.dismissMode ?? "auto",
   durationMs: Math.max(0, input.durationMs ?? DEFAULT_DURATION_MS),
   createdAt: now,
-  title: input.title,
-  actions: input.actions,
 });
 
 export const upsertUiNotification = (
