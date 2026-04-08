@@ -106,4 +106,29 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
     expect(useCoverageStore.getState().coverageSamples).toHaveLength(1);
   });
+
+  it("forces 1x simulation resolution while terrain is fetching", async () => {
+    let capturedGridSize = 0;
+    setAppStoreBridge({
+      getState: () =>
+        ({
+          ...bridgeState,
+          selectedCoverageResolution: "168",
+          isTerrainFetching: true,
+        }) as unknown as Record<string, unknown>,
+      setState: vi.fn(),
+    });
+    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation((gridSize) => {
+      capturedGridSize = Number(gridSize);
+      return Promise.resolve([]);
+    });
+
+    useCoverageStore.getState().recomputeCoverage();
+    vi.advanceTimersByTime(220);
+    await Promise.resolve();
+    vi.advanceTimersByTime(700);
+    await Promise.resolve();
+
+    expect(capturedGridSize).toBe(24);
+  });
 });

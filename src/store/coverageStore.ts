@@ -88,7 +88,6 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
             : selectedCoverageResolutionRaw === "high"
               ? "42"
               : "24";
-        const gridSize = Number(selectedCoverageResolution);
         const networks = appState.networks as Array<{ id: string; [key: string]: unknown }>;
         const selectedNetworkId = appState.selectedNetworkId as string;
         const sites = appState.sites as Site[];
@@ -104,6 +103,8 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
         const selectedSiteIds = (appState.selectedSiteIds as string[]) ?? [];
         const isTerrainFetching = Boolean(appState.isTerrainFetching);
         const selectedOverlayRadiusOptionRaw = appState.selectedOverlayRadiusOption;
+        const effectiveCoverageResolution = isTerrainFetching ? "24" : selectedCoverageResolution;
+        const gridSize = Number(effectiveCoverageResolution);
 
         const network = networks.find((n) => n.id === selectedNetworkId);
         if (!network) {
@@ -225,7 +226,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
                 simulationSamplesTotal: total,
               });
             },
-            terrainCacheKey: `${selectedCoverageResolution}|${selectedNetworkId}|${propagationModel}|${terrainLoadEpoch}`,
+            terrainCacheKey: `${effectiveCoverageResolution}|${selectedNetworkId}|${propagationModel}|${terrainLoadEpoch}`,
           },
         );
         if (get().simulationRunToken !== runId) return;

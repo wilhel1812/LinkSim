@@ -1539,6 +1539,8 @@ export function MapView({
   const effectiveGridSize =
     isDraggingSite || !Number.isFinite(selectedGridSize) || selectedGridSize < 24
       ? 24
+      : isTerrainFetching
+        ? 24
       : isSimulationRecomputing
         ? lastCompletedGridSize
         : selectedGridSize;
