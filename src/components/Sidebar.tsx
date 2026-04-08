@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
+import { Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
 import Map, {
   Layer,
   Marker,
@@ -13,7 +13,7 @@ import Map, {
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { t } from "../i18n/locales";
 import { fetchElevations } from "../lib/elevationService";
-import { FREQUENCY_PRESETS } from "../lib/frequencyPlans";
+import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../lib/frequencyPlans";
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
@@ -40,22 +40,32 @@ import {
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
+import { toAccessVisibility } from "../lib/uiFormatting";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
-  parsePersistedLibraryFilterState,
-  serializeLibraryFilterState,
   type LibraryFilterRole,
   type LibraryFilterSource,
   type LibraryFilterState,
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
+import {
+  effectiveSelection,
+  persistLibraryFilterState,
+  readLibraryFilterState,
+  selectionIsFiltered,
+  selectionLabel,
+  toggleValue,
+} from "../lib/libraryFilterUi";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
 import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
+import { ActionButton } from "./ActionButton";
+import { AvatarBadge } from "./AvatarBadge";
+import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { UserAdminPanel } from "./UserAdminPanel";
@@ -65,26 +75,9 @@ const parseNumber = (value: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
-  if (value === "shared" || value === "public_write") return "shared";
-  if (value === "public" || value === "public_read") return "public";
-  return "private";
-};
-
-const initialsForUser = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
-
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
-    {avatarUrl && avatarUrl.trim() ? (
-      <img alt={name} className="profile-avatar" src={avatarUrl} />
-    ) : (
-      <span className="profile-avatar">{initialsForUser(name)}</span>
-    )}
+    <AvatarBadge avatarUrl={avatarUrl} imageClassName="profile-avatar" name={name} />
     <span>{name}</span>
   </span>
 );
@@ -156,35 +149,6 @@ const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.
 const ALL_SITE_SOURCE_FILTERS = SITE_SOURCE_FILTER_OPTIONS.map((option) => option.key);
 
 type SiteFilterGroupKey = "role" | "visibility" | "source";
-
-const readLibraryFilterState = (key: string): LibraryFilterState => {
-  try {
-    return parsePersistedLibraryFilterState(localStorage.getItem(key), DEFAULT_LIBRARY_FILTER_STATE);
-  } catch {
-    return DEFAULT_LIBRARY_FILTER_STATE;
-  }
-};
-
-const persistLibraryFilterState = (key: string, state: LibraryFilterState): void => {
-  try {
-    localStorage.setItem(key, serializeLibraryFilterState(state));
-  } catch {
-    // Best effort only.
-  }
-};
-
-const effectiveSelection = <T extends string>(selected: T[], allValues: T[]): T[] =>
-  selected.length ? selected : allValues;
-
-const selectionLabel = <T extends string>(selected: T[], allValues: T[]): string => {
-  const effective = effectiveSelection(selected, allValues);
-  return `${effective.length}/${allValues.length}`;
-};
-
-const selectionIsFiltered = <T extends string>(selected: T[], allValues: T[]): boolean => {
-  const effective = effectiveSelection(selected, allValues);
-  return effective.length !== allValues.length;
-};
 
 const formatChangeSummary = (action: string, note: string | null): string => {
   if (note && note.trim()) return note;
@@ -334,6 +298,9 @@ export function Sidebar({
   const getSelectedSite = useAppStore((state) => state.getSelectedSite);
   const showNewSimulationRequest = useAppStore((state) => state.showNewSimulationRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
+  const getDefaultFrequencyPresetIdForNewSimulation = useAppStore(
+    (state) => state.getDefaultFrequencyPresetIdForNewSimulation,
+  );
   const showSiteLibraryRequest = useAppStore((state) => state.showSiteLibraryRequest);
   const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
   const selectedLink = useMemo(
@@ -589,8 +556,6 @@ export function Sidebar({
     onConfirm: () => void;
   } | null>(null);
   const currentUserId = currentUser?.id ?? null;
-  const toggleValue = <T extends string>(values: T[], key: T): T[] =>
-    values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
   const commitSiteRoleFilters = (roleFilters: LibraryFilterRole[]) => {
     if (!roleFilters.length) return;
     setSiteLibraryFilters((state) => ({ ...state, roleFilters }));
@@ -655,12 +620,12 @@ export function Sidebar({
       setNewSimulationName("");
       setNewSimulationDescription("");
       setNewSimulationNameError("");
-      setModalFreqPresetId(selectedFrequencyPresetId);
+      setModalFreqPresetId(getDefaultFrequencyPresetIdForNewSimulation());
       setModalAutoPropEnv(autoPropagationEnvironment);
       setShowNewSimulationModal(true);
       setShowNewSimulationRequest(false);
     }
-  }, [hideLibraryBrowsing, showNewSimulationRequest, setShowNewSimulationRequest]);
+  }, [hideLibraryBrowsing, showNewSimulationRequest, setShowNewSimulationRequest, getDefaultFrequencyPresetIdForNewSimulation]);
   useEffect(() => {
     if (showSiteLibraryRequest) {
       if (hideLibraryBrowsing) {
@@ -709,7 +674,7 @@ export function Sidebar({
     if (!selectedSimulationRef.startsWith("saved:")) return "shared";
     const presetId = selectedSimulationRef.replace("saved:", "");
     const preset = simulationPresets.find((candidate) => candidate.id === presetId);
-    return normalizeAccessVisibility(preset?.visibility);
+    return toAccessVisibility(preset?.visibility);
   }, [selectedSimulationRef, simulationPresets]);
   const openActiveSimulationDetails = () => {
     if (!selectedSimulationRef.startsWith("saved:")) return;
@@ -963,7 +928,6 @@ export function Sidebar({
   useEffect(() => {
     if (!pendingSiteLibraryOpenEntryId) return;
     const entry = siteLibrary.find((candidate) => candidate.id === pendingSiteLibraryOpenEntryId);
-    setShowSiteLibraryManager(true);
     if (entry) {
       openResourceDetailsPopup({
         kind: "site",
@@ -976,6 +940,8 @@ export function Sidebar({
         lastEditedByName: (entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
         lastEditedByAvatarUrl: (entry as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
       });
+    } else {
+      setShowSiteLibraryManager(true);
     }
     clearOpenSiteLibraryEntryRequest();
   }, [pendingSiteLibraryOpenEntryId, siteLibrary, clearOpenSiteLibraryEntryRequest]);
@@ -1157,6 +1123,7 @@ export function Sidebar({
     setSelectedFrequencyPresetId(modalFreqPresetId);
     setAutoPropagationEnvironment(modalAutoPropEnv);
     const createdId = createBlankSimulationPreset(trimmed, {
+      frequencyPresetId: modalFreqPresetId,
       description: newSimulationDescription.trim() || undefined,
       visibility: newSimulationVisibility,
       ownerUserId: currentUser.id,
@@ -1201,7 +1168,6 @@ export function Sidebar({
   };
   const selectedLibraryCount = selectedLibraryIds.size;
   const openLibraryForSelectedSite = () => {
-    setShowSiteLibraryManager(true);
     const matchedEntry = siteLibrary.find(
       (entry) =>
         entry.name === selectedSite.name &&
@@ -1226,6 +1192,7 @@ export function Sidebar({
       });
       return;
     }
+    setShowSiteLibraryManager(true);
     setShowAddLibraryForm(true);
     setNewLibraryName("");
     setNewLibraryDescription("");
@@ -1541,7 +1508,7 @@ export function Sidebar({
       setResourceTxGainDraft(site?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi);
       setResourceRxGainDraft(site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi);
       setResourceCableLossDraft(site?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
-      setResourceAccessVisibility(normalizeAccessVisibility(site?.visibility));
+      setResourceAccessVisibility(toAccessVisibility(site?.visibility));
       const siteGrants = (site?.sharedWith ?? []).filter((grant) => grant.userId !== site?.ownerUserId);
       setResourceCollaboratorUserIds(siteGrants.map((grant) => grant.userId));
       setResourceCollaboratorRoles(
@@ -1558,7 +1525,7 @@ export function Sidebar({
       setResourceTxGainDraft(STANDARD_SITE_RADIO.txGainDbi);
       setResourceRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
       setResourceCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
-      setResourceAccessVisibility(normalizeAccessVisibility(simulation?.visibility));
+      setResourceAccessVisibility(toAccessVisibility(simulation?.visibility));
       const simGrants = (simulation?.sharedWith ?? []).filter((grant) => grant.userId !== simulation?.ownerUserId);
       setResourceCollaboratorUserIds(simGrants.map((grant) => grant.userId));
       setResourceCollaboratorRoles(
@@ -1816,34 +1783,32 @@ export function Sidebar({
         <div className="chip-group simulation-buttons">
           {!hideLibraryBrowsing ? (
             <>
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => setShowSimulationLibraryManager(true)}
                 type="button"
               >
                 Library
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 onClick={() => {
                   setNewSimulationName("");
                   setNewSimulationDescription("");
                   setNewSimulationNameError("");
-                  setModalFreqPresetId(selectedFrequencyPresetId);
+                  setModalFreqPresetId(getDefaultFrequencyPresetIdForNewSimulation());
                   setModalAutoPropEnv(autoPropagationEnvironment);
                   setShowNewSimulationModal(true);
                 }}
                 type="button"
               >
                 New
-              </button>
-              <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+              </ActionButton>
+              <ActionButton onClick={saveSimulationAsNew} type="button">
                 Duplicate
-              </button>
+              </ActionButton>
               {selectedSimulationRef.startsWith("saved:") ? (
-                <button className="inline-action" onClick={openActiveSimulationDetails} type="button">
+                <ActionButton onClick={openActiveSimulationDetails} type="button">
                   Edit
-                </button>
+                </ActionButton>
               ) : null}
             </>
           ) : (
@@ -1877,22 +1842,21 @@ export function Sidebar({
         <div className="chip-group">
           {!hideLibraryBrowsing ? (
             <>
-              <button className="inline-action" onClick={() => setShowSiteLibraryManager(true)} type="button">
+              <ActionButton onClick={() => setShowSiteLibraryManager(true)} type="button">
                 Library
-              </button>
+              </ActionButton>
               {newestSiteLibraryEntryId ? (
-                <button className="inline-action" onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
+                <ActionButton onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
                   Insert newest
-                </button>
+                </ActionButton>
               ) : null}
-              <button className="inline-action" onClick={openLibraryForSelectedSite} type="button">
+              <ActionButton onClick={openLibraryForSelectedSite} type="button">
                 Edit
-              </button>
+              </ActionButton>
             </>
           ) : null}
           {!readOnly ? (
-            <button
-              className="inline-action danger"
+            <ActionButton
               disabled={sites.length <= 1}
               onClick={() =>
                 requestDeleteConfirm(
@@ -1903,9 +1867,10 @@ export function Sidebar({
                 )
               }
               type="button"
+              variant="danger"
             >
               Remove
-            </button>
+            </ActionButton>
           ) : null}
         </div>
       </section>
@@ -1930,14 +1895,13 @@ export function Sidebar({
         <div className="chip-group">
           {!readOnly ? (
             <>
-              <button className="inline-action" disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+              <ActionButton disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
                 New
-              </button>
-              <button className="inline-action" onClick={openEditLinkModal} type="button">
+              </ActionButton>
+              <ActionButton onClick={openEditLinkModal} type="button">
                 Edit
-              </button>
-              <button
-                className="inline-action danger"
+              </ActionButton>
+              <ActionButton
                 disabled={!links.length}
                 onClick={() =>
                   requestDeleteConfirm(
@@ -1947,9 +1911,10 @@ export function Sidebar({
                   )
                 }
                 type="button"
+                variant="danger"
               >
                 Remove
-              </button>
+              </ActionButton>
             </>
           ) : null}
         </div>
@@ -1960,9 +1925,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>{linkModal.mode === "add" ? "Add Link" : "Edit Link"}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setLinkModal(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setLinkModal(null)} />
             </div>
             <label className="field-grid">
               <span>Link name</span>
@@ -2090,9 +2053,9 @@ export function Sidebar({
               ) : null}
             </details>
             <div className="chip-group">
-              <button className="inline-action" onClick={saveLinkModal} type="button">
+              <ActionButton onClick={saveLinkModal} type="button">
                 {linkModal.mode === "add" ? "Create Link" : "Save Link"}
-              </button>
+              </ActionButton>
             </div>
             {linkModal.status ? <p className="field-help">{linkModal.status}</p> : null}
           </div>
@@ -2145,9 +2108,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>User Profile</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setProfilePopupUser(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setProfilePopupUser(null)} />
             </div>
             <p className="field-help">
               <strong>
@@ -2208,14 +2169,13 @@ export function Sidebar({
                 </select>
               </label>
               {!profilePopupUser.isApproved ? (
-                <button
-                  className="inline-action"
+                <ActionButton
                   disabled={profilePopupBusy}
                   onClick={() => void changeProfileRole("user")}
                   type="button"
                 >
                   Approve Access
-                </button>
+                </ActionButton>
               ) : null}
             </div>
             {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
@@ -2228,9 +2188,7 @@ export function Sidebar({
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Change Log · {changeLogPopup.label}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setChangeLogPopup(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setChangeLogPopup(null)} />
             </div>
             {changeLogPopup.busy ? <p className="field-help">Loading changes...</p> : null}
             {changeLogPopup.status ? <p className="field-help">{changeLogPopup.status}</p> : null}
@@ -2275,15 +2233,14 @@ export function Sidebar({
                   ) : null}
                   {canWriteResource(changeLogPopup.kind, changeLogPopup.resourceId) ? (
                     <div className="chip-group">
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         onClick={() =>
                           void revertChangeAsCopy(changeLogPopup.kind, changeLogPopup.resourceId, change.id)
                         }
                         type="button"
                       >
                         Revert
-                      </button>
+                      </ActionButton>
                     </div>
                   ) : null}
                 </div>
@@ -2301,9 +2258,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
               <h2>Edit · {resourceDetailsPopup.label}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setResourceDetailsPopup(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setResourceDetailsPopup(null)} />
             </div>
             <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
             <p className="field-help">ID: {resourceDetailsPopup.resourceId}</p>
@@ -2399,8 +2354,8 @@ export function Sidebar({
                         type="number"
                         value={resourceGroundDraft}
                       />
-                      <button
-                        className="inline-action field-inline-btn"
+                      <ActionButton
+                        className="field-inline-btn"
                         disabled={isEditorTerrainFetching}
                         onClick={() => {
                           const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
@@ -2417,7 +2372,7 @@ export function Sidebar({
                         type="button"
                       >
                         {isEditorTerrainFetching ? "Loading…" : "Fetch"}
-                      </button>
+                      </ActionButton>
                     </div>
                   </label>
                   <label className="field-grid">
@@ -2585,23 +2540,20 @@ export function Sidebar({
               </div>
             ) : null}
             <div className="chip-group">
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => void openUserProfilePopup(resourceDetailsPopup.createdByUserId)}
                 type="button"
               >
                 Created by <UserBadge avatarUrl={resourceDetailsPopup.createdByAvatarUrl} name={resourceDetailsPopup.createdByName} />
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 onClick={() => void openUserProfilePopup(resourceDetailsPopup.lastEditedByUserId)}
                 type="button"
               >
                 Last edited by{" "}
                 <UserBadge avatarUrl={resourceDetailsPopup.lastEditedByAvatarUrl} name={resourceDetailsPopup.lastEditedByName} />
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 onClick={() =>
                   void openChangeLogPopup(
                     resourceDetailsPopup.kind,
@@ -2612,7 +2564,7 @@ export function Sidebar({
                 type="button"
               >
                 Open change log
-              </button>
+              </ActionButton>
             </div>
             {resourceDetailsPopup.kind === "site" && currentResourceMqttMetaLines.length ? (
               <details className="compact-details">
@@ -2669,9 +2621,9 @@ export function Sidebar({
                             <option value="viewer">Viewer</option>
                             <option value="editor">Editor</option>
                           </select>
-                          <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
+                          <ActionButton onClick={() => removeCollaborator(user.id)} type="button">
                             Remove
-                          </button>
+                          </ActionButton>
                         </span>
                       ))
                     ) : (
@@ -2713,8 +2665,7 @@ export function Sidebar({
             </details>
             </fieldset>
             {resourceDetailsPopup.kind === "simulation" ? (
-              <details className="compact-details">
-                <summary>Propagation & Channel</summary>
+              <div className="compact-details">
                 {networks.length > 1 ? (
                   <label className="field-grid">
                     <span>Active network</span>
@@ -2735,126 +2686,126 @@ export function Sidebar({
                   <span>Frequency Plan</span>
                   <select
                     className="locale-select"
-                    onChange={(event) => setSelectedFrequencyPresetId(event.target.value)}
+                    onChange={(event) => {
+                      setSelectedFrequencyPresetId(event.target.value);
+                      applyFrequencyPresetToSelectedNetwork();
+                    }}
                     value={selectedFrequencyPresetId}
                   >
-                    {FREQUENCY_PRESETS.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label}
+                    {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
+                      <optgroup key={groupEntry.group} label={groupEntry.group}>
+                        {groupEntry.presets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+                <p className="field-help">
+                  These parameters feed terrain-aware path loss. Auto mode derives defaults from current
+                  terrain/profile and you can override manually.
+                </p>
+                <label className="field-grid">
+                  <span>Auto environment defaults</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
+                    value={autoPropagationEnvironment ? "auto" : "manual"}
+                  >
+                    <option value="auto">Auto (recommended)</option>
+                    <option value="manual">Manual override</option>
+                  </select>
+                </label>
+                <p className="field-help">{propagationEnvironmentReason}</p>
+                <label className="field-grid">
+                  <span>Radio Climate</span>
+                  <select
+                    className="locale-select"
+                    disabled={autoPropagationEnvironment}
+                    onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
+                    value={effectivePropagationEnvironment.radioClimate}
+                  >
+                    {RADIO_CLIMATE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
                       </option>
                     ))}
                   </select>
                 </label>
-                <button className="inline-action" onClick={() => applyFrequencyPresetToSelectedNetwork()} type="button">
-                  Apply Frequency Plan
-                </button>
-                <details className="compact-details">
-                  <summary>ITM Environment</summary>
-                  <p className="field-help">
-                    These parameters feed terrain-aware path loss. Auto mode derives defaults from current
-                    terrain/profile and you can override manually.
-                  </p>
-                  <label className="field-grid">
-                    <span>Auto environment defaults</span>
-                    <select
-                      className="locale-select"
-                      onChange={(event) => setAutoPropagationEnvironment(event.target.value === "auto")}
-                      value={autoPropagationEnvironment ? "auto" : "manual"}
-                    >
-                      <option value="auto">Auto (recommended)</option>
-                      <option value="manual">Manual override</option>
-                    </select>
-                  </label>
-                  <p className="field-help">{propagationEnvironmentReason}</p>
-                  <label className="field-grid">
-                    <span>Radio Climate</span>
-                    <select
-                      className="locale-select"
-                      disabled={autoPropagationEnvironment}
-                      onChange={(event) => applyClimateDefaults(event.target.value as RadioClimate)}
-                      value={effectivePropagationEnvironment.radioClimate}
-                    >
-                      {RADIO_CLIMATE_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field-grid">
-                    <span>Polarization</span>
-                    <select
-                      className="locale-select"
-                      disabled={autoPropagationEnvironment}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
-                      }
-                      value={effectivePropagationEnvironment.polarization}
-                    >
-                      <option value="Vertical">Vertical</option>
-                      <option value="Horizontal">Horizontal</option>
-                    </select>
-                  </label>
-                  <label className="field-grid">
-                    <span>Clutter Height (m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={0}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
-                      }
-                      type="number"
-                      value={effectivePropagationEnvironment.clutterHeightM}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Ground Dielectric (V/m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={1}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
-                      }
-                      step="0.1"
-                      type="number"
-                      value={effectivePropagationEnvironment.groundDielectric}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Ground Conductivity (S/m)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={0}
-                      onChange={(event) =>
-                        setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
-                      }
-                      step="0.001"
-                      type="number"
-                      value={effectivePropagationEnvironment.groundConductivity}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Atmospheric Bending (N-units)</span>
-                    <input
-                      disabled={autoPropagationEnvironment}
-                      min={250}
-                      onChange={(event) =>
-                        setPropagationEnvironment({
-                          atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
-                        })
-                      }
-                      step="1"
-                      type="number"
-                      value={effectivePropagationEnvironment.atmosphericBendingNUnits}
-                    />
-                  </label>
-                </details>
-              </details>
+                <label className="field-grid">
+                  <span>Polarization</span>
+                  <select
+                    className="locale-select"
+                    disabled={autoPropagationEnvironment}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ polarization: event.target.value as "Vertical" | "Horizontal" })
+                    }
+                    value={effectivePropagationEnvironment.polarization}
+                  >
+                    <option value="Vertical">Vertical</option>
+                    <option value="Horizontal">Horizontal</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Clutter Height (m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={0}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ clutterHeightM: Math.max(0, parseNumber(event.target.value)) })
+                    }
+                    type="number"
+                    value={effectivePropagationEnvironment.clutterHeightM}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground Dielectric (V/m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={1}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ groundDielectric: Math.max(1, parseNumber(event.target.value)) })
+                    }
+                    step="0.1"
+                    type="number"
+                    value={effectivePropagationEnvironment.groundDielectric}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Ground Conductivity (S/m)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={0}
+                    onChange={(event) =>
+                      setPropagationEnvironment({ groundConductivity: Math.max(0, parseNumber(event.target.value)) })
+                    }
+                    step="0.001"
+                    type="number"
+                    value={effectivePropagationEnvironment.groundConductivity}
+                  />
+                </label>
+                <label className="field-grid">
+                  <span>Atmospheric Bending (N-units)</span>
+                  <input
+                    disabled={autoPropagationEnvironment}
+                    min={250}
+                    onChange={(event) =>
+                      setPropagationEnvironment({
+                        atmosphericBendingNUnits: Math.max(250, Math.min(400, parseNumber(event.target.value))),
+                      })
+                    }
+                    step="1"
+                    type="number"
+                    value={effectivePropagationEnvironment.atmosphericBendingNUnits}
+                  />
+                </label>
+              </div>
             ) : null}
             {resourceCanWrite ? (
               <div className="chip-group">
-                <button
-                  className="inline-action danger"
+                <ActionButton
                   onClick={() => {
                     let siteDeleteMessage = `Delete "${resourceDetailsPopup.label}" from the site library?`;
                     if (resourceDetailsPopup.kind === "site") {
@@ -2885,9 +2836,10 @@ export function Sidebar({
                     );
                   }}
                   type="button"
+                  variant="danger"
                 >
                   Delete
-                </button>
+                </ActionButton>
               </div>
             ) : null}
           </div>
@@ -2905,18 +2857,12 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>New Simulation</h2>
-                <button
-                  aria-label="Close"
-                  className="inline-action inline-action-icon"
+                <InlineCloseIconButton
                   onClick={() => {
                     setShowNewSimulationModal(false);
                     setNewSimulationNameError("");
                   }}
-                  title="Close"
-                  type="button"
-                >
-                  <CircleX aria-hidden="true" strokeWidth={1.8} />
-                </button>
+                />
             </div>
             <label className="field-grid">
               <span>Name</span>
@@ -2955,8 +2901,7 @@ export function Sidebar({
                 <option value="shared">Shared</option>
               </select>
             </label>
-            <details className="compact-details">
-              <summary>Advanced</summary>
+            <div className="compact-details">
               <label className="field-grid">
                 <span>Frequency Plan</span>
                 <select
@@ -2964,15 +2909,17 @@ export function Sidebar({
                   onChange={(event) => setModalFreqPresetId(event.target.value)}
                   value={modalFreqPresetId}
                 >
-                  {FREQUENCY_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
+                  {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
+                    <optgroup key={groupEntry.group} label={groupEntry.group}>
+                      {groupEntry.presets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
-              <details className="compact-details">
-                <summary>ITM Environment</summary>
                 <p className="field-help">
                   These parameters feed terrain-aware path loss. Auto mode derives defaults from terrain; you can
                   override manually.
@@ -3070,12 +3017,11 @@ export function Sidebar({
                     value={effectivePropagationEnvironment.atmosphericBendingNUnits}
                   />
                 </label>
-              </details>
-            </details>
+            </div>
             <div className="chip-group">
-              <button className="inline-action" onClick={createBlankSimulation} type="button">
+              <ActionButton onClick={createBlankSimulation} type="button">
                 Create
-              </button>
+              </ActionButton>
             </div>
           </div>
         </ModalOverlay>
@@ -3106,9 +3052,7 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>Visibility Change Confirmation</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setPendingSimulationVisibilityPrompt(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setPendingSimulationVisibilityPrompt(null)} />
             </div>
             <p className="field-help">
               You are setting this simulation to{" "}
@@ -3120,12 +3064,12 @@ export function Sidebar({
               <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong> as well?
             </p>
             <div className="chip-group">
-              <button className="inline-action" onClick={applyPendingSimulationVisibilityChange} type="button">
+              <ActionButton onClick={applyPendingSimulationVisibilityChange} type="button">
                 Change
-              </button>
-              <button className="inline-action" onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
                 Cancel
-              </button>
+              </ActionButton>
             </div>
           </div>
         </ModalOverlay>
@@ -3142,19 +3086,13 @@ export function Sidebar({
           <div className="library-manager-card">
             <div className="library-manager-header">
               <h2>Site Library</h2>
-              <button
-                aria-label="Close"
-                className="inline-action inline-action-icon"
+              <InlineCloseIconButton
                 onClick={() => {
                   setShowSiteLibraryManager(false);
                   setPendingDraftAutoInsert(false);
                   closeSiteFilterEditors();
                 }}
-                title="Close"
-                type="button"
-              >
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              />
             </div>
             <p className="field-help">
               Built for large libraries. Select one or more entries to add into this simulation.
@@ -3171,8 +3109,8 @@ export function Sidebar({
             <div className="library-filter-toolbar" ref={siteFilterToolbarRef}>
               <span className="library-filter-row-label">Filters:</span>
               <div className="library-filter-menu">
-                <button
-                  className={clsx("inline-action", "library-filter-trigger", {
+                <ActionButton
+                  className={clsx("library-filter-trigger", {
                     "library-filter-trigger-active": selectionIsFiltered(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS),
                   })}
                   onClick={openSiteRoleEditor}
@@ -3182,16 +3120,16 @@ export function Sidebar({
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
                     <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
-                </button>
+                </ActionButton>
                 {openSiteFilterGroup === "role" ? (
                   <div className="library-filter-popover">
                     <div className="library-filter-popover-actions">
-                      <button className="inline-action" onClick={() => commitSiteRoleFilters(ALL_ROLE_FILTERS)} type="button">
+                      <ActionButton onClick={() => commitSiteRoleFilters(ALL_ROLE_FILTERS)} type="button">
                         All
-                      </button>
-                      <button className="inline-action" onClick={() => setSiteRoleDraft([])} type="button">
+                      </ActionButton>
+                      <ActionButton onClick={() => setSiteRoleDraft([])} type="button">
                         None
-                      </button>
+                      </ActionButton>
                     </div>
                     <div className="library-filter-popover-options">
                       {ROLE_FILTER_OPTIONS.map((option) => {
@@ -3218,8 +3156,8 @@ export function Sidebar({
               </div>
 
               <div className="library-filter-menu">
-                <button
-                  className={clsx("inline-action", "library-filter-trigger", {
+                <ActionButton
+                  className={clsx("library-filter-trigger", {
                     "library-filter-trigger-active": selectionIsFiltered(
                       siteLibraryFilters.visibilityFilters,
                       ALL_VISIBILITY_FILTERS,
@@ -3232,20 +3170,19 @@ export function Sidebar({
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
                     <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
-                </button>
+                </ActionButton>
                 {openSiteFilterGroup === "visibility" ? (
                   <div className="library-filter-popover">
                     <div className="library-filter-popover-actions">
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         onClick={() => commitSiteVisibilityFilters(ALL_VISIBILITY_FILTERS)}
                         type="button"
                       >
                         All
-                      </button>
-                      <button className="inline-action" onClick={() => setSiteVisibilityDraft([])} type="button">
+                      </ActionButton>
+                      <ActionButton onClick={() => setSiteVisibilityDraft([])} type="button">
                         None
-                      </button>
+                      </ActionButton>
                     </div>
                     <div className="library-filter-popover-options">
                       {VISIBILITY_FILTER_OPTIONS.map((option) => {
@@ -3273,8 +3210,8 @@ export function Sidebar({
               </div>
 
               <div className="library-filter-menu">
-                <button
-                  className={clsx("inline-action", "library-filter-trigger", {
+                <ActionButton
+                  className={clsx("library-filter-trigger", {
                     "library-filter-trigger-active": selectionIsFiltered(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS),
                   })}
                   onClick={openSiteSourceEditor}
@@ -3284,20 +3221,19 @@ export function Sidebar({
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
                     <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
-                </button>
+                </ActionButton>
                 {openSiteFilterGroup === "source" ? (
                   <div className="library-filter-popover">
                     <div className="library-filter-popover-actions">
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         onClick={() => commitSiteSourceFilters(ALL_SITE_SOURCE_FILTERS)}
                         type="button"
                       >
                         All
-                      </button>
-                      <button className="inline-action" onClick={() => setSiteSourceDraft([])} type="button">
+                      </ActionButton>
+                      <ActionButton onClick={() => setSiteSourceDraft([])} type="button">
                         None
-                      </button>
+                      </ActionButton>
                     </div>
                     <div className="library-filter-popover-options">
                       {SITE_SOURCE_FILTER_OPTIONS.map((option) => {
@@ -3323,8 +3259,7 @@ export function Sidebar({
                 ) : null}
               </div>
 
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => {
                   setSiteLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE);
                   closeSiteFilterEditors();
@@ -3332,11 +3267,10 @@ export function Sidebar({
                 type="button"
               >
                 Clear Filters
-              </button>
+              </ActionButton>
             </div>
             <div className="chip-group">
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => {
                   setShowAddLibraryForm((current) => !current);
                   if (showAddLibraryForm) {
@@ -3347,19 +3281,17 @@ export function Sidebar({
                 type="button"
               >
                 {showAddLibraryForm ? "Hide Add Form" : "Add Site"}
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 onClick={() => setSelectedLibraryIds(new Set(filteredSiteLibrary.map((entry) => entry.id)))}
                 type="button"
               >
                 Select Filtered ({filteredSiteLibrary.length})
-              </button>
-              <button className="inline-action" onClick={() => setSelectedLibraryIds(new Set())} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => setSelectedLibraryIds(new Set())} type="button">
                 Clear Selection
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 disabled={!selectedLibraryCount}
                 onClick={() => {
                   insertSitesFromLibrary(Array.from(selectedLibraryIds));
@@ -3368,9 +3300,8 @@ export function Sidebar({
                 type="button"
               >
                 Add Selected To Simulation ({selectedLibraryCount})
-              </button>
-              <button
-                className="inline-action danger"
+              </ActionButton>
+              <ActionButton
                 disabled={!selectedLibraryCount}
                 onClick={() => {
                   const deletedIds = Array.from(selectedLibraryIds);
@@ -3392,9 +3323,10 @@ export function Sidebar({
                   );
                 }}
                 type="button"
+                variant="danger"
               >
                 Delete Selected ({selectedLibraryCount})
-              </button>
+              </ActionButton>
             </div>
             {showAddLibraryForm ? (
               <div className="library-editor">
@@ -3453,9 +3385,9 @@ export function Sidebar({
                       type="number"
                       value={newLibraryGroundM}
                     />
-                    <button className="inline-action field-inline-btn" disabled={isEditorTerrainFetching} onClick={fetchNewLibraryGroundFromTerrain} type="button">
+                    <ActionButton className="field-inline-btn" disabled={isEditorTerrainFetching} onClick={fetchNewLibraryGroundFromTerrain} type="button">
                       {isEditorTerrainFetching ? "Loading…" : "Fetch"}
-                    </button>
+                    </ActionButton>
                   </div>
                 </label>
                 <label className="field-grid">
@@ -3507,22 +3439,21 @@ export function Sidebar({
                     value={librarySearchQuery}
                   />
                 </label>
-                <button className="inline-action" disabled={librarySearchBusy} onClick={() => void runLibrarySearch()} type="button">
+                <ActionButton disabled={librarySearchBusy} onClick={() => void runLibrarySearch()} type="button">
                   {librarySearchBusy ? "Searching…" : "Search"}
-                </button>
+                </ActionButton>
                 {librarySearchStatus ? <p className="field-help">{librarySearchStatus}</p> : null}
                 {librarySearchResults.length ? (
                   <div className="asset-list">
                     {librarySearchResults.map((result) => (
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         disabled={librarySearchPickBusyId !== null}
                         key={result.id}
                         onClick={() => void selectLibrarySearchResult(result)}
                         type="button"
                       >
                         {librarySearchPickBusyId === result.id ? "Loading..." : `Use: ${result.label}`}
-                      </button>
+                      </ActionButton>
                     ))}
                   </div>
                 ) : null}
@@ -3542,16 +3473,15 @@ export function Sidebar({
                     />
                   </label>
                   <div className="chip-group">
-                    <button className="inline-action" disabled={meshmapLoading} onClick={() => void loadMeshmapFeed()} type="button">
+                    <ActionButton disabled={meshmapLoading} onClick={() => void loadMeshmapFeed()} type="button">
                       {meshmapLoading ? "Loading..." : "Load Feed"}
-                    </button>
-                    <button
-                      className="inline-action"
+                    </ActionButton>
+                    <ActionButton
                       onClick={() => setShowMeshtasticBrowser((current) => !current)}
                       type="button"
                     >
                       {showMeshtasticBrowser ? "Hide Browser" : "Show Browser"}
-                    </button>
+                    </ActionButton>
                   </div>
                   {meshmapLoading ? (
                     <div className="map-progress-track" style={{ marginTop: 8 }}>
@@ -3568,16 +3498,15 @@ export function Sidebar({
                     <p className="field-help">
                       {meshmapStatus}
                       {meshmapStatus.includes("failed") ? (
-                        <button
+                        <ActionButton
                           aria-label="Retry loading Meshtastic feed"
-                          className="inline-action"
                           onClick={() => void loadMeshmapFeed()}
                           style={{ marginLeft: 8 }}
                           type="button"
                         >
                           <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
                           <span>Retry</span>
-                        </button>
+                        </ActionButton>
                       ) : null}
                     </p>
                   ) : null}
@@ -3620,9 +3549,9 @@ export function Sidebar({
                             Short: {selectedMeshmapNode.shortName ?? "n/a"} | Node ID: {selectedMeshmapNode.nodeId}
                             {selectedMeshmapNode.hwModel ? ` | HW: ${selectedMeshmapNode.hwModel}` : ""}
                           </p>
-                          <button className="inline-action" onClick={() => void addSelectedMeshmapNodeToLibrary()} type="button">
+                          <ActionButton onClick={() => void addSelectedMeshmapNodeToLibrary()} type="button">
                             Add Selected MQTT Node To Library
-                          </button>
+                          </ActionButton>
                         </div>
                       ) : (
                         <p className="field-help">Click a node in the map to select it.</p>
@@ -3736,22 +3665,21 @@ export function Sidebar({
                   </div>
                 </div>
                 <div className="chip-group">
-                  <button className="inline-action" onClick={addLibraryEntryNow} type="button">
-                    Add To Library
-                  </button>
-                  <button
-                    className="inline-action"
-                    onClick={() => {
-                      setShowAddLibraryForm(false);
-                      setNewLibraryNameError("");
+                <ActionButton onClick={addLibraryEntryNow} type="button">
+                  Add To Library
+                </ActionButton>
+                <ActionButton
+                  onClick={() => {
+                    setShowAddLibraryForm(false);
+                    setNewLibraryNameError("");
                       setNewLibraryDescription("");
                       setNewLibrarySourceMeta(undefined);
                       setPendingDraftAutoInsert(false);
-                    }}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </ActionButton>
                 </div>
               </div>
             ) : null}
@@ -3775,7 +3703,7 @@ export function Sidebar({
                     {entry.name} ({entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)})
                   </span>
                   <span className="library-row-meta">
-                    <span className="access-badge">{normalizeAccessVisibility((entry as { visibility?: unknown }).visibility)}</span>
+                    <span className="access-badge">{toAccessVisibility((entry as { visibility?: unknown }).visibility)}</span>
                     {(entry as { sourceMeta?: { sourceType?: string } }).sourceMeta?.sourceType === "mqtt-feed" ? (
                       <span className="access-badge mqtt-source-badge">MQTT</span>
                     ) : null}
@@ -3785,15 +3713,12 @@ export function Sidebar({
                       title={`Owner: ${owner.name}`}
                       type="button"
                     >
-                      {owner.avatarUrl ? (
-                        <img
-                          alt={owner.name}
-                          className="row-avatar-image"
-                          src={owner.avatarUrl}
-                        />
-                      ) : (
-                        initialsForUser(owner.name)
-                      )}
+                      <AvatarBadge
+                        avatarUrl={owner.avatarUrl}
+                        fallbackRawText
+                        imageClassName="row-avatar-image"
+                        name={owner.name}
+                      />
                     </button>
                     {((entry.sharedWith ?? [])
                       .filter((grant) => grant.userId !== (entry as { ownerUserId?: string }).ownerUserId)
@@ -3810,11 +3735,12 @@ export function Sidebar({
                             title={name}
                             type="button"
                           >
-                            {avatarUrl ? (
-                              <img alt={name} className="row-avatar-image" src={avatarUrl} />
-                            ) : (
-                              initialsForUser(name)
-                            )}
+                            <AvatarBadge
+                              avatarUrl={avatarUrl}
+                              fallbackRawText
+                              imageClassName="row-avatar-image"
+                              name={name}
+                            />
                           </button>
                         );
                       }))}
@@ -3823,11 +3749,10 @@ export function Sidebar({
                     );
                   })()}
                   <div className="library-row-actions">
-                    <button className="inline-action" onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                    <ActionButton onClick={() => insertSiteFromLibrary(entry.id)} type="button">
                       Add to simulation
-                    </button>
-                    <button
-                      className="inline-action"
+                    </ActionButton>
+                    <ActionButton
                       onClick={() =>
                         openResourceDetailsPopup({
                           kind: "site",
@@ -3848,7 +3773,7 @@ export function Sidebar({
                       type="button"
                     >
                       Open
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
               ))}
@@ -3862,26 +3787,24 @@ export function Sidebar({
           <div className="library-manager-card user-profile-popup">
             <div className="library-manager-header">
               <h2>{deleteConfirm.title}</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setDeleteConfirm(null)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setDeleteConfirm(null)} />
             </div>
             <p className="field-help">{deleteConfirm.message}</p>
             <div className="chip-group">
-              <button className="inline-action" onClick={() => setDeleteConfirm(null)} type="button">
+              <ActionButton onClick={() => setDeleteConfirm(null)} type="button">
                 Cancel
-              </button>
-              <button
-                className="inline-action danger"
+              </ActionButton>
+              <ActionButton
                 onClick={() => {
                   const action = deleteConfirm.onConfirm;
                   setDeleteConfirm(null);
                   action();
                 }}
                 type="button"
+                variant="danger"
               >
                 {deleteConfirm.confirmLabel}
-              </button>
+              </ActionButton>
             </div>
           </div>
         </ModalOverlay>

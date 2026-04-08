@@ -44,4 +44,19 @@ describe("api/me", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
+
+  it("passes defaultFrequencyPresetId through PATCH", async () => {
+    const req = new Request("https://example.test/api/me", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ defaultFrequencyPresetId: "mt-us" }),
+    });
+    const res = await onRequestPatch(mkCtx(req));
+    expect(res.status).toBe(200);
+    expect(updateUserProfileMock).toHaveBeenCalledWith(
+      env,
+      "u1",
+      expect.objectContaining({ defaultFrequencyPresetId: "mt-us" }),
+    );
+  });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
-import { CircleQuestionMark, CircleUserRound, CircleX } from "lucide-react";
+import { CircleAlert, CircleQuestionMark, CircleUserRound } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -24,21 +24,19 @@ import {
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
+import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../lib/frequencyPlans";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
+import { deriveSyncIndicator } from "../lib/syncIndicator";
 import { useAppStore } from "../store/appStore";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import type { UiColorTheme } from "../themes/types";
+import { AvatarBadge } from "./AvatarBadge";
+import { ActionButton } from "./ActionButton";
 import { InfoTip } from "./InfoTip";
+import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
 import { SettingsIcon, SyncStatusIcon } from "./icons/AppIcons";
-
-const initialsFor = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
 
 const fmtDate = (iso: string | null | undefined): string => {
   if (!iso) return "-";
@@ -49,15 +47,6 @@ const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
-
-type SyncIndicatorState = "local" | "offline" | "pending" | "syncing" | "synced" | "error";
-
-type SyncIndicator = {
-  state: SyncIndicatorState;
-  className: string;
-  label: string;
-  title: string;
-};
 
 const readDismissedNotificationIds = (): Set<string> => {
   try {
@@ -151,6 +140,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   const syncErrorMessage = useAppStore((state) => state.syncErrorMessage);
   const performManualCloudSync = useAppStore((state) => state.performManualCloudSync);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const authState = useAppStore((state) => state.authState);
+  const setAuthState = useAppStore((state) => state.setAuthState);
+  const currentUser = useAppStore((state) => state.currentUser);
   const { activeHolidayTheme } = useThemeVariant();
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
@@ -170,6 +162,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   const [avatarDraft, setAvatarDraft] = useState("");
   const [avatarStatus, setAvatarStatus] = useState("");
   const [emailPublicDraft, setEmailPublicDraft] = useState(true);
+  const [defaultFrequencyPresetIdDraft, setDefaultFrequencyPresetIdDraft] = useState<string | null>(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState("");
@@ -205,6 +198,8 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           : "pending";
   const canEditAccessRequestNote = Boolean(canModerate || !me?.isApproved);
   const showAccessRequestNoteField = Boolean(canModerate || !me?.isApproved);
+  const isSignedIn = authState === "signed_in" && Boolean(currentUser);
+  const displayUser = me ?? currentUser;
 
   const refreshAdminData = async () => {
     if (!canModerate) return;
@@ -291,6 +286,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       const current = await fetchMe();
       setMe(current);
       setCurrentUser(current);
+      setAuthState("signed_in");
       setNameDraft(current.username);
       setEmailDraft(current.email ?? "");
       setNameError("");
@@ -299,6 +295,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       setAccessRequestNoteDraft(current.accessRequestNote ?? "");
       setAvatarDraft(current.avatarUrl ?? "");
       setEmailPublicDraft(current.emailPublic ?? true);
+      setDefaultFrequencyPresetIdDraft(current.defaultFrequencyPresetId ?? null);
       if (current.isAdmin) {
         const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
@@ -329,14 +326,21 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     } catch (error) {
       const message = getUiErrorMessage(error);
       setStatus(`User load failed: ${message}`);
+      setMe(null);
+      setCurrentUser(null);
+      setAuthState("signed_out");
     } finally {
       setBusy(false);
     }
   };
 
   useEffect(() => {
+    if (authState === "signed_out") {
+      setMe(null);
+      return;
+    }
     void load();
-  }, []);
+  }, [authState]);
 
   useEffect(() => {
     if (!canModerate) {
@@ -411,15 +415,18 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
         bio: bioDraft,
         accessRequestNote: accessRequestNoteDraft,
         emailPublic: emailPublicDraft,
+        defaultFrequencyPresetId: defaultFrequencyPresetIdDraft,
       });
       setMe(updated);
       setCurrentUser(updated);
+      setAuthState("signed_in");
       setNameDraft(updated.username);
       setEmailDraft(updated.email ?? "");
       setBioDraft(updated.bio ?? "");
       setAccessRequestNoteDraft(updated.accessRequestNote ?? "");
       setAvatarDraft(updated.avatarUrl ?? "");
       setEmailPublicDraft(updated.emailPublic ?? true);
+      setDefaultFrequencyPresetIdDraft(updated.defaultFrequencyPresetId ?? null);
       setStatus("Profile updated. Account settings save immediately (separate from simulation sync).");
       if (canModerate) {
         await refreshAdminData();
@@ -446,6 +453,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       setAvatarDraft(uploaded.user.avatarUrl ?? "");
       setMe(uploaded.user);
       setCurrentUser(uploaded.user);
+      setAuthState("signed_in");
       setAvatarStatus("Avatar uploaded and saved.");
       setStatus("Avatar uploaded and saved.");
     } catch (error) {
@@ -669,8 +677,11 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
       window.location.reload();
       return;
     }
+    setMe(null);
+    setCurrentUser(null);
+    setAuthState("signed_out");
     window.location.href = "/cdn-cgi/access/logout";
-  }, [isLocalRuntime]);
+  }, [isLocalRuntime, setAuthState, setCurrentUser]);
 
   const handleSignUp = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -687,51 +698,16 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     };
   }, []);
 
-  const getSyncIndicator = (): SyncIndicator => {
-    const timeLabel = lastSyncedAt
-      ? `Up to date (synced ${new Date(lastSyncedAt).toLocaleTimeString()})`
-      : "Up to date";
-
-    if (isLocalRuntime) {
-      return { state: "local", className: "sync-local", label: "Local mode", title: "Local mode - no cloud sync available" };
-    }
-
-    if (!isOnline) {
-      return {
-        state: "offline",
-        className: "sync-offline",
-        label: "Offline",
-        title: `Offline. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}. Open Sync Status for details.`,
-      };
-    }
-
-    if (syncPending) {
-      return {
-        state: "pending",
-        className: "sync-pending",
-        label: "Sync pending",
-        title: `${timeLabel}. ${pendingChangesCount} pending change${pendingChangesCount === 1 ? "" : "s"}.`,
-      };
-    }
-
-    switch (syncStatus) {
-      case "syncing":
-        return { state: "syncing", className: "sync-syncing", label: "Syncing...", title: timeLabel };
-      case "synced":
-        return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
-      case "error":
-        return {
-          state: "error",
-          className: "sync-error",
-          label: "Sync failed",
-          title: `${timeLabel}. ${syncErrorMessage ?? "Open Sync Status for details."}`,
-        };
-      default:
-        return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
-    }
-  };
-
-  const syncIndicator = getSyncIndicator();
+  const syncIndicator = deriveSyncIndicator({
+    isLocalRuntime,
+    isOnline,
+    authState,
+    syncStatus,
+    syncPending,
+    pendingChangesCount,
+    syncErrorMessage,
+    lastSyncedAt,
+  });
 
   const handleSyncIndicatorClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -741,9 +717,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
   return (
     <>
       <div className="user-chip-row">
-        {me ? (
+        {isSignedIn && displayUser ? (
           <button aria-label="Open user settings" className="user-chip" onClick={() => setOpen(true)} type="button">
-            <ProfileAvatar avatarUrl={me.avatarUrl ?? ""} name={me.username ?? "User"} />
+            <ProfileAvatar avatarUrl={displayUser.avatarUrl ?? ""} name={displayUser.username ?? "User"} />
             {canModerate && unreadNotifications.length > 0 ? (
               <span className="notification-badge">{unreadNotifications.length}</span>
             ) : null}
@@ -761,7 +737,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           </button>
         )}
         <div className="user-chip-actions">
-          {me ? (
+          {isSignedIn ? (
             <>
               <button
                 aria-label={syncIndicator.label}
@@ -795,9 +771,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
           <div className="library-manager-card sync-modal">
             <div className="library-manager-header">
               <h2>Cloud Sync</h2>
-              <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setSyncModalOpen(false)} title="Close" type="button">
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              <InlineCloseIconButton onClick={() => setSyncModalOpen(false)} />
             </div>
             <div className="sync-modal-content">
               <div className="sync-info-grid">
@@ -867,8 +841,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
               </div>
               <div className="chip-group">
                 {syncStatus !== "syncing" ? (
-                  <button
-                    className="inline-action"
+                  <ActionButton
                     disabled={!isOnline}
                     onClick={() => {
                       void performManualCloudSync();
@@ -876,7 +849,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     type="button"
                   >
                     Sync Now
-                  </button>
+                  </ActionButton>
                 ) : null}
               </div>
             </div>
@@ -890,12 +863,10 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
             <div className="library-manager-header">
               <h2>User Settings</h2>
               <div className="chip-group">
-                <button className="inline-action" onClick={handleSignOut} type="button">
+                <ActionButton onClick={handleSignOut} type="button">
                   Sign Out
-                </button>
-                <button aria-label="Close" className="inline-action inline-action-icon" onClick={() => setOpen(false)} title="Close" type="button">
-                  <CircleX aria-hidden="true" strokeWidth={1.8} />
-                </button>
+                </ActionButton>
+                <InlineCloseIconButton onClick={() => setOpen(false)} />
               </div>
             </div>
 
@@ -981,6 +952,30 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 </div>
                 <div className="field-grid user-field-grid">
                   <span>
+                    Default preset for new simulations{" "}
+                    <InfoTip text="This cloud setting applies when you create a new simulation. Existing simulations keep their own saved channel settings." />
+                  </span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) =>
+                      setDefaultFrequencyPresetIdDraft(event.target.value ? event.target.value : null)
+                    }
+                    value={defaultFrequencyPresetIdDraft ?? ""}
+                  >
+                    <option value="">App default (Oslo Local 869.618)</option>
+                    {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
+                      <optgroup key={groupEntry.group} label={groupEntry.group}>
+                        {groupEntry.presets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+                <div className="field-grid user-field-grid">
+                  <span>
                     Email visibility{" "}
                     <InfoTip text="If enabled, your email is visible in user profile popovers and collaborator search. Admins always see emails for moderation." />
                   </span>
@@ -1015,17 +1010,16 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                   </label>
                 ) : null}
                 <div className="chip-group">
-                  <button
-                    className="inline-action"
+                  <ActionButton
                     disabled={busy || !nameDraft.trim() || !emailDraft.trim()}
                     onClick={() => void saveMyProfile()}
                     type="button"
                   >
                     Save Profile
-                  </button>
-                  <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
+                  </ActionButton>
+                  <ActionButton disabled={busy} onClick={() => void load()} type="button">
                     Refresh
-                  </button>
+                  </ActionButton>
                 </div>
               </div>
             </div>
@@ -1035,24 +1029,38 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 <div className="section-heading">
                   <p className="field-help">System diagnostics</p>
                   <div className="chip-group">
-                    <button className="inline-action" disabled={busy} onClick={() => void load()} type="button">
+                    <ActionButton disabled={busy} onClick={() => void load()} type="button">
                       Refresh
-                    </button>
-                    <button className="inline-action" disabled={busy} onClick={() => void repairMetadata()} type="button">
+                    </ActionButton>
+                    <ActionButton disabled={busy} onClick={() => void repairMetadata()} type="button">
                       Repair Metadata
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
                 {authWarnings.length ? (
-                  <div className="notification-banner" role="status">
-                    <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
+                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
+                    <div className="app-notification-copy">
+                      <span>
+                        <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
+                      </span>
+                    </div>
                   </div>
                 ) : (
                   <p className="field-help">Auth configuration checks passed.</p>
                 )}
                 {schemaWarnings.length ? (
-                  <div className="notification-banner" role="status">
-                    <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
+                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
+                    <div className="app-notification-copy">
+                      <span>
+                        <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
+                      </span>
+                    </div>
                   </div>
                 ) : (
                   <p className="field-help">Schema diagnostics passed.</p>
@@ -1071,9 +1079,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 <div className="section-heading">
                   <p className="field-help">Admin ownership tools</p>
                   <div className="chip-group">
-                    <button className="inline-action" disabled={busy || auditBusy} onClick={() => void loadAdminAudit()} type="button">
+                    <ActionButton disabled={busy || auditBusy} onClick={() => void loadAdminAudit()} type="button">
                       Refresh Audit
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
                 <label className="field-grid user-field-grid">
@@ -1106,9 +1114,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     value={ownershipNewOwnerId}
                   />
                 </label>
-                <button className="inline-action" disabled={busy} onClick={() => void runOwnerReassign()} type="button">
+                <ActionButton disabled={busy} onClick={() => void runOwnerReassign()} type="button">
                   Reassign Owner
-                </button>
+                </ActionButton>
 
                 <label className="field-grid user-field-grid">
                   <span>Bulk from owner ID</span>
@@ -1130,9 +1138,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     value={bulkToOwnerId}
                   />
                 </label>
-                <button className="inline-action" disabled={busy} onClick={() => void runBulkOwnerReassign()} type="button">
+                <ActionButton disabled={busy} onClick={() => void runBulkOwnerReassign()} type="button">
                   Bulk Reassign Ownership
-                </button>
+                </ActionButton>
 
                 <p className="field-help">Recent admin audit events</p>
                 {auditBusy ? <p className="field-help">Loading audit events…</p> : null}
@@ -1163,19 +1171,26 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
             {canModerate ? (
               <div className="user-manager-list notifications-center">
                 {unreadNotifications.length > 0 ? (
-                  <div className="notification-banner" role="status">
-                    <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
+                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
+                    <div className="app-notification-copy">
+                      <span>
+                        <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
+                      </span>
+                    </div>
                   </div>
                 ) : null}
                 <div className="section-heading">
                   <p className="field-help">Notification Center</p>
                   <div className="chip-group">
-                    <button className="inline-action" onClick={() => setNotificationOpen((prev) => !prev)} type="button">
+                    <ActionButton onClick={() => setNotificationOpen((prev) => !prev)} type="button">
                       {notificationOpen ? "Hide" : "Open"}
-                    </button>
-                    <button className="inline-action" onClick={() => void loadNotifications()} type="button">
+                    </ActionButton>
+                    <ActionButton onClick={() => void loadNotifications()} type="button">
                       Refresh
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
                 {notificationOpen ? (
@@ -1192,14 +1207,13 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                               <p className="field-help">{item.message}</p>
                               <p className="field-help">Updated: {fmtDate(item.createdAt)}</p>
                               <div className="chip-group">
-                                <button
-                                  className="inline-action"
+                                <ActionButton
                                   disabled={isDismissed}
                                   onClick={() => dismissNotification(item.id)}
                                   type="button"
                                 >
                                   {isDismissed ? "Dismissed" : "Dismiss Badge"}
-                                </button>
+                                </ActionButton>
                               </div>
                             </div>
                           );
@@ -1271,9 +1285,9 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     <p className="field-help">Deleted: {fmtDate(entry.deletedAt)}</p>
                     <p className="field-help">Deleted by: {entry.deletedByUserId ?? "-"}</p>
                     <div className="chip-group">
-                      <button className="inline-action" onClick={() => void restoreDeletedUser(entry.id)} type="button">
+                      <ActionButton onClick={() => void restoreDeletedUser(entry.id)} type="button">
                         Restore
-                      </button>
+                      </ActionButton>
                     </div>
                   </div>
                 ))}
@@ -1286,9 +1300,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                 <div className="library-manager-card user-profile-popup">
                   <div className="library-manager-header">
                     <h2>User Profile</h2>
-                    <button aria-label="Close" className="inline-action inline-action-icon" onClick={closeManagedUser} title="Close" type="button">
-                      <CircleX aria-hidden="true" strokeWidth={1.8} />
-                    </button>
+                    <InlineCloseIconButton onClick={closeManagedUser} />
                   </div>
                   <div className="user-list-row">
                     <ProfileAvatar avatarUrl={managedUser.avatarUrl} name={managedUser.username} size="large" />
@@ -1340,13 +1352,12 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                     <p className="field-help">No access request note.</p>
                   )}
                   <div className="chip-group">
-                    <button
-                      className="inline-action"
+                    <ActionButton
                       onClick={() => void saveManagedProfile(managedUser, { username: managedNameDraft, email: managedEmailDraft })}
                       type="button"
                     >
                       Save Profile
-                    </button>
+                    </ActionButton>
                     <label className="field-grid user-field-grid">
                       <span>
                         Role{" "}
@@ -1377,23 +1388,22 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                       </select>
                     </label>
                     {!managedUser.isApproved ? (
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         onClick={() => void updateRole(managedUser, "user")}
                         type="button"
                       >
                         Approve Access
-                      </button>
+                      </ActionButton>
                     ) : null}
                     {canAdmin ? (
-                      <button
-                        className="inline-action danger"
+                      <ActionButton
                         disabled={managedUser.id === me?.id || resolveRole(managedUser) === "admin"}
                         onClick={() => void deleteUserAccount(managedUser)}
                         type="button"
+                        variant="danger"
                       >
                         Delete User
-                      </button>
+                      </ActionButton>
                     ) : null}
                   </div>
                   <p className="field-help">
@@ -1422,8 +1432,12 @@ function ProfileAvatar({
   size?: "small" | "large";
 }) {
   const className = size === "large" ? "profile-avatar profile-avatar-large" : "profile-avatar";
-  if (avatarUrl.trim()) {
-    return <img alt={name} className={className} src={avatarUrl} />;
-  }
-  return <div className={className}>{initialsFor(name)}</div>;
+  return (
+    <AvatarBadge
+      avatarUrl={avatarUrl}
+      fallbackAs="div"
+      imageClassName={className}
+      name={name}
+    />
+  );
 }

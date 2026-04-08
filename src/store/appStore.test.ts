@@ -38,6 +38,37 @@ vi.mock("../lib/elevationService", () => ({
 import { useAppStore } from "./appStore";
 import { fetchElevations } from "../lib/elevationService";
 
+describe("appStore auth session state", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("marks auth state signed_in when current user is set and signed_out when cleared", () => {
+    useAppStore.getState().setCurrentUser({
+      id: "user-1",
+      username: "User One",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+    expect(useAppStore.getState().authState).toBe("signed_in");
+
+    useAppStore.getState().setCurrentUser(null);
+    expect(useAppStore.getState().authState).toBe("signed_out");
+  });
+});
+
 describe("appStore auth guards", () => {
   beforeEach(() => {
     storage.mock.clear();
@@ -453,6 +484,59 @@ describe("appStore blank simulation loading", () => {
     const raw = storage.mock.getItem("linksim-last-session-v1");
     expect(raw).toBeTruthy();
     expect(raw).toContain(createdId as string);
+  });
+});
+
+describe("appStore new simulation default frequency preset", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+    useAppStore.setState({
+      currentUser: {
+        id: "owner-1",
+        username: "owner",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+        defaultFrequencyPresetId: "meshcore-us-narrow-910525-sf7-bw625-cr5",
+      },
+      selectedScenarioId: "starter-default",
+      sites: [],
+      links: [],
+      simulationPresets: [],
+    });
+  });
+
+  it("uses cloud default preset when creating blank simulation", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Cloud Default Session", { visibility: "private", ownerUserId: "owner-1" });
+    expect(createdId).toBeTruthy();
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.snapshot.selectedFrequencyPresetId).toBe("meshcore-us-narrow-910525-sf7-bw625-cr5");
+  });
+
+  it("falls back to app default when cloud default is invalid", () => {
+    useAppStore.setState((state) => ({
+      currentUser: state.currentUser
+        ? { ...state.currentUser, defaultFrequencyPresetId: "not-a-real-preset" }
+        : state.currentUser,
+    }));
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Fallback Session", { visibility: "private", ownerUserId: "owner-1" });
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.snapshot.selectedFrequencyPresetId).toBe("oslo-local-869618");
   });
 });
 

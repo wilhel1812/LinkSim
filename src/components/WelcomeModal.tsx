@@ -1,4 +1,5 @@
 import { ModalOverlay } from "./ModalOverlay";
+import { ActionButton } from "./ActionButton";
 
 type WelcomeModalProps = {
   open: boolean;
@@ -26,27 +27,15 @@ export default function WelcomeModal({
           an existing simulation, creating a new one, or reading the getting started guide.
         </p>
         <div className="welcome-compact-actions">
-          <button
-            className="inline-action welcome-compact-button"
-            onClick={onOpenLibrary}
-            type="button"
-          >
+          <ActionButton onClick={onOpenLibrary} type="button">
             Open Simulation Library
-          </button>
-          <button
-            className="inline-action welcome-compact-button"
-            onClick={onCreateNewSimulation}
-            type="button"
-          >
+          </ActionButton>
+          <ActionButton onClick={onCreateNewSimulation} type="button">
             Create New Simulation
-          </button>
-          <button
-            className="inline-action welcome-compact-button"
-            onClick={onOpenOnboarding}
-            type="button"
-          >
+          </ActionButton>
+          <ActionButton onClick={onOpenOnboarding} type="button">
             Read Getting Started
-          </button>
+          </ActionButton>
         </div>
       </div>
     </ModalOverlay>

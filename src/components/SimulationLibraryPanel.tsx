@@ -1,17 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { CircleX, Funnel } from "lucide-react";
+import { Funnel } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
-  parsePersistedLibraryFilterState,
-  serializeLibraryFilterState,
   type LibraryFilterRole,
   type LibraryFilterState,
   type LibraryFilterVisibility,
 } from "../lib/libraryFilters";
+import {
+  effectiveSelection,
+  persistLibraryFilterState,
+  readLibraryFilterState,
+  selectionIsFiltered,
+  selectionLabel,
+  toggleValue,
+} from "../lib/libraryFilterUi";
 import { formatDate } from "../lib/locale";
+import { toAccessVisibility } from "../lib/uiFormatting";
+import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
+import { ActionButton } from "./ActionButton";
+import { AvatarBadge } from "./AvatarBadge";
+import { InlineCloseIconButton } from "./InlineCloseIconButton";
 
 type FilterGroupKey = "role" | "visibility";
 
@@ -26,56 +37,11 @@ const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
 
 const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: string }> = [
   { key: "private", label: "Private" },
-  { key: "sharedPublic", label: "Shared/Public" },
+  { key: "sharedPublic", label: "Shared or Public" },
 ];
 
 const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
 const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.key);
-
-const normalizeAccessVisibility = (value: unknown): "private" | "public" | "shared" => {
-  if (value === "shared" || value === "public_write") return "shared";
-  if (value === "public" || value === "public_read") return "public";
-  return "private";
-};
-
-const initialsForUser = (name: string): string => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
-
-const effectiveSelection = <T extends string>(selected: T[], allValues: T[]): T[] =>
-  selected.length ? selected : allValues;
-
-const selectionLabel = <T extends string>(selected: T[], allValues: T[]): string => {
-  const effective = effectiveSelection(selected, allValues);
-  return `${effective.length}/${allValues.length}`;
-};
-
-const selectionIsFiltered = <T extends string>(selected: T[], allValues: T[]): boolean => {
-  const effective = effectiveSelection(selected, allValues);
-  return effective.length !== allValues.length;
-};
-
-const toggleValue = <T extends string>(values: T[], key: T): T[] =>
-  values.includes(key) ? values.filter((value) => value !== key) : [...values, key];
-
-const readLibraryFilterState = (key: string): LibraryFilterState => {
-  try {
-    return parsePersistedLibraryFilterState(localStorage.getItem(key), DEFAULT_LIBRARY_FILTER_STATE);
-  } catch {
-    return DEFAULT_LIBRARY_FILTER_STATE;
-  }
-};
-
-const persistLibraryFilterState = (key: string, state: LibraryFilterState): void => {
-  try {
-    localStorage.setItem(key, serializeLibraryFilterState(state));
-  } catch {
-    // Best effort only.
-  }
-};
 
 type ResourceOpenParams = {
   kind: "site" | "simulation";
@@ -223,6 +189,12 @@ export default function SimulationLibraryPanel({
       setSimulationSaveStatus("");
       return;
     }
+    if (hasDuplicateSimulationNameForOwner(simulationPresets, trimmed, currentUser.id)) {
+      const duplicateMessage = duplicateSimulationNameMessage(trimmed);
+      setNewSimulationNameError(duplicateMessage);
+      setSimulationSaveStatus(duplicateMessage);
+      return;
+    }
     setNewSimulationNameError("");
     const createdId = createBlankSimulationPreset(trimmed, {
       description: newSimulationDescription.trim() || undefined,
@@ -236,7 +208,7 @@ export default function SimulationLibraryPanel({
       lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
     });
     if (!createdId) {
-      setSimulationSaveStatus("Failed creating simulation.");
+      setSimulationSaveStatus(duplicateSimulationNameMessage(trimmed));
       return;
     }
     loadSimulationPreset(createdId);
@@ -275,9 +247,7 @@ export default function SimulationLibraryPanel({
     <div className="library-manager-card">
       <div className="library-manager-header">
         <h2>Simulation Library</h2>
-        <button aria-label="Close" className="inline-action inline-action-icon" onClick={onClose} title="Close" type="button">
-          <CircleX aria-hidden="true" strokeWidth={1.8} />
-        </button>
+        <InlineCloseIconButton onClick={onClose} />
       </div>
       <p className="field-help">
         Manage saved simulations here. Site/node editing still happens in the main workspace.
@@ -294,27 +264,26 @@ export default function SimulationLibraryPanel({
       <div className="library-filter-toolbar" ref={filterToolbarRef}>
         <span className="library-filter-row-label">Filters:</span>
         <div className="library-filter-menu">
-          <button
-            className={clsx("inline-action", "library-filter-trigger", {
+          <ActionButton
+            className={clsx("library-filter-trigger", {
               "library-filter-trigger-active": selectionIsFiltered(filters.roleFilters, ALL_ROLE_FILTERS),
             })}
             onClick={openRoleEditor}
-            type="button"
           >
             Ownership {selectionLabel(filters.roleFilters, ALL_ROLE_FILTERS)}
             <span className="library-filter-trigger-chevron" aria-hidden="true">
               <Funnel aria-hidden="true" strokeWidth={1.8} />
             </span>
-          </button>
+          </ActionButton>
           {openFilterGroup === "role" ? (
             <div className="library-filter-popover">
               <div className="library-filter-popover-actions">
-                <button className="inline-action" onClick={() => commitRoleFilters(ALL_ROLE_FILTERS)} type="button">
+                <ActionButton onClick={() => commitRoleFilters(ALL_ROLE_FILTERS)}>
                   All
-                </button>
-                <button className="inline-action" onClick={() => setRoleDraft([])} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => setRoleDraft([])}>
                   None
-                </button>
+                </ActionButton>
               </div>
               <div className="library-filter-popover-options">
                 {ROLE_FILTER_OPTIONS.map((option) => {
@@ -341,27 +310,26 @@ export default function SimulationLibraryPanel({
         </div>
 
         <div className="library-filter-menu">
-          <button
-            className={clsx("inline-action", "library-filter-trigger", {
+          <ActionButton
+            className={clsx("library-filter-trigger", {
               "library-filter-trigger-active": selectionIsFiltered(filters.visibilityFilters, ALL_VISIBILITY_FILTERS),
             })}
             onClick={openVisibilityEditor}
-            type="button"
           >
             Access level {selectionLabel(filters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
             <span className="library-filter-trigger-chevron" aria-hidden="true">
               <Funnel aria-hidden="true" strokeWidth={1.8} />
             </span>
-          </button>
+          </ActionButton>
           {openFilterGroup === "visibility" ? (
             <div className="library-filter-popover">
               <div className="library-filter-popover-actions">
-                <button className="inline-action" onClick={() => commitVisibilityFilters(ALL_VISIBILITY_FILTERS)} type="button">
+                <ActionButton onClick={() => commitVisibilityFilters(ALL_VISIBILITY_FILTERS)}>
                   All
-                </button>
-                <button className="inline-action" onClick={() => setVisibilityDraft([])} type="button">
+                </ActionButton>
+                <ActionButton onClick={() => setVisibilityDraft([])}>
                   None
-                </button>
+                </ActionButton>
               </div>
               <div className="library-filter-popover-options">
                 {VISIBILITY_FILTER_OPTIONS.map((option) => {
@@ -388,16 +356,14 @@ export default function SimulationLibraryPanel({
           ) : null}
         </div>
 
-        <button
-          className="inline-action"
+        <ActionButton
           onClick={() => {
             setFilters(DEFAULT_LIBRARY_FILTER_STATE);
             closeFilterEditors();
           }}
-          type="button"
         >
           Clear Filters
-        </button>
+        </ActionButton>
       </div>
       {!hideSaveCopy ? (
         <>
@@ -416,37 +382,33 @@ export default function SimulationLibraryPanel({
           </label>
           {newPresetNameError ? <p className="field-help field-help-error">{newPresetNameError}</p> : null}
           <div className="chip-group">
-            <button className="inline-action" onClick={saveSimulationAsNew} type="button">
+            <ActionButton onClick={saveSimulationAsNew}>
               Save Copy
-            </button>
-            <button
-              className="inline-action"
+            </ActionButton>
+            <ActionButton
               onClick={() => {
                 setNewSimulationName("");
                 setNewSimulationDescription("");
                 setNewSimulationNameError("");
                 setShowNewSimulationModal(true);
               }}
-              type="button"
             >
               New Simulation
-            </button>
+            </ActionButton>
           </div>
         </>
       ) : (
         <div className="chip-group">
-          <button
-            className="inline-action"
+          <ActionButton
             onClick={() => {
               setNewSimulationName("");
               setNewSimulationDescription("");
               setNewSimulationNameError("");
               setShowNewSimulationModal(true);
             }}
-            type="button"
           >
             New Simulation
-          </button>
+          </ActionButton>
         </div>
       )}
       {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
@@ -468,32 +430,29 @@ export default function SimulationLibraryPanel({
                 </span>
                 <span className="library-row-meta">
                   <span className="access-badge">
-                    {normalizeAccessVisibility((preset as { visibility?: unknown }).visibility)}
+                    {toAccessVisibility((preset as { visibility?: unknown }).visibility)}
                   </span>
                   <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
-                    {owner.avatarUrl ? (
-                      <img alt={owner.name} className="row-avatar-image" src={owner.avatarUrl} />
-                    ) : (
-                      initialsForUser(owner.name)
-                    )}
+                    <AvatarBadge
+                      avatarUrl={owner.avatarUrl}
+                      fallbackRawText
+                      imageClassName="row-avatar-image"
+                      name={owner.name}
+                    />
                   </span>
                 </span>
                 <div className="library-row-actions">
-                  <button
-                    className="inline-action"
+                  <ActionButton
                     onClick={() => onLoadSimulation(preset.id)}
-                    type="button"
                   >
                     Load
-                  </button>
+                  </ActionButton>
                   {onOpenDetails ? (
-                    <button
-                      className="inline-action"
+                    <ActionButton
                       onClick={() => openResourceDetails(preset)}
-                      type="button"
                     >
-                      Open
-                    </button>
+                      Details
+                    </ActionButton>
                   ) : null}
                 </div>
               </div>
@@ -508,18 +467,12 @@ export default function SimulationLibraryPanel({
           <div className="library-manager-card user-profile-popup welcome-modal-new-simulation">
             <div className="library-manager-header">
               <h2>New Simulation</h2>
-              <button
-                aria-label="Close"
-                className="inline-action inline-action-icon"
+              <InlineCloseIconButton
                 onClick={() => {
                   setShowNewSimulationModal(false);
                   setNewSimulationNameError("");
                 }}
-                title="Close"
-                type="button"
-              >
-                <CircleX aria-hidden="true" strokeWidth={1.8} />
-              </button>
+              />
             </div>
             <label className="field-grid">
               <span>Name</span>
@@ -556,9 +509,9 @@ export default function SimulationLibraryPanel({
               </select>
             </label>
             <div className="chip-group">
-              <button className="inline-action" onClick={createBlankSimulation} type="button">
+              <ActionButton onClick={createBlankSimulation}>
                 Create
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>

@@ -43,3 +43,12 @@ export const shouldUseReadonlyFallbackForAuthBootstrap = (input: {
   if (!isFirefox) return false;
   return normalized.includes("networkerror when attempting to fetch resource");
 };
+
+export const shouldCloseSimulationLibraryOnLoad = (input: { presetId: string | null | undefined }): boolean =>
+  String(input.presetId ?? "").trim().length > 0;
+
+export const formatPrivateSiteReferenceBlockMessage = (siteNames: string[]): string => {
+  const cleaned = siteNames.map((name) => String(name).trim()).filter(Boolean);
+  const nameList = cleaned.length ? ` (${cleaned.join(", ")})` : "";
+  return `Cannot share this Simulation while private Library Site references exist${nameList}. Set Simulation visibility to Private or use non-private Site entries.`;
+};
