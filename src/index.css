@@ -3481,3 +3481,117 @@ input {
 .whatif-row:nth-child(even) {
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
 }
+
+.ui-gallery-page {
+  min-height: 100vh;
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.ui-gallery-topbar {
+  position: sticky;
+  top: 12px;
+  z-index: 4;
+}
+
+.ui-gallery-section {
+  display: grid;
+  gap: 10px;
+}
+
+.ui-gallery-section h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+}
+
+.ui-pattern-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.ui-pattern-grid-shells {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
+.ui-pattern-card {
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.ui-pattern-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ui-pattern-card-body {
+  display: grid;
+  gap: 10px;
+}
+
+.ui-pattern-status {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.ui-pattern-status.is-standard {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+}
+
+.ui-pattern-status.is-under-migration {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.ui-pattern-status.is-exception {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.ui-pattern-status.is-legacy {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.ui-gallery-theme-toggle .action-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ui-gallery-page .sidebar-panel,
+.ui-gallery-page .map-inspector,
+.ui-gallery-page .chart-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  max-height: none;
+  min-height: 0;
+}
+
+.ui-gallery-page .sidebar-panel {
+  gap: 10px;
+  padding: 12px;
+}
+
+.ui-gallery-page .map-inspector {
+  overflow: visible;
+  padding: 12px;
+}
+
+.ui-gallery-page .chart-panel {
+  padding: 12px;
+  gap: 10px;
+}
