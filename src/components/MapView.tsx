@@ -508,26 +508,17 @@ const makeGridInterpolator = (
   };
 };
 
-const computeOverlayDimensions = (bounds: TerrainBounds, resolutionScale = 1): { width: number; height: number } => {
-  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-  const latSpanKm = Math.max(0.5, Math.abs(bounds.maxLat - bounds.minLat) * 111.32);
-  const lonSpanKm =
-    Math.max(0.5, Math.abs(bounds.maxLon - bounds.minLon) * 111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)));
-  const aspect = lonSpanKm / latSpanKm;
-  const shortSidePx = 320;
-  const maxSidePx = 540;
-  let width = shortSidePx;
-  let height = shortSidePx;
-  if (aspect >= 1) {
-    width = Math.round(shortSidePx * Math.min(2.6, aspect));
-  } else {
-    height = Math.round(shortSidePx * Math.min(2.6, 1 / Math.max(0.01, aspect)));
-  }
-  const scaledWidth = Math.round(width * resolutionScale);
-  const scaledHeight = Math.round(height * resolutionScale);
+const computeOverlayDimensions = (
+  bounds: TerrainBounds,
+  targetGridSize: number,
+  resolutionScale = 1,
+): { width: number; height: number } => {
+  const { rows, cols } = computeCoverageGridDimensions(targetGridSize, bounds, 1);
+  const scaledWidth = Math.round(cols * resolutionScale);
+  const scaledHeight = Math.round(rows * resolutionScale);
   return {
-    width: clamp(scaledWidth, 200, maxSidePx),
-    height: clamp(scaledHeight, 200, maxSidePx),
+    width: clamp(scaledWidth, 64, 1400),
+    height: clamp(scaledHeight, 64, 1400),
   };
 };
 
@@ -1529,11 +1520,28 @@ export function MapView({
   }, [analysisBoundsDiagonalKm]);
   const largeAreaOptimizationActive = overlayResolutionScale < 1;
 
+  // During a site drag, force low-res (24) to keep overlay recomputations cheap.
+  // During simulation recompute, keep using the last completed grid size to avoid
+  // blocking the UI while a higher-resolution recompute is still preparing.
+  const selectedGridSize = Number(selectedCoverageResolution);
+  const [lastCompletedGridSize, setLastCompletedGridSize] = useState(24);
+  useEffect(() => {
+    if (isSimulationRecomputing) return;
+    if (!Number.isFinite(selectedGridSize) || selectedGridSize < 24) return;
+    setLastCompletedGridSize(selectedGridSize);
+  }, [isSimulationRecomputing, selectedGridSize]);
+  const effectiveGridSize =
+    isDraggingSite || !Number.isFinite(selectedGridSize) || selectedGridSize < 24
+      ? 24
+      : isSimulationRecomputing
+        ? lastCompletedGridSize
+        : selectedGridSize;
+
   const overlayDimensions = useMemo(() => {
     const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
-    if (!bounds) return { width: 320, height: 320 };
-    return computeOverlayDimensions(bounds, overlayResolutionScale);
-  }, [analysisBounds, samplesForOverlay, overlayResolutionScale]);
+    if (!bounds) return { width: 64, height: 64 };
+    return computeOverlayDimensions(bounds, effectiveGridSize, overlayResolutionScale);
+  }, [analysisBounds, samplesForOverlay, effectiveGridSize, overlayResolutionScale]);
 
   const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
   const resolutionOptionLabels = useMemo(() => {
@@ -1570,22 +1578,6 @@ export function MapView({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
     );
   }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
-  // During a site drag, force low-res (24) to keep overlay recomputations cheap.
-  // During simulation recompute, keep using the last completed grid size to avoid
-  // blocking the UI while a higher-resolution recompute is still preparing.
-  const selectedGridSize = Number(selectedCoverageResolution);
-  const [lastCompletedGridSize, setLastCompletedGridSize] = useState(24);
-  useEffect(() => {
-    if (isSimulationRecomputing) return;
-    if (!Number.isFinite(selectedGridSize) || selectedGridSize < 24) return;
-    setLastCompletedGridSize(selectedGridSize);
-  }, [isSimulationRecomputing, selectedGridSize]);
-  const effectiveGridSize =
-    isDraggingSite || !Number.isFinite(selectedGridSize) || selectedGridSize < 24
-      ? 24
-      : isSimulationRecomputing
-        ? lastCompletedGridSize
-        : selectedGridSize;
   const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "passfail") return null;
     if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
