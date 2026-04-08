@@ -693,18 +693,34 @@ export function AppShell() {
     if (runtimeEnvironment === "production") return;
     const target = window as NotificationDebugWindow;
     target.linksimNotifications = {
-      push: (notice) => pushNotification(notice),
-      pushMany: (notices) => {
-        for (const notice of notices) pushNotification(notice);
+      push: (notice) => {
+        const next = upsertUiNotification(uiNotificationsRef.current, notice);
+        uiNotificationsRef.current = next;
+        setUiNotifications(next);
       },
-      dismiss: (id) => dismissNotification(id),
-      clear: () => clearNotifications(),
+      pushMany: (notices) => {
+        let next = uiNotificationsRef.current;
+        for (const notice of notices) {
+          next = upsertUiNotification(next, notice);
+        }
+        uiNotificationsRef.current = next;
+        setUiNotifications(next);
+      },
+      dismiss: (id) => {
+        const next = dismissUiNotification(uiNotificationsRef.current, id);
+        uiNotificationsRef.current = next;
+        setUiNotifications(next);
+      },
+      clear: () => {
+        uiNotificationsRef.current = [];
+        setUiNotifications([]);
+      },
       list: () => [...uiNotificationsRef.current],
     };
     return () => {
       delete target.linksimNotifications;
     };
-  }, [clearNotifications, dismissNotification, pushNotification, runtimeEnvironment]);
+  }, [runtimeEnvironment]);
 
   useEffect(() => {
     try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
