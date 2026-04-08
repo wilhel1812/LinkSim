@@ -44,8 +44,10 @@ initializeMigrations();
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
-const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
+const ACCESS_CHECKING_NOTICE_ID = "access-checking";
+const OFFLINE_SYNC_NOTICE_ID = "offline-sync";
+const BLANK_SIM_NOTICE_ID = "blank-simulation-guidance";
 // Shell vocabulary mapping for cleanup work:
 // - navigator => LeftSidePanel
 // - inspector => RightSidePanel (legacy term retained in code for stability)
@@ -281,6 +283,20 @@ export function AppShell() {
     uiNotificationsRef.current = next;
     setPausedNotificationIds([]);
     setDismissingNotificationIds({});
+  }, []);
+  const removeNotificationImmediately = useCallback((id: string) => {
+    setUiNotifications((current) => {
+      const next = dismissUiNotification(current, id);
+      uiNotificationsRef.current = next;
+      return next;
+    });
+    setPausedNotificationIds((current) => current.filter((entry) => entry !== id));
+    setDismissingNotificationIds((current) => {
+      if (!current[id]) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
   }, []);
   const setNotificationPaused = useCallback((id: string, isPaused: boolean) => {
     setPausedNotificationIds((current) => {
@@ -712,6 +728,48 @@ export function AppShell() {
       }
     };
   }, [pausedNotificationIds, requestDismissNotification, uiNotifications]);
+
+  useEffect(() => {
+    if (accessState === "checking") {
+      pushNotification({
+        id: ACCESS_CHECKING_NOTICE_ID,
+        message: "Checking access in the background. Anonymous mode is available while this resolves.",
+        tone: "info",
+        dismissMode: "manual",
+      });
+      return;
+    }
+    removeNotificationImmediately(ACCESS_CHECKING_NOTICE_ID);
+  }, [accessState, pushNotification, removeNotificationImmediately]);
+
+  useEffect(() => {
+    if (!isOnline && !offlineBannerDismissed) {
+      pushNotification({
+        id: OFFLINE_SYNC_NOTICE_ID,
+        message: "Offline. Changes are saved locally and will sync when connection returns.",
+        tone: "warning",
+        dismissMode: "manual",
+      });
+      return;
+    }
+    removeNotificationImmediately(OFFLINE_SYNC_NOTICE_ID);
+    if (isOnline && offlineBannerDismissed) {
+      setOfflineBannerDismissed(false);
+    }
+  }, [isOnline, offlineBannerDismissed, pushNotification, removeNotificationImmediately]);
+
+  useEffect(() => {
+    if (workspaceState === "blank-simulation" && !(isAnonymousGuestReadonly || accessState === "checking")) {
+      pushNotification({
+        id: BLANK_SIM_NOTICE_ID,
+        message: "This Simulation is blank. Add sites from the map or Site Library to continue.",
+        tone: "info",
+        dismissMode: "manual",
+      });
+      return;
+    }
+    removeNotificationImmediately(BLANK_SIM_NOTICE_ID);
+  }, [accessState, isAnonymousGuestReadonly, pushNotification, removeNotificationImmediately, workspaceState]);
 
   useEffect(() => {
     if (runtimeEnvironment === "production") return;
@@ -1654,29 +1712,6 @@ export function AppShell() {
         id={isMobileViewport ? mobileInspectorPanelId : undefined}
         role={isMobileViewport ? "tabpanel" : undefined}
       >
-        {accessState === "checking" ? (
-          <div className="workspace-header-actions">
-            <span className="field-help">Checking access in the background. Anonymous mode is available while this resolves.</span>
-          </div>
-        ) : null}
-        {!isOnline && !offlineBannerDismissed ? (
-          <div className="offline-banner" role="status">
-            <span>Offline. Changes are saved locally and will sync when connection returns.</span>
-            <div className="chip-group">
-              <ActionButton
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent(OPEN_SYNC_MODAL_EVENT));
-                }}
-                type="button"
-              >
-                Open Sync Status
-              </ActionButton>
-              <ActionButton onClick={() => setOfflineBannerDismissed(true)} type="button">
-                Dismiss
-              </ActionButton>
-            </div>
-          </div>
-        ) : null}
         {workspaceState === "no-simulation" && !isReadOnlyShell ? (
           <div className="empty-workspace-overlay">
             <div className="empty-workspace-message">
@@ -1688,11 +1723,6 @@ export function AppShell() {
                 Open Library
               </ActionButton>
             </div>
-          </div>
-        ) : null}
-        {workspaceState === "blank-simulation" && uiNotifications.length === 0 ? (
-          <div className="workspace-header-actions">
-            <span className="field-help">This Simulation is blank. Add sites from the map or Site Library to continue.</span>
           </div>
         ) : null}
         <div className="workspace-header-actions">
@@ -1873,7 +1903,12 @@ export function AppShell() {
                 <button
                   aria-label="Dismiss notification"
                   className="app-notification-dismiss"
-                  onClick={() => requestDismissNotification(notification.id, "manual")}
+                  onClick={() => {
+                    if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
+                      setOfflineBannerDismissed(true);
+                    }
+                    requestDismissNotification(notification.id, "manual");
+                  }}
                   title="Dismiss"
                   type="button"
                 >

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
-import { CircleQuestionMark, CircleUserRound } from "lucide-react";
+import { CircleAlert, CircleQuestionMark, CircleUserRound } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -1038,15 +1038,29 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                   </div>
                 </div>
                 {authWarnings.length ? (
-                  <div className="notification-banner" role="status">
-                    <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
+                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
+                    <div className="app-notification-copy">
+                      <span>
+                        <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
+                      </span>
+                    </div>
                   </div>
                 ) : (
                   <p className="field-help">Auth configuration checks passed.</p>
                 )}
                 {schemaWarnings.length ? (
-                  <div className="notification-banner" role="status">
-                    <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
+                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
+                    <div className="app-notification-copy">
+                      <span>
+                        <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
+                      </span>
+                    </div>
                   </div>
                 ) : (
                   <p className="field-help">Schema diagnostics passed.</p>
@@ -1157,8 +1171,15 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
             {canModerate ? (
               <div className="user-manager-list notifications-center">
                 {unreadNotifications.length > 0 ? (
-                  <div className="notification-banner" role="status">
-                    <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
+                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                    <span className="app-notification-glyph" aria-hidden="true">
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
+                    <div className="app-notification-copy">
+                      <span>
+                        <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
+                      </span>
+                    </div>
                   </div>
                 ) : null}
                 <div className="section-heading">
