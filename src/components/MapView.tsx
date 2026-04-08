@@ -517,8 +517,8 @@ const computeOverlayDimensions = (
   const scaledWidth = Math.round(cols * resolutionScale);
   const scaledHeight = Math.round(rows * resolutionScale);
   return {
-    width: clamp(scaledWidth, 64, 1400),
-    height: clamp(scaledHeight, 64, 1400),
+    width: clamp(scaledWidth, 8, 1400),
+    height: clamp(scaledHeight, 8, 1400),
   };
 };
 
@@ -1539,7 +1539,7 @@ export function MapView({
 
   const overlayDimensions = useMemo(() => {
     const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
-    if (!bounds) return { width: 64, height: 64 };
+    if (!bounds) return { width: 24, height: 24 };
     return computeOverlayDimensions(bounds, effectiveGridSize, overlayResolutionScale);
   }, [analysisBounds, samplesForOverlay, effectiveGridSize, overlayResolutionScale]);
 
