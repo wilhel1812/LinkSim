@@ -3113,19 +3113,6 @@ input {
   gap: 8px;
 }
 
-.welcome-compact-button {
-  padding: 10px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  text-align: left;
-  font-size: 0.92rem;
-}
-
-.welcome-compact-button:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-}
-
 .welcome-modal-new-simulation-backdrop {
   position: fixed;
   inset: 0;
@@ -3496,6 +3483,17 @@ input {
   z-index: 4;
 }
 
+.ui-gallery-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ui-gallery-tab-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .ui-gallery-section {
   display: grid;
   gap: 10px;
@@ -3564,6 +3562,10 @@ input {
   background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
+.ui-pattern-status.is-mapped-only {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
 .ui-gallery-theme-toggle .action-button[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -3594,4 +3596,24 @@ input {
 .ui-gallery-page .chart-panel {
   padding: 12px;
   gap: 10px;
+}
+
+.ui-gallery-page .map-inline-notice {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  max-width: 100%;
+}
+
+.ui-gallery-page .offline-banner {
+  position: relative;
+}
+
+.ui-gallery-page .map-controls {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
 }

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import onboardingMarkdown from "../../docs/onboarding.md?raw";
+import { ActionButton } from "./ActionButton";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
 
@@ -88,9 +89,15 @@ export default function OnboardingTutorialModal({
           </ReactMarkdown>
         </div>
         <div className="tutorial-report-cta">
-          <a className="inline-action tutorial-report-button" href={FEEDBACK_ISSUES_URL} rel="noreferrer" target="_blank">
+          <ActionButton
+            className="tutorial-report-button"
+            onClick={() => {
+              window.open(FEEDBACK_ISSUES_URL, "_blank", "noopener,noreferrer");
+            }}
+            type="button"
+          >
             Report Issue or Suggestion
-          </a>
+          </ActionButton>
           <div className="asset-list">
             <a href={PRIVACY_URL} rel="noreferrer" target="_blank">
               Privacy Notice
