@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCoverage, buildCoverageAsync } from "./coverage";
+import { haversineDistanceKm } from "./geo";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import type { Network, RadioSystem, Site } from "../types/radio";
 
@@ -74,5 +75,34 @@ describe("buildCoverage", () => {
     const asyncResult = await buildCoverageAsync(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
     expect(asyncResult).toHaveLength(sync.length);
     expect(Math.abs(asyncResult[0].valueDbm - sync[0].valueDbm)).toBeLessThan(0.0001);
+  });
+
+  it("uses single-site radius override for sampling bounds", () => {
+    const singleSite = [sites[0]];
+    const base = buildCoverage(NORMAL_GRID, network, singleSite, systems, defaultPropagationEnvironment());
+    const expanded = buildCoverage(NORMAL_GRID, network, singleSite, systems, defaultPropagationEnvironment(), undefined, {
+      singleSiteRadiusKm: 60,
+    });
+    const farthestBase = Math.max(
+      ...base.map((sample) => haversineDistanceKm(sample, singleSite[0].position)),
+    );
+    const farthestExpanded = Math.max(
+      ...expanded.map((sample) => haversineDistanceKm(sample, singleSite[0].position)),
+    );
+    expect(farthestExpanded).toBeGreaterThan(farthestBase + 20);
+  });
+
+  it("uses overlay radius override for multi-site sampling bounds", () => {
+    const base = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
+    const expanded = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment(), undefined, {
+      overlayRadiusKm: 100,
+    });
+    const center = {
+      lat: (sites[0].position.lat + sites[1].position.lat) / 2,
+      lon: (sites[0].position.lon + sites[1].position.lon) / 2,
+    };
+    const farthestBase = Math.max(...base.map((sample) => haversineDistanceKm(sample, center)));
+    const farthestExpanded = Math.max(...expanded.map((sample) => haversineDistanceKm(sample, center)));
+    expect(farthestExpanded).toBeGreaterThan(farthestBase + 30);
   });
 });

@@ -16,6 +16,8 @@ export type BuildCoverageOptions = {
   terrainSamples?: number;
   onProgress?: (progress: number) => void;
   terrainCacheKey?: string;
+  overlayRadiusKm?: number;
+  singleSiteRadiusKm?: number;
 };
 
 const nUnitsToKFactor = (nUnits: number): number => {
@@ -160,7 +162,10 @@ export const buildCoverage = (
 
   const samples: { lat: number; lon: number }[] = [];
   const targetSamples = Math.max(64, Math.round(gridSize * gridSize * sampleMultiplier * sampleMultiplier));
-  const bounds = simulationAreaBoundsForSites(sites);
+  const bounds = simulationAreaBoundsForSites(sites, {
+    overlayRadiusKm: options?.overlayRadiusKm,
+    singleSiteRadiusKm: options?.singleSiteRadiusKm,
+  });
   if (!bounds) return [];
 
   const centerLat = (bounds.minLat + bounds.maxLat) / 2;
@@ -246,7 +251,10 @@ export const buildCoverageAsync = async (
 
   const samples: { lat: number; lon: number }[] = [];
   const targetSamples = Math.max(64, Math.round(gridSize * gridSize * sampleMultiplier * sampleMultiplier));
-  const bounds = simulationAreaBoundsForSites(sites);
+  const bounds = simulationAreaBoundsForSites(sites, {
+    overlayRadiusKm: options?.overlayRadiusKm,
+    singleSiteRadiusKm: options?.singleSiteRadiusKm,
+  });
   if (!bounds) return [];
 
   const centerLat = (bounds.minLat + bounds.maxLat) / 2;

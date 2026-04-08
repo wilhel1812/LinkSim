@@ -316,6 +316,31 @@ describe("appStore auth guards", () => {
     expect(state.simulationPresets[0]?.snapshot.sites.some((site) => site.id === "site-1")).toBe(false);
   });
 
+  it("persists selected overlay radius option to active simulation snapshot", () => {
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    useAppStore.getState().setSelectedOverlayRadiusOption("100");
+
+    expect(useAppStore.getState().selectedOverlayRadiusOption).toBe("100");
+    expect(useAppStore.getState().simulationPresets[0]?.snapshot.selectedOverlayRadiusOption).toBe("100");
+  });
+
   it("blocks deleteSite when current user cannot edit selected simulation", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     useAppStore.getState().setCurrentUser({

@@ -3,7 +3,12 @@ import { buildCoverageAsync } from "../lib/coverage";
 import {
   deriveDynamicPropagationEnvironment,
 } from "../lib/propagationEnvironment";
+import {
+  normalizeOverlayRadiusOptionForSelectionCount,
+  resolveEffectiveOverlayRadiusKm,
+} from "../lib/simulationOverlayRadius";
 import { sampleSrtmElevation } from "../lib/srtm";
+import type { Site, SrtmTile } from "../types/radio";
 import type { CoverageSample } from "../types/radio";
 
 const COVERAGE_RECOMPUTE_DEBOUNCE_MS = 140;
@@ -62,16 +67,19 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
         const gridSize = selectedCoverageResolution === "high" ? 42 : 24;
         const networks = appState.networks as Array<{ id: string; [key: string]: unknown }>;
         const selectedNetworkId = appState.selectedNetworkId as string;
-        const sites = appState.sites as Array<{ id: string; [key: string]: unknown }>;
+        const sites = appState.sites as Site[];
         const systems = appState.systems as unknown[];
         const propagationModel = appState.propagationModel as string;
-        const srtmTiles = appState.srtmTiles as Parameters<typeof sampleSrtmElevation>[0];
+        const srtmTiles = appState.srtmTiles as SrtmTile[];
         const links = appState.links as Array<{ id: string; fromSiteId: string; toSiteId: string; [key: string]: unknown }>;
         const selectedLinkId = appState.selectedLinkId as string;
         const autoPropagationEnvironment = appState.autoPropagationEnvironment as boolean;
         const propagationEnvironment = appState.propagationEnvironment as Record<string, unknown>;
         const propagationEnvironmentReason = appState.propagationEnvironmentReason as string;
         const terrainLoadEpoch = appState.terrainLoadEpoch as number;
+        const selectedSiteIds = (appState.selectedSiteIds as string[]) ?? [];
+        const isTerrainFetching = Boolean(appState.isTerrainFetching);
+        const selectedOverlayRadiusOptionRaw = appState.selectedOverlayRadiusOption;
 
         const network = networks.find((n) => n.id === selectedNetworkId);
         if (!network) {
@@ -125,6 +133,22 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
           }
         }
 
+        const selectionCount = selectedSiteIds.length;
+        const selectedSingleSite = selectionCount === 1
+          ? sites.find((site) => site.id === selectedSiteIds[0]) ?? null
+          : null;
+        const selectedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(
+          selectionCount,
+          selectedOverlayRadiusOptionRaw,
+        );
+        const overlayRadiusKm = resolveEffectiveOverlayRadiusKm({
+          selectionCount,
+          option: selectedOverlayRadiusOption,
+          selectedSingleSite,
+          srtmTiles,
+          isTerrainFetching,
+        });
+
         set({ simulationProgress: 8 });
         let lastProgress = 8;
         const coverageSamples = await buildCoverageAsync(
@@ -138,6 +162,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
           {
             sampleMultiplier: 1,
             terrainSamples: 20,
+            overlayRadiusKm,
             onProgress: (progress: number) => {
               if (get().simulationRunToken !== runId) return;
               const next = Math.round(8 + progress * 84);
