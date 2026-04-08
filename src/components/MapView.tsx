@@ -1570,7 +1570,7 @@ export function MapView({
     return options.map((gridSize) => {
       const fallbackSamples = gridSize * gridSize;
       const samples = overlayBounds ? computeCoverageGridDimensions(gridSize, overlayBounds, 1).totalSamples : fallbackSamples;
-      const isDefault = gridSize === 42;
+      const isDefault = gridSize === 24;
       return {
         value: String(gridSize) as "24" | "42" | "84" | "168",
         label: `${gridSize} (${samples} samples)${isDefault ? " - Default" : ""}`,
@@ -1751,8 +1751,10 @@ export function MapView({
     : isTerrainRecommending
       ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : "") + keepWorkingSuffix;
+  const showLocalTerrainDiagnostics =
+    import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
+    if (!showLocalTerrainDiagnostics) return;
     const rawThresholdMb = localStorage.getItem("linksim-dev-terrain-memory-warn-mb");
     const thresholdMb = Number(rawThresholdMb ?? "4096");
     if (!Number.isFinite(thresholdMb) || thresholdMb <= 0) return;
@@ -1762,7 +1764,7 @@ export function MapView({
       `[terrain-memory] retained decoded terrain is ${retainedMb.toFixed(1)} MB (threshold ${thresholdMb} MB)`,
       terrainMemoryDiagnostics,
     );
-  }, [terrainMemoryDiagnostics]);
+  }, [showLocalTerrainDiagnostics, terrainMemoryDiagnostics]);
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -2273,10 +2275,12 @@ export function MapView({
           {inspectorHeaderActions ? (
             <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
           ) : null}
-          {(isSimulationRecomputing || isBackgroundBusy) && backgroundBusyLabel ? (
+          {isSimulationRecomputing || (isBackgroundBusy && backgroundBusyLabel) ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">
-                {isSimulationRecomputing ? `Recalculating simulation... ${simulationProgress}%` : backgroundBusyLabel}
+                {isSimulationRecomputing
+                  ? `Recalculating simulation... ${simulationProgress}%`
+                  : (backgroundBusyLabel ?? "Working in background...")}
               </p>
               <div className="map-progress-track">
                 {isSimulationRecomputing ? (
@@ -2770,7 +2774,7 @@ export function MapView({
             <p>Site elevations: Simulation values</p>
             <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
             <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
-            {import.meta.env.DEV ? (
+            {showLocalTerrainDiagnostics ? (
               <>
                 <p>
                   Terrain memory (retained decoded): {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [
