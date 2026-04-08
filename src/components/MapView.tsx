@@ -2166,20 +2166,6 @@ export function MapView({
                       Save Selected Path
                     </ActionButton>
                   ) : null}
-                  {canAddSelectedDiscoverySite && selectedDiscoveryLibraryEntry ? (
-                    <button
-                      className="inline-action"
-                      onClick={() => addDiscoveryLibrarySiteToSimulation(selectedDiscoveryLibraryEntry.id)}
-                      type="button"
-                    >
-                      Add To Simulation
-                    </button>
-                  ) : null}
-                  {canSaveSelectedLink ? (
-                    <button className="inline-action" onClick={saveSelectedSitesAsLink} type="button">
-                      Save Selected Link
-                    </button>
-                  ) : null}
                 </div>
               ) : null}
             </div>
