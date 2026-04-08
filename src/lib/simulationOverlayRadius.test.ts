@@ -22,7 +22,7 @@ const mkTile = (key: string, sourceId = "copernicus30"): SrtmTile => ({
 
 describe("simulationOverlayRadius", () => {
   it("exposes expected options by selection context", () => {
-    expect(optionsForSelectionCount(1)).toEqual(["auto", "100", "200", "500"]);
+    expect(optionsForSelectionCount(1)).toEqual(["auto", "100", "200"]);
     expect(optionsForSelectionCount(2)).toEqual(["20", "50", "100"]);
     expect(defaultOptionForSelectionCount(1)).toBe("auto");
     expect(defaultOptionForSelectionCount(3)).toBe("20");
@@ -67,12 +67,12 @@ describe("simulationOverlayRadius", () => {
 
   it("resolves target radius by context and option", () => {
     expect(resolveTargetOverlayRadiusKm(1, "auto")).toBe(100);
-    expect(resolveTargetOverlayRadiusKm(1, "500")).toBe(500);
+    expect(resolveTargetOverlayRadiusKm(1, "200")).toBe(200);
     expect(resolveTargetOverlayRadiusKm(3, "100")).toBe(100);
   });
 
   it("caps loaded radius conservatively to available 30m tiles", () => {
-    const capped = resolveLoadedOverlayRadiusCapKm([site], 500, [mkTile("N59E010")], 20);
+    const capped = resolveLoadedOverlayRadiusCapKm([site], 200, [mkTile("N59E010")], 20);
     expect(capped).toBe(20);
   });
 });

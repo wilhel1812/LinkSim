@@ -1565,15 +1565,17 @@ export function MapView({
   }, [analysisBounds, samplesForOverlay, overlayResolutionScale]);
 
   const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
-  const normalResolutionLabel = useMemo(() => {
-    if (!overlayBounds) return "Normal (576 samples)";
-    const dims = computeCoverageGridDimensions(24, overlayBounds, 1);
-    return `Normal (${dims.totalSamples} samples)`;
-  }, [overlayBounds]);
-  const highResolutionLabel = useMemo(() => {
-    if (!overlayBounds) return "High (1764 samples, slower)";
-    const dims = computeCoverageGridDimensions(42, overlayBounds, 1);
-    return `High (${dims.totalSamples} samples, slower)`;
+  const resolutionOptionLabels = useMemo(() => {
+    const options = [24, 42, 84, 168] as const;
+    return options.map((gridSize) => {
+      const fallbackSamples = gridSize * gridSize;
+      const samples = overlayBounds ? computeCoverageGridDimensions(gridSize, overlayBounds, 1).totalSamples : fallbackSamples;
+      const isDefault = gridSize === 42;
+      return {
+        value: String(gridSize) as "24" | "42" | "84" | "168",
+        label: `${gridSize} (${samples} samples)${isDefault ? " - Default" : ""}`,
+      };
+    });
   }, [overlayBounds]);
   const effectiveBandStepDb = useMemo(() => {
     if (!overlayBounds) return 5;
@@ -1594,7 +1596,9 @@ export function MapView({
   }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
   // During a site drag, force low-res (24) to keep overlay recomputations cheap.
   // On mouse release (isDraggingSite → false) the configured resolution is restored.
-  const effectiveGridSize = isDraggingSite || selectedCoverageResolution !== "high" ? 24 : 42;
+  const selectedGridSize = Number(selectedCoverageResolution);
+  const effectiveGridSize =
+    isDraggingSite || !Number.isFinite(selectedGridSize) || selectedGridSize < 24 ? 24 : selectedGridSize;
   const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "passfail") return null;
     if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
@@ -2537,11 +2541,14 @@ export function MapView({
                   <span>Simulation Resolution</span>
                   <select
                     className="locale-select"
-                    onChange={(event) => setSelectedCoverageResolution(event.target.value as "normal" | "high")}
+                    onChange={(event) => setSelectedCoverageResolution(event.target.value as "24" | "42" | "84" | "168")}
                     value={selectedCoverageResolution}
                   >
-                    <option value="normal">{normalResolutionLabel}</option>
-                    <option value="high">{highResolutionLabel}</option>
+                    {resolutionOptionLabels.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               )}

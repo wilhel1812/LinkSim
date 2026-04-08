@@ -3,9 +3,9 @@ import { simulationAreaBoundsForSites } from "./simulationArea";
 import { tilesForBounds } from "./terrainTiles";
 import type { Site, SrtmTile } from "../types/radio";
 
-export type SimulationOverlayRadiusOption = "auto" | "20" | "50" | "100" | "200" | "500";
+export type SimulationOverlayRadiusOption = "auto" | "20" | "50" | "100" | "200";
 
-const SINGLE_SITE_OPTIONS: SimulationOverlayRadiusOption[] = ["auto", "100", "200", "500"];
+const SINGLE_SITE_OPTIONS: SimulationOverlayRadiusOption[] = ["auto", "100", "200"];
 const MULTI_SITE_OPTIONS: SimulationOverlayRadiusOption[] = ["20", "50", "100"];
 
 export const optionsForSelectionCount = (selectionCount: number): SimulationOverlayRadiusOption[] =>
@@ -26,7 +26,7 @@ export const normalizeOverlayRadiusOptionForSelectionCount = (
 
 export const isOverlayRadiusOption = (value: unknown): value is SimulationOverlayRadiusOption =>
   typeof value === "string" &&
-  (["auto", "20", "50", "100", "200", "500"] as const).includes(value as SimulationOverlayRadiusOption);
+  (["auto", "20", "50", "100", "200"] as const).includes(value as SimulationOverlayRadiusOption);
 
 export const resolveEffectiveOverlayRadiusKm = (params: {
   selectionCount: number;

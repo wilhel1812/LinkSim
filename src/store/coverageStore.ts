@@ -65,8 +65,17 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
         if (get().simulationRunToken !== runId) return;
 
         const appState = appStoreBridge!.getState();
-        const selectedCoverageResolution = (appState.selectedCoverageResolution as string) === "high" ? "high" : "normal";
-        const gridSize = selectedCoverageResolution === "high" ? 42 : 24;
+        const selectedCoverageResolutionRaw = appState.selectedCoverageResolution as string;
+        const selectedCoverageResolution =
+          selectedCoverageResolutionRaw === "24" ||
+          selectedCoverageResolutionRaw === "42" ||
+          selectedCoverageResolutionRaw === "84" ||
+          selectedCoverageResolutionRaw === "168"
+            ? selectedCoverageResolutionRaw
+            : selectedCoverageResolutionRaw === "high"
+              ? "42"
+              : "24";
+        const gridSize = Number(selectedCoverageResolution);
         const networks = appState.networks as Array<{ id: string; [key: string]: unknown }>;
         const selectedNetworkId = appState.selectedNetworkId as string;
         const sites = appState.sites as Site[];

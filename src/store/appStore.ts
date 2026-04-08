@@ -1177,6 +1177,13 @@ const initialBasemapStylePreset = normalizeBasemapStylePreset(
   readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "normal-themed"),
 );
 
+const normalizeCoverageResolution = (value: unknown): CoverageResolution => {
+  if (value === "24" || value === "42" || value === "84" || value === "168") return value;
+  if (value === "high") return "42";
+  if (value === "normal") return "24";
+  return "24";
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   sites: [],
   links: [],
@@ -1193,7 +1200,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedSiteId: "",
   selectedSiteIds: [],
   selectedNetworkId: "",
-  selectedCoverageResolution: "normal",
+  selectedCoverageResolution: "24",
   selectedOverlayRadiusOption: "20",
   propagationModel: "ITM",
   mapViewport: undefined,
@@ -2850,10 +2857,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedLinkId: "",
         temporaryDirectionReversed: false,
         selectedNetworkId: "",
-        selectedCoverageResolution:
-          snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
-            ? snap.selectedCoverageResolution
-            : "normal",
+        selectedCoverageResolution: normalizeCoverageResolution(snap.selectedCoverageResolution),
         selectedOverlayRadiusOption: isOverlayRadiusOption(snap.selectedOverlayRadiusOption)
           ? snap.selectedOverlayRadiusOption
           : defaultOptionForSelectionCount(0),
@@ -2907,10 +2911,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedLinkId,
       temporaryDirectionReversed: false,
       selectedNetworkId,
-      selectedCoverageResolution:
-        snap.selectedCoverageResolution === "normal" || snap.selectedCoverageResolution === "high"
-          ? snap.selectedCoverageResolution
-          : "normal",
+      selectedCoverageResolution: normalizeCoverageResolution(snap.selectedCoverageResolution),
       selectedOverlayRadiusOption: isOverlayRadiusOption(snap.selectedOverlayRadiusOption)
         ? snap.selectedOverlayRadiusOption
         : defaultOptionForSelectionCount(selectedSiteId ? 1 : 0),
