@@ -10,7 +10,7 @@ export const optionsForSelectionCount = (selectionCount: number): SimulationOver
   selectionCount >= 0 ? SHARED_OPTIONS : SHARED_OPTIONS;
 
 export const defaultOptionForSelectionCount = (selectionCount: number): SimulationOverlayRadiusOption =>
-  selectionCount >= 0 ? "20" : "20";
+  selectionCount === 1 ? "50" : "20";
 
 export const normalizeOverlayRadiusOptionForSelectionCount = (
   selectionCount: number,
@@ -20,6 +20,20 @@ export const normalizeOverlayRadiusOptionForSelectionCount = (
   const allowed = optionsForSelectionCount(selectionCount);
   if (candidate && allowed.includes(candidate)) return candidate;
   return defaultOptionForSelectionCount(selectionCount);
+};
+
+export const resolveOverlayRadiusOptionForSelectionTransition = (params: {
+  previousSelectionCount: number;
+  selectionCount: number;
+  option: unknown;
+}): SimulationOverlayRadiusOption => {
+  const normalized = normalizeOverlayRadiusOptionForSelectionCount(params.selectionCount, params.option);
+  const previousWasSingle = params.previousSelectionCount === 1;
+  const currentIsSingle = params.selectionCount === 1;
+  if (previousWasSingle !== currentIsSingle) {
+    return defaultOptionForSelectionCount(params.selectionCount);
+  }
+  return normalized;
 };
 
 export const isOverlayRadiusOption = (value: unknown): value is SimulationOverlayRadiusOption =>

@@ -5,6 +5,7 @@ import {
   optionsForSelectionCount,
   resolveEffectiveOverlayRadiusKm,
   resolveLoadedOverlayRadiusCapKm,
+  resolveOverlayRadiusOptionForSelectionTransition,
   resolveTargetOverlayRadiusKm,
 } from "./simulationOverlayRadius";
 import type { Site, SrtmTile } from "../types/radio";
@@ -24,13 +25,31 @@ describe("simulationOverlayRadius", () => {
   it("exposes expected options by selection context", () => {
     expect(optionsForSelectionCount(1)).toEqual(["20", "50", "100", "200"]);
     expect(optionsForSelectionCount(2)).toEqual(["20", "50", "100", "200"]);
-    expect(defaultOptionForSelectionCount(1)).toBe("20");
+    expect(defaultOptionForSelectionCount(1)).toBe("50");
     expect(defaultOptionForSelectionCount(3)).toBe("20");
   });
 
   it("normalizes invalid option to context default", () => {
     expect(normalizeOverlayRadiusOptionForSelectionCount(1, "50")).toBe("50");
     expect(normalizeOverlayRadiusOptionForSelectionCount(2, "auto")).toBe("20");
+    expect(normalizeOverlayRadiusOptionForSelectionCount(1, "auto")).toBe("50");
+  });
+
+  it("resets to context defaults when switching between single and non-single selection", () => {
+    expect(
+      resolveOverlayRadiusOptionForSelectionTransition({
+        previousSelectionCount: 1,
+        selectionCount: 2,
+        option: "50",
+      }),
+    ).toBe("20");
+    expect(
+      resolveOverlayRadiusOptionForSelectionTransition({
+        previousSelectionCount: 2,
+        selectionCount: 1,
+        option: "20",
+      }),
+    ).toBe("50");
   });
 
   it("uses fixed values in single-site mode", () => {

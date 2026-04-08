@@ -28,10 +28,10 @@ import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import {
-  normalizeOverlayRadiusOptionForSelectionCount,
   optionsForSelectionCount,
   resolveEffectiveOverlayRadiusKm,
   resolveLoadedOverlayRadiusCapKm,
+  resolveOverlayRadiusOptionForSelectionTransition,
   resolveTargetOverlayRadiusKm,
   type SimulationOverlayRadiusOption,
 } from "../lib/simulationOverlayRadius";
@@ -989,6 +989,8 @@ type MapViewProps = {
   };
   /** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
   fitBottomInset?: number;
+  /** Pixel insets reserved for map-internal chrome when fitting bounds. */
+  fitChromePadding?: { top: number; right: number; bottom: number; left: number };
 };
 
 type MarkerActionButtonProps = {
@@ -1059,6 +1061,7 @@ export function MapView({
   inspectorHeaderActions,
   notice,
   fitBottomInset = 30,
+  fitChromePadding = FIT_CHROME_PADDING,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
@@ -1196,21 +1199,6 @@ export function MapView({
     };
   }, []);
 
-  // When a scenario or simulation loads (fitSitesEpoch increments), fit the map to
-  // all sites with a ~20 km geographic margin and insets for UI chrome.
-  useEffect(() => {
-    if (!fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
-    const bounds = computeSiteFitBounds(sites);
-    if (!bounds) return;
-    mapRef.current.fitBounds(bounds, {
-      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
-      animate: false,
-      maxZoom: 14,
-    });
-    setInteractionViewState(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitSitesEpoch, isMapLoaded, fitBottomInset]);
-
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
     [links],
@@ -1238,6 +1226,7 @@ export function MapView({
   );
   const selectedSiteSet = useMemo(() => new Set(selectedSites.map((site) => site.id)), [selectedSites]);
   const selectionCount = selectedSites.length;
+  const previousSelectionCountRef = useRef(selectionCount);
   const selectedFromSite = selectedSites[0] ?? (selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null);
   const selectedToSite =
     selectedSites.length >= 2
@@ -1305,9 +1294,15 @@ export function MapView({
     };
   }, [showDiscoveryMqtt, mqttNodes.length]);
   useEffect(() => {
-    const normalized = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
-    if (normalized !== selectedOverlayRadiusOption) {
-      setSelectedOverlayRadiusOption(normalized);
+    const previousSelectionCount = previousSelectionCountRef.current;
+    previousSelectionCountRef.current = selectionCount;
+    const nextOption = resolveOverlayRadiusOptionForSelectionTransition({
+      previousSelectionCount,
+      selectionCount,
+      option: selectedOverlayRadiusOption,
+    });
+    if (nextOption !== selectedOverlayRadiusOption) {
+      setSelectedOverlayRadiusOption(nextOption);
     }
   }, [selectionCount, selectedOverlayRadiusOption, setSelectedOverlayRadiusOption]);
 
@@ -1315,7 +1310,11 @@ export function MapView({
   const hasRelayTopology = selectionCount >= 2;
   const hasMinimumTopology = sites.length >= 1;
   const analysisTargetSites = selectionCount === 1 ? selectedSites : sites;
-  const normalizedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
+  const normalizedOverlayRadiusOption = resolveOverlayRadiusOptionForSelectionTransition({
+    previousSelectionCount: selectionCount,
+    selectionCount,
+    option: selectedOverlayRadiusOption,
+  });
   const targetRadiusKm = useMemo(
     () => resolveTargetOverlayRadiusKm(selectionCount, normalizedOverlayRadiusOption),
     [selectionCount, normalizedOverlayRadiusOption],
@@ -2121,11 +2120,35 @@ export function MapView({
     providerMaxZoom,
     sites,
     computeSiteFitBounds: (fitSites) => computeSiteFitBounds(fitSites, overlayRadiusKm),
-    fitChromePadding: FIT_CHROME_PADDING,
+    fitChromePadding,
     clamp,
     setInteractionViewState,
     updateMapViewport,
   });
+  useEffect(() => {
+    if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
+    const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
+    if (!bounds) return;
+    mapRef.current.fitBounds(bounds, {
+      padding: { ...fitChromePadding, bottom: fitBottomInset },
+      animate: true,
+      linear: false,
+      duration: 900,
+      maxZoom: 14,
+    });
+    setInteractionViewState(null);
+  }, [
+    fitControlActive,
+    fitSitesEpoch,
+    isMapLoaded,
+    sites,
+    overlayRadiusKm,
+    fitBottomInset,
+    fitChromePadding.left,
+    fitChromePadding.right,
+    fitChromePadding.top,
+    fitChromePadding.bottom,
+  ]);
   const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "passfail" | "relay">>(() => {
     if (selectionCount <= 0) return ["none", "heatmap", "contours"];
     if (selectionCount === 1) return ["none", "passfail", "heatmap", "contours"];
