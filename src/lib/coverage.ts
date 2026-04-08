@@ -20,6 +20,41 @@ export type BuildCoverageOptions = {
   singleSiteRadiusKm?: number;
 };
 
+export type CoverageGridBounds = {
+  minLat: number;
+  maxLat: number;
+  minLon: number;
+  maxLon: number;
+};
+
+export type CoverageGridDimensions = {
+  rows: number;
+  cols: number;
+  totalSamples: number;
+  targetSamples: number;
+};
+
+export const computeCoverageGridDimensions = (
+  gridSize: number,
+  bounds: CoverageGridBounds,
+  sampleMultiplier = 1,
+): CoverageGridDimensions => {
+  const targetSamples = Math.max(64, Math.round(gridSize * gridSize * sampleMultiplier * sampleMultiplier));
+  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+  const latSpanKm = Math.max(0.001, (bounds.maxLat - bounds.minLat) * 111.32);
+  const lonScale = Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  const lonSpanKm = Math.max(0.001, (bounds.maxLon - bounds.minLon) * 111.32 * lonScale);
+  const aspect = latSpanKm / lonSpanKm;
+  const cols = Math.max(6, Math.round(Math.sqrt(targetSamples / Math.max(0.2, Math.min(5, aspect)))));
+  const rows = Math.max(6, Math.round(targetSamples / cols));
+  return {
+    rows,
+    cols,
+    totalSamples: rows * cols,
+    targetSamples,
+  };
+};
+
 const nUnitsToKFactor = (nUnits: number): number => {
   const n = Math.max(250, Math.min(400, nUnits));
   return Math.max(1, Math.min(2, 1 + (n - 250) / 153));
@@ -161,20 +196,13 @@ export const buildCoverage = (
       : sites.map((site) => ({ siteId: site.id, systemId: fallbackSystemId }));
 
   const samples: { lat: number; lon: number }[] = [];
-  const targetSamples = Math.max(64, Math.round(gridSize * gridSize * sampleMultiplier * sampleMultiplier));
   const bounds = simulationAreaBoundsForSites(sites, {
     overlayRadiusKm: options?.overlayRadiusKm,
     singleSiteRadiusKm: options?.singleSiteRadiusKm,
   });
   if (!bounds) return [];
 
-  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-  const latSpanKm = Math.max(0.001, (bounds.maxLat - bounds.minLat) * 111.32);
-  const lonScale = Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
-  const lonSpanKm = Math.max(0.001, (bounds.maxLon - bounds.minLon) * 111.32 * lonScale);
-  const aspect = latSpanKm / lonSpanKm;
-  const cols = Math.max(6, Math.round(Math.sqrt(targetSamples / Math.max(0.2, Math.min(5, aspect)))));
-  const rows = Math.max(6, Math.round(targetSamples / cols));
+  const { rows, cols } = computeCoverageGridDimensions(gridSize, bounds, sampleMultiplier);
 
   for (let y = 0; y < rows; y += 1) {
     const ty = rows <= 1 ? 0 : y / (rows - 1);
@@ -250,20 +278,13 @@ export const buildCoverageAsync = async (
       : sites.map((site) => ({ siteId: site.id, systemId: fallbackSystemId }));
 
   const samples: { lat: number; lon: number }[] = [];
-  const targetSamples = Math.max(64, Math.round(gridSize * gridSize * sampleMultiplier * sampleMultiplier));
   const bounds = simulationAreaBoundsForSites(sites, {
     overlayRadiusKm: options?.overlayRadiusKm,
     singleSiteRadiusKm: options?.singleSiteRadiusKm,
   });
   if (!bounds) return [];
 
-  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-  const latSpanKm = Math.max(0.001, (bounds.maxLat - bounds.minLat) * 111.32);
-  const lonScale = Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
-  const lonSpanKm = Math.max(0.001, (bounds.maxLon - bounds.minLon) * 111.32 * lonScale);
-  const aspect = latSpanKm / lonSpanKm;
-  const cols = Math.max(6, Math.round(Math.sqrt(targetSamples / Math.max(0.2, Math.min(5, aspect)))));
-  const rows = Math.max(6, Math.round(targetSamples / cols));
+  const { rows, cols } = computeCoverageGridDimensions(gridSize, bounds, sampleMultiplier);
 
   for (let y = 0; y < rows; y += 1) {
     const ty = rows <= 1 ? 0 : y / (rows - 1);

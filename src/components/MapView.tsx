@@ -11,6 +11,7 @@ import Map, {
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
+import { computeCoverageGridDimensions } from "../lib/coverage";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -27,11 +28,15 @@ import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import {
-  normalizeOverlayRadiusOptionForSelectionCount,
   optionsForSelectionCount,
   resolveEffectiveOverlayRadiusKm,
+  resolveLoadedOverlayRadiusCapKm,
+  resolveOverlayRadiusOptionForSelectionTransition,
+  resolveTargetOverlayRadiusKm,
   type SimulationOverlayRadiusOption,
 } from "../lib/simulationOverlayRadius";
+import { simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { tilesForBounds } from "../lib/terrainTiles";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
@@ -41,7 +46,6 @@ const UI_SECTION_KEYS = {
   mapViewSimSummary: "linksim-ui-mapview-sim-summary-v1",
   mapViewOverlayGuide: "linksim-ui-mapview-overlay-guide-v1",
 } as const;
-const SINGLE_SITE_BONUS_DEBOUNCE_MS = 220;
 
 const readSectionBool = (key: string, fallback: boolean): boolean => {
   try {
@@ -941,8 +945,7 @@ const buildTerrainShadeOverlay = (
   };
 };
 
-/** ~20 km geographic margin added around sites before fitting. */
-const FIT_PAD_DEG = 0.18;
+const kmToLatDegrees = (km: number): number => km / 111.32;
 /**
  * Pixel insets reserved for UI chrome inside the map container.
  * Right accounts for the map controls pill; others are minimal breathing room.
@@ -955,16 +958,18 @@ const FIT_CHROME_PADDING = { top: 30, right: 70, bottom: 30, left: 20 } as const
  */
 const computeSiteFitBounds = (
   sites: { position: { lat: number; lon: number } }[],
+  fitRadiusKm = 20,
 ): [[number, number], [number, number]] | null => {
   if (!sites.length) return null;
   const lats = sites.map((s) => s.position.lat);
   const lons = sites.map((s) => s.position.lon);
   const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const latPad = kmToLatDegrees(Math.max(1, fitRadiusKm));
   // Scale lon padding by 1/cos(lat) so the geographic margin is uniform in km.
-  const lonPad = FIT_PAD_DEG / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  const lonPad = latPad / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
   return [
-    [Math.min(...lons) - lonPad, Math.min(...lats) - FIT_PAD_DEG],
-    [Math.max(...lons) + lonPad, Math.max(...lats) + FIT_PAD_DEG],
+    [Math.min(...lons) - lonPad, Math.min(...lats) - latPad],
+    [Math.max(...lons) + lonPad, Math.max(...lats) + latPad],
   ];
 };
 
@@ -984,6 +989,8 @@ type MapViewProps = {
   };
   /** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
   fitBottomInset?: number;
+  /** Pixel insets reserved for map-internal chrome when fitting bounds. */
+  fitChromePadding?: { top: number; right: number; bottom: number; left: number };
 };
 
 type MarkerActionButtonProps = {
@@ -1054,6 +1061,7 @@ export function MapView({
   inspectorHeaderActions,
   notice,
   fitBottomInset = 30,
+  fitChromePadding = FIT_CHROME_PADDING,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
@@ -1089,6 +1097,13 @@ export function MapView({
   const terrainProgressTilesTotal = useAppStore((state) => state.terrainProgressTilesTotal);
   const terrainProgressBytesLoaded = useAppStore((state) => state.terrainProgressBytesLoaded);
   const terrainProgressBytesEstimated = useAppStore((state) => state.terrainProgressBytesEstimated);
+  const terrainProgressTransientDecodeBytesEstimated = useAppStore(
+    (state) => state.terrainProgressTransientDecodeBytesEstimated,
+  );
+  const terrainProgressPhaseLabel = useAppStore((state) => state.terrainProgressPhaseLabel);
+  const terrainProgressPhaseIndex = useAppStore((state) => state.terrainProgressPhaseIndex);
+  const terrainProgressPhaseTotal = useAppStore((state) => state.terrainProgressPhaseTotal);
+  const terrainMemoryDiagnostics = useAppStore((state) => state.terrainMemoryDiagnostics);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
@@ -1136,6 +1151,7 @@ export function MapView({
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const selectedCoverageResolution = useAppStore((state) => state.selectedCoverageResolution);
   const setSelectedCoverageResolution = useAppStore((state) => state.setSelectedCoverageResolution);
+  const recommendAndFetchTerrainForCurrentArea = useAppStore((state) => state.recommendAndFetchTerrainForCurrentArea);
   const selectedOverlayRadiusOption = useAppStore((state) => state.selectedOverlayRadiusOption);
   const setSelectedOverlayRadiusOption = useAppStore((state) => state.setSelectedOverlayRadiusOption);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
@@ -1156,7 +1172,6 @@ export function MapView({
   const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
   const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
-  const [singleSiteBonusRadiusKm, setSingleSiteBonusRadiusKm] = useState(20);
   const [selectedDiscoveryLibraryEntryId, setSelectedDiscoveryLibraryEntryId] = useState<string | null>(null);
   const [mqttDuplicatePrompt, setMqttDuplicatePrompt] = useState<{
     node: MeshmapNode;
@@ -1183,21 +1198,6 @@ export function MapView({
       window.removeEventListener("orientationchange", handleViewportChange);
     };
   }, []);
-
-  // When a scenario or simulation loads (fitSitesEpoch increments), fit the map to
-  // all sites with a ~20 km geographic margin and insets for UI chrome.
-  useEffect(() => {
-    if (!fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
-    const bounds = computeSiteFitBounds(sites);
-    if (!bounds) return;
-    mapRef.current.fitBounds(bounds, {
-      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
-      animate: false,
-      maxZoom: 14,
-    });
-    setInteractionViewState(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitSitesEpoch, isMapLoaded, fitBottomInset]);
 
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
@@ -1226,6 +1226,7 @@ export function MapView({
   );
   const selectedSiteSet = useMemo(() => new Set(selectedSites.map((site) => site.id)), [selectedSites]);
   const selectionCount = selectedSites.length;
+  const previousSelectionCountRef = useRef(selectionCount);
   const selectedFromSite = selectedSites[0] ?? (selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null);
   const selectedToSite =
     selectedSites.length >= 2
@@ -1293,51 +1294,54 @@ export function MapView({
     };
   }, [showDiscoveryMqtt, mqttNodes.length]);
   useEffect(() => {
-    const normalized = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
-    if (normalized !== selectedOverlayRadiusOption) {
-      setSelectedOverlayRadiusOption(normalized);
+    const previousSelectionCount = previousSelectionCountRef.current;
+    previousSelectionCountRef.current = selectionCount;
+    const nextOption = resolveOverlayRadiusOptionForSelectionTransition({
+      previousSelectionCount,
+      selectionCount,
+      option: selectedOverlayRadiusOption,
+    });
+    if (nextOption !== selectedOverlayRadiusOption) {
+      setSelectedOverlayRadiusOption(nextOption);
     }
   }, [selectionCount, selectedOverlayRadiusOption, setSelectedOverlayRadiusOption]);
 
-  useEffect(() => {
-    const normalizedOption = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
-    if (selectionCount !== 1 || normalizedOption !== "auto" || isTerrainFetching) {
-      setSingleSiteBonusRadiusKm(20);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      const nextRadius = resolveEffectiveOverlayRadiusKm({
-        selectionCount: 1,
-        option: "auto",
-        selectedSingleSite: selectedSites[0],
-        srtmTiles,
-        isTerrainFetching: false,
-      });
-      setSingleSiteBonusRadiusKm((current) => (current === nextRadius ? current : nextRadius));
-    }, SINGLE_SITE_BONUS_DEBOUNCE_MS);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [selectionCount, selectedSites, srtmTiles, isTerrainFetching, selectedOverlayRadiusOption]);
   const hasPassFailTopology = selectionCount >= 1;
   const hasRelayTopology = selectionCount >= 2;
   const hasMinimumTopology = sites.length >= 1;
   const analysisTargetSites = selectionCount === 1 ? selectedSites : sites;
-  const normalizedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
+  const normalizedOverlayRadiusOption = resolveOverlayRadiusOptionForSelectionTransition({
+    previousSelectionCount: selectionCount,
+    selectionCount,
+    option: selectedOverlayRadiusOption,
+  });
+  const targetRadiusKm = useMemo(
+    () => resolveTargetOverlayRadiusKm(selectionCount, normalizedOverlayRadiusOption),
+    [selectionCount, normalizedOverlayRadiusOption],
+  );
+  const loadedRadiusCapKm = useMemo(
+    () => resolveLoadedOverlayRadiusCapKm(analysisTargetSites, targetRadiusKm, srtmTiles, 20),
+    [analysisTargetSites, targetRadiusKm, srtmTiles],
+  );
   const overlayRadiusKm = useMemo(
     () =>
-      normalizedOverlayRadiusOption === "auto"
-        ? singleSiteBonusRadiusKm
-        : resolveEffectiveOverlayRadiusKm({
+      Math.min(
+        targetRadiusKm,
+        Math.min(
+          loadedRadiusCapKm,
+          resolveEffectiveOverlayRadiusKm({
             selectionCount,
             option: normalizedOverlayRadiusOption,
             selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
             srtmTiles,
             isTerrainFetching,
           }),
+        ),
+      ),
     [
+      targetRadiusKm,
       normalizedOverlayRadiusOption,
-      singleSiteBonusRadiusKm,
+      loadedRadiusCapKm,
       selectionCount,
       selectedSites,
       srtmTiles,
@@ -1345,6 +1349,56 @@ export function MapView({
     ],
   );
   const overlayRadiusOptions = optionsForSelectionCount(selectionCount);
+  const loaded30mTileKeys = useMemo(
+    () => new Set(srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key)),
+    [srtmTiles],
+  );
+  const targetRadiusBounds = useMemo(
+    () => simulationAreaBoundsForSites(analysisTargetSites, { overlayRadiusKm: targetRadiusKm }),
+    [analysisTargetSites, targetRadiusKm],
+  );
+  const requiredTargetRadiusTileKeys = useMemo(
+    () =>
+      targetRadiusBounds
+        ? tilesForBounds(
+            targetRadiusBounds.minLat,
+            targetRadiusBounds.maxLat,
+            targetRadiusBounds.minLon,
+            targetRadiusBounds.maxLon,
+          )
+        : [],
+    [targetRadiusBounds],
+  );
+  const missingTargetRadiusTileCount = useMemo(
+    () => requiredTargetRadiusTileKeys.filter((key) => !loaded30mTileKeys.has(key)).length,
+    [requiredTargetRadiusTileKeys, loaded30mTileKeys],
+  );
+  const targetRadiusTerrainSignature = `${targetRadiusKm}|${requiredTargetRadiusTileKeys.join(",")}`;
+  const targetRadiusFetchAttemptRef = useRef("");
+  useEffect(() => {
+    if (coverageVizMode === "none") {
+      targetRadiusFetchAttemptRef.current = "";
+      return;
+    }
+    if (!analysisTargetSites.length || missingTargetRadiusTileCount <= 0) {
+      targetRadiusFetchAttemptRef.current = "";
+      return;
+    }
+    if (isTerrainFetching || isTerrainRecommending) return;
+    if (targetRadiusFetchAttemptRef.current === targetRadiusTerrainSignature) return;
+    targetRadiusFetchAttemptRef.current = targetRadiusTerrainSignature;
+    void recommendAndFetchTerrainForCurrentArea(targetRadiusKm);
+  }, [
+    coverageVizMode,
+    analysisTargetSites.length,
+    missingTargetRadiusTileCount,
+    isTerrainFetching,
+    isTerrainRecommending,
+    normalizedOverlayRadiusOption,
+    targetRadiusTerrainSignature,
+    recommendAndFetchTerrainForCurrentArea,
+    targetRadiusKm,
+  ]);
   const overlayMaskArea = useMemo(
     () => buildBufferedSelectionArea(analysisTargetSites, overlayRadiusKm),
     [analysisTargetSites, overlayRadiusKm],
@@ -1386,7 +1440,6 @@ export function MapView({
     () => (boundedCoverageSamples.length >= 6 ? boundedCoverageSamples : coverageSamples),
     [boundedCoverageSamples, coverageSamples],
   );
-
   const lineFeatures = useMemo(
     () => {
       const showSelectionHighlights = !armAddSiteOnNextEmptyMapClick;
@@ -1483,6 +1536,23 @@ export function MapView({
   }, [analysisBounds, samplesForOverlay, overlayResolutionScale]);
 
   const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
+  const resolutionOptionLabels = useMemo(() => {
+    const options = [
+      { gridSize: 24, name: "1x" },
+      { gridSize: 42, name: "2x" },
+      { gridSize: 84, name: "4x" },
+      { gridSize: 168, name: "8x" },
+    ] as const;
+    return options.map(({ gridSize, name }) => {
+      const fallback = { rows: gridSize, cols: gridSize, totalSamples: gridSize * gridSize };
+      const dims = overlayBounds ? computeCoverageGridDimensions(gridSize, overlayBounds, 1) : fallback;
+      const isDefault = gridSize === 24;
+      return {
+        value: String(gridSize) as "24" | "42" | "84" | "168",
+        label: `${name} (${dims.rows}x${dims.cols}, ${dims.totalSamples} samples)${isDefault ? " - Default" : ""}`,
+      };
+    });
+  }, [overlayBounds]);
   const effectiveBandStepDb = useMemo(() => {
     if (!overlayBounds) return 5;
     return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, overlayBounds) : bandStepMode;
@@ -1501,8 +1571,21 @@ export function MapView({
     );
   }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
   // During a site drag, force low-res (24) to keep overlay recomputations cheap.
-  // On mouse release (isDraggingSite → false) the configured resolution is restored.
-  const effectiveGridSize = isDraggingSite || selectedCoverageResolution !== "high" ? 24 : 42;
+  // During simulation recompute, keep using the last completed grid size to avoid
+  // blocking the UI while a higher-resolution recompute is still preparing.
+  const selectedGridSize = Number(selectedCoverageResolution);
+  const [lastCompletedGridSize, setLastCompletedGridSize] = useState(24);
+  useEffect(() => {
+    if (isSimulationRecomputing) return;
+    if (!Number.isFinite(selectedGridSize) || selectedGridSize < 24) return;
+    setLastCompletedGridSize(selectedGridSize);
+  }, [isSimulationRecomputing, selectedGridSize]);
+  const effectiveGridSize =
+    isDraggingSite || !Number.isFinite(selectedGridSize) || selectedGridSize < 24
+      ? 24
+      : isSimulationRecomputing
+        ? lastCompletedGridSize
+        : selectedGridSize;
   const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "passfail") return null;
     if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
@@ -1630,16 +1713,24 @@ export function MapView({
   const hasTerrainDownloadProgress =
     terrainProgressTilesLoaded > 0 || terrainProgressBytesLoaded > 0 || terrainProgressBytesEstimated > 0;
   const formatMb = (bytes: number) => `${(Math.max(0, bytes) / (1024 * 1024)).toFixed(1)} MB`;
+  const terrainPhasePrefix =
+    isTerrainFetching && terrainProgressPhaseTotal > 0
+      ? `Phase ${Math.max(1, terrainProgressPhaseIndex)}/${terrainProgressPhaseTotal}${
+          terrainProgressPhaseLabel ? `: ${terrainProgressPhaseLabel}` : ""
+        }`
+      : null;
   const terrainProgressLabel =
     isTerrainFetching && hasTerrainDownloadProgress && terrainProgressTilesTotal > 0
-      ? `Loading terrain ${terrainProgressPercent}% — ${formatMb(terrainProgressBytesLoaded)} of ~${formatMb(
+      ? `${terrainPhasePrefix ? `${terrainPhasePrefix} — ` : ""}Loading terrain ${terrainProgressPercent}% — ${formatMb(
+          terrainProgressBytesLoaded,
+        )} of ~${formatMb(
           terrainProgressBytesEstimated || terrainProgressBytesLoaded,
         )} (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles)`
       : null;
   const terrainPreparingLabel =
     isTerrainFetching && !hasTerrainDownloadProgress
       ? terrainProgressTilesTotal > 0
-        ? `Preparing terrain download... (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles queued)`
+        ? `${terrainPhasePrefix ? `${terrainPhasePrefix} — ` : ""}Preparing terrain download... (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles queued)`
         : "Preparing terrain download..."
       : null;
   const backgroundBusyLabel = (isTerrainFetching
@@ -1647,6 +1738,20 @@ export function MapView({
     : isTerrainRecommending
       ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : "") + keepWorkingSuffix;
+  const showLocalTerrainDiagnostics =
+    import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
+  useEffect(() => {
+    if (!showLocalTerrainDiagnostics) return;
+    const rawThresholdMb = localStorage.getItem("linksim-dev-terrain-memory-warn-mb");
+    const thresholdMb = Number(rawThresholdMb ?? "4096");
+    if (!Number.isFinite(thresholdMb) || thresholdMb <= 0) return;
+    const retainedMb = terrainMemoryDiagnostics.retainedBytesTotal / (1024 * 1024);
+    if (retainedMb < thresholdMb) return;
+    console.warn(
+      `[terrain-memory] retained decoded terrain is ${retainedMb.toFixed(1)} MB (threshold ${thresholdMb} MB)`,
+      terrainMemoryDiagnostics,
+    );
+  }, [showLocalTerrainDiagnostics, terrainMemoryDiagnostics]);
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -2014,12 +2119,36 @@ export function MapView({
     mapRef,
     providerMaxZoom,
     sites,
-    computeSiteFitBounds,
-    fitChromePadding: FIT_CHROME_PADDING,
+    computeSiteFitBounds: (fitSites) => computeSiteFitBounds(fitSites, overlayRadiusKm),
+    fitChromePadding,
     clamp,
     setInteractionViewState,
     updateMapViewport,
   });
+  useEffect(() => {
+    if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
+    const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
+    if (!bounds) return;
+    mapRef.current.fitBounds(bounds, {
+      padding: { ...fitChromePadding, bottom: fitBottomInset },
+      animate: true,
+      linear: false,
+      duration: 900,
+      maxZoom: 14,
+    });
+    setInteractionViewState(null);
+  }, [
+    fitControlActive,
+    fitSitesEpoch,
+    isMapLoaded,
+    sites,
+    overlayRadiusKm,
+    fitBottomInset,
+    fitChromePadding.left,
+    fitChromePadding.right,
+    fitChromePadding.top,
+    fitChromePadding.bottom,
+  ]);
   const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "passfail" | "relay">>(() => {
     if (selectionCount <= 0) return ["none", "heatmap", "contours"];
     if (selectionCount === 1) return ["none", "passfail", "heatmap", "contours"];
@@ -2157,10 +2286,12 @@ export function MapView({
           {inspectorHeaderActions ? (
             <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
           ) : null}
-          {(isSimulationRecomputing || isBackgroundBusy) && backgroundBusyLabel ? (
+          {isSimulationRecomputing || (isBackgroundBusy && backgroundBusyLabel) ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">
-                {isSimulationRecomputing ? `Recalculating simulation... ${simulationProgress}%` : backgroundBusyLabel}
+                {isSimulationRecomputing
+                  ? `Recalculating simulation... ${simulationProgress}%`
+                  : (backgroundBusyLabel ?? "Working in background...")}
               </p>
               <div className="map-progress-track">
                 {isSimulationRecomputing ? (
@@ -2422,14 +2553,17 @@ export function MapView({
               </label>
               {coverageVizMode !== "none" && (
                 <label className="map-inspector-map-setting">
-                  <span>Coverage Detail</span>
+                  <span>Simulation Resolution</span>
                   <select
                     className="locale-select"
-                    onChange={(event) => setSelectedCoverageResolution(event.target.value as "normal" | "high")}
+                    onChange={(event) => setSelectedCoverageResolution(event.target.value as "24" | "42" | "84" | "168")}
                     value={selectedCoverageResolution}
                   >
-                    <option value="normal">Normal</option>
-                    <option value="high">High (slower)</option>
+                    {resolutionOptionLabels.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               )}
@@ -2444,7 +2578,7 @@ export function MapView({
                   >
                     {overlayRadiusOptions.map((option) => (
                       <option key={option} value={option}>
-                        {option === "auto" ? "Auto (current behavior)" : `${option} km`}
+                        {option === "200" ? "200 km (Slow)" : `${option} km`}
                       </option>
                     ))}
                   </select>
@@ -2651,6 +2785,26 @@ export function MapView({
             <p>Site elevations: Simulation values</p>
             <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
             <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
+            {showLocalTerrainDiagnostics ? (
+              <>
+                <p>
+                  Terrain memory (retained decoded): {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [
+                  30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, 90m{" "}
+                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus90)}, manual{" "}
+                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
+                </p>
+                <p>
+                  Terrain tiles by dataset: 30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, 90m{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.copernicus90}, manual{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.other}
+                </p>
+                <p>
+                  Terrain decode overhead (in-flight estimate):{" "}
+                  {formatMb(terrainProgressTransientDecodeBytesEstimated)}
+                </p>
+              </>
+            ) : null}
             <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
             {largeAreaOptimizationActive ? (
               <p>

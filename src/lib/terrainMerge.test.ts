@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SrtmTile } from "../types/radio";
 import { mergeSrtmTiles } from "./terrainMerge";
 
-const makeTile = (key: string, lat: number, lon: number): SrtmTile => ({
+const makeTile = (key: string, lat: number, lon: number, sourceId = "copernicus30"): SrtmTile => ({
   key,
   latStart: lat,
   lonStart: lon,
@@ -12,8 +12,8 @@ const makeTile = (key: string, lat: number, lon: number): SrtmTile => ({
   arcSecondSpacing: 1,
   elevations: new Int16Array(3601 * 3601),
   sourceKind: "auto-fetch",
-  sourceId: "copernicus30",
-  sourceLabel: "Copernicus GLO-30",
+  sourceId,
+  sourceLabel: sourceId === "copernicus90" ? "Copernicus GLO-90" : "Copernicus GLO-30",
   sourceDetail: "test",
 });
 
@@ -39,9 +39,9 @@ describe("mergeSrtmTiles", () => {
     expect(result.map((t) => t.key).sort()).toEqual(["N60E009", "N60E010", "N61E009"]);
   });
 
-  it("incoming tile overwrites existing tile with same key", () => {
-    const existing = [makeTile("N60E009", 60, 9)];
-    const incoming = [{ ...makeTile("N60E009", 99, 99) }];
+  it("incoming same-rank tile overwrites existing tile with same key", () => {
+    const existing = [makeTile("N60E009", 60, 9, "copernicus30")];
+    const incoming = [makeTile("N60E009", 99, 99, "copernicus30")];
     const result = mergeSrtmTiles(existing, incoming);
     expect(result).toHaveLength(1);
     expect(result[0].latStart).toBe(99);
@@ -54,11 +54,21 @@ describe("mergeSrtmTiles", () => {
     expect(result.map((t) => t.key)).toEqual(["N60E009", "N61E009", "N60E010"]);
   });
 
-  it("incoming overwrites existing (not vice versa) for same key", () => {
-    const existing = [makeTile("N60E009", 60, 9)];
-    const incoming = [makeTile("N60E009", 99, 99)];
+  it("keeps existing 30m tile when incoming tile is 90m for same key", () => {
+    const existing = [makeTile("N60E009", 60, 9, "copernicus30")];
+    const incoming = [makeTile("N60E009", 99, 99, "copernicus90")];
+    const result = mergeSrtmTiles(existing, incoming);
+    expect(result).toHaveLength(1);
+    expect(result[0].latStart).toBe(60);
+    expect(result[0].sourceId).toBe("copernicus30");
+  });
+
+  it("promotes 90m tile to 30m tile when incoming 30m arrives", () => {
+    const existing = [makeTile("N60E009", 60, 9, "copernicus90")];
+    const incoming = [makeTile("N60E009", 99, 99, "copernicus30")];
     const result = mergeSrtmTiles(existing, incoming);
     expect(result).toHaveLength(1);
     expect(result[0].latStart).toBe(99);
+    expect(result[0].sourceId).toBe("copernicus30");
   });
 });

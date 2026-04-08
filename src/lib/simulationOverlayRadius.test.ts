@@ -4,6 +4,9 @@ import {
   normalizeOverlayRadiusOptionForSelectionCount,
   optionsForSelectionCount,
   resolveEffectiveOverlayRadiusKm,
+  resolveLoadedOverlayRadiusCapKm,
+  resolveOverlayRadiusOptionForSelectionTransition,
+  resolveTargetOverlayRadiusKm,
 } from "./simulationOverlayRadius";
 import type { Site, SrtmTile } from "../types/radio";
 
@@ -20,36 +23,44 @@ const mkTile = (key: string, sourceId = "copernicus30"): SrtmTile => ({
 
 describe("simulationOverlayRadius", () => {
   it("exposes expected options by selection context", () => {
-    expect(optionsForSelectionCount(1)).toEqual(["auto", "100", "200", "500"]);
-    expect(optionsForSelectionCount(2)).toEqual(["20", "50", "100"]);
-    expect(defaultOptionForSelectionCount(1)).toBe("auto");
+    expect(optionsForSelectionCount(1)).toEqual(["20", "50", "100", "200"]);
+    expect(optionsForSelectionCount(2)).toEqual(["20", "50", "100", "200"]);
+    expect(defaultOptionForSelectionCount(1)).toBe("50");
     expect(defaultOptionForSelectionCount(3)).toBe("20");
   });
 
   it("normalizes invalid option to context default", () => {
-    expect(normalizeOverlayRadiusOptionForSelectionCount(1, "50")).toBe("auto");
+    expect(normalizeOverlayRadiusOptionForSelectionCount(1, "50")).toBe("50");
     expect(normalizeOverlayRadiusOptionForSelectionCount(2, "auto")).toBe("20");
+    expect(normalizeOverlayRadiusOptionForSelectionCount(1, "auto")).toBe("50");
   });
 
-  it("uses tile-aware auto radius in single-site mode", () => {
+  it("resets to context defaults when switching between single and non-single selection", () => {
+    expect(
+      resolveOverlayRadiusOptionForSelectionTransition({
+        previousSelectionCount: 1,
+        selectionCount: 2,
+        option: "50",
+      }),
+    ).toBe("20");
+    expect(
+      resolveOverlayRadiusOptionForSelectionTransition({
+        previousSelectionCount: 2,
+        selectionCount: 1,
+        option: "20",
+      }),
+    ).toBe("50");
+  });
+
+  it("uses fixed values in single-site mode", () => {
     const radius = resolveEffectiveOverlayRadiusKm({
       selectionCount: 1,
-      option: "auto",
+      option: "100",
       selectedSingleSite: site,
-      srtmTiles: [
-        mkTile("N59E010"),
-        mkTile("N60E010"),
-        mkTile("N58E010"),
-        mkTile("N59E009"),
-        mkTile("N59E011"),
-        mkTile("N60E009"),
-        mkTile("N60E011"),
-        mkTile("N58E009"),
-        mkTile("N58E011"),
-      ],
+      srtmTiles: [mkTile("N59E010")],
       isTerrainFetching: false,
     });
-    expect(radius).toBeGreaterThan(50);
+    expect(radius).toBe(100);
   });
 
   it("uses fixed values outside single-site mode", () => {
@@ -62,5 +73,15 @@ describe("simulationOverlayRadius", () => {
     });
     expect(radius).toBe(100);
   });
-});
 
+  it("resolves target radius by context and option", () => {
+    expect(resolveTargetOverlayRadiusKm(1, "20")).toBe(20);
+    expect(resolveTargetOverlayRadiusKm(1, "200")).toBe(200);
+    expect(resolveTargetOverlayRadiusKm(3, "100")).toBe(100);
+  });
+
+  it("caps loaded radius conservatively to available 30m tiles", () => {
+    const capped = resolveLoadedOverlayRadiusCapKm([site], 200, [mkTile("N59E010")], 20);
+    expect(capped).toBe(20);
+  });
+});

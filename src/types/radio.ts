@@ -30,7 +30,7 @@ export type Link = {
 
 export type PropagationModel = "ITM";
 export type CoverageMode = "BestSite";
-export type CoverageResolution = "normal" | "high";
+export type CoverageResolution = "24" | "42" | "84" | "168";
 export type Polarization = "Vertical" | "Horizontal";
 export type RadioClimate =
   | "Equatorial"

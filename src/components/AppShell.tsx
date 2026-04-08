@@ -199,6 +199,9 @@ export function AppShell() {
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
   const [mobileBottomPanelMode, setMobileBottomPanelMode] = useState<MobileBottomPanelMode>("normal");
   const [mobileControlsOccupied, setMobileControlsOccupied] = useState(0);
+  const [mobileBottomOccupied, setMobileBottomOccupied] = useState(0);
+  const [measuredSidebarWidth, setMeasuredSidebarWidth] = useState(0);
+  const [measuredInspectorWidth, setMeasuredInspectorWidth] = useState(0);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const [showLibraryFromRequest, setShowLibraryFromRequest] = useState(false);
@@ -878,6 +881,71 @@ export function AppShell() {
   }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel, mobileBottomPanelMode]);
 
   useEffect(() => {
+    const shell = appShellRef.current;
+    if (!shell) return;
+
+    let frameId = 0;
+    const measureVisibleRect = (selector: string) => {
+      const element = shell.querySelector<HTMLElement>(selector);
+      if (!element) return null;
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") return null;
+      return element.getBoundingClientRect();
+    };
+
+    const recompute = () => {
+      const sidebarRect = measureVisibleRect(".sidebar-panel");
+      const inspectorRect = measureVisibleRect(".map-inspector");
+      const tabsRect = measureVisibleRect(".mobile-workspace-tabs");
+      const mobilePanelRect = measureVisibleRect(".mobile-workspace-panel");
+
+      setMeasuredSidebarWidth((current) => {
+        const next = Math.round(sidebarRect?.width ?? 0);
+        return current === next ? current : next;
+      });
+      setMeasuredInspectorWidth((current) => {
+        const next = Math.round(inspectorRect?.width ?? 0);
+        return current === next ? current : next;
+      });
+
+      if (!isMobileViewport) {
+        setMobileBottomOccupied((current) => (current === 0 ? current : 0));
+        return;
+      }
+
+      const bottomCoverages = [tabsRect, mobilePanelRect, inspectorRect]
+        .filter((rect): rect is DOMRect => Boolean(rect))
+        .map((rect) => Math.max(0, Math.round(window.innerHeight - rect.top)));
+      const nextBottomOccupied = bottomCoverages.length ? Math.max(...bottomCoverages) : 0;
+      setMobileBottomOccupied((current) => (current === nextBottomOccupied ? current : nextBottomOccupied));
+    };
+
+    const schedule = () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(recompute);
+    };
+
+    schedule();
+    const followUpTimerA = window.setTimeout(schedule, 120);
+    const followUpTimerB = window.setTimeout(schedule, 280);
+    const observer = new ResizeObserver(schedule);
+    observer.observe(shell);
+    shell.querySelectorAll<HTMLElement>(".sidebar-panel, .map-inspector, .mobile-workspace-tabs, .mobile-workspace-panel").forEach((element) => {
+      observer.observe(element);
+    });
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
+      window.clearTimeout(followUpTimerA);
+      window.clearTimeout(followUpTimerB);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
+    };
+  }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel, mobileBottomPanelMode]);
+
+  useEffect(() => {
     if (isInitializing) {
       cloudInitSeenRef.current = true;
       return;
@@ -1403,6 +1471,30 @@ export function AppShell() {
     isProfileExpanded,
     mobileControlsOccupied,
   ]);
+  const mapFitChromePadding = useMemo(
+    () => ({
+      top: 30,
+      left: !isMobileViewport && !isMapExpanded ? Math.max(20, measuredSidebarWidth + 20) : 20,
+      right:
+        !isMobileViewport && !isMapExpanded && !isProfileExpanded && !isInspectorHidden
+          ? Math.max(70, measuredInspectorWidth + 20)
+          : 70,
+      bottom: 30,
+    }),
+    [
+      isInspectorHidden,
+      isMapExpanded,
+      isMobileViewport,
+      isProfileExpanded,
+      measuredInspectorWidth,
+      measuredSidebarWidth,
+    ],
+  );
+  const mapFitBottomInset = useMemo(() => {
+    if (isMobileViewport) return Math.max(30, mobileBottomOccupied + 18);
+    if (isMapExpanded || isProfileExpanded || isProfileHidden) return 30;
+    return Math.max(220, typeof window !== "undefined" ? window.innerHeight * 0.32 : 220) + 18 + 18;
+  }, [isMapExpanded, isMobileViewport, isProfileExpanded, isProfileHidden, mobileBottomOccupied]);
   const isAnonymousBootstrapShell = accessState === "checking";
   const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
   const emitProfileLayoutPulse = useCallback(() => {
@@ -1746,9 +1838,10 @@ export function AppShell() {
           isMapExpanded={isMapExpanded}
           showInspector={
             !isMapExpanded &&
-            !isProfileExpanded &&
             !isInspectorHidden &&
-            (!isMobileViewport || (mobileActivePanel === "inspector" && mobileBottomPanelMode !== "hidden"))
+            (isMobileViewport
+              ? mobileActivePanel === "inspector" && mobileBottomPanelMode !== "hidden"
+              : !isProfileExpanded)
           }
           showMultiSelectToggle={isMobileViewport}
           canPersist={canPersistWorkspace}
@@ -1793,11 +1886,8 @@ export function AppShell() {
             setIsMapExpanded((prev) => !prev);
             emitProfileLayoutPulse();
           }}
-          fitBottomInset={
-            isMobileViewport || isMapExpanded || isProfileExpanded || isProfileHidden
-              ? 30
-              : Math.max(220, typeof window !== "undefined" ? window.innerHeight * 0.32 : 220) + 18 + 18
-          }
+          fitBottomInset={mapFitBottomInset}
+          fitChromePadding={mapFitChromePadding}
         />
         {isMobileViewport ? (
           <MobileWorkspaceTabs
