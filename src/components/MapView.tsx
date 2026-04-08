@@ -514,8 +514,11 @@ const computeOverlayDimensions = (
   resolutionScale = 1,
 ): { width: number; height: number } => {
   const { rows, cols } = computeCoverageGridDimensions(targetGridSize, bounds, 1);
-  const scaledWidth = Math.round(cols * resolutionScale);
-  const scaledHeight = Math.round(rows * resolutionScale);
+  // Keep display raster proportional to simulation sample grid, but supersample
+  // for smoother visual output while preserving relative resolution differences.
+  const displaySupersample = 2;
+  const scaledWidth = Math.round(cols * resolutionScale * displaySupersample);
+  const scaledHeight = Math.round(rows * resolutionScale * displaySupersample);
   return {
     width: clamp(scaledWidth, 8, 1400),
     height: clamp(scaledHeight, 8, 1400),
