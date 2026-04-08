@@ -514,9 +514,10 @@ const computeOverlayDimensions = (
   resolutionScale = 1,
 ): { width: number; height: number } => {
   const { rows, cols } = computeCoverageGridDimensions(targetGridSize, bounds, 1);
-  // Keep display raster proportional to simulation sample grid, but supersample
-  // for smoother visual output while preserving relative resolution differences.
-  const displaySupersample = 2;
+  // Match the historical visual baseline (~100k display pixels at 24x24 samples)
+  // while keeping display density proportional to simulation sample density.
+  const targetDisplayPixelsPerSample = 174;
+  const displaySupersample = Math.sqrt(targetDisplayPixelsPerSample);
   const scaledWidth = Math.round(cols * resolutionScale * displaySupersample);
   const scaledHeight = Math.round(rows * resolutionScale * displaySupersample);
   return {
