@@ -53,6 +53,8 @@
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
 - Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
 - Maintain a human-readable `CHANGELOG.md` for every release; do not use raw commit dumps as release notes.
+- `CHANGELOG.md` entries must cover the full shipped release scope (all milestone issues labeled `released` for that version), not only the most recent implementation batch.
+- Before production promotion, cross-check changelog coverage against the milestone issue list and close any notable gaps.
 - Before each production release, verify whether any issues closed since the previous release are missing a milestone and report/fix that metadata drift.
 - Version/channel labeling rule:
   - Local must display `vX.Y.Z-alpha+<commit>`.
@@ -84,6 +86,7 @@
   - Confirm build label matches intended SemVer channel rules
   - Confirm no unresolved issue/project status drift for items in the current pass
   - Confirm `CHANGELOG.md` is updated with user-readable highlights for the target release
+  - Confirm changelog highlights represent the full release/milestone scope (not only latest batch work)
 - Token-efficient execution:
   - Lock scope for each pass before implementation.
   - Define done criteria and no-touch areas at pass start.
