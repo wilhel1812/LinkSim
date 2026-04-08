@@ -99,6 +99,7 @@
   - `npm test` passes
   - `npm run build` passes
   - `CHANGELOG.md` includes a human-readable entry for the release
+  - changelog entry reflects the full shipped milestone scope (not only the latest implementation batch), cross-checked against milestone `released` issues
   - `docs/milestone-release-checklist.md` is completed
 - PR body requirement for normal promotion (`staging` -> `main`):
   - include the checked line:
