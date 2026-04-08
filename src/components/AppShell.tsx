@@ -687,7 +687,7 @@ export function AppShell() {
   }, [uiNotifications.length]);
 
   useEffect(() => {
-    if (import.meta.env.PROD) return;
+    if (runtimeEnvironment === "production") return;
     const target = window as NotificationDebugWindow;
     target.linksimNotifications = {
       push: (notice) => pushNotification(notice),
@@ -701,7 +701,7 @@ export function AppShell() {
     return () => {
       delete target.linksimNotifications;
     };
-  }, [clearNotifications, dismissNotification, pushNotification, uiNotifications]);
+  }, [clearNotifications, dismissNotification, pushNotification, runtimeEnvironment, uiNotifications]);
 
   useEffect(() => {
     try { localStorage.setItem(UI_PANEL_KEYS.navigatorHidden, String(isNavigatorHidden)); } catch {}
