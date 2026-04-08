@@ -46,7 +46,6 @@ const UI_SECTION_KEYS = {
   mapViewSimSummary: "linksim-ui-mapview-sim-summary-v1",
   mapViewOverlayGuide: "linksim-ui-mapview-overlay-guide-v1",
 } as const;
-const SINGLE_SITE_BONUS_DEBOUNCE_MS = 220;
 
 const readSectionBool = (key: string, fallback: boolean): boolean => {
   try {
@@ -946,8 +945,7 @@ const buildTerrainShadeOverlay = (
   };
 };
 
-/** ~20 km geographic margin added around sites before fitting. */
-const FIT_PAD_DEG = 0.18;
+const kmToLatDegrees = (km: number): number => km / 111.32;
 /**
  * Pixel insets reserved for UI chrome inside the map container.
  * Right accounts for the map controls pill; others are minimal breathing room.
@@ -960,16 +958,18 @@ const FIT_CHROME_PADDING = { top: 30, right: 70, bottom: 30, left: 20 } as const
  */
 const computeSiteFitBounds = (
   sites: { position: { lat: number; lon: number } }[],
+  fitRadiusKm = 20,
 ): [[number, number], [number, number]] | null => {
   if (!sites.length) return null;
   const lats = sites.map((s) => s.position.lat);
   const lons = sites.map((s) => s.position.lon);
   const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const latPad = kmToLatDegrees(Math.max(1, fitRadiusKm));
   // Scale lon padding by 1/cos(lat) so the geographic margin is uniform in km.
-  const lonPad = FIT_PAD_DEG / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  const lonPad = latPad / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
   return [
-    [Math.min(...lons) - lonPad, Math.min(...lats) - FIT_PAD_DEG],
-    [Math.max(...lons) + lonPad, Math.max(...lats) + FIT_PAD_DEG],
+    [Math.min(...lons) - lonPad, Math.min(...lats) - latPad],
+    [Math.max(...lons) + lonPad, Math.max(...lats) + latPad],
   ];
 };
 
@@ -1169,7 +1169,6 @@ export function MapView({
   const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
   const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
-  const [singleSiteBonusRadiusKm, setSingleSiteBonusRadiusKm] = useState(20);
   const [selectedDiscoveryLibraryEntryId, setSelectedDiscoveryLibraryEntryId] = useState<string | null>(null);
   const [mqttDuplicatePrompt, setMqttDuplicatePrompt] = useState<{
     node: MeshmapNode;
@@ -1312,26 +1311,6 @@ export function MapView({
     }
   }, [selectionCount, selectedOverlayRadiusOption, setSelectedOverlayRadiusOption]);
 
-  useEffect(() => {
-    const normalizedOption = normalizeOverlayRadiusOptionForSelectionCount(selectionCount, selectedOverlayRadiusOption);
-    if (selectionCount !== 1 || normalizedOption !== "auto" || isTerrainFetching) {
-      setSingleSiteBonusRadiusKm(20);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      const nextRadius = resolveEffectiveOverlayRadiusKm({
-        selectionCount: 1,
-        option: "auto",
-        selectedSingleSite: selectedSites[0],
-        srtmTiles,
-        isTerrainFetching: false,
-      });
-      setSingleSiteBonusRadiusKm((current) => (current === nextRadius ? current : nextRadius));
-    }, SINGLE_SITE_BONUS_DEBOUNCE_MS);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [selectionCount, selectedSites, srtmTiles, isTerrainFetching, selectedOverlayRadiusOption]);
   const hasPassFailTopology = selectionCount >= 1;
   const hasRelayTopology = selectionCount >= 2;
   const hasMinimumTopology = sites.length >= 1;
@@ -1349,23 +1328,20 @@ export function MapView({
     () =>
       Math.min(
         targetRadiusKm,
-        normalizedOverlayRadiusOption === "auto"
-          ? singleSiteBonusRadiusKm
-          : Math.min(
-              loadedRadiusCapKm,
-              resolveEffectiveOverlayRadiusKm({
-                selectionCount,
-                option: normalizedOverlayRadiusOption,
-                selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
-                srtmTiles,
-                isTerrainFetching,
-              }),
-            ),
+        Math.min(
+          loadedRadiusCapKm,
+          resolveEffectiveOverlayRadiusKm({
+            selectionCount,
+            option: normalizedOverlayRadiusOption,
+            selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
+            srtmTiles,
+            isTerrainFetching,
+          }),
+        ),
       ),
     [
       targetRadiusKm,
       normalizedOverlayRadiusOption,
-      singleSiteBonusRadiusKm,
       loadedRadiusCapKm,
       selectionCount,
       selectedSites,
@@ -1402,10 +1378,6 @@ export function MapView({
   const targetRadiusFetchAttemptRef = useRef("");
   useEffect(() => {
     if (coverageVizMode === "none") {
-      targetRadiusFetchAttemptRef.current = "";
-      return;
-    }
-    if (normalizedOverlayRadiusOption === "auto") {
       targetRadiusFetchAttemptRef.current = "";
       return;
     }
@@ -1566,14 +1538,19 @@ export function MapView({
 
   const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
   const resolutionOptionLabels = useMemo(() => {
-    const options = [24, 42, 84, 168] as const;
-    return options.map((gridSize) => {
-      const fallbackSamples = gridSize * gridSize;
-      const samples = overlayBounds ? computeCoverageGridDimensions(gridSize, overlayBounds, 1).totalSamples : fallbackSamples;
+    const options = [
+      { gridSize: 24, name: "1x" },
+      { gridSize: 42, name: "2x" },
+      { gridSize: 84, name: "4x" },
+      { gridSize: 168, name: "8x" },
+    ] as const;
+    return options.map(({ gridSize, name }) => {
+      const fallback = { rows: gridSize, cols: gridSize, totalSamples: gridSize * gridSize };
+      const dims = overlayBounds ? computeCoverageGridDimensions(gridSize, overlayBounds, 1) : fallback;
       const isDefault = gridSize === 24;
       return {
         value: String(gridSize) as "24" | "42" | "84" | "168",
-        label: `${gridSize} (${samples} samples)${isDefault ? " - Default" : ""}`,
+        label: `${name} (${dims.rows}x${dims.cols}, ${dims.totalSamples} samples)${isDefault ? " - Default" : ""}`,
       };
     });
   }, [overlayBounds]);
@@ -1595,10 +1572,21 @@ export function MapView({
     );
   }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
   // During a site drag, force low-res (24) to keep overlay recomputations cheap.
-  // On mouse release (isDraggingSite → false) the configured resolution is restored.
+  // During simulation recompute, keep using the last completed grid size to avoid
+  // blocking the UI while a higher-resolution recompute is still preparing.
   const selectedGridSize = Number(selectedCoverageResolution);
+  const [lastCompletedGridSize, setLastCompletedGridSize] = useState(24);
+  useEffect(() => {
+    if (isSimulationRecomputing) return;
+    if (!Number.isFinite(selectedGridSize) || selectedGridSize < 24) return;
+    setLastCompletedGridSize(selectedGridSize);
+  }, [isSimulationRecomputing, selectedGridSize]);
   const effectiveGridSize =
-    isDraggingSite || !Number.isFinite(selectedGridSize) || selectedGridSize < 24 ? 24 : selectedGridSize;
+    isDraggingSite || !Number.isFinite(selectedGridSize) || selectedGridSize < 24
+      ? 24
+      : isSimulationRecomputing
+        ? lastCompletedGridSize
+        : selectedGridSize;
   const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
     if (coverageVizMode !== "passfail") return null;
     if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
@@ -2132,7 +2120,7 @@ export function MapView({
     mapRef,
     providerMaxZoom,
     sites,
-    computeSiteFitBounds,
+    computeSiteFitBounds: (fitSites) => computeSiteFitBounds(fitSites, overlayRadiusKm),
     fitChromePadding: FIT_CHROME_PADDING,
     clamp,
     setInteractionViewState,
@@ -2567,7 +2555,7 @@ export function MapView({
                   >
                     {overlayRadiusOptions.map((option) => (
                       <option key={option} value={option}>
-                        {option === "auto" ? "Auto (current behavior)" : `${option} km`}
+                        {option === "200" ? "200 km (Slow)" : `${option} km`}
                       </option>
                     ))}
                   </select>

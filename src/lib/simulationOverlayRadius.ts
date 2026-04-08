@@ -1,18 +1,16 @@
-import { resolveSingleSiteBonusRadiusKm } from "./singleSiteBonusRadius";
 import { simulationAreaBoundsForSites } from "./simulationArea";
 import { tilesForBounds } from "./terrainTiles";
 import type { Site, SrtmTile } from "../types/radio";
 
-export type SimulationOverlayRadiusOption = "auto" | "20" | "50" | "100" | "200";
+export type SimulationOverlayRadiusOption = "20" | "50" | "100" | "200";
 
-const SINGLE_SITE_OPTIONS: SimulationOverlayRadiusOption[] = ["auto", "100", "200"];
-const MULTI_SITE_OPTIONS: SimulationOverlayRadiusOption[] = ["20", "50", "100"];
+const SHARED_OPTIONS: SimulationOverlayRadiusOption[] = ["20", "50", "100", "200"];
 
 export const optionsForSelectionCount = (selectionCount: number): SimulationOverlayRadiusOption[] =>
-  selectionCount === 1 ? SINGLE_SITE_OPTIONS : MULTI_SITE_OPTIONS;
+  selectionCount >= 0 ? SHARED_OPTIONS : SHARED_OPTIONS;
 
 export const defaultOptionForSelectionCount = (selectionCount: number): SimulationOverlayRadiusOption =>
-  selectionCount === 1 ? "auto" : "20";
+  selectionCount >= 0 ? "20" : "20";
 
 export const normalizeOverlayRadiusOptionForSelectionCount = (
   selectionCount: number,
@@ -26,7 +24,7 @@ export const normalizeOverlayRadiusOptionForSelectionCount = (
 
 export const isOverlayRadiusOption = (value: unknown): value is SimulationOverlayRadiusOption =>
   typeof value === "string" &&
-  (["auto", "20", "50", "100", "200"] as const).includes(value as SimulationOverlayRadiusOption);
+  (["20", "50", "100", "200"] as const).includes(value as SimulationOverlayRadiusOption);
 
 export const resolveEffectiveOverlayRadiusKm = (params: {
   selectionCount: number;
@@ -35,16 +33,8 @@ export const resolveEffectiveOverlayRadiusKm = (params: {
   srtmTiles: ReadonlyArray<SrtmTile>;
   isTerrainFetching: boolean;
 }): number => {
-  const { selectionCount, option, selectedSingleSite, srtmTiles, isTerrainFetching } = params;
-  if (selectionCount === 1) {
-    if (option === "auto") {
-      if (!selectedSingleSite || isTerrainFetching) return 20;
-      return resolveSingleSiteBonusRadiusKm(selectedSingleSite, srtmTiles, { baseRadiusKm: 20, maxRadiusKm: 100 });
-    }
-    const fixed = Number(option);
-    return Number.isFinite(fixed) ? Math.max(20, fixed) : 20;
-  }
-  const fixed = option === "20" || option === "50" || option === "100" ? Number(option) : 20;
+  const { option } = params;
+  const fixed = option === "20" || option === "50" || option === "100" || option === "200" ? Number(option) : 20;
   return fixed;
 };
 
@@ -52,13 +42,9 @@ export const resolveTargetOverlayRadiusKm = (
   selectionCount: number,
   option: SimulationOverlayRadiusOption,
 ): number =>
-  selectionCount === 1
-    ? option === "auto"
-      ? 100
-      : Number(option)
-    : option === "20" || option === "50" || option === "100"
-      ? Number(option)
-      : 20;
+  selectionCount >= 0 && (option === "20" || option === "50" || option === "100" || option === "200")
+    ? Number(option)
+    : 20;
 
 export const resolveLoadedOverlayRadiusCapKm = (
   sites: Pick<Site, "position">[],
