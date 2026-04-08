@@ -7,10 +7,12 @@ Status labels:
 - `under migration`: actively converging to this pattern
 - `exception`: intentional non-standard case
 - `legacy`: older pattern retained until migrated
+- `mapped only`: inventoried/visible in gallery, intentionally not converged in current pass
 
-Current snapshot (after ActionButton consolidation + shell/header/action-row convergence pass):
-- Role boundaries are now mostly stable for `ActionButton` vs `ToolButton` vs `SelectionSurface`.
-- Remaining legacy `inline-action` usage is concentrated in Sidebar library/filter/editor utility zones and explicit exceptions.
+Current snapshot (after tabbed gallery and broad action convergence pass):
+- Normal text-bearing app actions continue converging into one shared `ActionButton` family.
+- `ToolButton` is restricted to true map/workspace overlay controls.
+- Icon-only controls are mapped and tracked (`mapped only`) but not visually converged in this run.
 
 ## Proposed Outline
 1. Standard patterns
@@ -59,9 +61,9 @@ Legacy names to keep temporarily for stability:
   - `src/components/MapView.tsx` (inspector action group + inline notice dismiss)
 - Status: `under migration`
 
-Boundary (stabilized):
-- Includes standard app actions in side panels, inspector sections, dialogs, and modal form actions.
-- Excludes tool/map controls, icon-only close controls, tab controls, selectable rows/cards, and link-style low-emphasis actions.
+Boundary (simplified):
+- Includes standard text-bearing app actions in side panels, inspector sections, dialogs, popovers, and modal form actions.
+- Excludes true overlay tool controls, link-style actions, tabs, selection surfaces, and icon-only utilities.
 
 ### ToolButton
 - Role: map/workspace overlay controls and view tools.
@@ -77,9 +79,9 @@ Boundary (stabilized):
   - `src/index.css` (`.map-control-btn*`)
 - Status: `standard`
 
-Boundary (stabilized):
+Boundary (strict):
 - Includes map/workspace overlay controls and panel visibility/resize controls in workspace chrome.
-- Must not be used for form submit/cancel/app-flow actions inside panel/modal content.
+- Must not be used for text-bearing form/app-flow actions inside panel/modal content.
 
 ### SelectionSurface
 - Role: selectable rows/cards/items representing entities or choices.
@@ -163,6 +165,43 @@ Exception policy:
 - Keep as exception when visual intent is contextual/link-like and intentionally lower emphasis than ActionButton.
 - Do not migrate to ActionButton unless the control should read as a primary/standard command.
 
+### Icon-only Utility Controls
+- Role: icon-only actions (close, compact utility icons, icon-only overlay controls).
+- Use when: control is intentionally icon-only and discoverable via aria-label/title.
+- Do not use when: action needs readable text label for normal app-flow operations.
+- Variants:
+  - `inline-action-icon`
+  - `map-control-btn-icon`
+  - `chart-endpoint-icon`
+- Known examples/files:
+  - `src/components/InlineCloseIconButton.tsx`
+  - `src/components/MapView.tsx`
+  - `src/components/AppShell.tsx`
+- Status: `mapped only`
+
+Policy:
+- Mapped and tracked in gallery for coverage.
+- Out of scope for visual convergence in the current pass.
+
+## Notification / Notice Inventory
+
+### Should converge next
+- `map-inline-notice`
+- `offline-banner`
+- `notification-banner`
+- shared helper/error container rhythm around sync/status messaging blocks
+
+### Intentional exceptions
+- `notification-bell` + `notification-badge` (trigger/badge behavior pattern)
+- `map-holiday-note` (seasonal/context-specific content treatment)
+
+### Borderline / defer
+- `field-help-error` inline validation text (form-level, not always banner-level)
+- domain-specific status tiles (`margin-status`, `terrain-alert`) that encode simulation semantics
+
+Recommended next cleanup pass:
+- Introduce one shared notice container baseline (surface/border/padding/title-row/action-slot) and migrate `map-inline-notice`, `offline-banner`, and `notification-banner` to it while keeping bell/badge and domain tiles as exceptions.
+
 ### Specialized Triggers
 - Role: controls with distinct meaning and visual behavior that should not be forced into generic button taxonomy.
 - Use when: control carries unique domain meaning (account chip, bell/badge trigger, upload label, info tip).
@@ -198,20 +237,21 @@ Exception policy:
 - Icon-only close remains a dedicated primitive and is not part of ActionButton family.
 
 ## Borderline / Too Early to Standardize
-- Sidebar library/filter/editor utility controls still contain mixed `inline-action` patterns (`library-filter-trigger`, `field-inline-btn`, mesh/search utility actions).
-- Compact welcome/tutorial actions remain intentionally distinct; keep until a dedicated compact-action policy pass exists.
-- Some utility controls in mixed data/editor contexts are visually near ActionButton but still role-ambiguous; defer until role boundary is explicit.
+- Sidebar library/filter/editor utility controls with embedded data/edit semantics (for example collaborator candidate row affordances) still need role cleanup.
+- Some mixed utility controls remain near ActionButton visually but need one more semantics pass before forced convergence.
 
 Recommendation: keep this glossary compact until ActionButton migration coverage is broader and ToolButton vs ActionButton boundaries are fully settled.
 
 ## Migration Coverage Snapshot
 - `ActionButton` migrated:
-  - `SimulationLibraryPanel` standard actions
-  - `MapView` inspector standard actions
-  - broad standard actions in `AppShell`, `UserAdminPanel`, and core `Sidebar` section actions
-- Intentionally not migrated:
-  - `ToolButton` (`map-control-btn*`) families
-  - icon-only close/action primitives
-  - tab controls, selection surfaces, link-style actions, specialized triggers
+  - `SimulationLibraryPanel`, `MapView` inspector standard actions
+  - broad standard actions in `AppShell`, `UserAdminPanel`, and expanded `Sidebar` modal/library flows
+  - welcome modal primary actions
+- Intentionally separate:
+  - `ToolButton` overlay controls
+  - `LinkButton`
+  - tab controls, selection surfaces
+- Mapped-only:
+  - icon-only utility controls
 - Remaining legacy concentration:
-  - Sidebar library manager/filter/editor utility subflows
+  - a small number of role-ambiguous Sidebar utility affordances

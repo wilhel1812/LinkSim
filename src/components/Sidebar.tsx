@@ -2233,15 +2233,14 @@ export function Sidebar({
                   ) : null}
                   {canWriteResource(changeLogPopup.kind, changeLogPopup.resourceId) ? (
                     <div className="chip-group">
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         onClick={() =>
                           void revertChangeAsCopy(changeLogPopup.kind, changeLogPopup.resourceId, change.id)
                         }
                         type="button"
                       >
                         Revert
-                      </button>
+                      </ActionButton>
                     </div>
                   ) : null}
                 </div>
@@ -2355,8 +2354,8 @@ export function Sidebar({
                         type="number"
                         value={resourceGroundDraft}
                       />
-                      <button
-                        className="inline-action field-inline-btn"
+                      <ActionButton
+                        className="field-inline-btn"
                         disabled={isEditorTerrainFetching}
                         onClick={() => {
                           const elevation = fetchGroundFromLoadedTerrain(resourceLatDraft, resourceLonDraft);
@@ -2373,7 +2372,7 @@ export function Sidebar({
                         type="button"
                       >
                         {isEditorTerrainFetching ? "Loading…" : "Fetch"}
-                      </button>
+                      </ActionButton>
                     </div>
                   </label>
                   <label className="field-grid">
@@ -2541,23 +2540,20 @@ export function Sidebar({
               </div>
             ) : null}
             <div className="chip-group">
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => void openUserProfilePopup(resourceDetailsPopup.createdByUserId)}
                 type="button"
               >
                 Created by <UserBadge avatarUrl={resourceDetailsPopup.createdByAvatarUrl} name={resourceDetailsPopup.createdByName} />
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 onClick={() => void openUserProfilePopup(resourceDetailsPopup.lastEditedByUserId)}
                 type="button"
               >
                 Last edited by{" "}
                 <UserBadge avatarUrl={resourceDetailsPopup.lastEditedByAvatarUrl} name={resourceDetailsPopup.lastEditedByName} />
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 onClick={() =>
                   void openChangeLogPopup(
                     resourceDetailsPopup.kind,
@@ -2568,7 +2564,7 @@ export function Sidebar({
                 type="button"
               >
                 Open change log
-              </button>
+              </ActionButton>
             </div>
             {resourceDetailsPopup.kind === "site" && currentResourceMqttMetaLines.length ? (
               <details className="compact-details">
@@ -2625,9 +2621,9 @@ export function Sidebar({
                             <option value="viewer">Viewer</option>
                             <option value="editor">Editor</option>
                           </select>
-                          <button className="inline-action" onClick={() => removeCollaborator(user.id)} type="button">
+                          <ActionButton onClick={() => removeCollaborator(user.id)} type="button">
                             Remove
-                          </button>
+                          </ActionButton>
                         </span>
                       ))
                     ) : (
@@ -2809,8 +2805,7 @@ export function Sidebar({
             ) : null}
             {resourceCanWrite ? (
               <div className="chip-group">
-                <button
-                  className="inline-action danger"
+                <ActionButton
                   onClick={() => {
                     let siteDeleteMessage = `Delete "${resourceDetailsPopup.label}" from the site library?`;
                     if (resourceDetailsPopup.kind === "site") {
@@ -2841,9 +2836,10 @@ export function Sidebar({
                     );
                   }}
                   type="button"
+                  variant="danger"
                 >
                   Delete
-                </button>
+                </ActionButton>
               </div>
             ) : null}
           </div>
@@ -3023,9 +3019,9 @@ export function Sidebar({
                 </label>
             </div>
             <div className="chip-group">
-              <button className="inline-action" onClick={createBlankSimulation} type="button">
+              <ActionButton onClick={createBlankSimulation} type="button">
                 Create
-              </button>
+              </ActionButton>
             </div>
           </div>
         </ModalOverlay>
@@ -3068,12 +3064,12 @@ export function Sidebar({
               <strong>{pendingSimulationVisibilityPrompt.targetVisibility}</strong> as well?
             </p>
             <div className="chip-group">
-              <button className="inline-action" onClick={applyPendingSimulationVisibilityChange} type="button">
+              <ActionButton onClick={applyPendingSimulationVisibilityChange} type="button">
                 Change
-              </button>
-              <button className="inline-action" onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => setPendingSimulationVisibilityPrompt(null)} type="button">
                 Cancel
-              </button>
+              </ActionButton>
             </div>
           </div>
         </ModalOverlay>
@@ -3113,8 +3109,8 @@ export function Sidebar({
             <div className="library-filter-toolbar" ref={siteFilterToolbarRef}>
               <span className="library-filter-row-label">Filters:</span>
               <div className="library-filter-menu">
-                <button
-                  className={clsx("inline-action", "library-filter-trigger", {
+                <ActionButton
+                  className={clsx("library-filter-trigger", {
                     "library-filter-trigger-active": selectionIsFiltered(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS),
                   })}
                   onClick={openSiteRoleEditor}
@@ -3124,16 +3120,16 @@ export function Sidebar({
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
                     <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
-                </button>
+                </ActionButton>
                 {openSiteFilterGroup === "role" ? (
                   <div className="library-filter-popover">
                     <div className="library-filter-popover-actions">
-                      <button className="inline-action" onClick={() => commitSiteRoleFilters(ALL_ROLE_FILTERS)} type="button">
+                      <ActionButton onClick={() => commitSiteRoleFilters(ALL_ROLE_FILTERS)} type="button">
                         All
-                      </button>
-                      <button className="inline-action" onClick={() => setSiteRoleDraft([])} type="button">
+                      </ActionButton>
+                      <ActionButton onClick={() => setSiteRoleDraft([])} type="button">
                         None
-                      </button>
+                      </ActionButton>
                     </div>
                     <div className="library-filter-popover-options">
                       {ROLE_FILTER_OPTIONS.map((option) => {
@@ -3160,8 +3156,8 @@ export function Sidebar({
               </div>
 
               <div className="library-filter-menu">
-                <button
-                  className={clsx("inline-action", "library-filter-trigger", {
+                <ActionButton
+                  className={clsx("library-filter-trigger", {
                     "library-filter-trigger-active": selectionIsFiltered(
                       siteLibraryFilters.visibilityFilters,
                       ALL_VISIBILITY_FILTERS,
@@ -3174,20 +3170,19 @@ export function Sidebar({
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
                     <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
-                </button>
+                </ActionButton>
                 {openSiteFilterGroup === "visibility" ? (
                   <div className="library-filter-popover">
                     <div className="library-filter-popover-actions">
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         onClick={() => commitSiteVisibilityFilters(ALL_VISIBILITY_FILTERS)}
                         type="button"
                       >
                         All
-                      </button>
-                      <button className="inline-action" onClick={() => setSiteVisibilityDraft([])} type="button">
+                      </ActionButton>
+                      <ActionButton onClick={() => setSiteVisibilityDraft([])} type="button">
                         None
-                      </button>
+                      </ActionButton>
                     </div>
                     <div className="library-filter-popover-options">
                       {VISIBILITY_FILTER_OPTIONS.map((option) => {
@@ -3215,8 +3210,8 @@ export function Sidebar({
               </div>
 
               <div className="library-filter-menu">
-                <button
-                  className={clsx("inline-action", "library-filter-trigger", {
+                <ActionButton
+                  className={clsx("library-filter-trigger", {
                     "library-filter-trigger-active": selectionIsFiltered(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS),
                   })}
                   onClick={openSiteSourceEditor}
@@ -3226,20 +3221,19 @@ export function Sidebar({
                   <span className="library-filter-trigger-chevron" aria-hidden="true">
                     <Funnel aria-hidden="true" strokeWidth={1.8} />
                   </span>
-                </button>
+                </ActionButton>
                 {openSiteFilterGroup === "source" ? (
                   <div className="library-filter-popover">
                     <div className="library-filter-popover-actions">
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         onClick={() => commitSiteSourceFilters(ALL_SITE_SOURCE_FILTERS)}
                         type="button"
                       >
                         All
-                      </button>
-                      <button className="inline-action" onClick={() => setSiteSourceDraft([])} type="button">
+                      </ActionButton>
+                      <ActionButton onClick={() => setSiteSourceDraft([])} type="button">
                         None
-                      </button>
+                      </ActionButton>
                     </div>
                     <div className="library-filter-popover-options">
                       {SITE_SOURCE_FILTER_OPTIONS.map((option) => {
@@ -3265,8 +3259,7 @@ export function Sidebar({
                 ) : null}
               </div>
 
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => {
                   setSiteLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE);
                   closeSiteFilterEditors();
@@ -3274,11 +3267,10 @@ export function Sidebar({
                 type="button"
               >
                 Clear Filters
-              </button>
+              </ActionButton>
             </div>
             <div className="chip-group">
-              <button
-                className="inline-action"
+              <ActionButton
                 onClick={() => {
                   setShowAddLibraryForm((current) => !current);
                   if (showAddLibraryForm) {
@@ -3289,19 +3281,17 @@ export function Sidebar({
                 type="button"
               >
                 {showAddLibraryForm ? "Hide Add Form" : "Add Site"}
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 onClick={() => setSelectedLibraryIds(new Set(filteredSiteLibrary.map((entry) => entry.id)))}
                 type="button"
               >
                 Select Filtered ({filteredSiteLibrary.length})
-              </button>
-              <button className="inline-action" onClick={() => setSelectedLibraryIds(new Set())} type="button">
+              </ActionButton>
+              <ActionButton onClick={() => setSelectedLibraryIds(new Set())} type="button">
                 Clear Selection
-              </button>
-              <button
-                className="inline-action"
+              </ActionButton>
+              <ActionButton
                 disabled={!selectedLibraryCount}
                 onClick={() => {
                   insertSitesFromLibrary(Array.from(selectedLibraryIds));
@@ -3310,9 +3300,8 @@ export function Sidebar({
                 type="button"
               >
                 Add Selected To Simulation ({selectedLibraryCount})
-              </button>
-              <button
-                className="inline-action danger"
+              </ActionButton>
+              <ActionButton
                 disabled={!selectedLibraryCount}
                 onClick={() => {
                   const deletedIds = Array.from(selectedLibraryIds);
@@ -3334,9 +3323,10 @@ export function Sidebar({
                   );
                 }}
                 type="button"
+                variant="danger"
               >
                 Delete Selected ({selectedLibraryCount})
-              </button>
+              </ActionButton>
             </div>
             {showAddLibraryForm ? (
               <div className="library-editor">
@@ -3395,9 +3385,9 @@ export function Sidebar({
                       type="number"
                       value={newLibraryGroundM}
                     />
-                    <button className="inline-action field-inline-btn" disabled={isEditorTerrainFetching} onClick={fetchNewLibraryGroundFromTerrain} type="button">
+                    <ActionButton className="field-inline-btn" disabled={isEditorTerrainFetching} onClick={fetchNewLibraryGroundFromTerrain} type="button">
                       {isEditorTerrainFetching ? "Loading…" : "Fetch"}
-                    </button>
+                    </ActionButton>
                   </div>
                 </label>
                 <label className="field-grid">
@@ -3449,22 +3439,21 @@ export function Sidebar({
                     value={librarySearchQuery}
                   />
                 </label>
-                <button className="inline-action" disabled={librarySearchBusy} onClick={() => void runLibrarySearch()} type="button">
+                <ActionButton disabled={librarySearchBusy} onClick={() => void runLibrarySearch()} type="button">
                   {librarySearchBusy ? "Searching…" : "Search"}
-                </button>
+                </ActionButton>
                 {librarySearchStatus ? <p className="field-help">{librarySearchStatus}</p> : null}
                 {librarySearchResults.length ? (
                   <div className="asset-list">
                     {librarySearchResults.map((result) => (
-                      <button
-                        className="inline-action"
+                      <ActionButton
                         disabled={librarySearchPickBusyId !== null}
                         key={result.id}
                         onClick={() => void selectLibrarySearchResult(result)}
                         type="button"
                       >
                         {librarySearchPickBusyId === result.id ? "Loading..." : `Use: ${result.label}`}
-                      </button>
+                      </ActionButton>
                     ))}
                   </div>
                 ) : null}
@@ -3484,16 +3473,15 @@ export function Sidebar({
                     />
                   </label>
                   <div className="chip-group">
-                    <button className="inline-action" disabled={meshmapLoading} onClick={() => void loadMeshmapFeed()} type="button">
+                    <ActionButton disabled={meshmapLoading} onClick={() => void loadMeshmapFeed()} type="button">
                       {meshmapLoading ? "Loading..." : "Load Feed"}
-                    </button>
-                    <button
-                      className="inline-action"
+                    </ActionButton>
+                    <ActionButton
                       onClick={() => setShowMeshtasticBrowser((current) => !current)}
                       type="button"
                     >
                       {showMeshtasticBrowser ? "Hide Browser" : "Show Browser"}
-                    </button>
+                    </ActionButton>
                   </div>
                   {meshmapLoading ? (
                     <div className="map-progress-track" style={{ marginTop: 8 }}>
@@ -3510,16 +3498,15 @@ export function Sidebar({
                     <p className="field-help">
                       {meshmapStatus}
                       {meshmapStatus.includes("failed") ? (
-                        <button
+                        <ActionButton
                           aria-label="Retry loading Meshtastic feed"
-                          className="inline-action"
                           onClick={() => void loadMeshmapFeed()}
                           style={{ marginLeft: 8 }}
                           type="button"
                         >
                           <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
                           <span>Retry</span>
-                        </button>
+                        </ActionButton>
                       ) : null}
                     </p>
                   ) : null}
@@ -3562,9 +3549,9 @@ export function Sidebar({
                             Short: {selectedMeshmapNode.shortName ?? "n/a"} | Node ID: {selectedMeshmapNode.nodeId}
                             {selectedMeshmapNode.hwModel ? ` | HW: ${selectedMeshmapNode.hwModel}` : ""}
                           </p>
-                          <button className="inline-action" onClick={() => void addSelectedMeshmapNodeToLibrary()} type="button">
+                          <ActionButton onClick={() => void addSelectedMeshmapNodeToLibrary()} type="button">
                             Add Selected MQTT Node To Library
-                          </button>
+                          </ActionButton>
                         </div>
                       ) : (
                         <p className="field-help">Click a node in the map to select it.</p>
