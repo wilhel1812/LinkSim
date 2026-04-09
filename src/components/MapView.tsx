@@ -10,7 +10,6 @@ import Map, {
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
-import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
 import { computeCoverageGridDimensions } from "../lib/coverage";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
@@ -24,7 +23,7 @@ import {
 import { useAppStore } from "../store/appStore";
 import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
-import type { Link, PropagationEnvironment, Site } from "../types/radio";
+import type { Link, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import {
@@ -37,6 +36,15 @@ import {
 } from "../lib/simulationOverlayRadius";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
+import {
+  buildCoverageOverlayPixelsAsync,
+  buildRelayCandidateOverlayPixelsAsync,
+  buildSourcePassFailOverlayPixelsAsync,
+  buildTerrainShadeOverlayPixelsAsync,
+  overlayPixelsToDataUrl,
+  OverlayTaskCancelledError,
+  type OverlayRasterPixels,
+} from "../lib/overlayRaster";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
@@ -354,46 +362,6 @@ const boundsDiagonalKm = (bounds: TerrainBounds): number => {
   return Math.hypot(latSpanKm, lonSpanKm);
 };
 
-const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
-  const stops: Array<{ v: number; c: [number, number, number] }> = [
-    { v: -125, c: [105, 42, 45] },
-    { v: -114, c: [156, 63, 49] },
-    { v: -104, c: [201, 92, 45] },
-    { v: -95, c: [226, 127, 45] },
-    { v: -86, c: [218, 175, 55] },
-    { v: -78, c: [164, 193, 68] },
-    { v: -70, c: [95, 178, 95] },
-    { v: -62, c: [64, 150, 178] },
-  ];
-  if (valueDbm <= stops[0].v) return stops[0].c;
-  if (valueDbm >= stops[stops.length - 1].v) return stops[stops.length - 1].c;
-  for (let i = 0; i < stops.length - 1; i += 1) {
-    const a = stops[i];
-    const b = stops[i + 1];
-    if (valueDbm < a.v || valueDbm > b.v) continue;
-    const t = (valueDbm - a.v) / (b.v - a.v);
-    return [
-      Math.round(a.c[0] + (b.c[0] - a.c[0]) * t),
-      Math.round(a.c[1] + (b.c[1] - a.c[1]) * t),
-      Math.round(a.c[2] + (b.c[2] - a.c[2]) * t),
-    ];
-  }
-  return [255, 255, 255];
-};
-
-const coverageColorAdaptive = (valueDbm: number, samples: CoverageSampleLite[]): [number, number, number] => {
-  if (samples.length < 2) return coverageColorForDbm(valueDbm);
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  for (const sample of samples) {
-    min = Math.min(min, sample.valueDbm);
-    max = Math.max(max, sample.valueDbm);
-  }
-  const range = Math.max(6, max - min);
-  const normalized = -125 + ((valueDbm - min) / range) * 63;
-  return coverageColorForDbm(clamp(normalized, -125, -62));
-};
-
 const autoBandStepDb = (samples: CoverageSampleLite[], bounds: TerrainBounds): 3 | 5 | 8 | 10 => {
   if (samples.length < 2) return 5;
   let min = Number.POSITIVE_INFINITY;
@@ -417,97 +385,6 @@ const autoBandStepDb = (samples: CoverageSampleLite[], bounds: TerrainBounds): 3
   return 3;
 };
 
-const interpolateCoverageDbm = (samples: CoverageSampleLite[], lat: number, lon: number): number | null => {
-  if (!samples.length) return null;
-  let weightSum = 0;
-  let valueSum = 0;
-  for (const sample of samples) {
-    const dLat = sample.lat - lat;
-    const dLon = sample.lon - lon;
-    const d2 = dLat * dLat + dLon * dLon;
-    if (d2 < 1e-12) return sample.valueDbm;
-    const weight = 1 / d2;
-    weightSum += weight;
-    valueSum += sample.valueDbm * weight;
-  }
-  if (weightSum <= 0) return null;
-  return valueSum / weightSum;
-};
-
-const binarySearchFloor = (values: number[], target: number): number => {
-  let lo = 0;
-  let hi = values.length - 1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const value = values[mid];
-    if (value <= target) {
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return clamp(hi, 0, values.length - 1);
-};
-
-const makeGridInterpolator = (
-  samples: CoverageSampleLite[],
-): ((lat: number, lon: number) => number | null) | null => {
-  if (samples.length < 4) return null;
-  const latSet = new Set<number>();
-  const lonSet = new Set<number>();
-  for (const sample of samples) {
-    latSet.add(sample.lat);
-    lonSet.add(sample.lon);
-  }
-  const lats = Array.from(latSet).sort((a, b) => a - b);
-  const lons = Array.from(lonSet).sort((a, b) => a - b);
-  if (lats.length < 2 || lons.length < 2) return null;
-  if (lats.length * lons.length !== samples.length) return null;
-
-  const latIndex = new globalThis.Map<number, number>();
-  const lonIndex = new globalThis.Map<number, number>();
-  lats.forEach((value, index) => latIndex.set(value, index));
-  lons.forEach((value, index) => lonIndex.set(value, index));
-
-  const values = new Float64Array(lats.length * lons.length);
-  const seen = new Uint8Array(lats.length * lons.length);
-  for (const sample of samples) {
-    const yi = latIndex.get(sample.lat);
-    const xi = lonIndex.get(sample.lon);
-    if (yi === undefined || xi === undefined) return null;
-    const idx = yi * lons.length + xi;
-    values[idx] = sample.valueDbm;
-    seen[idx] = 1;
-  }
-  for (const mark of seen) {
-    if (mark !== 1) return null;
-  }
-
-  return (lat, lon) => {
-    const latClamped = clamp(lat, lats[0], lats[lats.length - 1]);
-    const lonClamped = clamp(lon, lons[0], lons[lons.length - 1]);
-    const y0 = binarySearchFloor(lats, latClamped);
-    const x0 = binarySearchFloor(lons, lonClamped);
-    const y1 = Math.min(y0 + 1, lats.length - 1);
-    const x1 = Math.min(x0 + 1, lons.length - 1);
-
-    const lat0 = lats[y0];
-    const lat1 = lats[y1];
-    const lon0 = lons[x0];
-    const lon1 = lons[x1];
-    const ty = lat1 === lat0 ? 0 : (latClamped - lat0) / (lat1 - lat0);
-    const tx = lon1 === lon0 ? 0 : (lonClamped - lon0) / (lon1 - lon0);
-
-    const q00 = values[y0 * lons.length + x0];
-    const q10 = values[y0 * lons.length + x1];
-    const q01 = values[y1 * lons.length + x0];
-    const q11 = values[y1 * lons.length + x1];
-    const a = q00 + (q10 - q00) * tx;
-    const b = q01 + (q11 - q01) * tx;
-    return a + (b - a) * ty;
-  };
-};
-
 const computeOverlayDimensions = (
   bounds: TerrainBounds,
   targetGridSize: number,
@@ -523,420 +400,6 @@ const computeOverlayDimensions = (
   return {
     width: clamp(scaledWidth, 8, 1400),
     height: clamp(scaledHeight, 8, 1400),
-  };
-};
-
-const computeSourceCentricRxDbm = (
-  lat: number,
-  lon: number,
-  fromSite: Site,
-  effectiveLink: Link,
-  receiverAntennaHeightM: number,
-  receiverRxGainDbi: number,
-  terrainSampler: (lat: number, lon: number) => number | null,
-  terrainSamples: number,
-  propagationEnvironment: PropagationEnvironment,
-): number =>
-  computeSourceCentricRxMetrics(
-    lat,
-    lon,
-    fromSite,
-    effectiveLink,
-    receiverAntennaHeightM,
-    receiverRxGainDbi,
-    terrainSampler,
-    terrainSamples,
-    propagationEnvironment,
-  ).rxDbm;
-
-const buildCoverageOverlay = (
-  bounds: TerrainBounds,
-  samples: CoverageSampleLite[],
-  mode: "heatmap" | "contours",
-  bandStepDb: number,
-  dimensions: { width: number; height: number },
-  pointMask?: (lat: number, lon: number) => boolean,
-  terrainSampler?: (lat: number, lon: number) => number | null,
-): OverlayRaster | null => {
-  if (!samples.length) return null;
-  const gridInterpolator = makeGridInterpolator(samples);
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      if (pointMask && !pointMask(lat, lon)) continue;
-      if (terrainSampler && terrainSampler(lat, lon) === null) continue;
-      const valueDbm = gridInterpolator
-        ? gridInterpolator(lat, lon)
-        : interpolateCoverageDbm(samples, lat, lon);
-      if (valueDbm === null) continue;
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 180;
-      if (mode === "heatmap") {
-        [r, g, b] = coverageColorAdaptive(valueDbm, samples);
-      } else if (mode === "contours") {
-        const banded = Math.round(valueDbm / Math.max(1, bandStepDb)) * Math.max(1, bandStepDb);
-        [r, g, b] = coverageColorAdaptive(banded, samples);
-        a = 170;
-      }
-      const px = (y * width + x) * 4;
-      image.data[px] = r;
-      image.data[px + 1] = g;
-      image.data[px + 2] = b;
-      image.data[px + 3] = a;
-    }
-  }
-  ctx.putImageData(image, 0, 0);
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
-  };
-};
-
-const buildSourcePassFailOverlay = (
-  bounds: TerrainBounds,
-  fromSite: Site,
-  effectiveLink: Link,
-  receiverAntennaHeightM: number,
-  receiverRxGainDbi: number,
-  propagationEnvironment: PropagationEnvironment,
-  rxTargetDbm: number,
-  environmentLossDb: number,
-  terrainSampler: (lat: number, lon: number) => number | null,
-  dimensions: { width: number; height: number },
-  terrainSamples: number,
-  pointMask?: (lat: number, lon: number) => boolean,
-): OverlayRaster | null => {
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      if (pointMask && !pointMask(lat, lon)) {
-        continue;
-      }
-      if (terrainSampler(lat, lon) === null) {
-        continue;
-      }
-      const metrics = computeSourceCentricRxMetrics(
-        lat,
-        lon,
-        fromSite,
-        effectiveLink,
-        receiverAntennaHeightM,
-        receiverRxGainDbi,
-        terrainSampler,
-        terrainSamples,
-        propagationEnvironment,
-      );
-      const pass = metrics.rxDbm - environmentLossDb >= rxTargetDbm;
-      const losBlocked = metrics.terrainObstructed;
-      const state = classifyPassFailState(pass, losBlocked);
-      const px = (y * width + x) * 4;
-      if (state === "pass_clear") {
-        image.data[px] = 82;
-        image.data[px + 1] = 181;
-        image.data[px + 2] = 96;
-      } else if (state === "pass_blocked") {
-        image.data[px] = 232;
-        image.data[px + 1] = 170;
-        image.data[px + 2] = 72;
-      } else if (state === "fail_clear") {
-        image.data[px] = 235;
-        image.data[px + 1] = 120;
-        image.data[px + 2] = 70;
-      } else {
-        image.data[px] = 205;
-        image.data[px + 1] = 87;
-        image.data[px + 2] = 79;
-      }
-      image.data[px + 3] = 162;
-    }
-  }
-
-  ctx.putImageData(image, 0, 0);
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
-  };
-};
-
-const buildRelayCandidateOverlay = (
-  bounds: TerrainBounds,
-  fromSite: Site,
-  toSite: Site,
-  effectiveLink: Link,
-  propagationEnvironment: PropagationEnvironment,
-  environmentLossDb: number,
-  terrainSampler: (lat: number, lon: number) => number | null,
-  dimensions: { width: number; height: number },
-  terrainSamples: number,
-  pointMask?: (lat: number, lon: number) => boolean,
-): (OverlayRaster & { minDbm: number; maxDbm: number }) | null => {
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const relayAntennaHeightM = Math.max(2, (fromSite.antennaHeightM + toSite.antennaHeightM) / 2);
-  const fallbackRelayGround = (fromSite.groundElevationM + toSite.groundElevationM) / 2;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-  const bottleneck = new Float32Array(width * height).fill(-Infinity);
-  let minDbm = Number.POSITIVE_INFINITY;
-  let maxDbm = Number.NEGATIVE_INFINITY;
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      if (pointMask && !pointMask(lat, lon)) {
-        continue;
-      }
-
-      const sampledGround = terrainSampler(lat, lon);
-      if (sampledGround === null) {
-        continue;
-      }
-      const relayGround = sampledGround ?? fallbackRelayGround;
-      const relaySite: Site = {
-        id: "__relay_candidate__",
-        name: "Relay candidate",
-        position: { lat, lon },
-        antennaHeightM: relayAntennaHeightM,
-        groundElevationM: relayGround,
-        txPowerDbm: STANDARD_SITE_RADIO.txPowerDbm,
-        txGainDbi: STANDARD_SITE_RADIO.txGainDbi,
-        rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
-        cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
-      };
-      const fromToRelayRx = computeSourceCentricRxDbm(
-        lat,
-        lon,
-        fromSite,
-        effectiveLink,
-        relayAntennaHeightM,
-        relaySite.rxGainDbi,
-        terrainSampler,
-        terrainSamples,
-        propagationEnvironment,
-      );
-      const relayToTargetRx = computeSourceCentricRxDbm(
-        toSite.position.lat,
-        toSite.position.lon,
-        relaySite,
-        effectiveLink,
-        toSite.antennaHeightM,
-        toSite.rxGainDbi,
-        terrainSampler,
-        terrainSamples,
-        propagationEnvironment,
-      );
-      const bottleneckDbm = Math.min(fromToRelayRx, relayToTargetRx) - environmentLossDb;
-      const i = y * width + x;
-      bottleneck[i] = bottleneckDbm;
-      minDbm = Math.min(minDbm, bottleneckDbm);
-      maxDbm = Math.max(maxDbm, bottleneckDbm);
-    }
-  }
-  if (!Number.isFinite(minDbm) || !Number.isFinite(maxDbm)) return null;
-  const dynamicRange = Math.max(6, maxDbm - minDbm);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const i = y * width + x;
-      if (!Number.isFinite(bottleneck[i])) continue;
-      const px = i * 4;
-      const normalized = -125 + ((bottleneck[i] - minDbm) / dynamicRange) * 63;
-      const [r, g, b] = coverageColorForDbm(clamp(normalized, -125, -62));
-      image.data[px] = r;
-      image.data[px + 1] = g;
-      image.data[px + 2] = b;
-      image.data[px + 3] = 172;
-    }
-  }
-
-  ctx.putImageData(image, 0, 0);
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
-    minDbm,
-    maxDbm,
-  };
-};
-
-const buildTerrainShadeOverlay = (
-  bounds: TerrainBounds,
-  sampler: (lat: number, lon: number) => number | null,
-  dimensions: { width: number; height: number },
-  pointMask?: (lat: number, lon: number) => boolean,
-): OverlayRaster | null => {
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const elevations = new Float32Array(width * height);
-  const valid = new Uint8Array(width * height);
-  const allowed = new Uint8Array(width * height);
-
-  let minElevation = Number.POSITIVE_INFINITY;
-  let maxElevation = Number.NEGATIVE_INFINITY;
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      const isAllowed = pointMask ? pointMask(lat, lon) : true;
-      const elevation = sampler(lat, lon);
-      const i = y * width + x;
-      if (isAllowed) {
-        allowed[i] = 1;
-      }
-      if (!isAllowed) continue;
-      if (elevation === null) continue;
-      elevations[i] = elevation;
-      valid[i] = 1;
-      minElevation = Math.min(minElevation, elevation);
-      maxElevation = Math.max(maxElevation, elevation);
-    }
-  }
-
-  if (!Number.isFinite(minElevation) || !Number.isFinite(maxElevation)) return null;
-
-  for (let pass = 0; pass < 3; pass += 1) {
-    for (let y = 1; y < height - 1; y += 1) {
-      for (let x = 1; x < width - 1; x += 1) {
-        const i = y * width + x;
-        if (!allowed[i]) continue;
-        if (valid[i]) continue;
-        const neighbors = [i - 1, i + 1, i - width, i + width];
-        let sum = 0;
-        let count = 0;
-        for (const n of neighbors) {
-          if (!allowed[n]) continue;
-          if (!valid[n]) continue;
-          sum += elevations[n];
-          count += 1;
-        }
-        if (!count) continue;
-        elevations[i] = sum / count;
-        valid[i] = 1;
-      }
-    }
-  }
-
-  const lightAzimuthRad = (315 * Math.PI) / 180;
-  const lightAltitudeRad = (45 * Math.PI) / 180;
-  const lx = Math.cos(lightAltitudeRad) * Math.sin(lightAzimuthRad);
-  const ly = Math.cos(lightAltitudeRad) * Math.cos(lightAzimuthRad);
-  const lz = Math.sin(lightAltitudeRad);
-  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-  const metersPerLon =
-    ((bounds.maxLon - bounds.minLon) * 111_320 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180))) /
-    Math.max(1, width - 1);
-  const metersPerLat = ((bounds.maxLat - bounds.minLat) * 111_320) / Math.max(1, height - 1);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-  const range = Math.max(1, maxElevation - minElevation);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const i = y * width + x;
-      const px = i * 4;
-      if (!allowed[i]) {
-        image.data[px + 3] = 0;
-        continue;
-      }
-      if (!valid[i]) {
-        image.data[px + 3] = 0;
-        continue;
-      }
-
-      const x0 = Math.max(0, x - 1);
-      const x1 = Math.min(width - 1, x + 1);
-      const y0 = Math.max(0, y - 1);
-      const y1 = Math.min(height - 1, y + 1);
-      const left = elevations[y * width + x0];
-      const right = elevations[y * width + x1];
-      const top = elevations[y0 * width + x];
-      const bottom = elevations[y1 * width + x];
-
-      const dzdx = (right - left) / Math.max(1, (x1 - x0) * metersPerLon);
-      const dzdy = (bottom - top) / Math.max(1, (y1 - y0) * metersPerLat);
-
-      const nx = -dzdx;
-      const ny = -dzdy;
-      const nz = 1;
-      const norm = Math.hypot(nx, ny, nz) || 1;
-      const shade = Math.max(0, (nx * lx + ny * ly + nz * lz) / norm);
-
-      const elevationNorm = (elevations[i] - minElevation) / range;
-      const base = 58 + elevationNorm * 112;
-      const lit = clamp(base * 0.65 + shade * 145, 0, 255);
-
-      image.data[px] = lit * 0.95;
-      image.data[px + 1] = lit;
-      image.data[px + 2] = lit * 1.04;
-      image.data[px + 3] = 210;
-    }
-  }
-
-  ctx.putImageData(image, 0, 0);
-
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
   };
 };
 
@@ -1573,38 +1036,146 @@ export function MapView({
     if (!overlayBounds) return 5;
     return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, overlayBounds) : bandStepMode;
   }, [overlayBounds, samplesForOverlay, bandStepMode]);
-  const baseOverlayMode = coverageVizMode === "contours" ? "contours" : coverageVizMode === "heatmap" ? "heatmap" : null;
-  const baseCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
-    if (!overlayBounds || !baseOverlayMode) return null;
-    return buildCoverageOverlay(
-      overlayBounds,
-      samplesForOverlay,
-      baseOverlayMode,
+  const overlayLongTaskWarnedRef = useRef<Set<string>>(new Set());
+  const showOverlayDiagnostics =
+    import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
+  const coverageOverlayTaskTokenRef = useRef(0);
+  const terrainOverlayTaskTokenRef = useRef(0);
+  const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
+  const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
+
+  useEffect(() => {
+    if (coverageVizMode === "none") {
+      coverageOverlayTaskTokenRef.current += 1;
+      setCoverageOverlay(null);
+      return;
+    }
+    if (!overlayBounds) {
+      coverageOverlayTaskTokenRef.current += 1;
+      setCoverageOverlay(null);
+      return;
+    }
+
+    const mode = coverageVizMode;
+    if (mode === "passfail" && (!activeSelectionLink || !selectedFromSite || !hasPassFailTopology)) {
+      coverageOverlayTaskTokenRef.current += 1;
+      setCoverageOverlay(null);
+      return;
+    }
+    if (mode === "relay" && (!activeSelectionLink || !selectedFromSite || !selectedToSite || !hasRelayTopology)) {
+      coverageOverlayTaskTokenRef.current += 1;
+      setCoverageOverlay(null);
+      return;
+    }
+
+    coverageOverlayTaskTokenRef.current += 1;
+    const token = coverageOverlayTaskTokenRef.current;
+    const signature = [
+      mode,
+      overlayBounds.minLat.toFixed(5),
+      overlayBounds.maxLat.toFixed(5),
+      overlayBounds.minLon.toFixed(5),
+      overlayBounds.maxLon.toFixed(5),
+      overlayDimensions.width,
+      overlayDimensions.height,
       effectiveBandStepDb,
-      overlayDimensions,
-      overlayPointMask,
-      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-    );
-  }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
-  const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
-    if (coverageVizMode !== "passfail") return null;
-    if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
-    const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite.antennaHeightM ?? 2;
-    const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? selectedFromSite.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
-    return buildSourcePassFailOverlay(
-      overlayBounds,
-      selectedFromSite,
-      activeSelectionLink,
-      receiverAntennaHeightM,
-      receiverRxGainDbi,
-      propagationEnvironment,
-      rxSensitivityTargetDbm,
-      environmentLossDb,
-      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-      overlayDimensions,
+      samplesForOverlay.length,
+      srtmTiles.length,
       effectiveGridSize,
-      overlayPointMask,
-    );
+    ].join("|");
+
+    const onLongTask = (payload: {
+      phase: string;
+      signature: string;
+      durationMs: number;
+      processed: number;
+      total: number;
+    }) => {
+      if (!showOverlayDiagnostics) return;
+      const warnKey = `${payload.phase}|${payload.signature}`;
+      const warned = overlayLongTaskWarnedRef.current;
+      if (warned.has(warnKey)) return;
+      warned.add(warnKey);
+      if (warned.size > 80) warned.clear();
+      console.warn("[simulation-long-task]", {
+        scope: "overlay",
+        ...payload,
+      });
+    };
+
+    const shouldCancel = () => coverageOverlayTaskTokenRef.current !== token;
+    const terrainSampler = (lat: number, lon: number) => sampleSrtmElevation(srtmTiles, lat, lon);
+
+    void (async () => {
+      try {
+        const context = {
+          phase: mode,
+          signature,
+          shouldCancel,
+          onLongTask,
+        } as const;
+        let rasterPixels: OverlayRasterPixels | null = null;
+        if (mode === "heatmap" || mode === "contours") {
+          rasterPixels = await buildCoverageOverlayPixelsAsync(
+            overlayBounds,
+            samplesForOverlay,
+            mode,
+            effectiveBandStepDb,
+            overlayDimensions,
+            overlayPointMask,
+            terrainSampler,
+            context,
+          );
+        } else if (mode === "passfail") {
+          const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite!.antennaHeightM ?? 2;
+          const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? selectedFromSite!.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
+          rasterPixels = await buildSourcePassFailOverlayPixelsAsync(
+            overlayBounds,
+            selectedFromSite!,
+            activeSelectionLink!,
+            receiverAntennaHeightM,
+            receiverRxGainDbi,
+            propagationEnvironment,
+            rxSensitivityTargetDbm,
+            environmentLossDb,
+            terrainSampler,
+            overlayDimensions,
+            effectiveGridSize,
+            overlayPointMask,
+            context,
+          );
+        } else if (mode === "relay") {
+          rasterPixels = await buildRelayCandidateOverlayPixelsAsync(
+            overlayBounds,
+            selectedFromSite!,
+            selectedToSite!,
+            activeSelectionLink!,
+            propagationEnvironment,
+            environmentLossDb,
+            terrainSampler,
+            overlayDimensions,
+            effectiveGridSize,
+            overlayPointMask,
+            context,
+          );
+        }
+
+        if (shouldCancel()) return;
+        if (!rasterPixels) {
+          setCoverageOverlay(null);
+          return;
+        }
+        const raster = overlayPixelsToDataUrl(rasterPixels);
+        if (shouldCancel()) return;
+        setCoverageOverlay(raster ? { ...raster } : null);
+      } catch (error) {
+        if (error instanceof OverlayTaskCancelledError) return;
+        console.error("Failed to render simulation overlay", error);
+      }
+    })();
+    return () => {
+      coverageOverlayTaskTokenRef.current += 1;
+    };
   }, [
     coverageVizMode,
     overlayBounds,
@@ -1612,49 +1183,18 @@ export function MapView({
     selectedFromSite,
     selectedToSite,
     hasPassFailTopology,
+    hasRelayTopology,
+    overlayDimensions,
+    overlayPointMask,
+    srtmTiles,
+    effectiveBandStepDb,
+    samplesForOverlay,
     propagationEnvironment,
     rxSensitivityTargetDbm,
     environmentLossDb,
-    srtmTiles,
-    overlayDimensions,
-    overlayPointMask,
     effectiveGridSize,
+    showOverlayDiagnostics,
   ]);
-  const relayCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
-    if (coverageVizMode !== "relay") return null;
-    if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
-    return buildRelayCandidateOverlay(
-      overlayBounds,
-      selectedFromSite,
-      selectedToSite,
-      activeSelectionLink,
-      propagationEnvironment,
-      environmentLossDb,
-      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-      overlayDimensions,
-      effectiveGridSize,
-      overlayPointMask,
-    );
-  }, [
-    coverageVizMode,
-    overlayBounds,
-    activeSelectionLink,
-    selectedFromSite,
-    selectedToSite,
-    hasRelayTopology,
-    propagationEnvironment,
-    environmentLossDb,
-    srtmTiles,
-    overlayDimensions,
-    overlayPointMask,
-    effectiveGridSize,
-  ]);
-  const coverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
-    if (coverageVizMode === "none") return null;
-    if (coverageVizMode === "relay") return relayCoverageOverlay;
-    if (coverageVizMode === "passfail") return passFailCoverageOverlay;
-    return baseCoverageOverlay;
-  }, [coverageVizMode, relayCoverageOverlay, passFailCoverageOverlay, baseCoverageOverlay]);
   const currentBandStepDb = effectiveBandStepDb;
 
   const signalRange = useMemo(() => {
@@ -1684,16 +1224,85 @@ export function MapView({
           ? "Pass/Fail"
           : "Relay";
 
-  const simulationTerrainOverlay = useMemo(() => {
-    if (!showTerrainOverlay || !hasSimulationTerrain || !analysisBounds) return null;
-    const bounds = analysisBounds;
-    return buildTerrainShadeOverlay(
-      bounds,
-      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-      overlayDimensions,
-      overlayPointMask,
-    );
-  }, [showTerrainOverlay, hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions, overlayPointMask]);
+  useEffect(() => {
+    if (!showTerrainOverlay || !hasSimulationTerrain || !analysisBounds) {
+      terrainOverlayTaskTokenRef.current += 1;
+      setSimulationTerrainOverlay(null);
+      return;
+    }
+
+    terrainOverlayTaskTokenRef.current += 1;
+    const token = terrainOverlayTaskTokenRef.current;
+    const signature = [
+      "terrain",
+      analysisBounds.minLat.toFixed(5),
+      analysisBounds.maxLat.toFixed(5),
+      analysisBounds.minLon.toFixed(5),
+      analysisBounds.maxLon.toFixed(5),
+      overlayDimensions.width,
+      overlayDimensions.height,
+      srtmTiles.length,
+    ].join("|");
+
+    const shouldCancel = () => terrainOverlayTaskTokenRef.current !== token;
+    const onLongTask = (payload: {
+      phase: string;
+      signature: string;
+      durationMs: number;
+      processed: number;
+      total: number;
+    }) => {
+      if (!showOverlayDiagnostics) return;
+      const warnKey = `${payload.phase}|${payload.signature}`;
+      const warned = overlayLongTaskWarnedRef.current;
+      if (warned.has(warnKey)) return;
+      warned.add(warnKey);
+      if (warned.size > 80) warned.clear();
+      console.warn("[simulation-long-task]", {
+        scope: "overlay",
+        ...payload,
+      });
+    };
+
+    void (async () => {
+      try {
+        const rasterPixels = await buildTerrainShadeOverlayPixelsAsync(
+          analysisBounds,
+          (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+          overlayDimensions,
+          overlayPointMask,
+          {
+            phase: "terrain-shade",
+            signature,
+            shouldCancel,
+            onLongTask,
+          },
+        );
+        if (shouldCancel()) return;
+        if (!rasterPixels) {
+          setSimulationTerrainOverlay(null);
+          return;
+        }
+        const raster = overlayPixelsToDataUrl(rasterPixels);
+        if (shouldCancel()) return;
+        setSimulationTerrainOverlay(raster ? { url: raster.url, coordinates: raster.coordinates } : null);
+      } catch (error) {
+        if (error instanceof OverlayTaskCancelledError) return;
+        console.error("Failed to render terrain overlay", error);
+      }
+    })();
+    return () => {
+      terrainOverlayTaskTokenRef.current += 1;
+    };
+  }, [
+    showTerrainOverlay,
+    hasSimulationTerrain,
+    analysisBounds,
+    srtmTiles,
+    overlayDimensions,
+    overlayPointMask,
+    showOverlayDiagnostics,
+  ]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending;
