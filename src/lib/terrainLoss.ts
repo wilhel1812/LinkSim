@@ -1,4 +1,4 @@
-import { haversineDistanceKm, interpolateCoordinate } from "./geo";
+import { haversineDistanceKm } from "./geo";
 import type { Coordinates, Polarization } from "../types/radio";
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -45,6 +45,7 @@ type TerrainLossInput = {
   toAntennaAbsM: number;
   frequencyMHz: number;
   terrainSampler: TerrainSampler;
+  terrainSamplerAt?: (lat: number, lon: number) => number | null;
   samples?: number;
   kFactor?: number;
   clutterHeightM?: number;
@@ -57,6 +58,7 @@ type TerrainLosInput = {
   fromAntennaAbsM: number;
   toAntennaAbsM: number;
   terrainSampler: TerrainSampler;
+  terrainSamplerAt?: (lat: number, lon: number) => number | null;
   samples?: number;
   kFactor?: number;
   clutterHeightM?: number;
@@ -69,6 +71,7 @@ export const estimateTerrainExcessLossDb = ({
   toAntennaAbsM,
   frequencyMHz,
   terrainSampler,
+  terrainSamplerAt,
   samples = 24,
   kFactor = 4 / 3,
   clutterHeightM = 0,
@@ -80,10 +83,16 @@ export const estimateTerrainExcessLossDb = ({
   const wavelengthM = 300 / Math.max(1, frequencyMHz);
 
   const trace: { distanceM: number; terrainM: number }[] = [];
+  const sampleTerrainAt =
+    terrainSamplerAt ??
+    ((lat: number, lon: number) => terrainSampler({ lat, lon }));
+  const latSpan = to.lat - from.lat;
+  const lonSpan = to.lon - from.lon;
   for (let i = 0; i < sampleCount; i += 1) {
     const t = sampleCount <= 1 ? 0 : i / (sampleCount - 1);
-    const p = interpolateCoordinate(from, to, t);
-    const terrain = terrainSampler(p);
+    const lat = from.lat + latSpan * t;
+    const lon = from.lon + lonSpan * t;
+    const terrain = sampleTerrainAt(lat, lon);
     if (terrain === null) continue;
     trace.push({
       distanceM: distanceM * t,
@@ -162,6 +171,7 @@ export const isTerrainLineObstructed = ({
   fromAntennaAbsM,
   toAntennaAbsM,
   terrainSampler,
+  terrainSamplerAt,
   samples = 24,
   kFactor = 4 / 3,
   clutterHeightM = 0,
@@ -170,11 +180,17 @@ export const isTerrainLineObstructed = ({
   const distanceKm = Math.max(0.001, haversineDistanceKm(from, to));
   const distanceM = distanceKm * 1000;
   const clutterBoost = Math.max(0, clutterHeightM) * 0.55;
+  const sampleTerrainAt =
+    terrainSamplerAt ??
+    ((lat: number, lon: number) => terrainSampler({ lat, lon }));
+  const latSpan = to.lat - from.lat;
+  const lonSpan = to.lon - from.lon;
 
   for (let i = 1; i < sampleCount - 1; i += 1) {
     const t = i / (sampleCount - 1);
-    const p = interpolateCoordinate(from, to, t);
-    const terrain = terrainSampler(p);
+    const lat = from.lat + latSpan * t;
+    const lon = from.lon + lonSpan * t;
+    const terrain = sampleTerrainAt(lat, lon);
     if (terrain === null) continue;
     const d1 = distanceM * t;
     const losM = fromAntennaAbsM + (toAntennaAbsM - fromAntennaAbsM) * t;

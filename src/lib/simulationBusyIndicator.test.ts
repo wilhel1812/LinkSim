@@ -9,6 +9,8 @@ describe("resolveSimulationBusyIndicatorState", () => {
       simulationStepLabel: "Sampling simulation grid (120/240)",
       simulationProgress: 50,
       overlayJobsInFlight: 2,
+      overlayProgressMode: "indeterminate",
+      overlayProgressPercent: null,
       isBackgroundBusy: true,
       backgroundBusyLabel: "Loading terrain 60%",
       isTerrainFetching: true,
@@ -31,6 +33,8 @@ describe("resolveSimulationBusyIndicatorState", () => {
       simulationStepLabel: "",
       simulationProgress: 0,
       overlayJobsInFlight: 1,
+      overlayProgressMode: "indeterminate",
+      overlayProgressPercent: null,
       isBackgroundBusy: false,
       backgroundBusyLabel: "",
       isTerrainFetching: false,
@@ -46,6 +50,30 @@ describe("resolveSimulationBusyIndicatorState", () => {
     });
   });
 
+  it("shows determinate overlay progress when provided", () => {
+    const state = resolveSimulationBusyIndicatorState({
+      isSimulationRecomputing: false,
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "",
+      simulationProgress: 0,
+      overlayJobsInFlight: 1,
+      overlayProgressMode: "determinate",
+      overlayProgressPercent: 64,
+      isBackgroundBusy: false,
+      backgroundBusyLabel: "",
+      isTerrainFetching: false,
+      hasTerrainDownloadProgress: false,
+      terrainProgressPercent: 0,
+      terrainProgressTilesTotal: 0,
+    });
+
+    expect(state).toEqual({
+      label: "Finalizing simulation overlay... 64%",
+      progressMode: "determinate",
+      progressPercent: 64,
+    });
+  });
+
   it("retains terrain determinate progress behavior when background fetch is active", () => {
     const state = resolveSimulationBusyIndicatorState({
       isSimulationRecomputing: false,
@@ -53,6 +81,8 @@ describe("resolveSimulationBusyIndicatorState", () => {
       simulationStepLabel: "",
       simulationProgress: 0,
       overlayJobsInFlight: 0,
+      overlayProgressMode: "indeterminate",
+      overlayProgressPercent: null,
       isBackgroundBusy: true,
       backgroundBusyLabel: "Loading terrain 40%",
       isTerrainFetching: true,
@@ -75,6 +105,8 @@ describe("resolveSimulationBusyIndicatorState", () => {
       simulationStepLabel: "",
       simulationProgress: 0,
       overlayJobsInFlight: 0,
+      overlayProgressMode: "indeterminate",
+      overlayProgressPercent: null,
       isBackgroundBusy: false,
       backgroundBusyLabel: "",
       isTerrainFetching: false,
