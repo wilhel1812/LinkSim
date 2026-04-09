@@ -15,7 +15,6 @@ export type BuildCoverageOptions = {
   sampleMultiplier?: number;
   terrainSamples?: number;
   onProgress?: (progress: number) => void;
-  onSampleProgress?: (processed: number, total: number) => void;
   terrainCacheKey?: string;
   overlayRadiusKm?: number;
   singleSiteRadiusKm?: number;
@@ -34,6 +33,9 @@ export type CoverageGridDimensions = {
   totalSamples: number;
   targetSamples: number;
 };
+
+const COVERAGE_COMPUTE_CHUNK_SIZE = 48;
+const COVERAGE_COMPUTE_FRAME_BUDGET_MS = 12;
 
 export const computeCoverageGridDimensions = (
   gridSize: number,
@@ -301,7 +303,7 @@ export const buildCoverageAsync = async (
   const total = Math.max(1, samples.length);
   const notifyEvery = Math.max(1, Math.floor(total / 40));
   const results: CoverageSample[] = [];
-  const chunkSize = 8;
+  const chunkSize = COVERAGE_COMPUTE_CHUNK_SIZE;
   let chunkStartedAt = performance.now();
 
   for (let i = 0; i < samples.length; i += 1) {
@@ -331,8 +333,7 @@ export const buildCoverageAsync = async (
     if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
       onProgress?.((i + 1) / total);
     }
-    options?.onSampleProgress?.(i + 1, total);
-    if ((i + 1) % chunkSize === 0 || performance.now() - chunkStartedAt > 7) {
+    if ((i + 1) % chunkSize === 0 || performance.now() - chunkStartedAt > COVERAGE_COMPUTE_FRAME_BUDGET_MS) {
       await new Promise<void>((resolve) => {
         if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
           window.requestAnimationFrame(() => resolve());
