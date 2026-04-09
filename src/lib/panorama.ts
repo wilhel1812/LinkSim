@@ -1,5 +1,6 @@
 import { computeSourceCentricRxMetrics, classifyPassFailState, type PassFailState } from "./passFailState";
 import { haversineDistanceKm } from "./geo";
+import { normalizeFovScale } from "./panoramaView";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -70,6 +71,8 @@ export type PanoramaBuildOptions = {
   maxRadiusKm?: number;
   azimuthStepDeg?: number;
   radialSamples?: number;
+  windowCenterDeg?: number;
+  windowSpanDeg?: number;
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -81,6 +84,16 @@ export const qualityToSampling = (quality: PanoramaQuality): { azimuthStepDeg: n
   quality === "drag"
     ? { azimuthStepDeg: 5, radialSamples: 64 }
     : { azimuthStepDeg: 1, radialSamples: 192 };
+
+export const resolvePanoramaSampling = (quality: PanoramaQuality, options?: { zoomModeEnabled?: boolean; fovScale?: number }) => {
+  const defaults = qualityToSampling(quality);
+  if (!options?.zoomModeEnabled) return defaults;
+  const fovScale = normalizeFovScale(options.fovScale ?? 1);
+  return {
+    azimuthStepDeg: Math.max(0.25, defaults.azimuthStepDeg / fovScale),
+    radialSamples: defaults.radialSamples,
+  };
+};
 
 export const earthCurvatureDropM = (distanceKm: number, kFactor: number): number => {
   const distanceM = Math.max(0, distanceKm * 1000);
@@ -156,6 +169,35 @@ const clearanceMarginMeters = (
   return Math.tan(deltaRad) * distanceM;
 };
 
+const normalizeAzimuth = (azimuthDeg: number): number => ((azimuthDeg % 360) + 360) % 360;
+
+const angularDistanceDeg = (a: number, b: number): number => {
+  const diff = Math.abs(normalizeAzimuth(a) - normalizeAzimuth(b)) % 360;
+  return diff > 180 ? 360 - diff : diff;
+};
+
+const buildAzimuthSweep = (azimuthStepDeg: number, windowCenterDeg?: number, windowSpanDeg?: number): number[] => {
+  const step = Math.max(0.25, azimuthStepDeg);
+  const span = Math.max(10, Math.min(360, windowSpanDeg ?? 360));
+  if (span >= 359.999) {
+    const values: number[] = [];
+    for (let azimuthDeg = 0; azimuthDeg < 360; azimuthDeg += step) {
+      values.push(normalizeAzimuth(azimuthDeg));
+    }
+    return values.length ? values : [0];
+  }
+
+  const center = normalizeAzimuth(windowCenterDeg ?? 180);
+  const start = center - span / 2;
+  const count = Math.max(2, Math.ceil(span / step) + 1);
+  const values: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const ratio = count <= 1 ? 0 : i / (count - 1);
+    values.push(normalizeAzimuth(start + span * ratio));
+  }
+  return values;
+};
+
 export const buildPanorama = (params: {
   selectedSite: Site;
   effectiveLink: Link;
@@ -172,7 +214,7 @@ export const buildPanorama = (params: {
   const defaults = qualityToSampling(quality);
   const baseRadiusKm = Math.max(1, params.options?.baseRadiusKm ?? 50);
   const maxRadiusKm = Math.max(baseRadiusKm, params.options?.maxRadiusKm ?? 200);
-  const azimuthStepDeg = clamp(params.options?.azimuthStepDeg ?? defaults.azimuthStepDeg, 1, 45);
+  const azimuthStepDeg = clamp(params.options?.azimuthStepDeg ?? defaults.azimuthStepDeg, 0.25, 45);
   const radialSamples = Math.max(12, Math.round(params.options?.radialSamples ?? defaults.radialSamples));
   const clutterHeightM = Math.max(0, propagationEnvironment.clutterHeightM);
 
@@ -183,7 +225,8 @@ export const buildPanorama = (params: {
   let minAngleDeg = Number.POSITIVE_INFINITY;
   let maxAngleDeg = Number.NEGATIVE_INFINITY;
 
-  for (let azimuthDeg = 0; azimuthDeg < 360; azimuthDeg += azimuthStepDeg) {
+  const azimuthSweep = buildAzimuthSweep(azimuthStepDeg, params.options?.windowCenterDeg, params.options?.windowSpanDeg);
+  for (const azimuthDeg of azimuthSweep) {
     const maxDistanceKm = resolveRayMaxDistanceKm(selectedSite.position, azimuthDeg, baseRadiusKm, maxRadiusKm, terrainSampler);
     const samples: PanoramaRaySample[] = [];
     let maxAngleSoFar = -90;
@@ -249,7 +292,6 @@ export const buildPanorama = (params: {
     });
   }
 
-  const azimuthCount = rays.length;
   const nodes: PanoramaNodeProjection[] = nodeCandidates
     .filter((candidate) => candidate.id !== selectedSite.id)
     .map((candidate) => {
@@ -259,8 +301,11 @@ export const buildPanorama = (params: {
       const candidateAbs = candidate.groundElevationM + candidate.antennaHeightM;
       const elevationAngleDeg = toDegrees(Math.atan2(candidateAbs - sourceAbsM - dropM, Math.max(1, distanceKm * 1000)));
 
-      const rayIndex = Math.round(azimuthDeg / azimuthStepDeg) % Math.max(1, azimuthCount);
-      const ray = rays[rayIndex] ?? rays[0];
+      const ray =
+        rays.reduce<PanoramaRay | null>((best, candidate) => {
+          if (!best) return candidate;
+          return angularDistanceDeg(candidate.azimuthDeg, azimuthDeg) < angularDistanceDeg(best.azimuthDeg, azimuthDeg) ? candidate : best;
+        }, null) ?? rays[0];
       const terrainBeforeDeg = ray ? lookupMaxAngleBefore(ray.samples, distanceKm) : -90;
       const visible = elevationAngleDeg > terrainBeforeDeg;
       const angularClearanceDeg = elevationAngleDeg - terrainBeforeDeg;

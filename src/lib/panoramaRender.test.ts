@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDepthBands, depthStyleForBand, resolveRenderedEndpoint } from "./panoramaRender";
+import { buildDepthBands, buildNearBiasedDepthFractions, depthStyleForBand, resolveRenderedEndpoint } from "./panoramaRender";
 import type { PanoramaRay } from "./panorama";
 
 const mkRay = (azimuthDeg: number, samples: number[]): PanoramaRay => ({
@@ -53,6 +53,16 @@ describe("panoramaRender", () => {
     expect(near.strokeOpacity).toBeGreaterThan(far.strokeOpacity);
     expect(near.strokeMixTerrainPct).toBeGreaterThan(far.strokeMixTerrainPct);
     expect(near.strokeMixMutedPct).toBeLessThan(far.strokeMixMutedPct);
+  });
+
+  it("builds ten near-biased fractions ending at horizon depth", () => {
+    const fractions = buildNearBiasedDepthFractions(10);
+    expect(fractions).toHaveLength(10);
+    expect(fractions[0]).toBeLessThan(0.1);
+    expect(fractions[fractions.length - 1]).toBe(1);
+    for (let i = 1; i < fractions.length; i += 1) {
+      expect(fractions[i]).toBeGreaterThan(fractions[i - 1]);
+    }
   });
 
   it("resolves rendered endpoint from hovered node/sample before fallback ray", () => {

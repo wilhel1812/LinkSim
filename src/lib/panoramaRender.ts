@@ -59,6 +59,15 @@ export const depthStyleForBand = (bandIndex: number, bandCount: number): Panoram
   };
 };
 
+export const buildNearBiasedDepthFractions = (lineCount: number): number[] => {
+  const count = Math.max(1, Math.round(lineCount));
+  if (count === 1) return [1];
+  return Array.from({ length: count }, (_, index) => {
+    const t = (index + 1) / count;
+    return Number(Math.pow(t, 1.6).toFixed(6));
+  });
+};
+
 export const buildDepthBands = (
   rays: PanoramaRay[],
   fractions: number[],
