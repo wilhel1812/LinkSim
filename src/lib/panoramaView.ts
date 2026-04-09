@@ -1,4 +1,4 @@
-const mod360 = (value: number): number => ((value % 360) + 360) % 360;
+export const mod360 = (value: number): number => ((value % 360) + 360) % 360;
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 export const cardinalLabelForAzimuth = (azimuthDeg: number): "N" | "E" | "S" | "W" | null => {
