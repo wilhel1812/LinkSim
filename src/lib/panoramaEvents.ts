@@ -3,6 +3,9 @@ export type PanoramaFocusPoint = {
   azimuthDeg: number;
   endpoint: { lat: number; lon: number };
   horizonDistanceKm: number;
+  focusMode?: "hover" | "pinned" | "none";
+  viewportCenterAzimuthDeg?: number;
+  viewportSpanDeg?: number;
   mapHoverZoomEnabled?: boolean;
 };
 

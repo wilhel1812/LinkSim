@@ -1,12 +1,14 @@
 import { scaleLinear } from "d3-scale";
 import { Compass, Maximize2, Minimize2, Trees, Waves, ZoomIn } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/latestOnlyTaskScheduler";
 import { dispatchPanoramaInteraction } from "../lib/panoramaEvents";
 import {
   buildPanorama,
+  qualityToSampling,
   resolvePanoramaSampling,
   type PanoramaNodeCandidate,
   type PanoramaNodeProjection,
@@ -16,18 +18,12 @@ import {
   type PanoramaRaySample,
 } from "../lib/panorama";
 import { buildDepthBands, buildNearBiasedDepthFractions, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
-import {
-  cardinalLabelForAzimuth,
-  chartXNormToAzimuthDeg,
-  formatAzimuthTick,
-  fovScaleToSpanDeg,
-  normalizeFovScale,
-  resolvePanoramaWindow,
-  unwrapAzimuthForWindow,
-} from "../lib/panoramaView";
+import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
+import { centerForScaledWindow, centerForScrollLeft, normalizeScrollLeftToMiddleCycle, scrollLeftForCenter } from "../lib/panoramaViewport";
 import { passFailStateLabel } from "../lib/passFailState";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { useAppStore } from "../store/appStore";
+import { UiSlider } from "./UiSlider";
 
 const M = { t: 14, r: 20, b: 32, l: 46 };
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -56,16 +52,28 @@ type HoverTarget =
       node: PanoramaNodeProjection;
     };
 
+const pointerDistance = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
+
 export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls }: PanoramaChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
+  const panScrollRef = useRef<HTMLDivElement | null>(null);
+  const suppressPanScrollSyncRef = useRef(false);
+  const wavesButtonRef = useRef<HTMLButtonElement | null>(null);
+  const fovButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sliderPopoverRef = useRef<HTMLDivElement | null>(null);
+  const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStartRef = useRef<{ distance: number; fovScale: number; spanDeg: number; centerDeg: number } | null>(null);
+
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
-  const [hoverAzimuth, setHoverAzimuth] = useState<number | null>(null);
+  const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(180);
   const [includeClutter, setIncludeClutter] = useState(false);
-  const [fitScaleMode, setFitScaleMode] = useState(true);
+  const [verticalBlend, setVerticalBlend] = useState(1);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
-  const [zoomModeEnabled, setZoomModeEnabled] = useState(true);
   const [fovScale, setFovScale] = useState(1.5);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
+  const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
+  const [openSliderPopover, setOpenSliderPopover] = useState<"fov" | "vertical" | null>(null);
+  const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number } | null>(null);
 
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
@@ -91,6 +99,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   const previewCount = Object.keys(siteDragPreview).length;
   const quality: PanoramaQuality = previewCount > 0 ? "drag" : "full";
+  const normalizedFovScale = normalizeFovScale(fovScale);
+  const viewportSpanDeg = fovScaleToSpanDeg(normalizedFovScale);
 
   useLayoutEffect(() => {
     const element = chartHostRef.current;
@@ -111,9 +121,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     return () => observer?.disconnect();
   }, []);
 
-  const schedulerRef = useRef(createLatestOnlyTaskScheduler());
+  const baseSchedulerRef = useRef(createLatestOnlyTaskScheduler());
+  const detailSchedulerRef = useRef(createLatestOnlyTaskScheduler());
   const cacheRef = useRef<Map<string, PanoramaResult>>(new Map());
-  const [panorama, setPanorama] = useState<PanoramaResult | null>(null);
+  const [basePanorama, setBasePanorama] = useState<PanoramaResult | null>(null);
+  const [detailPanorama, setDetailPanorama] = useState<PanoramaResult | null>(null);
 
   const selectedSiteEffective = useMemo(() => {
     if (!selectedSite) return null;
@@ -168,8 +180,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   }, [sites, siteLibrary, mqttNodes, discoveryLibraryVisible, discoveryMqttVisible]);
 
   useEffect(() => {
+    setPinnedTarget(null);
+    setHoverTarget(null);
+  }, [selectedSiteEffective?.id]);
+
+  useEffect(() => {
     if (!selectedSiteEffective || !selectedNetwork) {
-      setPanorama(null);
+      setBasePanorama(null);
+      setDetailPanorama(null);
       return;
     }
 
@@ -195,13 +213,33 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           cableLossDb: selectedSiteEffective.cableLossDb,
         };
 
-    const effectiveFovScale = normalizeFovScale(fovScale);
-    const windowSpanDeg = zoomModeEnabled ? fovScaleToSpanDeg(effectiveFovScale) : 360;
-    const windowCenterDegRaw = hoverAzimuth ?? 180;
-    const sampling = resolvePanoramaSampling(quality, { zoomModeEnabled, fovScale: effectiveFovScale });
-    const centerBucketSizeDeg = Math.max(1, Math.round(sampling.azimuthStepDeg * 4));
-    const windowCenterBucketDeg = Math.round(windowCenterDegRaw / centerBucketSizeDeg) * centerBucketSizeDeg;
-    const signature = [
+    const baseSampling = qualityToSampling("drag");
+    const detailSampling = resolvePanoramaSampling(quality, { zoomModeEnabled: true, fovScale: normalizedFovScale });
+    const detailCenterBucketSizeDeg = Math.max(1, Math.round(detailSampling.azimuthStepDeg * 4));
+    const detailCenterBucketDeg = Math.round(viewportCenterAzimuthDeg / detailCenterBucketSizeDeg) * detailCenterBucketSizeDeg;
+
+    const baseSignature = [
+      "panorama-base",
+      selectedSiteEffective.id,
+      selectedSiteEffective.position.lat.toFixed(6),
+      selectedSiteEffective.position.lon.toFixed(6),
+      selectedSiteEffective.groundElevationM,
+      selectedSiteEffective.antennaHeightM,
+      selectedNetwork.id,
+      effectiveLink.frequencyMHz,
+      propagationEnvironment.atmosphericBendingNUnits,
+      propagationEnvironment.clutterHeightM,
+      baseSampling.azimuthStepDeg,
+      baseSampling.radialSamples,
+      terrainLoadEpoch,
+      srtmTiles.length,
+      nodeCandidates.length,
+      rxSensitivityTargetDbm,
+      environmentLossDb,
+    ].join("|");
+
+    const detailSignature = [
+      "panorama-detail",
       selectedSiteEffective.id,
       selectedSiteEffective.position.lat.toFixed(6),
       selectedSiteEffective.position.lon.toFixed(6),
@@ -212,12 +250,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       propagationEnvironment.atmosphericBendingNUnits,
       propagationEnvironment.clutterHeightM,
       quality,
-      zoomModeEnabled ? "zoom:on" : "zoom:off",
-      effectiveFovScale.toFixed(2),
-      windowSpanDeg.toFixed(3),
-      windowCenterBucketDeg.toFixed(3),
-      sampling.azimuthStepDeg,
-      sampling.radialSamples,
+      normalizedFovScale.toFixed(2),
+      viewportSpanDeg.toFixed(3),
+      detailCenterBucketDeg.toFixed(3),
+      detailSampling.azimuthStepDeg,
+      detailSampling.radialSamples,
       terrainLoadEpoch,
       srtmTiles.length,
       nodeCandidates.length,
@@ -225,46 +262,84 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       environmentLossDb,
     ].join("|");
 
-    const cached = cacheRef.current.get(signature);
-    if (cached) {
-      setPanorama(cached);
-      return;
+    const cachedBase = cacheRef.current.get(baseSignature);
+    if (cachedBase) setBasePanorama(cachedBase);
+    const cachedDetail = cacheRef.current.get(detailSignature);
+    if (cachedDetail) {
+      setDetailPanorama(cachedDetail);
+    } else {
+      setDetailPanorama(null);
     }
 
-    const scheduler = schedulerRef.current;
-    scheduler.clearQueue();
-    scheduler.cancelActive();
+    if (!cachedBase) {
+      const scheduler = baseSchedulerRef.current;
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      scheduler.enqueue({
+        signature: baseSignature,
+        run: async (context) => {
+          const result = buildPanorama({
+            selectedSite: selectedSiteEffective,
+            effectiveLink,
+            propagationEnvironment,
+            rxSensitivityTargetDbm,
+            environmentLossDb,
+            quality: "drag",
+            terrainSampler: (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+            nodeCandidates,
+            options: {
+              baseRadiusKm: 50,
+              maxRadiusKm: 200,
+              azimuthStepDeg: baseSampling.azimuthStepDeg,
+              radialSamples: baseSampling.radialSamples,
+            },
+          });
+          if (context.isCancelled()) return;
+          cacheRef.current.set(baseSignature, result);
+          if (cacheRef.current.size > 90) {
+            const oldest = cacheRef.current.keys().next().value;
+            if (oldest) cacheRef.current.delete(oldest);
+          }
+          setBasePanorama(result);
+        },
+      } satisfies LatestOnlyTask);
+    }
 
-    scheduler.enqueue({
-      signature,
-      run: async (context) => {
-        const result = buildPanorama({
-          selectedSite: selectedSiteEffective,
-          effectiveLink,
-          propagationEnvironment,
-          rxSensitivityTargetDbm,
-          environmentLossDb,
-          quality,
-          terrainSampler: (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-          nodeCandidates,
-          options: {
-            baseRadiusKm: 50,
-            maxRadiusKm: 200,
-            azimuthStepDeg: sampling.azimuthStepDeg,
-            radialSamples: sampling.radialSamples,
-            windowCenterDeg: zoomModeEnabled ? windowCenterBucketDeg : undefined,
-            windowSpanDeg: zoomModeEnabled ? windowSpanDeg : undefined,
-          },
-        });
-        if (context.isCancelled()) return;
-        cacheRef.current.set(signature, result);
-        if (cacheRef.current.size > 40) {
-          const oldest = cacheRef.current.keys().next().value;
-          if (oldest) cacheRef.current.delete(oldest);
-        }
-        setPanorama(result);
-      },
-    } satisfies LatestOnlyTask);
+    if (!cachedDetail) {
+      const scheduler = detailSchedulerRef.current;
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      scheduler.enqueue({
+        signature: detailSignature,
+        run: async (context) => {
+          const result = buildPanorama({
+            selectedSite: selectedSiteEffective,
+            effectiveLink,
+            propagationEnvironment,
+            rxSensitivityTargetDbm,
+            environmentLossDb,
+            quality,
+            terrainSampler: (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+            nodeCandidates,
+            options: {
+              baseRadiusKm: 50,
+              maxRadiusKm: 200,
+              azimuthStepDeg: detailSampling.azimuthStepDeg,
+              radialSamples: detailSampling.radialSamples,
+              windowCenterDeg: detailCenterBucketDeg,
+              windowSpanDeg: viewportSpanDeg,
+            },
+          });
+          if (context.isCancelled()) return;
+          cacheRef.current.set(detailSignature, result);
+          if (cacheRef.current.size > 90) {
+            const oldest = cacheRef.current.keys().next().value;
+            if (oldest) cacheRef.current.delete(oldest);
+          }
+          setDetailPanorama(result);
+        },
+      } satisfies LatestOnlyTask);
+    }
   }, [
     selectedSiteEffective,
     selectedNetwork,
@@ -276,70 +351,76 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     rxSensitivityTargetDbm,
     environmentLossDb,
     terrainLoadEpoch,
-    zoomModeEnabled,
-    fovScale,
-    hoverAzimuth,
+    normalizedFovScale,
+    viewportCenterAzimuthDeg,
+    viewportSpanDeg,
   ]);
+
+  const panorama = detailPanorama ?? basePanorama;
 
   const chartWidth = chartSize?.width ?? 0;
   const chartHeight = chartSize?.height ?? 0;
+  const panCycleWidthPx = Math.max(1, chartWidth * normalizedFovScale);
+  const panTrackWidthPx = panCycleWidthPx * 3;
 
-  const xWindow = useMemo(() => {
-    if (!zoomModeEnabled) return null;
-    return resolvePanoramaWindow(hoverAzimuth ?? 180, fovScaleToSpanDeg(fovScale));
-  }, [zoomModeEnabled, hoverAzimuth, fovScale]);
+  useEffect(() => {
+    const element = panScrollRef.current;
+    if (!element || chartWidth <= 0) return;
+    suppressPanScrollSyncRef.current = true;
+    element.scrollLeft = scrollLeftForCenter(viewportCenterAzimuthDeg, panCycleWidthPx, chartWidth);
+    requestAnimationFrame(() => {
+      suppressPanScrollSyncRef.current = false;
+    });
+  }, [chartWidth, panCycleWidthPx, viewportCenterAzimuthDeg]);
+
+  const xWindow = useMemo(
+    () => resolvePanoramaWindow(viewportCenterAzimuthDeg, viewportSpanDeg),
+    [viewportCenterAzimuthDeg, viewportSpanDeg],
+  );
 
   const terrainFillGradientId = useMemo(() => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`, []);
 
   const geometry = useMemo(() => {
     if (!panorama || !chartSize || !panorama.rays.length) return null;
 
-    const useWindow = Boolean(xWindow);
-    const xDomainStart = xWindow?.startDeg ?? 0;
-    const xDomainEnd = xWindow?.endDeg ?? 360;
+    const xDomainStart = xWindow.startDeg;
+    const xDomainEnd = xWindow.endDeg;
     const xSpan = Math.max(0.001, xDomainEnd - xDomainStart);
     const x = scaleLinear().domain([xDomainStart, xDomainEnd]).range([M.l, chartWidth - M.r]);
-    const xCenterForUnwrap = xWindow?.centerDeg ?? 180;
+    const xCenterForUnwrap = xWindow.centerDeg;
 
     const visibleRays = panorama.rays
       .map((ray) => {
-        const xValue = useWindow ? unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap) : ray.azimuthDeg;
+        const xValue = unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap);
         return { ray, xValue };
       })
-      .filter((entry) => !useWindow || (entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd))
+      .filter((entry) => entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd)
       .sort((a, b) => a.xValue - b.xValue);
 
     if (!visibleRays.length) return null;
 
     const minHorizon = Math.min(...panorama.rays.map((ray) => ray.horizonAngleDeg));
     const maxHorizon = Math.max(...panorama.rays.map((ray) => ray.horizonAngleDeg));
-    const minSampleAngle = Math.min(
-      ...panorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)),
-    );
-    const maxSampleAngle = Math.max(
-      ...panorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)),
-    );
+    const minSampleAngle = Math.min(...panorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
+    const maxSampleAngle = Math.max(...panorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
 
     const innerWidth = Math.max(1, chartWidth - M.l - M.r);
     const innerHeight = Math.max(1, chartHeight - M.t - M.b);
     const horizonPad = 0.5;
 
-    let domainMin: number;
-    let domainMax: number;
-    if (fitScaleMode) {
-      domainMin = minHorizon - horizonPad;
-      domainMax = maxHorizon + horizonPad;
-    } else {
-      const pixelsPerDegX = innerWidth / xSpan;
-      const ySpanDeg = innerHeight / Math.max(0.001, pixelsPerDegX);
-      const seaLevelAnchorDeg = Math.min(0, minSampleAngle - 0.2);
-      domainMin = seaLevelAnchorDeg;
-      domainMax = domainMin + ySpanDeg;
-      if (domainMax < maxSampleAngle + 0.2) {
-        domainMax = maxSampleAngle + 0.2;
-        domainMin = domainMax - ySpanDeg;
-      }
+    const fitMin = minHorizon - horizonPad;
+    const fitMax = maxHorizon + horizonPad;
+    const pixelsPerDegX = innerWidth / xSpan;
+    const ySpanDeg = innerHeight / Math.max(0.001, pixelsPerDegX);
+    let trueMin = Math.min(0, minSampleAngle - 0.2);
+    let trueMax = trueMin + ySpanDeg;
+    if (trueMax < maxSampleAngle + 0.2) {
+      trueMax = maxSampleAngle + 0.2;
+      trueMin = trueMax - ySpanDeg;
     }
+
+    let domainMin = trueMin + (fitMin - trueMin) * clamp(verticalBlend, 0, 1);
+    let domainMax = trueMax + (fitMax - trueMax) * clamp(verticalBlend, 0, 1);
 
     if (!Number.isFinite(domainMin) || !Number.isFinite(domainMax) || domainMax <= domainMin) {
       domainMin = panorama.minAngleDeg;
@@ -357,7 +438,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       visibleRays.map((entry) => entry.ray),
       ridgeFractions,
       (ray, sample) => {
-        const xValue = useWindow ? unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap) : ray.azimuthDeg;
+        const xValue = unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap);
         const angleDeg = sample?.angleDeg ?? ray.horizonAngleDeg;
         return { x: x(xValue), y: y(angleDeg), angleDeg };
       },
@@ -373,9 +454,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     }));
 
     const furthestBandFillPath = ridgeBands[ridgeBands.length - 1]?.fillPath ?? "";
-    const clutterBasePoints =
-      depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ??
-      clutterPoints;
+    const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
 
     const clutterAreaPath = includeClutter
       ? `${toPath(clutterPoints)} ${[...clutterBasePoints]
@@ -384,18 +463,16 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           .join(" ")} Z`
       : "";
 
-    const ticksX = xWindow
-      ? Array.from({ length: 7 }, (_, index) => {
-          const ratio = index / 6;
-          return xDomainStart + (xDomainEnd - xDomainStart) * ratio;
-        })
-      : [0, 60, 120, 180, 240, 300, 360];
+    const ticksX = Array.from({ length: 7 }, (_, index) => {
+      const ratio = index / 6;
+      return xDomainStart + (xDomainEnd - xDomainStart) * ratio;
+    });
 
     const ticksY = [domainMin, (domainMin + domainMax) / 2, domainMax];
 
     const nodes = panorama.nodes
       .map((node) => {
-        const xValue = useWindow ? unwrapAzimuthForWindow(node.azimuthDeg, xCenterForUnwrap) : node.azimuthDeg;
+        const xValue = unwrapAzimuthForWindow(node.azimuthDeg, xCenterForUnwrap);
         return {
           node,
           xValue,
@@ -403,7 +480,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           cy: y(node.elevationAngleDeg),
         };
       })
-      .filter((entry) => !useWindow || (entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd));
+      .filter((entry) => entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd);
 
     return {
       x,
@@ -417,28 +494,34 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ticksY,
       nodes,
     };
-  }, [panorama, chartSize, chartHeight, chartWidth, fitScaleMode, xWindow, includeClutter]);
+  }, [panorama, chartSize, chartHeight, chartWidth, verticalBlend, xWindow, includeClutter]);
+
+  const focusTarget = hoverTarget ?? pinnedTarget;
+  const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
 
   const activeRay = useMemo(() => {
-    if (!panorama || hoverAzimuth == null || !panorama.rays.length) return null;
-    const nearest = panorama.rays.reduce(
+    if (!panorama || focusAzimuthDeg == null || !panorama.rays.length) return null;
+    return panorama.rays.reduce(
       (best, ray) => {
-        const dist = Math.abs(unwrapAzimuthForWindow(ray.azimuthDeg, hoverAzimuth) - hoverAzimuth);
+        const dist = Math.abs(unwrapAzimuthForWindow(ray.azimuthDeg, focusAzimuthDeg) - focusAzimuthDeg);
         if (dist < best.distance) return { ray, distance: dist };
         return best;
       },
       { ray: panorama.rays[0], distance: Number.POSITIVE_INFINITY },
-    );
-    return nearest.ray;
-  }, [panorama, hoverAzimuth]);
+    ).ray;
+  }, [panorama, focusAzimuthDeg]);
 
   useEffect(() => {
     if (!selectedSiteEffective) return;
+    if (!focusTarget) {
+      dispatchPanoramaInteraction({ type: "leave", siteId: selectedSiteEffective.id });
+      return;
+    }
     const renderedEndpoint = resolveRenderedEndpoint({
-      hoveredNode: hoverTarget?.kind === "node" ? hoverTarget.node : null,
-      hoveredSample: hoverTarget?.kind === "terrain" ? hoverTarget.sample : null,
-      hoveredAzimuthDeg: hoverTarget?.azimuthDeg ?? null,
-      fallbackRay: activeRay,
+      hoveredNode: focusTarget.kind === "node" ? focusTarget.node : null,
+      hoveredSample: focusTarget.kind === "terrain" ? focusTarget.sample : null,
+      hoveredAzimuthDeg: focusTarget.azimuthDeg,
+      fallbackRay: null,
     });
     if (!renderedEndpoint) {
       dispatchPanoramaInteraction({ type: "leave", siteId: selectedSiteEffective.id });
@@ -451,12 +534,100 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         azimuthDeg: renderedEndpoint.azimuthDeg,
         endpoint: renderedEndpoint.endpoint,
         horizonDistanceKm: renderedEndpoint.distanceKm,
+        focusMode: hoverTarget ? "hover" : pinnedTarget ? "pinned" : "none",
+        viewportCenterAzimuthDeg,
+        viewportSpanDeg,
         mapHoverZoomEnabled,
       },
     });
-  }, [selectedSiteEffective, activeRay, hoverTarget, mapHoverZoomEnabled]);
+  }, [selectedSiteEffective, focusTarget, hoverTarget, pinnedTarget, viewportCenterAzimuthDeg, viewportSpanDeg, mapHoverZoomEnabled]);
 
-  const onMove = (event: MouseEvent<SVGRectElement>) => {
+  const onPanScroll = useCallback(() => {
+    const element = panScrollRef.current;
+    if (!element || chartWidth <= 0 || suppressPanScrollSyncRef.current) return;
+    const normalized = normalizeScrollLeftToMiddleCycle(element.scrollLeft, panCycleWidthPx);
+    if (Math.abs(normalized - element.scrollLeft) > 0.5) {
+      suppressPanScrollSyncRef.current = true;
+      element.scrollLeft = normalized;
+      requestAnimationFrame(() => {
+        suppressPanScrollSyncRef.current = false;
+      });
+    }
+    setViewportCenterAzimuthDeg(centerForScrollLeft(normalized, panCycleWidthPx, chartWidth));
+  }, [chartWidth, panCycleWidthPx]);
+
+  const applyFovAtFocal = useCallback(
+    (nextScale: number, focalNorm: number) => {
+      const clamped = normalizeFovScale(nextScale);
+      const oldSpan = fovScaleToSpanDeg(normalizedFovScale);
+      const newSpan = fovScaleToSpanDeg(clamped);
+      const nextCenter = centerForScaledWindow(viewportCenterAzimuthDeg, oldSpan, newSpan, focalNorm);
+      setFovScale(clamped);
+      setViewportCenterAzimuthDeg(nextCenter);
+    },
+    [normalizedFovScale, viewportCenterAzimuthDeg],
+  );
+
+  const onWheelPanorama = (event: React.WheelEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const focalNorm = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+    if (event.ctrlKey) {
+      event.preventDefault();
+      const nextScale = normalizeFovScale(normalizedFovScale * Math.exp(-event.deltaY * 0.01));
+      applyFovAtFocal(nextScale, focalNorm);
+      return;
+    }
+    const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.shiftKey ? event.deltaY : 0;
+    if (dominantDelta === 0) return;
+    event.preventDefault();
+    const deltaDeg = (dominantDelta / Math.max(1, chartWidth - M.l - M.r)) * viewportSpanDeg;
+    setViewportCenterAzimuthDeg((current) => mod360(current + deltaDeg));
+  };
+
+  const onPointerDownPanorama = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "touch") return;
+    pinchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinchPointersRef.current.size === 2) {
+      const [a, b] = [...pinchPointersRef.current.values()];
+      pinchStartRef.current = {
+        distance: Math.max(1, pointerDistance(a, b)),
+        fovScale: normalizedFovScale,
+        spanDeg: viewportSpanDeg,
+        centerDeg: viewportCenterAzimuthDeg,
+      };
+    }
+  };
+
+  const onPointerMovePanorama = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!pinchPointersRef.current.has(event.pointerId)) return;
+    pinchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinchPointersRef.current.size !== 2 || !pinchStartRef.current) return;
+    const [a, b] = [...pinchPointersRef.current.values()];
+    const distance = Math.max(1, pointerDistance(a, b));
+    const rect = event.currentTarget.getBoundingClientRect();
+    const midX = (a.x + b.x) * 0.5;
+    const focalNorm = clamp((midX - rect.left) / Math.max(1, rect.width), 0, 1);
+    const scaleFactor = distance / Math.max(1, pinchStartRef.current.distance);
+    const nextScale = normalizeFovScale(pinchStartRef.current.fovScale * scaleFactor);
+    const nextSpan = fovScaleToSpanDeg(nextScale);
+    const nextCenter = centerForScaledWindow(
+      pinchStartRef.current.centerDeg,
+      pinchStartRef.current.spanDeg,
+      nextSpan,
+      focalNorm,
+    );
+    setFovScale(nextScale);
+    setViewportCenterAzimuthDeg(nextCenter);
+  };
+
+  const onPointerEndPanorama = (event: React.PointerEvent<HTMLDivElement>) => {
+    pinchPointersRef.current.delete(event.pointerId);
+    if (pinchPointersRef.current.size < 2) {
+      pinchStartRef.current = null;
+    }
+  };
+
+  const onMove = (event: ReactMouseEvent<SVGRectElement>) => {
     if (!geometry || !panorama) return;
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 1 || rect.height <= 1) return;
@@ -466,8 +637,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const xPx = M.l + xNorm * (chartWidth - M.l - M.r);
     const yPx = M.t + yNorm * (chartHeight - M.t - M.b);
 
-    const azimuth = chartXNormToAzimuthDeg(xNorm);
-    setHoverAzimuth(azimuth);
+    const unwrapped = geometry.x.invert(xPx);
+    const azimuth = mod360(unwrapped);
 
     const nearestRay = panorama.rays.reduce(
       (best, ray) => {
@@ -515,11 +686,79 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   };
 
   const onLeave = () => {
-    setHoverAzimuth(null);
     setHoverTarget(null);
-    if (!selectedSiteEffective) return;
-    dispatchPanoramaInteraction({ type: "leave", siteId: selectedSiteEffective.id });
+    if (!pinnedTarget && selectedSiteEffective) {
+      dispatchPanoramaInteraction({ type: "leave", siteId: selectedSiteEffective.id });
+    }
   };
+
+  const onClick = () => {
+    if (!hoverTarget || !selectedSiteEffective) return;
+    setPinnedTarget(hoverTarget);
+    const renderedEndpoint = resolveRenderedEndpoint({
+      hoveredNode: hoverTarget.kind === "node" ? hoverTarget.node : null,
+      hoveredSample: hoverTarget.kind === "terrain" ? hoverTarget.sample : null,
+      hoveredAzimuthDeg: hoverTarget.azimuthDeg,
+      fallbackRay: null,
+    });
+    if (!renderedEndpoint) return;
+    dispatchPanoramaInteraction({
+      type: "toggle-lock",
+      payload: {
+        siteId: selectedSiteEffective.id,
+        azimuthDeg: renderedEndpoint.azimuthDeg,
+        endpoint: renderedEndpoint.endpoint,
+        horizonDistanceKm: renderedEndpoint.distanceKm,
+        focusMode: "pinned",
+        viewportCenterAzimuthDeg,
+        viewportSpanDeg,
+        mapHoverZoomEnabled,
+      },
+    });
+  };
+
+  useEffect(() => {
+    if (!openSliderPopover) return;
+    const anchor = openSliderPopover === "fov" ? fovButtonRef.current : wavesButtonRef.current;
+    if (!anchor) return;
+    const updatePosition = () => {
+      const rect = anchor.getBoundingClientRect();
+      setSliderPopoverPos({ left: rect.left + rect.width / 2, top: rect.top - 8 });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [openSliderPopover]);
+
+  useEffect(() => {
+    if (!openSliderPopover) return;
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      const anchor = openSliderPopover === "fov" ? fovButtonRef.current : wavesButtonRef.current;
+      if (sliderPopoverRef.current?.contains(target)) return;
+      if (anchor?.contains(target)) return;
+      setOpenSliderPopover(null);
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as Node | null;
+      const anchor = openSliderPopover === "fov" ? fovButtonRef.current : wavesButtonRef.current;
+      if (sliderPopoverRef.current?.contains(target)) return;
+      if (anchor?.contains(target)) return;
+      setOpenSliderPopover(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("focusin", onFocusIn);
+    };
+  }, [openSliderPopover]);
 
   if (!selectedSiteEffective) {
     return (
@@ -529,28 +768,62 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     );
   }
 
-  const hoverPopover = hoverTarget
-    ? hoverTarget.kind === "terrain"
+  const hoverPopover = focusTarget
+    ? focusTarget.kind === "terrain"
       ? {
-          title: `${hoverTarget.azimuthDeg.toFixed(1)}°${cardinalLabelForAzimuth(hoverTarget.azimuthDeg) ? ` (${cardinalLabelForAzimuth(hoverTarget.azimuthDeg)})` : ""}`,
+          title: `${focusTarget.azimuthDeg.toFixed(1)}°${cardinalLabelForAzimuth(focusTarget.azimuthDeg) ? ` (${cardinalLabelForAzimuth(focusTarget.azimuthDeg)})` : ""}`,
           rows: [
-            `Coordinates: ${hoverTarget.sample?.lat.toFixed(5)}, ${hoverTarget.sample?.lon.toFixed(5)}`,
-            `Distance: ${hoverTarget.sample?.distanceKm.toFixed(2)} km`,
-            `Terrain elevation: ${Math.round(hoverTarget.sample?.terrainM ?? 0)} m`,
-            `Status: ${hoverTarget.sample && hoverTarget.sample.angleDeg > hoverTarget.sample.maxAngleBeforeDeg ? "Horizon crest" : "Blocked before horizon"}`,
+            `Coordinates: ${focusTarget.sample?.lat.toFixed(5)}, ${focusTarget.sample?.lon.toFixed(5)}`,
+            `Distance: ${focusTarget.sample?.distanceKm.toFixed(2)} km`,
+            `Terrain elevation: ${Math.round(focusTarget.sample?.terrainM ?? 0)} m`,
+            `Status: ${focusTarget.sample && focusTarget.sample.angleDeg > focusTarget.sample.maxAngleBeforeDeg ? "Horizon crest" : "Blocked before horizon"}`,
           ],
         }
       : {
-          title: `${hoverTarget.node.name}`,
+          title: `${focusTarget.node.name}`,
           rows: [
-            `${hoverTarget.node.azimuthDeg.toFixed(1)}°${cardinalLabelForAzimuth(hoverTarget.node.azimuthDeg) ? ` (${cardinalLabelForAzimuth(hoverTarget.node.azimuthDeg)})` : ""}`,
-            `Coordinates: ${hoverTarget.node.lat.toFixed(5)}, ${hoverTarget.node.lon.toFixed(5)}`,
-            `Distance: ${hoverTarget.node.distanceKm.toFixed(2)} km`,
-            `${passFailStateLabel(hoverTarget.node.state)} • ${hoverTarget.node.visible ? "Visible" : "Blocked"}`,
-            `Clearance margin: ${hoverTarget.node.clearanceMarginM.toFixed(1)} m`,
+            `${focusTarget.node.azimuthDeg.toFixed(1)}°${cardinalLabelForAzimuth(focusTarget.node.azimuthDeg) ? ` (${cardinalLabelForAzimuth(focusTarget.node.azimuthDeg)})` : ""}`,
+            `Coordinates: ${focusTarget.node.lat.toFixed(5)}, ${focusTarget.node.lon.toFixed(5)}`,
+            `Distance: ${focusTarget.node.distanceKm.toFixed(2)} km`,
+            `${passFailStateLabel(focusTarget.node.state)} • ${focusTarget.node.visible ? "Visible" : "Blocked"}`,
+            `Clearance margin: ${focusTarget.node.clearanceMarginM.toFixed(1)} m`,
           ],
         }
     : null;
+
+  const sliderPopover =
+    openSliderPopover && sliderPopoverPos && typeof document !== "undefined"
+      ? createPortal(
+          <div className="panorama-slider-popover" ref={sliderPopoverRef} style={{ left: `${sliderPopoverPos.left}px`, top: `${sliderPopoverPos.top}px` }}>
+            {openSliderPopover === "fov" ? (
+              <UiSlider
+                ariaLabel="Panorama field of view"
+                label="FOV"
+                max={4}
+                min={1}
+                onChange={(value) => setFovScale(normalizeFovScale(value))}
+                orientation="vertical"
+                step={0.1}
+                value={normalizedFovScale}
+                valueLabel={`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}
+              />
+            ) : (
+              <UiSlider
+                ariaLabel="Panorama vertical exaggeration"
+                label="Vertical"
+                max={1}
+                min={0}
+                onChange={(value) => setVerticalBlend(clamp(value, 0, 1))}
+                orientation="vertical"
+                step={0.05}
+                value={verticalBlend}
+                valueLabel={`${Math.round(verticalBlend * 100)}%`}
+              />
+            )}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`}>
@@ -558,10 +831,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         <h3 className="panorama-header-title">Panorama from {selectedSiteEffective.name}</h3>
         <div className="chart-action-row-controls">
           <button
-            aria-label={fitScaleMode ? "Switch to true-scale mode" : "Switch to fit-scale mode"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${fitScaleMode ? "is-active" : ""}`}
-            onClick={() => setFitScaleMode((value) => !value)}
-            title={fitScaleMode ? "Fit scale" : "True scale"}
+            aria-label="Adjust vertical scaling"
+            className={`chart-endpoint-swap chart-endpoint-icon ${openSliderPopover === "vertical" ? "is-active" : ""}`}
+            onClick={() => setOpenSliderPopover((value) => (value === "vertical" ? null : "vertical"))}
+            ref={wavesButtonRef}
+            title="Vertical scaling"
             type="button"
           >
             <Waves aria-hidden="true" strokeWidth={1.8} />
@@ -576,30 +850,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             <Trees aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
-            aria-label={zoomModeEnabled ? "Disable chart zoom mode" : "Enable chart zoom mode"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${zoomModeEnabled ? "is-active" : ""}`}
-            onClick={() => setZoomModeEnabled((value) => !value)}
-            title={zoomModeEnabled ? "Chart zoom mode on" : "Chart zoom mode off"}
+            aria-label="Adjust field of view"
+            className={`chart-endpoint-swap chart-endpoint-icon ${openSliderPopover === "fov" ? "is-active" : ""}`}
+            onClick={() => setOpenSliderPopover((value) => (value === "fov" ? null : "fov"))}
+            ref={fovButtonRef}
+            title="Field of view"
             type="button"
           >
             <ZoomIn aria-hidden="true" strokeWidth={1.8} />
           </button>
-          {zoomModeEnabled ? (
-            <label className="panorama-fov-control">
-              <span className="panorama-fov-label">FOV</span>
-              <input
-                aria-label="Panorama FOV"
-                className="panorama-fov-slider"
-                max={4}
-                min={1}
-                onChange={(event) => setFovScale(normalizeFovScale(Number(event.currentTarget.value)))}
-                step={0.1}
-                type="range"
-                value={fovScale}
-              />
-              <span className="panorama-fov-value">{fovScale.toFixed(1)}x</span>
-            </label>
-          ) : null}
           <button
             aria-label={mapHoverZoomEnabled ? "Disable map hover lens" : "Enable map hover lens"}
             className={`chart-endpoint-swap chart-endpoint-icon ${mapHoverZoomEnabled ? "is-active" : ""}`}
@@ -637,7 +896,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         </div>
       </div>
 
-      <div className="chart-svg-wrap" ref={chartHostRef}>
+      <div
+        className="chart-svg-wrap"
+        onPointerCancel={onPointerEndPanorama}
+        onPointerDown={onPointerDownPanorama}
+        onPointerMove={onPointerMovePanorama}
+        onPointerUp={onPointerEndPanorama}
+        onWheel={onWheelPanorama}
+        ref={chartHostRef}
+      >
         {!geometry || !panorama ? (
           <div className="chart-empty" aria-hidden="true" />
         ) : (
@@ -708,11 +975,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 />
               ))}
 
-              {activeRay ? (
+              {activeRay && focusAzimuthDeg != null ? (
                 <line
                   className="profile-cursor"
-                  x1={geometry.x(geometry.xWindow ? unwrapAzimuthForWindow(activeRay.azimuthDeg, geometry.xWindow.centerDeg) : activeRay.azimuthDeg)}
-                  x2={geometry.x(geometry.xWindow ? unwrapAzimuthForWindow(activeRay.azimuthDeg, geometry.xWindow.centerDeg) : activeRay.azimuthDeg)}
+                  x1={geometry.x(unwrapAzimuthForWindow(activeRay.azimuthDeg, focusAzimuthDeg))}
+                  x2={geometry.x(unwrapAzimuthForWindow(activeRay.azimuthDeg, focusAzimuthDeg))}
                   y1={M.t}
                   y2={chartHeight - M.b}
                 />
@@ -724,16 +991,17 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 y={M.t}
                 width={chartWidth - M.l - M.r}
                 height={chartHeight - M.t - M.b}
+                onClick={onClick}
                 onMouseLeave={onLeave}
                 onMouseMove={onMove}
               />
             </svg>
-            {hoverPopover && hoverTarget ? (
+            {hoverPopover && focusTarget ? (
               <div
                 className="chart-hover-popover"
                 style={{
-                  left: `${clamp(hoverTarget.x, 170, chartWidth - 170)}px`,
-                  top: `${clamp(hoverTarget.y - 12, 46, chartHeight - 14)}px`,
+                  left: `${clamp(focusTarget.x, 170, chartWidth - 170)}px`,
+                  top: `${clamp(focusTarget.y - 12, 46, chartHeight - 14)}px`,
                 }}
               >
                 <div className="chart-hover-popover-row"><strong>{hoverPopover.title}</strong></div>
@@ -745,6 +1013,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           </>
         )}
       </div>
+
+      <div className="panorama-scrollbar" onScroll={onPanScroll} ref={panScrollRef}>
+        <div className="panorama-scrollbar-track" style={{ width: `${panTrackWidthPx}px` }} />
+      </div>
+      {sliderPopover}
     </section>
   );
 }
