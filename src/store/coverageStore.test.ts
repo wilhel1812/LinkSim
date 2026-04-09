@@ -89,7 +89,6 @@ describe("coverageStore simulation progress phases", () => {
     vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation((...args) => {
       const options = args[6];
       options?.onProgress?.(0.5);
-      options?.onSampleProgress?.(7, 14);
       return new Promise<CoverageSample[]>((resolve) => {
         resolveBuild = resolve;
       });
@@ -104,7 +103,7 @@ describe("coverageStore simulation progress phases", () => {
 
     expect(useCoverageStore.getState().simulationProgressMode).toBe("determinate");
     expect(useCoverageStore.getState().simulationProgress).toBe(50);
-    expect(useCoverageStore.getState().simulationStepLabel).toBe("Sampling simulation grid (7/14)");
+    expect(useCoverageStore.getState().simulationStepLabel).toBe("Sampling simulation grid...");
 
     resolveBuild([{ lat: site.position.lat, lon: site.position.lon, valueDbm: -90 }]);
     await flushAsyncTicks();

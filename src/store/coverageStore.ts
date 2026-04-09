@@ -10,6 +10,10 @@ import {
   resolveEffectiveOverlayRadiusKm,
   resolveTargetOverlayRadiusKm,
 } from "../lib/simulationOverlayRadius";
+import {
+  recordSimulationCoveragePerf,
+  recordSimulationRunCancelled,
+} from "../lib/simulationPerf";
 import { sampleSrtmElevation } from "../lib/srtm";
 import type { Site, SrtmTile } from "../types/radio";
 import type { CoverageSample } from "../types/radio";
@@ -288,17 +292,35 @@ const runCoverageComputation = async (
 ): Promise<void> => {
   const startedAt = nowMs();
   let coverageSamples: CoverageSample[] = [];
+  let loggedCancellation = false;
+
+  const markCancelled = (reason: string): void => {
+    if (loggedCancellation) return;
+    loggedCancellation = true;
+    recordSimulationRunCancelled({
+      runId,
+      phase: "coverage",
+      reason,
+      signature: runSignature,
+    });
+  };
 
   try {
     await waitForNextPaint();
-    if (get().simulationRunToken !== runId) return;
+    if (get().simulationRunToken !== runId) {
+      markCancelled("token-mismatch-before-start");
+      return;
+    }
 
     const gridSize = Number(inputs.effectiveCoverageResolution);
     const network = inputs.networks.find((n) => n.id === inputs.selectedNetworkId);
     if (!network) {
       const waitMs = Math.max(0, COVERAGE_MIN_VISIBLE_MS - (nowMs() - startedAt));
       if (waitMs > 0) await delayMs(waitMs);
-      if (get().simulationRunToken !== runId) return;
+      if (get().simulationRunToken !== runId) {
+        markCancelled("token-mismatch-no-network");
+        return;
+      }
       finalizeRunComplete(set, get, runId, []);
       lastAppliedCoverageSignature = runSignature;
       return;
@@ -397,20 +419,16 @@ const runCoverageComputation = async (
             set({ simulationProgress: next });
           }
         },
-        onSampleProgress: (processed, total) => {
-          if (get().simulationRunToken !== runId) return;
-          set({
-            simulationStepLabel: `Sampling simulation grid (${processed}/${total})`,
-            simulationSamplesDone: processed,
-            simulationSamplesTotal: total,
-          });
-        },
         terrainCacheKey: `${inputs.effectiveCoverageResolution}|${inputs.selectedNetworkId}|${inputs.propagationModel}|${inputs.terrainLoadEpoch}`,
       },
     );
-    warnLongTask("coverage-build", runSignature, nowMs() - buildCoverageStartedAt);
+    const coverageComputeMs = nowMs() - buildCoverageStartedAt;
+    warnLongTask("coverage-build", runSignature, coverageComputeMs);
 
-    if (get().simulationRunToken !== runId) return;
+    if (get().simulationRunToken !== runId) {
+      markCancelled("token-mismatch-after-coverage-build");
+      return;
+    }
 
     if (shouldSkipStaleCommit(runSignature)) {
       set({
@@ -420,8 +438,18 @@ const runCoverageComputation = async (
         simulationSamplesDone: 0,
         simulationSamplesTotal: 0,
       });
+      markCancelled("stale-signature-superseded");
       return;
     }
+
+    recordSimulationCoveragePerf({
+      runId,
+      signature: runSignature,
+      durationMs: coverageComputeMs,
+      sampleCount,
+      gridSize,
+      effectiveRadiusKm: effectiveOverlayRadiusKm,
+    });
 
     set({
       simulationProgressMode: "indeterminate",
@@ -430,7 +458,10 @@ const runCoverageComputation = async (
 
     const waitMs = Math.max(0, COVERAGE_MIN_VISIBLE_MS - (nowMs() - startedAt));
     if (waitMs > 0) await delayMs(waitMs);
-    if (get().simulationRunToken !== runId) return;
+    if (get().simulationRunToken !== runId) {
+      markCancelled("token-mismatch-before-finalize");
+      return;
+    }
 
     finalizeRunComplete(set, get, runId, coverageSamples);
     lastAppliedCoverageSignature = runSignature;

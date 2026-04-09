@@ -45,6 +45,11 @@ import {
   OverlayTaskCancelledError,
   type OverlayRasterPixels,
 } from "../lib/overlayRaster";
+import { overlayTaskBudgetForMode } from "../lib/overlayTaskBudget";
+import {
+  recordSimulationOverlayPerf,
+  recordSimulationRunCancelled,
+} from "../lib/simulationPerf";
 import { resolveSimulationBusyIndicatorState } from "../lib/simulationBusyIndicator";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
@@ -574,6 +579,7 @@ export function MapView({
   const simulationProgress = useCoverageStore((state) => state.simulationProgress);
   const simulationProgressMode = useCoverageStore((state) => state.simulationProgressMode);
   const simulationStepLabel = useCoverageStore((state) => state.simulationStepLabel);
+  const simulationRunToken = useCoverageStore((state) => state.simulationRunToken);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
@@ -1095,6 +1101,9 @@ export function MapView({
       effectiveGridSize,
     ].join("|");
     const endOverlayJob = beginOverlayJob();
+    const taskBudget = overlayTaskBudgetForMode(mode);
+    const perfRunId = simulationRunToken || `overlay:${mode}:${token}`;
+    const overlayBuildStartedAt = performance.now();
 
     const onLongTask = (payload: {
       phase: string;
@@ -1123,6 +1132,8 @@ export function MapView({
         const context = {
           phase: mode,
           signature,
+          frameBudgetMs: taskBudget.frameBudgetMs,
+          longTaskMs: taskBudget.longTaskMs,
           shouldCancel,
           onLongTask,
         } as const;
@@ -1172,16 +1183,56 @@ export function MapView({
           );
         }
 
-        if (shouldCancel()) return;
+        const overlayBuildCompletedAt = performance.now();
+        if (shouldCancel()) {
+          recordSimulationRunCancelled({
+            runId: perfRunId,
+            phase: "overlay",
+            reason: "token-mismatch-after-build",
+            signature,
+            mode,
+          });
+          return;
+        }
         if (!rasterPixels) {
           setCoverageOverlay(null);
           return;
         }
         const raster = overlayPixelsToDataUrl(rasterPixels);
-        if (shouldCancel()) return;
+        const overlayEncodeCompletedAt = performance.now();
+        if (shouldCancel()) {
+          recordSimulationRunCancelled({
+            runId: perfRunId,
+            phase: "overlay",
+            reason: "token-mismatch-after-encode",
+            signature,
+            mode,
+          });
+          return;
+        }
+        recordSimulationOverlayPerf({
+          runId: perfRunId,
+          mode,
+          buildDurationMs: overlayBuildCompletedAt - overlayBuildStartedAt,
+          encodeDurationMs: overlayEncodeCompletedAt - overlayBuildCompletedAt,
+          width: rasterPixels.width,
+          height: rasterPixels.height,
+          pixelCount: rasterPixels.width * rasterPixels.height,
+          gridSize: effectiveGridSize,
+          effectiveRadiusKm: overlayRadiusKm,
+        });
         setCoverageOverlay(raster ? { ...raster } : null);
       } catch (error) {
-        if (error instanceof OverlayTaskCancelledError) return;
+        if (error instanceof OverlayTaskCancelledError) {
+          recordSimulationRunCancelled({
+            runId: perfRunId,
+            phase: "overlay",
+            reason: "overlay-task-cancelled-error",
+            signature,
+            mode,
+          });
+          return;
+        }
         console.error("Failed to render simulation overlay", error);
       } finally {
         endOverlayJob();
@@ -1208,6 +1259,8 @@ export function MapView({
     rxSensitivityTargetDbm,
     environmentLossDb,
     effectiveGridSize,
+    overlayRadiusKm,
+    simulationRunToken,
     showOverlayDiagnostics,
     beginOverlayJob,
   ]);
@@ -1260,6 +1313,9 @@ export function MapView({
       srtmTiles.length,
     ].join("|");
     const endOverlayJob = beginOverlayJob();
+    const taskBudget = overlayTaskBudgetForMode("terrain");
+    const perfRunId = simulationRunToken || `overlay:terrain:${token}`;
+    const overlayBuildStartedAt = performance.now();
 
     const shouldCancel = () => terrainOverlayTaskTokenRef.current !== token;
     const onLongTask = (payload: {
@@ -1291,20 +1347,62 @@ export function MapView({
           {
             phase: "terrain-shade",
             signature,
+            frameBudgetMs: taskBudget.frameBudgetMs,
+            longTaskMs: taskBudget.longTaskMs,
             shouldCancel,
             onLongTask,
           },
         );
-        if (shouldCancel()) return;
+        const overlayBuildCompletedAt = performance.now();
+        if (shouldCancel()) {
+          recordSimulationRunCancelled({
+            runId: perfRunId,
+            phase: "overlay",
+            reason: "token-mismatch-after-build",
+            signature,
+            mode: "terrain",
+          });
+          return;
+        }
         if (!rasterPixels) {
           setSimulationTerrainOverlay(null);
           return;
         }
         const raster = overlayPixelsToDataUrl(rasterPixels);
-        if (shouldCancel()) return;
+        const overlayEncodeCompletedAt = performance.now();
+        if (shouldCancel()) {
+          recordSimulationRunCancelled({
+            runId: perfRunId,
+            phase: "overlay",
+            reason: "token-mismatch-after-encode",
+            signature,
+            mode: "terrain",
+          });
+          return;
+        }
+        recordSimulationOverlayPerf({
+          runId: perfRunId,
+          mode: "terrain",
+          buildDurationMs: overlayBuildCompletedAt - overlayBuildStartedAt,
+          encodeDurationMs: overlayEncodeCompletedAt - overlayBuildCompletedAt,
+          width: rasterPixels.width,
+          height: rasterPixels.height,
+          pixelCount: rasterPixels.width * rasterPixels.height,
+          gridSize: effectiveGridSize,
+          effectiveRadiusKm: overlayRadiusKm,
+        });
         setSimulationTerrainOverlay(raster ? { url: raster.url, coordinates: raster.coordinates } : null);
       } catch (error) {
-        if (error instanceof OverlayTaskCancelledError) return;
+        if (error instanceof OverlayTaskCancelledError) {
+          recordSimulationRunCancelled({
+            runId: perfRunId,
+            phase: "overlay",
+            reason: "overlay-task-cancelled-error",
+            signature,
+            mode: "terrain",
+          });
+          return;
+        }
         console.error("Failed to render terrain overlay", error);
       } finally {
         endOverlayJob();
@@ -1321,6 +1419,9 @@ export function MapView({
     srtmTiles,
     overlayDimensions,
     overlayPointMask,
+    effectiveGridSize,
+    overlayRadiusKm,
+    simulationRunToken,
     showOverlayDiagnostics,
     beginOverlayJob,
   ]);
