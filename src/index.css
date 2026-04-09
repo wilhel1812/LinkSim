@@ -1891,6 +1891,18 @@ input {
   text-align: right;
 }
 
+.panorama-header-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
 .chart-panel svg {
   display: block;
   width: 100%;
@@ -2127,6 +2139,28 @@ input {
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.panorama-ridge-band {
+  fill: color-mix(in srgb, var(--terrain) 64%, var(--surface-2) 36%);
+}
+
+.panorama-ridge-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--terrain) 66%, var(--text) 34%);
+  stroke-width: 1.1;
+}
+
+.panorama-clutter-haze {
+  fill: color-mix(in srgb, var(--state-fail-blocked) 34%, transparent);
+  opacity: 0.35;
+}
+
+.panorama-clutter-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--state-fail-blocked) 62%, var(--text) 38%);
+  stroke-width: 1.6;
+  stroke-dasharray: 4 3;
 }
 
 .panorama-node {

@@ -3,6 +3,7 @@ export type PanoramaFocusPoint = {
   azimuthDeg: number;
   endpoint: { lat: number; lon: number };
   horizonDistanceKm: number;
+  mapHoverZoomEnabled?: boolean;
 };
 
 export type PanoramaInteractionEvent =

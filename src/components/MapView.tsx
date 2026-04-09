@@ -813,11 +813,17 @@ export function MapView({
   }, [singleSelectedSite?.id]);
 
   const activePanoramaFocus = panoramaInteraction?.locked ?? panoramaInteraction?.hover ?? null;
+  const panoramaHoverLensEnabled = Boolean(activePanoramaFocus?.mapHoverZoomEnabled);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (!singleSelectedSite || !activePanoramaFocus || activePanoramaFocus.siteId !== singleSelectedSite.id) {
+    if (
+      !singleSelectedSite ||
+      !activePanoramaFocus ||
+      activePanoramaFocus.siteId !== singleSelectedSite.id ||
+      !panoramaHoverLensEnabled
+    ) {
       const previous = panoramaLensBaseViewRef.current;
       if (previous) {
         map.easeTo({
@@ -843,13 +849,23 @@ export function MapView({
       };
     }
     const baseZoom = panoramaLensBaseViewRef.current?.zoom ?? map.getZoom();
+    const midLat = (singleSelectedSite.position.lat + activePanoramaFocus.endpoint.lat) / 2;
+    const midLon = (singleSelectedSite.position.lon + activePanoramaFocus.endpoint.lon) / 2;
     map.easeTo({
-      center: [activePanoramaFocus.endpoint.lon, activePanoramaFocus.endpoint.lat],
-      zoom: Math.min(14, baseZoom + 1.8),
+      center: [midLon, midLat],
+      zoom: Math.max(2.8, Math.min(13, baseZoom - 0.8)),
       duration: 220,
       essential: true,
     });
-  }, [singleSelectedSite?.id, activePanoramaFocus?.siteId, activePanoramaFocus?.endpoint.lat, activePanoramaFocus?.endpoint.lon]);
+  }, [
+    singleSelectedSite?.id,
+    singleSelectedSite?.position.lat,
+    singleSelectedSite?.position.lon,
+    activePanoramaFocus?.siteId,
+    activePanoramaFocus?.endpoint.lat,
+    activePanoramaFocus?.endpoint.lon,
+    panoramaHoverLensEnabled,
+  ]);
   const hasHeatTopology = sites.length >= 1;
   const simulationLibrarySiteIds = useMemo(
     () =>
