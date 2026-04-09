@@ -53,6 +53,7 @@ import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
 import { getActiveHolidayTheme } from "../themes/holidayThemes";
 import type { CloudUser } from "../lib/cloudUser";
+import type { MeshmapNode } from "../lib/meshtasticMqtt";
 import type {
   CoverageResolution,
   Link,
@@ -430,6 +431,9 @@ type AppState = {
   pendingSiteLibraryOpenEntryId: string | null;
   scenarioOptions: { id: string; name: string }[];
   mapOverlayMode: MapOverlayMode;
+  discoveryLibraryVisible: boolean;
+  discoveryMqttVisible: boolean;
+  mapDiscoveryMqttNodes: MeshmapNode[];
   syncStatus: "syncing" | "synced" | "error";
   syncPending: boolean;
   pendingChangesCount: number;
@@ -576,6 +580,8 @@ type AppState = {
   requestOpenSiteLibraryEntry: (entryId: string) => void;
   clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
+  setDiscoveryVisibility: (payload: { libraryVisible: boolean; mqttVisible: boolean }) => void;
+  setMapDiscoveryMqttNodes: (nodes: MeshmapNode[]) => void;
   applyFrequencyPresetToSelectedNetwork: () => void;
   updateSite: (id: string, patch: Partial<Site>) => void;
   setSiteDragPreview: (id: string, preview: { position: { lat: number; lon: number }; groundElevationM: number }) => void;
@@ -1244,6 +1250,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
+  discoveryLibraryVisible: false,
+  discoveryMqttVisible: false,
+  mapDiscoveryMqttNodes: [],
   syncStatus: "synced",
   syncPending: false,
   pendingChangesCount: 0,
@@ -2029,62 +2038,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       useCoverageStore.getState().recomputeCoverage();
     }
   },
-  selectSiteById: (id, additive = false) => {
-    set((state) => {
-      const validIds = new Set(state.sites.map((site) => site.id));
-      if (!validIds.has(id)) return state;
-      const current = normalizeSelectedSiteIds(state.selectedSiteIds, state.sites);
-      let nextSelection: string[];
-      if (!additive) {
-        nextSelection = [id];
-      } else if (current.includes(id)) {
-        nextSelection = current.filter((candidate) => candidate !== id);
-      } else {
-        nextSelection = [...current, id];
-      }
-      const normalizedSelection = normalizeSelectedSiteIds(nextSelection, state.sites);
-      const nextSelectedSiteId = normalizedSelection[0] ?? "";
-      const nextOverlay = defaultOverlayModeForSelectionCount(normalizedSelection.length);
-      if (
-        state.selectedSiteId === nextSelectedSiteId &&
-        state.selectedLinkId === "" &&
-        state.mapOverlayMode === nextOverlay &&
-        sameSiteSelection(state.selectedSiteIds, normalizedSelection)
-      ) {
-        return state;
-      }
-      return {
-        selectedSiteIds: normalizedSelection,
-        selectedSiteId: nextSelectedSiteId,
-        selectedLinkId: "",
-        mapOverlayMode: nextOverlay,
-      };
-    });
-  },
-  clearActiveSelection: () =>
-    set((state) => {
-      const nextOverlay = defaultOverlayModeForSelectionCount(0);
-      if (
-        !state.selectedSiteIds.length &&
-        !state.selectedSiteId &&
-        !state.selectedLinkId &&
-        !state.temporaryDirectionReversed &&
-        state.endpointPickTarget === null &&
-        state.profileCursorIndex === 0 &&
-        state.mapOverlayMode === nextOverlay
-      ) {
-        return state;
-      }
-      return {
-        selectedSiteIds: [],
-        selectedSiteId: "",
-        selectedLinkId: "",
-        temporaryDirectionReversed: false,
-        endpointPickTarget: null,
-        profileCursorIndex: 0,
-        mapOverlayMode: nextOverlay,
-      };
-    }),
   setSelectedNetworkId: (id) => {
     set({ selectedNetworkId: id });
     useCoverageStore.getState().recomputeCoverage();
@@ -3227,6 +3180,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       if (state.mapOverlayMode === mode) return state;
       return { mapOverlayMode: mode };
+    }),
+  setDiscoveryVisibility: ({ libraryVisible, mqttVisible }) =>
+    set((state) => {
+      if (
+        state.discoveryLibraryVisible === libraryVisible &&
+        state.discoveryMqttVisible === mqttVisible
+      ) {
+        return state;
+      }
+      return {
+        discoveryLibraryVisible: libraryVisible,
+        discoveryMqttVisible: mqttVisible,
+      };
+    }),
+  setMapDiscoveryMqttNodes: (nodes) =>
+    set((state) => {
+      if (
+        state.mapDiscoveryMqttNodes.length === nodes.length &&
+        state.mapDiscoveryMqttNodes.every((node, index) => node.nodeId === nodes[index]?.nodeId)
+      ) {
+        return state;
+      }
+      return { mapDiscoveryMqttNodes: nodes };
     }),
   applyFrequencyPresetToSelectedNetwork: () => {
     const { currentUser, selectedScenarioId, simulationPresets } = get();

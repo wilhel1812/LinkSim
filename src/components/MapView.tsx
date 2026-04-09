@@ -20,6 +20,7 @@ import {
   PROFILE_DRAFT_SITE_REQUEST_EVENT,
   type ProfileDraftSiteRequestDetail,
 } from "../lib/profileDraftEvent";
+import { subscribePanoramaInteraction, type PanoramaFocusPoint, type PanoramaInteractionEvent } from "../lib/panoramaEvents";
 import { useAppStore } from "../store/appStore";
 import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
@@ -127,6 +128,16 @@ const profileLineLayer = (color: string): LayerProps => ({
     "line-color": color,
     "line-width": 3.6,
     "line-opacity": 0.9,
+  },
+});
+
+const panoramaRayLayer = (color: string): LayerProps => ({
+  id: "panorama-ray-line",
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": 2.8,
+    "line-opacity": 0.88,
   },
 });
 
@@ -523,6 +534,12 @@ type MapInspectorHoverInfo = {
   libraryEntryId?: string;
 };
 
+type PanoramaInteractionState = {
+  siteId: string;
+  hover: PanoramaFocusPoint | null;
+  locked: PanoramaFocusPoint | null;
+};
+
 const DEFAULT_MAP_VIEWPORT = {
   center: { lat: 59.9, lon: 10.75 },
   zoom: 8,
@@ -632,6 +649,8 @@ export function MapView({
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const selectedCoverageResolution = useAppStore((state) => state.selectedCoverageResolution);
   const setSelectedCoverageResolution = useAppStore((state) => state.setSelectedCoverageResolution);
+  const setDiscoveryVisibility = useAppStore((state) => state.setDiscoveryVisibility);
+  const setMapDiscoveryMqttNodes = useAppStore((state) => state.setMapDiscoveryMqttNodes);
   const recommendAndFetchTerrainForCurrentArea = useAppStore((state) => state.recommendAndFetchTerrainForCurrentArea);
   const selectedOverlayRadiusOption = useAppStore((state) => state.selectedOverlayRadiusOption);
   const setSelectedOverlayRadiusOption = useAppStore((state) => state.setSelectedOverlayRadiusOption);
@@ -653,6 +672,7 @@ export function MapView({
   const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
   const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
+  const [panoramaInteraction, setPanoramaInteraction] = useState<PanoramaInteractionState | null>(null);
   const [selectedDiscoveryLibraryEntryId, setSelectedDiscoveryLibraryEntryId] = useState<string | null>(null);
   const [mqttDuplicatePrompt, setMqttDuplicatePrompt] = useState<{
     node: MeshmapNode;
@@ -667,6 +687,12 @@ export function MapView({
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+  const panoramaLensBaseViewRef = useRef<{
+    center: { lat: number; lon: number };
+    zoom: number;
+    bearing: number;
+    pitch: number;
+  } | null>(null);
 
   useEffect(() => {
     const handleViewportChange = () => {
@@ -678,6 +704,48 @@ export function MapView({
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("orientationchange", handleViewportChange);
     };
+  }, []);
+
+  useEffect(() => {
+    setDiscoveryVisibility({ libraryVisible: showDiscoverySites, mqttVisible: showDiscoveryMqtt });
+  }, [showDiscoverySites, showDiscoveryMqtt, setDiscoveryVisibility]);
+
+  useEffect(() => {
+    setMapDiscoveryMqttNodes(mqttNodes);
+  }, [mqttNodes, setMapDiscoveryMqttNodes]);
+
+  useEffect(() => {
+    const unsubscribe = subscribePanoramaInteraction((event: PanoramaInteractionEvent) => {
+      setPanoramaInteraction((current) => {
+        if (event.type === "clear") {
+          if (!current || current.siteId !== event.siteId) return current;
+          return { ...current, hover: null, locked: null };
+        }
+        if (event.type === "leave") {
+          if (!current || current.siteId !== event.siteId) return current;
+          return { ...current, hover: null };
+        }
+        if (event.type === "hover") {
+          if (!current || current.siteId !== event.payload.siteId) {
+            return { siteId: event.payload.siteId, hover: event.payload, locked: null };
+          }
+          if (current.locked) return current;
+          return { ...current, hover: event.payload };
+        }
+        if (!current || current.siteId !== event.payload.siteId) {
+          return { siteId: event.payload.siteId, hover: null, locked: event.payload };
+        }
+        const unlock =
+          current.locked &&
+          Math.abs(current.locked.azimuthDeg - event.payload.azimuthDeg) < 0.01;
+        return {
+          ...current,
+          locked: unlock ? null : event.payload,
+          hover: unlock ? current.hover : null,
+        };
+      });
+    });
+    return unsubscribe;
   }, []);
 
   const hasNonAutoLinks = useMemo(
@@ -707,6 +775,7 @@ export function MapView({
   );
   const selectedSiteSet = useMemo(() => new Set(selectedSites.map((site) => site.id)), [selectedSites]);
   const selectionCount = selectedSites.length;
+  const singleSelectedSite = selectionCount === 1 ? selectedSites[0] ?? null : null;
   const previousSelectionCountRef = useRef(selectionCount);
   const selectedFromSite = selectedSites[0] ?? (selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null);
   const selectedToSite =
@@ -730,6 +799,57 @@ export function MapView({
       cableLossDb: selectedFromSite.cableLossDb,
     };
   }, [selectedFromSite, selectedToSite, selectedNetwork, selectedLink]);
+
+  useEffect(() => {
+    if (!singleSelectedSite) {
+      setPanoramaInteraction(null);
+      return;
+    }
+    setPanoramaInteraction((current) => {
+      if (!current) return current;
+      if (current.siteId === singleSelectedSite.id) return current;
+      return null;
+    });
+  }, [singleSelectedSite?.id]);
+
+  const activePanoramaFocus = panoramaInteraction?.locked ?? panoramaInteraction?.hover ?? null;
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!singleSelectedSite || !activePanoramaFocus || activePanoramaFocus.siteId !== singleSelectedSite.id) {
+      const previous = panoramaLensBaseViewRef.current;
+      if (previous) {
+        map.easeTo({
+          center: [previous.center.lon, previous.center.lat],
+          zoom: previous.zoom,
+          bearing: previous.bearing,
+          pitch: previous.pitch,
+          duration: 260,
+          essential: true,
+        });
+      }
+      panoramaLensBaseViewRef.current = null;
+      return;
+    }
+
+    if (!panoramaLensBaseViewRef.current) {
+      const center = map.getCenter();
+      panoramaLensBaseViewRef.current = {
+        center: { lat: center.lat, lon: center.lng },
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      };
+    }
+    const baseZoom = panoramaLensBaseViewRef.current?.zoom ?? map.getZoom();
+    map.easeTo({
+      center: [activePanoramaFocus.endpoint.lon, activePanoramaFocus.endpoint.lat],
+      zoom: Math.min(14, baseZoom + 1.8),
+      duration: 220,
+      essential: true,
+    });
+  }, [singleSelectedSite?.id, activePanoramaFocus?.siteId, activePanoramaFocus?.endpoint.lat, activePanoramaFocus?.endpoint.lon]);
   const hasHeatTopology = sites.length >= 1;
   const simulationLibrarySiteIds = useMemo(
     () =>
@@ -1001,6 +1121,32 @@ export function MapView({
     selectionCount === 2
       ? selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))]
       : undefined;
+
+  const panoramaRayFeatures = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features:
+        selectionCount === 1 &&
+        singleSelectedSite &&
+        activePanoramaFocus &&
+        activePanoramaFocus.siteId === singleSelectedSite.id
+          ? [
+              {
+                type: "Feature" as const,
+                properties: { id: "panorama-ray" },
+                geometry: {
+                  type: "LineString" as const,
+                  coordinates: [
+                    [singleSelectedSite.position.lon, singleSelectedSite.position.lat],
+                    [activePanoramaFocus.endpoint.lon, activePanoramaFocus.endpoint.lat],
+                  ],
+                },
+              },
+            ]
+          : [],
+    }),
+    [selectionCount, singleSelectedSite, activePanoramaFocus],
+  );
 
   const overlayResolutionScale = useMemo(() => {
     if (analysisBoundsDiagonalKm > 600) return 0.52;
@@ -2857,6 +3003,9 @@ export function MapView({
         <Source data={profileFeatures} id="profile-path" type="geojson">
           <Layer {...profileLineLayer(profileColor)} />
         </Source>
+        <Source data={panoramaRayFeatures} id="panorama-ray-path" type="geojson">
+          <Layer {...panoramaRayLayer(profileColor)} />
+        </Source>
 
         {coverageOverlay ? (
           <Source
@@ -2994,6 +3143,15 @@ export function MapView({
             longitude={cursorPoint.lon}
           >
             <div className="profile-map-cursor" />
+          </Marker>
+        ) : null}
+        {selectionCount === 1 && activePanoramaFocus && singleSelectedSite && activePanoramaFocus.siteId === singleSelectedSite.id ? (
+          <Marker
+            anchor="center"
+            latitude={activePanoramaFocus.endpoint.lat}
+            longitude={activePanoramaFocus.endpoint.lon}
+          >
+            <div className="profile-map-cursor panorama-map-cursor" />
           </Marker>
         ) : null}
       </Map>

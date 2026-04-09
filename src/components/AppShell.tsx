@@ -27,6 +27,7 @@ import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
+import { PanoramaChart } from "./PanoramaChart";
 import { ActionButton } from "./ActionButton";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { MapView } from "./MapView";
@@ -156,6 +157,7 @@ export function AppShell() {
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const sites = useAppStore((state) => state.sites);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
+  const isSingleSiteSelection = selectedSiteIds.length === 1;
   const loadDemoScenario = useAppStore((state) => state.loadDemoScenario);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
@@ -1905,6 +1907,31 @@ export function AppShell() {
           />
         ) : null}
         {!isMobileViewport && !isMapExpanded && !isProfileHidden ? (
+          isSingleSiteSelection ? (
+          <PanoramaChart
+            isExpanded={isProfileExpanded}
+            onToggleExpanded={toggleProfileExpanded}
+            rowControls={
+              <button
+                aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
+                className="chart-endpoint-swap chart-endpoint-icon"
+                onClick={() => {
+                  setIsProfileHidden((prev) => {
+                    const next = !prev;
+                    if (next) setIsProfileExpanded(false);
+                    return next;
+                  });
+                  emitProfileLayoutPulse();
+                }}
+                title={isProfileHidden ? "Show Profile" : "Hide Profile"}
+                type="button"
+              >
+                {isProfileHidden ? <PanelBottom aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
+              </button>
+            }
+            showExpandToggle
+          />
+          ) : (
           <LinkProfileChart
             isExpanded={isProfileExpanded}
             onToggleExpanded={toggleProfileExpanded}
@@ -1928,6 +1955,7 @@ export function AppShell() {
             }
             showExpandToggle
           />
+          )
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && mobileBottomPanelMode !== "hidden" ? (
           <div
@@ -1936,12 +1964,21 @@ export function AppShell() {
             id={mobileProfilePanelId}
             role="tabpanel"
           >
-            <LinkProfileChart
-              isExpanded={mobileBottomPanelMode === "full"}
-              onToggleExpanded={toggleProfileExpanded}
-              rowControls={panelSizeControls("Profile", "chart")}
-              showExpandToggle={false}
-            />
+            {isSingleSiteSelection ? (
+              <PanoramaChart
+                isExpanded={mobileBottomPanelMode === "full"}
+                onToggleExpanded={toggleProfileExpanded}
+                rowControls={panelSizeControls("Profile", "chart")}
+                showExpandToggle={false}
+              />
+            ) : (
+              <LinkProfileChart
+                isExpanded={mobileBottomPanelMode === "full"}
+                onToggleExpanded={toggleProfileExpanded}
+                rowControls={panelSizeControls("Profile", "chart")}
+                showExpandToggle={false}
+              />
+            )}
           </div>
         ) : null}
         {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && mobileBottomPanelMode !== "hidden" ? (
