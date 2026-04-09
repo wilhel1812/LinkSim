@@ -31,7 +31,20 @@
     "refresh:staging:d1": "./scripts/refresh-staging-d1.sh",
     "refresh:staging:r2": "./scripts/refresh-staging-r2.sh",
     "refresh:staging": "npm run refresh:staging:d1 && npm run refresh:staging:r2",
-    "refresh-and-deploy:staging": "npm run refresh:staging && npm run deploy:staging"
+    "refresh-and-deploy:staging": "npm run refresh:staging && npm run deploy:staging",
+    "tf:bootstrap:state": "infra/terraform/scripts/bootstrap-state-backend.sh",
+    "tf:fmt": "infra/terraform/scripts/fmt-check.sh",
+    "tf:validate": "infra/terraform/scripts/validate.sh",
+    "tf:init:staging": "infra/terraform/scripts/init.sh staging",
+    "tf:init:prod": "infra/terraform/scripts/init.sh prod",
+    "tf:init:staging:local": "infra/terraform/scripts/init.sh staging --backend=false",
+    "tf:init:prod:local": "infra/terraform/scripts/init.sh prod --backend=false",
+    "tf:import:staging": "infra/terraform/scripts/import.sh staging",
+    "tf:import:prod": "infra/terraform/scripts/import.sh prod",
+    "tf:plan:staging": "infra/terraform/scripts/plan.sh staging",
+    "tf:plan:prod": "infra/terraform/scripts/plan.sh prod",
+    "tf:discover:staging": "node infra/terraform/scripts/discover-cloudflare.mjs staging infra/terraform/environments/staging/discovery.json",
+    "tf:discover:prod": "node infra/terraform/scripts/discover-cloudflare.mjs prod infra/terraform/environments/prod/discovery.json"
   },
   "dependencies": {
     "clsx": "^2.1.1",
