@@ -1,5 +1,5 @@
 account_id                = "85c57e0c4da3a747a09212dc5b090f52"
-zone_id                   = "REPLACE_WITH_LINKSIM_LINK_ZONE_ID"
+zone_id                   = "a3e8d2285955eeb31f5a0757e7bc0181"
 project_name              = "linksim"
 project_production_branch = "main"
 pages_compatibility_date  = "2026-03-12"
@@ -28,21 +28,25 @@ r2_bucket_jurisdiction = "default"
 
 dns_records = {
   apex = {
-    name    = "@"
+    name    = "linksim.link"
     type    = "CNAME"
     content = "linksim.pages.dev"
     ttl     = 1
     proxied = true
-    comment = "Terraform managed: production routing"
   }
 }
 
 # Access app configuration; app and policy IDs stay in imports.env.
 access_application = {
-  name            = "LinkSim Access"
-  domain          = "linksim.link"
-  type            = "self_hosted"
-  policy_bindings = []
+  name   = "LinkSim Public App Shell"
+  domain = "linksim.link"
+  type   = "self_hosted"
+  policy_bindings = [
+    {
+      id         = "32915afb-f399-4c5c-90ea-e5bf0f377b7c"
+      precedence = 1
+    }
+  ]
 }
 
 # Import-first stubs. Populate with real policy keys/names/decisions before import.
