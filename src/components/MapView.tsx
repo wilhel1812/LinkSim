@@ -849,10 +849,8 @@ export function MapView({
       };
     }
     const baseZoom = panoramaLensBaseViewRef.current?.zoom ?? map.getZoom();
-    const midLat = (singleSelectedSite.position.lat + activePanoramaFocus.endpoint.lat) / 2;
-    const midLon = (singleSelectedSite.position.lon + activePanoramaFocus.endpoint.lon) / 2;
     map.easeTo({
-      center: [midLon, midLat],
+      center: [activePanoramaFocus.endpoint.lon, activePanoramaFocus.endpoint.lat],
       zoom: Math.max(2.8, Math.min(13, baseZoom - 0.8)),
       duration: 220,
       essential: true,

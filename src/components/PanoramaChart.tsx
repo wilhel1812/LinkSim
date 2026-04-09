@@ -15,6 +15,7 @@ import {
   type PanoramaResult,
   type PanoramaRaySample,
 } from "../lib/panorama";
+import { buildDepthBands, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
 import { cardinalLabelForAzimuth, formatAzimuthTick, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
 import { passFailStateLabel } from "../lib/passFailState";
 import { sampleSrtmElevation } from "../lib/srtm";
@@ -331,25 +332,24 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const horizonPath = toPath(horizonPoints);
     const horizonAreaPath = `${horizonPath} L${horizonPoints[horizonPoints.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${horizonPoints[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`;
 
-    const ridgeFractions = [0.18, 0.34, 0.52, 0.72, 0.9];
-    const ridgeBands = ridgeFractions.map((fraction, bandIndex) => {
-      const points = visibleRays.map(({ ray, xValue }) => {
-        const sampleIndex = Math.max(0, Math.min(ray.samples.length - 1, Math.round((ray.samples.length - 1) * fraction)));
-        const sample = ray.samples[sampleIndex] ?? ray.samples[ray.samples.length - 1];
-        return {
-          x: x(xValue),
-          y: y(sample?.angleDeg ?? ray.horizonAngleDeg),
-        };
-      });
-      const line = toPath(points);
-      const area = `${line} L${points[points.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${points[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`;
-      return {
-        key: `ridge-${bandIndex}`,
-        area,
-        line,
-        opacity: 0.08 + bandIndex * 0.05,
-      };
-    });
+    const ridgeFractions = [0.14, 0.28, 0.42, 0.58, 0.74, 0.9];
+    const ridgeBands = buildDepthBands(
+      visibleRays.map((entry) => entry.ray),
+      ridgeFractions,
+      (ray, sample) => {
+        const xValue = useWindow ? unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap) : ray.azimuthDeg;
+        const angleDeg = sample?.angleDeg ?? ray.horizonAngleDeg;
+        return { x: x(xValue), y: y(angleDeg), angleDeg };
+      },
+    ).map((band, bandIndex, all) => ({
+      key: `ridge-${bandIndex}`,
+      style: depthStyleForBand(bandIndex, all.length),
+      lineSegments: band.lineSegments,
+      fillPath:
+        band.points.length >= 2
+          ? `${toPath(band.points)} L${band.points[band.points.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${band.points[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`
+          : "",
+    }));
 
     const clutterAreaPath = includeClutter
       ? `${toPath(clutterPoints)} ${[...horizonPoints]
@@ -409,7 +409,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   useEffect(() => {
     if (!selectedSiteEffective) return;
-    if (!activeRay) {
+    const renderedEndpoint = resolveRenderedEndpoint({
+      hoveredNode: hoverTarget?.kind === "node" ? hoverTarget.node : null,
+      hoveredSample: hoverTarget?.kind === "terrain" ? hoverTarget.sample : null,
+      hoveredAzimuthDeg: hoverTarget?.azimuthDeg ?? null,
+      fallbackRay: activeRay,
+    });
+    if (!renderedEndpoint) {
       dispatchPanoramaInteraction({ type: "leave", siteId: selectedSiteEffective.id });
       return;
     }
@@ -417,13 +423,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       type: "hover",
       payload: {
         siteId: selectedSiteEffective.id,
-        azimuthDeg: activeRay.azimuthDeg,
-        endpoint: { lat: activeRay.horizonLat, lon: activeRay.horizonLon },
-        horizonDistanceKm: activeRay.horizonDistanceKm,
+        azimuthDeg: renderedEndpoint.azimuthDeg,
+        endpoint: renderedEndpoint.endpoint,
+        horizonDistanceKm: renderedEndpoint.distanceKm,
         mapHoverZoomEnabled,
       },
     });
-  }, [selectedSiteEffective, activeRay, mapHoverZoomEnabled]);
+  }, [selectedSiteEffective, activeRay, hoverTarget, mapHoverZoomEnabled]);
 
   const onMove = (event: MouseEvent<SVGRectElement>) => {
     if (!geometry || !panorama) return;
@@ -615,8 +621,28 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
               <path className="terrain-fill-path" d={geometry.horizonAreaPath} fill={`url(#${terrainFillGradientId})`} />
               {geometry.ridgeBands.map((band) => (
                 <g key={band.key}>
-                  <path className="panorama-ridge-band" d={band.area} style={{ opacity: band.opacity }} />
-                  <path className="panorama-ridge-line" d={band.line} style={{ opacity: Math.min(0.7, band.opacity + 0.2) }} />
+                  {band.fillPath ? (
+                    <path
+                      className="panorama-ridge-band"
+                      d={band.fillPath}
+                      style={{
+                        opacity: band.style.fillOpacity,
+                        fill: `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--surface-2) 55%)`,
+                      }}
+                    />
+                  ) : null}
+                  {band.lineSegments.map((segment, segmentIndex) => (
+                    <path
+                      className="panorama-ridge-line"
+                      d={segment}
+                      key={`${band.key}-segment-${segmentIndex}`}
+                      style={{
+                        strokeWidth: band.style.strokeWidth,
+                        strokeOpacity: band.style.strokeOpacity,
+                        stroke: `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--muted) ${band.style.strokeMixMutedPct}%)`,
+                      }}
+                    />
+                  ))}
                 </g>
               ))}
               {includeClutter && geometry.clutterAreaPath ? <path className="panorama-clutter-haze" d={geometry.clutterAreaPath} /> : null}
