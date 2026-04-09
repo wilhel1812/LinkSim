@@ -27,7 +27,9 @@ if ! command -v terraform >/dev/null 2>&1; then
 fi
 
 if [[ "${BACKEND_MODE}" == "disabled" ]]; then
-  terraform -chdir="${ENV_DIR}" init -backend=false
+  TMP_TF_DATA_DIR="$(mktemp -d)"
+  trap 'rm -rf "${TMP_TF_DATA_DIR}"' EXIT
+  TF_DATA_DIR="${TMP_TF_DATA_DIR}" terraform -chdir="${ENV_DIR}" init -backend=false
   exit 0
 fi
 

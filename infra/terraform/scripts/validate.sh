@@ -15,7 +15,9 @@ for env in "${TARGETS[@]}"; do
     echo "Unknown environment: ${env}"
     exit 1
   fi
-  terraform -chdir="${ENV_DIR}" init -backend=false
-  terraform -chdir="${ENV_DIR}" validate
+  TMP_TF_DATA_DIR="$(mktemp -d)"
+  TF_DATA_DIR="${TMP_TF_DATA_DIR}" terraform -chdir="${ENV_DIR}" init -backend=false
+  TF_DATA_DIR="${TMP_TF_DATA_DIR}" terraform -chdir="${ENV_DIR}" validate
+  rm -rf "${TMP_TF_DATA_DIR}"
   echo "[validate] ${env} ok"
 done

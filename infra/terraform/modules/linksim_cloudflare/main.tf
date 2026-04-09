@@ -71,6 +71,9 @@ resource "cloudflare_pages_domain" "custom_domains" {
 resource "cloudflare_d1_database" "database" {
   account_id = var.account_id
   name       = var.d1_database_name
+  read_replication = {
+    mode = var.d1_read_replication_mode
+  }
 
   lifecycle {
     prevent_destroy = true
@@ -119,6 +122,9 @@ resource "cloudflare_zero_trust_access_application" "app" {
   ]
 
   lifecycle {
+    # Adoption step safety: avoid mutating live Access app defaults/policy wiring
+    # until all intended app/policy resources are modeled in Terraform.
+    ignore_changes  = all
     prevent_destroy = true
   }
 }

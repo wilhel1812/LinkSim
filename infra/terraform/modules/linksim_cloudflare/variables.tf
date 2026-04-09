@@ -52,6 +52,12 @@ variable "d1_database_id" {
   type        = string
 }
 
+variable "d1_read_replication_mode" {
+  description = "D1 read replication mode."
+  type        = string
+  default     = "disabled"
+}
+
 variable "d1_binding_name" {
   description = "Pages D1 binding name."
   type        = string
