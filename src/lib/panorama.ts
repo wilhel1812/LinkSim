@@ -19,16 +19,28 @@ export type PanoramaNodeCandidate = {
 export type PanoramaNodeProjection = {
   id: string;
   name: string;
+  lat: number;
+  lon: number;
+  groundElevationM: number;
+  antennaHeightM: number;
+  targetElevationM: number;
   azimuthDeg: number;
   distanceKm: number;
   elevationAngleDeg: number;
+  terrainBeforeDeg: number;
+  angularClearanceDeg: number;
+  clearanceMarginM: number;
   visible: boolean;
   state: PassFailState;
 };
 
 export type PanoramaRaySample = {
   distanceKm: number;
+  lat: number;
+  lon: number;
+  terrainM: number;
   angleDeg: number;
+  clutterAngleDeg: number;
   maxAngleBeforeDeg: number;
 };
 
@@ -36,7 +48,12 @@ export type PanoramaRay = {
   azimuthDeg: number;
   maxDistanceKm: number;
   horizonDistanceKm: number;
+  horizonLat: number;
+  horizonLon: number;
+  horizonTerrainM: number;
   horizonAngleDeg: number;
+  clutterHorizonDistanceKm: number;
+  clutterHorizonAngleDeg: number;
   samples: PanoramaRaySample[];
 };
 
@@ -130,6 +147,16 @@ const lookupMaxAngleBefore = (samples: PanoramaRaySample[], distanceKm: number):
   return maxBefore;
 };
 
+const clearanceMarginMeters = (
+  elevationAngleDeg: number,
+  terrainBeforeDeg: number,
+  distanceKm: number,
+): number => {
+  const distanceM = Math.max(1, distanceKm * 1000);
+  const deltaRad = toRadians(elevationAngleDeg - terrainBeforeDeg);
+  return Math.tan(deltaRad) * distanceM;
+};
+
 export const buildPanorama = (params: {
   selectedSite: Site;
   effectiveLink: Link;
@@ -162,8 +189,14 @@ export const buildPanorama = (params: {
     const maxDistanceKm = resolveRayMaxDistanceKm(selectedSite.position, azimuthDeg, baseRadiusKm, maxRadiusKm, terrainSampler);
     const samples: PanoramaRaySample[] = [];
     let maxAngleSoFar = -90;
+    let maxClutterAngleSoFar = -90;
     let horizonAngleDeg = -90;
     let horizonDistanceKm = 0;
+    let horizonLat = selectedSite.position.lat;
+    let horizonLon = selectedSite.position.lon;
+    let horizonTerrainM = selectedSite.groundElevationM;
+    let clutterHorizonAngleDeg = -90;
+    let clutterHorizonDistanceKm = 0;
 
     for (let i = 1; i <= radialSamples; i += 1) {
       const distanceKm = (maxDistanceKm * i) / radialSamples;
@@ -171,25 +204,49 @@ export const buildPanorama = (params: {
       const terrainM = terrainSampler(point.lat, point.lon);
       if (terrainM === null) break;
       const dropM = earthCurvatureDropM(distanceKm, kFactor);
-      const relativeM = terrainM + clutterHeightM - sourceAbsM - dropM;
-      const angleDeg = toDegrees(Math.atan2(relativeM, Math.max(1, distanceKm * 1000)));
+      const distanceM = Math.max(1, distanceKm * 1000);
+      const relativeTerrainM = terrainM - sourceAbsM - dropM;
+      const relativeClutterM = terrainM + clutterHeightM - sourceAbsM - dropM;
+      const angleDeg = toDegrees(Math.atan2(relativeTerrainM, distanceM));
+      const clutterAngleDeg = toDegrees(Math.atan2(relativeClutterM, distanceM));
 
       const maxAngleBeforeDeg = maxAngleSoFar;
       maxAngleSoFar = Math.max(maxAngleSoFar, angleDeg);
       if (maxAngleSoFar === angleDeg) {
         horizonAngleDeg = angleDeg;
         horizonDistanceKm = distanceKm;
+        horizonLat = point.lat;
+        horizonLon = point.lon;
+        horizonTerrainM = terrainM;
       }
-      samples.push({ distanceKm, angleDeg, maxAngleBeforeDeg });
+      maxClutterAngleSoFar = Math.max(maxClutterAngleSoFar, clutterAngleDeg);
+      if (maxClutterAngleSoFar === clutterAngleDeg) {
+        clutterHorizonAngleDeg = clutterAngleDeg;
+        clutterHorizonDistanceKm = distanceKm;
+      }
+      samples.push({
+        distanceKm,
+        lat: point.lat,
+        lon: point.lon,
+        terrainM,
+        angleDeg,
+        clutterAngleDeg,
+        maxAngleBeforeDeg,
+      });
       minAngleDeg = Math.min(minAngleDeg, angleDeg);
-      maxAngleDeg = Math.max(maxAngleDeg, angleDeg);
+      maxAngleDeg = Math.max(maxAngleDeg, includeClutter ? clutterAngleDeg : angleDeg);
     }
 
     rays.push({
       azimuthDeg,
       maxDistanceKm,
       horizonDistanceKm,
+      horizonLat,
+      horizonLon,
+      horizonTerrainM,
       horizonAngleDeg,
+      clutterHorizonDistanceKm,
+      clutterHorizonAngleDeg,
       samples,
     });
   }
@@ -208,6 +265,8 @@ export const buildPanorama = (params: {
       const ray = rays[rayIndex] ?? rays[0];
       const terrainBeforeDeg = ray ? lookupMaxAngleBefore(ray.samples, distanceKm) : -90;
       const visible = elevationAngleDeg > terrainBeforeDeg;
+      const angularClearanceDeg = elevationAngleDeg - terrainBeforeDeg;
+      const clearanceMarginM = clearanceMarginMeters(elevationAngleDeg, terrainBeforeDeg, distanceKm);
 
       const metrics = computeSourceCentricRxMetrics(
         candidate.lat,
@@ -229,9 +288,17 @@ export const buildPanorama = (params: {
       return {
         id: candidate.id,
         name: candidate.name,
+        lat: candidate.lat,
+        lon: candidate.lon,
+        groundElevationM: candidate.groundElevationM,
+        antennaHeightM: candidate.antennaHeightM,
+        targetElevationM: candidateAbs,
         azimuthDeg,
         distanceKm,
         elevationAngleDeg,
+        terrainBeforeDeg,
+        angularClearanceDeg,
+        clearanceMarginM,
         visible,
         state,
       };
