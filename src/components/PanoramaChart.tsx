@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { Compass, Lock, Maximize2, Minimize2, Trees, Unlock, Waves } from "lucide-react";
+import { Compass, Maximize2, Minimize2, Trees, Waves } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
@@ -22,7 +22,6 @@ import { useAppStore } from "../store/appStore";
 
 const M = { t: 14, r: 20, b: 32, l: 46 };
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
-const normalizeAzimuth = (value: number): number => ((value % 360) + 360) % 360;
 
 type PanoramaChartProps = {
   isExpanded: boolean;
@@ -52,9 +51,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [hoverAzimuth, setHoverAzimuth] = useState<number | null>(null);
-  const [lockedAzimuth, setLockedAzimuth] = useState<number | null>(null);
   const [includeClutter, setIncludeClutter] = useState(false);
-  const [verticalExaggeration, setVerticalExaggeration] = useState(true);
+  const [fitScaleMode, setFitScaleMode] = useState(true);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
 
@@ -197,7 +195,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       effectiveLink.frequencyMHz,
       propagationEnvironment.atmosphericBendingNUnits,
       propagationEnvironment.clutterHeightM,
-      includeClutter ? 1 : 0,
       quality,
       sampling.azimuthStepDeg,
       sampling.radialSamples,
@@ -235,7 +232,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             maxRadiusKm: 200,
             azimuthStepDeg: sampling.azimuthStepDeg,
             radialSamples: sampling.radialSamples,
-            includeClutter,
           },
         });
         if (context.isCancelled()) return;
@@ -252,7 +248,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     selectedNetwork,
     links,
     propagationEnvironment,
-    includeClutter,
     quality,
     srtmTiles,
     nodeCandidates,
@@ -263,35 +258,21 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   const chartWidth = chartSize?.width ?? 0;
   const chartHeight = chartSize?.height ?? 0;
-  const activeAzimuth = lockedAzimuth ?? hoverAzimuth;
 
   const xWindow = useMemo(() => {
-    if (activeAzimuth == null) return null;
-    return resolvePanoramaWindow(activeAzimuth, 90);
-  }, [activeAzimuth]);
+    if (hoverAzimuth == null) return null;
+    return resolvePanoramaWindow(hoverAzimuth, 90);
+  }, [hoverAzimuth]);
 
   const terrainFillGradientId = useMemo(() => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`, []);
 
   const geometry = useMemo(() => {
     if (!panorama || !chartSize || !panorama.rays.length) return null;
-    const yPaddingDeg = 0.6;
-    const minHorizon = Math.min(...panorama.rays.map((ray) => ray.horizonAngleDeg));
-    const maxHorizon = Math.max(...panorama.rays.map((ray) => ray.horizonAngleDeg));
-    const rawMin = minHorizon - yPaddingDeg;
-    const rawMax = maxHorizon + yPaddingDeg;
-    const domainMin = Number.isFinite(rawMin) ? rawMin : panorama.minAngleDeg;
-    const domainMax = Number.isFinite(rawMax) && rawMax > domainMin ? rawMax : domainMin + 3;
-    const yRange = chartHeight - M.b - M.t;
-
-    const yForAngle = (angle: number): number => {
-      const tRaw = clamp((angle - domainMin) / Math.max(0.001, domainMax - domainMin), 0, 1);
-      const t = verticalExaggeration ? Math.pow(tRaw, 0.8) : tRaw;
-      return M.t + (1 - t) * yRange;
-    };
 
     const useWindow = Boolean(xWindow);
     const xDomainStart = xWindow?.startDeg ?? 0;
     const xDomainEnd = xWindow?.endDeg ?? 360;
+    const xSpan = Math.max(0.001, xDomainEnd - xDomainStart);
     const x = scaleLinear().domain([xDomainStart, xDomainEnd]).range([M.l, chartWidth - M.r]);
     const xCenterForUnwrap = xWindow?.centerDeg ?? 180;
 
@@ -305,11 +286,48 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
     if (!visibleRays.length) return null;
 
+    const minHorizon = Math.min(...panorama.rays.map((ray) => ray.horizonAngleDeg));
+    const maxHorizon = Math.max(...panorama.rays.map((ray) => ray.horizonAngleDeg));
+    const minSampleAngle = Math.min(
+      ...panorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)),
+    );
+    const maxSampleAngle = Math.max(
+      ...panorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)),
+    );
+
+    const innerWidth = Math.max(1, chartWidth - M.l - M.r);
+    const innerHeight = Math.max(1, chartHeight - M.t - M.b);
+    const horizonPad = 0.5;
+
+    let domainMin: number;
+    let domainMax: number;
+    if (fitScaleMode) {
+      domainMin = minHorizon - horizonPad;
+      domainMax = maxHorizon + horizonPad;
+    } else {
+      const pixelsPerDegX = innerWidth / xSpan;
+      const ySpanDeg = innerHeight / Math.max(0.001, pixelsPerDegX);
+      const seaLevelAnchorDeg = Math.min(0, minSampleAngle - 0.2);
+      domainMin = seaLevelAnchorDeg;
+      domainMax = domainMin + ySpanDeg;
+      if (domainMax < maxSampleAngle + 0.2) {
+        domainMax = maxSampleAngle + 0.2;
+        domainMin = domainMax - ySpanDeg;
+      }
+    }
+
+    if (!Number.isFinite(domainMin) || !Number.isFinite(domainMax) || domainMax <= domainMin) {
+      domainMin = panorama.minAngleDeg;
+      domainMax = panorama.maxAngleDeg;
+    }
+
+    const y = scaleLinear().domain([domainMin, domainMax]).range([chartHeight - M.b, M.t]);
+
     const toPath = (points: { x: number; y: number }[]): string =>
       points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
 
-    const horizonPoints = visibleRays.map(({ ray, xValue }) => ({ x: x(xValue), y: yForAngle(ray.horizonAngleDeg) }));
-    const clutterPoints = visibleRays.map(({ ray, xValue }) => ({ x: x(xValue), y: yForAngle(ray.clutterHorizonAngleDeg) }));
+    const horizonPoints = visibleRays.map(({ ray, xValue }) => ({ x: x(xValue), y: y(ray.horizonAngleDeg) }));
+    const clutterPoints = visibleRays.map(({ ray, xValue }) => ({ x: x(xValue), y: y(ray.clutterHorizonAngleDeg) }));
     const horizonPath = toPath(horizonPoints);
     const horizonAreaPath = `${horizonPath} L${horizonPoints[horizonPoints.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${horizonPoints[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`;
 
@@ -320,7 +338,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         const sample = ray.samples[sampleIndex] ?? ray.samples[ray.samples.length - 1];
         return {
           x: x(xValue),
-          y: yForAngle(sample?.angleDeg ?? ray.horizonAngleDeg),
+          y: y(sample?.angleDeg ?? ray.horizonAngleDeg),
         };
       });
       const line = toPath(points);
@@ -356,17 +374,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           node,
           xValue,
           cx: x(xValue),
-          cy: yForAngle(node.elevationAngleDeg),
+          cy: y(node.elevationAngleDeg),
         };
       })
       .filter((entry) => !useWindow || (entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd));
 
-    const azimuthForX = (xPx: number): number => normalizeAzimuth(x.invert(xPx));
-
     return {
       x,
       xWindow,
-      yForAngle,
+      y,
       horizonPath,
       horizonAreaPath,
       clutterPath: includeClutter ? toPath(clutterPoints) : "",
@@ -375,23 +391,21 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ticksX,
       ticksY,
       nodes,
-      visibleRays: visibleRays.map((entry) => entry.ray),
-      azimuthForX,
     };
-  }, [panorama, chartSize, chartHeight, chartWidth, verticalExaggeration, xWindow, includeClutter]);
+  }, [panorama, chartSize, chartHeight, chartWidth, fitScaleMode, xWindow, includeClutter]);
 
   const activeRay = useMemo(() => {
-    if (!panorama || activeAzimuth == null || !panorama.rays.length) return null;
+    if (!panorama || hoverAzimuth == null || !panorama.rays.length) return null;
     const nearest = panorama.rays.reduce(
       (best, ray) => {
-        const dist = Math.abs(unwrapAzimuthForWindow(ray.azimuthDeg, activeAzimuth) - activeAzimuth);
+        const dist = Math.abs(unwrapAzimuthForWindow(ray.azimuthDeg, hoverAzimuth) - hoverAzimuth);
         if (dist < best.distance) return { ray, distance: dist };
         return best;
       },
       { ray: panorama.rays[0], distance: Number.POSITIVE_INFINITY },
     );
     return nearest.ray;
-  }, [panorama, activeAzimuth]);
+  }, [panorama, hoverAzimuth]);
 
   useEffect(() => {
     if (!selectedSiteEffective) return;
@@ -399,16 +413,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       dispatchPanoramaInteraction({ type: "leave", siteId: selectedSiteEffective.id });
       return;
     }
-    const endpoint = {
-      lat: activeRay.horizonLat,
-      lon: activeRay.horizonLon,
-    };
     dispatchPanoramaInteraction({
       type: "hover",
       payload: {
         siteId: selectedSiteEffective.id,
         azimuthDeg: activeRay.azimuthDeg,
-        endpoint,
+        endpoint: { lat: activeRay.horizonLat, lon: activeRay.horizonLon },
         horizonDistanceKm: activeRay.horizonDistanceKm,
         mapHoverZoomEnabled,
       },
@@ -424,7 +434,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const yNorm = clamp((event.clientY - rect.top) / rect.height, 0, 1);
     const xPx = M.l + xNorm * (chartWidth - M.l - M.r);
     const yPx = M.t + yNorm * (chartHeight - M.t - M.b);
-    const azimuth = geometry.azimuthForX(xPx);
+
+    const azimuth = xNorm * 360;
     setHoverAzimuth(azimuth);
 
     const nearestRay = panorama.rays.reduce(
@@ -457,11 +468,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       return;
     }
 
-    const sample = nearestRay.samples.find((entry) => Math.abs(entry.distanceKm - nearestRay.horizonDistanceKm) < 0.001) ?? nearestRay.samples[nearestRay.samples.length - 1] ?? null;
-    if (!sample) {
-      setHoverTarget(null);
-      return;
-    }
+    const sample =
+      nearestRay.samples.find((entry) => Math.abs(entry.distanceKm - nearestRay.horizonDistanceKm) < 0.001) ??
+      nearestRay.samples[nearestRay.samples.length - 1] ??
+      null;
 
     setHoverTarget({
       kind: "terrain",
@@ -480,27 +490,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     dispatchPanoramaInteraction({ type: "leave", siteId: selectedSiteEffective.id });
   };
 
-  const onClick = () => {
-    if (activeAzimuth == null || !selectedSiteEffective || !activeRay) return;
-    const endpoint = { lat: activeRay.horizonLat, lon: activeRay.horizonLon };
-    if (lockedAzimuth != null) {
-      dispatchPanoramaInteraction({ type: "clear", siteId: selectedSiteEffective.id });
-      setLockedAzimuth(null);
-      return;
-    }
-    dispatchPanoramaInteraction({
-      type: "toggle-lock",
-      payload: {
-        siteId: selectedSiteEffective.id,
-        azimuthDeg: activeRay.azimuthDeg,
-        endpoint,
-        horizonDistanceKm: activeRay.horizonDistanceKm,
-        mapHoverZoomEnabled,
-      },
-    });
-    setLockedAzimuth(activeAzimuth);
-  };
-
   if (!selectedSiteEffective) {
     return (
       <section className="chart-panel chart-panel-empty">
@@ -509,11 +498,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     );
   }
 
-  const cardinal = activeRay ? cardinalLabelForAzimuth(activeRay.azimuthDeg) : null;
   const hoverPopover = hoverTarget
     ? hoverTarget.kind === "terrain"
       ? {
-          title: `${hoverTarget.azimuthDeg.toFixed(1)}°${cardinal ? ` (${cardinal})` : ""}`,
+          title: `${hoverTarget.azimuthDeg.toFixed(1)}°${cardinalLabelForAzimuth(hoverTarget.azimuthDeg) ? ` (${cardinalLabelForAzimuth(hoverTarget.azimuthDeg)})` : ""}`,
           rows: [
             `Coordinates: ${hoverTarget.sample?.lat.toFixed(5)}, ${hoverTarget.sample?.lon.toFixed(5)}`,
             `Distance: ${hoverTarget.sample?.distanceKm.toFixed(2)} km`,
@@ -539,19 +527,19 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         <h3 className="panorama-header-title">Panorama from {selectedSiteEffective.name}</h3>
         <div className="chart-action-row-controls">
           <button
-            aria-label={verticalExaggeration ? "Disable vertical exaggeration" : "Enable vertical exaggeration"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${verticalExaggeration ? "is-active" : ""}`}
-            onClick={() => setVerticalExaggeration((value) => !value)}
-            title={verticalExaggeration ? "Vertical exaggeration on" : "Vertical exaggeration off"}
+            aria-label={fitScaleMode ? "Switch to true-scale mode" : "Switch to fit-scale mode"}
+            className={`chart-endpoint-swap chart-endpoint-icon ${fitScaleMode ? "is-active" : ""}`}
+            onClick={() => setFitScaleMode((value) => !value)}
+            title={fitScaleMode ? "Fit scale" : "True scale"}
             type="button"
           >
             <Waves aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
-            aria-label={includeClutter ? "Disable clutter influence" : "Enable clutter influence"}
+            aria-label={includeClutter ? "Disable clutter layer" : "Enable clutter layer"}
             className={`chart-endpoint-swap chart-endpoint-icon ${includeClutter ? "is-active" : ""}`}
             onClick={() => setIncludeClutter((value) => !value)}
-            title={includeClutter ? "Clutter on" : "Clutter off"}
+            title={includeClutter ? "Clutter layer on" : "Clutter layer off"}
             type="button"
           >
             <Trees aria-hidden="true" strokeWidth={1.8} />
@@ -564,15 +552,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             type="button"
           >
             <Compass aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
-            aria-label={lockedAzimuth == null ? "Lock hovered direction" : "Unlock direction"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${lockedAzimuth == null ? "" : "is-active"}`}
-            onClick={() => setLockedAzimuth((current) => (current == null ? activeAzimuth : null))}
-            title={lockedAzimuth == null ? "Lock direction" : "Unlock direction"}
-            type="button"
-          >
-            {lockedAzimuth == null ? <Lock aria-hidden="true" strokeWidth={1.8} /> : <Unlock aria-hidden="true" strokeWidth={1.8} />}
           </button>
           {showExpandToggle ? (
             <button
@@ -617,8 +596,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
               {geometry.ticksY.map((value) => (
                 <g className="chart-grid" key={`y-${value.toFixed(2)}`}>
-                  <line x1={M.l} x2={chartWidth - M.r} y1={geometry.yForAngle(value)} y2={geometry.yForAngle(value)} />
-                  <text textAnchor="end" x={M.l - 8} y={geometry.yForAngle(value) + 4}>
+                  <line x1={M.l} x2={chartWidth - M.r} y1={geometry.y(value)} y2={geometry.y(value)} />
+                  <text textAnchor="end" x={M.l - 8} y={geometry.y(value) + 4}>
                     {value.toFixed(1)}°
                   </text>
                 </g>
@@ -670,7 +649,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 y={M.t}
                 width={chartWidth - M.l - M.r}
                 height={chartHeight - M.t - M.b}
-                onClick={onClick}
                 onMouseLeave={onLeave}
                 onMouseMove={onMove}
               />

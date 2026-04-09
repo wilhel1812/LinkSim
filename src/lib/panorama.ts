@@ -70,7 +70,6 @@ export type PanoramaBuildOptions = {
   maxRadiusKm?: number;
   azimuthStepDeg?: number;
   radialSamples?: number;
-  includeClutter?: boolean;
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -175,8 +174,7 @@ export const buildPanorama = (params: {
   const maxRadiusKm = Math.max(baseRadiusKm, params.options?.maxRadiusKm ?? 200);
   const azimuthStepDeg = clamp(params.options?.azimuthStepDeg ?? defaults.azimuthStepDeg, 1, 45);
   const radialSamples = Math.max(12, Math.round(params.options?.radialSamples ?? defaults.radialSamples));
-  const includeClutter = Boolean(params.options?.includeClutter);
-  const clutterHeightM = includeClutter ? Math.max(0, propagationEnvironment.clutterHeightM) : 0;
+  const clutterHeightM = Math.max(0, propagationEnvironment.clutterHeightM);
 
   const kFactor = Math.max(0.5, 1 + (propagationEnvironment.atmosphericBendingNUnits - 250) / 153);
   const sourceAbsM = selectedSite.groundElevationM + selectedSite.antennaHeightM;
@@ -234,7 +232,7 @@ export const buildPanorama = (params: {
         maxAngleBeforeDeg,
       });
       minAngleDeg = Math.min(minAngleDeg, angleDeg);
-      maxAngleDeg = Math.max(maxAngleDeg, includeClutter ? clutterAngleDeg : angleDeg);
+      maxAngleDeg = Math.max(maxAngleDeg, angleDeg);
     }
 
     rays.push({
