@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { Compass, Maximize2, Minimize2, Trees, Waves } from "lucide-react";
+import { Compass, Maximize2, Minimize2, Trees, Waves, ZoomIn } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
@@ -7,7 +7,7 @@ import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/lates
 import { dispatchPanoramaInteraction } from "../lib/panoramaEvents";
 import {
   buildPanorama,
-  qualityToSampling,
+  resolvePanoramaSampling,
   type PanoramaNodeCandidate,
   type PanoramaNodeProjection,
   type PanoramaQuality,
@@ -15,8 +15,16 @@ import {
   type PanoramaResult,
   type PanoramaRaySample,
 } from "../lib/panorama";
-import { buildDepthBands, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
-import { cardinalLabelForAzimuth, formatAzimuthTick, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
+import { buildDepthBands, buildNearBiasedDepthFractions, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
+import {
+  cardinalLabelForAzimuth,
+  chartXNormToAzimuthDeg,
+  formatAzimuthTick,
+  fovScaleToSpanDeg,
+  normalizeFovScale,
+  resolvePanoramaWindow,
+  unwrapAzimuthForWindow,
+} from "../lib/panoramaView";
 import { passFailStateLabel } from "../lib/passFailState";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { useAppStore } from "../store/appStore";
@@ -55,6 +63,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [includeClutter, setIncludeClutter] = useState(false);
   const [fitScaleMode, setFitScaleMode] = useState(true);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
+  const [zoomModeEnabled, setZoomModeEnabled] = useState(true);
+  const [fovScale, setFovScale] = useState(1.5);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
 
   const sites = useAppStore((state) => state.sites);
@@ -185,7 +195,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           cableLossDb: selectedSiteEffective.cableLossDb,
         };
 
-    const sampling = qualityToSampling(quality);
+    const effectiveFovScale = normalizeFovScale(fovScale);
+    const windowSpanDeg = zoomModeEnabled ? fovScaleToSpanDeg(effectiveFovScale) : 360;
+    const windowCenterDegRaw = hoverAzimuth ?? 180;
+    const sampling = resolvePanoramaSampling(quality, { zoomModeEnabled, fovScale: effectiveFovScale });
+    const centerBucketSizeDeg = Math.max(1, Math.round(sampling.azimuthStepDeg * 4));
+    const windowCenterBucketDeg = Math.round(windowCenterDegRaw / centerBucketSizeDeg) * centerBucketSizeDeg;
     const signature = [
       selectedSiteEffective.id,
       selectedSiteEffective.position.lat.toFixed(6),
@@ -197,6 +212,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       propagationEnvironment.atmosphericBendingNUnits,
       propagationEnvironment.clutterHeightM,
       quality,
+      zoomModeEnabled ? "zoom:on" : "zoom:off",
+      effectiveFovScale.toFixed(2),
+      windowSpanDeg.toFixed(3),
+      windowCenterBucketDeg.toFixed(3),
       sampling.azimuthStepDeg,
       sampling.radialSamples,
       terrainLoadEpoch,
@@ -233,6 +252,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             maxRadiusKm: 200,
             azimuthStepDeg: sampling.azimuthStepDeg,
             radialSamples: sampling.radialSamples,
+            windowCenterDeg: zoomModeEnabled ? windowCenterBucketDeg : undefined,
+            windowSpanDeg: zoomModeEnabled ? windowSpanDeg : undefined,
           },
         });
         if (context.isCancelled()) return;
@@ -255,15 +276,18 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     rxSensitivityTargetDbm,
     environmentLossDb,
     terrainLoadEpoch,
+    zoomModeEnabled,
+    fovScale,
+    hoverAzimuth,
   ]);
 
   const chartWidth = chartSize?.width ?? 0;
   const chartHeight = chartSize?.height ?? 0;
 
   const xWindow = useMemo(() => {
-    if (hoverAzimuth == null) return null;
-    return resolvePanoramaWindow(hoverAzimuth, 90);
-  }, [hoverAzimuth]);
+    if (!zoomModeEnabled) return null;
+    return resolvePanoramaWindow(hoverAzimuth ?? 180, fovScaleToSpanDeg(fovScale));
+  }, [zoomModeEnabled, hoverAzimuth, fovScale]);
 
   const terrainFillGradientId = useMemo(() => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`, []);
 
@@ -327,13 +351,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const toPath = (points: { x: number; y: number }[]): string =>
       points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
 
-    const horizonPoints = visibleRays.map(({ ray, xValue }) => ({ x: x(xValue), y: y(ray.horizonAngleDeg) }));
     const clutterPoints = visibleRays.map(({ ray, xValue }) => ({ x: x(xValue), y: y(ray.clutterHorizonAngleDeg) }));
-    const horizonPath = toPath(horizonPoints);
-    const horizonAreaPath = `${horizonPath} L${horizonPoints[horizonPoints.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${horizonPoints[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`;
-
-    const ridgeFractions = [0.14, 0.28, 0.42, 0.58, 0.74, 0.9];
-    const ridgeBands = buildDepthBands(
+    const ridgeFractions = buildNearBiasedDepthFractions(10);
+    const depthBands = buildDepthBands(
       visibleRays.map((entry) => entry.ray),
       ridgeFractions,
       (ray, sample) => {
@@ -341,7 +361,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         const angleDeg = sample?.angleDeg ?? ray.horizonAngleDeg;
         return { x: x(xValue), y: y(angleDeg), angleDeg };
       },
-    ).map((band, bandIndex, all) => ({
+    );
+    const ridgeBands = depthBands.map((band, bandIndex, all) => ({
       key: `ridge-${bandIndex}`,
       style: depthStyleForBand(bandIndex, all.length),
       lineSegments: band.lineSegments,
@@ -351,8 +372,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           : "",
     }));
 
+    const furthestBandFillPath = ridgeBands[ridgeBands.length - 1]?.fillPath ?? "";
+    const clutterBasePoints =
+      depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ??
+      clutterPoints;
+
     const clutterAreaPath = includeClutter
-      ? `${toPath(clutterPoints)} ${[...horizonPoints]
+      ? `${toPath(clutterPoints)} ${[...clutterBasePoints]
           .reverse()
           .map((point) => `L${point.x.toFixed(2)},${point.y.toFixed(2)}`)
           .join(" ")} Z`
@@ -383,8 +409,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       x,
       xWindow,
       y,
-      horizonPath,
-      horizonAreaPath,
+      terrainFillPath: furthestBandFillPath,
       clutterPath: includeClutter ? toPath(clutterPoints) : "",
       clutterAreaPath,
       ridgeBands,
@@ -441,7 +466,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const xPx = M.l + xNorm * (chartWidth - M.l - M.r);
     const yPx = M.t + yNorm * (chartHeight - M.t - M.b);
 
-    const azimuth = xNorm * 360;
+    const azimuth = chartXNormToAzimuthDeg(xNorm);
     setHoverAzimuth(azimuth);
 
     const nearestRay = panorama.rays.reduce(
@@ -551,6 +576,31 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             <Trees aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
+            aria-label={zoomModeEnabled ? "Disable chart zoom mode" : "Enable chart zoom mode"}
+            className={`chart-endpoint-swap chart-endpoint-icon ${zoomModeEnabled ? "is-active" : ""}`}
+            onClick={() => setZoomModeEnabled((value) => !value)}
+            title={zoomModeEnabled ? "Chart zoom mode on" : "Chart zoom mode off"}
+            type="button"
+          >
+            <ZoomIn aria-hidden="true" strokeWidth={1.8} />
+          </button>
+          {zoomModeEnabled ? (
+            <label className="panorama-fov-control">
+              <span className="panorama-fov-label">FOV</span>
+              <input
+                aria-label="Panorama FOV"
+                className="panorama-fov-slider"
+                max={4}
+                min={1}
+                onChange={(event) => setFovScale(normalizeFovScale(Number(event.currentTarget.value)))}
+                step={0.1}
+                type="range"
+                value={fovScale}
+              />
+              <span className="panorama-fov-value">{fovScale.toFixed(1)}x</span>
+            </label>
+          ) : null}
+          <button
             aria-label={mapHoverZoomEnabled ? "Disable map hover lens" : "Enable map hover lens"}
             className={`chart-endpoint-swap chart-endpoint-icon ${mapHoverZoomEnabled ? "is-active" : ""}`}
             onClick={() => setMapHoverZoomEnabled((value) => !value)}
@@ -618,7 +668,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 </g>
               ))}
 
-              <path className="terrain-fill-path" d={geometry.horizonAreaPath} fill={`url(#${terrainFillGradientId})`} />
+              {geometry.terrainFillPath ? <path className="terrain-fill-path" d={geometry.terrainFillPath} fill={`url(#${terrainFillGradientId})`} /> : null}
               {geometry.ridgeBands.map((band) => (
                 <g key={band.key}>
                   {band.fillPath ? (
@@ -647,7 +697,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
               ))}
               {includeClutter && geometry.clutterAreaPath ? <path className="panorama-clutter-haze" d={geometry.clutterAreaPath} /> : null}
               {includeClutter && geometry.clutterPath ? <path className="panorama-clutter-line" d={geometry.clutterPath} /> : null}
-              <path className="terrain-line-neutral" d={geometry.horizonPath} />
 
               {geometry.nodes.map((node) => (
                 <circle

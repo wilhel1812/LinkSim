@@ -1,4 +1,5 @@
 const mod360 = (value: number): number => ((value % 360) + 360) % 360;
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 export const cardinalLabelForAzimuth = (azimuthDeg: number): "N" | "E" | "S" | "W" | null => {
   const normalized = mod360(azimuthDeg);
@@ -29,6 +30,12 @@ export const resolvePanoramaWindow = (centerDeg: number, spanDeg = 90): Panorama
   const endDeg = center + span / 2;
   return { centerDeg: center, spanDeg: span, startDeg, endDeg };
 };
+
+export const normalizeFovScale = (fovScale: number): number => clamp(fovScale, 1, 4);
+
+export const fovScaleToSpanDeg = (fovScale: number): number => 360 / normalizeFovScale(fovScale);
+
+export const chartXNormToAzimuthDeg = (xNorm: number): number => clamp(xNorm, 0, 1) * 360;
 
 export const unwrapAzimuthForWindow = (azimuthDeg: number, referenceDeg: number): number => {
   const normalized = mod360(azimuthDeg);
