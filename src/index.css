@@ -1802,6 +1802,11 @@ input {
   box-shadow: 0 0 0 6px var(--selection-soft);
 }
 
+.panorama-map-cursor {
+  background: var(--state-pass-clear);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--state-pass-clear) 35%, transparent);
+}
+
 .chart-panel {
   overflow: hidden;
   padding: 10px 10px 8px;
@@ -2122,6 +2127,34 @@ input {
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.panorama-node {
+  stroke-width: 1.1;
+}
+
+.panorama-node.is-hidden {
+  opacity: 0.52;
+}
+
+.panorama-node-pass_clear {
+  fill: var(--state-pass-clear);
+  stroke: color-mix(in srgb, var(--state-pass-clear) 40%, var(--text) 60%);
+}
+
+.panorama-node-pass_blocked {
+  fill: var(--state-pass-blocked);
+  stroke: color-mix(in srgb, var(--state-pass-blocked) 40%, var(--text) 60%);
+}
+
+.panorama-node-fail_clear {
+  fill: var(--state-fail-clear);
+  stroke: color-mix(in srgb, var(--state-fail-clear) 40%, var(--text) 60%);
+}
+
+.panorama-node-fail_blocked {
+  fill: var(--state-fail-blocked);
+  stroke: color-mix(in srgb, var(--state-fail-blocked) 40%, var(--text) 60%);
 }
 
 .earth-curvature-horizon {
