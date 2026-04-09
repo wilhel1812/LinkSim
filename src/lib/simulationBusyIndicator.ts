@@ -4,6 +4,8 @@ export type SimulationBusyIndicatorInput = {
   simulationStepLabel: string;
   simulationProgress: number;
   overlayJobsInFlight: number;
+  overlayProgressMode: "determinate" | "indeterminate";
+  overlayProgressPercent: number | null;
   isBackgroundBusy: boolean;
   backgroundBusyLabel: string;
   isTerrainFetching: boolean;
@@ -37,6 +39,13 @@ export const resolveSimulationBusyIndicatorState = (
   }
 
   if (input.overlayJobsInFlight > 0) {
+    if (input.overlayProgressMode === "determinate" && typeof input.overlayProgressPercent === "number") {
+      return {
+        label: `Finalizing simulation overlay... ${input.overlayProgressPercent}%`,
+        progressMode: "determinate",
+        progressPercent: input.overlayProgressPercent,
+      };
+    }
     return {
       label: "Finalizing simulation overlay...",
       progressMode: "indeterminate",

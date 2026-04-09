@@ -161,4 +161,33 @@ describe("overlayRaster async builders", () => {
 
     await expect(promise).rejects.toBeInstanceOf(OverlayTaskCancelledError);
   });
+
+  it("reports cooperative progress for overlay build callbacks", async () => {
+    const checkpoints: Array<{ processed: number; total: number; percent: number }> = [];
+    await buildCoverageOverlayPixelsAsync(
+      bounds,
+      samples,
+      "heatmap",
+      5,
+      { width: 40, height: 40 },
+      undefined,
+      terrainSampler,
+      {
+        phase: "coverage",
+        signature: "progress-test",
+        frameBudgetMs: 1,
+        onProgress: (payload) => {
+          checkpoints.push({
+            processed: payload.processed,
+            total: payload.total,
+            percent: payload.percent,
+          });
+        },
+      },
+    );
+
+    expect(checkpoints.length).toBeGreaterThan(0);
+    const last = checkpoints[checkpoints.length - 1];
+    expect(last).toEqual({ processed: 1600, total: 1600, percent: 100 });
+  });
 });

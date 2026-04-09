@@ -40,6 +40,13 @@ export type OverlayTaskContext = {
     processed: number;
     total: number;
   }) => void;
+  onProgress?: (payload: {
+    phase: string;
+    signature: string;
+    processed: number;
+    total: number;
+    percent: number;
+  }) => void;
 };
 
 const DEFAULT_FRAME_BUDGET_MS = 8;
@@ -111,10 +118,53 @@ const runCooperativeLoop = async (
       });
     }
 
+    if (total > 0) {
+      context?.onProgress?.({
+        phase: context.phase,
+        signature: context.signature,
+        processed,
+        total,
+        percent: Math.round((processed / total) * 100),
+      });
+    }
+
     if (processed < total) {
       await nextFrame();
     }
   }
+
+  if (total > 0 && processed >= total) {
+    context?.onProgress?.({
+      phase: context.phase,
+      signature: context.signature,
+      processed: total,
+      total,
+      percent: 100,
+    });
+  }
+};
+
+const precomputeGridAxes = (
+  bounds: TerrainBounds,
+  dimensions: { width: number; height: number },
+): { latByRow: Float64Array; lonByCol: Float64Array } => {
+  const width = dimensions.width;
+  const height = dimensions.height;
+  const latByRow = new Float64Array(height);
+  const lonByCol = new Float64Array(width);
+  const latSpan = bounds.maxLat - bounds.minLat;
+  const lonSpan = bounds.maxLon - bounds.minLon;
+  const heightDivisor = Math.max(1, height - 1);
+  const widthDivisor = Math.max(1, width - 1);
+
+  for (let y = 0; y < height; y += 1) {
+    latByRow[y] = bounds.maxLat - latSpan * (y / heightDivisor);
+  }
+  for (let x = 0; x < width; x += 1) {
+    lonByCol[x] = bounds.minLon + lonSpan * (x / widthDivisor);
+  }
+
+  return { latByRow, lonByCol };
 };
 
 const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
@@ -144,16 +194,28 @@ const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
   return [255, 255, 255];
 };
 
-const coverageColorAdaptive = (valueDbm: number, samples: CoverageSampleLite[]): [number, number, number] => {
-  if (samples.length < 2) return coverageColorForDbm(valueDbm);
+const computeCoverageAdaptiveScale = (
+  samples: CoverageSampleLite[],
+): { min: number; range: number } | null => {
+  if (samples.length < 2) return null;
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
   for (const sample of samples) {
     min = Math.min(min, sample.valueDbm);
     max = Math.max(max, sample.valueDbm);
   }
-  const range = Math.max(6, max - min);
-  const normalized = -125 + ((valueDbm - min) / range) * 63;
+  return {
+    min,
+    range: Math.max(6, max - min),
+  };
+};
+
+const coverageColorAdaptive = (
+  valueDbm: number,
+  scale: { min: number; range: number } | null,
+): [number, number, number] => {
+  if (!scale) return coverageColorForDbm(valueDbm);
+  const normalized = -125 + ((valueDbm - scale.min) / scale.range) * 63;
   return coverageColorForDbm(clamp(normalized, -125, -62));
 };
 
@@ -285,6 +347,8 @@ export const buildCoverageOverlayPixelsAsync = async (
   const gridInterpolator = makeGridInterpolator(samples);
   const width = dimensions.width;
   const height = dimensions.height;
+  const { latByRow, lonByCol } = precomputeGridAxes(bounds, dimensions);
+  const adaptiveScale = computeCoverageAdaptiveScale(samples);
   const pixels = new Uint8ClampedArray(width * height * 4);
 
   await runCooperativeLoop(
@@ -292,10 +356,8 @@ export const buildCoverageOverlayPixelsAsync = async (
     (index) => {
       const y = Math.floor(index / width);
       const x = index - y * width;
-      const tY = y / Math.max(1, height - 1);
-      const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      const lat = latByRow[y];
+      const lon = lonByCol[x];
       if (pointMask && !pointMask(lat, lon)) return;
       if (terrainSampler && terrainSampler(lat, lon) === null) return;
       const valueDbm = gridInterpolator
@@ -308,10 +370,10 @@ export const buildCoverageOverlayPixelsAsync = async (
       let b = 0;
       let a = 180;
       if (mode === "heatmap") {
-        [r, g, b] = coverageColorAdaptive(valueDbm, samples);
+        [r, g, b] = coverageColorAdaptive(valueDbm, adaptiveScale);
       } else {
         const banded = Math.round(valueDbm / Math.max(1, bandStepDb)) * Math.max(1, bandStepDb);
-        [r, g, b] = coverageColorAdaptive(banded, samples);
+        [r, g, b] = coverageColorAdaptive(banded, adaptiveScale);
         a = 170;
       }
 
@@ -349,6 +411,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
 ): Promise<OverlayRasterPixels | null> => {
   const width = dimensions.width;
   const height = dimensions.height;
+  const { latByRow, lonByCol } = precomputeGridAxes(bounds, dimensions);
   const pixels = new Uint8ClampedArray(width * height * 4);
 
   await runCooperativeLoop(
@@ -356,10 +419,8 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
     (index) => {
       const y = Math.floor(index / width);
       const x = index - y * width;
-      const tY = y / Math.max(1, height - 1);
-      const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      const lat = latByRow[y];
+      const lon = lonByCol[x];
       if (pointMask && !pointMask(lat, lon)) return;
       if (terrainSampler(lat, lon) === null) return;
 
@@ -424,10 +485,22 @@ export const buildRelayCandidateOverlayPixelsAsync = async (
 ): Promise<OverlayRasterPixels | null> => {
   const width = dimensions.width;
   const height = dimensions.height;
+  const { latByRow, lonByCol } = precomputeGridAxes(bounds, dimensions);
   const relayAntennaHeightM = Math.max(2, (fromSite.antennaHeightM + toSite.antennaHeightM) / 2);
   const fallbackRelayGround = (fromSite.groundElevationM + toSite.groundElevationM) / 2;
   const pixels = new Uint8ClampedArray(width * height * 4);
   const bottleneck = new Float32Array(width * height).fill(-Infinity);
+  const relaySite: Site = {
+    id: "__relay_candidate__",
+    name: "Relay candidate",
+    position: { lat: fromSite.position.lat, lon: fromSite.position.lon },
+    antennaHeightM: relayAntennaHeightM,
+    groundElevationM: fallbackRelayGround,
+    txPowerDbm: STANDARD_SITE_RADIO.txPowerDbm,
+    txGainDbi: STANDARD_SITE_RADIO.txGainDbi,
+    rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
+    cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
+  };
   let minDbm = Number.POSITIVE_INFINITY;
   let maxDbm = Number.NEGATIVE_INFINITY;
 
@@ -436,27 +509,16 @@ export const buildRelayCandidateOverlayPixelsAsync = async (
     (index) => {
       const y = Math.floor(index / width);
       const x = index - y * width;
-      const tY = y / Math.max(1, height - 1);
-      const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      const lat = latByRow[y];
+      const lon = lonByCol[x];
       if (pointMask && !pointMask(lat, lon)) return;
 
       const sampledGround = terrainSampler(lat, lon);
       if (sampledGround === null) return;
       const relayGround = sampledGround ?? fallbackRelayGround;
-
-      const relaySite: Site = {
-        id: "__relay_candidate__",
-        name: "Relay candidate",
-        position: { lat, lon },
-        antennaHeightM: relayAntennaHeightM,
-        groundElevationM: relayGround,
-        txPowerDbm: STANDARD_SITE_RADIO.txPowerDbm,
-        txGainDbi: STANDARD_SITE_RADIO.txGainDbi,
-        rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
-        cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
-      };
+      relaySite.position.lat = lat;
+      relaySite.position.lon = lon;
+      relaySite.groundElevationM = relayGround;
 
       const fromToRelayRx = computeSourceCentricRxDbm(
         lat,
@@ -527,6 +589,7 @@ export const buildTerrainShadeOverlayPixelsAsync = async (
 ): Promise<OverlayRasterPixels | null> => {
   const width = dimensions.width;
   const height = dimensions.height;
+  const { latByRow, lonByCol } = precomputeGridAxes(bounds, dimensions);
   const elevations = new Float32Array(width * height);
   const valid = new Uint8Array(width * height);
   const allowed = new Uint8Array(width * height);
@@ -540,10 +603,8 @@ export const buildTerrainShadeOverlayPixelsAsync = async (
     (index) => {
       const y = Math.floor(index / width);
       const x = index - y * width;
-      const tY = y / Math.max(1, height - 1);
-      const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
+      const lat = latByRow[y];
+      const lon = lonByCol[x];
       const isAllowed = pointMask ? pointMask(lat, lon) : true;
       const elevation = sampler(lat, lon);
 

@@ -120,5 +120,17 @@ export const recordSimulationRunCancelled = (payload: {
 }): void => {
   if (!inDevDiagnostics) return;
   console.info("[simulation-perf-cancelled]", payload);
-  pendingByRun.delete(payload.runId);
+  if (payload.phase === "coverage") {
+    pendingByRun.delete(payload.runId);
+    return;
+  }
+
+  const pending = pendingByRun.get(payload.runId);
+  if (!pending) return;
+
+  // Overlay tasks can cancel and restart while the same coverage run is still active.
+  // Keep pending coverage timing so a later successful overlay can still emit a full run log.
+  if (!pending.coverage) {
+    pendingByRun.delete(payload.runId);
+  }
 };

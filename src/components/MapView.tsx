@@ -51,6 +51,8 @@ import {
   recordSimulationRunCancelled,
 } from "../lib/simulationPerf";
 import { resolveSimulationBusyIndicatorState } from "../lib/simulationBusyIndicator";
+import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/latestOnlyTaskScheduler";
+import { createLruCache } from "../lib/lruCache";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
@@ -74,6 +76,17 @@ const readSectionBool = (key: string, fallback: boolean): boolean => {
 const writeSectionBool = (key: string, value: boolean): void => {
   try { localStorage.setItem(key, String(value)); } catch {}
 };
+
+const FNV_OFFSET_BASIS = 2166136261;
+const FNV_PRIME = 16777619;
+
+const updateFvnHash = (hash: number, value: number): number => {
+  const next = hash ^ (value & 0xff_ff_ff_ff);
+  return Math.imul(next, FNV_PRIME) >>> 0;
+};
+
+const roundHashValue = (value: number, factor = 10_000): number =>
+  Number.isFinite(value) ? Math.round(value * factor) : 0;
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
@@ -554,6 +567,7 @@ export function MapView({
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
   const coverageSamples = useCoverageStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
+  const terrainLoadEpoch = useAppStore((state) => state.terrainLoadEpoch);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainLoadingStartedAtMs = useAppStore((state) => state.terrainLoadingStartedAtMs);
   const terrainProgressPercent = useAppStore((state) => state.terrainProgressPercent);
@@ -1046,47 +1060,154 @@ export function MapView({
   const overlayLongTaskWarnedRef = useRef<Set<string>>(new Set());
   const showOverlayDiagnostics =
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
-  const coverageOverlayTaskTokenRef = useRef(0);
-  const terrainOverlayTaskTokenRef = useRef(0);
+  const coverageOverlaySchedulerRef = useRef<ReturnType<typeof createLatestOnlyTaskScheduler> | null>(null);
+  const terrainOverlaySchedulerRef = useRef<ReturnType<typeof createLatestOnlyTaskScheduler> | null>(null);
+  if (!coverageOverlaySchedulerRef.current) {
+    coverageOverlaySchedulerRef.current = createLatestOnlyTaskScheduler();
+  }
+  if (!terrainOverlaySchedulerRef.current) {
+    terrainOverlaySchedulerRef.current = createLatestOnlyTaskScheduler();
+  }
+  const coverageOverlayRunCounterRef = useRef(0);
+  const terrainOverlayRunCounterRef = useRef(0);
+  const latestCoverageRunTokenRef = useRef("");
+  const coverageOverlayCacheRef = useRef(
+    createLruCache<OverlayRaster & { minDbm?: number; maxDbm?: number }>(4),
+  );
+  const terrainOverlayCacheRef = useRef(createLruCache<OverlayRaster>(3));
   const [overlayJobsInFlight, setOverlayJobsInFlight] = useState(0);
-  const beginOverlayJob = useCallback(() => {
+  const [overlayProgressMode, setOverlayProgressMode] = useState<"determinate" | "indeterminate">("indeterminate");
+  const [overlayProgressPercent, setOverlayProgressPercent] = useState<number | null>(null);
+  const overlayProgressByPipelineRef = useRef<{ coverage: number | null; terrain: number | null }>({
+    coverage: null,
+    terrain: null,
+  });
+  const syncOverlayProgressState = useCallback(() => {
+    const coverageProgress = overlayProgressByPipelineRef.current.coverage;
+    const terrainProgress = overlayProgressByPipelineRef.current.terrain;
+    const numeric = [coverageProgress, terrainProgress].filter((value): value is number => typeof value === "number");
+    if (!numeric.length) {
+      setOverlayProgressMode("indeterminate");
+      setOverlayProgressPercent(null);
+      return;
+    }
+    setOverlayProgressMode("determinate");
+    setOverlayProgressPercent(Math.max(...numeric));
+  }, []);
+  const setOverlayPipelineProgress = useCallback(
+    (pipeline: "coverage" | "terrain", percent: number | null) => {
+      const normalized =
+        typeof percent === "number" && Number.isFinite(percent)
+          ? Math.max(0, Math.min(100, Math.round(percent)))
+          : null;
+      if (overlayProgressByPipelineRef.current[pipeline] === normalized) return;
+      overlayProgressByPipelineRef.current[pipeline] = normalized;
+      syncOverlayProgressState();
+    },
+    [syncOverlayProgressState],
+  );
+  const beginOverlayJob = useCallback((pipeline: "coverage" | "terrain") => {
     let finished = false;
     setOverlayJobsInFlight((count) => count + 1);
+    setOverlayPipelineProgress(pipeline, null);
     return () => {
       if (finished) return;
       finished = true;
       setOverlayJobsInFlight((count) => Math.max(0, count - 1));
+      setOverlayPipelineProgress(pipeline, null);
     };
-  }, []);
+  }, [setOverlayPipelineProgress]);
   const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
   const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
 
+  const logOverlaySchedulerEvent = useCallback(
+    (
+      pipeline: "coverage" | "terrain",
+      event: "queued" | "deduped-active" | "deduped-queued" | "cache-hit" | "started",
+      signature: string,
+      extra?: Record<string, unknown>,
+    ) => {
+      if (!showOverlayDiagnostics) return;
+      console.info("[simulation-overlay-scheduler]", {
+        pipeline,
+        event,
+        signature,
+        ...(extra ?? {}),
+      });
+    },
+    [showOverlayDiagnostics],
+  );
+
   useEffect(() => {
+    if (simulationRunToken) {
+      latestCoverageRunTokenRef.current = simulationRunToken;
+      return;
+    }
+    if (!isSimulationRecomputing) {
+      latestCoverageRunTokenRef.current = "";
+    }
+  }, [simulationRunToken, isSimulationRecomputing]);
+
+  useEffect(() => {
+    return () => {
+      coverageOverlaySchedulerRef.current?.dispose();
+      terrainOverlaySchedulerRef.current?.dispose();
+    };
+  }, []);
+
+  const overlaySampleDigest = useMemo(() => {
+    let hash = FNV_OFFSET_BASIS;
+    for (const sample of samplesForOverlay) {
+      hash = updateFvnHash(hash, roundHashValue(sample.lat, 100_000));
+      hash = updateFvnHash(hash, roundHashValue(sample.lon, 100_000));
+      hash = updateFvnHash(hash, roundHashValue(sample.valueDbm, 10));
+    }
+    return hash.toString(16);
+  }, [samplesForOverlay]);
+  const propagationEnvironmentDigest = useMemo(
+    () =>
+      [
+        propagationEnvironment.clutterHeightM,
+        propagationEnvironment.polarization,
+        propagationEnvironment.groundDielectric,
+        propagationEnvironment.groundConductivity,
+        propagationEnvironment.radioClimate,
+        propagationEnvironment.atmosphericBendingNUnits,
+      ]
+        .map((value) => String(value ?? ""))
+        .join(":"),
+    [propagationEnvironment],
+  );
+  const selectedSiteDigest = useMemo(() => selectedSiteIds.join(","), [selectedSiteIds]);
+
+  useEffect(() => {
+    const scheduler = coverageOverlaySchedulerRef.current!;
+    const cancelCoveragePipeline = (clearOverlay: boolean) => {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("coverage", null);
+      if (clearOverlay) setCoverageOverlay(null);
+    };
+
     if (coverageVizMode === "none") {
-      coverageOverlayTaskTokenRef.current += 1;
-      setCoverageOverlay(null);
+      cancelCoveragePipeline(true);
       return;
     }
     if (!overlayBounds) {
-      coverageOverlayTaskTokenRef.current += 1;
-      setCoverageOverlay(null);
+      cancelCoveragePipeline(true);
       return;
     }
 
     const mode = coverageVizMode;
     if (mode === "passfail" && (!activeSelectionLink || !selectedFromSite || !hasPassFailTopology)) {
-      coverageOverlayTaskTokenRef.current += 1;
-      setCoverageOverlay(null);
+      cancelCoveragePipeline(true);
       return;
     }
     if (mode === "relay" && (!activeSelectionLink || !selectedFromSite || !selectedToSite || !hasRelayTopology)) {
-      coverageOverlayTaskTokenRef.current += 1;
-      setCoverageOverlay(null);
+      cancelCoveragePipeline(true);
       return;
     }
 
-    coverageOverlayTaskTokenRef.current += 1;
-    const token = coverageOverlayTaskTokenRef.current;
     const signature = [
       mode,
       overlayBounds.minLat.toFixed(5),
@@ -1097,151 +1218,195 @@ export function MapView({
       overlayDimensions.height,
       effectiveBandStepDb,
       samplesForOverlay.length,
+      overlaySampleDigest,
       srtmTiles.length,
+      terrainLoadEpoch,
       effectiveGridSize,
+      overlayRadiusKm,
+      activeSelectionLink?.id ?? "",
+      selectedFromSite?.id ?? "",
+      selectedToSite?.id ?? "",
+      propagationEnvironmentDigest,
+      rxSensitivityTargetDbm,
+      environmentLossDb,
+      selectedSiteDigest,
     ].join("|");
-    const endOverlayJob = beginOverlayJob();
-    const taskBudget = overlayTaskBudgetForMode(mode);
-    const perfRunId = simulationRunToken || `overlay:${mode}:${token}`;
-    const overlayBuildStartedAt = performance.now();
+    const cached = coverageOverlayCacheRef.current.get(signature);
+    if (cached) {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("coverage", null);
+      logOverlaySchedulerEvent("coverage", "cache-hit", signature);
+      setCoverageOverlay(cached);
+      return;
+    }
 
-    const onLongTask = (payload: {
-      phase: string;
-      signature: string;
-      durationMs: number;
-      processed: number;
-      total: number;
-    }) => {
-      if (!showOverlayDiagnostics) return;
-      const warnKey = `${payload.phase}|${payload.signature}`;
-      const warned = overlayLongTaskWarnedRef.current;
-      if (warned.has(warnKey)) return;
-      warned.add(warnKey);
-      if (warned.size > 80) warned.clear();
-      console.warn("[simulation-long-task]", {
-        scope: "overlay",
-        ...payload,
+    const enqueueResult = scheduler.enqueue({
+      signature,
+      run: async (taskContext) => {
+        const endOverlayJob = beginOverlayJob("coverage");
+        const taskBudget = overlayTaskBudgetForMode(mode);
+        coverageOverlayRunCounterRef.current += 1;
+        const perfRunId =
+          latestCoverageRunTokenRef.current || `overlay:${mode}:${coverageOverlayRunCounterRef.current}`;
+        const overlayBuildStartedAt = performance.now();
+        let lastReportedProgress = -2;
+
+        const onLongTask = (payload: {
+          phase: string;
+          signature: string;
+          durationMs: number;
+          processed: number;
+          total: number;
+        }) => {
+          if (!showOverlayDiagnostics) return;
+          const warnKey = `${payload.phase}|${payload.signature}`;
+          const warned = overlayLongTaskWarnedRef.current;
+          if (warned.has(warnKey)) return;
+          warned.add(warnKey);
+          if (warned.size > 80) warned.clear();
+          console.warn("[simulation-long-task]", {
+            scope: "overlay",
+            ...payload,
+          });
+        };
+
+        const onProgress = (payload: { percent: number }) => {
+          if (taskContext.isCancelled()) return;
+          if (payload.percent < 100 && payload.percent - lastReportedProgress < 2) return;
+          lastReportedProgress = payload.percent;
+          setOverlayPipelineProgress("coverage", payload.percent);
+        };
+
+        const terrainSampler = (lat: number, lon: number) => sampleSrtmElevation(srtmTiles, lat, lon);
+
+        try {
+          const context = {
+            phase: mode,
+            signature,
+            frameBudgetMs: taskBudget.frameBudgetMs,
+            longTaskMs: taskBudget.longTaskMs,
+            shouldCancel: taskContext.isCancelled,
+            onLongTask,
+            onProgress,
+          } as const;
+          let rasterPixels: OverlayRasterPixels | null = null;
+          if (mode === "heatmap" || mode === "contours") {
+            rasterPixels = await buildCoverageOverlayPixelsAsync(
+              overlayBounds,
+              samplesForOverlay,
+              mode,
+              effectiveBandStepDb,
+              overlayDimensions,
+              overlayPointMask,
+              terrainSampler,
+              context,
+            );
+          } else if (mode === "passfail") {
+            const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite!.antennaHeightM ?? 2;
+            const receiverRxGainDbi =
+              selectedToSite?.rxGainDbi ?? selectedFromSite!.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
+            rasterPixels = await buildSourcePassFailOverlayPixelsAsync(
+              overlayBounds,
+              selectedFromSite!,
+              activeSelectionLink!,
+              receiverAntennaHeightM,
+              receiverRxGainDbi,
+              propagationEnvironment,
+              rxSensitivityTargetDbm,
+              environmentLossDb,
+              terrainSampler,
+              overlayDimensions,
+              effectiveGridSize,
+              overlayPointMask,
+              context,
+            );
+          } else if (mode === "relay") {
+            rasterPixels = await buildRelayCandidateOverlayPixelsAsync(
+              overlayBounds,
+              selectedFromSite!,
+              selectedToSite!,
+              activeSelectionLink!,
+              propagationEnvironment,
+              environmentLossDb,
+              terrainSampler,
+              overlayDimensions,
+              effectiveGridSize,
+              overlayPointMask,
+              context,
+            );
+          }
+
+          const overlayBuildCompletedAt = performance.now();
+          if (taskContext.isCancelled()) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "token-mismatch-after-build",
+              signature,
+              mode,
+            });
+            return;
+          }
+          if (!rasterPixels) {
+            setCoverageOverlay(null);
+            return;
+          }
+          const raster = overlayPixelsToDataUrl(rasterPixels);
+          const overlayEncodeCompletedAt = performance.now();
+          if (taskContext.isCancelled()) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "token-mismatch-after-encode",
+              signature,
+              mode,
+            });
+            return;
+          }
+          recordSimulationOverlayPerf({
+            runId: perfRunId,
+            mode,
+            buildDurationMs: overlayBuildCompletedAt - overlayBuildStartedAt,
+            encodeDurationMs: overlayEncodeCompletedAt - overlayBuildCompletedAt,
+            width: rasterPixels.width,
+            height: rasterPixels.height,
+            pixelCount: rasterPixels.width * rasterPixels.height,
+            gridSize: effectiveGridSize,
+            effectiveRadiusKm: overlayRadiusKm,
+          });
+          const overlayValue = raster ? { ...raster } : null;
+          if (overlayValue) {
+            coverageOverlayCacheRef.current.set(signature, overlayValue);
+          }
+          setOverlayPipelineProgress("coverage", 100);
+          setCoverageOverlay(overlayValue);
+        } catch (error) {
+          if (error instanceof OverlayTaskCancelledError) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "overlay-task-cancelled-error",
+              signature,
+              mode,
+            });
+            return;
+          }
+          console.error("Failed to render simulation overlay", error);
+        } finally {
+          endOverlayJob();
+        }
+      },
+    } satisfies LatestOnlyTask);
+    if (enqueueResult !== "started") {
+      logOverlaySchedulerEvent("coverage", enqueueResult, signature, {
+        activeMode: mode,
       });
-    };
-
-    const shouldCancel = () => coverageOverlayTaskTokenRef.current !== token;
-    const terrainSampler = (lat: number, lon: number) => sampleSrtmElevation(srtmTiles, lat, lon);
-
-    void (async () => {
-      try {
-        const context = {
-          phase: mode,
-          signature,
-          frameBudgetMs: taskBudget.frameBudgetMs,
-          longTaskMs: taskBudget.longTaskMs,
-          shouldCancel,
-          onLongTask,
-        } as const;
-        let rasterPixels: OverlayRasterPixels | null = null;
-        if (mode === "heatmap" || mode === "contours") {
-          rasterPixels = await buildCoverageOverlayPixelsAsync(
-            overlayBounds,
-            samplesForOverlay,
-            mode,
-            effectiveBandStepDb,
-            overlayDimensions,
-            overlayPointMask,
-            terrainSampler,
-            context,
-          );
-        } else if (mode === "passfail") {
-          const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite!.antennaHeightM ?? 2;
-          const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? selectedFromSite!.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
-          rasterPixels = await buildSourcePassFailOverlayPixelsAsync(
-            overlayBounds,
-            selectedFromSite!,
-            activeSelectionLink!,
-            receiverAntennaHeightM,
-            receiverRxGainDbi,
-            propagationEnvironment,
-            rxSensitivityTargetDbm,
-            environmentLossDb,
-            terrainSampler,
-            overlayDimensions,
-            effectiveGridSize,
-            overlayPointMask,
-            context,
-          );
-        } else if (mode === "relay") {
-          rasterPixels = await buildRelayCandidateOverlayPixelsAsync(
-            overlayBounds,
-            selectedFromSite!,
-            selectedToSite!,
-            activeSelectionLink!,
-            propagationEnvironment,
-            environmentLossDb,
-            terrainSampler,
-            overlayDimensions,
-            effectiveGridSize,
-            overlayPointMask,
-            context,
-          );
-        }
-
-        const overlayBuildCompletedAt = performance.now();
-        if (shouldCancel()) {
-          recordSimulationRunCancelled({
-            runId: perfRunId,
-            phase: "overlay",
-            reason: "token-mismatch-after-build",
-            signature,
-            mode,
-          });
-          return;
-        }
-        if (!rasterPixels) {
-          setCoverageOverlay(null);
-          return;
-        }
-        const raster = overlayPixelsToDataUrl(rasterPixels);
-        const overlayEncodeCompletedAt = performance.now();
-        if (shouldCancel()) {
-          recordSimulationRunCancelled({
-            runId: perfRunId,
-            phase: "overlay",
-            reason: "token-mismatch-after-encode",
-            signature,
-            mode,
-          });
-          return;
-        }
-        recordSimulationOverlayPerf({
-          runId: perfRunId,
-          mode,
-          buildDurationMs: overlayBuildCompletedAt - overlayBuildStartedAt,
-          encodeDurationMs: overlayEncodeCompletedAt - overlayBuildCompletedAt,
-          width: rasterPixels.width,
-          height: rasterPixels.height,
-          pixelCount: rasterPixels.width * rasterPixels.height,
-          gridSize: effectiveGridSize,
-          effectiveRadiusKm: overlayRadiusKm,
-        });
-        setCoverageOverlay(raster ? { ...raster } : null);
-      } catch (error) {
-        if (error instanceof OverlayTaskCancelledError) {
-          recordSimulationRunCancelled({
-            runId: perfRunId,
-            phase: "overlay",
-            reason: "overlay-task-cancelled-error",
-            signature,
-            mode,
-          });
-          return;
-        }
-        console.error("Failed to render simulation overlay", error);
-      } finally {
-        endOverlayJob();
-      }
-    })();
-    return () => {
-      coverageOverlayTaskTokenRef.current += 1;
-      endOverlayJob();
-    };
+      return;
+    }
+    logOverlaySchedulerEvent("coverage", "started", signature, {
+      activeMode: mode,
+    });
   }, [
     coverageVizMode,
     overlayBounds,
@@ -1253,16 +1418,21 @@ export function MapView({
     overlayDimensions,
     overlayPointMask,
     srtmTiles,
+    terrainLoadEpoch,
     effectiveBandStepDb,
     samplesForOverlay,
+    overlaySampleDigest,
     propagationEnvironment,
+    propagationEnvironmentDigest,
     rxSensitivityTargetDbm,
     environmentLossDb,
     effectiveGridSize,
     overlayRadiusKm,
-    simulationRunToken,
+    selectedSiteDigest,
     showOverlayDiagnostics,
     beginOverlayJob,
+    setOverlayPipelineProgress,
+    logOverlaySchedulerEvent,
   ]);
   const currentBandStepDb = effectiveBandStepDb;
 
@@ -1294,14 +1464,19 @@ export function MapView({
           : "Relay";
 
   useEffect(() => {
+    const scheduler = terrainOverlaySchedulerRef.current!;
+    const cancelTerrainPipeline = (clearOverlay: boolean) => {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("terrain", null);
+      if (clearOverlay) setSimulationTerrainOverlay(null);
+    };
+
     if (!showTerrainOverlay || !hasSimulationTerrain || !analysisBounds) {
-      terrainOverlayTaskTokenRef.current += 1;
-      setSimulationTerrainOverlay(null);
+      cancelTerrainPipeline(true);
       return;
     }
 
-    terrainOverlayTaskTokenRef.current += 1;
-    const token = terrainOverlayTaskTokenRef.current;
     const signature = [
       "terrain",
       analysisBounds.minLat.toFixed(5),
@@ -1311,119 +1486,154 @@ export function MapView({
       overlayDimensions.width,
       overlayDimensions.height,
       srtmTiles.length,
+      terrainLoadEpoch,
+      selectedSiteDigest,
+      overlayRadiusKm,
     ].join("|");
-    const endOverlayJob = beginOverlayJob();
-    const taskBudget = overlayTaskBudgetForMode("terrain");
-    const perfRunId = simulationRunToken || `overlay:terrain:${token}`;
-    const overlayBuildStartedAt = performance.now();
+    const cached = terrainOverlayCacheRef.current.get(signature);
+    if (cached) {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("terrain", null);
+      logOverlaySchedulerEvent("terrain", "cache-hit", signature);
+      setSimulationTerrainOverlay(cached);
+      return;
+    }
 
-    const shouldCancel = () => terrainOverlayTaskTokenRef.current !== token;
-    const onLongTask = (payload: {
-      phase: string;
-      signature: string;
-      durationMs: number;
-      processed: number;
-      total: number;
-    }) => {
-      if (!showOverlayDiagnostics) return;
-      const warnKey = `${payload.phase}|${payload.signature}`;
-      const warned = overlayLongTaskWarnedRef.current;
-      if (warned.has(warnKey)) return;
-      warned.add(warnKey);
-      if (warned.size > 80) warned.clear();
-      console.warn("[simulation-long-task]", {
-        scope: "overlay",
-        ...payload,
-      });
-    };
+    const enqueueResult = scheduler.enqueue({
+      signature,
+      run: async (taskContext) => {
+        const endOverlayJob = beginOverlayJob("terrain");
+        const taskBudget = overlayTaskBudgetForMode("terrain");
+        terrainOverlayRunCounterRef.current += 1;
+        const perfRunId =
+          latestCoverageRunTokenRef.current || `overlay:terrain:${terrainOverlayRunCounterRef.current}`;
+        const overlayBuildStartedAt = performance.now();
+        let lastReportedProgress = -2;
 
-    void (async () => {
-      try {
-        const rasterPixels = await buildTerrainShadeOverlayPixelsAsync(
-          analysisBounds,
-          (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-          overlayDimensions,
-          overlayPointMask,
-          {
-            phase: "terrain-shade",
-            signature,
-            frameBudgetMs: taskBudget.frameBudgetMs,
-            longTaskMs: taskBudget.longTaskMs,
-            shouldCancel,
-            onLongTask,
-          },
-        );
-        const overlayBuildCompletedAt = performance.now();
-        if (shouldCancel()) {
-          recordSimulationRunCancelled({
-            runId: perfRunId,
-            phase: "overlay",
-            reason: "token-mismatch-after-build",
-            signature,
-            mode: "terrain",
+        const onLongTask = (payload: {
+          phase: string;
+          signature: string;
+          durationMs: number;
+          processed: number;
+          total: number;
+        }) => {
+          if (!showOverlayDiagnostics) return;
+          const warnKey = `${payload.phase}|${payload.signature}`;
+          const warned = overlayLongTaskWarnedRef.current;
+          if (warned.has(warnKey)) return;
+          warned.add(warnKey);
+          if (warned.size > 80) warned.clear();
+          console.warn("[simulation-long-task]", {
+            scope: "overlay",
+            ...payload,
           });
-          return;
-        }
-        if (!rasterPixels) {
-          setSimulationTerrainOverlay(null);
-          return;
-        }
-        const raster = overlayPixelsToDataUrl(rasterPixels);
-        const overlayEncodeCompletedAt = performance.now();
-        if (shouldCancel()) {
-          recordSimulationRunCancelled({
+        };
+
+        const onProgress = (payload: { percent: number }) => {
+          if (taskContext.isCancelled()) return;
+          if (payload.percent < 100 && payload.percent - lastReportedProgress < 2) return;
+          lastReportedProgress = payload.percent;
+          setOverlayPipelineProgress("terrain", payload.percent);
+        };
+
+        try {
+          const rasterPixels = await buildTerrainShadeOverlayPixelsAsync(
+            analysisBounds,
+            (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+            overlayDimensions,
+            overlayPointMask,
+            {
+              phase: "terrain-shade",
+              signature,
+              frameBudgetMs: taskBudget.frameBudgetMs,
+              longTaskMs: taskBudget.longTaskMs,
+              shouldCancel: taskContext.isCancelled,
+              onLongTask,
+              onProgress,
+            },
+          );
+          const overlayBuildCompletedAt = performance.now();
+          if (taskContext.isCancelled()) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "token-mismatch-after-build",
+              signature,
+              mode: "terrain",
+            });
+            return;
+          }
+          if (!rasterPixels) {
+            setSimulationTerrainOverlay(null);
+            return;
+          }
+          const raster = overlayPixelsToDataUrl(rasterPixels);
+          const overlayEncodeCompletedAt = performance.now();
+          if (taskContext.isCancelled()) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "token-mismatch-after-encode",
+              signature,
+              mode: "terrain",
+            });
+            return;
+          }
+          recordSimulationOverlayPerf({
             runId: perfRunId,
-            phase: "overlay",
-            reason: "token-mismatch-after-encode",
-            signature,
             mode: "terrain",
+            buildDurationMs: overlayBuildCompletedAt - overlayBuildStartedAt,
+            encodeDurationMs: overlayEncodeCompletedAt - overlayBuildCompletedAt,
+            width: rasterPixels.width,
+            height: rasterPixels.height,
+            pixelCount: rasterPixels.width * rasterPixels.height,
+            gridSize: effectiveGridSize,
+            effectiveRadiusKm: overlayRadiusKm,
           });
-          return;
+          const overlayValue = raster ? { url: raster.url, coordinates: raster.coordinates } : null;
+          if (overlayValue) {
+            terrainOverlayCacheRef.current.set(signature, overlayValue);
+          }
+          setOverlayPipelineProgress("terrain", 100);
+          setSimulationTerrainOverlay(overlayValue);
+        } catch (error) {
+          if (error instanceof OverlayTaskCancelledError) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "overlay-task-cancelled-error",
+              signature,
+              mode: "terrain",
+            });
+            return;
+          }
+          console.error("Failed to render terrain overlay", error);
+        } finally {
+          endOverlayJob();
         }
-        recordSimulationOverlayPerf({
-          runId: perfRunId,
-          mode: "terrain",
-          buildDurationMs: overlayBuildCompletedAt - overlayBuildStartedAt,
-          encodeDurationMs: overlayEncodeCompletedAt - overlayBuildCompletedAt,
-          width: rasterPixels.width,
-          height: rasterPixels.height,
-          pixelCount: rasterPixels.width * rasterPixels.height,
-          gridSize: effectiveGridSize,
-          effectiveRadiusKm: overlayRadiusKm,
-        });
-        setSimulationTerrainOverlay(raster ? { url: raster.url, coordinates: raster.coordinates } : null);
-      } catch (error) {
-        if (error instanceof OverlayTaskCancelledError) {
-          recordSimulationRunCancelled({
-            runId: perfRunId,
-            phase: "overlay",
-            reason: "overlay-task-cancelled-error",
-            signature,
-            mode: "terrain",
-          });
-          return;
-        }
-        console.error("Failed to render terrain overlay", error);
-      } finally {
-        endOverlayJob();
-      }
-    })();
-    return () => {
-      terrainOverlayTaskTokenRef.current += 1;
-      endOverlayJob();
-    };
+      },
+    } satisfies LatestOnlyTask);
+    if (enqueueResult !== "started") {
+      logOverlaySchedulerEvent("terrain", enqueueResult, signature);
+      return;
+    }
+    logOverlaySchedulerEvent("terrain", "started", signature);
   }, [
     showTerrainOverlay,
     hasSimulationTerrain,
     analysisBounds,
     srtmTiles,
+    terrainLoadEpoch,
     overlayDimensions,
     overlayPointMask,
+    selectedSiteDigest,
     effectiveGridSize,
     overlayRadiusKm,
-    simulationRunToken,
     showOverlayDiagnostics,
     beginOverlayJob,
+    setOverlayPipelineProgress,
+    logOverlaySchedulerEvent,
   ]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
@@ -1477,6 +1687,8 @@ export function MapView({
         simulationStepLabel,
         simulationProgress,
         overlayJobsInFlight,
+        overlayProgressMode,
+        overlayProgressPercent,
         isBackgroundBusy,
         backgroundBusyLabel,
         isTerrainFetching,
@@ -1490,6 +1702,8 @@ export function MapView({
       simulationStepLabel,
       simulationProgress,
       overlayJobsInFlight,
+      overlayProgressMode,
+      overlayProgressPercent,
       isBackgroundBusy,
       backgroundBusyLabel,
       isTerrainFetching,

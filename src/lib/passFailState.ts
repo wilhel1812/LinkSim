@@ -54,7 +54,8 @@ export const computeSourceCentricRxMetrics = (
 
   let terrainPenaltyDb = 0;
   let terrainObstructed = false;
-  const rxGround = terrainSampler(lat, lon);
+  const sampleTerrainAt = (sampleLat: number, sampleLon: number): number | null => terrainSampler(sampleLat, sampleLon);
+  const rxGround = sampleTerrainAt(lat, lon);
   if (rxGround !== null) {
     terrainPenaltyDb = estimateTerrainExcessLossDb({
       from: fromSite.position,
@@ -62,7 +63,8 @@ export const computeSourceCentricRxMetrics = (
       fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
       toAntennaAbsM: rxGround + receiverAntennaHeightM,
       frequencyMHz: effectiveLink.frequencyMHz,
-      terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
+      terrainSampler: ({ lat: y, lon: x }) => sampleTerrainAt(y, x),
+      terrainSamplerAt: sampleTerrainAt,
       samples: terrainSamples,
       kFactor,
       clutterHeightM,
@@ -73,7 +75,8 @@ export const computeSourceCentricRxMetrics = (
       to: { lat, lon },
       fromAntennaAbsM: fromSite.groundElevationM + fromSite.antennaHeightM,
       toAntennaAbsM: rxGround + receiverAntennaHeightM,
-      terrainSampler: ({ lat: y, lon: x }) => terrainSampler(y, x),
+      terrainSampler: ({ lat: y, lon: x }) => sampleTerrainAt(y, x),
+      terrainSamplerAt: sampleTerrainAt,
       samples: Math.max(12, Math.round(terrainSamples * 0.66)),
       kFactor,
       clutterHeightM,
