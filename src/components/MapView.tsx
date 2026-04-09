@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
@@ -45,6 +45,7 @@ import {
   OverlayTaskCancelledError,
   type OverlayRasterPixels,
 } from "../lib/overlayRaster";
+import { resolveSimulationBusyIndicatorState } from "../lib/simulationBusyIndicator";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
@@ -1041,6 +1042,16 @@ export function MapView({
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
   const coverageOverlayTaskTokenRef = useRef(0);
   const terrainOverlayTaskTokenRef = useRef(0);
+  const [overlayJobsInFlight, setOverlayJobsInFlight] = useState(0);
+  const beginOverlayJob = useCallback(() => {
+    let finished = false;
+    setOverlayJobsInFlight((count) => count + 1);
+    return () => {
+      if (finished) return;
+      finished = true;
+      setOverlayJobsInFlight((count) => Math.max(0, count - 1));
+    };
+  }, []);
   const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
   const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
 
@@ -1083,6 +1094,7 @@ export function MapView({
       srtmTiles.length,
       effectiveGridSize,
     ].join("|");
+    const endOverlayJob = beginOverlayJob();
 
     const onLongTask = (payload: {
       phase: string;
@@ -1171,10 +1183,13 @@ export function MapView({
       } catch (error) {
         if (error instanceof OverlayTaskCancelledError) return;
         console.error("Failed to render simulation overlay", error);
+      } finally {
+        endOverlayJob();
       }
     })();
     return () => {
       coverageOverlayTaskTokenRef.current += 1;
+      endOverlayJob();
     };
   }, [
     coverageVizMode,
@@ -1194,6 +1209,7 @@ export function MapView({
     environmentLossDb,
     effectiveGridSize,
     showOverlayDiagnostics,
+    beginOverlayJob,
   ]);
   const currentBandStepDb = effectiveBandStepDb;
 
@@ -1243,6 +1259,7 @@ export function MapView({
       overlayDimensions.height,
       srtmTiles.length,
     ].join("|");
+    const endOverlayJob = beginOverlayJob();
 
     const shouldCancel = () => terrainOverlayTaskTokenRef.current !== token;
     const onLongTask = (payload: {
@@ -1289,10 +1306,13 @@ export function MapView({
       } catch (error) {
         if (error instanceof OverlayTaskCancelledError) return;
         console.error("Failed to render terrain overlay", error);
+      } finally {
+        endOverlayJob();
       }
     })();
     return () => {
       terrainOverlayTaskTokenRef.current += 1;
+      endOverlayJob();
     };
   }, [
     showTerrainOverlay,
@@ -1302,6 +1322,7 @@ export function MapView({
     overlayDimensions,
     overlayPointMask,
     showOverlayDiagnostics,
+    beginOverlayJob,
   ]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
@@ -1347,6 +1368,35 @@ export function MapView({
     : isTerrainRecommending
       ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : "") + keepWorkingSuffix;
+  const simulationBusyIndicator = useMemo(
+    () =>
+      resolveSimulationBusyIndicatorState({
+        isSimulationRecomputing,
+        simulationProgressMode,
+        simulationStepLabel,
+        simulationProgress,
+        overlayJobsInFlight,
+        isBackgroundBusy,
+        backgroundBusyLabel,
+        isTerrainFetching,
+        hasTerrainDownloadProgress,
+        terrainProgressPercent,
+        terrainProgressTilesTotal,
+      }),
+    [
+      isSimulationRecomputing,
+      simulationProgressMode,
+      simulationStepLabel,
+      simulationProgress,
+      overlayJobsInFlight,
+      isBackgroundBusy,
+      backgroundBusyLabel,
+      isTerrainFetching,
+      hasTerrainDownloadProgress,
+      terrainProgressPercent,
+      terrainProgressTilesTotal,
+    ],
+  );
   const showLocalTerrainDiagnostics =
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
   useEffect(() => {
@@ -1895,24 +1945,14 @@ export function MapView({
           {inspectorHeaderActions ? (
             <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
           ) : null}
-          {isSimulationRecomputing || (isBackgroundBusy && backgroundBusyLabel) ? (
+          {simulationBusyIndicator ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">
-                {isSimulationRecomputing
-                  ? simulationProgressMode === "determinate"
-                    ? `${simulationStepLabel || "Sampling simulation grid..."} ${simulationProgress}%`
-                    : simulationStepLabel || "Recalculating simulation..."
-                  : (backgroundBusyLabel ?? "Working in background...")}
+                {simulationBusyIndicator.label || "Working in background..."}
               </p>
               <div className="map-progress-track">
-                {isSimulationRecomputing ? (
-                  simulationProgressMode === "determinate" ? (
-                    <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
-                  ) : (
-                    <div className="map-progress-fill map-progress-fill-indeterminate" />
-                  )
-                ) : isTerrainFetching && hasTerrainDownloadProgress && terrainProgressTilesTotal > 0 ? (
-                  <div className="map-progress-fill" style={{ width: `${terrainProgressPercent}%` }} />
+                {simulationBusyIndicator.progressMode === "determinate" ? (
+                  <div className="map-progress-fill" style={{ width: `${simulationBusyIndicator.progressPercent ?? 0}%` }} />
                 ) : (
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 )}

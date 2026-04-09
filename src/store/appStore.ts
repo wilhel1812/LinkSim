@@ -1900,7 +1900,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     useCoverageStore.getState().recomputeCoverage();
   },
   requestFitToSites: () => set((state) => ({ fitSitesEpoch: state.fitSitesEpoch + 1 })),
-  setSelectedLinkId: (id) =>
+  setSelectedLinkId: (id) => {
+    let changed = false;
     set((state) => {
       const selectedLink = state.links.find((link) => link.id === id) ?? null;
       const selection = selectedLink
@@ -1917,6 +1918,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ) {
         return state;
       }
+      changed = true;
       return {
         selectedLinkId: id,
         profileCursorIndex: 0,
@@ -1925,12 +1927,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedSiteId: selection[0] ?? state.selectedSiteId,
         mapOverlayMode: nextOverlay,
       };
-    }),
+    });
+    if (changed) {
+      useCoverageStore.getState().recomputeCoverage();
+    }
+  },
   setTemporaryDirectionReversed: (value) => set({ temporaryDirectionReversed: Boolean(value) }),
   toggleTemporaryDirectionReversed: () =>
     set((state) => ({ temporaryDirectionReversed: !state.temporaryDirectionReversed })),
   setProfileCursorIndex: (index) => set({ profileCursorIndex: Math.max(0, Math.floor(index)) }),
   setSelectedSiteId: (id) => {
+    let changed = false;
     set((state) => {
       const selection = normalizeSelectedSiteIds([id], state.sites);
       const nextSelectedSiteId = selection[0] ?? id;
@@ -1943,6 +1950,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ) {
         return state;
       }
+      changed = true;
       return {
         selectedSiteId: nextSelectedSiteId,
         selectedSiteIds: selection,
@@ -1950,8 +1958,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         mapOverlayMode: nextOverlay,
       };
     });
+    if (changed) {
+      useCoverageStore.getState().recomputeCoverage();
+    }
   },
   selectSiteById: (id, additive = false) => {
+    let changed = false;
     set((state) => {
       const validIds = new Set(state.sites.map((site) => site.id));
       if (!validIds.has(id)) return state;
@@ -1975,6 +1987,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ) {
         return state;
       }
+      changed = true;
       return {
         selectedSiteIds: normalizedSelection,
         selectedSiteId: nextSelectedSiteId,
@@ -1982,8 +1995,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         mapOverlayMode: nextOverlay,
       };
     });
+    if (changed) {
+      useCoverageStore.getState().recomputeCoverage();
+    }
   },
-  clearActiveSelection: () =>
+  clearActiveSelection: () => {
+    let changed = false;
     set((state) => {
       const nextOverlay = defaultOverlayModeForSelectionCount(0);
       if (
@@ -1997,6 +2014,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ) {
         return state;
       }
+      changed = true;
       return {
         selectedSiteIds: [],
         selectedSiteId: "",
@@ -2006,7 +2024,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         profileCursorIndex: 0,
         mapOverlayMode: nextOverlay,
       };
-    }),
+    });
+    if (changed) {
+      useCoverageStore.getState().recomputeCoverage();
+    }
+  },
   setSelectedNetworkId: (id) => {
     set({ selectedNetworkId: id });
     useCoverageStore.getState().recomputeCoverage();
