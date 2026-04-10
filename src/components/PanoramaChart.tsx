@@ -19,7 +19,7 @@ import {
 } from "../lib/panorama";
 import { buildDepthBands, buildNearBiasedDepthFractions, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
 import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
-import { centerForScaledWindow, centerForScrollLeft, normalizeScrollLeftToMiddleCycle, scrollLeftForCenter } from "../lib/panoramaViewport";
+import { centerForScaledWindow } from "../lib/panoramaViewport";
 import { passFailStateLabel } from "../lib/passFailState";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { useAppStore } from "../store/appStore";
@@ -56,13 +56,14 @@ const pointerDistance = (a: { x: number; y: number }, b: { x: number; y: number 
 
 export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls }: PanoramaChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
-  const panScrollRef = useRef<HTMLDivElement | null>(null);
-  const suppressPanScrollSyncRef = useRef(false);
+  const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
   const wavesButtonRef = useRef<HTMLButtonElement | null>(null);
   const fovButtonRef = useRef<HTMLButtonElement | null>(null);
   const sliderPopoverRef = useRef<HTMLDivElement | null>(null);
   const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStartRef = useRef<{ distance: number; fovScale: number; spanDeg: number; centerDeg: number } | null>(null);
+  const panDragRef = useRef<{ pointerId: number; startX: number; startCenterDeg: number } | null>(null);
+  const scrubDragRef = useRef<{ pointerId: number; startX: number; startCenterDeg: number } | null>(null);
 
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(180);
@@ -73,7 +74,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
   const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
   const [openSliderPopover, setOpenSliderPopover] = useState<"fov" | "vertical" | null>(null);
-  const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number } | null>(null);
+  const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
+  const [lineSampleCount, setLineSampleCount] = useState(10);
 
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
@@ -213,7 +215,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           cableLossDb: selectedSiteEffective.cableLossDb,
         };
 
-    const baseSampling = qualityToSampling("drag");
+    const baseSampling = { ...qualityToSampling("drag"), azimuthStepDeg: 1 };
     const detailSampling = resolvePanoramaSampling(quality, { zoomModeEnabled: true, fovScale: normalizedFovScale });
     const detailCenterBucketSizeDeg = Math.max(1, Math.round(detailSampling.azimuthStepDeg * 4));
     const detailCenterBucketDeg = Math.round(viewportCenterAzimuthDeg / detailCenterBucketSizeDeg) * detailCenterBucketSizeDeg;
@@ -360,18 +362,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   const chartWidth = chartSize?.width ?? 0;
   const chartHeight = chartSize?.height ?? 0;
-  const panCycleWidthPx = Math.max(1, chartWidth * normalizedFovScale);
-  const panTrackWidthPx = panCycleWidthPx * 3;
-
-  useEffect(() => {
-    const element = panScrollRef.current;
-    if (!element || chartWidth <= 0) return;
-    suppressPanScrollSyncRef.current = true;
-    element.scrollLeft = scrollLeftForCenter(viewportCenterAzimuthDeg, panCycleWidthPx, chartWidth);
-    requestAnimationFrame(() => {
-      suppressPanScrollSyncRef.current = false;
-    });
-  }, [chartWidth, panCycleWidthPx, viewportCenterAzimuthDeg]);
 
   const xWindow = useMemo(
     () => resolvePanoramaWindow(viewportCenterAzimuthDeg, viewportSpanDeg),
@@ -433,7 +423,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
 
     const clutterPoints = visibleRays.map(({ ray, xValue }) => ({ x: x(xValue), y: y(ray.clutterHorizonAngleDeg) }));
-    const ridgeFractions = buildNearBiasedDepthFractions(10);
+    const ridgeFractions = buildNearBiasedDepthFractions(lineSampleCount);
     const depthBands = buildDepthBands(
       visibleRays.map((entry) => entry.ray),
       ridgeFractions,
@@ -482,6 +472,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       })
       .filter((entry) => entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd);
 
+    const fitSpan = Math.max(0.001, fitMax - fitMin);
+    const trueSpan = Math.max(0.001, trueMax - trueMin);
+    const maxVerticalScaleX = Math.max(1, trueSpan / fitSpan);
+
     return {
       x,
       xWindow,
@@ -493,8 +487,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ticksX,
       ticksY,
       nodes,
+      maxVerticalScaleX,
     };
-  }, [panorama, chartSize, chartHeight, chartWidth, verticalBlend, xWindow, includeClutter]);
+  }, [panorama, chartSize, chartHeight, chartWidth, verticalBlend, xWindow, includeClutter, lineSampleCount]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -542,19 +537,27 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     });
   }, [selectedSiteEffective, focusTarget, hoverTarget, pinnedTarget, viewportCenterAzimuthDeg, viewportSpanDeg, mapHoverZoomEnabled]);
 
-  const onPanScroll = useCallback(() => {
-    const element = panScrollRef.current;
-    if (!element || chartWidth <= 0 || suppressPanScrollSyncRef.current) return;
-    const normalized = normalizeScrollLeftToMiddleCycle(element.scrollLeft, panCycleWidthPx);
-    if (Math.abs(normalized - element.scrollLeft) > 0.5) {
-      suppressPanScrollSyncRef.current = true;
-      element.scrollLeft = normalized;
-      requestAnimationFrame(() => {
-        suppressPanScrollSyncRef.current = false;
-      });
-    }
-    setViewportCenterAzimuthDeg(centerForScrollLeft(normalized, panCycleWidthPx, chartWidth));
-  }, [chartWidth, panCycleWidthPx]);
+  const onScrubPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrollbarTrackRef.current) return;
+    const rect = scrollbarTrackRef.current.getBoundingClientRect();
+    const xNorm = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+    setViewportCenterAzimuthDeg(xNorm * 360);
+    scrubDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startCenterDeg: viewportCenterAzimuthDeg };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const onScrubPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubDragRef.current || scrubDragRef.current.pointerId !== event.pointerId || !scrollbarTrackRef.current) return;
+    const rect = scrollbarTrackRef.current.getBoundingClientRect();
+    const deltaNorm = (event.clientX - scrubDragRef.current.startX) / Math.max(1, rect.width);
+    setViewportCenterAzimuthDeg(mod360(scrubDragRef.current.startCenterDeg + deltaNorm * 360));
+    event.preventDefault();
+  };
+
+  const onScrubPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (scrubDragRef.current?.pointerId === event.pointerId) scrubDragRef.current = null;
+  };
 
   const applyFovAtFocal = useCallback(
     (nextScale: number, focalNorm: number) => {
@@ -569,6 +572,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   );
 
   const onWheelPanorama = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
     const focalNorm = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
     if (event.ctrlKey) {
@@ -585,7 +589,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   };
 
   const onPointerDownPanorama = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== "touch") return;
+    if (!geometry) return;
+    panDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startCenterDeg: viewportCenterAzimuthDeg };
+    event.currentTarget.setPointerCapture(event.pointerId);
     pinchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pinchPointersRef.current.size === 2) {
       const [a, b] = [...pinchPointersRef.current.values()];
@@ -601,6 +607,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const onPointerMovePanorama = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!pinchPointersRef.current.has(event.pointerId)) return;
     pinchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinchPointersRef.current.size === 1 && panDragRef.current?.pointerId === event.pointerId) {
+      const innerWidth = Math.max(1, chartWidth - M.l - M.r);
+      const deltaDeg = ((panDragRef.current.startX - event.clientX) / innerWidth) * viewportSpanDeg;
+      setViewportCenterAzimuthDeg(mod360(panDragRef.current.startCenterDeg + deltaDeg));
+      event.preventDefault();
+      return;
+    }
     if (pinchPointersRef.current.size !== 2 || !pinchStartRef.current) return;
     const [a, b] = [...pinchPointersRef.current.values()];
     const distance = Math.max(1, pointerDistance(a, b));
@@ -618,10 +631,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     );
     setFovScale(nextScale);
     setViewportCenterAzimuthDeg(nextCenter);
+    event.preventDefault();
   };
 
   const onPointerEndPanorama = (event: React.PointerEvent<HTMLDivElement>) => {
     pinchPointersRef.current.delete(event.pointerId);
+    if (panDragRef.current?.pointerId === event.pointerId) panDragRef.current = null;
     if (pinchPointersRef.current.size < 2) {
       pinchStartRef.current = null;
     }
@@ -723,7 +738,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     if (!anchor) return;
     const updatePosition = () => {
       const rect = anchor.getBoundingClientRect();
-      setSliderPopoverPos({ left: rect.left + rect.width / 2, top: rect.top - 8 });
+      const direction: "up" | "down" = rect.top < 220 ? "down" : "up";
+      setSliderPopoverPos({
+        left: rect.left + rect.width / 2,
+        top: direction === "up" ? rect.top - 8 : rect.bottom + 8,
+        direction,
+      });
     };
     updatePosition();
     window.addEventListener("resize", updatePosition);
@@ -791,10 +811,17 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         }
     : null;
 
+  const maxVerticalScaleX = geometry?.maxVerticalScaleX ?? 1;
+  const currentVerticalScaleX = 1 + clamp(verticalBlend, 0, 1) * Math.max(0, maxVerticalScaleX - 1);
+
   const sliderPopover =
     openSliderPopover && sliderPopoverPos && typeof document !== "undefined"
       ? createPortal(
-          <div className="panorama-slider-popover" ref={sliderPopoverRef} style={{ left: `${sliderPopoverPos.left}px`, top: `${sliderPopoverPos.top}px` }}>
+          <div
+            className={`panorama-slider-popover ${sliderPopoverPos.direction === "down" ? "is-down" : ""}`}
+            ref={sliderPopoverRef}
+            style={{ left: `${sliderPopoverPos.left}px`, top: `${sliderPopoverPos.top}px` }}
+          >
             {openSliderPopover === "fov" ? (
               <UiSlider
                 ariaLabel="Panorama field of view"
@@ -808,22 +835,37 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 valueLabel={`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}
               />
             ) : (
-              <UiSlider
-                ariaLabel="Panorama vertical exaggeration"
-                label="Vertical"
-                max={1}
-                min={0}
-                onChange={(value) => setVerticalBlend(clamp(value, 0, 1))}
-                orientation="vertical"
-                step={0.05}
-                value={verticalBlend}
-                valueLabel={`${Math.round(verticalBlend * 100)}%`}
-              />
+              <div className="panorama-slider-popover-stack">
+                <UiSlider
+                  ariaLabel="Panorama vertical exaggeration"
+                  label="Vertical"
+                  max={1}
+                  min={0}
+                  onChange={(value) => setVerticalBlend(clamp(value, 0, 1))}
+                  orientation="vertical"
+                  step={0.05}
+                  value={verticalBlend}
+                  valueLabel={`${currentVerticalScaleX.toFixed(1)}x`}
+                />
+                <UiSlider
+                  ariaLabel="Panorama radial lines"
+                  label="Lines"
+                  max={24}
+                  min={4}
+                  onChange={(value) => setLineSampleCount(Math.round(value))}
+                  step={1}
+                  value={lineSampleCount}
+                  valueLabel={`${lineSampleCount}`}
+                />
+              </div>
             )}
           </div>,
           document.body,
         )
       : null;
+
+  const scrubberWidthPct = Math.max(8, (viewportSpanDeg / 360) * 100);
+  const scrubberLeftPct = clamp((viewportCenterAzimuthDeg / 360) * 100 - scrubberWidthPct / 2, 0, 100 - scrubberWidthPct);
 
   return (
     <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`}>
@@ -1014,8 +1056,21 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         )}
       </div>
 
-      <div className="panorama-scrollbar" onScroll={onPanScroll} ref={panScrollRef}>
-        <div className="panorama-scrollbar-track" style={{ width: `${panTrackWidthPx}px` }} />
+      <div
+        className="panorama-scrollbar"
+        onPointerDown={onScrubPointerDown}
+        onPointerMove={onScrubPointerMove}
+        onPointerUp={onScrubPointerEnd}
+        onPointerCancel={onScrubPointerEnd}
+        ref={scrollbarTrackRef}
+      >
+        <div
+          className="panorama-scrollbar-thumb"
+          style={{
+            width: `${scrubberWidthPct}%`,
+            left: `${scrubberLeftPct}%`,
+          }}
+        />
       </div>
       {sliderPopover}
     </section>
