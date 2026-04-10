@@ -39,7 +39,7 @@ describe("panoramaRender", () => {
         y: sample?.angleDeg ?? 0,
         angleDeg: sample?.angleDeg ?? Number.NEGATIVE_INFINITY,
       }),
-      { ridgeSnap: { enabled: false } },
+      { ridgeSnap: { enabled: false }, smoothing: { enabled: false } },
     );
 
     expect(bands).toHaveLength(2);
@@ -67,6 +67,27 @@ describe("panoramaRender", () => {
     expect(pickedDistances[1]).toBeGreaterThanOrEqual(pickedDistances[0]);
     expect(pickedDistances[2]).toBeGreaterThanOrEqual(pickedDistances[1]);
     expect(pickedDistances[2]).toBeGreaterThan(0);
+  });
+
+  it("applies conservative smoothing while preserving sharp crest angles", () => {
+    const ray = mkRay(0, [0, 0.4, 3.2, 0.5, 0.7, 0.8]);
+    const bands = buildDepthBands(
+      [ray],
+      [0.6],
+      (_ray, sample) => ({
+        x: sample?.distanceKm ?? 0,
+        y: sample?.angleDeg ?? 0,
+        angleDeg: sample?.angleDeg ?? Number.NEGATIVE_INFINITY,
+      }),
+      {
+        ridgeSnap: { enabled: false },
+        smoothing: { enabled: true, strength: 0.28, maxDeviationDeg: 0.2, crestGuardDeg: 0.4 },
+      },
+    );
+
+    const point = bands[0]?.points[0];
+    expect(point).toBeTruthy();
+    expect(Math.abs((point?.angleDeg ?? 0) - 0.5)).toBeLessThanOrEqual(0.2);
   });
 
   it("returns monotonic near-to-far depth style falloff", () => {

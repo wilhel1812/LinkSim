@@ -21,6 +21,12 @@ export type PanoramaBandSelectionOptions = {
     enabled?: boolean;
     windowRatio?: number;
   };
+  smoothing?: {
+    enabled?: boolean;
+    strength?: number;
+    maxDeviationDeg?: number;
+    crestGuardDeg?: number;
+  };
 };
 
 export type PanoramaDepthStyle = {
@@ -102,6 +108,10 @@ export const buildDepthBands = (
 
   const ridgeSnapEnabled = options?.ridgeSnap?.enabled !== false;
   const ridgeWindowRatio = Math.max(0.01, Math.min(0.35, options?.ridgeSnap?.windowRatio ?? 0.08));
+  const smoothingEnabled = options?.smoothing?.enabled !== false;
+  const smoothingStrength = Math.max(0, Math.min(1, options?.smoothing?.strength ?? 0.24));
+  const smoothingMaxDeviationDeg = Math.max(0.02, Math.min(1.5, options?.smoothing?.maxDeviationDeg ?? 0.28));
+  const smoothingCrestGuardDeg = Math.max(0.05, Math.min(2, options?.smoothing?.crestGuardDeg ?? 0.52));
 
   const pickSampleIndex = (
     ray: PanoramaRay,
@@ -167,12 +177,54 @@ export const buildDepthBands = (
     }
   }
 
-  return rawBands.map((band, bandIndex) => ({
-    ...band,
-    lineSegments: visibleLineSegments(band.points, visibility[bandIndex]),
-    fillSegments: visiblePointRuns(band.points, visibility[bandIndex]),
-    visibilityMask: visibility[bandIndex],
-  }));
+  const smoothBandPoints = (points: PanoramaDepthPoint[]): PanoramaDepthPoint[] => {
+    if (!smoothingEnabled || points.length < 3 || smoothingStrength <= 0) return points;
+    let sumDegToY = 0;
+    let countDegToY = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      const prev = points[i - 1];
+      const current = points[i];
+      const deltaAngle = current.angleDeg - prev.angleDeg;
+      if (Math.abs(deltaAngle) < 1e-5) continue;
+      const deltaY = current.y - prev.y;
+      if (!Number.isFinite(deltaY)) continue;
+      sumDegToY += deltaY / deltaAngle;
+      countDegToY += 1;
+    }
+    const degToY = countDegToY > 0 ? sumDegToY / countDegToY : 0;
+    const nextPoints = points.map((point) => ({ ...point }));
+    for (let i = 1; i < points.length - 1; i += 1) {
+      const prev = points[i - 1];
+      const current = points[i];
+      const next = points[i + 1];
+      const localSpanDeg = Math.max(
+        Math.abs(current.angleDeg - prev.angleDeg),
+        Math.abs(next.angleDeg - current.angleDeg),
+      );
+      const isCrest =
+        (current.angleDeg > prev.angleDeg && current.angleDeg > next.angleDeg) ||
+        (current.angleDeg < prev.angleDeg && current.angleDeg < next.angleDeg);
+      const crestDamping = isCrest || localSpanDeg >= smoothingCrestGuardDeg ? 0.18 : 1;
+      const localMean = (prev.angleDeg + next.angleDeg) * 0.5;
+      const rawDelta = (localMean - current.angleDeg) * smoothingStrength * crestDamping;
+      const clampedDelta = Math.max(-smoothingMaxDeviationDeg, Math.min(smoothingMaxDeviationDeg, rawDelta));
+      const nextAngle = current.angleDeg + clampedDelta;
+      nextPoints[i].angleDeg = nextAngle;
+      nextPoints[i].y = current.y + clampedDelta * degToY;
+    }
+    return nextPoints;
+  };
+
+  return rawBands.map((band, bandIndex) => {
+    const points = smoothBandPoints(band.points);
+    return {
+      ...band,
+      points,
+      lineSegments: visibleLineSegments(points, visibility[bandIndex]),
+      fillSegments: visiblePointRuns(points, visibility[bandIndex]),
+      visibilityMask: visibility[bandIndex],
+    };
+  });
 };
 
 export const resolveRenderedEndpoint = (params: {
