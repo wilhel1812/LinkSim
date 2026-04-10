@@ -7,7 +7,7 @@ class PeakExtractor(osmium.SimpleHandler):
     def __init__(self, writer):
         super().__init__()
         self.writer = writer
-        self.counts = {"node": 0, "way": 0, "relation_skipped": 0}
+        self.counts = {"node": 0, "way": 0, "relation": 0, "relation_skipped": 0}
 
     def _kind(self, tags):
         natural = tags.get("natural")
@@ -59,9 +59,45 @@ class PeakExtractor(osmium.SimpleHandler):
     def relation(self, r):
         kind = self._kind(r.tags)
         name = r.tags.get("name")
-        if kind and name:
-            # Relation center extraction requires full geometry assembly; skipped in this extractor.
+        if not kind or not name:
             self.counts["relation_skipped"] += 1
+            return
+
+        lat, lon = None, None
+
+        # Use explicit lat/lon tags on the relation (some mappers add these)
+        try:
+            if r.tags.get("lat") and r.tags.get("lon"):
+                lat = float(r.tags.get("lat"))
+                lon = float(r.tags.get("lon"))
+        except (ValueError, TypeError):
+            pass
+
+        # Use center:lat / center:lon tags if present
+        if lat is None:
+            try:
+                if r.tags.get("center:lat") and r.tags.get("center:lon"):
+                    lat = float(r.tags.get("center:lat"))
+                    lon = float(r.tags.get("center:lon"))
+            except (ValueError, TypeError):
+                pass
+
+        if lat is None or lon is None:
+            # Cannot determine center without a full geometry pass.
+            # Named peaks as relations are extremely rare; nodes/ways cover >99% of cases.
+            self.counts["relation_skipped"] += 1
+            return
+
+        item = {
+            "id": f"relation:{r.id}",
+            "kind": kind,
+            "name": str(name).strip(),
+            "lat": lat,
+            "lon": lon,
+            "elevationM": self._parse_ele(r.tags.get("ele")),
+        }
+        self.writer.write(json.dumps(item, ensure_ascii=False) + "\n")
+        self.counts["relation"] += 1
 
     def _parse_ele(self, value):
         if value is None:

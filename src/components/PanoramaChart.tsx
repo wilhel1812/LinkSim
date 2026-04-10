@@ -134,7 +134,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(180);
   const [includeClutter, setIncludeClutter] = useState(false);
-  const [verticalBlend, setVerticalBlend] = useState(1);
+  const [exaggeration, setExaggeration] = useState(4);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [fovScale, setFovScale] = useState(1.5);
@@ -242,7 +242,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const detailContextRef = useRef<string>("");
   const [basePanorama, setBasePanorama] = useState<PanoramaResult | null>(null);
   const [detailPanoramas, setDetailPanoramas] = useState<PanoramaResult[]>([]);
-  const terrainClipId = useMemo(() => `panorama-terrain-clip-${Math.random().toString(36).slice(2, 11)}`, []);
 
   const selectedSiteEffective = useMemo(() => {
     if (!selectedSite) return null;
@@ -592,8 +591,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       trueMin = trueMax - ySpanDeg;
     }
 
-    let domainMin = trueMin + (fitMin - trueMin) * clamp(verticalBlend, 0, 1);
-    let domainMax = trueMax + (fitMax - trueMax) * clamp(verticalBlend, 0, 1);
+    // 1x = natural proportions (same px/deg vertically and horizontally).
+    // Higher exaggeration zooms in on terrain by shrinking the vertical domain.
+    const naturalSpan = Math.max(0.001, trueMax - trueMin);
+    const domainHeight = naturalSpan / Math.max(1, exaggeration);
+    const terrainCenter = (minHorizon + maxHorizon) / 2;
+    let domainMin = terrainCenter - domainHeight / 2;
+    let domainMax = terrainCenter + domainHeight / 2;
 
     if (!Number.isFinite(domainMin) || !Number.isFinite(domainMax) || domainMax <= domainMin) {
       domainMin = panorama.minAngleDeg;
@@ -736,6 +740,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       y,
       plotTop,
       plotBottom,
+      clutterPoints: includeClutter ? clutterPoints : [],
       clutterPath: includeClutter ? toPath(clutterPoints) : "",
       clutterAreaPath,
       ridgeBands,
@@ -762,7 +767,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     chartSize,
     chartHeight,
     chartWidth,
-    verticalBlend,
+    exaggeration,
     xWindow,
     includeClutter,
     lineSampleCount,
@@ -772,7 +777,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     showLabels,
   ]);
 
-  useEffect(() => {
+  // useLayoutEffect fires synchronously after DOM mutations, same tick as SVG,
+  // eliminating the one-frame lag between terrain shading and other chart elements.
+  useLayoutEffect(() => {
     const canvas = terrainCanvasRef.current;
     if (!canvas || !geometry || !chartSize) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -787,86 +794,240 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, chartSize.width, chartSize.height);
 
-    const terrainColorText = resolveCssColor("var(--terrain)", "rgb(100,100,100)");
-    const surfaceColorText = resolveCssColor("var(--surface-2)", "rgb(40,40,40)");
-    const textColorText = resolveCssColor("var(--text)", "rgb(180,180,180)");
-    const terrainColor = parseRgb(terrainColorText) ?? { r: 100, g: 100, b: 100 };
-    const surfaceColor = parseRgb(surfaceColorText) ?? { r: 40, g: 40, b: 40 };
-    const textColor = parseRgb(textColorText) ?? { r: 180, g: 180, b: 180 };
+    // Resolve CSS color variables once per frame.
+    const terrainColor = parseRgb(resolveCssColor("var(--terrain)", "rgb(100,100,100)")) ?? { r: 100, g: 100, b: 100 };
+    const surfaceColor = parseRgb(resolveCssColor("var(--surface-2)", "rgb(40,40,40)")) ?? { r: 40, g: 40, b: 40 };
+    const textColor = parseRgb(resolveCssColor("var(--text)", "rgb(200,200,200)")) ?? { r: 200, g: 200, b: 200 };
+    const mutedColor = parseRgb(resolveCssColor("var(--muted)", "rgb(130,130,130)")) ?? { r: 130, g: 130, b: 130 };
+    const borderColor = parseRgb(resolveCssColor("var(--border)", "rgb(80,80,80)")) ?? { r: 80, g: 80, b: 80 };
+    const surfaceBaseColor = parseRgb(resolveCssColor("var(--surface)", "rgb(30,30,30)")) ?? { r: 30, g: 30, b: 30 };
+    const stateColors: Record<string, Rgb> = {
+      pass_clear: parseRgb(resolveCssColor("var(--state-pass-clear)", "rgb(76,175,80)")) ?? { r: 76, g: 175, b: 80 },
+      pass_blocked: parseRgb(resolveCssColor("var(--state-pass-blocked)", "rgb(255,152,0)")) ?? { r: 255, g: 152, b: 0 },
+      fail_clear: parseRgb(resolveCssColor("var(--state-fail-clear)", "rgb(244,67,54)")) ?? { r: 244, g: 67, b: 54 },
+      fail_blocked: parseRgb(resolveCssColor("var(--state-fail-blocked)", "rgb(200,50,50)")) ?? { r: 200, g: 50, b: 50 },
+    };
 
     const rays = geometry.visibleRays;
-    if (rays.length < 2) return;
-    const maxDistanceKm = Math.max(
-      0.001,
-      ...rays.map((entry) => (entry.ray.samples.length ? entry.ray.samples[entry.ray.samples.length - 1]?.distanceKm ?? entry.ray.maxDistanceKm : entry.ray.maxDistanceKm)),
-    );
-    const maxSampleCount = Math.max(2, ...rays.map((entry) => entry.ray.samples.length));
-    const light = { x: -0.62, y: -0.36, z: 0.7 };
-    const lightNorm = Math.hypot(light.x, light.y, light.z) || 1;
-    const lx = light.x / lightNorm;
-    const ly = light.y / lightNorm;
-    const lz = light.z / lightNorm;
+    const bandCount = geometry.depthBands.length;
+    const cw = chartSize.width;
+    const ch = chartSize.height;
 
+    // --- LAYER 1: Terrain quads (depth-shaded, back to front, clipped) ---
+    if (rays.length >= 2) {
+      const maxDistanceKm = Math.max(
+        0.001,
+        ...rays.map((entry) => (entry.ray.samples.length ? entry.ray.samples[entry.ray.samples.length - 1]?.distanceKm ?? entry.ray.maxDistanceKm : entry.ray.maxDistanceKm)),
+      );
+      const maxSampleCount = Math.max(2, ...rays.map((entry) => entry.ray.samples.length));
+      const light = { x: -0.62, y: -0.36, z: 0.7 };
+      const lightNorm = Math.hypot(light.x, light.y, light.z) || 1;
+      const lx = light.x / lightNorm;
+      const ly = light.y / lightNorm;
+      const lz = light.z / lightNorm;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(M.l, geometry.plotTop, cw - M.l - M.r, geometry.plotBottom - geometry.plotTop);
+      ctx.clip();
+
+      for (let sampleIndex = maxSampleCount - 2; sampleIndex >= 0; sampleIndex -= 1) {
+        for (let rayIndex = 0; rayIndex < rays.length - 1; rayIndex += 1) {
+          const left = rays[rayIndex];
+          const right = rays[rayIndex + 1];
+          const s00 = left.ray.samples[sampleIndex];
+          const s01 = left.ray.samples[sampleIndex + 1];
+          const s10 = right.ray.samples[sampleIndex];
+          const s11 = right.ray.samples[sampleIndex + 1];
+          if (!s00 || !s01 || !s10 || !s11) continue;
+
+          const x0 = geometry.x(left.xValue);
+          const x1 = geometry.x(right.xValue);
+          const y00 = geometry.y(s00.angleDeg);
+          const y01 = geometry.y(s01.angleDeg);
+          const y10 = geometry.y(s10.angleDeg);
+          const y11 = geometry.y(s11.angleDeg);
+
+          const dzdx = ((s10.angleDeg - s00.angleDeg) + (s11.angleDeg - s01.angleDeg)) * 0.5;
+          const dzdr = ((s01.angleDeg - s00.angleDeg) + (s11.angleDeg - s10.angleDeg)) * 0.5;
+          const nx = -dzdx * 0.75;
+          const ny = -dzdr * 1.2;
+          const nz = 1;
+          const norm = Math.hypot(nx, ny, nz) || 1;
+          const lambert = Math.max(0, (nx / norm) * lx + (ny / norm) * ly + (nz / norm) * lz);
+
+          const avgDistanceKm = (s00.distanceKm + s01.distanceKm + s10.distanceKm + s11.distanceKm) * 0.25;
+          const depth = clamp(avgDistanceKm / maxDistanceKm, 0, 1);
+          const haze = Math.pow(depth, 1.15);
+
+          const baseColor =
+            shadingMode === "relief"
+              ? blendRgb(terrainColor, surfaceColor, 0.14 + haze * 0.68)
+              : blendRgb(terrainColor, textColor, 0.22 + haze * 0.32);
+          const litColor =
+            shadingMode === "relief"
+              ? brightenRgb(baseColor, (lambert - 0.45) * 0.6)
+              : brightenRgb(baseColor, 0);
+          const alpha =
+            shadingMode === "relief"
+              ? clamp(0.88 - haze * 0.5 + lambert * 0.08, 0.2, 0.96)
+              : clamp(0.18 - haze * 0.1, 0.06, 0.2);
+
+          ctx.fillStyle = toCanvasColor(litColor, alpha);
+          ctx.beginPath();
+          ctx.moveTo(x0, y00);
+          // Extend right edge by 1px so adjacent quads overlap, eliminating sub-pixel gaps.
+          ctx.lineTo(x1 + 1, y10);
+          ctx.lineTo(x1 + 1, y11);
+          ctx.lineTo(x0, y01);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    // --- LAYER 2: Grid lines and tick labels ---
+    const gridLineColor = toCanvasColor(borderColor, 0.82);
+    ctx.strokeStyle = gridLineColor;
+    ctx.lineWidth = 1;
+    ctx.font = '500 12px "IBM Plex Mono", monospace';
+    ctx.fillStyle = toCanvasColor(mutedColor, 1);
+
+    // Y-axis horizontal grid lines
+    for (const value of geometry.ticksY) {
+      const gy = geometry.y(value);
+      ctx.beginPath();
+      ctx.moveTo(M.l, gy);
+      ctx.lineTo(cw - M.r, gy);
+      ctx.stroke();
+    }
+    // Y-axis labels (right-aligned at left margin)
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    for (const value of geometry.ticksY) {
+      ctx.fillText(`${value.toFixed(1)}°`, M.l - 8, geometry.y(value));
+    }
+    // X-axis vertical grid lines and bottom labels
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    for (const value of geometry.ticksX) {
+      const gx = geometry.x(value);
+      ctx.strokeStyle = gridLineColor;
+      ctx.beginPath();
+      ctx.moveTo(gx, geometry.plotTop);
+      ctx.lineTo(gx, ch - M.b);
+      ctx.stroke();
+      ctx.fillStyle = toCanvasColor(mutedColor, 1);
+      ctx.fillText(formatAzimuthTick(value), gx, ch - 8);
+    }
+
+    // --- LAYER 3: Ridge lines, clutter, and node circles (clipped to plot) ---
     ctx.save();
     ctx.beginPath();
-    ctx.rect(M.l, geometry.plotTop, chartSize.width - M.l - M.r, geometry.plotBottom - geometry.plotTop);
+    ctx.rect(M.l, geometry.plotTop, cw - M.l - M.r, geometry.plotBottom - geometry.plotTop);
     ctx.clip();
+    ctx.lineJoin = "round";
 
-    for (let sampleIndex = maxSampleCount - 2; sampleIndex >= 0; sampleIndex -= 1) {
-      for (let rayIndex = 0; rayIndex < rays.length - 1; rayIndex += 1) {
-        const left = rays[rayIndex];
-        const right = rays[rayIndex + 1];
-        const s00 = left.ray.samples[sampleIndex];
-        const s01 = left.ray.samples[sampleIndex + 1];
-        const s10 = right.ray.samples[sampleIndex];
-        const s11 = right.ray.samples[sampleIndex + 1];
-        if (!s00 || !s01 || !s10 || !s11) continue;
-
-        const x0 = geometry.x(left.xValue);
-        const x1 = geometry.x(right.xValue);
-        const y00 = geometry.y(s00.angleDeg);
-        const y01 = geometry.y(s01.angleDeg);
-        const y10 = geometry.y(s10.angleDeg);
-        const y11 = geometry.y(s11.angleDeg);
-
-        const dzdx = ((s10.angleDeg - s00.angleDeg) + (s11.angleDeg - s01.angleDeg)) * 0.5;
-        const dzdr = ((s01.angleDeg - s00.angleDeg) + (s11.angleDeg - s10.angleDeg)) * 0.5;
-        const nx = -dzdx * 0.75;
-        const ny = -dzdr * 1.2;
-        const nz = 1;
-        const norm = Math.hypot(nx, ny, nz) || 1;
-        const lambert = Math.max(0, (nx / norm) * lx + (ny / norm) * ly + (nz / norm) * lz);
-
-        const avgDistanceKm = (s00.distanceKm + s01.distanceKm + s10.distanceKm + s11.distanceKm) * 0.25;
-        const depth = clamp(avgDistanceKm / maxDistanceKm, 0, 1);
-        const haze = Math.pow(depth, 1.15);
-
-        const baseColor =
-          shadingMode === "relief"
-            ? blendRgb(terrainColor, surfaceColor, 0.14 + haze * 0.68)
-            : blendRgb(terrainColor, textColor, 0.22 + haze * 0.32);
-        const litColor =
-          shadingMode === "relief"
-            ? brightenRgb(baseColor, (lambert - 0.45) * 0.6)
-            : brightenRgb(baseColor, 0);
-        const alpha =
-          shadingMode === "relief"
-            ? clamp(0.88 - haze * 0.5 + lambert * 0.08, 0.2, 0.96)
-            : clamp(0.18 - haze * 0.1, 0.06, 0.2);
-
-        ctx.fillStyle = toCanvasColor(litColor, alpha);
+    // Ridge lines using raw point runs from depthBands (avoids SVG path string parsing)
+    for (const band of geometry.depthBands) {
+      const style = depthStyleForBand(band.bandIndex, bandCount);
+      const strokePct = style.strokeMixTerrainPct / 100;
+      const strokeRgb = blendRgb(terrainColor, mutedColor, 1 - strokePct);
+      const opacity = shadingMode === "relief" ? style.strokeOpacity : Math.max(0.5, style.strokeOpacity);
+      ctx.strokeStyle = toCanvasColor(strokeRgb, opacity);
+      ctx.lineWidth = shadingMode === "relief" ? style.strokeWidth : Math.max(1.2, style.strokeWidth * 1.08);
+      for (const run of band.fillSegments) {
+        if (run.length < 2) continue;
         ctx.beginPath();
-        ctx.moveTo(x0, y00);
-        ctx.lineTo(x1, y10);
-        ctx.lineTo(x1, y11);
-        ctx.lineTo(x0, y01);
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(run[0].x, run[0].y);
+        for (let i = 1; i < run.length; i++) {
+          ctx.lineTo(run[i].x, run[i].y);
+        }
+        ctx.stroke();
       }
     }
 
+    // Clutter area (haze) and clutter line
+    if (includeClutter && geometry.clutterPoints.length >= 2) {
+      const failBlockedRgb = stateColors.fail_blocked ?? { r: 200, g: 50, b: 50 };
+      const clutterBasePoints = geometry.depthBands[geometry.depthBands.length - 1]?.points ?? [];
+      if (clutterBasePoints.length) {
+        ctx.fillStyle = toCanvasColor(failBlockedRgb, 0.34 * 0.35);
+        ctx.beginPath();
+        ctx.moveTo(geometry.clutterPoints[0].x, geometry.clutterPoints[0].y);
+        for (let i = 1; i < geometry.clutterPoints.length; i++) {
+          ctx.lineTo(geometry.clutterPoints[i].x, geometry.clutterPoints[i].y);
+        }
+        for (let i = clutterBasePoints.length - 1; i >= 0; i--) {
+          const p = clutterBasePoints[i];
+          if (p) ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.strokeStyle = toCanvasColor(blendRgb(failBlockedRgb, textColor, 0.38), 1);
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(geometry.clutterPoints[0].x, geometry.clutterPoints[0].y);
+      for (let i = 1; i < geometry.clutterPoints.length; i++) {
+        ctx.lineTo(geometry.clutterPoints[i].x, geometry.clutterPoints[i].y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Node circles
+    ctx.lineWidth = 1.1;
+    for (const entry of geometry.nodes) {
+      const stateRgb = stateColors[entry.node.state] ?? textColor;
+      const strokeRgb = blendRgb(stateRgb, textColor, 0.6);
+      const nodeAlpha = entry.node.visible ? 1 : 0.52;
+      ctx.fillStyle = toCanvasColor(stateRgb, nodeAlpha);
+      ctx.strokeStyle = toCanvasColor(strokeRgb, nodeAlpha);
+      ctx.beginPath();
+      ctx.arc(entry.cx, entry.cy, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
     ctx.restore();
-  }, [geometry, chartSize, shadingMode]);
+
+    // --- LAYER 4: Labels (leader lines + 45°-rotated text, not clipped) ---
+    const labelLineRgb = blendRgb(textColor, borderColor, 0.72);
+    const labelPoiRgb = blendRgb(textColor, surfaceBaseColor, 0.12);
+    const labelPeakRgb = blendRgb(textColor, mutedColor, 0.24);
+
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.font = '10px "IBM Plex Mono", monospace';
+
+    for (const label of geometry.labels) {
+      // Leader line from label anchor down to peak/node position
+      ctx.strokeStyle = toCanvasColor(labelLineRgb, 0.84);
+      ctx.beginPath();
+      ctx.moveTo(label.anchorX, label.lineStartY);
+      ctx.lineTo(label.x, label.y);
+      ctx.stroke();
+
+      // Text at 45° rotation around anchor point
+      const labelRgb = label.source === "peak" ? labelPeakRgb : labelPoiRgb;
+      ctx.save();
+      ctx.translate(label.anchorX, label.anchorY);
+      ctx.rotate(Math.PI / 4);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "hanging";
+      // Paint outline first (simulates SVG paint-order: stroke), then fill
+      ctx.strokeStyle = toCanvasColor(surfaceBaseColor, 0.7);
+      ctx.lineWidth = 2;
+      ctx.lineJoin = "round";
+      ctx.strokeText(label.name, 0, 0);
+      ctx.fillStyle = toCanvasColor(labelRgb, 1);
+      ctx.fillText(label.name, 0, 0);
+      ctx.restore();
+    }
+  }, [geometry, chartSize, shadingMode, includeClutter]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -1225,8 +1386,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         }
     : null;
 
-  const maxVerticalScaleX = geometry?.maxVerticalScaleX ?? 1;
-  const currentVerticalScaleX = 1 + clamp(verticalBlend, 0, 1) * Math.max(0, maxVerticalScaleX - 1);
 
   const sliderPopover =
     openSliderPopover && sliderPopoverPos && typeof document !== "undefined"
@@ -1255,13 +1414,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 <UiSlider
                   ariaLabel="Panorama vertical exaggeration"
                   label="Vertical"
-                  max={1}
-                  min={0}
-                  onChange={(value) => setVerticalBlend(clamp(value, 0, 1))}
+                  max={20}
+                  min={1}
+                  onChange={(value) => setExaggeration(clamp(value, 1, 20))}
                   orientation="vertical"
-                  step={0.05}
-                  value={verticalBlend}
-                  valueLabel={`${currentVerticalScaleX.toFixed(1)}x`}
+                  step={0.1}
+                  value={exaggeration}
+                  valueLabel={`${exaggeration.toFixed(1)}x`}
                 />
               </div>
             ) : (
@@ -1410,82 +1569,18 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         ) : (
           <>
             <canvas aria-hidden className="panorama-terrain-canvas" ref={terrainCanvasRef} />
+            {/* SVG retained only for the hover cursor line and mouse hit-detection rect.
+                All visual rendering (terrain, ridge lines, grid, labels, nodes) is on canvas. */}
             <svg aria-label="Panorama" height={chartHeight} role="img" width={chartWidth}>
-              <defs>
-                <clipPath id={terrainClipId}>
-                  <rect x={M.l} y={geometry.plotTop} width={chartWidth - M.l - M.r} height={geometry.plotBottom - geometry.plotTop} />
-                </clipPath>
-              </defs>
-
-              <g clipPath={`url(#${terrainClipId})`}>
-                {geometry.ridgeBands.map((band) => (
-                  <g key={band.key}>
-                    {band.lineSegments.map((segment, segmentIndex) => (
-                      <path
-                        className="panorama-ridge-line"
-                        d={segment}
-                        key={`${band.key}-segment-${segmentIndex}`}
-                        style={{
-                          strokeWidth: shadingMode === "relief" ? band.style.strokeWidth : Math.max(1.2, band.style.strokeWidth * 1.08),
-                          strokeOpacity: shadingMode === "relief" ? band.style.strokeOpacity : Math.max(0.5, band.style.strokeOpacity),
-                          stroke: `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--muted) ${band.style.strokeMixMutedPct}%)`,
-                        }}
-                      />
-                    ))}
-                  </g>
-                ))}
-                {includeClutter && geometry.clutterAreaPath ? <path className="panorama-clutter-haze" d={geometry.clutterAreaPath} /> : null}
-                {includeClutter && geometry.clutterPath ? <path className="panorama-clutter-line" d={geometry.clutterPath} /> : null}
-                {geometry.nodes.map((node) => (
-                  <circle
-                    key={node.node.id}
-                    className={`panorama-node panorama-node-${node.node.state} ${node.node.visible ? "is-visible" : "is-hidden"}`}
-                    cx={node.cx}
-                    cy={node.cy}
-                    r={3.2}
-                  />
-                ))}
-              </g>
-
-              {geometry.ticksY.map((value) => (
-                <g className="chart-grid" key={`y-${value.toFixed(2)}`}>
-                  <line x1={M.l} x2={chartWidth - M.r} y1={geometry.y(value)} y2={geometry.y(value)} />
-                  <text textAnchor="end" x={M.l - 8} y={geometry.y(value) + 4}>
-                    {value.toFixed(1)}°
-                  </text>
-                </g>
-              ))}
-
-              {geometry.ticksX.map((value) => (
-                <g className="chart-grid" key={`x-${value.toFixed(2)}`}>
-                  <line x1={geometry.x(value)} x2={geometry.x(value)} y1={geometry.plotTop} y2={chartHeight - M.b} />
-                  <text textAnchor="middle" x={geometry.x(value)} y={chartHeight - 8}>
-                    {formatAzimuthTick(value)}
-                  </text>
-                </g>
-              ))}
-              {geometry.labels.map((label) => (
-                <g className="panorama-label-layer" key={label.id}>
-                  <line className="panorama-label-line" x1={label.anchorX} x2={label.x} y1={label.lineStartY} y2={label.y} />
-                  <text
-                    className={`panorama-label-text ${label.source === "peak" ? "is-peak" : "is-poi"}`}
-                    transform={`rotate(45 ${label.anchorX.toFixed(2)} ${label.anchorY.toFixed(2)})`}
-                    x={label.anchorX}
-                    y={label.anchorY}
-                  >
-                    {label.name}
-                  </text>
-                </g>
-              ))}
-
               {activeRay && focusAzimuthDeg != null ? (
-                <line
-                  className="profile-cursor"
-                  x1={geometry.x(unwrapAzimuthForWindow(activeRay.azimuthDeg, focusAzimuthDeg))}
-                  x2={geometry.x(unwrapAzimuthForWindow(activeRay.azimuthDeg, focusAzimuthDeg))}
-                  y1={geometry.plotTop}
-                  y2={chartHeight - M.b}
-                />
+                <g className="profile-cursor">
+                  <line
+                    x1={geometry.x(unwrapAzimuthForWindow(activeRay.azimuthDeg, focusAzimuthDeg))}
+                    x2={geometry.x(unwrapAzimuthForWindow(activeRay.azimuthDeg, focusAzimuthDeg))}
+                    y1={geometry.plotTop}
+                    y2={chartHeight - M.b}
+                  />
+                </g>
               ) : null}
 
               <rect

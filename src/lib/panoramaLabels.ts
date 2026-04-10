@@ -23,6 +23,12 @@ const projectedLabelWidthPx = (name: string): number => {
   return chars * 5.6 + 16;
 };
 
+// Labels are rendered at 45°. The horizontal footprint of a rotated rectangle
+// with width W and height H is (W + H) / sqrt(2), not W.
+const LABEL_TEXT_HEIGHT_PX = 14;
+const rotatedHorizontalFootprint = (width: number): number =>
+  (width + LABEL_TEXT_HEIGHT_PX) / Math.SQRT2;
+
 export const resolveVisiblePanoramaLabels = (params: {
   candidates: PanoramaLabelCandidate[];
   chartWidth: number;
@@ -32,11 +38,12 @@ export const resolveVisiblePanoramaLabels = (params: {
   minGapPx?: number;
 }): PanoramaLabelLayout[] => {
   const { candidates, chartWidth, leftPadding, rightPadding, topY } = params;
-  const minGapPx = Math.max(8, params.minGapPx ?? 10);
+  const minGapPx = Math.max(4, params.minGapPx ?? 4);
   const laneLeft = leftPadding + 2;
   const laneRight = chartWidth - rightPadding - 2;
   const laneWidth = Math.max(1, laneRight - laneLeft);
-  const hardCap = Math.max(1, Math.floor(laneWidth / 56));
+  // Use rotated footprint for hard cap: avg label ~100px wide → ~81px rotated footprint
+  const hardCap = Math.max(1, Math.floor(laneWidth / 40));
 
   const selected: Array<PanoramaLabelLayout & { minX: number; maxX: number }> = [];
   const ranked = [...candidates].sort((a, b) => {
@@ -48,9 +55,10 @@ export const resolveVisiblePanoramaLabels = (params: {
   for (const candidate of ranked) {
     if (selected.length >= hardCap) break;
     const width = projectedLabelWidthPx(candidate.name);
-    const anchorX = clamp(candidate.x, laneLeft + width * 0.5, laneRight - width * 0.5);
-    const minX = anchorX - width * 0.5;
-    const maxX = anchorX + width * 0.5;
+    const footprint = rotatedHorizontalFootprint(width);
+    const anchorX = clamp(candidate.x, laneLeft + footprint * 0.5, laneRight - footprint * 0.5);
+    const minX = anchorX - footprint * 0.5;
+    const maxX = anchorX + footprint * 0.5;
     const collides = selected.some((entry) => Math.max(entry.minX, minX) <= Math.min(entry.maxX, maxX) + minGapPx);
     if (collides) continue;
     selected.push({
