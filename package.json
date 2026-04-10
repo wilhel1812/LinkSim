@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build:meta": "node scripts/generate-build-info.mjs",
+    "peaks:build": "node scripts/build-open-peak-index.mjs",
     "build:verify": "node scripts/verify-build-info.mjs",
     "dev": "vite --config config/vite.config.ts",
     "build:client": "npm run build:meta && vite build --config config/vite.config.ts",
