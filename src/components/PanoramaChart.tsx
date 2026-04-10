@@ -19,7 +19,8 @@ import {
 } from "../lib/panorama";
 import { composePanoramaWindow } from "../lib/panoramaCompose";
 import { resolveVisiblePanoramaLabels, type PanoramaLabelCandidate } from "../lib/panoramaLabels";
-import { queryPanoramaPeaks } from "../lib/panoramaPeaks";
+import { loadPanoramaPeaks, type PanoramaPeakCandidate } from "../lib/panoramaPeaks";
+import { isPeakLosVisible, nearestSampleForDistance } from "../lib/panoramaLos";
 import { buildDepthBands, buildNearBiasedDepthFractions, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
 import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
 import { centerForScaledWindow } from "../lib/panoramaViewport";
@@ -29,6 +30,7 @@ import { useAppStore } from "../store/appStore";
 import { UiSlider } from "./UiSlider";
 
 const M = { t: 22, r: 20, b: 32, l: 46 };
+const LABEL_RAIL_HEIGHT = 34;
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 type PanoramaChartProps = {
@@ -83,6 +85,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [openSliderPopover, setOpenSliderPopover] = useState<"fov" | "vertical" | "lines" | null>(null);
   const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const [lineSampleCount, setLineSampleCount] = useState(10);
+  const [peakCandidates, setPeakCandidates] = useState<PanoramaPeakCandidate[]>([]);
 
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
@@ -177,6 +180,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const detailContextRef = useRef<string>("");
   const [basePanorama, setBasePanorama] = useState<PanoramaResult | null>(null);
   const [detailPanoramas, setDetailPanoramas] = useState<PanoramaResult[]>([]);
+  const terrainClipId = useMemo(() => `panorama-terrain-clip-${Math.random().toString(36).slice(2, 11)}`, []);
 
   const selectedSiteEffective = useMemo(() => {
     if (!selectedSite) return null;
@@ -234,6 +238,31 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     setPinnedTarget(null);
     setHoverTarget(null);
   }, [selectedSiteEffective?.id]);
+
+  useEffect(() => {
+    if (!selectedSiteEffective || !chartSize) {
+      setPeakCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    const spanDeg = viewportSpanDeg;
+    const centerBucketDeg = Math.max(0.5, Math.round(spanDeg / 12));
+    const centerDeg = Math.round(viewportCenterAzimuthDeg / centerBucketDeg) * centerBucketDeg;
+    const window = resolvePanoramaWindow(centerDeg, spanDeg);
+    void loadPanoramaPeaks({
+      origin: selectedSiteEffective.position,
+      centerDeg,
+      startDeg: window.startDeg,
+      endDeg: window.endDeg,
+      maxDistanceKm: 500,
+      limit: 3200,
+    }).then((peaks) => {
+      if (!cancelled) setPeakCandidates(peaks);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSiteEffective, chartSize, viewportCenterAzimuthDeg, viewportSpanDeg]);
 
   useEffect(() => {
     if (!selectedSiteEffective || !selectedNetwork) {
@@ -446,8 +475,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     [basePanorama, detailPanoramas, xWindow],
   );
 
-  const terrainFillGradientId = useMemo(() => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`, []);
-
   const geometry = useMemo(() => {
     if (!panorama || !chartSize || !panorama.rays.length) return null;
     const anchorPanorama = basePanorama && basePanorama.rays.length ? basePanorama : panorama;
@@ -457,6 +484,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const xSpan = Math.max(0.001, xDomainEnd - xDomainStart);
     const x = scaleLinear().domain([xDomainStart, xDomainEnd]).range([M.l, chartWidth - M.r]);
     const xCenterForUnwrap = xWindow.centerDeg;
+    const plotTop = M.t + LABEL_RAIL_HEIGHT;
+    const plotBottom = chartHeight - M.b;
 
     const visibleRays = composedWindow.rays
       .map((entry) => ({ ray: entry.ray, xValue: entry.xValue, source: entry.source }))
@@ -470,7 +499,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const maxSampleAngle = Math.max(...anchorPanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
 
     const innerWidth = Math.max(1, chartWidth - M.l - M.r);
-    const innerHeight = Math.max(1, chartHeight - M.t - M.b);
+    const innerHeight = Math.max(1, plotBottom - plotTop);
     const horizonPad = 0.5;
 
     const fitMin = minHorizon - horizonPad;
@@ -492,7 +521,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       domainMax = panorama.maxAngleDeg;
     }
 
-    const y = scaleLinear().domain([domainMin, domainMax]).range([chartHeight - M.b, M.t]);
+    const y = scaleLinear().domain([domainMin, domainMax]).range([plotBottom, plotTop]);
 
     const toPath = (points: { x: number; y: number }[]): string =>
       points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
@@ -561,29 +590,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       flush();
       return paths;
     };
-    const ridgeBands = depthBands.map((band, bandIndex, all) => {
-      const stripPaths =
-        bandIndex < all.length - 1
-          ? toStripFillPaths(depthBands, bandIndex, bandIndex + 1)
-          : band.fillSegments.map(
-              (segment) =>
-                `${toPath(segment)} L${segment[segment.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${segment[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`,
-            );
-      const topCapPaths =
-        bandIndex === 0
-          ? band.fillSegments.map(
-              (segment) =>
-                `${toPath(segment)} L${segment[segment.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${segment[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`,
-            )
-          : [];
-      return {
-        key: `ridge-${bandIndex}`,
-        style: depthStyleForBand(bandIndex, all.length),
-        isBaseFill: bandIndex === all.length - 1,
-        lineSegments: band.lineSegments,
-        fillPaths: [...stripPaths, ...topCapPaths],
-      };
-    });
+    const ridgeBands = depthBands.map((band, bandIndex, all) => ({
+      key: `ridge-${bandIndex}`,
+      style: depthStyleForBand(bandIndex, all.length),
+      lineSegments: band.lineSegments,
+    }));
     const sampleDrivenBandCount = Math.min(
       20,
       Math.max(8, Math.round((visibleRays[0]?.ray.samples.length ?? 64) / 10)),
@@ -637,10 +648,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         }
         const slopeNorm = slopeSamples > 0 ? Math.min(1.4, (avgSlopeDeg / slopeSamples) * 4.2) : 0;
         const curvatureNorm = slopeSamples > 0 ? Math.min(1.4, (avgCurvatureDeg / slopeSamples) * 5.1) : 0;
-        const baseAlpha = 0.03 + depthNearFactor * 0.11;
-        const reliefAlpha = slopeNorm * 0.07 + curvatureNorm * 0.06;
-        const nearBoost = Math.min(0.06, pxPerDeg * 0.0022);
-        const alpha = Math.min(0.34, baseAlpha + reliefAlpha + nearBoost);
+        const baseAlpha = 0.12 + depthNearFactor * 0.2;
+        const reliefAlpha = slopeNorm * 0.14 + curvatureNorm * 0.12;
+        const nearBoost = Math.min(0.14, pxPerDeg * 0.0038);
+        const alpha = Math.min(0.72, baseAlpha + reliefAlpha + nearBoost);
         return paths.map((path) => ({ path, alpha }));
       });
     const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
@@ -671,18 +682,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           cy: y(node.elevationAngleDeg),
         };
       })
-      .filter((entry) => entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd);
+      .filter((entry) => entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd)
+      .filter((entry) => {
+        if (entry.node.id.startsWith("sim:")) return true;
+        if (entry.node.id.startsWith("lib:") || entry.node.id.startsWith("mqtt:")) return entry.node.visible;
+        return true;
+      });
 
-    const peakCandidates = selectedSiteEffective
-      ? queryPanoramaPeaks({
-          origin: selectedSiteEffective.position,
-          centerDeg: xCenterForUnwrap,
-          startDeg: xDomainStart,
-          endDeg: xDomainEnd,
-          maxDistanceKm: 600,
-          limit: 2200,
-        })
-      : [];
+    const kFactor = Math.max(0.5, 1 + (propagationEnvironment.atmosphericBendingNUnits - 250) / 153);
+    const sourceAbsM = selectedSiteEffective ? selectedSiteEffective.groundElevationM + selectedSiteEffective.antennaHeightM : 0;
     const peakLabels = peakCandidates
       .map((peak) => {
         const xValue = unwrapAzimuthForWindow(peak.azimuthDeg, xCenterForUnwrap);
@@ -695,15 +703,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           },
           { entry: visibleRays[0], dist: Number.POSITIVE_INFINITY },
         ).entry.ray;
-        const sample =
-          nearestRay.samples.reduce(
-            (best, item) => {
-              const dist = Math.abs(item.distanceKm - peak.distanceKm);
-              if (dist < best.dist) return { item, dist };
-              return best;
-            },
-            { item: nearestRay.samples[nearestRay.samples.length - 1] ?? null, dist: Number.POSITIVE_INFINITY },
-          ).item ?? null;
+        const sample = nearestSampleForDistance(nearestRay.samples, peak.distanceKm);
+        const visibleLos = isPeakLosVisible({
+          samples: nearestRay.samples,
+          distanceKm: peak.distanceKm,
+          peakElevationM: peak.elevationM,
+          sourceAbsM,
+          kFactor,
+        });
+        if (!visibleLos) return null;
         const yAngle = sample?.angleDeg ?? nearestRay.horizonAngleDeg;
         return {
           id: `peak:${peak.id}`,
@@ -732,7 +740,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           chartWidth,
           leftPadding: M.l,
           rightPadding: M.r,
-          topY: M.t + 2,
+          topY: M.t + 4,
         })
       : [];
 
@@ -747,6 +755,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       x,
       xWindow,
       y,
+      plotTop,
+      plotBottom,
       clutterPath: includeClutter ? toPath(clutterPoints) : "",
       clutterAreaPath,
       ridgeBands,
@@ -777,6 +787,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     includeClutter,
     lineSampleCount,
     selectedSiteEffective,
+    peakCandidates,
+    propagationEnvironment.atmosphericBendingNUnits,
     showLabels,
   ]);
 
@@ -957,7 +969,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const xNorm = clamp((event.clientX - rect.left) / rect.width, 0, 1);
     const yNorm = clamp((event.clientY - rect.top) / rect.height, 0, 1);
     const xPx = M.l + xNorm * (chartWidth - M.l - M.r);
-    const yPx = M.t + yNorm * (chartHeight - M.t - M.b);
+    const yPx = geometry.plotTop + yNorm * (chartHeight - geometry.plotTop - M.b);
 
     const unwrapped = geometry.x.invert(xPx);
     const azimuth = mod360(unwrapped);
@@ -1312,11 +1324,48 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           <>
             <svg aria-label="Panorama" height={chartHeight} role="img" width={chartWidth}>
               <defs>
-                <linearGradient id={terrainFillGradientId} x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="color-mix(in srgb, var(--terrain) 70%, var(--accent) 30%)" stopOpacity="0.86" />
-                  <stop offset="100%" stopColor="color-mix(in srgb, var(--terrain) 18%, var(--surface-2) 82%)" stopOpacity="0.22" />
-                </linearGradient>
+                <clipPath id={terrainClipId}>
+                  <rect x={M.l} y={geometry.plotTop} width={chartWidth - M.l - M.r} height={geometry.plotBottom - geometry.plotTop} />
+                </clipPath>
               </defs>
+
+              <g clipPath={`url(#${terrainClipId})`}>
+                {geometry.sampleShadePaths.map((shadePath, shadeIndex) => (
+                  <path
+                    className="panorama-shade-band"
+                    d={shadePath.path}
+                    key={`shade-${shadeIndex}`}
+                    style={{ opacity: shadePath.alpha }}
+                  />
+                ))}
+                {geometry.ridgeBands.map((band) => (
+                  <g key={band.key}>
+                    {band.lineSegments.map((segment, segmentIndex) => (
+                      <path
+                        className="panorama-ridge-line"
+                        d={segment}
+                        key={`${band.key}-segment-${segmentIndex}`}
+                        style={{
+                          strokeWidth: band.style.strokeWidth,
+                          strokeOpacity: band.style.strokeOpacity,
+                          stroke: `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--muted) ${band.style.strokeMixMutedPct}%)`,
+                        }}
+                      />
+                    ))}
+                  </g>
+                ))}
+                {includeClutter && geometry.clutterAreaPath ? <path className="panorama-clutter-haze" d={geometry.clutterAreaPath} /> : null}
+                {includeClutter && geometry.clutterPath ? <path className="panorama-clutter-line" d={geometry.clutterPath} /> : null}
+                {geometry.nodes.map((node) => (
+                  <circle
+                    key={node.node.id}
+                    className={`panorama-node panorama-node-${node.node.state} ${node.node.visible ? "is-visible" : "is-hidden"}`}
+                    cx={node.cx}
+                    cy={node.cy}
+                    r={3.2}
+                  />
+                ))}
+              </g>
 
               {geometry.ticksY.map((value) => (
                 <g className="chart-grid" key={`y-${value.toFixed(2)}`}>
@@ -1329,61 +1378,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
               {geometry.ticksX.map((value) => (
                 <g className="chart-grid" key={`x-${value.toFixed(2)}`}>
-                  <line x1={geometry.x(value)} x2={geometry.x(value)} y1={M.t} y2={chartHeight - M.b} />
+                  <line x1={geometry.x(value)} x2={geometry.x(value)} y1={geometry.plotTop} y2={chartHeight - M.b} />
                   <text textAnchor="middle" x={geometry.x(value)} y={chartHeight - 8}>
                     {formatAzimuthTick(value)}
                   </text>
                 </g>
-              ))}
-
-              {geometry.sampleShadePaths.map((shadePath, shadeIndex) => (
-                <path
-                  className="panorama-shade-band"
-                  d={shadePath.path}
-                  key={`shade-${shadeIndex}`}
-                  style={{ opacity: shadePath.alpha }}
-                />
-              ))}
-              {geometry.ridgeBands.map((band) => (
-                <g key={band.key}>
-                  {band.fillPaths.map((fillPath, fillIndex) => (
-                    <path
-                      className="panorama-ridge-band"
-                      d={fillPath}
-                      key={`${band.key}-fill-${fillIndex}`}
-                      style={{
-                        opacity: band.style.fillOpacity + (band.isBaseFill ? 0.08 : 0),
-                        fill: band.isBaseFill
-                          ? `url(#${terrainFillGradientId})`
-                          : `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--surface-2) 55%)`,
-                      }}
-                    />
-                  ))}
-                  {band.lineSegments.map((segment, segmentIndex) => (
-                    <path
-                      className="panorama-ridge-line"
-                      d={segment}
-                      key={`${band.key}-segment-${segmentIndex}`}
-                      style={{
-                        strokeWidth: band.style.strokeWidth,
-                        strokeOpacity: band.style.strokeOpacity,
-                        stroke: `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--muted) ${band.style.strokeMixMutedPct}%)`,
-                      }}
-                    />
-                  ))}
-                </g>
-              ))}
-              {includeClutter && geometry.clutterAreaPath ? <path className="panorama-clutter-haze" d={geometry.clutterAreaPath} /> : null}
-              {includeClutter && geometry.clutterPath ? <path className="panorama-clutter-line" d={geometry.clutterPath} /> : null}
-
-              {geometry.nodes.map((node) => (
-                <circle
-                  key={node.node.id}
-                  className={`panorama-node panorama-node-${node.node.state} ${node.node.visible ? "is-visible" : "is-hidden"}`}
-                  cx={node.cx}
-                  cy={node.cy}
-                  r={3.2}
-                />
               ))}
               {geometry.labels.map((label) => (
                 <g className="panorama-label-layer" key={label.id}>
@@ -1404,7 +1403,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                   className="profile-cursor"
                   x1={geometry.x(unwrapAzimuthForWindow(activeRay.azimuthDeg, focusAzimuthDeg))}
                   x2={geometry.x(unwrapAzimuthForWindow(activeRay.azimuthDeg, focusAzimuthDeg))}
-                  y1={M.t}
+                  y1={geometry.plotTop}
                   y2={chartHeight - M.b}
                 />
               ) : null}
@@ -1412,9 +1411,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
               <rect
                 className="profile-hitbox"
                 x={M.l}
-                y={M.t}
+                y={geometry.plotTop}
                 width={chartWidth - M.l - M.r}
-                height={chartHeight - M.t - M.b}
+                height={chartHeight - geometry.plotTop - M.b}
                 onClick={onClick}
                 onMouseLeave={onLeave}
                 onMouseMove={onMove}

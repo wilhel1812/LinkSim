@@ -2121,7 +2121,9 @@ input {
 }
 
 .ui-slider-vertical {
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  justify-items: center;
   align-items: center;
   gap: 10px;
   width: 92px;
@@ -2175,7 +2177,7 @@ input {
 }
 
 .panorama-shade-band {
-  fill: color-mix(in srgb, var(--terrain) 58%, var(--surface-2) 42%);
+  fill: color-mix(in srgb, var(--terrain) 72%, var(--surface-2) 28%);
 }
 
 @keyframes panorama-popover-rise {
@@ -2322,13 +2324,9 @@ html.panorama-gesture-lock body {
   stroke-linejoin: round;
 }
 
-.panorama-ridge-band {
-  fill: color-mix(in srgb, var(--terrain) 64%, var(--surface-2) 36%);
-}
-
 .panorama-ridge-line {
   fill: none;
-  stroke: color-mix(in srgb, var(--terrain) 66%, var(--text) 34%);
+  stroke: color-mix(in srgb, var(--terrain) 74%, var(--text) 26%);
   stroke-width: 1.1;
 }
 
