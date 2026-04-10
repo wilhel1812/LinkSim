@@ -18,16 +18,10 @@ export type PanoramaLabelLayout = PanoramaLabelCandidate & {
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
-const projectedLabelWidthPx = (name: string): number => {
-  const chars = Math.max(4, Math.min(36, name.trim().length || 4));
-  return chars * 5.6 + 16;
-};
-
-// Labels are rendered at 45°. The horizontal footprint of a rotated rectangle
-// with width W and height H is (W + H) / sqrt(2), not W.
+// Labels are rendered at 45°. The horizontal footprint depends only on the text
+// height — the width extends diagonally upward and doesn't interfere with neighbors.
 const LABEL_TEXT_HEIGHT_PX = 14;
-const rotatedHorizontalFootprint = (width: number): number =>
-  (width + LABEL_TEXT_HEIGHT_PX) / Math.SQRT2;
+const ROTATED_LABEL_FOOTPRINT_PX = LABEL_TEXT_HEIGHT_PX / Math.SQRT2; // ~10px
 
 export const resolveVisiblePanoramaLabels = (params: {
   candidates: PanoramaLabelCandidate[];
@@ -42,8 +36,7 @@ export const resolveVisiblePanoramaLabels = (params: {
   const laneLeft = leftPadding + 2;
   const laneRight = chartWidth - rightPadding - 2;
   const laneWidth = Math.max(1, laneRight - laneLeft);
-  // Use rotated footprint for hard cap: avg label ~100px wide → ~81px rotated footprint
-  const hardCap = Math.max(1, Math.floor(laneWidth / 40));
+  const hardCap = Math.max(1, Math.floor(laneWidth / 16));
 
   const selected: Array<PanoramaLabelLayout & { minX: number; maxX: number }> = [];
   const ranked = [...candidates].sort((a, b) => {
@@ -54,8 +47,7 @@ export const resolveVisiblePanoramaLabels = (params: {
 
   for (const candidate of ranked) {
     if (selected.length >= hardCap) break;
-    const width = projectedLabelWidthPx(candidate.name);
-    const footprint = rotatedHorizontalFootprint(width);
+    const footprint = ROTATED_LABEL_FOOTPRINT_PX;
     const anchorX = clamp(candidate.x, laneLeft + footprint * 0.5, laneRight - footprint * 0.5);
     const minX = anchorX - footprint * 0.5;
     const maxX = anchorX + footprint * 0.5;

@@ -51,7 +51,7 @@ describe("resolveVisiblePanoramaLabels", () => {
       rightPadding: 20,
       topY: 16,
     });
-    expect(labels.length).toBeLessThan(10);
+    expect(labels.length).toBeLessThan(25);
     for (let i = 1; i < labels.length; i += 1) {
       expect(labels[i].anchorX).toBeGreaterThanOrEqual(labels[i - 1].anchorX);
     }

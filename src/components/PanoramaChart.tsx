@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { AudioLines, Compass, Maximize2, Minimize2, SunMedium, Tags, Trees, Waves, ZoomIn } from "lucide-react";
+import { Compass, Maximize2, Minimize2, SunMedium, Tags, Waves, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -21,7 +21,7 @@ import { composePanoramaWindow } from "../lib/panoramaCompose";
 import { resolveVisiblePanoramaLabels, type PanoramaLabelCandidate } from "../lib/panoramaLabels";
 import { loadPanoramaPeaks, type PanoramaPeakCandidate } from "../lib/panoramaPeaks";
 import { isPeakLosVisible, nearestSampleForDistance } from "../lib/panoramaLos";
-import { buildDepthBands, buildNearBiasedDepthFractions, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
+import { buildDepthBands, buildNearBiasedDepthFractions, resolveRenderedEndpoint } from "../lib/panoramaRender";
 import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
 import { centerForScaledWindow } from "../lib/panoramaViewport";
 import { passFailStateLabel } from "../lib/passFailState";
@@ -122,7 +122,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
   const wavesButtonRef = useRef<HTMLButtonElement | null>(null);
   const fovButtonRef = useRef<HTMLButtonElement | null>(null);
-  const linesButtonRef = useRef<HTMLButtonElement | null>(null);
   const sliderPopoverRef = useRef<HTMLDivElement | null>(null);
   const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStartRef = useRef<{ distance: number; fovScale: number; spanDeg: number; centerDeg: number } | null>(null);
@@ -133,16 +132,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(180);
-  const [includeClutter, setIncludeClutter] = useState(false);
   const [exaggeration, setExaggeration] = useState(4);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
-  const [fovScale, setFovScale] = useState(1.5);
+  const [fovScale, setFovScale] = useState(3);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
   const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
-  const [openSliderPopover, setOpenSliderPopover] = useState<"fov" | "vertical" | "lines" | null>(null);
+  const [openSliderPopover, setOpenSliderPopover] = useState<"fov" | "vertical" | null>(null);
   const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
-  const [lineSampleCount, setLineSampleCount] = useState(10);
   const [peakCandidates, setPeakCandidates] = useState<PanoramaPeakCandidate[]>([]);
   const [peakLoadStatus, setPeakLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [peakLoadError, setPeakLoadError] = useState<string | null>(null);
@@ -606,11 +603,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
     const y = scaleLinear().domain([domainMin, domainMax]).range([plotBottom, plotTop]);
 
-    const toPath = (points: { x: number; y: number }[]): string =>
-      points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
-
-    const clutterPoints = visibleRays.map(({ ray, xValue }) => ({ x: x(xValue), y: y(ray.clutterHorizonAngleDeg) }));
-    const ridgeFractions = buildNearBiasedDepthFractions(lineSampleCount);
+    const ridgeFractions = buildNearBiasedDepthFractions(10);
     const depthBands = buildDepthBands(
       visibleRays.map((entry) => entry.ray),
       ridgeFractions,
@@ -632,20 +625,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         },
       },
     );
-    const ridgeBands = depthBands.map((band, bandIndex, all) => ({
-      key: `ridge-${bandIndex}`,
-      style: depthStyleForBand(bandIndex, all.length),
-      lineSegments: band.lineSegments,
-    }));
-    const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
-
-    const clutterAreaPath = includeClutter
-      ? `${toPath(clutterPoints)} ${[...clutterBasePoints]
-          .reverse()
-          .map((point) => `L${point.x.toFixed(2)},${point.y.toFixed(2)}`)
-          .join(" ")} Z`
-      : "";
-
     const ticksX = Array.from({ length: 7 }, (_, index) => {
       const ratio = index / 6;
       return xDomainStart + (xDomainEnd - xDomainStart) * ratio;
@@ -730,20 +709,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const fitSpan = Math.max(0.001, fitMax - fitMin);
     const trueSpan = Math.max(0.001, trueMax - trueMin);
     const maxVerticalScaleX = Math.max(1, trueSpan / fitSpan);
-    const nearestBandDistances = depthBands[0]?.points.map((point) => point.sample?.distanceKm ?? 0).filter((value) => Number.isFinite(value) && value > 0) ?? [];
-    const furthestBandDistances =
-      depthBands[depthBands.length - 1]?.points.map((point) => point.sample?.distanceKm ?? 0).filter((value) => Number.isFinite(value) && value > 0) ?? [];
-
     return {
       x,
       xWindow,
       y,
       plotTop,
       plotBottom,
-      clutterPoints: includeClutter ? clutterPoints : [],
-      clutterPath: includeClutter ? toPath(clutterPoints) : "",
-      clutterAreaPath,
-      ridgeBands,
       ticksX,
       ticksY,
       nodes,
@@ -752,12 +723,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       coverageSegments: composedWindow.segments,
       visibleRays,
       depthBands,
-      nearestLineDistanceKm: nearestBandDistances.length
-        ? { min: Math.min(...nearestBandDistances), max: Math.max(...nearestBandDistances) }
-        : null,
-      furthestLineDistanceKm: furthestBandDistances.length
-        ? { min: Math.min(...furthestBandDistances), max: Math.max(...furthestBandDistances) }
-        : null,
     };
   }, [
     panorama,
@@ -769,8 +734,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     chartWidth,
     exaggeration,
     xWindow,
-    includeClutter,
-    lineSampleCount,
     selectedSiteEffective,
     peakCandidates,
     propagationEnvironment.atmosphericBendingNUnits,
@@ -809,11 +772,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     };
 
     const rays = geometry.visibleRays;
-    const bandCount = geometry.depthBands.length;
     const cw = chartSize.width;
     const ch = chartSize.height;
 
-    // --- LAYER 1: Terrain quads (depth-shaded, back to front, clipped) ---
+    // --- LAYER 1: Terrain quads (rendered opaque to offscreen canvas, composited) ---
     if (rays.length >= 2) {
       const maxDistanceKm = Math.max(
         0.001,
@@ -826,65 +788,81 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       const ly = light.y / lightNorm;
       const lz = light.z / lightNorm;
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(M.l, geometry.plotTop, cw - M.l - M.r, geometry.plotBottom - geometry.plotTop);
-      ctx.clip();
+      // Render terrain to an offscreen canvas at full opacity, then composite.
+      // This eliminates seams: adjacent quads rendered semi-transparently would
+      // double-render at overlaps, but opaque quads on a separate surface don't.
+      const offscreen = document.createElement("canvas");
+      offscreen.width = targetWidth;
+      offscreen.height = targetHeight;
+      const oCtx = offscreen.getContext("2d");
+      if (oCtx) {
+        oCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        oCtx.clearRect(0, 0, cw, ch);
+        oCtx.save();
+        oCtx.beginPath();
+        oCtx.rect(M.l, geometry.plotTop, cw - M.l - M.r, geometry.plotBottom - geometry.plotTop);
+        oCtx.clip();
 
-      for (let sampleIndex = maxSampleCount - 2; sampleIndex >= 0; sampleIndex -= 1) {
-        for (let rayIndex = 0; rayIndex < rays.length - 1; rayIndex += 1) {
-          const left = rays[rayIndex];
-          const right = rays[rayIndex + 1];
-          const s00 = left.ray.samples[sampleIndex];
-          const s01 = left.ray.samples[sampleIndex + 1];
-          const s10 = right.ray.samples[sampleIndex];
-          const s11 = right.ray.samples[sampleIndex + 1];
-          if (!s00 || !s01 || !s10 || !s11) continue;
+        for (let sampleIndex = maxSampleCount - 2; sampleIndex >= 0; sampleIndex -= 1) {
+          for (let rayIndex = 0; rayIndex < rays.length - 1; rayIndex += 1) {
+            const left = rays[rayIndex];
+            const right = rays[rayIndex + 1];
+            const s00 = left.ray.samples[sampleIndex];
+            const s01 = left.ray.samples[sampleIndex + 1];
+            const s10 = right.ray.samples[sampleIndex];
+            const s11 = right.ray.samples[sampleIndex + 1];
+            if (!s00 || !s01 || !s10 || !s11) continue;
 
-          const x0 = geometry.x(left.xValue);
-          const x1 = geometry.x(right.xValue);
-          const y00 = geometry.y(s00.angleDeg);
-          const y01 = geometry.y(s01.angleDeg);
-          const y10 = geometry.y(s10.angleDeg);
-          const y11 = geometry.y(s11.angleDeg);
+            const x0 = geometry.x(left.xValue);
+            const x1 = geometry.x(right.xValue);
+            const y00 = geometry.y(s00.angleDeg);
+            const y01 = geometry.y(s01.angleDeg);
+            const y10 = geometry.y(s10.angleDeg);
+            const y11 = geometry.y(s11.angleDeg);
 
-          const dzdx = ((s10.angleDeg - s00.angleDeg) + (s11.angleDeg - s01.angleDeg)) * 0.5;
-          const dzdr = ((s01.angleDeg - s00.angleDeg) + (s11.angleDeg - s10.angleDeg)) * 0.5;
-          const nx = -dzdx * 0.75;
-          const ny = -dzdr * 1.2;
-          const nz = 1;
-          const norm = Math.hypot(nx, ny, nz) || 1;
-          const lambert = Math.max(0, (nx / norm) * lx + (ny / norm) * ly + (nz / norm) * lz);
+            const dzdx = ((s10.angleDeg - s00.angleDeg) + (s11.angleDeg - s01.angleDeg)) * 0.5;
+            const dzdr = ((s01.angleDeg - s00.angleDeg) + (s11.angleDeg - s10.angleDeg)) * 0.5;
+            const nx = -dzdx * 0.75;
+            const ny = -dzdr * 1.2;
+            const nz = 1;
+            const norm = Math.hypot(nx, ny, nz) || 1;
+            const lambert = Math.max(0, (nx / norm) * lx + (ny / norm) * ly + (nz / norm) * lz);
 
-          const avgDistanceKm = (s00.distanceKm + s01.distanceKm + s10.distanceKm + s11.distanceKm) * 0.25;
-          const depth = clamp(avgDistanceKm / maxDistanceKm, 0, 1);
-          const haze = Math.pow(depth, 1.15);
+            const avgDistanceKm = (s00.distanceKm + s01.distanceKm + s10.distanceKm + s11.distanceKm) * 0.25;
+            const depth = clamp(avgDistanceKm / maxDistanceKm, 0, 1);
+            const haze = Math.pow(depth, 1.15);
 
-          const baseColor =
-            shadingMode === "relief"
-              ? blendRgb(terrainColor, surfaceColor, 0.14 + haze * 0.68)
-              : blendRgb(terrainColor, textColor, 0.22 + haze * 0.32);
-          const litColor =
-            shadingMode === "relief"
-              ? brightenRgb(baseColor, (lambert - 0.45) * 0.6)
-              : brightenRgb(baseColor, 0);
-          const alpha =
-            shadingMode === "relief"
-              ? clamp(0.88 - haze * 0.5 + lambert * 0.08, 0.2, 0.96)
-              : clamp(0.18 - haze * 0.1, 0.06, 0.2);
+            const baseColor =
+              shadingMode === "relief"
+                ? blendRgb(terrainColor, surfaceColor, 0.08 + haze * 0.55)
+                : blendRgb(terrainColor, textColor, 0.22 + haze * 0.32);
+            const litColor =
+              shadingMode === "relief"
+                ? brightenRgb(baseColor, (lambert - 0.4) * 0.85)
+                : brightenRgb(baseColor, 0);
 
-          ctx.fillStyle = toCanvasColor(litColor, alpha);
-          ctx.beginPath();
-          ctx.moveTo(x0, y00);
-          // Extend right edge by 1px so adjacent quads overlap, eliminating sub-pixel gaps.
-          ctx.lineTo(x1 + 1, y10);
-          ctx.lineTo(x1 + 1, y11);
-          ctx.lineTo(x0, y01);
-          ctx.closePath();
-          ctx.fill();
+            // Render opaque on the offscreen canvas — no seam artifacts.
+            oCtx.fillStyle = toCanvasColor(litColor, 1);
+            oCtx.beginPath();
+            oCtx.moveTo(x0, y00);
+            oCtx.lineTo(x1 + 0.5, y10);
+            oCtx.lineTo(x1 + 0.5, y11);
+            oCtx.lineTo(x0, y01);
+            oCtx.closePath();
+            oCtx.fill();
+          }
         }
+        oCtx.restore();
+
+        // Composite the opaque terrain layer onto the main canvas.
+        const terrainAlpha = shadingMode === "relief" ? 0.92 : 0.18;
+        ctx.save();
+        ctx.globalAlpha = terrainAlpha;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(offscreen, 0, 0);
+        ctx.restore();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
-      ctx.restore();
     }
 
     // --- LAYER 2: Grid lines and tick labels ---
@@ -922,61 +900,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ctx.fillText(formatAzimuthTick(value), gx, ch - 8);
     }
 
-    // --- LAYER 3: Ridge lines, clutter, and node circles (clipped to plot) ---
+    // --- LAYER 3: Node circles (clipped to plot) ---
     ctx.save();
     ctx.beginPath();
     ctx.rect(M.l, geometry.plotTop, cw - M.l - M.r, geometry.plotBottom - geometry.plotTop);
     ctx.clip();
-    ctx.lineJoin = "round";
-
-    // Ridge lines using raw point runs from depthBands (avoids SVG path string parsing)
-    for (const band of geometry.depthBands) {
-      const style = depthStyleForBand(band.bandIndex, bandCount);
-      const strokePct = style.strokeMixTerrainPct / 100;
-      const strokeRgb = blendRgb(terrainColor, mutedColor, 1 - strokePct);
-      const opacity = shadingMode === "relief" ? style.strokeOpacity : Math.max(0.5, style.strokeOpacity);
-      ctx.strokeStyle = toCanvasColor(strokeRgb, opacity);
-      ctx.lineWidth = shadingMode === "relief" ? style.strokeWidth : Math.max(1.2, style.strokeWidth * 1.08);
-      for (const run of band.fillSegments) {
-        if (run.length < 2) continue;
-        ctx.beginPath();
-        ctx.moveTo(run[0].x, run[0].y);
-        for (let i = 1; i < run.length; i++) {
-          ctx.lineTo(run[i].x, run[i].y);
-        }
-        ctx.stroke();
-      }
-    }
-
-    // Clutter area (haze) and clutter line
-    if (includeClutter && geometry.clutterPoints.length >= 2) {
-      const failBlockedRgb = stateColors.fail_blocked ?? { r: 200, g: 50, b: 50 };
-      const clutterBasePoints = geometry.depthBands[geometry.depthBands.length - 1]?.points ?? [];
-      if (clutterBasePoints.length) {
-        ctx.fillStyle = toCanvasColor(failBlockedRgb, 0.34 * 0.35);
-        ctx.beginPath();
-        ctx.moveTo(geometry.clutterPoints[0].x, geometry.clutterPoints[0].y);
-        for (let i = 1; i < geometry.clutterPoints.length; i++) {
-          ctx.lineTo(geometry.clutterPoints[i].x, geometry.clutterPoints[i].y);
-        }
-        for (let i = clutterBasePoints.length - 1; i >= 0; i--) {
-          const p = clutterBasePoints[i];
-          if (p) ctx.lineTo(p.x, p.y);
-        }
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.strokeStyle = toCanvasColor(blendRgb(failBlockedRgb, textColor, 0.38), 1);
-      ctx.lineWidth = 1.6;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(geometry.clutterPoints[0].x, geometry.clutterPoints[0].y);
-      for (let i = 1; i < geometry.clutterPoints.length; i++) {
-        ctx.lineTo(geometry.clutterPoints[i].x, geometry.clutterPoints[i].y);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
 
     // Node circles
     ctx.lineWidth = 1.1;
@@ -1027,7 +955,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ctx.fillText(label.name, 0, 0);
       ctx.restore();
     }
-  }, [geometry, chartSize, shadingMode, includeClutter]);
+  }, [geometry, chartSize, shadingMode]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -1293,9 +1221,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const anchor =
       openSliderPopover === "fov"
         ? fovButtonRef.current
-        : openSliderPopover === "vertical"
-          ? wavesButtonRef.current
-          : linesButtonRef.current;
+        : wavesButtonRef.current;
     if (!anchor) return;
     const updatePosition = () => {
       const rect = anchor.getBoundingClientRect();
@@ -1326,9 +1252,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       const anchor =
         openSliderPopover === "fov"
           ? fovButtonRef.current
-          : openSliderPopover === "vertical"
-            ? wavesButtonRef.current
-            : linesButtonRef.current;
+          : wavesButtonRef.current;
       if (sliderPopoverRef.current?.contains(target)) return;
       if (anchor?.contains(target)) return;
       setOpenSliderPopover(null);
@@ -1338,9 +1262,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       const anchor =
         openSliderPopover === "fov"
           ? fovButtonRef.current
-          : openSliderPopover === "vertical"
-            ? wavesButtonRef.current
-            : linesButtonRef.current;
+          : wavesButtonRef.current;
       if (sliderPopoverRef.current?.contains(target)) return;
       if (anchor?.contains(target)) return;
       setOpenSliderPopover(null);
@@ -1423,29 +1345,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                   valueLabel={`${exaggeration.toFixed(1)}x`}
                 />
               </div>
-            ) : (
-              <div className="panorama-slider-popover-single">
-                <UiSlider
-                  ariaLabel="Panorama radial lines"
-                  label="Lines"
-                  max={60}
-                  min={4}
-                  onChange={(value) => setLineSampleCount(Math.round(value))}
-                  orientation="vertical"
-                  step={1}
-                  value={lineSampleCount}
-                  valueLabel={`${lineSampleCount}`}
-                />
-                {geometry?.nearestLineDistanceKm ? (
-                  <div className="panorama-lines-telemetry">
-                    <div>Near: {geometry.nearestLineDistanceKm.min.toFixed(1)}-{geometry.nearestLineDistanceKm.max.toFixed(1)} km</div>
-                    {geometry?.furthestLineDistanceKm ? (
-                      <div>Far: {geometry.furthestLineDistanceKm.min.toFixed(1)}-{geometry.furthestLineDistanceKm.max.toFixed(1)} km</div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            )}
+            ) : null}
           </div>,
           document.body,
         )
@@ -1479,15 +1379,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             <SunMedium aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
-            aria-label={includeClutter ? "Disable clutter layer" : "Enable clutter layer"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${includeClutter ? "is-active" : ""}`}
-            onClick={() => setIncludeClutter((value) => !value)}
-            title={includeClutter ? "Clutter layer on" : "Clutter layer off"}
-            type="button"
-          >
-            <Trees aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
             aria-label="Adjust field of view"
             className={`chart-endpoint-swap chart-endpoint-icon ${openSliderPopover === "fov" ? "is-active" : ""}`}
             onClick={() => setOpenSliderPopover((value) => (value === "fov" ? null : "fov"))}
@@ -1496,16 +1387,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             type="button"
           >
             <ZoomIn aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
-            aria-label="Adjust terrain line count"
-            className={`chart-endpoint-swap chart-endpoint-icon ${openSliderPopover === "lines" ? "is-active" : ""}`}
-            onClick={() => setOpenSliderPopover((value) => (value === "lines" ? null : "lines"))}
-            ref={linesButtonRef}
-            title="Terrain lines"
-            type="button"
-          >
-            <AudioLines aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
             aria-label={mapHoverZoomEnabled ? "Disable map hover lens" : "Enable map hover lens"}
