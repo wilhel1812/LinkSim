@@ -2175,7 +2175,7 @@ input {
 }
 
 .panorama-shade-band {
-  fill: color-mix(in srgb, var(--terrain) 38%, var(--surface-2) 62%);
+  fill: color-mix(in srgb, var(--terrain) 58%, var(--surface-2) 42%);
 }
 
 @keyframes panorama-popover-rise {
@@ -2370,6 +2370,31 @@ html.panorama-gesture-lock body {
 .panorama-node-fail_blocked {
   fill: var(--state-fail-blocked);
   stroke: color-mix(in srgb, var(--state-fail-blocked) 40%, var(--text) 60%);
+}
+
+.panorama-label-layer {
+  pointer-events: none;
+}
+
+.panorama-label-line {
+  stroke: color-mix(in srgb, var(--text) 28%, var(--border) 72%);
+  stroke-width: 1;
+  opacity: 0.84;
+}
+
+.panorama-label-text {
+  font-size: 0.64rem;
+  font-family: "IBM Plex Mono", monospace;
+  dominant-baseline: hanging;
+  text-anchor: middle;
+  fill: color-mix(in srgb, var(--text) 88%, var(--surface) 12%);
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--surface) 70%, transparent);
+  stroke-width: 2px;
+}
+
+.panorama-label-text.is-peak {
+  fill: color-mix(in srgb, var(--text) 76%, var(--muted) 24%);
 }
 
 .earth-curvature-horizon {

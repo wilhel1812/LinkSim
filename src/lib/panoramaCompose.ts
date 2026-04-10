@@ -26,16 +26,25 @@ const mapVisible = (rays: PanoramaRay[], centerDeg: number, startDeg: number, en
 
 export const composePanoramaWindow = (params: {
   basePanorama: PanoramaResult | null;
-  detailPanorama: PanoramaResult | null;
+  detailPanoramas: PanoramaResult[];
   centerDeg: number;
   startDeg: number;
   endDeg: number;
 }): { rays: PanoramaComposedRay[]; segments: PanoramaCoverageSegment[] } => {
-  const { basePanorama, detailPanorama, centerDeg, startDeg, endDeg } = params;
+  const { basePanorama, detailPanoramas, centerDeg, startDeg, endDeg } = params;
   const baseVisible = basePanorama ? mapVisible(basePanorama.rays, centerDeg, startDeg, endDeg) : [];
-  const detailVisible = detailPanorama ? mapVisible(detailPanorama.rays, centerDeg, startDeg, endDeg) : [];
+  const detailVisibleByPanorama = detailPanoramas
+    .map((panorama) => mapVisible(panorama.rays, centerDeg, startDeg, endDeg))
+    .filter((entries) => entries.length > 0);
+  const detailVisible = detailVisibleByPanorama.flat().sort((a, b) => a.xValue - b.xValue);
 
-  if (!detailVisible.length) {
+  const dedupedDetailVisible = detailVisible.filter((entry, index, all) => {
+    const prev = all[index - 1];
+    if (!prev) return true;
+    return Math.abs(prev.xValue - entry.xValue) > 0.0001;
+  });
+
+  if (!dedupedDetailVisible.length) {
     return {
       rays: baseVisible.map((entry) => ({ ...entry, source: "base" as const })),
       segments: baseVisible.length ? [{ source: "base", startDeg, endDeg }] : [],
@@ -43,30 +52,54 @@ export const composePanoramaWindow = (params: {
   }
 
   if (!baseVisible.length) {
-    const start = detailVisible[0]?.xValue ?? startDeg;
-    const end = detailVisible[detailVisible.length - 1]?.xValue ?? endDeg;
+    const start = dedupedDetailVisible[0]?.xValue ?? startDeg;
+    const end = dedupedDetailVisible[dedupedDetailVisible.length - 1]?.xValue ?? endDeg;
     return {
-      rays: detailVisible.map((entry) => ({ ...entry, source: "detail" as const })),
+      rays: dedupedDetailVisible.map((entry) => ({ ...entry, source: "detail" as const })),
       segments: [{ source: "detail", startDeg: start, endDeg: end }],
     };
   }
 
-  const detailStart = detailVisible[0]?.xValue ?? startDeg;
-  const detailEnd = detailVisible[detailVisible.length - 1]?.xValue ?? endDeg;
+  const detailSpans = detailVisibleByPanorama
+    .map((entries) => ({
+      startDeg: entries[0]?.xValue ?? startDeg,
+      endDeg: entries[entries.length - 1]?.xValue ?? endDeg,
+    }))
+    .sort((a, b) => a.startDeg - b.startDeg);
+  const mergedDetailSpans: Array<{ startDeg: number; endDeg: number }> = [];
+  for (const span of detailSpans) {
+    const last = mergedDetailSpans[mergedDetailSpans.length - 1];
+    if (!last || span.startDeg > last.endDeg + 0.0001) {
+      mergedDetailSpans.push({ startDeg: span.startDeg, endDeg: span.endDeg });
+    } else {
+      last.endDeg = Math.max(last.endDeg, span.endDeg);
+    }
+  }
 
-  const leftBase = baseVisible.filter((entry) => entry.xValue < detailStart);
-  const rightBase = baseVisible.filter((entry) => entry.xValue > detailEnd);
-  const rays: PanoramaComposedRay[] = [
-    ...leftBase.map((entry) => ({ ...entry, source: "base" as const })),
-    ...detailVisible.map((entry) => ({ ...entry, source: "detail" as const })),
-    ...rightBase.map((entry) => ({ ...entry, source: "base" as const })),
-  ];
-
+  const rays: PanoramaComposedRay[] = [];
   const segments: PanoramaCoverageSegment[] = [];
-  if (leftBase.length) segments.push({ source: "base", startDeg, endDeg: detailStart });
-  segments.push({ source: "detail", startDeg: detailStart, endDeg: detailEnd });
-  if (rightBase.length) segments.push({ source: "base", startDeg: detailEnd, endDeg });
+  let cursor = startDeg;
+  for (const span of mergedDetailSpans) {
+    const spanStart = Math.max(startDeg, span.startDeg);
+    const spanEnd = Math.min(endDeg, span.endDeg);
+    if (spanEnd <= spanStart) continue;
+    if (cursor < spanStart) {
+      const baseSlice = baseVisible.filter((entry) => entry.xValue >= cursor && entry.xValue <= spanStart);
+      rays.push(...baseSlice.map((entry) => ({ ...entry, source: "base" as const })));
+      if (baseSlice.length) segments.push({ source: "base", startDeg: cursor, endDeg: spanStart });
+    }
+    const detailSlice = dedupedDetailVisible.filter((entry) => entry.xValue >= spanStart && entry.xValue <= spanEnd);
+    rays.push(...detailSlice.map((entry) => ({ ...entry, source: "detail" as const })));
+    if (detailSlice.length) segments.push({ source: "detail", startDeg: spanStart, endDeg: spanEnd });
+    cursor = Math.max(cursor, spanEnd);
+  }
+  if (cursor < endDeg) {
+    const baseSlice = baseVisible.filter((entry) => entry.xValue >= cursor && entry.xValue <= endDeg);
+    rays.push(...baseSlice.map((entry) => ({ ...entry, source: "base" as const })));
+    if (baseSlice.length) segments.push({ source: "base", startDeg: cursor, endDeg });
+  }
+
+  rays.sort((a, b) => a.xValue - b.xValue);
 
   return { rays, segments };
 };
-
