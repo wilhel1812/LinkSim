@@ -88,6 +88,7 @@ const main = async () => {
       featureCount: entries.length,
       tileCount: tiles.size,
     },
+    availableTileKeys: [...tiles.keys()].sort((a, b) => a.localeCompare(b)),
   };
 
   await fs.writeFile(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
