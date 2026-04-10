@@ -14,6 +14,13 @@ export type PanoramaDepthBand = {
   lineSegments: string[];
 };
 
+export type PanoramaBandSelectionOptions = {
+  ridgeSnap?: {
+    enabled?: boolean;
+    windowRatio?: number;
+  };
+};
+
 export type PanoramaDepthStyle = {
   strokeWidth: number;
   strokeOpacity: number;
@@ -72,23 +79,65 @@ export const buildDepthBands = (
   rays: PanoramaRay[],
   fractions: number[],
   mapPoint: (ray: PanoramaRay, sample: PanoramaRaySample | null) => { x: number; y: number; angleDeg: number },
+  options?: PanoramaBandSelectionOptions,
 ): PanoramaDepthBand[] => {
   if (!rays.length || !fractions.length) return [];
 
-  const rawBands = fractions.map((fraction, bandIndex) => {
-    const points: PanoramaDepthPoint[] = rays.map((ray) => {
-      const sampleIndex = Math.max(0, Math.min(ray.samples.length - 1, Math.round((ray.samples.length - 1) * fraction)));
-      const sample = ray.samples.length ? ray.samples[sampleIndex] ?? ray.samples[ray.samples.length - 1] : null;
+  const ridgeSnapEnabled = options?.ridgeSnap?.enabled !== false;
+  const ridgeWindowRatio = Math.max(0.01, Math.min(0.35, options?.ridgeSnap?.windowRatio ?? 0.08));
+
+  const pickSampleIndex = (
+    ray: PanoramaRay,
+    targetIndex: number,
+    minIndex: number,
+  ): number => {
+    if (!ray.samples.length) return 0;
+    const maxIndex = ray.samples.length - 1;
+    const clampedTarget = Math.max(0, Math.min(maxIndex, targetIndex));
+    if (!ridgeSnapEnabled) return Math.max(minIndex, clampedTarget);
+    const windowRadius = Math.max(1, Math.round(maxIndex * ridgeWindowRatio));
+    const start = Math.max(minIndex, clampedTarget - windowRadius);
+    const end = Math.min(maxIndex, clampedTarget + windowRadius);
+    let bestIndex = Math.max(minIndex, clampedTarget);
+    let bestScore = Number.NEGATIVE_INFINITY;
+    for (let i = start; i <= end; i += 1) {
+      const sample = ray.samples[i];
+      if (!sample) continue;
+      const crestScore = Math.max(0, sample.angleDeg - sample.maxAngleBeforeDeg);
+      const proximityScore = 1 - Math.min(1, Math.abs(i - clampedTarget) / Math.max(1, windowRadius));
+      const score = sample.angleDeg + crestScore * 0.35 + proximityScore * 0.08;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+    return Math.max(minIndex, bestIndex);
+  };
+
+  const rawBands: { bandIndex: number; depthRatio: number; points: PanoramaDepthPoint[] }[] = [];
+  for (let bandIndex = 0; bandIndex < fractions.length; bandIndex += 1) {
+    const fraction = fractions[bandIndex] ?? 1;
+    const points: PanoramaDepthPoint[] = [];
+    for (let rayIndex = 0; rayIndex < rays.length; rayIndex += 1) {
+      const ray = rays[rayIndex];
+      const maxIndex = Math.max(0, ray.samples.length - 1);
+      const targetIndex = Math.round(maxIndex * fraction);
+      const prevSample = bandIndex > 0 ? rawBands[bandIndex - 1]?.points[rayIndex]?.sample : null;
+      const minIndex = prevSample
+        ? Math.min(maxIndex, Math.max(0, Math.round((prevSample.distanceKm / Math.max(0.001, ray.maxDistanceKm)) * maxIndex)))
+        : 0;
+      const sampleIndex = pickSampleIndex(ray, targetIndex, minIndex);
+      const sample = ray.samples.length ? ray.samples[sampleIndex] ?? ray.samples[maxIndex] : null;
       const mapped = mapPoint(ray, sample);
-      return {
+      points.push({
         x: mapped.x,
         y: mapped.y,
         angleDeg: mapped.angleDeg,
         sample,
-      };
-    });
-    return { bandIndex, depthRatio: fraction, points };
-  });
+      });
+    }
+    rawBands.push({ bandIndex, depthRatio: fraction, points });
+  }
 
   const visibility: boolean[][] = rawBands.map(() => new Array<boolean>(rays.length).fill(false));
   for (let rayIndex = 0; rayIndex < rays.length; rayIndex += 1) {

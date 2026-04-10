@@ -159,6 +159,27 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+const parseDirtyPathsFromPorcelain = (statusStdout) =>
+  statusStdout
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const payload = line.length >= 4 ? line.slice(3).trim() : line.trim();
+      const renameIdx = payload.indexOf(" -> ");
+      if (renameIdx >= 0) return payload.slice(renameIdx + 4).trim();
+      return payload;
+    })
+    .filter(Boolean);
+
+async function cleanupAllowedDirtyFiles() {
+  const status = await run("git", ["status", "--porcelain"], { capture: true });
+  const dirtyPaths = parseDirtyPathsFromPorcelain(status.stdout);
+  const allowedDirty = dirtyPaths.filter((file) => ALLOWED_DIRTY_PATHS.has(file));
+  if (!allowedDirty.length) return;
+  await run("git", ["checkout", "--", ...allowedDirty]);
+  console.log(`[deploy-pages-safe] Cleaned generated files: ${allowedDirty.join(", ")}`);
+}
+
 async function verifyChartRegressionGuards() {
   const chartSource = await readFile(LINK_PROFILE_CHART_PATH, "utf8");
   const forbiddenPatterns = [
@@ -222,15 +243,7 @@ async function preflight(targetName, target) {
   const branch = await getGitRef();
   const commit = await getGitRef(["rev-parse", "--short", "HEAD"]);
   const status = await run("git", ["status", "--porcelain"], { capture: true });
-  const dirtyLines = status.stdout.split("\n").filter((line) => line.trim().length > 0);
-  const dirtyPaths = dirtyLines
-    .map((line) => {
-      const payload = line.length >= 4 ? line.slice(3).trim() : line.trim();
-      const renameIdx = payload.indexOf(" -> ");
-      if (renameIdx >= 0) return payload.slice(renameIdx + 4).trim();
-      return payload;
-    })
-    .filter(Boolean);
+  const dirtyPaths = parseDirtyPathsFromPorcelain(status.stdout);
   const unexpectedDirty = dirtyPaths.filter((file) => !ALLOWED_DIRTY_PATHS.has(file));
   assert(
     unexpectedDirty.length === 0,
@@ -337,24 +350,28 @@ async function main() {
     return replacements[ch] ?? "";
   });
 
-  await withWranglerConfig(target.configPath, async () => {
-    await run(wrangler, [
-      "pages",
-      "deploy",
-      "dist",
-      "--project-name",
-      target.projectName,
-      "--branch",
-      deployBranch,
-      "--commit-message",
-      commitMessage || commit,
-    ]);
-  });
+  try {
+    await withWranglerConfig(target.configPath, async () => {
+      await run(wrangler, [
+        "pages",
+        "deploy",
+        "dist",
+        "--project-name",
+        target.projectName,
+        "--branch",
+        deployBranch,
+        "--commit-message",
+        commitMessage || commit,
+      ]);
+    });
 
-  await verifyDeployment(target.projectName, commit);
-  console.log(
-    `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
-  );
+    await verifyDeployment(target.projectName, commit);
+    console.log(
+      `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
+    );
+  } finally {
+    await cleanupAllowedDirtyFiles();
+  }
 }
 
 main().catch((error) => {

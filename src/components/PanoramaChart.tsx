@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { Compass, Maximize2, Minimize2, Trees, Waves, ZoomIn } from "lucide-react";
+import { AudioLines, Compass, Maximize2, Minimize2, Trees, Waves, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -59,11 +59,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
   const wavesButtonRef = useRef<HTMLButtonElement | null>(null);
   const fovButtonRef = useRef<HTMLButtonElement | null>(null);
+  const linesButtonRef = useRef<HTMLButtonElement | null>(null);
   const sliderPopoverRef = useRef<HTMLDivElement | null>(null);
   const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStartRef = useRef<{ distance: number; fovScale: number; spanDeg: number; centerDeg: number } | null>(null);
   const panDragRef = useRef<{ pointerId: number; startX: number; startCenterDeg: number } | null>(null);
   const scrubDragRef = useRef<{ pointerId: number; startX: number; startCenterDeg: number } | null>(null);
+  const wheelGestureUnlockTimerRef = useRef<number | null>(null);
+  const [gestureLockActive, setGestureLockActive] = useState(false);
 
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(180);
@@ -73,7 +76,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [fovScale, setFovScale] = useState(1.5);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
   const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
-  const [openSliderPopover, setOpenSliderPopover] = useState<"fov" | "vertical" | null>(null);
+  const [openSliderPopover, setOpenSliderPopover] = useState<"fov" | "vertical" | "lines" | null>(null);
   const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const [lineSampleCount, setLineSampleCount] = useState(10);
 
@@ -122,6 +125,47 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     observer?.observe(element);
     return () => observer?.disconnect();
   }, []);
+
+  useEffect(() => {
+    const host = chartHostRef.current;
+    const scrub = scrollbarTrackRef.current;
+    if (!host || !scrub) return;
+    const captureWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const captureTouchMove = (event: TouchEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    host.addEventListener("wheel", captureWheel, { passive: false, capture: true });
+    scrub.addEventListener("wheel", captureWheel, { passive: false, capture: true });
+    host.addEventListener("touchmove", captureTouchMove, { passive: false, capture: true });
+    scrub.addEventListener("touchmove", captureTouchMove, { passive: false, capture: true });
+    return () => {
+      host.removeEventListener("wheel", captureWheel, true);
+      scrub.removeEventListener("wheel", captureWheel, true);
+      host.removeEventListener("touchmove", captureTouchMove, true);
+      scrub.removeEventListener("touchmove", captureTouchMove, true);
+    };
+  }, [chartSize]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (gestureLockActive) root.classList.add("panorama-gesture-lock");
+    else root.classList.remove("panorama-gesture-lock");
+    return () => root.classList.remove("panorama-gesture-lock");
+  }, [gestureLockActive]);
+
+  useEffect(
+    () => () => {
+      if (wheelGestureUnlockTimerRef.current != null) {
+        window.clearTimeout(wheelGestureUnlockTimerRef.current);
+        wheelGestureUnlockTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   const baseSchedulerRef = useRef(createLatestOnlyTaskScheduler());
   const detailSchedulerRef = useRef(createLatestOnlyTaskScheduler());
@@ -372,6 +416,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   const geometry = useMemo(() => {
     if (!panorama || !chartSize || !panorama.rays.length) return null;
+    const anchorPanorama = basePanorama && basePanorama.rays.length ? basePanorama : panorama;
 
     const xDomainStart = xWindow.startDeg;
     const xDomainEnd = xWindow.endDeg;
@@ -389,10 +434,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
     if (!visibleRays.length) return null;
 
-    const minHorizon = Math.min(...panorama.rays.map((ray) => ray.horizonAngleDeg));
-    const maxHorizon = Math.max(...panorama.rays.map((ray) => ray.horizonAngleDeg));
-    const minSampleAngle = Math.min(...panorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
-    const maxSampleAngle = Math.max(...panorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
+    const minHorizon = Math.min(...anchorPanorama.rays.map((ray) => ray.horizonAngleDeg));
+    const maxHorizon = Math.max(...anchorPanorama.rays.map((ray) => ray.horizonAngleDeg));
+    const minSampleAngle = Math.min(...anchorPanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
+    const maxSampleAngle = Math.max(...anchorPanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
 
     const innerWidth = Math.max(1, chartWidth - M.l - M.r);
     const innerHeight = Math.max(1, chartHeight - M.t - M.b);
@@ -431,6 +476,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         const xValue = unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap);
         const angleDeg = sample?.angleDeg ?? ray.horizonAngleDeg;
         return { x: x(xValue), y: y(angleDeg), angleDeg };
+      },
+      {
+        ridgeSnap: {
+          enabled: true,
+          windowRatio: 0.08,
+        },
       },
     );
     const ridgeBands = depthBands.map((band, bandIndex, all) => ({
@@ -489,7 +540,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       nodes,
       maxVerticalScaleX,
     };
-  }, [panorama, chartSize, chartHeight, chartWidth, verticalBlend, xWindow, includeClutter, lineSampleCount]);
+  }, [panorama, basePanorama, chartSize, chartHeight, chartWidth, verticalBlend, xWindow, includeClutter, lineSampleCount]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -539,6 +590,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   const onScrubPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!scrollbarTrackRef.current) return;
+    setGestureLockActive(true);
     const rect = scrollbarTrackRef.current.getBoundingClientRect();
     const xNorm = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
     setViewportCenterAzimuthDeg(xNorm * 360);
@@ -557,6 +609,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   const onScrubPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
     if (scrubDragRef.current?.pointerId === event.pointerId) scrubDragRef.current = null;
+    setGestureLockActive(false);
   };
 
   const applyFovAtFocal = useCallback(
@@ -572,24 +625,33 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   );
 
   const onWheelPanorama = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
     event.stopPropagation();
+    setGestureLockActive(true);
+    if (wheelGestureUnlockTimerRef.current != null) {
+      window.clearTimeout(wheelGestureUnlockTimerRef.current);
+      wheelGestureUnlockTimerRef.current = null;
+    }
+    wheelGestureUnlockTimerRef.current = window.setTimeout(() => {
+      setGestureLockActive(false);
+      wheelGestureUnlockTimerRef.current = null;
+    }, 160);
     const rect = event.currentTarget.getBoundingClientRect();
     const focalNorm = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
     if (event.ctrlKey) {
-      event.preventDefault();
       const nextScale = normalizeFovScale(normalizedFovScale * Math.exp(-event.deltaY * 0.01));
       applyFovAtFocal(nextScale, focalNorm);
       return;
     }
     const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.shiftKey ? event.deltaY : 0;
     if (dominantDelta === 0) return;
-    event.preventDefault();
     const deltaDeg = (dominantDelta / Math.max(1, chartWidth - M.l - M.r)) * viewportSpanDeg;
     setViewportCenterAzimuthDeg((current) => mod360(current + deltaDeg));
   };
 
   const onPointerDownPanorama = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!geometry) return;
+    setGestureLockActive(true);
     panDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startCenterDeg: viewportCenterAzimuthDeg };
     event.currentTarget.setPointerCapture(event.pointerId);
     pinchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -639,6 +701,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     if (panDragRef.current?.pointerId === event.pointerId) panDragRef.current = null;
     if (pinchPointersRef.current.size < 2) {
       pinchStartRef.current = null;
+    }
+    if (!panDragRef.current && pinchPointersRef.current.size === 0) {
+      setGestureLockActive(false);
     }
   };
 
@@ -734,13 +799,22 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   useEffect(() => {
     if (!openSliderPopover) return;
-    const anchor = openSliderPopover === "fov" ? fovButtonRef.current : wavesButtonRef.current;
+    const anchor =
+      openSliderPopover === "fov"
+        ? fovButtonRef.current
+        : openSliderPopover === "vertical"
+          ? wavesButtonRef.current
+          : linesButtonRef.current;
     if (!anchor) return;
     const updatePosition = () => {
       const rect = anchor.getBoundingClientRect();
-      const direction: "up" | "down" = rect.top < 220 ? "down" : "up";
+      const estimatedHeight = 264;
+      const spaceAbove = rect.top;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const direction: "up" | "down" = spaceAbove >= estimatedHeight || spaceAbove >= spaceBelow ? "up" : "down";
+      const left = clamp(rect.left + rect.width / 2, 84, window.innerWidth - 84);
       setSliderPopoverPos({
-        left: rect.left + rect.width / 2,
+        left,
         top: direction === "up" ? rect.top - 8 : rect.bottom + 8,
         direction,
       });
@@ -758,14 +832,24 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     if (!openSliderPopover) return;
     const onPointerDown = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node | null;
-      const anchor = openSliderPopover === "fov" ? fovButtonRef.current : wavesButtonRef.current;
+      const anchor =
+        openSliderPopover === "fov"
+          ? fovButtonRef.current
+          : openSliderPopover === "vertical"
+            ? wavesButtonRef.current
+            : linesButtonRef.current;
       if (sliderPopoverRef.current?.contains(target)) return;
       if (anchor?.contains(target)) return;
       setOpenSliderPopover(null);
     };
     const onFocusIn = (event: FocusEvent) => {
       const target = event.target as Node | null;
-      const anchor = openSliderPopover === "fov" ? fovButtonRef.current : wavesButtonRef.current;
+      const anchor =
+        openSliderPopover === "fov"
+          ? fovButtonRef.current
+          : openSliderPopover === "vertical"
+            ? wavesButtonRef.current
+            : linesButtonRef.current;
       if (sliderPopoverRef.current?.contains(target)) return;
       if (anchor?.contains(target)) return;
       setOpenSliderPopover(null);
@@ -834,8 +918,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 value={normalizedFovScale}
                 valueLabel={`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}
               />
-            ) : (
-              <div className="panorama-slider-popover-stack">
+            ) : openSliderPopover === "vertical" ? (
+              <div className="panorama-slider-popover-single">
                 <UiSlider
                   ariaLabel="Panorama vertical exaggeration"
                   label="Vertical"
@@ -847,12 +931,16 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                   value={verticalBlend}
                   valueLabel={`${currentVerticalScaleX.toFixed(1)}x`}
                 />
+              </div>
+            ) : (
+              <div className="panorama-slider-popover-single">
                 <UiSlider
                   ariaLabel="Panorama radial lines"
                   label="Lines"
-                  max={24}
+                  max={60}
                   min={4}
                   onChange={(value) => setLineSampleCount(Math.round(value))}
+                  orientation="vertical"
                   step={1}
                   value={lineSampleCount}
                   valueLabel={`${lineSampleCount}`}
@@ -900,6 +988,16 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             type="button"
           >
             <ZoomIn aria-hidden="true" strokeWidth={1.8} />
+          </button>
+          <button
+            aria-label="Adjust terrain line count"
+            className={`chart-endpoint-swap chart-endpoint-icon ${openSliderPopover === "lines" ? "is-active" : ""}`}
+            onClick={() => setOpenSliderPopover((value) => (value === "lines" ? null : "lines"))}
+            ref={linesButtonRef}
+            title="Terrain lines"
+            type="button"
+          >
+            <AudioLines aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
             aria-label={mapHoverZoomEnabled ? "Disable map hover lens" : "Enable map hover lens"}
