@@ -32,6 +32,63 @@ import { UiSlider } from "./UiSlider";
 const M = { t: 22, r: 20, b: 32, l: 46 };
 const LABEL_RAIL_HEIGHT = 34;
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+type Rgb = { r: number; g: number; b: number };
+
+const parseRgb = (value: string): Rgb | null => {
+  const text = value.trim();
+  if (!text) return null;
+  const hex = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hex) {
+    const raw = hex[1].toLowerCase();
+    if (raw.length === 3) {
+      return {
+        r: Number.parseInt(raw[0] + raw[0], 16),
+        g: Number.parseInt(raw[1] + raw[1], 16),
+        b: Number.parseInt(raw[2] + raw[2], 16),
+      };
+    }
+    return {
+      r: Number.parseInt(raw.slice(0, 2), 16),
+      g: Number.parseInt(raw.slice(2, 4), 16),
+      b: Number.parseInt(raw.slice(4, 6), 16),
+    };
+  }
+  const rgb = text.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (!rgb) return null;
+  return {
+    r: clamp(Math.round(Number(rgb[1])), 0, 255),
+    g: clamp(Math.round(Number(rgb[2])), 0, 255),
+    b: clamp(Math.round(Number(rgb[3])), 0, 255),
+  };
+};
+
+const toCanvasColor = (color: Rgb, alpha: number): string =>
+  `rgba(${clamp(Math.round(color.r), 0, 255)}, ${clamp(Math.round(color.g), 0, 255)}, ${clamp(Math.round(color.b), 0, 255)}, ${clamp(alpha, 0, 1).toFixed(3)})`;
+
+const blendRgb = (a: Rgb, b: Rgb, t: number): Rgb => {
+  const ratio = clamp(t, 0, 1);
+  return {
+    r: Math.round(a.r + (b.r - a.r) * ratio),
+    g: Math.round(a.g + (b.g - a.g) * ratio),
+    b: Math.round(a.b + (b.b - a.b) * ratio),
+  };
+};
+
+const brightenRgb = (color: Rgb, amount: number): Rgb => {
+  if (amount === 0) return color;
+  if (amount > 0) return blendRgb(color, { r: 255, g: 255, b: 255 }, clamp(amount, 0, 1));
+  return blendRgb(color, { r: 0, g: 0, b: 0 }, clamp(-amount, 0, 1));
+};
+
+const resolveCssColor = (value: string, fallback: string): string => {
+  if (typeof document === "undefined") return fallback;
+  const sample = document.createElement("span");
+  sample.style.color = value;
+  document.body.appendChild(sample);
+  const resolved = getComputedStyle(sample).color;
+  sample.remove();
+  return resolved || fallback;
+};
 
 type PanoramaChartProps = {
   isExpanded: boolean;
@@ -61,6 +118,7 @@ const pointerDistance = (a: { x: number; y: number }, b: { x: number; y: number 
 
 export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls }: PanoramaChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
+  const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
   const wavesButtonRef = useRef<HTMLButtonElement | null>(null);
   const fovButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -86,7 +144,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const [lineSampleCount, setLineSampleCount] = useState(10);
   const [peakCandidates, setPeakCandidates] = useState<PanoramaPeakCandidate[]>([]);
+  const [peakLoadStatus, setPeakLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [peakLoadError, setPeakLoadError] = useState<string | null>(null);
   const [shadingMode, setShadingMode] = useState<"relief" | "classic">("relief");
+  const peakErrorLogTsRef = useRef(0);
 
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
@@ -243,9 +304,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   useEffect(() => {
     if (!selectedSiteEffective || !chartSize) {
       setPeakCandidates([]);
+      setPeakLoadStatus("idle");
+      setPeakLoadError(null);
       return;
     }
     let cancelled = false;
+    setPeakLoadStatus("loading");
+    setPeakLoadError(null);
     const spanDeg = viewportSpanDeg;
     const centerBucketDeg = Math.max(0.5, Math.round(spanDeg / 12));
     const centerDeg = Math.round(viewportCenterAzimuthDeg / centerBucketDeg) * centerBucketDeg;
@@ -259,7 +324,19 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       limit: 3200,
       allowNetwork: quality !== "drag",
     }).then((peaks) => {
-      if (!cancelled) setPeakCandidates(peaks);
+      if (!cancelled) {
+        setPeakCandidates(peaks);
+        setPeakLoadStatus("ready");
+      }
+    }).catch((error) => {
+      if (cancelled) return;
+      setPeakLoadStatus("error");
+      setPeakLoadError(error instanceof Error ? error.message : String(error));
+      const now = Date.now();
+      if (now - peakErrorLogTsRef.current > 2_000) {
+        peakErrorLogTsRef.current = now;
+        console.error("[panorama] peak loading failed", error);
+      }
     });
     return () => {
       cancelled = true;
@@ -551,114 +628,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         },
       },
     );
-    const toStripFillPaths = (
-      bands: Array<{ points: Array<{ x: number; y: number }>; visibilityMask: boolean[] }>,
-      nearBandIndex: number,
-      farBandIndex: number,
-    ): string[] => {
-      const nearBand = bands[nearBandIndex];
-      const farBand = bands[farBandIndex];
-      if (!nearBand || !farBand) return [];
-      const paths: string[] = [];
-      let runTop: { x: number; y: number }[] = [];
-      let runBottom: { x: number; y: number }[] = [];
-      const flush = () => {
-        if (runTop.length >= 2 && runBottom.length >= 2) {
-          paths.push(
-            `${toPath(runTop)} ${[...runBottom]
-              .reverse()
-              .map((point) => `L${point.x.toFixed(2)},${point.y.toFixed(2)}`)
-              .join(" ")} Z`,
-          );
-        }
-        runTop = [];
-        runBottom = [];
-      };
-      for (let i = 0; i < nearBand.points.length; i += 1) {
-        const visible = Boolean(nearBand.visibilityMask[i]) && Boolean(farBand.visibilityMask[i]);
-        if (!visible) {
-          flush();
-          continue;
-        }
-        const top = nearBand.points[i];
-        const bottom = farBand.points[i];
-        if (!top || !bottom) {
-          flush();
-          continue;
-        }
-        runTop.push({ x: top.x, y: top.y });
-        runBottom.push({ x: bottom.x, y: bottom.y });
-      }
-      flush();
-      return paths;
-    };
     const ridgeBands = depthBands.map((band, bandIndex, all) => ({
       key: `ridge-${bandIndex}`,
       style: depthStyleForBand(bandIndex, all.length),
       lineSegments: band.lineSegments,
     }));
-    const sampleDrivenBandCount = Math.min(
-      20,
-      Math.max(8, Math.round((visibleRays[0]?.ray.samples.length ?? 64) / 10)),
-    );
-    const sampleDrivenFractions = Array.from({ length: sampleDrivenBandCount }, (_, index) => (index + 1) / sampleDrivenBandCount);
-    const sampleDrivenBands = buildDepthBands(
-      visibleRays.map((entry) => entry.ray),
-      sampleDrivenFractions,
-      (ray, sample) => {
-        const xValue = unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap);
-        const angleDeg = sample?.angleDeg ?? ray.horizonAngleDeg;
-        return { x: x(xValue), y: y(angleDeg), angleDeg };
-      },
-      {
-        ridgeSnap: {
-          enabled: false,
-        },
-        smoothing: {
-          enabled: true,
-          strength: 0.18,
-          maxDeviationDeg: 0.2,
-          crestGuardDeg: 0.42,
-        },
-      },
-    );
-    const sampleShadePaths =
-      shadingMode === "relief"
-        ? sampleDrivenBands
-      .flatMap((_, bandIndex, bands) => {
-        if (bandIndex >= bands.length - 1) return [];
-        const nearBand = sampleDrivenBands[bandIndex];
-        const farBand = sampleDrivenBands[bandIndex + 1];
-        const depthNearFactor = 1 - bandIndex / Math.max(1, bands.length - 1);
-        const paths = toStripFillPaths(sampleDrivenBands, bandIndex, bandIndex + 1);
-        const firstPoint = nearBand?.points[0];
-        const nextPoint = nearBand?.points[1];
-        const pxPerDeg = firstPoint && nextPoint ? Math.abs(nextPoint.y - firstPoint.y) / Math.max(0.001, Math.abs(nextPoint.angleDeg - firstPoint.angleDeg)) : 10;
-        let avgSlopeDeg = 0;
-        let avgCurvatureDeg = 0;
-        let slopeSamples = 0;
-        if (nearBand && farBand) {
-          for (let i = 1; i < nearBand.points.length - 1; i += 1) {
-            const p0 = nearBand.points[i - 1];
-            const p1 = nearBand.points[i];
-            const p2 = nearBand.points[i + 1];
-            if (!p0 || !p1 || !p2) continue;
-            const slope = Math.abs(p1.angleDeg - p0.angleDeg);
-            const slope2 = Math.abs(p2.angleDeg - p1.angleDeg);
-            avgSlopeDeg += (slope + slope2) * 0.5;
-            avgCurvatureDeg += Math.abs((p2.angleDeg - p1.angleDeg) - (p1.angleDeg - p0.angleDeg));
-            slopeSamples += 1;
-          }
-        }
-        const slopeNorm = slopeSamples > 0 ? Math.min(1.4, (avgSlopeDeg / slopeSamples) * 4.2) : 0;
-        const curvatureNorm = slopeSamples > 0 ? Math.min(1.4, (avgCurvatureDeg / slopeSamples) * 5.1) : 0;
-        const baseAlpha = 0.12 + depthNearFactor * 0.2;
-        const reliefAlpha = slopeNorm * 0.14 + curvatureNorm * 0.12;
-        const nearBoost = Math.min(0.14, pxPerDeg * 0.0038);
-        const alpha = Math.min(0.72, baseAlpha + reliefAlpha + nearBoost);
-        return paths.map((path) => ({ path, alpha }));
-      })
-        : [];
     const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
 
     const clutterAreaPath = includeClutter
@@ -771,7 +745,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       labels: visibleLabels,
       maxVerticalScaleX,
       coverageSegments: composedWindow.segments,
-      sampleShadePaths,
+      visibleRays,
+      depthBands,
       nearestLineDistanceKm: nearestBandDistances.length
         ? { min: Math.min(...nearestBandDistances), max: Math.max(...nearestBandDistances) }
         : null,
@@ -794,9 +769,104 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     selectedSiteEffective,
     peakCandidates,
     propagationEnvironment.atmosphericBendingNUnits,
-    shadingMode,
     showLabels,
   ]);
+
+  useEffect(() => {
+    const canvas = terrainCanvasRef.current;
+    if (!canvas || !geometry || !chartSize) return;
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const targetWidth = Math.max(1, Math.round(chartSize.width * dpr));
+    const targetHeight = Math.max(1, Math.round(chartSize.height * dpr));
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, chartSize.width, chartSize.height);
+
+    const terrainColorText = resolveCssColor("var(--terrain)", "rgb(100,100,100)");
+    const surfaceColorText = resolveCssColor("var(--surface-2)", "rgb(40,40,40)");
+    const textColorText = resolveCssColor("var(--text)", "rgb(180,180,180)");
+    const terrainColor = parseRgb(terrainColorText) ?? { r: 100, g: 100, b: 100 };
+    const surfaceColor = parseRgb(surfaceColorText) ?? { r: 40, g: 40, b: 40 };
+    const textColor = parseRgb(textColorText) ?? { r: 180, g: 180, b: 180 };
+
+    const rays = geometry.visibleRays;
+    if (rays.length < 2) return;
+    const maxDistanceKm = Math.max(
+      0.001,
+      ...rays.map((entry) => (entry.ray.samples.length ? entry.ray.samples[entry.ray.samples.length - 1]?.distanceKm ?? entry.ray.maxDistanceKm : entry.ray.maxDistanceKm)),
+    );
+    const maxSampleCount = Math.max(2, ...rays.map((entry) => entry.ray.samples.length));
+    const light = { x: -0.62, y: -0.36, z: 0.7 };
+    const lightNorm = Math.hypot(light.x, light.y, light.z) || 1;
+    const lx = light.x / lightNorm;
+    const ly = light.y / lightNorm;
+    const lz = light.z / lightNorm;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(M.l, geometry.plotTop, chartSize.width - M.l - M.r, geometry.plotBottom - geometry.plotTop);
+    ctx.clip();
+
+    for (let sampleIndex = maxSampleCount - 2; sampleIndex >= 0; sampleIndex -= 1) {
+      for (let rayIndex = 0; rayIndex < rays.length - 1; rayIndex += 1) {
+        const left = rays[rayIndex];
+        const right = rays[rayIndex + 1];
+        const s00 = left.ray.samples[sampleIndex];
+        const s01 = left.ray.samples[sampleIndex + 1];
+        const s10 = right.ray.samples[sampleIndex];
+        const s11 = right.ray.samples[sampleIndex + 1];
+        if (!s00 || !s01 || !s10 || !s11) continue;
+
+        const x0 = geometry.x(left.xValue);
+        const x1 = geometry.x(right.xValue);
+        const y00 = geometry.y(s00.angleDeg);
+        const y01 = geometry.y(s01.angleDeg);
+        const y10 = geometry.y(s10.angleDeg);
+        const y11 = geometry.y(s11.angleDeg);
+
+        const dzdx = ((s10.angleDeg - s00.angleDeg) + (s11.angleDeg - s01.angleDeg)) * 0.5;
+        const dzdr = ((s01.angleDeg - s00.angleDeg) + (s11.angleDeg - s10.angleDeg)) * 0.5;
+        const nx = -dzdx * 0.75;
+        const ny = -dzdr * 1.2;
+        const nz = 1;
+        const norm = Math.hypot(nx, ny, nz) || 1;
+        const lambert = Math.max(0, (nx / norm) * lx + (ny / norm) * ly + (nz / norm) * lz);
+
+        const avgDistanceKm = (s00.distanceKm + s01.distanceKm + s10.distanceKm + s11.distanceKm) * 0.25;
+        const depth = clamp(avgDistanceKm / maxDistanceKm, 0, 1);
+        const haze = Math.pow(depth, 1.15);
+
+        const baseColor =
+          shadingMode === "relief"
+            ? blendRgb(terrainColor, surfaceColor, 0.14 + haze * 0.68)
+            : blendRgb(terrainColor, textColor, 0.22 + haze * 0.32);
+        const litColor =
+          shadingMode === "relief"
+            ? brightenRgb(baseColor, (lambert - 0.45) * 0.6)
+            : brightenRgb(baseColor, 0);
+        const alpha =
+          shadingMode === "relief"
+            ? clamp(0.88 - haze * 0.5 + lambert * 0.08, 0.2, 0.96)
+            : clamp(0.18 - haze * 0.1, 0.06, 0.2);
+
+        ctx.fillStyle = toCanvasColor(litColor, alpha);
+        ctx.beginPath();
+        ctx.moveTo(x0, y00);
+        ctx.lineTo(x1, y10);
+        ctx.lineTo(x1, y11);
+        ctx.lineTo(x0, y01);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }, [geometry, chartSize, shadingMode]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -1321,6 +1391,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           <span>Visible + fail</span>
           <span className="state-dot state-dot-fail_blocked" aria-hidden />
           <span>Blocked + fail</span>
+          {peakLoadStatus === "loading" ? <span>Peaks loading…</span> : null}
+          {peakLoadStatus === "error" ? <span title={peakLoadError ?? "Peak loading error"}>Peaks unavailable</span> : null}
         </div>
       </div>
 
@@ -1337,6 +1409,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           <div className="chart-empty" aria-hidden="true" />
         ) : (
           <>
+            <canvas aria-hidden className="panorama-terrain-canvas" ref={terrainCanvasRef} />
             <svg aria-label="Panorama" height={chartHeight} role="img" width={chartWidth}>
               <defs>
                 <clipPath id={terrainClipId}>
@@ -1345,14 +1418,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
               </defs>
 
               <g clipPath={`url(#${terrainClipId})`}>
-                {geometry.sampleShadePaths.map((shadePath, shadeIndex) => (
-                  <path
-                    className="panorama-shade-band"
-                    d={shadePath.path}
-                    key={`shade-${shadeIndex}`}
-                    style={{ opacity: shadePath.alpha }}
-                  />
-                ))}
                 {geometry.ridgeBands.map((band) => (
                   <g key={band.key}>
                     {band.lineSegments.map((segment, segmentIndex) => (

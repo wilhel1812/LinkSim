@@ -44,7 +44,7 @@ export type PanoramaPeakTileManifest = {
 };
 
 type TilePayload = {
-  tileId: string;
+  tileKey: string;
   version: string;
   entries: PanoramaPeakTileEntry[];
 };
@@ -64,10 +64,11 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 
 const tileIndex = (value: number, tileDeg: number): number => Math.floor(value / tileDeg);
 
-const buildTileId = (latIndex: number, lonIndex: number): string => `${latIndex}:${lonIndex}`;
+const tileKeyPart = (prefix: "la" | "lo", index: number): string => `${prefix}_${index < 0 ? "m" : "p"}${Math.abs(index)}`;
+const buildTileKey = (latIndex: number, lonIndex: number): string => `${tileKeyPart("la", latIndex)}_${tileKeyPart("lo", lonIndex)}`;
 
-const cacheRequestForTile = (manifestVersion: string, tileId: string): Request =>
-  new Request(`${CACHE_PATH_PREFIX}${encodeURIComponent(manifestVersion)}-${encodeURIComponent(tileId)}.json`);
+const cacheRequestForTile = (manifestVersion: string, tileKey: string): Request =>
+  new Request(`${CACHE_PATH_PREFIX}${encodeURIComponent(manifestVersion)}-${encodeURIComponent(tileKey)}.json`);
 
 const inWindow = (azimuthDeg: number, centerDeg: number, startDeg: number, endDeg: number): boolean => {
   const unwrapped = unwrapAzimuthForWindow(azimuthDeg, centerDeg);
@@ -85,15 +86,15 @@ const resolveTileKeysForRadius = (origin: { lat: number; lon: number }, maxDista
   const keys: string[] = [];
   for (let latTile = minLatTile; latTile <= maxLatTile; latTile += 1) {
     for (let lonTile = minLonTile; lonTile <= maxLonTile; lonTile += 1) {
-      keys.push(buildTileId(latTile, lonTile));
+      keys.push(buildTileKey(latTile, lonTile));
       if (keys.length >= MAX_TILE_FETCH) return keys;
     }
   }
   return keys;
 };
 
-const tileUrl = (manifest: PanoramaPeakTileManifest, tileId: string): string =>
-  manifest.tileUrlTemplate.replace("{tileId}", encodeURIComponent(tileId));
+const tileUrl = (manifest: PanoramaPeakTileManifest, tileKey: string): string =>
+  manifest.tileUrlTemplate.replace("{tileKey}", tileKey).replace("{tileId}", tileKey);
 
 const getManifest = async (): Promise<PanoramaPeakTileManifest> => {
   if (manifestPromise) return manifestPromise;
@@ -109,29 +110,30 @@ const getManifest = async (): Promise<PanoramaPeakTileManifest> => {
   return manifestPromise;
 };
 
-const readTileFromPersistentCache = async (manifest: PanoramaPeakTileManifest, tileId: string): Promise<TilePayload | null> => {
+const readTileFromPersistentCache = async (manifest: PanoramaPeakTileManifest, tileKey: string): Promise<TilePayload | null> => {
   if (typeof window === "undefined" || !("caches" in window)) return null;
   const cache = await caches.open(CACHE_NAME);
-  const match = await cache.match(cacheRequestForTile(manifest.version, tileId));
+  const match = await cache.match(cacheRequestForTile(manifest.version, tileKey));
   if (!match) return null;
-  const payload = (await match.json()) as TilePayload;
-  if (!payload || payload.version !== manifest.version || payload.tileId !== tileId || !Array.isArray(payload.entries)) return null;
+  const payload = (await match.json()) as TilePayload & { tileId?: string };
+  const normalizedKey = String(payload?.tileKey ?? payload?.tileId ?? "");
+  if (!payload || payload.version !== manifest.version || normalizedKey !== tileKey || !Array.isArray(payload.entries)) return null;
   return payload;
 };
 
-const writeTileToPersistentCache = async (manifest: PanoramaPeakTileManifest, tileId: string, payload: TilePayload): Promise<void> => {
+const writeTileToPersistentCache = async (manifest: PanoramaPeakTileManifest, tileKey: string, payload: TilePayload): Promise<void> => {
   if (typeof window === "undefined" || !("caches" in window)) return;
   const cache = await caches.open(CACHE_NAME);
   await cache.put(
-    cacheRequestForTile(manifest.version, tileId),
+    cacheRequestForTile(manifest.version, tileKey),
     new Response(JSON.stringify(payload), { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   );
 };
 
-const fetchTileFromNetwork = async (manifest: PanoramaPeakTileManifest, tileId: string): Promise<TilePayload> => {
-  const response = await fetch(tileUrl(manifest, tileId), { cache: "no-store" });
+const fetchTileFromNetwork = async (manifest: PanoramaPeakTileManifest, tileKey: string): Promise<TilePayload> => {
+  const response = await fetch(tileUrl(manifest, tileKey), { cache: "no-store" });
   if (!response.ok) throw new Error(`Peak tile fetch failed (${response.status})`);
-  const raw = (await response.json()) as { entries?: PanoramaPeakTileEntry[]; tileId?: string; version?: string };
+  const raw = (await response.json()) as { entries?: PanoramaPeakTileEntry[]; tileKey?: string; tileId?: string; version?: string };
   const entries = Array.isArray(raw.entries) ? raw.entries : [];
   const normalized = entries
     .map((entry): PanoramaPeakTileEntry => {
@@ -147,15 +149,15 @@ const fetchTileFromNetwork = async (manifest: PanoramaPeakTileManifest, tileId: 
     })
     .filter((entry) => entry.id && entry.name && Number.isFinite(entry.lat) && Number.isFinite(entry.lon));
   return {
-    tileId: tileId,
+    tileKey: tileKey,
     version: manifest.version,
     entries: normalized,
   };
 };
 
-const loadTile = async (manifest: PanoramaPeakTileManifest, tileId: string, allowNetwork: boolean): Promise<TilePayload | null> => {
+const loadTile = async (manifest: PanoramaPeakTileManifest, tileKey: string, allowNetwork: boolean): Promise<TilePayload | null> => {
   const ttlMs = Math.max(60_000, (manifest.ttlSeconds ?? 0) * 1000 || DEFAULT_TTL_MS);
-  const cacheKey = `${manifest.version}|${tileId}`;
+  const cacheKey = `${manifest.version}|${tileKey}`;
   const inMemory = memoryTileCache.get(cacheKey);
   if (inMemory && Date.now() - inMemory.fetchedAt <= ttlMs) return inMemory.payload;
 
@@ -163,15 +165,15 @@ const loadTile = async (manifest: PanoramaPeakTileManifest, tileId: string, allo
   if (pending) return pending;
 
   const task = (async () => {
-    const cached = await readTileFromPersistentCache(manifest, tileId);
+    const cached = await readTileFromPersistentCache(manifest, tileKey);
     if (cached) {
       memoryTileCache.set(cacheKey, { fetchedAt: Date.now(), payload: cached });
       return cached;
     }
     if (!allowNetwork) return null;
-    const fetched = await fetchTileFromNetwork(manifest, tileId);
+    const fetched = await fetchTileFromNetwork(manifest, tileKey);
     memoryTileCache.set(cacheKey, { fetchedAt: Date.now(), payload: fetched });
-    await writeTileToPersistentCache(manifest, tileId, fetched);
+    await writeTileToPersistentCache(manifest, tileKey, fetched);
     return fetched;
   })();
 
