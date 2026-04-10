@@ -41,6 +41,7 @@ export type PanoramaPeakTileManifest = {
     minimumRequired: number;
     pass: boolean;
   };
+  availableTileKeys?: string[];
 };
 
 type TilePayload = {
@@ -59,6 +60,7 @@ const MAX_TILE_FETCH = 160;
 const memoryTileCache = new Map<string, { fetchedAt: number; payload: TilePayload }>();
 const pendingTileFetches = new Map<string, Promise<TilePayload | null>>();
 let manifestPromise: Promise<PanoramaPeakTileManifest> | null = null;
+let manifestAvailableTileSet: Set<string> | null = null;
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
@@ -105,6 +107,9 @@ const getManifest = async (): Promise<PanoramaPeakTileManifest> => {
     if (!manifest.version || !manifest.tileUrlTemplate || !Number.isFinite(manifest.tileDeg) || manifest.tileDeg <= 0) {
       throw new Error("Invalid peak tile manifest");
     }
+    manifestAvailableTileSet = Array.isArray(manifest.availableTileKeys)
+      ? new Set(manifest.availableTileKeys.map((key) => String(key).trim()).filter((key) => key.length > 0))
+      : null;
     return manifest;
   })();
   return manifestPromise;
@@ -133,6 +138,14 @@ const writeTileToPersistentCache = async (manifest: PanoramaPeakTileManifest, ti
 const fetchTileFromNetwork = async (manifest: PanoramaPeakTileManifest, tileKey: string): Promise<TilePayload> => {
   const response = await fetch(tileUrl(manifest, tileKey), { cache: "no-store" });
   if (!response.ok) throw new Error(`Peak tile fetch failed (${response.status})`);
+  const contentType = String(response.headers.get("content-type") ?? "").toLowerCase();
+  if (!contentType.includes("application/json")) {
+    return {
+      tileKey,
+      version: manifest.version,
+      entries: [],
+    };
+  }
   const raw = (await response.json()) as { entries?: PanoramaPeakTileEntry[]; tileKey?: string; tileId?: string; version?: string };
   const entries = Array.isArray(raw.entries) ? raw.entries : [];
   const normalized = entries
@@ -187,6 +200,7 @@ const loadTile = async (manifest: PanoramaPeakTileManifest, tileKey: string, all
 
 export const clearPanoramaPeakManifestCacheForTests = (): void => {
   manifestPromise = null;
+  manifestAvailableTileSet = null;
   memoryTileCache.clear();
   pendingTileFetches.clear();
 };
@@ -203,7 +217,9 @@ export const loadPanoramaPeaks = async (params: {
   const limit = Math.max(1, Math.min(5000, params.limit ?? 1200));
   const allowNetwork = params.allowNetwork ?? true;
   const manifest = await getManifest();
-  const keys = resolveTileKeysForRadius(params.origin, params.maxDistanceKm, manifest.tileDeg);
+  const keys = resolveTileKeysForRadius(params.origin, params.maxDistanceKm, manifest.tileDeg).filter((key) =>
+    manifestAvailableTileSet ? manifestAvailableTileSet.has(key) : true,
+  );
   const payloads = await Promise.all(keys.map((key) => loadTile(manifest, key, allowNetwork)));
   const entries = payloads.flatMap((payload) => payload?.entries ?? []);
   if (!entries.length) return [];
