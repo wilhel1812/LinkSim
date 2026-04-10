@@ -1,0 +1,25 @@
+{
+  "version": "v1-bootstrap",
+  "generatedAt": "2026-04-10T14:18:46.583Z",
+  "tileDeg": 1,
+  "tileUrlTemplate": "/peak-tiles/v1/tiles/{tileId}.json",
+  "ttlSeconds": 2592000,
+  "source": {
+    "provider": "osm",
+    "includeNatural": [
+      "peak",
+      "volcano"
+    ],
+    "namedOnly": true,
+    "note": "bootstrap tiles generated from existing local index; replace with global OSM pipeline output"
+  },
+  "benchmark": {
+    "norwayNamedCount": 38,
+    "minimumRequired": 1000,
+    "pass": false
+  },
+  "stats": {
+    "featureCount": 2994,
+    "tileCount": 824
+  }
+}

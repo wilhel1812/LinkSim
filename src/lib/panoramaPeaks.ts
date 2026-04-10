@@ -1,297 +1,193 @@
 import { haversineDistanceKm } from "./geo";
 import { azimuthFromToDeg } from "./panorama";
 import { mod360, unwrapAzimuthForWindow } from "./panoramaView";
-import { OPEN_PEAK_MAP_INDEX_BUCKETS, OPEN_PEAK_MAP_INDEX_META, type OpenPeakMapIndexEntry } from "../data/openPeakMapIndex";
+
+export type PanoramaPeakKind = "peak" | "volcano";
 
 export type PanoramaPeakCandidate = {
   id: string;
+  kind: PanoramaPeakKind;
   name: string;
   lat: number;
   lon: number;
   elevationM: number | null;
   azimuthDeg: number;
   distanceKm: number;
-  source: "local-index" | "overpass-tile";
-};
-
-export type PanoramaPeakTileMeta = {
-  tileId: string;
-  version: string;
-  fetchedAt: number;
-  ttlMs: number;
-  bounds: { south: number; west: number; north: number; east: number };
-  source: "overpass";
+  source: "global-tile";
 };
 
 export type PanoramaPeakTileEntry = {
   id: string;
+  kind: PanoramaPeakKind;
   name: string;
   lat: number;
   lon: number;
   elevationM: number | null;
-  source: "overpass-tile";
 };
 
-type PeakIndex = Map<string, OpenPeakMapIndexEntry[]>;
-type TilePayload = { meta: PanoramaPeakTileMeta; entries: PanoramaPeakTileEntry[] };
+export type PanoramaPeakTileManifest = {
+  version: string;
+  generatedAt: string;
+  tileDeg: number;
+  tileUrlTemplate: string;
+  ttlSeconds: number;
+  source: {
+    provider: "osm";
+    includeNatural: Array<"peak" | "volcano">;
+    namedOnly: true;
+  };
+  benchmark: {
+    norwayNamedCount: number;
+    minimumRequired: number;
+    pass: boolean;
+  };
+};
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-const TILE_DEG = 0.5;
-const TILE_CACHE_VERSION = "v2";
-const TILE_TTL_MS = 1000 * 60 * 60 * 24 * 30;
-const CACHE_NAME = "panorama-peak-tiles-v2";
-const CACHE_PATH_PREFIX = "/__panorama_peak_tiles_v2__/";
-const MAX_TILE_FETCH = 96;
+type TilePayload = {
+  tileId: string;
+  version: string;
+  entries: PanoramaPeakTileEntry[];
+};
 
-const memoryTileCache = new Map<string, TilePayload>();
-const pendingTileFetches = new Map<string, Promise<TilePayload>>();
+const DEFAULT_MANIFEST_URL = "/peak-tiles/v1/manifest.json";
+const MANIFEST_URL = String(import.meta.env.VITE_PEAK_TILES_MANIFEST_URL ?? DEFAULT_MANIFEST_URL).trim() || DEFAULT_MANIFEST_URL;
+const CACHE_NAME = "panorama-osm-peak-tiles-v1";
+const CACHE_PATH_PREFIX = "/__panorama_osm_peak_tiles__/";
+const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const MAX_TILE_FETCH = 160;
+
+const memoryTileCache = new Map<string, { fetchedAt: number; payload: TilePayload }>();
+const pendingTileFetches = new Map<string, Promise<TilePayload | null>>();
+let manifestPromise: Promise<PanoramaPeakTileManifest> | null = null;
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
-const bucketLat = (lat: number): number => Math.floor(lat);
-const bucketLon = (lon: number): number => Math.floor(lon);
-const bucketKey = (latBucket: number, lonBucket: number): string => `${latBucket}:${lonBucket}`;
-const tileIndex = (value: number): number => Math.floor(value / TILE_DEG);
+const tileIndex = (value: number, tileDeg: number): number => Math.floor(value / tileDeg);
 
-const tileBoundsFromKey = (key: string): { south: number; west: number; north: number; east: number } => {
-  const [latToken, lonToken] = key.split(":");
-  const lat = Number(latToken);
-  const lon = Number(lonToken);
-  const south = lat * TILE_DEG;
-  const west = lon * TILE_DEG;
-  return { south, west, north: south + TILE_DEG, east: west + TILE_DEG };
-};
+const buildTileId = (latIndex: number, lonIndex: number): string => `${latIndex}:${lonIndex}`;
 
-const PEAK_INDEX: PeakIndex = (() => {
-  const next: PeakIndex = new Map();
-  for (const [key, entries] of Object.entries(OPEN_PEAK_MAP_INDEX_BUCKETS)) next.set(key, entries);
-  return next;
-})();
-
-export const OPEN_PEAK_MAP_STATS = {
-  features: OPEN_PEAK_MAP_INDEX_META.featureCount,
-  buckets: OPEN_PEAK_MAP_INDEX_META.bucketCount,
-  sourceSha256: OPEN_PEAK_MAP_INDEX_META.sourceSha256,
-} as const;
+const cacheRequestForTile = (manifestVersion: string, tileId: string): Request =>
+  new Request(`${CACHE_PATH_PREFIX}${encodeURIComponent(manifestVersion)}-${encodeURIComponent(tileId)}.json`);
 
 const inWindow = (azimuthDeg: number, centerDeg: number, startDeg: number, endDeg: number): boolean => {
   const unwrapped = unwrapAzimuthForWindow(azimuthDeg, centerDeg);
   return unwrapped >= startDeg && unwrapped <= endDeg;
 };
 
-const resolveTileKeysForRadius = (origin: { lat: number; lon: number }, maxDistanceKm: number): string[] => {
-  const latRadiusDeg = clamp(maxDistanceKm / 111, 0.1, 12);
+const resolveTileKeysForRadius = (origin: { lat: number; lon: number }, maxDistanceKm: number, tileDeg: number): string[] => {
+  const latRadiusDeg = clamp(maxDistanceKm / 111, 0.1, 18);
   const lonScale = Math.max(0.2, Math.cos((origin.lat * Math.PI) / 180));
-  const lonRadiusDeg = clamp(maxDistanceKm / (111 * lonScale), 0.1, 18);
-  const minLatTile = tileIndex(origin.lat - latRadiusDeg);
-  const maxLatTile = tileIndex(origin.lat + latRadiusDeg);
-  const minLonTile = tileIndex(origin.lon - lonRadiusDeg);
-  const maxLonTile = tileIndex(origin.lon + lonRadiusDeg);
+  const lonRadiusDeg = clamp(maxDistanceKm / (111 * lonScale), 0.1, 36);
+  const minLatTile = tileIndex(origin.lat - latRadiusDeg, tileDeg);
+  const maxLatTile = tileIndex(origin.lat + latRadiusDeg, tileDeg);
+  const minLonTile = tileIndex(origin.lon - lonRadiusDeg, tileDeg);
+  const maxLonTile = tileIndex(origin.lon + lonRadiusDeg, tileDeg);
   const keys: string[] = [];
   for (let latTile = minLatTile; latTile <= maxLatTile; latTile += 1) {
     for (let lonTile = minLonTile; lonTile <= maxLonTile; lonTile += 1) {
-      keys.push(`${latTile}:${lonTile}`);
+      keys.push(buildTileId(latTile, lonTile));
       if (keys.length >= MAX_TILE_FETCH) return keys;
     }
   }
   return keys;
 };
 
-const queryLocalIndex = (params: {
-  origin: { lat: number; lon: number };
-  centerDeg: number;
-  startDeg: number;
-  endDeg: number;
-  maxDistanceKm: number;
-  limit: number;
-}): PanoramaPeakCandidate[] => {
-  const { origin, centerDeg, startDeg, endDeg, maxDistanceKm, limit } = params;
-  const latRadiusDeg = clamp(maxDistanceKm / 111, 0.1, 12);
-  const lonScale = Math.max(0.2, Math.cos((origin.lat * Math.PI) / 180));
-  const lonRadiusDeg = clamp(maxDistanceKm / (111 * lonScale), 0.1, 18);
-  const minLat = bucketLat(origin.lat - latRadiusDeg);
-  const maxLat = bucketLat(origin.lat + latRadiusDeg);
-  const minLon = bucketLon(origin.lon - lonRadiusDeg);
-  const maxLon = bucketLon(origin.lon + lonRadiusDeg);
-  const matches: PanoramaPeakCandidate[] = [];
-  for (let latBucket = minLat; latBucket <= maxLat; latBucket += 1) {
-    for (let lonBucket = minLon; lonBucket <= maxLon; lonBucket += 1) {
-      const bucket = PEAK_INDEX.get(bucketKey(latBucket, lonBucket));
-      if (!bucket?.length) continue;
-      for (const peak of bucket) {
-        const distanceKm = haversineDistanceKm(origin, { lat: peak.lat, lon: peak.lon });
-        if (distanceKm <= 0.05 || distanceKm > maxDistanceKm) continue;
-        const azimuthDeg = mod360(azimuthFromToDeg(origin, { lat: peak.lat, lon: peak.lon }));
-        if (!inWindow(azimuthDeg, centerDeg, startDeg, endDeg)) continue;
-        matches.push({
-          id: peak.id,
-          name: peak.name,
-          lat: peak.lat,
-          lon: peak.lon,
-          elevationM: Number.isFinite(peak.elevationM) ? peak.elevationM : null,
-          azimuthDeg,
-          distanceKm,
-          source: "local-index",
-        });
-      }
+const tileUrl = (manifest: PanoramaPeakTileManifest, tileId: string): string =>
+  manifest.tileUrlTemplate.replace("{tileId}", encodeURIComponent(tileId));
+
+const getManifest = async (): Promise<PanoramaPeakTileManifest> => {
+  if (manifestPromise) return manifestPromise;
+  manifestPromise = (async () => {
+    const response = await fetch(MANIFEST_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Peak tile manifest fetch failed (${response.status})`);
+    const manifest = (await response.json()) as PanoramaPeakTileManifest;
+    if (!manifest.version || !manifest.tileUrlTemplate || !Number.isFinite(manifest.tileDeg) || manifest.tileDeg <= 0) {
+      throw new Error("Invalid peak tile manifest");
     }
-  }
-  matches.sort((a, b) => a.distanceKm - b.distanceKm);
-  return matches.slice(0, limit);
+    return manifest;
+  })();
+  return manifestPromise;
 };
 
-const cacheRequestForTile = (tileId: string): Request => new Request(`${CACHE_PATH_PREFIX}${encodeURIComponent(tileId)}.json`);
-
-const parseOverpassPeakResponse = (payload: unknown, tileId: string, bounds: PanoramaPeakTileMeta["bounds"]): TilePayload => {
-  const elements = Array.isArray((payload as { elements?: unknown[] })?.elements) ? (payload as { elements: unknown[] }).elements : [];
-  const entries: PanoramaPeakTileEntry[] = [];
-  for (const item of elements) {
-    const element = item as {
-      id?: number | string;
-      type?: string;
-      lat?: number;
-      lon?: number;
-      center?: { lat?: number; lon?: number };
-      tags?: Record<string, unknown>;
-    };
-    const tags = element.tags ?? {};
-    const name = String(tags.name ?? "").trim();
-    if (!name) continue;
-    const lat = typeof element.lat === "number" ? element.lat : typeof element.center?.lat === "number" ? element.center.lat : null;
-    const lon = typeof element.lon === "number" ? element.lon : typeof element.center?.lon === "number" ? element.center.lon : null;
-    if (lat === null || lon === null) continue;
-    const rawEle = String(tags.ele ?? "").trim();
-    const eleNumber = Number(rawEle.replace(/[^0-9.+-]/g, ""));
-    entries.push({
-      id: `${String(element.type ?? "node")}:${String(element.id ?? `${lat.toFixed(6)}:${lon.toFixed(6)}`)}`,
-      name,
-      lat: Number(lat.toFixed(6)),
-      lon: Number(lon.toFixed(6)),
-      elevationM: Number.isFinite(eleNumber) ? Math.round(eleNumber) : null,
-      source: "overpass-tile",
-    });
-  }
-  const unique = new Map<string, PanoramaPeakTileEntry>();
-  for (const entry of entries) unique.set(`${entry.name.toLowerCase()}|${entry.lat.toFixed(5)}|${entry.lon.toFixed(5)}`, entry);
-  return {
-    meta: {
-      tileId,
-      version: TILE_CACHE_VERSION,
-      fetchedAt: Date.now(),
-      ttlMs: TILE_TTL_MS,
-      bounds,
-      source: "overpass",
-    },
-    entries: [...unique.values()],
-  };
-};
-
-const fetchTileFromNetwork = async (tileId: string): Promise<TilePayload> => {
-  const bounds = tileBoundsFromKey(tileId);
-  const query = `[out:json][timeout:25];
-(
-  node["natural"~"^(peak|volcano|saddle)$"]["name"](${bounds.south},${bounds.west},${bounds.north},${bounds.east});
-  way["natural"~"^(peak|volcano|saddle)$"]["name"](${bounds.south},${bounds.west},${bounds.north},${bounds.east});
-  relation["natural"~"^(peak|volcano|saddle)$"]["name"](${bounds.south},${bounds.west},${bounds.north},${bounds.east});
-);
-out center tags;`;
-  const response = await fetch(OVERPASS_URL, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
-    body: `data=${encodeURIComponent(query)}`,
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error(`Peak tile fetch failed (${response.status})`);
-  const data = (await response.json()) as unknown;
-  return parseOverpassPeakResponse(data, tileId, bounds);
-};
-
-const readTileFromPersistentCache = async (tileId: string): Promise<TilePayload | null> => {
+const readTileFromPersistentCache = async (manifest: PanoramaPeakTileManifest, tileId: string): Promise<TilePayload | null> => {
   if (typeof window === "undefined" || !("caches" in window)) return null;
   const cache = await caches.open(CACHE_NAME);
-  const match = await cache.match(cacheRequestForTile(tileId));
+  const match = await cache.match(cacheRequestForTile(manifest.version, tileId));
   if (!match) return null;
   const payload = (await match.json()) as TilePayload;
-  if (!payload?.meta?.fetchedAt || payload.meta.version !== TILE_CACHE_VERSION) return null;
+  if (!payload || payload.version !== manifest.version || payload.tileId !== tileId || !Array.isArray(payload.entries)) return null;
   return payload;
 };
 
-const writeTileToPersistentCache = async (tileId: string, payload: TilePayload): Promise<void> => {
+const writeTileToPersistentCache = async (manifest: PanoramaPeakTileManifest, tileId: string, payload: TilePayload): Promise<void> => {
   if (typeof window === "undefined" || !("caches" in window)) return;
   const cache = await caches.open(CACHE_NAME);
   await cache.put(
-    cacheRequestForTile(tileId),
+    cacheRequestForTile(manifest.version, tileId),
     new Response(JSON.stringify(payload), { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   );
 };
 
-const loadTile = async (tileId: string): Promise<TilePayload> => {
-  const inMemory = memoryTileCache.get(tileId);
-  if (inMemory && Date.now() - inMemory.meta.fetchedAt <= inMemory.meta.ttlMs) return inMemory;
-  const pending = pendingTileFetches.get(tileId);
+const fetchTileFromNetwork = async (manifest: PanoramaPeakTileManifest, tileId: string): Promise<TilePayload> => {
+  const response = await fetch(tileUrl(manifest, tileId), { cache: "no-store" });
+  if (!response.ok) throw new Error(`Peak tile fetch failed (${response.status})`);
+  const raw = (await response.json()) as { entries?: PanoramaPeakTileEntry[]; tileId?: string; version?: string };
+  const entries = Array.isArray(raw.entries) ? raw.entries : [];
+  const normalized = entries
+    .map((entry): PanoramaPeakTileEntry => {
+      const kind: PanoramaPeakKind = entry.kind === "volcano" ? "volcano" : "peak";
+      return {
+        id: String(entry.id ?? "").trim(),
+        kind,
+        name: String(entry.name ?? "").trim(),
+        lat: Number(entry.lat),
+        lon: Number(entry.lon),
+        elevationM: Number.isFinite(entry.elevationM) ? Number(entry.elevationM) : null,
+      };
+    })
+    .filter((entry) => entry.id && entry.name && Number.isFinite(entry.lat) && Number.isFinite(entry.lon));
+  return {
+    tileId: tileId,
+    version: manifest.version,
+    entries: normalized,
+  };
+};
+
+const loadTile = async (manifest: PanoramaPeakTileManifest, tileId: string, allowNetwork: boolean): Promise<TilePayload | null> => {
+  const ttlMs = Math.max(60_000, (manifest.ttlSeconds ?? 0) * 1000 || DEFAULT_TTL_MS);
+  const cacheKey = `${manifest.version}|${tileId}`;
+  const inMemory = memoryTileCache.get(cacheKey);
+  if (inMemory && Date.now() - inMemory.fetchedAt <= ttlMs) return inMemory.payload;
+
+  const pending = pendingTileFetches.get(cacheKey);
   if (pending) return pending;
+
   const task = (async () => {
-    const cached = await readTileFromPersistentCache(tileId);
-    if (cached && Date.now() - cached.meta.fetchedAt <= cached.meta.ttlMs) {
-      memoryTileCache.set(tileId, cached);
+    const cached = await readTileFromPersistentCache(manifest, tileId);
+    if (cached) {
+      memoryTileCache.set(cacheKey, { fetchedAt: Date.now(), payload: cached });
       return cached;
     }
-    const fetched = await fetchTileFromNetwork(tileId);
-    memoryTileCache.set(tileId, fetched);
-    await writeTileToPersistentCache(tileId, fetched);
+    if (!allowNetwork) return null;
+    const fetched = await fetchTileFromNetwork(manifest, tileId);
+    memoryTileCache.set(cacheKey, { fetchedAt: Date.now(), payload: fetched });
+    await writeTileToPersistentCache(manifest, tileId, fetched);
     return fetched;
   })();
-  pendingTileFetches.set(tileId, task);
+
+  pendingTileFetches.set(cacheKey, task);
   try {
     return await task;
   } finally {
-    pendingTileFetches.delete(tileId);
+    pendingTileFetches.delete(cacheKey);
   }
 };
 
-const mergeTileEntriesToCandidates = (params: {
-  entries: PanoramaPeakTileEntry[];
-  origin: { lat: number; lon: number };
-  centerDeg: number;
-  startDeg: number;
-  endDeg: number;
-  maxDistanceKm: number;
-  limit: number;
-}): PanoramaPeakCandidate[] => {
-  const { entries, origin, centerDeg, startDeg, endDeg, maxDistanceKm, limit } = params;
-  const candidates: PanoramaPeakCandidate[] = [];
-  for (const peak of entries) {
-    const distanceKm = haversineDistanceKm(origin, { lat: peak.lat, lon: peak.lon });
-    if (distanceKm <= 0.05 || distanceKm > maxDistanceKm) continue;
-    const azimuthDeg = mod360(azimuthFromToDeg(origin, { lat: peak.lat, lon: peak.lon }));
-    if (!inWindow(azimuthDeg, centerDeg, startDeg, endDeg)) continue;
-    candidates.push({
-      id: peak.id,
-      name: peak.name,
-      lat: peak.lat,
-      lon: peak.lon,
-      elevationM: peak.elevationM,
-      azimuthDeg,
-      distanceKm,
-      source: "overpass-tile",
-    });
-  }
-  candidates.sort((a, b) => a.distanceKm - b.distanceKm);
-  return candidates.slice(0, limit);
+export const clearPanoramaPeakManifestCacheForTests = (): void => {
+  manifestPromise = null;
+  memoryTileCache.clear();
+  pendingTileFetches.clear();
 };
-
-export const queryPanoramaPeaks = (params: {
-  origin: { lat: number; lon: number };
-  centerDeg: number;
-  startDeg: number;
-  endDeg: number;
-  maxDistanceKm: number;
-  limit?: number;
-}): PanoramaPeakCandidate[] =>
-  queryLocalIndex({
-    ...params,
-    limit: Math.max(1, Math.min(2400, params.limit ?? 1200)),
-  });
 
 export const loadPanoramaPeaks = async (params: {
   origin: { lat: number; lon: number };
@@ -300,17 +196,36 @@ export const loadPanoramaPeaks = async (params: {
   endDeg: number;
   maxDistanceKm: number;
   limit?: number;
+  allowNetwork?: boolean;
 }): Promise<PanoramaPeakCandidate[]> => {
-  const limit = Math.max(1, Math.min(2400, params.limit ?? 1200));
-  const tileKeys = resolveTileKeysForRadius(params.origin, params.maxDistanceKm);
-  const tilePayloads = await Promise.allSettled(tileKeys.map((key) => loadTile(key)));
-  const entries = tilePayloads
-    .filter((item): item is PromiseFulfilledResult<TilePayload> => item.status === "fulfilled")
-    .flatMap((item) => item.value.entries);
-  if (entries.length) {
-    const merged = mergeTileEntriesToCandidates({ ...params, entries, limit });
-    if (merged.length) return merged;
+  const limit = Math.max(1, Math.min(5000, params.limit ?? 1200));
+  const allowNetwork = params.allowNetwork ?? true;
+  const manifest = await getManifest();
+  const keys = resolveTileKeysForRadius(params.origin, params.maxDistanceKm, manifest.tileDeg);
+  const payloads = await Promise.all(keys.map((key) => loadTile(manifest, key, allowNetwork)));
+  const entries = payloads.flatMap((payload) => payload?.entries ?? []);
+  if (!entries.length) return [];
+
+  const dedupe = new Map<string, PanoramaPeakCandidate>();
+  for (const peak of entries) {
+    const distanceKm = haversineDistanceKm(params.origin, { lat: peak.lat, lon: peak.lon });
+    if (distanceKm <= 0.05 || distanceKm > params.maxDistanceKm) continue;
+    const azimuthDeg = mod360(azimuthFromToDeg(params.origin, { lat: peak.lat, lon: peak.lon }));
+    if (!inWindow(azimuthDeg, params.centerDeg, params.startDeg, params.endDeg)) continue;
+    const key = `${peak.kind}|${peak.name.toLowerCase()}|${peak.lat.toFixed(5)}|${peak.lon.toFixed(5)}`;
+    if (dedupe.has(key)) continue;
+    dedupe.set(key, {
+      id: peak.id,
+      kind: peak.kind,
+      name: peak.name,
+      lat: peak.lat,
+      lon: peak.lon,
+      elevationM: peak.elevationM,
+      azimuthDeg,
+      distanceKm,
+      source: "global-tile",
+    });
   }
-  // Fallback for transient network failures.
-  return queryLocalIndex({ ...params, limit });
+
+  return [...dedupe.values()].sort((a, b) => a.distanceKm - b.distanceKm).slice(0, limit);
 };

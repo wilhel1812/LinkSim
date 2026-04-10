@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { AudioLines, Compass, Maximize2, Minimize2, Tags, Trees, Waves, ZoomIn } from "lucide-react";
+import { AudioLines, Compass, Maximize2, Minimize2, SunMedium, Tags, Trees, Waves, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -86,6 +86,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const [lineSampleCount, setLineSampleCount] = useState(10);
   const [peakCandidates, setPeakCandidates] = useState<PanoramaPeakCandidate[]>([]);
+  const [shadingMode, setShadingMode] = useState<"relief" | "classic">("relief");
 
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
@@ -256,13 +257,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       endDeg: window.endDeg,
       maxDistanceKm: 500,
       limit: 3200,
+      allowNetwork: quality !== "drag",
     }).then((peaks) => {
       if (!cancelled) setPeakCandidates(peaks);
     });
     return () => {
       cancelled = true;
     };
-  }, [selectedSiteEffective, chartSize, viewportCenterAzimuthDeg, viewportSpanDeg]);
+  }, [selectedSiteEffective, chartSize, viewportCenterAzimuthDeg, viewportSpanDeg, quality]);
 
   useEffect(() => {
     if (!selectedSiteEffective || !selectedNetwork) {
@@ -620,7 +622,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         },
       },
     );
-    const sampleShadePaths = sampleDrivenBands
+    const sampleShadePaths =
+      shadingMode === "relief"
+        ? sampleDrivenBands
       .flatMap((_, bandIndex, bands) => {
         if (bandIndex >= bands.length - 1) return [];
         const nearBand = sampleDrivenBands[bandIndex];
@@ -653,7 +657,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         const nearBoost = Math.min(0.14, pxPerDeg * 0.0038);
         const alpha = Math.min(0.72, baseAlpha + reliefAlpha + nearBoost);
         return paths.map((path) => ({ path, alpha }));
-      });
+      })
+        : [];
     const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
 
     const clutterAreaPath = includeClutter
@@ -716,7 +721,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         return {
           id: `peak:${peak.id}`,
           source: "peak" as const,
-          name: peak.name,
+          name: peak.kind === "volcano" ? `🌋 ${peak.name}` : peak.name,
           x: x(xValue),
           y: y(yAngle),
           distanceKm: peak.distanceKm,
@@ -789,6 +794,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     selectedSiteEffective,
     peakCandidates,
     propagationEnvironment.atmosphericBendingNUnits,
+    shadingMode,
     showLabels,
   ]);
 
@@ -1235,6 +1241,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             <Waves aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
+            aria-label={shadingMode === "relief" ? "Switch to classic shading" : "Switch to relief shading"}
+            className={`chart-endpoint-swap chart-endpoint-icon ${shadingMode === "relief" ? "is-active" : ""}`}
+            onClick={() => setShadingMode((value) => (value === "relief" ? "classic" : "relief"))}
+            title={shadingMode === "relief" ? "Shading: Relief" : "Shading: Classic"}
+            type="button"
+          >
+            <SunMedium aria-hidden="true" strokeWidth={1.8} />
+          </button>
+          <button
             aria-label={includeClutter ? "Disable clutter layer" : "Enable clutter layer"}
             className={`chart-endpoint-swap chart-endpoint-icon ${includeClutter ? "is-active" : ""}`}
             onClick={() => setIncludeClutter((value) => !value)}
@@ -1346,8 +1361,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                         d={segment}
                         key={`${band.key}-segment-${segmentIndex}`}
                         style={{
-                          strokeWidth: band.style.strokeWidth,
-                          strokeOpacity: band.style.strokeOpacity,
+                          strokeWidth: shadingMode === "relief" ? band.style.strokeWidth : Math.max(1.2, band.style.strokeWidth * 1.08),
+                          strokeOpacity: shadingMode === "relief" ? band.style.strokeOpacity : Math.max(0.5, band.style.strokeOpacity),
                           stroke: `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--muted) ${band.style.strokeMixMutedPct}%)`,
                         }}
                       />
