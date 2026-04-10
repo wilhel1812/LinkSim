@@ -28,7 +28,7 @@ import { sampleSrtmElevation } from "../lib/srtm";
 import { useAppStore } from "../store/appStore";
 import { UiSlider } from "./UiSlider";
 
-const M = { t: 14, r: 20, b: 32, l: 46 };
+const M = { t: 22, r: 20, b: 32, l: 46 };
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 type PanoramaChartProps = {
@@ -512,6 +512,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           enabled: true,
           windowRatio: 0.08,
         },
+        smoothing: {
+          enabled: true,
+          strength: 0.23,
+          maxDeviationDeg: 0.24,
+          crestGuardDeg: 0.5,
+        },
       },
     );
     const toStripFillPaths = (
@@ -595,13 +601,46 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         ridgeSnap: {
           enabled: false,
         },
+        smoothing: {
+          enabled: true,
+          strength: 0.18,
+          maxDeviationDeg: 0.2,
+          crestGuardDeg: 0.42,
+        },
       },
     );
     const sampleShadePaths = sampleDrivenBands
       .flatMap((_, bandIndex, bands) => {
         if (bandIndex >= bands.length - 1) return [];
+        const nearBand = sampleDrivenBands[bandIndex];
+        const farBand = sampleDrivenBands[bandIndex + 1];
+        const depthNearFactor = 1 - bandIndex / Math.max(1, bands.length - 1);
         const paths = toStripFillPaths(sampleDrivenBands, bandIndex, bandIndex + 1);
-        const alpha = 0.05 + (1 - bandIndex / Math.max(1, bands.length - 1)) * 0.14;
+        const firstPoint = nearBand?.points[0];
+        const nextPoint = nearBand?.points[1];
+        const pxPerDeg = firstPoint && nextPoint ? Math.abs(nextPoint.y - firstPoint.y) / Math.max(0.001, Math.abs(nextPoint.angleDeg - firstPoint.angleDeg)) : 10;
+        let avgSlopeDeg = 0;
+        let avgCurvatureDeg = 0;
+        let slopeSamples = 0;
+        if (nearBand && farBand) {
+          for (let i = 1; i < nearBand.points.length - 1; i += 1) {
+            const p0 = nearBand.points[i - 1];
+            const p1 = nearBand.points[i];
+            const p2 = nearBand.points[i + 1];
+            if (!p0 || !p1 || !p2) continue;
+            const slope = Math.abs(p1.angleDeg - p0.angleDeg);
+            const slope2 = Math.abs(p2.angleDeg - p1.angleDeg);
+            avgSlopeDeg += (slope + slope2) * 0.5;
+            avgCurvatureDeg += Math.abs((p2.angleDeg - p1.angleDeg) - (p1.angleDeg - p0.angleDeg));
+            slopeSamples += 1;
+          }
+        }
+        const slopeNorm = slopeSamples > 0 ? Math.min(1.4, (avgSlopeDeg / slopeSamples) * 4.2) : 0;
+        const curvatureNorm = slopeSamples > 0 ? Math.min(1.4, (avgCurvatureDeg / slopeSamples) * 5.1) : 0;
+        const baseAlpha = 0.03 + depthNearFactor * 0.11;
+        const reliefAlpha = slopeNorm * 0.07 + curvatureNorm * 0.06;
+        const nearBoost = Math.min(0.06, pxPerDeg * 0.0022);
+        const alpha = Math.min(0.34, baseAlpha + reliefAlpha + nearBoost);
         return paths.map((path) => ({ path, alpha }));
       });
     const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
@@ -640,8 +679,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           centerDeg: xCenterForUnwrap,
           startDeg: xDomainStart,
           endDeg: xDomainEnd,
-          maxDistanceKm: 220,
-          limit: 140,
+          maxDistanceKm: 600,
+          limit: 2200,
         })
       : [];
     const peakLabels = peakCandidates
@@ -1351,7 +1390,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                   <line className="panorama-label-line" x1={label.anchorX} x2={label.x} y1={label.lineStartY} y2={label.y} />
                   <text
                     className={`panorama-label-text ${label.source === "peak" ? "is-peak" : "is-poi"}`}
-                    transform={`rotate(-45 ${label.anchorX.toFixed(2)} ${label.anchorY.toFixed(2)})`}
+                    transform={`rotate(45 ${label.anchorX.toFixed(2)} ${label.anchorY.toFixed(2)})`}
                     x={label.anchorX}
                     y={label.anchorY}
                   >

@@ -1,7 +1,7 @@
 import { haversineDistanceKm } from "./geo";
 import { azimuthFromToDeg } from "./panorama";
 import { mod360, unwrapAzimuthForWindow } from "./panoramaView";
-import { OPEN_PEAK_MAP_PEAKS, type OpenPeakMapPeak } from "../data/openPeakMapPeaks";
+import { OPEN_PEAK_MAP_INDEX_BUCKETS, OPEN_PEAK_MAP_INDEX_META, type OpenPeakMapIndexEntry } from "../data/openPeakMapIndex";
 
 export type PanoramaPeakCandidate = {
   id: string;
@@ -13,7 +13,7 @@ export type PanoramaPeakCandidate = {
   distanceKm: number;
 };
 
-type PeakIndex = Map<string, OpenPeakMapPeak[]>;
+type PeakIndex = Map<string, OpenPeakMapIndexEntry[]>;
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
@@ -23,14 +23,17 @@ const bucketKey = (latBucket: number, lonBucket: number): string => `${latBucket
 
 const PEAK_INDEX: PeakIndex = (() => {
   const next: PeakIndex = new Map();
-  for (const peak of OPEN_PEAK_MAP_PEAKS) {
-    const key = bucketKey(bucketLat(peak.lat), bucketLon(peak.lon));
-    const bucket = next.get(key) ?? [];
-    bucket.push(peak);
-    next.set(key, bucket);
+  for (const [key, entries] of Object.entries(OPEN_PEAK_MAP_INDEX_BUCKETS)) {
+    next.set(key, entries);
   }
   return next;
 })();
+
+export const OPEN_PEAK_MAP_STATS = {
+  features: OPEN_PEAK_MAP_INDEX_META.featureCount,
+  buckets: OPEN_PEAK_MAP_INDEX_META.bucketCount,
+  sourceSha256: OPEN_PEAK_MAP_INDEX_META.sourceSha256,
+} as const;
 
 const inWindow = (azimuthDeg: number, centerDeg: number, startDeg: number, endDeg: number): boolean => {
   const unwrapped = unwrapAzimuthForWindow(azimuthDeg, centerDeg);
@@ -46,11 +49,11 @@ export const queryPanoramaPeaks = (params: {
   limit?: number;
 }): PanoramaPeakCandidate[] => {
   const { origin, centerDeg, startDeg, endDeg, maxDistanceKm } = params;
-  const limit = Math.max(1, Math.min(400, params.limit ?? 120));
+  const limit = Math.max(1, Math.min(2400, params.limit ?? 1200));
 
-  const latRadiusDeg = clamp(maxDistanceKm / 111, 0.1, 4);
+  const latRadiusDeg = clamp(maxDistanceKm / 111, 0.1, 12);
   const lonScale = Math.max(0.2, Math.cos((origin.lat * Math.PI) / 180));
-  const lonRadiusDeg = clamp(maxDistanceKm / (111 * lonScale), 0.1, 6);
+  const lonRadiusDeg = clamp(maxDistanceKm / (111 * lonScale), 0.1, 18);
   const minLat = bucketLat(origin.lat - latRadiusDeg);
   const maxLat = bucketLat(origin.lat + latRadiusDeg);
   const minLon = bucketLon(origin.lon - lonRadiusDeg);
@@ -71,7 +74,7 @@ export const queryPanoramaPeaks = (params: {
           name: peak.name,
           lat: peak.lat,
           lon: peak.lon,
-          elevationM: Number.isFinite(peak.elevationM) ? peak.elevationM ?? null : null,
+          elevationM: Number.isFinite(peak.elevationM) ? peak.elevationM : null,
           azimuthDeg,
           distanceKm,
         });
@@ -82,4 +85,3 @@ export const queryPanoramaPeaks = (params: {
   matches.sort((a, b) => a.distanceKm - b.distanceKm);
   return matches.slice(0, limit);
 };
-

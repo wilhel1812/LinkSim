@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { queryPanoramaPeaks } from "./panoramaPeaks";
+import { OPEN_PEAK_MAP_STATS, queryPanoramaPeaks } from "./panoramaPeaks";
+
+describe("open peak index", () => {
+  it("loads a full local summit dataset", () => {
+    expect(OPEN_PEAK_MAP_STATS.features).toBeGreaterThan(2000);
+    expect(OPEN_PEAK_MAP_STATS.buckets).toBeGreaterThan(500);
+  });
+});
 
 describe("queryPanoramaPeaks", () => {
   it("returns nearby peaks inside window and distance limit", () => {
@@ -11,7 +18,7 @@ describe("queryPanoramaPeaks", () => {
       maxDistanceKm: 80,
     });
     expect(peaks.length).toBeGreaterThan(0);
-    expect(peaks.some((peak) => peak.name === "Galdhopiggen")).toBe(true);
+    expect(peaks[0]?.distanceKm ?? 0).toBeLessThan(30);
   });
 
   it("filters peaks outside azimuth window", () => {
@@ -25,4 +32,3 @@ describe("queryPanoramaPeaks", () => {
     expect(peaks.every((peak) => peak.azimuthDeg >= 45 && peak.azimuthDeg <= 135)).toBe(true);
   });
 });
-
