@@ -2070,6 +2070,12 @@ input {
   font-family: "IBM Plex Mono", monospace;
 }
 
+.ui-slider-vertical .ui-slider-value {
+  min-width: 0;
+  width: 100%;
+  text-align: center;
+}
+
 .ui-slider-input {
   appearance: none;
   -webkit-appearance: none;
@@ -2166,6 +2172,10 @@ input {
   color: var(--muted);
   font-family: "IBM Plex Mono", monospace;
   text-align: center;
+}
+
+.panorama-shade-band {
+  fill: color-mix(in srgb, var(--terrain) 38%, var(--surface-2) 62%);
 }
 
 @keyframes panorama-popover-rise {

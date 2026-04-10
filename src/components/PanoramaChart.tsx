@@ -491,14 +491,86 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         },
       },
     );
+    const toStripFillPaths = (
+      bands: Array<{ points: Array<{ x: number; y: number }>; visibilityMask: boolean[] }>,
+      nearBandIndex: number,
+      farBandIndex: number,
+    ): string[] => {
+      const nearBand = bands[nearBandIndex];
+      const farBand = bands[farBandIndex];
+      if (!nearBand || !farBand) return [];
+      const paths: string[] = [];
+      let runTop: { x: number; y: number }[] = [];
+      let runBottom: { x: number; y: number }[] = [];
+      const flush = () => {
+        if (runTop.length >= 2 && runBottom.length >= 2) {
+          paths.push(
+            `${toPath(runTop)} ${[...runBottom]
+              .reverse()
+              .map((point) => `L${point.x.toFixed(2)},${point.y.toFixed(2)}`)
+              .join(" ")} Z`,
+          );
+        }
+        runTop = [];
+        runBottom = [];
+      };
+      for (let i = 0; i < nearBand.points.length; i += 1) {
+        const visible = Boolean(nearBand.visibilityMask[i]) && Boolean(farBand.visibilityMask[i]);
+        if (!visible) {
+          flush();
+          continue;
+        }
+        const top = nearBand.points[i];
+        const bottom = farBand.points[i];
+        if (!top || !bottom) {
+          flush();
+          continue;
+        }
+        runTop.push({ x: top.x, y: top.y });
+        runBottom.push({ x: bottom.x, y: bottom.y });
+      }
+      flush();
+      return paths;
+    };
     const ridgeBands = depthBands.map((band, bandIndex, all) => ({
       key: `ridge-${bandIndex}`,
       style: depthStyleForBand(bandIndex, all.length),
+      isBaseFill: bandIndex === all.length - 1,
       lineSegments: band.lineSegments,
-      fillPaths: band.fillSegments.map((segment) =>
-        `${toPath(segment)} L${segment[segment.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${segment[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`,
-      ),
+      fillPaths:
+        bandIndex < all.length - 1
+          ? toStripFillPaths(depthBands, bandIndex, bandIndex + 1)
+          : band.fillSegments.map(
+              (segment) =>
+                `${toPath(segment)} L${segment[segment.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${segment[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`,
+            ),
     }));
+    const sampleDrivenBandCount = Math.min(
+      20,
+      Math.max(8, Math.round((visibleRays[0]?.ray.samples.length ?? 64) / 10)),
+    );
+    const sampleDrivenFractions = Array.from({ length: sampleDrivenBandCount }, (_, index) => (index + 1) / sampleDrivenBandCount);
+    const sampleDrivenBands = buildDepthBands(
+      visibleRays.map((entry) => entry.ray),
+      sampleDrivenFractions,
+      (ray, sample) => {
+        const xValue = unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap);
+        const angleDeg = sample?.angleDeg ?? ray.horizonAngleDeg;
+        return { x: x(xValue), y: y(angleDeg), angleDeg };
+      },
+      {
+        ridgeSnap: {
+          enabled: false,
+        },
+      },
+    );
+    const sampleShadePaths = sampleDrivenBands
+      .flatMap((_, bandIndex, bands) => {
+        if (bandIndex >= bands.length - 1) return [];
+        const paths = toStripFillPaths(sampleDrivenBands, bandIndex, bandIndex + 1);
+        const alpha = 0.01 + (1 - bandIndex / Math.max(1, bands.length - 1)) * 0.03;
+        return paths.map((path) => ({ path, alpha }));
+      });
     const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
 
     const clutterAreaPath = includeClutter
@@ -547,6 +619,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       nodes,
       maxVerticalScaleX,
       coverageSegments: composedWindow.segments,
+      sampleShadePaths,
       nearestLineDistanceKm: nearestBandDistances.length
         ? { min: Math.min(...nearestBandDistances), max: Math.max(...nearestBandDistances) }
         : null,
@@ -1103,6 +1176,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 </g>
               ))}
 
+              {geometry.sampleShadePaths.map((shadePath, shadeIndex) => (
+                <path
+                  className="panorama-shade-band"
+                  d={shadePath.path}
+                  key={`shade-${shadeIndex}`}
+                  style={{ opacity: shadePath.alpha }}
+                />
+              ))}
               {geometry.ridgeBands.map((band) => (
                 <g key={band.key}>
                   {band.fillPaths.map((fillPath, fillIndex) => (
@@ -1111,8 +1192,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                       d={fillPath}
                       key={`${band.key}-fill-${fillIndex}`}
                       style={{
-                        opacity: band.style.fillOpacity,
-                        fill: `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--surface-2) 55%)`,
+                        opacity: band.style.fillOpacity + (band.isBaseFill ? 0.08 : 0),
+                        fill: band.isBaseFill
+                          ? `url(#${terrainFillGradientId})`
+                          : `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--surface-2) 55%)`,
                       }}
                     />
                   ))}
