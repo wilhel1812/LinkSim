@@ -39,11 +39,32 @@ describe("panoramaRender", () => {
         y: sample?.angleDeg ?? 0,
         angleDeg: sample?.angleDeg ?? Number.NEGATIVE_INFINITY,
       }),
+      { ridgeSnap: { enabled: false } },
     );
 
     expect(bands).toHaveLength(2);
     expect(bands[1].lineSegments).toHaveLength(1);
     expect(bands[1].lineSegments[0]).toContain("M60.00,4.00 L90.00,5.00");
+  });
+
+  it("snaps each depth band to local ridge candidates while preserving distance order", () => {
+    const ray = mkRay(0, [0, 1.2, 0.4, 3.1, 2.8, 4.5, 4.2, 5.4, 5.1]);
+    const bands = buildDepthBands(
+      [ray],
+      [0.2, 0.5, 0.8],
+      (_ray, sample) => ({
+        x: sample?.distanceKm ?? 0,
+        y: sample?.angleDeg ?? 0,
+        angleDeg: sample?.angleDeg ?? Number.NEGATIVE_INFINITY,
+      }),
+      { ridgeSnap: { enabled: true, windowRatio: 0.2 } },
+    );
+
+    expect(bands).toHaveLength(3);
+    const pickedDistances = bands.map((band) => band.points[0]?.sample?.distanceKm ?? 0);
+    expect(pickedDistances[1]).toBeGreaterThanOrEqual(pickedDistances[0]);
+    expect(pickedDistances[2]).toBeGreaterThanOrEqual(pickedDistances[1]);
+    expect(pickedDistances[2]).toBeGreaterThan(0);
   });
 
   it("returns monotonic near-to-far depth style falloff", () => {
