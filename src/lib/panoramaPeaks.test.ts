@@ -5,7 +5,7 @@ const mockManifest = {
   version: "v-test",
   generatedAt: "2026-04-10T00:00:00Z",
   tileDeg: 1,
-  tileUrlTemplate: "/peak-tiles/v1/tiles/{tileId}.json",
+  tileUrlTemplate: "/peak-tiles/v1/tiles/{tileKey}.json",
   ttlSeconds: 3600,
   source: {
     provider: "osm",
@@ -35,10 +35,10 @@ describe("loadPanoramaPeaks", () => {
       if (url.endsWith("/peak-tiles/v1/manifest.json")) {
         return new Response(JSON.stringify(mockManifest), { status: 200 });
       }
-      if (url.includes("tiles/60%3A10.json") || url.includes("tiles/60:10.json")) {
+      if (url.includes("tiles/la_p60_lo_p10.json")) {
         return new Response(
           JSON.stringify({
-            tileId: "60:10",
+            tileKey: "la_p60_lo_p10",
             version: "v-test",
             entries: [
               { id: "p1", kind: "peak", name: "Peak One", lat: 60.2, lon: 10.2, elevationM: 1400 },
@@ -72,10 +72,10 @@ describe("loadPanoramaPeaks", () => {
       if (url.endsWith("/peak-tiles/v1/manifest.json")) {
         return new Response(JSON.stringify(mockManifest), { status: 200 });
       }
-      if (url.includes("tiles/60%3A10.json") || url.includes("tiles/60:10.json")) {
+      if (url.includes("tiles/la_p60_lo_p10.json")) {
         return new Response(
           JSON.stringify({
-            tileId: "60:10",
+            tileKey: "la_p60_lo_p10",
             version: "v-test",
             entries: [{ id: "p1", kind: "peak", name: "Peak One", lat: 60.2, lon: 10.2, elevationM: 1400 }],
           }),
@@ -115,5 +115,29 @@ describe("loadPanoramaPeaks", () => {
         limit: 50,
       }),
     ).rejects.toThrow(/manifest/i);
+  });
+
+  it("never requests reserved tile-id paths with colon encoding", async () => {
+    const seen: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      seen.push(url);
+      if (url.endsWith("/peak-tiles/v1/manifest.json")) {
+        return new Response(JSON.stringify(mockManifest), { status: 200 });
+      }
+      return new Response(JSON.stringify({ tileKey: "none", version: "v-test", entries: [] }), { status: 200 });
+    });
+
+    await loadPanoramaPeaks({
+      origin: { lat: 60.15, lon: 10.15 },
+      centerDeg: 180,
+      startDeg: -180,
+      endDeg: 180,
+      maxDistanceKm: 50,
+      limit: 50,
+    });
+
+    expect(seen.some((url) => url.includes("%3A"))).toBe(false);
+    expect(seen.some((url) => /tiles\/la_[pm]\d+_lo_[pm]\d+\.json/.test(url))).toBe(true);
   });
 });

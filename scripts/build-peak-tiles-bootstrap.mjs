@@ -23,7 +23,12 @@ const readOpenPeakMapIndex = async () => {
   return Object.values(buckets).flat();
 };
 
-const tileIdFor = (lat, lon) => `${Math.floor(lat / tileDeg)}:${Math.floor(lon / tileDeg)}`;
+const tileKeyPart = (prefix, index) => `${prefix}_${index < 0 ? "m" : "p"}${Math.abs(index)}`;
+const tileKeyFor = (lat, lon) => {
+  const latIndex = Math.floor(lat / tileDeg);
+  const lonIndex = Math.floor(lon / tileDeg);
+  return `${tileKeyPart("la", latIndex)}_${tileKeyPart("lo", lonIndex)}`;
+};
 
 const main = async () => {
   const entries = await readOpenPeakMapIndex();
@@ -37,8 +42,8 @@ const main = async () => {
     if (!entry.name) continue;
     if (lat >= 57 && lat <= 72 && lon >= 4 && lon <= 32) norwayCount += 1;
 
-    const tileId = tileIdFor(lat, lon);
-    const tile = tiles.get(tileId) ?? [];
+    const tileKey = tileKeyFor(lat, lon);
+    const tile = tiles.get(tileKey) ?? [];
     tile.push({
       id: String(entry.id),
       kind: "peak",
@@ -47,17 +52,17 @@ const main = async () => {
       lon,
       elevationM: Number.isFinite(entry.elevationM) ? Number(entry.elevationM) : null,
     });
-    tiles.set(tileId, tile);
+    tiles.set(tileKey, tile);
   }
 
   await fs.rm(outDir, { recursive: true, force: true });
   await fs.mkdir(path.join(outDir, "tiles"), { recursive: true });
 
   const version = "v1-bootstrap";
-  for (const [tileId, tileEntries] of tiles.entries()) {
+  for (const [tileKey, tileEntries] of tiles.entries()) {
     await fs.writeFile(
-      path.join(outDir, "tiles", `${encodeURIComponent(tileId)}.json`),
-      JSON.stringify({ tileId, version, entries: tileEntries }),
+      path.join(outDir, "tiles", `${tileKey}.json`),
+      JSON.stringify({ tileKey, version, entries: tileEntries }),
       "utf8",
     );
   }
@@ -66,7 +71,7 @@ const main = async () => {
     version,
     generatedAt: new Date().toISOString(),
     tileDeg,
-    tileUrlTemplate: "/peak-tiles/v1/tiles/{tileId}.json",
+    tileUrlTemplate: "/peak-tiles/v1/tiles/{tileKey}.json",
     ttlSeconds: 60 * 60 * 24 * 30,
     source: {
       provider: "osm",

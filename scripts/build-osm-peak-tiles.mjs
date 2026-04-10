@@ -36,7 +36,12 @@ const run = (cmd, argv) =>
     });
   });
 
-const tileIdFor = (lat, lon) => `${Math.floor(lat / tileDeg)}:${Math.floor(lon / tileDeg)}`;
+const tileKeyPart = (prefix, index) => `${prefix}_${index < 0 ? "m" : "p"}${Math.abs(index)}`;
+const tileKeyFor = (lat, lon) => {
+  const latIndex = Math.floor(lat / tileDeg);
+  const lonIndex = Math.floor(lon / tileDeg);
+  return `${tileKeyPart("la", latIndex)}_${tileKeyPart("lo", lonIndex)}`;
+};
 
 const main = async () => {
   await run("python3", [extractScript, "--input", input, "--output", ndjsonPath]);
@@ -60,8 +65,8 @@ const main = async () => {
     featureCount += 1;
     if (item.lat >= 57 && item.lat <= 72 && item.lon >= 4 && item.lon <= 32) norwayNamedCount += 1;
 
-    const tileId = tileIdFor(item.lat, item.lon);
-    const tile = tiles.get(tileId) ?? [];
+    const tileKey = tileKeyFor(item.lat, item.lon);
+    const tile = tiles.get(tileKey) ?? [];
     tile.push({
       id: String(item.id),
       kind: item.kind,
@@ -70,16 +75,16 @@ const main = async () => {
       lon: Number(item.lon),
       elevationM: Number.isFinite(item.elevationM) ? Number(item.elevationM) : null,
     });
-    tiles.set(tileId, tile);
+    tiles.set(tileKey, tile);
   }
 
   await fs.rm(path.join(root, outDir), { recursive: true, force: true });
   await fs.mkdir(path.join(root, outDir, "tiles"), { recursive: true });
 
-  for (const [tileId, entries] of tiles.entries()) {
+  for (const [tileKey, entries] of tiles.entries()) {
     await fs.writeFile(
-      path.join(root, outDir, "tiles", `${encodeURIComponent(tileId)}.json`),
-      JSON.stringify({ tileId, version: generatedVersion, entries }),
+      path.join(root, outDir, "tiles", `${tileKey}.json`),
+      JSON.stringify({ tileKey, version: generatedVersion, entries }),
       "utf8",
     );
   }
@@ -89,7 +94,7 @@ const main = async () => {
     version: generatedVersion,
     generatedAt: new Date().toISOString(),
     tileDeg,
-    tileUrlTemplate: "/peak-tiles/v1/tiles/{tileId}.json",
+    tileUrlTemplate: "/peak-tiles/v1/tiles/{tileKey}.json",
     ttlSeconds: 60 * 60 * 24 * 30,
     source: {
       provider: "osm",

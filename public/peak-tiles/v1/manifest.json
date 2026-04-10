@@ -1,8 +1,8 @@
 {
   "version": "v1-bootstrap",
-  "generatedAt": "2026-04-10T14:18:46.583Z",
+  "generatedAt": "2026-04-10T15:23:43.742Z",
   "tileDeg": 1,
-  "tileUrlTemplate": "/peak-tiles/v1/tiles/{tileId}.json",
+  "tileUrlTemplate": "/peak-tiles/v1/tiles/{tileKey}.json",
   "ttlSeconds": 2592000,
   "source": {
     "provider": "osm",
