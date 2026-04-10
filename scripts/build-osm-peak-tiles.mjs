@@ -13,13 +13,15 @@ const getArg = (name, fallback = undefined) => {
 };
 
 const input = getArg("--input");
+const ndjsonInput = getArg("--ndjson");
 const outDir = getArg("--out", path.join("public", "peak-tiles", "v1"));
 const tileDeg = Number(getArg("--tile-deg", "1"));
 const minNorway = Number(getArg("--norway-min", "1000"));
 const generatedVersion = getArg("--version", `v1-${Date.now()}`);
 
-if (!input) {
+if (!input && !ndjsonInput) {
   console.error("Usage: node scripts/build-osm-peak-tiles.mjs --input <planet-or-region.osm.pbf> [--out public/peak-tiles/v1]");
+  console.error("       node scripts/build-osm-peak-tiles.mjs --ndjson <peaks.ndjson> [--out public/peak-tiles/v1]");
   process.exit(1);
 }
 
@@ -44,7 +46,13 @@ const tileKeyFor = (lat, lon) => {
 };
 
 const main = async () => {
-  await run("python3", [extractScript, "--input", input, "--output", ndjsonPath]);
+  if (ndjsonInput) {
+    // Skip Python extraction — use pre-built NDJSON directly
+    await fs.copyFile(ndjsonInput, ndjsonPath);
+    console.log(`[peaks:osm] Using pre-built NDJSON from ${ndjsonInput}`);
+  } else {
+    await run("python3", [extractScript, "--input", input, "--output", ndjsonPath]);
+  }
 
   const tiles = new Map();
   let featureCount = 0;
@@ -57,7 +65,7 @@ const main = async () => {
 
   for await (const line of rl) {
     const text = line.trim();
-    if (!text) continue;
+    if (!text || text.startsWith("#")) continue;
     const item = JSON.parse(text);
     if (!item?.name || !item?.id) continue;
     if ((item.kind !== "peak" && item.kind !== "volcano") || !Number.isFinite(item.lat) || !Number.isFinite(item.lon)) continue;
