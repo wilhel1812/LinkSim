@@ -2355,7 +2355,7 @@ export function MapView({
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
       <div className="map-controls map-controls-unified map-controls-icon-only">
-        <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
+        <div className="map-controls-group map-controls-group-utility map-controls-utility-pill ui-surface-pill">
           {showMultiSelectToggle ? (
             <button
               aria-label={isMultiSelectMode ? "Disable multi-select" : "Enable multi-select"}

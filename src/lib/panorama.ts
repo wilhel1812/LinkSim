@@ -64,6 +64,8 @@ export type PanoramaResult = {
   minAngleDeg: number;
   maxAngleDeg: number;
   radiusPolicyKm: number;
+  coverageCenterDeg: number;
+  coverageSpanDeg: number;
 };
 
 export type PanoramaBuildOptions = {
@@ -363,5 +365,7 @@ export const buildPanorama = (params: {
     minAngleDeg,
     maxAngleDeg,
     radiusPolicyKm: baseRadiusKm,
+    coverageCenterDeg: normalizeAzimuth(params.options?.windowCenterDeg ?? 180),
+    coverageSpanDeg: clamp(params.options?.windowSpanDeg ?? 360, 10, 360),
   };
 };

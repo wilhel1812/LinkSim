@@ -17,6 +17,7 @@ import {
   type PanoramaResult,
   type PanoramaRaySample,
 } from "../lib/panorama";
+import { composePanoramaWindow } from "../lib/panoramaCompose";
 import { buildDepthBands, buildNearBiasedDepthFractions, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
 import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
 import { centerForScaledWindow } from "../lib/panoramaViewport";
@@ -313,8 +314,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const cachedDetail = cacheRef.current.get(detailSignature);
     if (cachedDetail) {
       setDetailPanorama(cachedDetail);
-    } else {
-      setDetailPanorama(null);
     }
 
     if (!cachedBase) {
@@ -412,6 +411,18 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     [viewportCenterAzimuthDeg, viewportSpanDeg],
   );
 
+  const composedWindow = useMemo(
+    () =>
+      composePanoramaWindow({
+        basePanorama,
+        detailPanorama,
+        centerDeg: xWindow.centerDeg,
+        startDeg: xWindow.startDeg,
+        endDeg: xWindow.endDeg,
+      }),
+    [basePanorama, detailPanorama, xWindow],
+  );
+
   const terrainFillGradientId = useMemo(() => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`, []);
 
   const geometry = useMemo(() => {
@@ -424,12 +435,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const x = scaleLinear().domain([xDomainStart, xDomainEnd]).range([M.l, chartWidth - M.r]);
     const xCenterForUnwrap = xWindow.centerDeg;
 
-    const visibleRays = panorama.rays
-      .map((ray) => {
-        const xValue = unwrapAzimuthForWindow(ray.azimuthDeg, xCenterForUnwrap);
-        return { ray, xValue };
-      })
-      .filter((entry) => entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd)
+    const visibleRays = composedWindow.rays
+      .map((entry) => ({ ray: entry.ray, xValue: entry.xValue, source: entry.source }))
       .sort((a, b) => a.xValue - b.xValue);
 
     if (!visibleRays.length) return null;
@@ -488,13 +495,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       key: `ridge-${bandIndex}`,
       style: depthStyleForBand(bandIndex, all.length),
       lineSegments: band.lineSegments,
-      fillPath:
-        band.points.length >= 2
-          ? `${toPath(band.points)} L${band.points[band.points.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${band.points[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`
-          : "",
+      fillPaths: band.fillSegments.map((segment) =>
+        `${toPath(segment)} L${segment[segment.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${segment[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`,
+      ),
     }));
-
-    const furthestBandFillPath = ridgeBands[ridgeBands.length - 1]?.fillPath ?? "";
     const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
 
     const clutterAreaPath = includeClutter
@@ -511,7 +515,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
     const ticksY = [domainMin, (domainMin + domainMax) / 2, domainMax];
 
-    const nodes = panorama.nodes
+    const nodeSource = detailPanorama?.nodes?.length ? detailPanorama.nodes : basePanorama?.nodes ?? panorama.nodes;
+    const nodes = nodeSource
       .map((node) => {
         const xValue = unwrapAzimuthForWindow(node.azimuthDeg, xCenterForUnwrap);
         return {
@@ -526,12 +531,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const fitSpan = Math.max(0.001, fitMax - fitMin);
     const trueSpan = Math.max(0.001, trueMax - trueMin);
     const maxVerticalScaleX = Math.max(1, trueSpan / fitSpan);
+    const nearestBandDistances = depthBands[0]?.points.map((point) => point.sample?.distanceKm ?? 0).filter((value) => Number.isFinite(value) && value > 0) ?? [];
+    const furthestBandDistances =
+      depthBands[depthBands.length - 1]?.points.map((point) => point.sample?.distanceKm ?? 0).filter((value) => Number.isFinite(value) && value > 0) ?? [];
 
     return {
       x,
       xWindow,
       y,
-      terrainFillPath: furthestBandFillPath,
       clutterPath: includeClutter ? toPath(clutterPoints) : "",
       clutterAreaPath,
       ridgeBands,
@@ -539,23 +546,34 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ticksY,
       nodes,
       maxVerticalScaleX,
+      coverageSegments: composedWindow.segments,
+      nearestLineDistanceKm: nearestBandDistances.length
+        ? { min: Math.min(...nearestBandDistances), max: Math.max(...nearestBandDistances) }
+        : null,
+      furthestLineDistanceKm: furthestBandDistances.length
+        ? { min: Math.min(...furthestBandDistances), max: Math.max(...furthestBandDistances) }
+        : null,
     };
-  }, [panorama, basePanorama, chartSize, chartHeight, chartWidth, verticalBlend, xWindow, includeClutter, lineSampleCount]);
+  }, [panorama, basePanorama, detailPanorama, composedWindow, chartSize, chartHeight, chartWidth, verticalBlend, xWindow, includeClutter, lineSampleCount]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
+  const interactionRays = useMemo(() => {
+    const rays = composedWindow.rays.map((entry) => entry.ray);
+    return rays.length ? rays : panorama?.rays ?? [];
+  }, [composedWindow, panorama]);
 
   const activeRay = useMemo(() => {
-    if (!panorama || focusAzimuthDeg == null || !panorama.rays.length) return null;
-    return panorama.rays.reduce(
+    if (!interactionRays.length || focusAzimuthDeg == null) return null;
+    return interactionRays.reduce(
       (best, ray) => {
         const dist = Math.abs(unwrapAzimuthForWindow(ray.azimuthDeg, focusAzimuthDeg) - focusAzimuthDeg);
         if (dist < best.distance) return { ray, distance: dist };
         return best;
       },
-      { ray: panorama.rays[0], distance: Number.POSITIVE_INFINITY },
+      { ray: interactionRays[0], distance: Number.POSITIVE_INFINITY },
     ).ray;
-  }, [panorama, focusAzimuthDeg]);
+  }, [interactionRays, focusAzimuthDeg]);
 
   useEffect(() => {
     if (!selectedSiteEffective) return;
@@ -708,7 +726,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   };
 
   const onMove = (event: ReactMouseEvent<SVGRectElement>) => {
-    if (!geometry || !panorama) return;
+    if (!geometry || !interactionRays.length) return;
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 1 || rect.height <= 1) return;
 
@@ -720,12 +738,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const unwrapped = geometry.x.invert(xPx);
     const azimuth = mod360(unwrapped);
 
-    const nearestRay = panorama.rays.reduce(
+    const nearestRay = interactionRays.reduce(
       (best, ray) => {
         const dist = Math.abs(unwrapAzimuthForWindow(ray.azimuthDeg, azimuth) - azimuth);
         return dist < best.distance ? { ray, distance: dist } : best;
       },
-      { ray: panorama.rays[0], distance: Number.POSITIVE_INFINITY },
+      { ray: interactionRays[0], distance: Number.POSITIVE_INFINITY },
     ).ray;
 
     let nearestNode: { node: PanoramaNodeProjection; cx: number; cy: number; distancePx: number } | null = null;
@@ -902,22 +920,24 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     openSliderPopover && sliderPopoverPos && typeof document !== "undefined"
       ? createPortal(
           <div
-            className={`panorama-slider-popover ${sliderPopoverPos.direction === "down" ? "is-down" : ""}`}
+            className={`ui-surface-pill panorama-slider-popover ${sliderPopoverPos.direction === "down" ? "is-down" : ""}`}
             ref={sliderPopoverRef}
             style={{ left: `${sliderPopoverPos.left}px`, top: `${sliderPopoverPos.top}px` }}
           >
             {openSliderPopover === "fov" ? (
-              <UiSlider
-                ariaLabel="Panorama field of view"
-                label="FOV"
-                max={4}
-                min={1}
-                onChange={(value) => setFovScale(normalizeFovScale(value))}
-                orientation="vertical"
-                step={0.1}
-                value={normalizedFovScale}
-                valueLabel={`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}
-              />
+              <div className="panorama-slider-popover-single">
+                <UiSlider
+                  ariaLabel="Panorama field of view"
+                  label="FOV"
+                  max={4}
+                  min={1}
+                  onChange={(value) => setFovScale(normalizeFovScale(value))}
+                  orientation="vertical"
+                  step={0.1}
+                  value={normalizedFovScale}
+                  valueLabel={`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}
+                />
+              </div>
             ) : openSliderPopover === "vertical" ? (
               <div className="panorama-slider-popover-single">
                 <UiSlider
@@ -945,6 +965,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                   value={lineSampleCount}
                   valueLabel={`${lineSampleCount}`}
                 />
+                {geometry?.nearestLineDistanceKm ? (
+                  <div className="panorama-lines-telemetry">
+                    <div>Near: {geometry.nearestLineDistanceKm.min.toFixed(1)}-{geometry.nearestLineDistanceKm.max.toFixed(1)} km</div>
+                    {geometry?.furthestLineDistanceKm ? (
+                      <div>Far: {geometry.furthestLineDistanceKm.min.toFixed(1)}-{geometry.furthestLineDistanceKm.max.toFixed(1)} km</div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             )}
           </div>,
@@ -1075,19 +1103,19 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 </g>
               ))}
 
-              {geometry.terrainFillPath ? <path className="terrain-fill-path" d={geometry.terrainFillPath} fill={`url(#${terrainFillGradientId})`} /> : null}
               {geometry.ridgeBands.map((band) => (
                 <g key={band.key}>
-                  {band.fillPath ? (
+                  {band.fillPaths.map((fillPath, fillIndex) => (
                     <path
                       className="panorama-ridge-band"
-                      d={band.fillPath}
+                      d={fillPath}
+                      key={`${band.key}-fill-${fillIndex}`}
                       style={{
                         opacity: band.style.fillOpacity,
                         fill: `color-mix(in srgb, var(--terrain) ${band.style.strokeMixTerrainPct}%, var(--surface-2) 55%)`,
                       }}
                     />
-                  ) : null}
+                  ))}
                   {band.lineSegments.map((segment, segmentIndex) => (
                     <path
                       className="panorama-ridge-line"
