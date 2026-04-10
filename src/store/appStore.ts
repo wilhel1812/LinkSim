@@ -2038,6 +2038,62 @@ export const useAppStore = create<AppState>((set, get) => ({
       useCoverageStore.getState().recomputeCoverage();
     }
   },
+  selectSiteById: (id, additive = false) => {
+    set((state) => {
+      const validIds = new Set(state.sites.map((site) => site.id));
+      if (!validIds.has(id)) return state;
+      const current = normalizeSelectedSiteIds(state.selectedSiteIds, state.sites);
+      let nextSelection: string[];
+      if (!additive) {
+        nextSelection = [id];
+      } else if (current.includes(id)) {
+        nextSelection = current.filter((candidate) => candidate !== id);
+      } else {
+        nextSelection = [...current, id];
+      }
+      const normalizedSelection = normalizeSelectedSiteIds(nextSelection, state.sites);
+      const nextSelectedSiteId = normalizedSelection[0] ?? "";
+      const nextOverlay = defaultOverlayModeForSelectionCount(normalizedSelection.length);
+      if (
+        state.selectedSiteId === nextSelectedSiteId &&
+        state.selectedLinkId === "" &&
+        state.mapOverlayMode === nextOverlay &&
+        sameSiteSelection(state.selectedSiteIds, normalizedSelection)
+      ) {
+        return state;
+      }
+      return {
+        selectedSiteIds: normalizedSelection,
+        selectedSiteId: nextSelectedSiteId,
+        selectedLinkId: "",
+        mapOverlayMode: nextOverlay,
+      };
+    });
+  },
+  clearActiveSelection: () =>
+    set((state) => {
+      const nextOverlay = defaultOverlayModeForSelectionCount(0);
+      if (
+        !state.selectedSiteIds.length &&
+        !state.selectedSiteId &&
+        !state.selectedLinkId &&
+        !state.temporaryDirectionReversed &&
+        state.endpointPickTarget === null &&
+        state.profileCursorIndex === 0 &&
+        state.mapOverlayMode === nextOverlay
+      ) {
+        return state;
+      }
+      return {
+        selectedSiteIds: [],
+        selectedSiteId: "",
+        selectedLinkId: "",
+        temporaryDirectionReversed: false,
+        endpointPickTarget: null,
+        profileCursorIndex: 0,
+        mapOverlayMode: nextOverlay,
+      };
+    }),
   setSelectedNetworkId: (id) => {
     set({ selectedNetworkId: id });
     useCoverageStore.getState().recomputeCoverage();
