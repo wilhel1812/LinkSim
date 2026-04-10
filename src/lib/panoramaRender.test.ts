@@ -45,6 +45,8 @@ describe("panoramaRender", () => {
     expect(bands).toHaveLength(2);
     expect(bands[1].lineSegments).toHaveLength(1);
     expect(bands[1].lineSegments[0]).toContain("M60.00,4.00 L90.00,5.00");
+    expect(bands[1].fillSegments).toHaveLength(1);
+    expect(bands[1].fillSegments[0]).toHaveLength(2);
   });
 
   it("snaps each depth band to local ridge candidates while preserving distance order", () => {

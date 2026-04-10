@@ -1182,13 +1182,16 @@ input {
   flex: 0 0 auto;
 }
 
-.map-controls-utility-pill {
+.ui-surface-pill {
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow-elev-3);
+}
+
+.map-controls-utility-pill {
   margin: 2px;
   padding: 4px;
   gap: 4px;
@@ -1206,12 +1209,6 @@ input {
   gap: 4px;
   font-size: 0.68rem;
   color: var(--muted);
-  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
-  backdrop-filter: blur(var(--glass-panel-blur));
-  box-shadow: var(--shadow-elev-3);
   padding: 6px 12px;
 }
 
@@ -2142,11 +2139,6 @@ input {
   min-width: 136px;
   padding: 12px 10px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
-  backdrop-filter: blur(var(--glass-panel-blur));
-  box-shadow: var(--shadow-elev-3);
   animation: panorama-popover-rise 140ms ease-out;
 }
 
@@ -2163,6 +2155,17 @@ input {
 .panorama-slider-popover-single {
   display: grid;
   place-items: center;
+  gap: 8px;
+}
+
+.panorama-lines-telemetry {
+  display: grid;
+  gap: 4px;
+  font-size: 0.66rem;
+  line-height: 1.2;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  text-align: center;
 }
 
 @keyframes panorama-popover-rise {

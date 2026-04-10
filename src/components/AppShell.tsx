@@ -2054,7 +2054,7 @@ export function AppShell() {
         </section>
       ) : null}
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
-        <div className="floating-attribution-pill">
+        <div className="floating-attribution-pill ui-surface-pill">
           <span>&copy;</span>
           <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
             {resolvedBasemap.attribution.replace(/©/g, "").trim()}

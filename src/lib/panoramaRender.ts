@@ -12,6 +12,7 @@ export type PanoramaDepthBand = {
   depthRatio: number;
   points: PanoramaDepthPoint[];
   lineSegments: string[];
+  fillSegments: PanoramaDepthPoint[][];
 };
 
 export type PanoramaBandSelectionOptions = {
@@ -51,6 +52,21 @@ const visibleLineSegments = (points: PanoramaDepthPoint[], visibleMask: boolean[
   }
   if (run.length >= 2) segments.push(linePath(run));
   return segments;
+};
+
+const visiblePointRuns = (points: PanoramaDepthPoint[], visibleMask: boolean[]): PanoramaDepthPoint[][] => {
+  const runs: PanoramaDepthPoint[][] = [];
+  let run: PanoramaDepthPoint[] = [];
+  for (let i = 0; i < points.length; i += 1) {
+    if (!visibleMask[i]) {
+      if (run.length >= 2) runs.push(run);
+      run = [];
+      continue;
+    }
+    run.push(points[i]);
+  }
+  if (run.length >= 2) runs.push(run);
+  return runs;
 };
 
 export const depthStyleForBand = (bandIndex: number, bandCount: number): PanoramaDepthStyle => {
@@ -153,6 +169,7 @@ export const buildDepthBands = (
   return rawBands.map((band, bandIndex) => ({
     ...band,
     lineSegments: visibleLineSegments(band.points, visibility[bandIndex]),
+    fillSegments: visiblePointRuns(band.points, visibility[bandIndex]),
   }));
 };
 
