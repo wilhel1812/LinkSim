@@ -41,7 +41,7 @@ describe("composePanoramaWindow", () => {
     const detail = mkPanorama([120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240]);
     const result = composePanoramaWindow({
       basePanorama: base,
-      detailPanorama: detail,
+      detailPanoramas: [detail],
       centerDeg: 180,
       startDeg: 60,
       endDeg: 300,
@@ -60,7 +60,7 @@ describe("composePanoramaWindow", () => {
     const base = mkPanorama([0, 90, 180, 270]);
     const result = composePanoramaWindow({
       basePanorama: base,
-      detailPanorama: null,
+      detailPanoramas: [],
       centerDeg: 180,
       startDeg: 0,
       endDeg: 360,
@@ -74,7 +74,7 @@ describe("composePanoramaWindow", () => {
     const detail = mkPanorama([140, 160, 180, 200, 220]);
     const result = composePanoramaWindow({
       basePanorama: base,
-      detailPanorama: detail,
+      detailPanoramas: [detail],
       centerDeg: 180,
       startDeg: 60,
       endDeg: 300,
@@ -86,5 +86,21 @@ describe("composePanoramaWindow", () => {
     for (let i = 1; i < result.segments.length; i += 1) {
       expect(result.segments[i - 1].endDeg).toBeCloseTo(result.segments[i].startDeg);
     }
+  });
+
+  it("keeps detail coverage when multiple detail windows are present", () => {
+    const base = mkPanorama([60, 90, 120, 150, 180, 210, 240, 270, 300]);
+    const detailA = mkPanorama([120, 130, 140, 150, 160]);
+    const detailB = mkPanorama([180, 190, 200, 210, 220, 230, 240]);
+    const result = composePanoramaWindow({
+      basePanorama: base,
+      detailPanoramas: [detailA, detailB],
+      centerDeg: 180,
+      startDeg: 90,
+      endDeg: 270,
+    });
+    expect(result.rays.some((entry) => entry.source === "detail")).toBe(true);
+    expect(result.rays[0]?.xValue).toBeGreaterThanOrEqual(90);
+    expect(result.rays[result.rays.length - 1]?.xValue).toBeLessThanOrEqual(270);
   });
 });

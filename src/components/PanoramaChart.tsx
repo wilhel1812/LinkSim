@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { AudioLines, Compass, Maximize2, Minimize2, Trees, Waves, ZoomIn } from "lucide-react";
+import { AudioLines, Compass, Maximize2, Minimize2, Tags, Trees, Waves, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -18,6 +18,8 @@ import {
   type PanoramaRaySample,
 } from "../lib/panorama";
 import { composePanoramaWindow } from "../lib/panoramaCompose";
+import { resolveVisiblePanoramaLabels, type PanoramaLabelCandidate } from "../lib/panoramaLabels";
+import { queryPanoramaPeaks } from "../lib/panoramaPeaks";
 import { buildDepthBands, buildNearBiasedDepthFractions, depthStyleForBand, resolveRenderedEndpoint } from "../lib/panoramaRender";
 import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
 import { centerForScaledWindow } from "../lib/panoramaViewport";
@@ -74,6 +76,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [includeClutter, setIncludeClutter] = useState(false);
   const [verticalBlend, setVerticalBlend] = useState(1);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
+  const [showLabels, setShowLabels] = useState(true);
   const [fovScale, setFovScale] = useState(1.5);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
   const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
@@ -171,8 +174,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const baseSchedulerRef = useRef(createLatestOnlyTaskScheduler());
   const detailSchedulerRef = useRef(createLatestOnlyTaskScheduler());
   const cacheRef = useRef<Map<string, PanoramaResult>>(new Map());
+  const detailContextRef = useRef<string>("");
   const [basePanorama, setBasePanorama] = useState<PanoramaResult | null>(null);
-  const [detailPanorama, setDetailPanorama] = useState<PanoramaResult | null>(null);
+  const [detailPanoramas, setDetailPanoramas] = useState<PanoramaResult[]>([]);
 
   const selectedSiteEffective = useMemo(() => {
     if (!selectedSite) return null;
@@ -234,7 +238,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   useEffect(() => {
     if (!selectedSiteEffective || !selectedNetwork) {
       setBasePanorama(null);
-      setDetailPanorama(null);
+      setDetailPanoramas([]);
       return;
     }
 
@@ -285,8 +289,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       environmentLossDb,
     ].join("|");
 
-    const detailSignature = [
-      "panorama-detail",
+    const detailContextKey = [
       selectedSiteEffective.id,
       selectedSiteEffective.position.lat.toFixed(6),
       selectedSiteEffective.position.lon.toFixed(6),
@@ -299,7 +302,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       quality,
       normalizedFovScale.toFixed(2),
       viewportSpanDeg.toFixed(3),
-      detailCenterBucketDeg.toFixed(3),
       detailSampling.azimuthStepDeg,
       detailSampling.radialSamples,
       terrainLoadEpoch,
@@ -309,11 +311,27 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       environmentLossDb,
     ].join("|");
 
+    const detailSignature = [
+      "panorama-detail",
+      detailContextKey,
+      detailCenterBucketDeg.toFixed(3),
+    ].join("|");
+
+    if (detailContextRef.current !== detailContextKey) {
+      detailContextRef.current = detailContextKey;
+      setDetailPanoramas([]);
+    }
+
     const cachedBase = cacheRef.current.get(baseSignature);
     if (cachedBase) setBasePanorama(cachedBase);
     const cachedDetail = cacheRef.current.get(detailSignature);
     if (cachedDetail) {
-      setDetailPanorama(cachedDetail);
+      setDetailPanoramas((current) => {
+        const bucketKey = cachedDetail.coverageCenterDeg.toFixed(3);
+        const next = [...current.filter((entry) => entry.coverageCenterDeg.toFixed(3) !== bucketKey), cachedDetail];
+        next.sort((a, b) => a.coverageCenterDeg - b.coverageCenterDeg);
+        return next.slice(-12);
+      });
     }
 
     if (!cachedBase) {
@@ -381,7 +399,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             const oldest = cacheRef.current.keys().next().value;
             if (oldest) cacheRef.current.delete(oldest);
           }
-          setDetailPanorama(result);
+          setDetailPanoramas((current) => {
+            const bucketKey = result.coverageCenterDeg.toFixed(3);
+            const next = [...current.filter((entry) => entry.coverageCenterDeg.toFixed(3) !== bucketKey), result];
+            next.sort((a, b) => a.coverageCenterDeg - b.coverageCenterDeg);
+            return next.slice(-12);
+          });
         },
       } satisfies LatestOnlyTask);
     }
@@ -401,7 +424,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     viewportSpanDeg,
   ]);
 
-  const panorama = detailPanorama ?? basePanorama;
+  const panorama = detailPanoramas[detailPanoramas.length - 1] ?? basePanorama;
 
   const chartWidth = chartSize?.width ?? 0;
   const chartHeight = chartSize?.height ?? 0;
@@ -415,12 +438,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     () =>
       composePanoramaWindow({
         basePanorama,
-        detailPanorama,
+        detailPanoramas,
         centerDeg: xWindow.centerDeg,
         startDeg: xWindow.startDeg,
         endDeg: xWindow.endDeg,
       }),
-    [basePanorama, detailPanorama, xWindow],
+    [basePanorama, detailPanoramas, xWindow],
   );
 
   const terrainFillGradientId = useMemo(() => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`, []);
@@ -532,19 +555,29 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       flush();
       return paths;
     };
-    const ridgeBands = depthBands.map((band, bandIndex, all) => ({
-      key: `ridge-${bandIndex}`,
-      style: depthStyleForBand(bandIndex, all.length),
-      isBaseFill: bandIndex === all.length - 1,
-      lineSegments: band.lineSegments,
-      fillPaths:
+    const ridgeBands = depthBands.map((band, bandIndex, all) => {
+      const stripPaths =
         bandIndex < all.length - 1
           ? toStripFillPaths(depthBands, bandIndex, bandIndex + 1)
           : band.fillSegments.map(
               (segment) =>
                 `${toPath(segment)} L${segment[segment.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${segment[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`,
-            ),
-    }));
+            );
+      const topCapPaths =
+        bandIndex === 0
+          ? band.fillSegments.map(
+              (segment) =>
+                `${toPath(segment)} L${segment[segment.length - 1].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} L${segment[0].x.toFixed(2)},${(chartHeight - M.b).toFixed(2)} Z`,
+            )
+          : [];
+      return {
+        key: `ridge-${bandIndex}`,
+        style: depthStyleForBand(bandIndex, all.length),
+        isBaseFill: bandIndex === all.length - 1,
+        lineSegments: band.lineSegments,
+        fillPaths: [...stripPaths, ...topCapPaths],
+      };
+    });
     const sampleDrivenBandCount = Math.min(
       20,
       Math.max(8, Math.round((visibleRays[0]?.ray.samples.length ?? 64) / 10)),
@@ -568,7 +601,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       .flatMap((_, bandIndex, bands) => {
         if (bandIndex >= bands.length - 1) return [];
         const paths = toStripFillPaths(sampleDrivenBands, bandIndex, bandIndex + 1);
-        const alpha = 0.01 + (1 - bandIndex / Math.max(1, bands.length - 1)) * 0.03;
+        const alpha = 0.05 + (1 - bandIndex / Math.max(1, bands.length - 1)) * 0.14;
         return paths.map((path) => ({ path, alpha }));
       });
     const clutterBasePoints = depthBands[depthBands.length - 1]?.points.map((point) => ({ x: point.x, y: point.y })) ?? clutterPoints;
@@ -587,7 +620,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
     const ticksY = [domainMin, (domainMin + domainMax) / 2, domainMax];
 
-    const nodeSource = detailPanorama?.nodes?.length ? detailPanorama.nodes : basePanorama?.nodes ?? panorama.nodes;
+    const latestDetail = detailPanoramas[detailPanoramas.length - 1] ?? null;
+    const nodeSource = latestDetail?.nodes?.length ? latestDetail.nodes : basePanorama?.nodes ?? panorama.nodes;
     const nodes = nodeSource
       .map((node) => {
         const xValue = unwrapAzimuthForWindow(node.azimuthDeg, xCenterForUnwrap);
@@ -599,6 +633,69 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         };
       })
       .filter((entry) => entry.xValue >= xDomainStart && entry.xValue <= xDomainEnd);
+
+    const peakCandidates = selectedSiteEffective
+      ? queryPanoramaPeaks({
+          origin: selectedSiteEffective.position,
+          centerDeg: xCenterForUnwrap,
+          startDeg: xDomainStart,
+          endDeg: xDomainEnd,
+          maxDistanceKm: 220,
+          limit: 140,
+        })
+      : [];
+    const peakLabels = peakCandidates
+      .map((peak) => {
+        const xValue = unwrapAzimuthForWindow(peak.azimuthDeg, xCenterForUnwrap);
+        if (xValue < xDomainStart || xValue > xDomainEnd) return null;
+        const nearestRay = visibleRays.reduce(
+          (best, entry) => {
+            const dist = Math.abs(entry.xValue - xValue);
+            if (dist < best.dist) return { entry, dist };
+            return best;
+          },
+          { entry: visibleRays[0], dist: Number.POSITIVE_INFINITY },
+        ).entry.ray;
+        const sample =
+          nearestRay.samples.reduce(
+            (best, item) => {
+              const dist = Math.abs(item.distanceKm - peak.distanceKm);
+              if (dist < best.dist) return { item, dist };
+              return best;
+            },
+            { item: nearestRay.samples[nearestRay.samples.length - 1] ?? null, dist: Number.POSITIVE_INFINITY },
+          ).item ?? null;
+        const yAngle = sample?.angleDeg ?? nearestRay.horizonAngleDeg;
+        return {
+          id: `peak:${peak.id}`,
+          source: "peak" as const,
+          name: peak.name,
+          x: x(xValue),
+          y: y(yAngle),
+          distanceKm: peak.distanceKm,
+          priorityBucket: 1 as const,
+        };
+      })
+      .filter((entry): entry is Exclude<typeof entry, null> => entry !== null);
+
+    const poiLabels: PanoramaLabelCandidate[] = nodes.map((entry) => ({
+      id: `poi:${entry.node.id}`,
+      source: "poi",
+      name: entry.node.name,
+      x: entry.cx,
+      y: entry.cy,
+      distanceKm: entry.node.distanceKm,
+      priorityBucket: 0,
+    }));
+    const visibleLabels = showLabels
+      ? resolveVisiblePanoramaLabels({
+          candidates: [...poiLabels, ...peakLabels],
+          chartWidth,
+          leftPadding: M.l,
+          rightPadding: M.r,
+          topY: M.t + 2,
+        })
+      : [];
 
     const fitSpan = Math.max(0.001, fitMax - fitMin);
     const trueSpan = Math.max(0.001, trueMax - trueMin);
@@ -617,6 +714,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ticksX,
       ticksY,
       nodes,
+      labels: visibleLabels,
       maxVerticalScaleX,
       coverageSegments: composedWindow.segments,
       sampleShadePaths,
@@ -627,7 +725,21 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         ? { min: Math.min(...furthestBandDistances), max: Math.max(...furthestBandDistances) }
         : null,
     };
-  }, [panorama, basePanorama, detailPanorama, composedWindow, chartSize, chartHeight, chartWidth, verticalBlend, xWindow, includeClutter, lineSampleCount]);
+  }, [
+    panorama,
+    basePanorama,
+    detailPanoramas,
+    composedWindow,
+    chartSize,
+    chartHeight,
+    chartWidth,
+    verticalBlend,
+    xWindow,
+    includeClutter,
+    lineSampleCount,
+    selectedSiteEffective,
+    showLabels,
+  ]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -1109,6 +1221,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           >
             <Compass aria-hidden="true" strokeWidth={1.8} />
           </button>
+          <button
+            aria-label={showLabels ? "Hide labels" : "Show labels"}
+            className={`chart-endpoint-swap chart-endpoint-icon ${showLabels ? "is-active" : ""}`}
+            onClick={() => setShowLabels((value) => !value)}
+            title={showLabels ? "Labels on" : "Labels off"}
+            type="button"
+          >
+            <Tags aria-hidden="true" strokeWidth={1.8} />
+          </button>
           {showExpandToggle ? (
             <button
               aria-label={isExpanded ? "Exit full screen" : "Full screen"}
@@ -1224,6 +1345,19 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                   cy={node.cy}
                   r={3.2}
                 />
+              ))}
+              {geometry.labels.map((label) => (
+                <g className="panorama-label-layer" key={label.id}>
+                  <line className="panorama-label-line" x1={label.anchorX} x2={label.x} y1={label.lineStartY} y2={label.y} />
+                  <text
+                    className={`panorama-label-text ${label.source === "peak" ? "is-peak" : "is-poi"}`}
+                    transform={`rotate(-45 ${label.anchorX.toFixed(2)} ${label.anchorY.toFixed(2)})`}
+                    x={label.anchorX}
+                    y={label.anchorY}
+                  >
+                    {label.name}
+                  </text>
+                </g>
               ))}
 
               {activeRay && focusAzimuthDeg != null ? (
