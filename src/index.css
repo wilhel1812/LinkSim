@@ -1916,7 +1916,7 @@ input {
   letter-spacing: 0.01em;
 }
 
-.chart-panel svg {
+.chart-panel svg:not(.lucide) {
   display: block;
   width: 100%;
   height: 100%;
@@ -1924,6 +1924,12 @@ input {
   max-height: none;
   position: relative;
   z-index: 1;
+}
+
+.chart-panel .lucide {
+  width: auto;
+  height: auto;
+  min-height: unset;
 }
 
 .chart-panel.is-expanded .chart-svg-wrap {

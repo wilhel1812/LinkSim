@@ -588,12 +588,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const stableMaxSampleAngle = Math.max(...stablePanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
     const stableMinSampleAngle = Math.min(...stablePanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
 
-    // Use the stable 360° base panorama for the Y-domain top anchor so that
-    // panning doesn't cause the viewport to jump as detail panoramas load in.
-    const stablePanorama = basePanorama ?? anchorPanorama;
-    const stableMaxSampleAngle = Math.max(...stablePanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
-    const stableMinSampleAngle = Math.min(...stablePanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
-
     const innerWidth = Math.max(1, chartWidth - M.l - M.r);
     const innerHeight = Math.max(1, plotBottom - plotTop);
     const horizonPad = 0.5;
