@@ -72,7 +72,7 @@ export const buildHoverProfileSegments = (
   );
   const toSegment = buildSegment(
     toSegmentPoints,
-    cursorPoint.terrainM + fromAntennaHeightM,
+    cursorPoint.terrainM + toAntennaHeightM,
     toStart.terrainM + toAntennaHeightM,
     frequencyMHz,
   );
