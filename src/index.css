@@ -27,6 +27,9 @@
   --panel-header-row-padding-bottom: 9px;
   --panel-action-row-gap: 8px;
   --panel-action-row-min-height: 34px;
+  --radius-pill: 999px;
+  --radius-card: 12px;
+  --radius-btn:  8px;
 }
 
 * {
@@ -149,7 +152,7 @@ input {
 .access-locked-alert-icon {
   width: 84px;
   height: 84px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -290,7 +293,7 @@ input {
 .panel-section {
   background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -361,7 +364,7 @@ input {
   z-index: 12000;
   width: 240px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px 9px;
   background: color-mix(in srgb, var(--surface-2) 96%, transparent);
   color: var(--text);
@@ -400,7 +403,7 @@ input {
 .chip-button {
   border: 1px solid var(--border);
   background: var(--surface);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 12px;
   color: var(--text);
   cursor: pointer;
@@ -429,7 +432,7 @@ input {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 6px 8px;
   text-align: right;
   font-family: "IBM Plex Mono", monospace;
@@ -439,7 +442,7 @@ input {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 6px 8px;
 }
 
@@ -694,7 +697,7 @@ input {
   height: 36px;
   min-width: 36px;
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
@@ -747,7 +750,7 @@ input {
 
 .workspace-header-actions .field-help {
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   white-space: nowrap;
@@ -780,7 +783,7 @@ input {
   pointer-events: auto;
   text-align: center;
   padding: 24px 32px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow-elev-2);
@@ -816,7 +819,7 @@ input {
 .workspace-attribution {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: color-mix(in srgb, var(--surface-2) 92%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 10px 12px;
   font-size: 0.78rem;
 }
@@ -921,7 +924,7 @@ input {
   justify-content: space-between;
   gap: 10px;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   font-size: 0.84rem;
@@ -981,7 +984,7 @@ input {
   gap: 10px;
   min-height: 36px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   box-shadow: var(--shadow-elev-3);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
@@ -1064,7 +1067,7 @@ input {
   color: var(--muted);
   width: 24px;
   height: 24px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-grid;
   place-items: center;
   cursor: pointer;
@@ -1184,7 +1187,7 @@ input {
 
 .ui-surface-pill {
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
@@ -1192,7 +1195,7 @@ input {
 }
 
 .ui-surface-pill.is-card {
-  border-radius: 12px;
+  border-radius: var(--radius-card);
 }
 
 .map-controls-utility-pill {
@@ -1263,7 +1266,7 @@ input {
   right: 12px;
   z-index: 60;
   padding: 6px 9px;
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   border: 1px solid color-mix(in srgb, var(--selection) 45%, var(--border));
   background: color-mix(in srgb, var(--selection) 18%, var(--surface-2));
   color: var(--text);
@@ -1414,7 +1417,7 @@ input {
 
 .map-holiday-note {
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
   padding: 10px;
 }
@@ -1478,7 +1481,7 @@ input {
 .map-progress-track {
   width: 100%;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   background: var(--progress-track-bg);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
@@ -1487,7 +1490,7 @@ input {
 .map-progress-fill {
   height: 100%;
   width: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--progress-gradient-start), var(--progress-gradient-end));
   transition: width 0.16s ease-out;
 }
@@ -1589,7 +1592,7 @@ input {
 .overlay-scale-bar {
   width: 100%;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: linear-gradient(
     90deg,
@@ -1724,7 +1727,7 @@ input {
   background: color-mix(in srgb, var(--surface-2) 82%, var(--accent-soft));
   border: 1px solid var(--accent);
   color: var(--text);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 10px;
   font-size: 0.72rem;
   white-space: nowrap;
@@ -1840,6 +1843,11 @@ input {
   touch-action: none;
   overscroll-behavior: contain;
   overscroll-behavior-x: none;
+  cursor: grab;
+}
+
+.chart-svg-wrap:active {
+  cursor: grabbing;
 }
 
 .panorama-terrain-canvas {
@@ -1934,6 +1942,12 @@ input {
   flex-shrink: 0;
 }
 
+.chart-panel.is-expanded .panorama-label-overlay svg {
+  width: 10px;
+  height: 10px;
+  min-height: unset;
+}
+
 .chart-panel.is-expanded .chart-svg-wrap {
   min-height: clamp(280px, 62vh, 760px);
 }
@@ -1947,7 +1961,7 @@ input {
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   width: auto;
   min-width: 118px;
   height: 26px;
@@ -2024,7 +2038,7 @@ input {
   display: grid;
   gap: 6px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, var(--surface) 10%);
   box-shadow: var(--shadow-elev-3);
@@ -2119,7 +2133,7 @@ input {
   -webkit-appearance: none;
   width: 148px;
   height: 44px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   outline: none;
   cursor: pointer;
@@ -2139,13 +2153,13 @@ input {
 
 .ui-slider-input::-webkit-slider-runnable-track {
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--border) 72%, var(--surface) 28%);
 }
 
 .ui-slider-input::-moz-range-track {
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--border) 72%, var(--surface) 28%);
 }
 
@@ -2184,7 +2198,7 @@ input {
   transform: translate(-50%, calc(-100% - 6px));
   min-width: 136px;
   padding: 12px 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   animation: panorama-popover-rise 140ms ease-out;
 }
 
@@ -2245,7 +2259,7 @@ input {
   align-items: center;
   gap: 3px;
   padding: 2px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--panorama-label-state, var(--accent)) 22%, var(--surface-2));
   border: 1px solid color-mix(in srgb, var(--panorama-label-state, var(--accent)) 60%, transparent);
   color: var(--text);
@@ -2283,45 +2297,66 @@ input {
 
 /* Temporary shading debug panel */
 .panorama-shading-debug {
-  position: absolute;
+  position: fixed;
   top: 52px;
   left: 8px;
-  z-index: 50;
+  z-index: 9999;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  pointer-events: all;
+}
+
+.panorama-shading-debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .panorama-shading-debug-title {
-  font-size: 0.68rem;
+  font-size: 0.72rem;
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--text);
+}
+
+.panorama-shading-debug-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 1rem;
+  line-height: 1;
   color: var(--muted);
+  border-radius: var(--radius-btn);
+}
+.panorama-shading-debug-close:hover {
+  color: var(--text);
 }
 
 .panorama-shading-debug-sliders {
   display: flex;
-  gap: 6px;
+  flex-direction: row;
+  gap: 12px;
   align-items: flex-end;
 }
 
 .panorama-shading-debug-toggle {
-  position: absolute;
+  position: fixed;
   top: 52px;
   left: 8px;
-  z-index: 51;
-  font-size: 0.6rem;
-  padding: 2px 5px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
+  z-index: 10000;
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: var(--radius-btn);
   background: var(--surface-2);
-  color: var(--muted);
+  border: 1px solid var(--border);
+  color: var(--text);
   cursor: pointer;
-  line-height: 1;
+  opacity: 0.5;
 }
-
-.panorama-shading-debug + .panorama-shading-debug-toggle {
-  display: none;
+.panorama-shading-debug-toggle:hover {
+  opacity: 1;
 }
 
 .panorama-shade-band {
@@ -2354,7 +2389,7 @@ input {
   width: 100%;
   height: 22px;
   position: relative;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface-2) 84%, var(--border) 16%);
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
   touch-action: none;
@@ -2366,7 +2401,7 @@ input {
   position: absolute;
   top: 3px;
   bottom: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent) 76%, var(--surface) 24%);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, var(--surface) 66%);
   pointer-events: none;
@@ -2623,7 +2658,7 @@ html.panorama-gesture-lock body {
     gap: 8px;
     padding: 8px;
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    border-radius: 12px;
+    border-radius: var(--radius-card);
     background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
     -webkit-backdrop-filter: blur(var(--glass-panel-blur));
     backdrop-filter: blur(var(--glass-panel-blur));
@@ -2851,7 +2886,7 @@ html.panorama-gesture-lock body {
   .map-controls-utility-pill {
     max-width: calc(100% - 24px);
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
     -webkit-backdrop-filter: blur(var(--glass-panel-blur));
     backdrop-filter: blur(var(--glass-panel-blur));
@@ -2916,7 +2951,7 @@ html.panorama-gesture-lock body {
 
 .locale-select {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: var(--surface);
   color: var(--text);
   padding: 8px;
@@ -2934,7 +2969,7 @@ html.panorama-gesture-lock body {
 
 .inline-action {
   border: 1px solid var(--accent);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: var(--accent-soft);
   color: var(--text);
   padding: 8px 10px;
@@ -3045,7 +3080,7 @@ html.panorama-gesture-lock body {
   padding: 0 12px;
   gap: 8px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--panel) 86%, var(--bg));
   font-size: 0.84rem;
   font-weight: 700;
@@ -3068,7 +3103,7 @@ html.panorama-gesture-lock body {
   height: 34px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--panel) 86%, var(--bg));
 }
 
@@ -3268,7 +3303,7 @@ html.panorama-gesture-lock body {
 .profile-avatar {
   width: 30px;
   height: 30px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   display: grid;
   place-items: center;
@@ -3288,7 +3323,7 @@ html.panorama-gesture-lock body {
 .floating-help-button {
   width: 52px;
   height: 52px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border));
   background: color-mix(in srgb, var(--accent-soft) 78%, var(--surface));
   color: var(--text);
@@ -3314,7 +3349,7 @@ html.panorama-gesture-lock body {
 }
 
 .floating-env-badge {
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
   background: color-mix(in srgb, var(--surface) 78%, var(--accent-soft));
   color: var(--text);
@@ -3405,7 +3440,7 @@ html.panorama-gesture-lock body {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px;
   min-height: 88px;
   resize: vertical;
@@ -3431,14 +3466,14 @@ html.panorama-gesture-lock body {
   align-items: center;
   gap: 8px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 4px 8px;
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
 }
 
 .collaborator-candidate-list {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   max-height: 170px;
   overflow: auto;
   display: grid;
@@ -3450,7 +3485,7 @@ html.panorama-gesture-lock body {
 .collaborator-candidate-list .site-quick-item {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: var(--surface);
   color: var(--text);
   display: flex;
@@ -3517,7 +3552,7 @@ html.panorama-gesture-lock body {
 .notification-badge {
   min-width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-grid;
   place-items: center;
   background: var(--danger);
@@ -3576,7 +3611,7 @@ html.panorama-gesture-lock body {
 
 .library-row {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px;
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   display: flex;
@@ -3609,7 +3644,7 @@ html.panorama-gesture-lock body {
   max-height: min(86vh, 980px);
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--shadow);
   padding: 14px;
@@ -3688,7 +3723,7 @@ html.panorama-gesture-lock body {
 .welcome-compact-card {
   width: min(440px, 92vw);
   padding: 24px 28px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface-2);
   color: var(--text);
   display: flex;
@@ -3837,7 +3872,7 @@ html.panorama-gesture-lock body {
 
 .library-manager-row {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -3859,7 +3894,7 @@ html.panorama-gesture-lock body {
 
 .access-badge {
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px 8px;
   font-size: 0.68rem;
   color: var(--muted);
@@ -3875,7 +3910,7 @@ html.panorama-gesture-lock body {
 .row-avatar {
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   color: var(--text);
@@ -3946,7 +3981,7 @@ html.panorama-gesture-lock body {
   gap: 8px;
   padding: 6px;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   box-shadow: var(--shadow-elev-1);
 }
@@ -4020,7 +4055,7 @@ html.panorama-gesture-lock body {
 
 .margin-status {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px 10px;
   font-size: 0.82rem;
   font-family: "IBM Plex Mono", monospace;
@@ -4053,7 +4088,7 @@ html.panorama-gesture-lock body {
 
 .whatif-table {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   overflow: hidden;
 }
 
@@ -4139,7 +4174,7 @@ html.panorama-gesture-lock body {
 
 .ui-pattern-status {
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px 8px;
   font-size: 0.68rem;
   text-transform: uppercase;
@@ -4218,7 +4253,7 @@ html.panorama-gesture-lock body {
 .ui-gallery-map-notice-stage {
   position: relative;
   min-height: 86px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
   background: color-mix(in srgb, var(--surface) 84%, transparent);
   overflow: hidden;
