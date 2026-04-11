@@ -439,6 +439,42 @@ export function UiGalleryPage() {
                 <div className="sidebar-footer-version">Build: v0.14.0-beta+fc9813a</div>
               </footer>
             </PatternCard>
+            <PatternCard name="Popover — pill variant (tall / label use-case)" status="standard">
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
+                <div className="ui-surface-pill" style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
+                    <span className="state-dot state-dot-pass_clear" aria-hidden />
+                    <span>Visible + pass</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
+                    <span className="state-dot state-dot-pass_blocked" aria-hidden />
+                    <span>Blocked + pass</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
+                    <span className="state-dot state-dot-fail_clear" aria-hidden />
+                    <span>Visible + fail</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
+                    <span className="state-dot state-dot-fail_blocked" aria-hidden />
+                    <span>Blocked + fail</span>
+                  </div>
+                </div>
+                <p className="field-help" style={{ marginTop: 0 }}>Strict pill shape (border-radius: 999px) for tall or long content such as label lists and narrow context menus. Uses the base <code>ui-surface-pill</code> class.</p>
+              </div>
+            </PatternCard>
+            <PatternCard name="Popover — card variant (square / content-rich use-case)" status="standard">
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
+                <div className="ui-surface-pill is-card" style={{ padding: "12px 16px", display: "inline-grid", gap: "8px", minWidth: "160px" }}>
+                  <strong style={{ fontSize: "0.75rem" }}>Signal overview</strong>
+                  <div style={{ display: "grid", gap: "4px", fontSize: "0.7rem", color: "var(--muted)" }}>
+                    <span>Azimuth: 142°</span>
+                    <span>Distance: 12.4 km</span>
+                    <span>State: Visible + pass</span>
+                  </div>
+                </div>
+                <p className="field-help" style={{ marginTop: 0 }}>Card variant (border-radius: 12px) for larger, square-ish popovers with structured content. Add <code>is-card</code> modifier to <code>ui-surface-pill</code>.</p>
+              </div>
+            </PatternCard>
             <PatternCard name="Icon-only controls policy" status="mapped only">
               <p className="field-help">Mapped for taxonomy coverage only in this pass. No visual convergence or restyling is applied.</p>
             </PatternCard>

@@ -1,7 +1,7 @@
 import { scaleLinear } from "d3-scale";
-import { Compass, Maximize2, Minimize2, SunMedium, Tags, Waves, ZoomIn } from "lucide-react";
+import { Brush, Info, Maximize2, Minimize2, Mountain, MountainSnow, MoveVertical, RadioTower, ScanSearch, Tags, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/latestOnlyTaskScheduler";
@@ -122,7 +122,9 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
   const wavesButtonRef = useRef<HTMLButtonElement | null>(null);
   const fovButtonRef = useRef<HTMLButtonElement | null>(null);
+  const legendButtonRef = useRef<HTMLButtonElement | null>(null);
   const sliderPopoverRef = useRef<HTMLDivElement | null>(null);
+  const legendPopoverRef = useRef<HTMLDivElement | null>(null);
   const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStartRef = useRef<{ distance: number; fovScale: number; spanDeg: number; centerDeg: number } | null>(null);
   const panDragRef = useRef<{ pointerId: number; startX: number; startCenterDeg: number } | null>(null);
@@ -144,6 +146,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [peakLoadStatus, setPeakLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [peakLoadError, setPeakLoadError] = useState<string | null>(null);
   const [shadingMode, setShadingMode] = useState<"relief" | "classic">("relief");
+  const [legendPopoverOpen, setLegendPopoverOpen] = useState(false);
+  const [legendPopoverPos, setLegendPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const peakErrorLogTsRef = useRef(0);
 
   const sites = useAppStore((state) => state.sites);
@@ -581,20 +585,24 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const fitMax = maxHorizon + horizonPad;
     const pixelsPerDegX = innerWidth / xSpan;
     const ySpanDeg = innerHeight / Math.max(0.001, pixelsPerDegX);
-    let trueMin = Math.min(0, minSampleAngle - 0.2);
-    let trueMax = trueMin + ySpanDeg;
-    if (trueMax < maxSampleAngle + 0.2) {
-      trueMax = maxSampleAngle + 0.2;
-      trueMin = trueMax - ySpanDeg;
+    // Compute the natural vertical span without anchoring to 0°.
+    // trueMax is derived from the highest sample angle; trueMin ensures the span
+    // is at least ySpanDeg so we never have a compressed natural scale.
+    let trueMax = maxSampleAngle + 0.2;
+    let trueMin = trueMax - ySpanDeg;
+    if (trueMin > minSampleAngle - 0.2) {
+      trueMin = minSampleAngle - 0.2;
     }
 
     // 1x = natural proportions (same px/deg vertically and horizontally).
     // Higher exaggeration zooms in on terrain by shrinking the vertical domain.
     const naturalSpan = Math.max(0.001, trueMax - trueMin);
     const domainHeight = naturalSpan / Math.max(1, exaggeration);
-    const terrainCenter = (minHorizon + maxHorizon) / 2;
-    let domainMin = terrainCenter - domainHeight / 2;
-    let domainMax = terrainCenter + domainHeight / 2;
+    // Anchor the top of the viewport to the highest terrain (+ small padding).
+    // This keeps all terrain visible and prevents empty space below when looking
+    // from a tall vantage point where all other terrain is below the horizon.
+    let domainMax = maxSampleAngle + 0.2 + domainHeight * 0.06;
+    let domainMin = domainMax - domainHeight;
 
     if (!Number.isFinite(domainMin) || !Number.isFinite(domainMax) || domainMax <= domainMin) {
       domainMin = panorama.minAngleDeg;
@@ -625,10 +633,23 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         },
       },
     );
-    const ticksX = Array.from({ length: 7 }, (_, index) => {
+    // Build regular ticks, then inject cardinal directions (N/S/E/W) that fall
+    // within the visible window. Deduplicate: if a cardinal is within 5° of a
+    // regular tick, the regular tick is dropped in favour of the cardinal.
+    const regularTickValues = Array.from({ length: 7 }, (_, index) => {
       const ratio = index / 6;
       return xDomainStart + (xDomainEnd - xDomainStart) * ratio;
     });
+    type AzimuthTick = { value: number; isCardinal: boolean; isNorth: boolean };
+    const cardinalBases = [0, 90, 180, 270, 360, -90, -180];
+    const cardinalTicks: AzimuthTick[] = cardinalBases
+      .filter((v) => v >= xDomainStart - 0.5 && v <= xDomainEnd + 0.5)
+      .map((v) => ({ value: v, isCardinal: true, isNorth: v % 360 === 0 }));
+    const dedupeThreshold = 5;
+    const regularTicks: AzimuthTick[] = regularTickValues
+      .filter((v) => !cardinalTicks.some((c) => Math.abs(c.value - v) < dedupeThreshold))
+      .map((v) => ({ value: v, isCardinal: false, isNorth: false }));
+    const ticksX: AzimuthTick[] = [...regularTicks, ...cardinalTicks].sort((a, b) => a.value - b.value);
 
     const ticksY = [domainMin, (domainMin + domainMax) / 2, domainMax];
 
@@ -683,6 +704,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           y: y(yAngle),
           distanceKm: peak.distanceKm,
           priorityBucket: 1 as const,
+          elevationM: peak.elevationM,
         };
       })
       .filter((entry): entry is Exclude<typeof entry, null> => entry !== null);
@@ -695,6 +717,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       y: entry.cy,
       distanceKm: entry.node.distanceKm,
       priorityBucket: 0,
+      state: entry.node.state,
     }));
     const visibleLabels = showLabels
       ? resolveVisiblePanoramaLabels({
@@ -763,7 +786,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const textColor = parseRgb(resolveCssColor("var(--text)", "rgb(200,200,200)")) ?? { r: 200, g: 200, b: 200 };
     const mutedColor = parseRgb(resolveCssColor("var(--muted)", "rgb(130,130,130)")) ?? { r: 130, g: 130, b: 130 };
     const borderColor = parseRgb(resolveCssColor("var(--border)", "rgb(80,80,80)")) ?? { r: 80, g: 80, b: 80 };
-    const surfaceBaseColor = parseRgb(resolveCssColor("var(--surface)", "rgb(30,30,30)")) ?? { r: 30, g: 30, b: 30 };
+
     const stateColors: Record<string, Rgb> = {
       pass_clear: parseRgb(resolveCssColor("var(--state-pass-clear)", "rgb(76,175,80)")) ?? { r: 76, g: 175, b: 80 },
       pass_blocked: parseRgb(resolveCssColor("var(--state-pass-blocked)", "rgb(255,152,0)")) ?? { r: 255, g: 152, b: 0 },
@@ -835,10 +858,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             const baseColor =
               shadingMode === "relief"
                 ? blendRgb(terrainColor, surfaceColor, 0.08 + haze * 0.55)
-                : blendRgb(terrainColor, textColor, 0.22 + haze * 0.32);
+                : blendRgb(terrainColor, textColor, 0.20 + haze * 0.46);
             const litColor =
               shadingMode === "relief"
-                ? brightenRgb(baseColor, (lambert - 0.4) * 0.85)
+                ? brightenRgb(baseColor, (lambert - 0.4) * 1.1)
                 : brightenRgb(baseColor, 0);
 
             // Render opaque on the offscreen canvas — no seam artifacts.
@@ -855,7 +878,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         oCtx.restore();
 
         // Composite the opaque terrain layer onto the main canvas.
-        const terrainAlpha = shadingMode === "relief" ? 0.92 : 0.18;
+        const terrainAlpha = shadingMode === "relief" ? 0.92 : 0.32;
         ctx.save();
         ctx.globalAlpha = terrainAlpha;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -887,17 +910,27 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ctx.fillText(`${value.toFixed(1)}°`, M.l - 8, geometry.y(value));
     }
     // X-axis vertical grid lines and bottom labels
+    const dangerColor = parseRgb(resolveCssColor("var(--danger)", "rgb(255,107,107)")) ?? { r: 255, g: 107, b: 107 };
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    for (const value of geometry.ticksX) {
-      const gx = geometry.x(value);
-      ctx.strokeStyle = gridLineColor;
+    for (const tick of geometry.ticksX) {
+      const gx = geometry.x(tick.value);
+      ctx.strokeStyle = tick.isCardinal ? toCanvasColor(borderColor, 1) : gridLineColor;
       ctx.beginPath();
       ctx.moveTo(gx, geometry.plotTop);
       ctx.lineTo(gx, ch - M.b);
       ctx.stroke();
-      ctx.fillStyle = toCanvasColor(mutedColor, 1);
-      ctx.fillText(formatAzimuthTick(value), gx, ch - 8);
+      if (tick.isNorth) {
+        ctx.font = '700 12px "IBM Plex Mono", monospace';
+        ctx.fillStyle = toCanvasColor(dangerColor, 1);
+      } else if (tick.isCardinal) {
+        ctx.font = '600 12px "IBM Plex Mono", monospace';
+        ctx.fillStyle = toCanvasColor(textColor, 0.9);
+      } else {
+        ctx.font = '500 12px "IBM Plex Mono", monospace';
+        ctx.fillStyle = toCanvasColor(mutedColor, 1);
+      }
+      ctx.fillText(formatAzimuthTick(tick.value), gx, ch - 8);
     }
 
     // --- LAYER 3: Node circles (clipped to plot) ---
@@ -922,38 +955,18 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
     ctx.restore();
 
-    // --- LAYER 4: Labels (leader lines + 45°-rotated text, not clipped) ---
+    // --- LAYER 4: Label leader lines (text is rendered as HTML overlay) ---
     const labelLineRgb = blendRgb(textColor, borderColor, 0.72);
-    const labelPoiRgb = blendRgb(textColor, surfaceBaseColor, 0.12);
-    const labelPeakRgb = blendRgb(textColor, mutedColor, 0.24);
 
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
-    ctx.font = '10px "IBM Plex Mono", monospace';
 
     for (const label of geometry.labels) {
-      // Leader line from label anchor down to peak/node position
       ctx.strokeStyle = toCanvasColor(labelLineRgb, 0.84);
       ctx.beginPath();
       ctx.moveTo(label.anchorX, label.lineStartY);
       ctx.lineTo(label.x, label.y);
       ctx.stroke();
-
-      // Text at 45° rotation around anchor point
-      const labelRgb = label.source === "peak" ? labelPeakRgb : labelPoiRgb;
-      ctx.save();
-      ctx.translate(label.anchorX, label.anchorY);
-      ctx.rotate(Math.PI / 4);
-      ctx.textAlign = "center";
-      ctx.textBaseline = "hanging";
-      // Paint outline first (simulates SVG paint-order: stroke), then fill
-      ctx.strokeStyle = toCanvasColor(surfaceBaseColor, 0.7);
-      ctx.lineWidth = 2;
-      ctx.lineJoin = "round";
-      ctx.strokeText(label.name, 0, 0);
-      ctx.fillStyle = toCanvasColor(labelRgb, 1);
-      ctx.fillText(label.name, 0, 0);
-      ctx.restore();
     }
   }, [geometry, chartSize, shadingMode]);
 
@@ -1277,6 +1290,42 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     };
   }, [openSliderPopover]);
 
+  useEffect(() => {
+    if (!legendPopoverOpen) { setLegendPopoverPos(null); return; }
+    const updatePosition = () => {
+      const rect = legendButtonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const estimatedHeight = 120;
+      const spaceAbove = rect.top;
+      const direction: "up" | "down" = spaceAbove >= estimatedHeight + 12 ? "up" : "down";
+      const left = clamp(rect.left + rect.width / 2, 84, window.innerWidth - 84);
+      setLegendPopoverPos({ left, top: direction === "up" ? rect.top - 8 : rect.bottom + 8, direction });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [legendPopoverOpen]);
+
+  useEffect(() => {
+    if (!legendPopoverOpen) return;
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (legendPopoverRef.current?.contains(target)) return;
+      if (legendButtonRef.current?.contains(target)) return;
+      setLegendPopoverOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, [legendPopoverOpen]);
+
   if (!selectedSiteEffective) {
     return (
       <section className="chart-panel chart-panel-empty">
@@ -1351,6 +1400,25 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         )
       : null;
 
+  const legendPopover =
+    legendPopoverOpen && legendPopoverPos && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className={`ui-surface-pill panorama-legend-popover ${legendPopoverPos.direction === "down" ? "is-down" : ""}`}
+            ref={legendPopoverRef}
+            style={{ left: `${legendPopoverPos.left}px`, top: `${legendPopoverPos.top}px` }}
+          >
+            <ul className="panorama-legend-popover-list">
+              <li><span className="state-dot state-dot-pass_clear" aria-hidden /><span>Visible + pass</span></li>
+              <li><span className="state-dot state-dot-pass_blocked" aria-hidden /><span>Blocked + pass</span></li>
+              <li><span className="state-dot state-dot-fail_clear" aria-hidden /><span>Visible + fail</span></li>
+              <li><span className="state-dot state-dot-fail_blocked" aria-hidden /><span>Blocked + fail</span></li>
+            </ul>
+          </div>,
+          document.body,
+        )
+      : null;
+
   const scrubberWidthPct = Math.max(8, (viewportSpanDeg / 360) * 100);
   const scrubberLeftPct = clamp((viewportCenterAzimuthDeg / 360) * 100 - scrubberWidthPct / 2, 0, 100 - scrubberWidthPct);
 
@@ -1367,16 +1435,16 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             title="Vertical scaling"
             type="button"
           >
-            <Waves aria-hidden="true" strokeWidth={1.8} />
+            <MoveVertical aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
-            aria-label={shadingMode === "relief" ? "Switch to classic shading" : "Switch to relief shading"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${shadingMode === "relief" ? "is-active" : ""}`}
+            aria-label={shadingMode === "classic" ? "Hide classic overlay" : "Show classic overlay"}
+            className={`chart-endpoint-swap chart-endpoint-icon ${shadingMode === "classic" ? "is-active" : ""}`}
             onClick={() => setShadingMode((value) => (value === "relief" ? "classic" : "relief"))}
-            title={shadingMode === "relief" ? "Shading: Relief" : "Shading: Classic"}
+            title={shadingMode === "classic" ? "Classic overlay on" : "Classic overlay off"}
             type="button"
           >
-            <SunMedium aria-hidden="true" strokeWidth={1.8} />
+            <Brush aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
             aria-label="Adjust field of view"
@@ -1395,7 +1463,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             title={mapHoverZoomEnabled ? "Map hover lens on" : "Map hover lens off"}
             type="button"
           >
-            <Compass aria-hidden="true" strokeWidth={1.8} />
+            <ScanSearch aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
             aria-label={showLabels ? "Hide labels" : "Show labels"}
@@ -1405,6 +1473,16 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             type="button"
           >
             <Tags aria-hidden="true" strokeWidth={1.8} />
+          </button>
+          <button
+            aria-label="Signal coverage legend"
+            className={`chart-endpoint-swap chart-endpoint-icon ${legendPopoverOpen ? "is-active" : ""}`}
+            onClick={() => setLegendPopoverOpen((v) => !v)}
+            ref={legendButtonRef}
+            title="Coverage legend"
+            type="button"
+          >
+            <Info aria-hidden="true" strokeWidth={1.8} />
           </button>
           {showExpandToggle ? (
             <button
@@ -1421,20 +1499,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         </div>
       </div>
 
-      <div className="chart-action-row">
-        <div className="chart-hover-state">
-          <span className="state-dot state-dot-pass_clear" aria-hidden />
-          <span>Visible + pass</span>
-          <span className="state-dot state-dot-pass_blocked" aria-hidden />
-          <span>Blocked + pass</span>
-          <span className="state-dot state-dot-fail_clear" aria-hidden />
-          <span>Visible + fail</span>
-          <span className="state-dot state-dot-fail_blocked" aria-hidden />
-          <span>Blocked + fail</span>
-          {peakLoadStatus === "loading" ? <span>Peaks loading…</span> : null}
-          {peakLoadStatus === "error" ? <span title={peakLoadError ?? "Peak loading error"}>Peaks unavailable</span> : null}
+      {(peakLoadStatus === "loading" || peakLoadStatus === "error") && (
+        <div className="chart-action-row">
+          <div className="chart-hover-state">
+            {peakLoadStatus === "loading" ? <span>Peaks loading…</span> : null}
+            {peakLoadStatus === "error" ? <span title={peakLoadError ?? "Peak loading error"}>Peaks unavailable</span> : null}
+          </div>
         </div>
-      </div>
+      )}
+      {legendPopover}
 
       <div
         className="chart-svg-wrap"
@@ -1475,6 +1548,43 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 onMouseMove={onMove}
               />
             </svg>
+            <div aria-hidden className="panorama-label-overlay">
+              {geometry.labels.map((label) => {
+                const isPoi = label.source === "poi";
+                const elevM = label.elevationM ?? null;
+                const IconEl = isPoi
+                  ? RadioTower
+                  : elevM !== null && elevM >= 1000
+                    ? MountainSnow
+                    : Mountain;
+                const stateVar = isPoi && label.state
+                  ? `var(--state-${label.state.replace(/_/g, "-")})`
+                  : null;
+                return (
+                  <div
+                    className={`panorama-label${isPoi ? " panorama-label-site" : " panorama-label-peak"}`}
+                    key={label.id}
+                    style={{
+                      left: `${label.anchorX}px`,
+                      top: `${label.anchorY}px`,
+                      ...(stateVar ? { "--panorama-label-state": stateVar } as CSSProperties : {}),
+                    }}
+                  >
+                    {isPoi ? (
+                      <span className="panorama-label-pill">
+                        <IconEl aria-hidden strokeWidth={1.8} size={11} />
+                        <strong>{label.name}</strong>
+                      </span>
+                    ) : (
+                      <>
+                        <IconEl aria-hidden strokeWidth={1.8} size={11} />
+                        <span>{label.name}</span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
             {hoverPopover && focusTarget ? (
               <div
                 className="chart-hover-popover"

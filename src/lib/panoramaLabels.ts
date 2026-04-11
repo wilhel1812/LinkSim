@@ -8,6 +8,8 @@ export type PanoramaLabelCandidate = {
   y: number;
   distanceKm: number;
   priorityBucket: 0 | 1;
+  elevationM?: number | null;
+  state?: string | null;
 };
 
 export type PanoramaLabelLayout = PanoramaLabelCandidate & {
