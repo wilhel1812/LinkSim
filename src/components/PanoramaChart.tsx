@@ -1,6 +1,6 @@
 import { scaleLinear } from "d3-scale";
 import { Surface } from "./ui/Surface";
-import { Info, MapPinned, Maximize2, Minimize2, Mountain, MountainSnow, MoveVertical, RadioTower, Tags, ZoomIn } from "lucide-react";
+import { Info, MapPinned, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, MoveVertical, RadioTower, Tags, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -1337,7 +1337,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   if (!selectedSiteEffective) {
     return (
-      <section className="chart-panel chart-panel-empty">
+      <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
         <div className="chart-empty">Select one site to show panorama analysis.</div>
       </section>
     );
@@ -1494,7 +1494,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
               title={isExpanded ? "Exit full screen" : "Full screen"}
               type="button"
             >
-              {isExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
+              {isExpanded ? <PanelBottomClose aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />}
             </button>
           ) : null}
           {rowControls}

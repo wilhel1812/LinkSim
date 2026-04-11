@@ -128,6 +128,7 @@ input {
   opacity: 1;
   animation: fade-in 260ms ease;
   animation-fill-mode: both;
+  transition: grid-template-columns 360ms ease-out;
 }
 
 .app-shell.is-map-expanded,
@@ -2787,6 +2788,17 @@ html.panorama-gesture-lock body {
     padding: 0;
     z-index: 45;
     transition: opacity 350ms ease-out, transform 350ms ease-out, height 350ms ease-out, min-height 350ms ease-out;
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .mobile-panel-motion-enter-bottom {
+    animation: panel-slide-in-bottom 360ms ease-out both;
+  }
+
+  .mobile-panel-motion-exit-bottom {
+    animation: panel-slide-out-bottom 360ms ease-out both;
+    pointer-events: none;
   }
 
   .mobile-workspace-panel > * {
@@ -3010,9 +3022,10 @@ html.panorama-gesture-lock body {
 
   .app-shell.is-mobile-shell.mobile-bottom-full .workspace-panel .mobile-workspace-panel,
   .app-shell.is-mobile-shell.mobile-bottom-full .workspace-panel .map-inspector {
-    top: calc(12px + env(safe-area-inset-top));
+    top: auto;
     bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-tab-gap));
-    height: auto;
+    height: calc(100dvh - var(--mobile-controls-top) - var(--mobile-tabbar-offset) - var(--mobile-tabbar-height) - var(--mobile-panel-tab-gap) - 12px);
+    min-height: calc(100dvh - var(--mobile-controls-top) - var(--mobile-tabbar-offset) - var(--mobile-tabbar-height) - var(--mobile-panel-tab-gap) - 12px);
     max-height: none;
   }
 
