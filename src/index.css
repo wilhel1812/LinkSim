@@ -2201,10 +2201,11 @@ input {
 
 .panorama-label {
   position: absolute;
-  transform: translate(-50%, -100%);
+  transform-origin: top center;
+  transform: translateX(-50%) rotate(45deg);
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   font-size: 0.62rem;
   line-height: 1;
   font-family: "IBM Plex Mono", monospace;
@@ -2255,6 +2256,49 @@ input {
   align-items: center;
   gap: 6px;
   color: var(--text);
+}
+
+/* Temporary shading debug panel */
+.panorama-shading-debug {
+  position: absolute;
+  top: 52px;
+  left: 8px;
+  z-index: 50;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: all;
+}
+
+.panorama-shading-debug-title {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.panorama-shading-debug-sliders {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.panorama-shading-debug-toggle {
+  position: absolute;
+  top: 52px;
+  left: 8px;
+  z-index: 51;
+  font-size: 0.6rem;
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.panorama-shading-debug + .panorama-shading-debug-toggle {
+  display: none;
 }
 
 .panorama-shade-band {
