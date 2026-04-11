@@ -46,6 +46,10 @@ const tileKeyFor = (lat, lon) => {
 };
 
 const main = async () => {
+  console.log(`[peaks:osm] Output directory: ${path.join(root, outDir)}`);
+  console.log(`[peaks:osm] Tile size (deg): ${tileDeg}`);
+  console.log(`[peaks:osm] Norway benchmark minimum: ${minNorway}`);
+
   if (ndjsonInput) {
     // Skip Python extraction — use pre-built NDJSON directly
     await fs.copyFile(ndjsonInput, ndjsonPath);
@@ -57,6 +61,8 @@ const main = async () => {
   const tiles = new Map();
   let featureCount = 0;
   let norwayNamedCount = 0;
+  let linesRead = 0;
+  let skippedLines = 0;
 
   const rl = readline.createInterface({
     input: (await import("node:fs")).createReadStream(ndjsonPath, { encoding: "utf8" }),
@@ -64,11 +70,21 @@ const main = async () => {
   });
 
   for await (const line of rl) {
+    linesRead += 1;
     const text = line.trim();
-    if (!text || text.startsWith("#")) continue;
+    if (!text || text.startsWith("#")) {
+      skippedLines += 1;
+      continue;
+    }
     const item = JSON.parse(text);
-    if (!item?.name || !item?.id) continue;
-    if ((item.kind !== "peak" && item.kind !== "volcano") || !Number.isFinite(item.lat) || !Number.isFinite(item.lon)) continue;
+    if (!item?.name || !item?.id) {
+      skippedLines += 1;
+      continue;
+    }
+    if ((item.kind !== "peak" && item.kind !== "volcano") || !Number.isFinite(item.lat) || !Number.isFinite(item.lon)) {
+      skippedLines += 1;
+      continue;
+    }
 
     featureCount += 1;
     if (item.lat >= 57 && item.lat <= 72 && item.lon >= 4 && item.lon <= 32) norwayNamedCount += 1;
@@ -84,17 +100,33 @@ const main = async () => {
       elevationM: Number.isFinite(item.elevationM) ? Number(item.elevationM) : null,
     });
     tiles.set(tileKey, tile);
+
+    if (linesRead % 50_000 === 0) {
+      console.log(
+        `[peaks:osm] parse progress: lines=${linesRead} accepted=${featureCount} skipped=${skippedLines} tiles=${tiles.size}`,
+      );
+    }
   }
+
+  console.log(
+    `[peaks:osm] parse complete: lines=${linesRead} accepted=${featureCount} skipped=${skippedLines} tiles=${tiles.size}`,
+  );
 
   await fs.rm(path.join(root, outDir), { recursive: true, force: true });
   await fs.mkdir(path.join(root, outDir, "tiles"), { recursive: true });
 
+  let tileWriteCount = 0;
+  const totalTiles = tiles.size;
   for (const [tileKey, entries] of tiles.entries()) {
     await fs.writeFile(
       path.join(root, outDir, "tiles", `${tileKey}.json`),
       JSON.stringify({ tileKey, version: generatedVersion, entries }),
       "utf8",
     );
+    tileWriteCount += 1;
+    if (tileWriteCount % 1000 === 0 || tileWriteCount === totalTiles) {
+      console.log(`[peaks:osm] tile write progress: ${tileWriteCount}/${totalTiles}`);
+    }
   }
 
   const benchmarkPass = norwayNamedCount >= minNorway;
