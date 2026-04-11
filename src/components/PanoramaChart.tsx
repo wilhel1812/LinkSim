@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { Brush, Info, Maximize2, Minimize2, Mountain, MountainSnow, MoveVertical, RadioTower, ScanSearch, Tags, ZoomIn } from "lucide-react";
+import { Brush, Info, MapPinned, Maximize2, Minimize2, Mountain, MountainSnow, MoveVertical, RadioTower, Tags, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -145,7 +145,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [peakCandidates, setPeakCandidates] = useState<PanoramaPeakCandidate[]>([]);
   const [peakLoadStatus, setPeakLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [peakLoadError, setPeakLoadError] = useState<string | null>(null);
-  const [shadingMode, setShadingMode] = useState<"relief" | "classic">("relief");
+  const [showClassicOverlay, setShowClassicOverlay] = useState(false);
+  // Temporary debug shading sliders — remove once values are finalised.
+  const [dbgLightMult, setDbgLightMult] = useState(1.1);
+  const [dbgReliefAlpha, setDbgReliefAlpha] = useState(0.92);
+  const [dbgClassicAlpha, setDbgClassicAlpha] = useState(0.32);
+  const [dbgHazeStart, setDbgHazeStart] = useState(0.08);
+  const [dbgHazeRange, setDbgHazeRange] = useState(0.55);
+  const [dbgClassicHazeRange, setDbgClassicHazeRange] = useState(0.46);
+  const [shadingDebugOpen, setShadingDebugOpen] = useState(false);
   const [legendPopoverOpen, setLegendPopoverOpen] = useState(false);
   const [legendPopoverPos, setLegendPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const peakErrorLogTsRef = useRef(0);
@@ -577,6 +585,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const minSampleAngle = Math.min(...anchorPanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
     const maxSampleAngle = Math.max(...anchorPanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
 
+    // Use the stable 360° base panorama for the Y-domain top anchor so that
+    // panning doesn't cause the viewport to jump as detail panoramas load in.
+    const stablePanorama = basePanorama ?? anchorPanorama;
+    const stableMaxSampleAngle = Math.max(...stablePanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
+    const stableMinSampleAngle = Math.min(...stablePanorama.rays.flatMap((ray) => ray.samples.map((sample) => sample.angleDeg)));
+
     const innerWidth = Math.max(1, chartWidth - M.l - M.r);
     const innerHeight = Math.max(1, plotBottom - plotTop);
     const horizonPad = 0.5;
@@ -585,23 +599,20 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const fitMax = maxHorizon + horizonPad;
     const pixelsPerDegX = innerWidth / xSpan;
     const ySpanDeg = innerHeight / Math.max(0.001, pixelsPerDegX);
-    // Compute the natural vertical span without anchoring to 0°.
-    // trueMax is derived from the highest sample angle; trueMin ensures the span
-    // is at least ySpanDeg so we never have a compressed natural scale.
-    let trueMax = maxSampleAngle + 0.2;
+    // Compute the natural vertical span from the stable 360° base panorama so
+    // the domain doesn't jump as detail panoramas load while panning.
+    let trueMax = stableMaxSampleAngle + 0.2;
     let trueMin = trueMax - ySpanDeg;
-    if (trueMin > minSampleAngle - 0.2) {
-      trueMin = minSampleAngle - 0.2;
+    if (trueMin > stableMinSampleAngle - 0.2) {
+      trueMin = stableMinSampleAngle - 0.2;
     }
 
     // 1x = natural proportions (same px/deg vertically and horizontally).
     // Higher exaggeration zooms in on terrain by shrinking the vertical domain.
     const naturalSpan = Math.max(0.001, trueMax - trueMin);
     const domainHeight = naturalSpan / Math.max(1, exaggeration);
-    // Anchor the top of the viewport to the highest terrain (+ small padding).
-    // This keeps all terrain visible and prevents empty space below when looking
-    // from a tall vantage point where all other terrain is below the horizon.
-    let domainMax = maxSampleAngle + 0.2 + domainHeight * 0.06;
+    // Anchor the top of the viewport to the stable highest terrain (+ small padding).
+    let domainMax = stableMaxSampleAngle + 0.2 + domainHeight * 0.06;
     let domainMin = domainMax - domainHeight;
 
     if (!Number.isFinite(domainMin) || !Number.isFinite(domainMax) || domainMax <= domainMin) {
@@ -826,65 +837,78 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         oCtx.rect(M.l, geometry.plotTop, cw - M.l - M.r, geometry.plotBottom - geometry.plotTop);
         oCtx.clip();
 
-        for (let sampleIndex = maxSampleCount - 2; sampleIndex >= 0; sampleIndex -= 1) {
-          for (let rayIndex = 0; rayIndex < rays.length - 1; rayIndex += 1) {
-            const left = rays[rayIndex];
-            const right = rays[rayIndex + 1];
-            const s00 = left.ray.samples[sampleIndex];
-            const s01 = left.ray.samples[sampleIndex + 1];
-            const s10 = right.ray.samples[sampleIndex];
-            const s11 = right.ray.samples[sampleIndex + 1];
-            if (!s00 || !s01 || !s10 || !s11) continue;
+        // Helper: draw one terrain pass onto oCtx using the given color function.
+        const drawTerrainPass = (colorFn: (haze: number, lambert: number) => Rgb) => {
+          oCtx.clearRect(0, 0, cw, ch);
+          oCtx.save();
+          oCtx.beginPath();
+          oCtx.rect(M.l, geometry.plotTop, cw - M.l - M.r, geometry.plotBottom - geometry.plotTop);
+          oCtx.clip();
+          for (let sampleIndex = maxSampleCount - 2; sampleIndex >= 0; sampleIndex -= 1) {
+            for (let rayIndex = 0; rayIndex < rays.length - 1; rayIndex += 1) {
+              const left = rays[rayIndex];
+              const right = rays[rayIndex + 1];
+              const s00 = left.ray.samples[sampleIndex];
+              const s01 = left.ray.samples[sampleIndex + 1];
+              const s10 = right.ray.samples[sampleIndex];
+              const s11 = right.ray.samples[sampleIndex + 1];
+              if (!s00 || !s01 || !s10 || !s11) continue;
 
-            const x0 = geometry.x(left.xValue);
-            const x1 = geometry.x(right.xValue);
-            const y00 = geometry.y(s00.angleDeg);
-            const y01 = geometry.y(s01.angleDeg);
-            const y10 = geometry.y(s10.angleDeg);
-            const y11 = geometry.y(s11.angleDeg);
+              const x0 = geometry.x(left.xValue);
+              const x1 = geometry.x(right.xValue);
+              const y00 = geometry.y(s00.angleDeg);
+              const y01 = geometry.y(s01.angleDeg);
+              const y10 = geometry.y(s10.angleDeg);
+              const y11 = geometry.y(s11.angleDeg);
 
-            const dzdx = ((s10.angleDeg - s00.angleDeg) + (s11.angleDeg - s01.angleDeg)) * 0.5;
-            const dzdr = ((s01.angleDeg - s00.angleDeg) + (s11.angleDeg - s10.angleDeg)) * 0.5;
-            const nx = -dzdx * 0.75;
-            const ny = -dzdr * 1.2;
-            const nz = 1;
-            const norm = Math.hypot(nx, ny, nz) || 1;
-            const lambert = Math.max(0, (nx / norm) * lx + (ny / norm) * ly + (nz / norm) * lz);
+              const dzdx = ((s10.angleDeg - s00.angleDeg) + (s11.angleDeg - s01.angleDeg)) * 0.5;
+              const dzdr = ((s01.angleDeg - s00.angleDeg) + (s11.angleDeg - s10.angleDeg)) * 0.5;
+              const nx = -dzdx * 0.75;
+              const ny = -dzdr * 1.2;
+              const nz = 1;
+              const norm = Math.hypot(nx, ny, nz) || 1;
+              const lambert = Math.max(0, (nx / norm) * lx + (ny / norm) * ly + (nz / norm) * lz);
 
-            const avgDistanceKm = (s00.distanceKm + s01.distanceKm + s10.distanceKm + s11.distanceKm) * 0.25;
-            const depth = clamp(avgDistanceKm / maxDistanceKm, 0, 1);
-            const haze = Math.pow(depth, 1.15);
+              const avgDistanceKm = (s00.distanceKm + s01.distanceKm + s10.distanceKm + s11.distanceKm) * 0.25;
+              const depth = clamp(avgDistanceKm / maxDistanceKm, 0, 1);
+              const haze = Math.pow(depth, 1.15);
 
-            const baseColor =
-              shadingMode === "relief"
-                ? blendRgb(terrainColor, surfaceColor, 0.08 + haze * 0.55)
-                : blendRgb(terrainColor, textColor, 0.20 + haze * 0.46);
-            const litColor =
-              shadingMode === "relief"
-                ? brightenRgb(baseColor, (lambert - 0.4) * 1.1)
-                : brightenRgb(baseColor, 0);
-
-            // Render opaque on the offscreen canvas — no seam artifacts.
-            oCtx.fillStyle = toCanvasColor(litColor, 1);
-            oCtx.beginPath();
-            oCtx.moveTo(x0, y00);
-            oCtx.lineTo(x1 + 0.5, y10);
-            oCtx.lineTo(x1 + 0.5, y11);
-            oCtx.lineTo(x0, y01);
-            oCtx.closePath();
-            oCtx.fill();
+              oCtx.fillStyle = toCanvasColor(colorFn(haze, lambert), 1);
+              oCtx.beginPath();
+              oCtx.moveTo(x0, y00);
+              oCtx.lineTo(x1 + 0.5, y10);
+              oCtx.lineTo(x1 + 0.5, y11);
+              oCtx.lineTo(x0, y01);
+              oCtx.closePath();
+              oCtx.fill();
+            }
           }
-        }
-        oCtx.restore();
+          oCtx.restore();
+        };
 
-        // Composite the opaque terrain layer onto the main canvas.
-        const terrainAlpha = shadingMode === "relief" ? 0.92 : 0.32;
+        // Pass 1: Relief shading (always rendered).
+        drawTerrainPass((haze, lambert) =>
+          brightenRgb(blendRgb(terrainColor, surfaceColor, dbgHazeStart + haze * dbgHazeRange), (lambert - 0.4) * dbgLightMult),
+        );
         ctx.save();
-        ctx.globalAlpha = terrainAlpha;
+        ctx.globalAlpha = dbgReliefAlpha;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.drawImage(offscreen, 0, 0);
         ctx.restore();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        // Pass 2: Classic colour overlay (additive, toggled by Brush button).
+        if (showClassicOverlay) {
+          drawTerrainPass((haze) =>
+            blendRgb(terrainColor, textColor, 0.20 + haze * dbgClassicHazeRange),
+          );
+          ctx.save();
+          ctx.globalAlpha = dbgClassicAlpha;
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.drawImage(offscreen, 0, 0);
+          ctx.restore();
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
       }
     }
 
@@ -968,7 +992,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ctx.lineTo(label.x, label.y);
       ctx.stroke();
     }
-  }, [geometry, chartSize, shadingMode]);
+  }, [geometry, chartSize, showClassicOverlay, dbgLightMult, dbgReliefAlpha, dbgClassicAlpha, dbgHazeStart, dbgHazeRange, dbgClassicHazeRange]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -1404,7 +1428,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     legendPopoverOpen && legendPopoverPos && typeof document !== "undefined"
       ? createPortal(
           <div
-            className={`ui-surface-pill panorama-legend-popover ${legendPopoverPos.direction === "down" ? "is-down" : ""}`}
+            className={`ui-surface-pill is-card panorama-legend-popover ${legendPopoverPos.direction === "down" ? "is-down" : ""}`}
             ref={legendPopoverRef}
             style={{ left: `${legendPopoverPos.left}px`, top: `${legendPopoverPos.top}px` }}
           >
@@ -1438,10 +1462,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             <MoveVertical aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
-            aria-label={shadingMode === "classic" ? "Hide classic overlay" : "Show classic overlay"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${shadingMode === "classic" ? "is-active" : ""}`}
-            onClick={() => setShadingMode((value) => (value === "relief" ? "classic" : "relief"))}
-            title={shadingMode === "classic" ? "Classic overlay on" : "Classic overlay off"}
+            aria-label={showClassicOverlay ? "Hide classic overlay" : "Show classic overlay"}
+            className={`chart-endpoint-swap chart-endpoint-icon ${showClassicOverlay ? "is-active" : ""}`}
+            onClick={() => setShowClassicOverlay((v) => !v)}
+            title={showClassicOverlay ? "Classic overlay on" : "Classic overlay off"}
             type="button"
           >
             <Brush aria-hidden="true" strokeWidth={1.8} />
@@ -1463,7 +1487,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             title={mapHoverZoomEnabled ? "Map hover lens on" : "Map hover lens off"}
             type="button"
           >
-            <ScanSearch aria-hidden="true" strokeWidth={1.8} />
+            <MapPinned aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
             aria-label={showLabels ? "Hide labels" : "Show labels"}
@@ -1572,12 +1596,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                   >
                     {isPoi ? (
                       <span className="panorama-label-pill">
-                        <IconEl aria-hidden strokeWidth={1.8} size={11} />
+                        <IconEl aria-hidden strokeWidth={1.8} size={10} />
                         <strong>{label.name}</strong>
                       </span>
                     ) : (
                       <>
-                        <IconEl aria-hidden strokeWidth={1.8} size={11} />
+                        <IconEl aria-hidden strokeWidth={1.8} size={10} />
                         <span>{label.name}</span>
                       </>
                     )}
@@ -1620,6 +1644,26 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         />
       </div>
       {sliderPopover}
+      {shadingDebugOpen && (
+        <div className="ui-surface-pill is-card panorama-shading-debug">
+          <strong className="panorama-shading-debug-title">Shading debug</strong>
+          <div className="panorama-shading-debug-sliders">
+            <UiSlider ariaLabel="Relief lighting multiplier" label="Light" max={2} min={0} onChange={setDbgLightMult} orientation="vertical" step={0.05} value={dbgLightMult} valueLabel={dbgLightMult.toFixed(2)} />
+            <UiSlider ariaLabel="Relief terrain alpha" label="R.Alpha" max={1} min={0} onChange={setDbgReliefAlpha} orientation="vertical" step={0.01} value={dbgReliefAlpha} valueLabel={dbgReliefAlpha.toFixed(2)} />
+            <UiSlider ariaLabel="Haze blend start" label="Haze0" max={0.5} min={0} onChange={setDbgHazeStart} orientation="vertical" step={0.01} value={dbgHazeStart} valueLabel={dbgHazeStart.toFixed(2)} />
+            <UiSlider ariaLabel="Haze blend range" label="HazeR" max={1} min={0} onChange={setDbgHazeRange} orientation="vertical" step={0.01} value={dbgHazeRange} valueLabel={dbgHazeRange.toFixed(2)} />
+            <UiSlider ariaLabel="Classic overlay alpha" label="C.Alpha" max={1} min={0} onChange={setDbgClassicAlpha} orientation="vertical" step={0.01} value={dbgClassicAlpha} valueLabel={dbgClassicAlpha.toFixed(2)} />
+            <UiSlider ariaLabel="Classic haze range" label="C.Haze" max={1} min={0} onChange={setDbgClassicHazeRange} orientation="vertical" step={0.01} value={dbgClassicHazeRange} valueLabel={dbgClassicHazeRange.toFixed(2)} />
+          </div>
+        </div>
+      )}
+      <button
+        aria-label="Toggle shading debug"
+        className="panorama-shading-debug-toggle"
+        onClick={() => setShadingDebugOpen((v) => !v)}
+        title="Shading debug"
+        type="button"
+      >dbg</button>
     </section>
   );
 }
