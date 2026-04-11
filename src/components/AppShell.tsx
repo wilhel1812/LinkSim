@@ -55,6 +55,8 @@ const BLANK_SIM_NOTICE_ID = "blank-simulation-guidance";
 // - profile => BottomPanel shell (legacy term retained in code for stability)
 type MobileWorkspacePanel = "navigator" | "inspector" | "profile";
 type MobileBottomPanelMode = "hidden" | "normal" | "full";
+type PanelMotionPhase = "idle" | "entering" | "exiting";
+const PANEL_MOTION_MS = 360;
 type AppNotice = {
   id: string;
   message: string;
@@ -177,6 +179,9 @@ export function AppShell() {
   const [isNavigatorHidden, setIsNavigatorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.navigatorHidden, false));
   const [isInspectorHidden, setIsInspectorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.inspectorHidden, false));
   const [isProfileHidden, setIsProfileHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.profileHidden, false));
+  const [navigatorMotionPhase, setNavigatorMotionPhase] = useState<PanelMotionPhase>("idle");
+  const [inspectorMotionPhase, setInspectorMotionPhase] = useState<PanelMotionPhase>("idle");
+  const [profileMotionPhase, setProfileMotionPhase] = useState<PanelMotionPhase>("idle");
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   // Derived early so effects below can reference them without temporal dead zone.
@@ -213,6 +218,9 @@ export function AppShell() {
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
+  const navigatorMotionTimerRef = useRef<number | null>(null);
+  const inspectorMotionTimerRef = useRef<number | null>(null);
+  const profileMotionTimerRef = useRef<number | null>(null);
   const hadAuthenticatedSessionRef = useRef(false);
   const {
     showWelcomeModal,
@@ -1507,6 +1515,101 @@ export function AppShell() {
     window.setTimeout(fire, 120);
   }, []);
 
+  const clearMotionTimer = useCallback((timerRef: { current: number | null }) => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearMotionTimer(navigatorMotionTimerRef);
+      clearMotionTimer(inspectorMotionTimerRef);
+      clearMotionTimer(profileMotionTimerRef);
+    };
+  }, [clearMotionTimer]);
+
+  const showNavigatorPanel = useCallback(() => {
+    clearMotionTimer(navigatorMotionTimerRef);
+    setIsNavigatorHidden(false);
+    setNavigatorMotionPhase("entering");
+    navigatorMotionTimerRef.current = window.setTimeout(() => {
+      setNavigatorMotionPhase("idle");
+      navigatorMotionTimerRef.current = null;
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const hideNavigatorPanel = useCallback(() => {
+    clearMotionTimer(navigatorMotionTimerRef);
+    setNavigatorMotionPhase("exiting");
+    navigatorMotionTimerRef.current = window.setTimeout(() => {
+      setIsNavigatorHidden(true);
+      setNavigatorMotionPhase("idle");
+      navigatorMotionTimerRef.current = null;
+      emitProfileLayoutPulse();
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const showInspectorPanel = useCallback(() => {
+    clearMotionTimer(inspectorMotionTimerRef);
+    setIsInspectorHidden(false);
+    setInspectorMotionPhase("entering");
+    inspectorMotionTimerRef.current = window.setTimeout(() => {
+      setInspectorMotionPhase("idle");
+      inspectorMotionTimerRef.current = null;
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const hideInspectorPanel = useCallback(() => {
+    clearMotionTimer(inspectorMotionTimerRef);
+    setInspectorMotionPhase("exiting");
+    inspectorMotionTimerRef.current = window.setTimeout(() => {
+      setIsInspectorHidden(true);
+      setInspectorMotionPhase("idle");
+      inspectorMotionTimerRef.current = null;
+      emitProfileLayoutPulse();
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const showProfilePanel = useCallback(() => {
+    clearMotionTimer(profileMotionTimerRef);
+    setIsProfileHidden(false);
+    setProfileMotionPhase("entering");
+    profileMotionTimerRef.current = window.setTimeout(() => {
+      setProfileMotionPhase("idle");
+      profileMotionTimerRef.current = null;
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const hideProfilePanel = useCallback(() => {
+    clearMotionTimer(profileMotionTimerRef);
+    setProfileMotionPhase("exiting");
+    profileMotionTimerRef.current = window.setTimeout(() => {
+      setIsProfileHidden(true);
+      setProfileMotionPhase("idle");
+      profileMotionTimerRef.current = null;
+      emitProfileLayoutPulse();
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const shouldRenderNavigatorPanel = !isNavigatorHidden || navigatorMotionPhase === "exiting";
+  const shouldRenderInspectorPanel = !isInspectorHidden || inspectorMotionPhase === "exiting";
+  const shouldRenderProfilePanel = !isProfileHidden || profileMotionPhase === "exiting";
+
+  const navigatorPanelMotionClass =
+    navigatorMotionPhase === "entering" ? "panel-motion-enter-left" : navigatorMotionPhase === "exiting" ? "panel-motion-exit-left" : "";
+  const inspectorPanelMotionClass =
+    inspectorMotionPhase === "entering" ? "panel-motion-enter-right" : inspectorMotionPhase === "exiting" ? "panel-motion-exit-right" : "";
+  const profilePanelMotionClass =
+    profileMotionPhase === "entering" ? "panel-motion-enter-bottom" : profileMotionPhase === "exiting" ? "panel-motion-exit-bottom" : "";
+
   const toggleProfileExpanded = () => {
     setIsMapExpanded(false);
     setMobileActivePanel("profile");
@@ -1732,10 +1835,7 @@ export function AppShell() {
             <button
               aria-label="Show Navigator panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-navigator"
-              onClick={() => {
-                setIsNavigatorHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={showNavigatorPanel}
               title="Show Navigator"
               type="button"
             >
@@ -1746,10 +1846,7 @@ export function AppShell() {
             <button
               aria-label="Show Inspector panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-inspector"
-              onClick={() => {
-                setIsInspectorHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={showInspectorPanel}
               title="Show Inspector"
               type="button"
             >
@@ -1760,10 +1857,7 @@ export function AppShell() {
             <button
               aria-label="Show Profile panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-profile"
-              onClick={() => {
-                setIsProfileHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={showProfilePanel}
               title="Show Profile"
               type="button"
             >
@@ -1772,7 +1866,7 @@ export function AppShell() {
           ) : null}
         </div>
       ) : null}
-      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && !isNavigatorHidden && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
+      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && shouldRenderNavigatorPanel && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
           <Sidebar
             authBootstrapPending={accessState === "checking"}
             hideLibraryBrowsing={isReadOnlyShell}
@@ -1786,8 +1880,11 @@ export function AppShell() {
                   aria-label={isNavigatorHidden ? "Show Navigator panel" : "Hide Navigator panel"}
                   className="user-icon-button"
                   onClick={() => {
-                    setIsNavigatorHidden((prev) => !prev);
-                    emitProfileLayoutPulse();
+                    if (isNavigatorHidden) {
+                      showNavigatorPanel();
+                      return;
+                    }
+                    hideNavigatorPanel();
                   }}
                   title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
                   type="button"
@@ -1796,6 +1893,7 @@ export function AppShell() {
                 </button>
               )
             }
+            panelClassName={navigatorPanelMotionClass}
             simulationDisplayLabel={undefined}
         />
       ) : null}
@@ -1840,7 +1938,7 @@ export function AppShell() {
           isMapExpanded={isMapExpanded}
           showInspector={
             !isMapExpanded &&
-            !isInspectorHidden &&
+            shouldRenderInspectorPanel &&
             (isMobileViewport
               ? mobileActivePanel === "inspector" && mobileBottomPanelMode !== "hidden"
               : !isProfileExpanded)
@@ -1854,8 +1952,11 @@ export function AppShell() {
                   aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
                   className="map-control-btn map-control-btn-icon"
                   onClick={() => {
-                    setIsInspectorHidden((prev) => !prev);
-                    emitProfileLayoutPulse();
+                    if (isInspectorHidden) {
+                      showInspectorPanel();
+                      return;
+                    }
+                    hideInspectorPanel();
                   }}
                   title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
                   type="button"
@@ -1880,6 +1981,7 @@ export function AppShell() {
             </div>
           }
           readOnly={!canPersistWorkspace}
+          inspectorPanelClassName={inspectorPanelMotionClass}
           onToggleMapExpanded={() => {
             setIsProfileExpanded(false);
             if (isMobileViewport && mobileBottomPanelMode === "full") {
@@ -1906,22 +2008,23 @@ export function AppShell() {
             setMobileBottomPanelVisibility={setMobileBottomPanelVisibility}
           />
         ) : null}
-        {!isMobileViewport && !isMapExpanded && !isProfileHidden ? (
+        {!isMobileViewport && !isMapExpanded && shouldRenderProfilePanel ? (
           isSingleSiteSelection ? (
           <PanoramaChart
             isExpanded={isProfileExpanded}
             onToggleExpanded={toggleProfileExpanded}
             rowControls={
+              isProfileExpanded ? null :
               <button
                 aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
                 className="chart-endpoint-swap chart-endpoint-icon"
                 onClick={() => {
-                  setIsProfileHidden((prev) => {
-                    const next = !prev;
-                    if (next) setIsProfileExpanded(false);
-                    return next;
-                  });
-                  emitProfileLayoutPulse();
+                  if (isProfileHidden) {
+                    showProfilePanel();
+                    return;
+                  }
+                  setIsProfileExpanded(false);
+                  hideProfilePanel();
                 }}
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
                 type="button"
@@ -1929,6 +2032,7 @@ export function AppShell() {
                 {isProfileHidden ? <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
               </button>
             }
+            panelClassName={profilePanelMotionClass}
             showExpandToggle
           />
           ) : (
@@ -1936,16 +2040,17 @@ export function AppShell() {
             isExpanded={isProfileExpanded}
             onToggleExpanded={toggleProfileExpanded}
             rowControls={
+              isProfileExpanded ? null :
               <button
                 aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
                 className="chart-endpoint-swap chart-endpoint-icon"
                 onClick={() => {
-                  setIsProfileHidden((prev) => {
-                    const next = !prev;
-                    if (next) setIsProfileExpanded(false);
-                    return next;
-                  });
-                  emitProfileLayoutPulse();
+                  if (isProfileHidden) {
+                    showProfilePanel();
+                    return;
+                  }
+                  setIsProfileExpanded(false);
+                  hideProfilePanel();
                 }}
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
                 type="button"
@@ -1953,6 +2058,7 @@ export function AppShell() {
                 {isProfileHidden ? <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
               </button>
             }
+            panelClassName={profilePanelMotionClass}
             showExpandToggle
           />
           )

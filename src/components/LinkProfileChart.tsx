@@ -51,6 +51,7 @@ type LinkProfileChartProps = {
   onToggleExpanded: () => void;
   showExpandToggle?: boolean;
   rowControls?: ReactNode;
+  panelClassName?: string;
 };
 
 export function LinkProfileChart({
@@ -58,6 +59,7 @@ export function LinkProfileChart({
   onToggleExpanded,
   showExpandToggle = true,
   rowControls,
+  panelClassName,
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const [hostAttachRevision, setHostAttachRevision] = useState(0);
@@ -712,7 +714,7 @@ export function LinkProfileChart({
   }
 
   return (
-    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`} data-profile-revision={profileRevision}>
+    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} data-profile-revision={profileRevision}>
       <div className="chart-top-row">
         <div className="chart-endpoints" aria-live="polite">
           <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
