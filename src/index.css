@@ -1191,6 +1191,10 @@ input {
   box-shadow: var(--shadow-elev-3);
 }
 
+.ui-surface-pill.is-card {
+  border-radius: 12px;
+}
+
 .map-controls-utility-pill {
   margin: 2px;
   padding: 4px;
@@ -2185,6 +2189,72 @@ input {
   color: var(--muted);
   font-family: "IBM Plex Mono", monospace;
   text-align: center;
+}
+
+/* Panorama HTML label overlay — positioned over the canvas */
+.panorama-label-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.panorama-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.62rem;
+  line-height: 1;
+  font-family: "IBM Plex Mono", monospace;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.panorama-label-peak {
+  opacity: 0.75;
+}
+
+.panorama-label-site .panorama-label-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panorama-label-state, var(--accent)) 22%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--panorama-label-state, var(--accent)) 60%, transparent);
+  color: var(--text);
+}
+
+.panorama-legend-popover {
+  position: fixed;
+  z-index: 2100;
+  transform: translate(-50%, calc(-100% - 6px));
+  padding: 10px 14px;
+  animation: panorama-popover-rise 140ms ease-out;
+}
+
+.panorama-legend-popover.is-down {
+  transform: translate(-50%, 6px);
+  animation: panorama-popover-drop 140ms ease-out;
+}
+
+.panorama-legend-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.panorama-legend-popover-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
 }
 
 .panorama-shade-band {
