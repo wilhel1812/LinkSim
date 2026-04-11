@@ -917,17 +917,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     for (const value of geometry.ticksY) {
       ctx.fillText(`${value.toFixed(1)}°`, M.l - 8, geometry.y(value));
     }
-    // X-axis vertical grid lines and bottom labels
+    // X-axis bottom labels (no vertical grid lines)
     const dangerColor = parseRgb(resolveCssColor("var(--danger)", "rgb(255,107,107)")) ?? { r: 255, g: 107, b: 107 };
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
     for (const tick of geometry.ticksX) {
       const gx = geometry.x(tick.value);
-      ctx.strokeStyle = tick.isCardinal ? toCanvasColor(borderColor, 1) : gridLineColor;
-      ctx.beginPath();
-      ctx.moveTo(gx, geometry.plotTop);
-      ctx.lineTo(gx, ch - M.b);
-      ctx.stroke();
       if (tick.isNorth) {
         ctx.font = '700 12px "IBM Plex Mono", monospace';
         ctx.fillStyle = toCanvasColor(dangerColor, 1);
