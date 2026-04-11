@@ -205,6 +205,7 @@ export function AppShell() {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
   const [mobileBottomPanelMode, setMobileBottomPanelMode] = useState<MobileBottomPanelMode>("normal");
+  const [mobileBottomMotionPhase, setMobileBottomMotionPhase] = useState<PanelMotionPhase>("idle");
   const [mobileControlsOccupied, setMobileControlsOccupied] = useState(0);
   const [mobileBottomOccupied, setMobileBottomOccupied] = useState(0);
   const [measuredSidebarWidth, setMeasuredSidebarWidth] = useState(0);
@@ -221,6 +222,7 @@ export function AppShell() {
   const navigatorMotionTimerRef = useRef<number | null>(null);
   const inspectorMotionTimerRef = useRef<number | null>(null);
   const profileMotionTimerRef = useRef<number | null>(null);
+  const mobileBottomMotionTimerRef = useRef<number | null>(null);
   const hadAuthenticatedSessionRef = useRef(false);
   const {
     showWelcomeModal,
@@ -1464,9 +1466,9 @@ export function AppShell() {
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     const style: CSSProperties = {
       ["--sidebar-overlay-width" as string]:
-        isNavigatorHidden && !isMapExpanded && !isProfileExpanded ? "0px" : "clamp(280px, 20vw, 400px)",
+        (isNavigatorHidden || navigatorMotionPhase === "exiting") && !isMapExpanded && !isProfileExpanded ? "0px" : "clamp(280px, 20vw, 400px)",
       ["--inspector-overlay-width" as string]:
-        isInspectorHidden || isMapExpanded || isProfileExpanded ? "0px" : "clamp(280px, 20vw, 400px)",
+        isInspectorHidden || inspectorMotionPhase === "exiting" || isMapExpanded || isProfileExpanded ? "0px" : "clamp(280px, 20vw, 400px)",
     };
     if (!isMobileViewport) return style;
     return {
@@ -1474,9 +1476,11 @@ export function AppShell() {
       ["--mobile-controls-occupied" as string]: `${mobileControlsOccupied}px`,
     };
   }, [
+    inspectorMotionPhase,
     isInspectorHidden,
     isMapExpanded,
     isMobileViewport,
+    navigatorMotionPhase,
     isNavigatorHidden,
     isProfileExpanded,
     mobileControlsOccupied,
@@ -1527,6 +1531,7 @@ export function AppShell() {
       clearMotionTimer(navigatorMotionTimerRef);
       clearMotionTimer(inspectorMotionTimerRef);
       clearMotionTimer(profileMotionTimerRef);
+      clearMotionTimer(mobileBottomMotionTimerRef);
     };
   }, [clearMotionTimer]);
 
@@ -1618,8 +1623,31 @@ export function AppShell() {
   };
 
   const setMobileBottomPanelVisibility = useCallback((nextMode: MobileBottomPanelMode) => {
+    clearMotionTimer(mobileBottomMotionTimerRef);
+    if (nextMode === "hidden") {
+      setMobileBottomMotionPhase("exiting");
+      mobileBottomMotionTimerRef.current = window.setTimeout(() => {
+        setMobileBottomPanelMode("hidden");
+        setMobileBottomMotionPhase("idle");
+        mobileBottomMotionTimerRef.current = null;
+      }, PANEL_MOTION_MS);
+      return;
+    }
     setMobileBottomPanelMode(nextMode);
-  }, []);
+    setMobileBottomMotionPhase("entering");
+    mobileBottomMotionTimerRef.current = window.setTimeout(() => {
+      setMobileBottomMotionPhase("idle");
+      mobileBottomMotionTimerRef.current = null;
+    }, PANEL_MOTION_MS);
+  }, [clearMotionTimer]);
+
+  const shouldRenderMobileBottomPanel = mobileBottomPanelMode !== "hidden" || mobileBottomMotionPhase === "exiting";
+  const mobileBottomPanelMotionClass =
+    mobileBottomMotionPhase === "entering"
+      ? "mobile-panel-motion-enter-bottom"
+      : mobileBottomMotionPhase === "exiting"
+        ? "mobile-panel-motion-exit-bottom"
+        : "";
 
   const closeShareModal = useCallback(() => {
     setShowShareModal(false);
@@ -2063,10 +2091,10 @@ export function AppShell() {
           />
           )
         ) : null}
-        {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && mobileBottomPanelMode !== "hidden" ? (
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && shouldRenderMobileBottomPanel ? (
           <div
             aria-labelledby={mobileProfileTabId}
-            className="mobile-workspace-panel mobile-workspace-panel-shell"
+            className={`mobile-workspace-panel mobile-workspace-panel-shell ${mobileBottomPanelMotionClass}`.trim()}
             id={mobileProfilePanelId}
             role="tabpanel"
           >
@@ -2087,10 +2115,10 @@ export function AppShell() {
             )}
           </div>
         ) : null}
-        {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && mobileBottomPanelMode !== "hidden" ? (
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && shouldRenderMobileBottomPanel ? (
           <div
             aria-labelledby={mobileNavigatorTabId}
-            className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator"
+            className={`mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator ${mobileBottomPanelMotionClass}`.trim()}
             id={mobileNavigatorPanelId}
             role="tabpanel"
           >
