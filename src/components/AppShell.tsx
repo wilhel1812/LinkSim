@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -1572,7 +1572,7 @@ export function AppShell() {
             title="Normal size"
             type="button"
           >
-            <PanelBottom aria-hidden="true" strokeWidth={1.8} />
+            <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
           </button>
         ) : (
           <>
@@ -1592,7 +1592,7 @@ export function AppShell() {
               title="Full size"
               type="button"
             >
-              <Maximize2 aria-hidden="true" strokeWidth={1.8} />
+              <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />
             </button>
           </>
         )}
@@ -1739,7 +1739,7 @@ export function AppShell() {
               title="Show Navigator"
               type="button"
             >
-              <PanelLeft aria-hidden="true" strokeWidth={1.8} />
+<PanelLeftOpen aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
           {isInspectorHidden ? (
@@ -1753,7 +1753,7 @@ export function AppShell() {
               title="Show Inspector"
               type="button"
             >
-              <PanelRight aria-hidden="true" strokeWidth={1.8} />
+<PanelRightOpen aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
           {isProfileHidden ? (
@@ -1767,7 +1767,7 @@ export function AppShell() {
               title="Show Profile"
               type="button"
             >
-              <PanelBottom aria-hidden="true" strokeWidth={1.8} />
+<PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
         </div>
@@ -1792,7 +1792,7 @@ export function AppShell() {
                   title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
                   type="button"
                 >
-                  {isNavigatorHidden ? <PanelLeft aria-hidden="true" strokeWidth={1.8} /> : <PanelLeftClose aria-hidden="true" strokeWidth={1.8} />}
+                  {isNavigatorHidden ? <PanelLeftOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelLeftClose aria-hidden="true" strokeWidth={1.8} />}
                 </button>
               )
             }
@@ -1860,7 +1860,7 @@ export function AppShell() {
                   title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
                   type="button"
                 >
-                  {isInspectorHidden ? <PanelRight aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
+                  {isInspectorHidden ? <PanelRightOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
                 </button>
               ) : null}
               <div className="map-inspector-header-actions-right">
@@ -1926,7 +1926,7 @@ export function AppShell() {
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
                 type="button"
               >
-                {isProfileHidden ? <PanelBottom aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
+                {isProfileHidden ? <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
               </button>
             }
             showExpandToggle
@@ -1950,7 +1950,7 @@ export function AppShell() {
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
                 type="button"
               >
-                {isProfileHidden ? <PanelBottom aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
+                {isProfileHidden ? <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
               </button>
             }
             showExpandToggle
