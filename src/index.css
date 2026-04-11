@@ -185,6 +185,36 @@ input {
   }
 }
 
+@keyframes panel-toggle-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+@keyframes panel-toggle-bounce-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.8);
+  }
+}
+
 .sidebar-panel,
 .map-inspector,
 .chart-panel {
@@ -198,6 +228,7 @@ input {
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow);
+  transition: opacity 350ms ease-out, transform 350ms ease-out, box-shadow 350ms ease-out;
 }
 
 .sidebar-panel {
@@ -210,6 +241,7 @@ input {
   font-family: "Space Grotesk", "Avenir Next", sans-serif;
   max-height: calc(100vh - 36px);
   overflow: auto;
+  transition: opacity 350ms ease-out, transform 350ms ease-out, box-shadow 350ms ease-out;
 }
 
 .sidebar-grow {
@@ -717,12 +749,24 @@ input {
   left: 26px;
   top: 50%;
   transform: translateY(-50%);
+  animation: panel-toggle-bounce 200ms ease-out 50ms both;
+  transition: opacity 150ms ease, transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
 .collapsed-panel-btn-inspector {
   right: 26px;
   top: 50%;
   transform: translateY(-50%);
+  animation: panel-toggle-bounce 200ms ease-out 50ms both;
+  transition: opacity 150ms ease, transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.collapsed-panel-btn-profile {
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  animation: panel-toggle-bounce 200ms ease-out 50ms both;
+  transition: opacity 150ms ease, transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
 .app-shell:not(.is-profile-hidden) .collapsed-panel-btn-navigator,
@@ -2649,6 +2693,7 @@ html.panorama-gesture-lock body {
     box-shadow: none;
     padding: 0;
     z-index: 45;
+    transition: opacity 350ms ease-out, transform 350ms ease-out, height 350ms ease-out, min-height 350ms ease-out;
   }
 
   .mobile-workspace-panel > * {
