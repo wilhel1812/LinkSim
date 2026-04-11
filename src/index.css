@@ -2248,6 +2248,18 @@ input {
   font-family: "IBM Plex Mono", monospace;
   white-space: nowrap;
   color: var(--text);
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panorama-label-pill strong,
+.panorama-label-peak span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 18ch;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .panorama-label-peak {
@@ -2295,69 +2307,6 @@ input {
   color: var(--text);
 }
 
-/* Temporary shading debug panel */
-.panorama-shading-debug {
-  position: fixed;
-  top: 52px;
-  left: 8px;
-  z-index: 9999;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.panorama-shading-debug-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.panorama-shading-debug-title {
-  font-size: 0.72rem;
-  font-family: "IBM Plex Mono", monospace;
-  color: var(--text);
-}
-
-.panorama-shading-debug-close {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0 2px;
-  font-size: 1rem;
-  line-height: 1;
-  color: var(--muted);
-  border-radius: var(--radius-btn);
-}
-.panorama-shading-debug-close:hover {
-  color: var(--text);
-}
-
-.panorama-shading-debug-sliders {
-  display: flex;
-  flex-direction: row;
-  gap: 12px;
-  align-items: flex-end;
-}
-
-.panorama-shading-debug-toggle {
-  position: fixed;
-  top: 52px;
-  left: 8px;
-  z-index: 10000;
-  font-size: 0.65rem;
-  padding: 2px 6px;
-  border-radius: var(--radius-btn);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  cursor: pointer;
-  opacity: 0.5;
-}
-.panorama-shading-debug-toggle:hover {
-  opacity: 1;
-}
 
 .panorama-shade-band {
   fill: color-mix(in srgb, var(--terrain) 72%, var(--surface-2) 28%);
@@ -2467,6 +2416,14 @@ html.panorama-gesture-lock body {
 .profile-hitbox {
   fill: transparent;
   cursor: crosshair;
+}
+
+/* In panorama mode, use grab instead of crosshair */
+.chart-svg-wrap:has(.panorama-terrain-canvas) .profile-hitbox {
+  cursor: grab;
+}
+.chart-svg-wrap:has(.panorama-terrain-canvas):active .profile-hitbox {
+  cursor: grabbing;
 }
 
 .terrain-fill-path {

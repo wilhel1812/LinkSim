@@ -147,19 +147,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [peakCandidates, setPeakCandidates] = useState<PanoramaPeakCandidate[]>([]);
   const [peakLoadStatus, setPeakLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [, setPeakLoadError] = useState<string | null>(null);
-  // Temporary debug shading sliders — remove once values are finalised.
-  const { theme: themeVariant } = useThemeVariant();
-  const [dbgShadowMult, setDbgShadowMult] = useState(0.7);
-  const [dbgHighMult, setDbgHighMult] = useState(0.5);
-  const [dbgReliefAlpha, setDbgReliefAlpha] = useState(0.9);
-  const [dbgHazeStart, setDbgHazeStart] = useState(() => themeVariant === "dark" ? 0.5 : 0);
-  const [dbgHazeRange, setDbgHazeRange] = useState(0.55);
-  const [shadingDebugOpen, setShadingDebugOpen] = useState(false);
+  const { theme: themeMode } = useThemeVariant();
+  const shadingHazeStart = themeMode === "dark" ? 0.5 : 0;
   const [legendPopoverOpen, setLegendPopoverOpen] = useState(false);
   const [legendPopoverPos, setLegendPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const peakErrorLogTsRef = useRef(0);
 
-  useEffect(() => { setDbgHazeStart(themeVariant === "dark" ? 0.5 : 0); }, [themeVariant]);
 
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
@@ -888,13 +881,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
         // Pass 1: Relief shading (always rendered).
         drawTerrainPass((haze, lambert) => {
-          const base = blendRgb(terrainColor, surfaceColor, dbgHazeStart + haze * dbgHazeRange);
-          const lighten = lambert > 0.4 ? ((lambert - 0.4) / 0.6) * dbgHighMult : 0;
-          const darken = lambert < 0.4 ? ((0.4 - lambert) / 0.4) * dbgShadowMult : 0;
+          const base = blendRgb(terrainColor, surfaceColor, shadingHazeStart + haze * 0.55);
+          const lighten = lambert > 0.4 ? ((lambert - 0.4) / 0.6) * 1.0 : 0;
+          const darken = lambert < 0.4 ? ((0.4 - lambert) / 0.4) * 0.7 : 0;
           return brightenRgb(base, lighten - darken);
         });
         ctx.save();
-        ctx.globalAlpha = dbgReliefAlpha;
+        ctx.globalAlpha = 0.9;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.drawImage(offscreen, 0, 0);
         ctx.restore();
@@ -988,7 +981,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ctx.lineTo(label.x, label.y);
       ctx.stroke();
     }
-  }, [geometry, chartSize, dbgShadowMult, dbgHighMult, dbgReliefAlpha, dbgHazeStart, dbgHazeRange]);
+  }, [geometry, chartSize, shadingHazeStart]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -1632,81 +1625,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         />
       </div>
       {sliderPopover}
-      {shadingDebugOpen && (
-        <Surface variant="card" className="panorama-shading-debug">
-          <div className="panorama-shading-debug-header">
-            <strong className="panorama-shading-debug-title">Shading debug</strong>
-            <button
-              aria-label="Close debug panel"
-              className="panorama-shading-debug-close"
-              onClick={() => setShadingDebugOpen(false)}
-              type="button"
-            >
-              ×
-            </button>
-          </div>
-          <div className="panorama-shading-debug-sliders">
-            <UiSlider
-              ariaLabel="Shadow strength"
-              label="Shadow"
-              max={1}
-              min={0}
-              onChange={setDbgShadowMult}
-              orientation="vertical"
-              step={0.01}
-              value={dbgShadowMult}
-              valueLabel={dbgShadowMult.toFixed(2)}
-            />
-            <UiSlider
-              ariaLabel="Highlight strength"
-              label="Highlight"
-              max={1}
-              min={0}
-              onChange={setDbgHighMult}
-              orientation="vertical"
-              step={0.01}
-              value={dbgHighMult}
-              valueLabel={dbgHighMult.toFixed(2)}
-            />
-            <UiSlider
-              ariaLabel="Relief alpha"
-              label="R.Alpha"
-              max={1}
-              min={0}
-              onChange={setDbgReliefAlpha}
-              orientation="vertical"
-              step={0.01}
-              value={dbgReliefAlpha}
-              valueLabel={dbgReliefAlpha.toFixed(2)}
-            />
-            <UiSlider
-              ariaLabel="Haze start"
-              label="Haze0"
-              max={0.5}
-              min={0}
-              onChange={setDbgHazeStart}
-              orientation="vertical"
-              step={0.01}
-              value={dbgHazeStart}
-              valueLabel={dbgHazeStart.toFixed(2)}
-            />
-            <UiSlider
-              ariaLabel="Haze range"
-              label="HazeR"
-              max={1}
-              min={0}
-              onChange={setDbgHazeRange}
-              orientation="vertical"
-              step={0.01}
-              value={dbgHazeRange}
-              valueLabel={dbgHazeRange.toFixed(2)}
-            />
-          </div>
-        </Surface>
-      )}
-      <button className="panorama-shading-debug-toggle" onClick={() => setShadingDebugOpen(v => !v)} type="button">
-        dbg
-      </button>
     </section>
   );
 }
