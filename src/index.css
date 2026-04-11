@@ -1916,7 +1916,7 @@ input {
   letter-spacing: 0.01em;
 }
 
-.chart-panel svg:not(.lucide) {
+.chart-panel svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -1926,10 +1926,12 @@ input {
   z-index: 1;
 }
 
-.chart-panel .lucide {
-  width: auto;
-  height: auto;
+/* Label overlay icons must not inherit the full-bleed svg rule */
+.panorama-label-overlay svg {
+  width: 10px;
+  height: 10px;
   min-height: unset;
+  flex-shrink: 0;
 }
 
 .chart-panel.is-expanded .chart-svg-wrap {
@@ -1996,6 +1998,21 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.panorama-peaks-loading {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 6px 12px;
+  pointer-events: none;
+}
+
+.panorama-peaks-loading .map-progress-track {
+  width: 64px;
+  margin: 0;
 }
 
 .chart-hover-popover {
@@ -2167,7 +2184,7 @@ input {
   transform: translate(-50%, calc(-100% - 6px));
   min-width: 136px;
   padding: 12px 10px;
-  border-radius: 999px;
+  border-radius: 12px;
   animation: panorama-popover-rise 140ms ease-out;
 }
 

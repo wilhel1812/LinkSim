@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { Brush, Info, MapPinned, Maximize2, Minimize2, Mountain, MountainSnow, MoveVertical, RadioTower, Tags, ZoomIn } from "lucide-react";
+import { Info, MapPinned, Maximize2, Minimize2, Mountain, MountainSnow, MoveVertical, RadioTower, Tags, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +27,7 @@ import { centerForScaledWindow } from "../lib/panoramaViewport";
 import { passFailStateLabel } from "../lib/passFailState";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { useAppStore } from "../store/appStore";
+import { useThemeVariant } from "../hooks/useThemeVariant";
 import { UiSlider } from "./UiSlider";
 
 const M = { t: 22, r: 20, b: 32, l: 46 };
@@ -144,19 +145,19 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [sliderPopoverPos, setSliderPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const [peakCandidates, setPeakCandidates] = useState<PanoramaPeakCandidate[]>([]);
   const [peakLoadStatus, setPeakLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [peakLoadError, setPeakLoadError] = useState<string | null>(null);
-  const [showClassicOverlay, setShowClassicOverlay] = useState(false);
+  const [, setPeakLoadError] = useState<string | null>(null);
   // Temporary debug shading sliders — remove once values are finalised.
-  const [dbgLightMult, setDbgLightMult] = useState(1.1);
-  const [dbgReliefAlpha, setDbgReliefAlpha] = useState(0.92);
-  const [dbgClassicAlpha, setDbgClassicAlpha] = useState(0.32);
-  const [dbgHazeStart, setDbgHazeStart] = useState(0.08);
+  const { theme: themeVariant } = useThemeVariant();
+  const [dbgLightMult, setDbgLightMult] = useState(2);
+  const [dbgReliefAlpha, setDbgReliefAlpha] = useState(0.9);
+  const [dbgHazeStart, setDbgHazeStart] = useState(() => themeVariant === "dark" ? 0.5 : 0);
   const [dbgHazeRange, setDbgHazeRange] = useState(0.55);
-  const [dbgClassicHazeRange, setDbgClassicHazeRange] = useState(0.46);
   const [shadingDebugOpen, setShadingDebugOpen] = useState(false);
   const [legendPopoverOpen, setLegendPopoverOpen] = useState(false);
   const [legendPopoverPos, setLegendPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const peakErrorLogTsRef = useRef(0);
+
+  useEffect(() => { setDbgHazeStart(themeVariant === "dark" ? 0.5 : 0); }, [themeVariant]);
 
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
@@ -894,18 +895,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         ctx.restore();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        // Pass 2: Classic colour overlay (additive, toggled by Brush button).
-        if (showClassicOverlay) {
-          drawTerrainPass((haze) =>
-            blendRgb(terrainColor, textColor, 0.20 + haze * dbgClassicHazeRange),
-          );
-          ctx.save();
-          ctx.globalAlpha = dbgClassicAlpha;
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.drawImage(offscreen, 0, 0);
-          ctx.restore();
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        }
       }
     }
 
@@ -977,19 +966,24 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     ctx.restore();
 
     // --- LAYER 4: Label leader lines (text is rendered as HTML overlay) ---
-    const labelLineRgb = blendRgb(textColor, borderColor, 0.72);
+    const labelLineFallbackRgb = blendRgb(textColor, borderColor, 0.72);
 
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
 
     for (const label of geometry.labels) {
-      ctx.strokeStyle = toCanvasColor(labelLineRgb, 0.84);
+      // POI/site labels: use the state colour for the leader line.
+      const lineRgb =
+        label.source === "poi" && label.state && stateColors[label.state]
+          ? blendRgb(stateColors[label.state]!, textColor, 0.4)
+          : labelLineFallbackRgb;
+      ctx.strokeStyle = toCanvasColor(lineRgb, 0.84);
       ctx.beginPath();
       ctx.moveTo(label.anchorX, label.lineStartY);
       ctx.lineTo(label.x, label.y);
       ctx.stroke();
     }
-  }, [geometry, chartSize, showClassicOverlay, dbgLightMult, dbgReliefAlpha, dbgClassicAlpha, dbgHazeStart, dbgHazeRange, dbgClassicHazeRange]);
+  }, [geometry, chartSize, dbgLightMult, dbgReliefAlpha, dbgHazeStart, dbgHazeRange]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -1459,15 +1453,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             <MoveVertical aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
-            aria-label={showClassicOverlay ? "Hide classic overlay" : "Show classic overlay"}
-            className={`chart-endpoint-swap chart-endpoint-icon ${showClassicOverlay ? "is-active" : ""}`}
-            onClick={() => setShowClassicOverlay((v) => !v)}
-            title={showClassicOverlay ? "Classic overlay on" : "Classic overlay off"}
-            type="button"
-          >
-            <Brush aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
             aria-label="Adjust field of view"
             className={`chart-endpoint-swap chart-endpoint-icon ${openSliderPopover === "fov" ? "is-active" : ""}`}
             onClick={() => setOpenSliderPopover((value) => (value === "fov" ? null : "fov"))}
@@ -1520,14 +1505,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         </div>
       </div>
 
-      {(peakLoadStatus === "loading" || peakLoadStatus === "error") && (
-        <div className="chart-action-row">
-          <div className="chart-hover-state">
-            {peakLoadStatus === "loading" ? <span>Peaks loading…</span> : null}
-            {peakLoadStatus === "error" ? <span title={peakLoadError ?? "Peak loading error"}>Peaks unavailable</span> : null}
-          </div>
-        </div>
-      )}
       {legendPopover}
 
       <div
@@ -1620,6 +1597,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 ))}
               </div>
             ) : null}
+            {peakLoadStatus === "loading" && (
+              <div className="ui-surface-pill panorama-peaks-loading">
+                <div className="map-progress-track">
+                  <div className="map-progress-fill map-progress-fill-indeterminate" />
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1649,8 +1633,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             <UiSlider ariaLabel="Relief terrain alpha" label="R.Alpha" max={1} min={0} onChange={setDbgReliefAlpha} orientation="vertical" step={0.01} value={dbgReliefAlpha} valueLabel={dbgReliefAlpha.toFixed(2)} />
             <UiSlider ariaLabel="Haze blend start" label="Haze0" max={0.5} min={0} onChange={setDbgHazeStart} orientation="vertical" step={0.01} value={dbgHazeStart} valueLabel={dbgHazeStart.toFixed(2)} />
             <UiSlider ariaLabel="Haze blend range" label="HazeR" max={1} min={0} onChange={setDbgHazeRange} orientation="vertical" step={0.01} value={dbgHazeRange} valueLabel={dbgHazeRange.toFixed(2)} />
-            <UiSlider ariaLabel="Classic overlay alpha" label="C.Alpha" max={1} min={0} onChange={setDbgClassicAlpha} orientation="vertical" step={0.01} value={dbgClassicAlpha} valueLabel={dbgClassicAlpha.toFixed(2)} />
-            <UiSlider ariaLabel="Classic haze range" label="C.Haze" max={1} min={0} onChange={setDbgClassicHazeRange} orientation="vertical" step={0.01} value={dbgClassicHazeRange} valueLabel={dbgClassicHazeRange.toFixed(2)} />
           </div>
         </div>
       )}
