@@ -72,6 +72,8 @@ const fetchBand = async (south, north, label) => {
 
 const main = async () => {
   console.log("[overpass] Downloading named peaks/volcanoes globally in latitude bands...");
+  console.log(`[overpass] Output file: ${outPath}`);
+  console.log(`[overpass] Total latitude bands: ${BANDS.length}`);
 
   // Support resume: if the output file exists, count existing lines and skip
   // completed bands. Each band appends a marker line "# BAND:<label>" before its data.
@@ -89,15 +91,21 @@ const main = async () => {
 
   const out = fs.createWriteStream(outPath, { flags: completedBands.size > 0 ? "a" : "w", encoding: "utf8" });
   let totalCount = 0;
+  let completedCount = 0;
 
-  for (const band of BANDS) {
+  for (let index = 0; index < BANDS.length; index += 1) {
+    const band = BANDS[index];
+    console.log(`[overpass] Band ${index + 1}/${BANDS.length}: ${band.label} (${band.s}..${band.n})`);
     if (completedBands.has(band.label)) {
       console.log(`[overpass] Skipping ${band.label} (already downloaded)`);
+      completedCount += 1;
+      console.log(`[overpass] Progress: ${completedCount}/${BANDS.length} bands complete`);
       continue;
     }
     const elements = await fetchBand(band.s, band.n, band.label);
     out.write(`# BAND:${band.label}\n`);
 
+    let writtenForBand = 0;
     for (const el of elements) {
       if (el.type !== "node" || !el.tags?.name) continue;
       if (!Number.isFinite(el.lat) || !Number.isFinite(el.lon)) continue;
@@ -123,7 +131,13 @@ const main = async () => {
         }) + "\n",
       );
       totalCount += 1;
+      writtenForBand += 1;
     }
+
+    completedCount += 1;
+    console.log(
+      `[overpass] ${band.label}: wrote ${writtenForBand} features (${totalCount} total); progress ${completedCount}/${BANDS.length} bands`,
+    );
 
     // Be polite to the API between bands
     await sleep(5_000);
