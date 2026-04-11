@@ -97,6 +97,7 @@ type PanoramaChartProps = {
   onToggleExpanded: () => void;
   showExpandToggle?: boolean;
   rowControls?: ReactNode;
+  panelClassName?: string;
 };
 
 type HoverTarget =
@@ -118,7 +119,7 @@ type HoverTarget =
 
 const pointerDistance = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
 
-export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls }: PanoramaChartProps) {
+export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls, panelClassName }: PanoramaChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
@@ -1433,7 +1434,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const scrubberLeftPct = clamp((viewportCenterAzimuthDeg / 360) * 100 - scrubberWidthPct / 2, 0, 100 - scrubberWidthPct);
 
   return (
-    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`}>
+    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()}>
       <div className="chart-top-row">
         <h3 className="panorama-header-title">Panorama from {selectedSiteEffective.name}</h3>
         <div className="chart-action-row-controls">

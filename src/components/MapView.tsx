@@ -464,6 +464,7 @@ const computeSiteFitBounds = (
 type MapViewProps = {
   isMapExpanded: boolean;
   showInspector?: boolean;
+  inspectorPanelClassName?: string;
   showMultiSelectToggle?: boolean;
   readOnly?: boolean;
   canPersist?: boolean;
@@ -548,6 +549,7 @@ const DEFAULT_MAP_VIEWPORT = {
 export function MapView({
   isMapExpanded,
   showInspector = true,
+  inspectorPanelClassName,
   showMultiSelectToggle = false,
   readOnly = false,
   canPersist = true,
@@ -2416,7 +2418,7 @@ export function MapView({
         </div>
       ) : null}
       {showInspector ? (
-        <aside className="map-inspector" aria-live="polite">
+        <aside className={`map-inspector ${inspectorPanelClassName ?? ""}`.trim()} aria-live="polite">
           {inspectorHeaderActions ? (
             <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
           ) : null}
