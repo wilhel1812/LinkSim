@@ -2248,18 +2248,14 @@ input {
   font-family: "IBM Plex Mono", monospace;
   white-space: nowrap;
   color: var(--text);
-  max-width: 20ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .panorama-label-pill strong,
 .panorama-label-peak span {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 18ch;
-  display: inline-block;
-  vertical-align: middle;
+  max-width: 20ch;
 }
 
 .panorama-label-peak {
