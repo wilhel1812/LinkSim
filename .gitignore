@@ -29,6 +29,10 @@ dist-ssr
 .tmp/
 
 debug-logs/
+.playwright-mcp/
+artifacts/
+linksim-home.png
+opencode.json
 
 # Python
 __pycache__/
