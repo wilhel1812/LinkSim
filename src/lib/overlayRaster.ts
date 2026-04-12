@@ -1,6 +1,7 @@
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "./passFailState";
 import { STANDARD_SITE_RADIO } from "./linkRadio";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
+import { interpolateHeatmapColor } from "../themes/heatmapColors";
 
 export type TerrainBounds = {
   minLat: number;
@@ -168,30 +169,9 @@ const precomputeGridAxes = (
 };
 
 const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
-  const stops: Array<{ v: number; c: [number, number, number] }> = [
-    { v: -125, c: [105, 42, 45] },
-    { v: -114, c: [156, 63, 49] },
-    { v: -104, c: [201, 92, 45] },
-    { v: -95, c: [226, 127, 45] },
-    { v: -86, c: [218, 175, 55] },
-    { v: -78, c: [164, 193, 68] },
-    { v: -70, c: [95, 178, 95] },
-    { v: -62, c: [64, 150, 178] },
-  ];
-  if (valueDbm <= stops[0].v) return stops[0].c;
-  if (valueDbm >= stops[stops.length - 1].v) return stops[stops.length - 1].c;
-  for (let i = 0; i < stops.length - 1; i += 1) {
-    const a = stops[i];
-    const b = stops[i + 1];
-    if (valueDbm < a.v || valueDbm > b.v) continue;
-    const t = (valueDbm - a.v) / (b.v - a.v);
-    return [
-      Math.round(a.c[0] + (b.c[0] - a.c[0]) * t),
-      Math.round(a.c[1] + (b.c[1] - a.c[1]) * t),
-      Math.round(a.c[2] + (b.c[2] - a.c[2]) * t),
-    ];
-  }
-  return [255, 255, 255];
+  const normalized = (valueDbm + 125) / 63;
+  const color = interpolateHeatmapColor(normalized);
+  return [color.r, color.g, color.b];
 };
 
 const computeCoverageAdaptiveScale = (
