@@ -225,6 +225,10 @@ export function AppShell() {
   const mobileBottomMotionTimerRef = useRef<number | null>(null);
   const navigatorWasHiddenBeforeProfileExpandRef = useRef(false);
   const inspectorWasHiddenBeforeProfileExpandRef = useRef(false);
+  const mapExpandedNavigatorWasHiddenRef = useRef(false);
+  const mapExpandedInspectorWasHiddenRef = useRef(false);
+  const mapExpandedProfileWasHiddenRef = useRef(false);
+  const mapExpandToggleTimerRef = useRef<number | null>(null);
   const hadAuthenticatedSessionRef = useRef(false);
   const {
     showWelcomeModal,
@@ -1534,6 +1538,7 @@ export function AppShell() {
       clearMotionTimer(inspectorMotionTimerRef);
       clearMotionTimer(profileMotionTimerRef);
       clearMotionTimer(mobileBottomMotionTimerRef);
+      clearMotionTimer(mapExpandToggleTimerRef);
     };
   }, [clearMotionTimer]);
 
@@ -1670,6 +1675,61 @@ export function AppShell() {
       : mobileBottomMotionPhase === "exiting"
         ? "mobile-panel-motion-exit-bottom"
         : "";
+
+  const toggleMapExpanded = useCallback(() => {
+    if (isMobileViewport) {
+      setIsProfileExpanded(false);
+      if (mobileBottomPanelMode === "full") {
+        setMobileBottomPanelVisibility("normal");
+      }
+      setIsMapExpanded((prev) => !prev);
+      emitProfileLayoutPulse();
+      return;
+    }
+
+    clearMotionTimer(mapExpandToggleTimerRef);
+
+    if (!isMapExpanded) {
+      mapExpandedNavigatorWasHiddenRef.current = isNavigatorHidden;
+      mapExpandedInspectorWasHiddenRef.current = isInspectorHidden;
+      mapExpandedProfileWasHiddenRef.current = isProfileHidden;
+      setIsProfileExpanded(false);
+      if (!isNavigatorHidden) hideNavigatorPanel();
+      if (!isInspectorHidden) hideInspectorPanel();
+      if (!isProfileHidden) hideProfilePanel();
+      mapExpandToggleTimerRef.current = window.setTimeout(() => {
+        setIsMapExpanded(true);
+        mapExpandToggleTimerRef.current = null;
+        emitProfileLayoutPulse();
+      }, PANEL_MOTION_MS);
+      return;
+    }
+
+    setIsMapExpanded(false);
+    if (!mapExpandedNavigatorWasHiddenRef.current) showNavigatorPanel();
+    if (!mapExpandedInspectorWasHiddenRef.current) showInspectorPanel();
+    if (!mapExpandedProfileWasHiddenRef.current) showProfilePanel();
+    mapExpandedNavigatorWasHiddenRef.current = false;
+    mapExpandedInspectorWasHiddenRef.current = false;
+    mapExpandedProfileWasHiddenRef.current = false;
+    emitProfileLayoutPulse();
+  }, [
+    clearMotionTimer,
+    emitProfileLayoutPulse,
+    hideInspectorPanel,
+    hideNavigatorPanel,
+    hideProfilePanel,
+    isInspectorHidden,
+    isMapExpanded,
+    isMobileViewport,
+    isNavigatorHidden,
+    isProfileHidden,
+    mobileBottomPanelMode,
+    setMobileBottomPanelVisibility,
+    showInspectorPanel,
+    showNavigatorPanel,
+    showProfilePanel,
+  ]);
 
   const closeShareModal = useCallback(() => {
     setShowShareModal(false);
@@ -1916,7 +1976,7 @@ export function AppShell() {
           ) : null}
         </div>
       ) : null}
-      {!isMobileViewport && !isMapExpanded && shouldRenderNavigatorPanel && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
+      {!isMobileViewport && (!isMapExpanded || navigatorMotionPhase === "exiting") && shouldRenderNavigatorPanel && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
           <Sidebar
             authBootstrapPending={accessState === "checking"}
             hideLibraryBrowsing={isReadOnlyShell}
@@ -1987,7 +2047,7 @@ export function AppShell() {
         <MapView
           isMapExpanded={isMapExpanded}
           showInspector={
-            !isMapExpanded &&
+            (!isMapExpanded || inspectorMotionPhase === "exiting") &&
             shouldRenderInspectorPanel &&
             (isMobileViewport
               ? mobileActivePanel === "inspector" && shouldRenderMobileBottomPanel
@@ -2034,14 +2094,7 @@ export function AppShell() {
           inspectorPanelClassName={`${inspectorPanelMotionClass} ${
             isMobileViewport && mobileActivePanel === "inspector" ? mobileBottomPanelMotionClass : ""
           }`.trim()}
-          onToggleMapExpanded={() => {
-            setIsProfileExpanded(false);
-            if (isMobileViewport && mobileBottomPanelMode === "full") {
-              setMobileBottomPanelVisibility("normal");
-            }
-            setIsMapExpanded((prev) => !prev);
-            emitProfileLayoutPulse();
-          }}
+          onToggleMapExpanded={toggleMapExpanded}
           fitBottomInset={mapFitBottomInset}
           fitChromePadding={mapFitChromePadding}
         />
@@ -2060,7 +2113,7 @@ export function AppShell() {
             setMobileBottomPanelVisibility={setMobileBottomPanelVisibility}
           />
         ) : null}
-        {!isMobileViewport && !isMapExpanded && shouldRenderProfilePanel ? (
+        {!isMobileViewport && (!isMapExpanded || profileMotionPhase === "exiting") && shouldRenderProfilePanel ? (
           isSingleSiteSelection ? (
           <PanoramaChart
             isExpanded={isProfileExpanded}
