@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import Map, {
   Layer,
@@ -10,7 +10,7 @@ import Map, {
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
-import { classifyPassFailState, computeSourceCentricRxMetrics } from "../lib/passFailState";
+import { computeCoverageGridDimensions } from "../lib/coverage";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -20,12 +20,40 @@ import {
   PROFILE_DRAFT_SITE_REQUEST_EVENT,
   type ProfileDraftSiteRequestDetail,
 } from "../lib/profileDraftEvent";
+import { subscribePanoramaInteraction, type PanoramaFocusPoint, type PanoramaInteractionEvent } from "../lib/panoramaEvents";
 import { useAppStore } from "../store/appStore";
 import { useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
-import type { Link, PropagationEnvironment, Site } from "../types/radio";
+import type { Link, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
+import {
+  optionsForSelectionCount,
+  resolveEffectiveOverlayRadiusKm,
+  resolveLoadedOverlayRadiusCapKm,
+  resolveOverlayRadiusOptionForSelectionTransition,
+  resolveTargetOverlayRadiusKm,
+  type SimulationOverlayRadiusOption,
+} from "../lib/simulationOverlayRadius";
+import { simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { tilesForBounds } from "../lib/terrainTiles";
+import {
+  buildCoverageOverlayPixelsAsync,
+  buildRelayCandidateOverlayPixelsAsync,
+  buildSourcePassFailOverlayPixelsAsync,
+  buildTerrainShadeOverlayPixelsAsync,
+  overlayPixelsToDataUrl,
+  OverlayTaskCancelledError,
+  type OverlayRasterPixels,
+} from "../lib/overlayRaster";
+import { overlayTaskBudgetForMode } from "../lib/overlayTaskBudget";
+import {
+  recordSimulationOverlayPerf,
+  recordSimulationRunCancelled,
+} from "../lib/simulationPerf";
+import { resolveSimulationBusyIndicatorState } from "../lib/simulationBusyIndicator";
+import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/latestOnlyTaskScheduler";
+import { createLruCache } from "../lib/lruCache";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { useMapControls } from "./map/useMapControls";
@@ -49,6 +77,17 @@ const readSectionBool = (key: string, fallback: boolean): boolean => {
 const writeSectionBool = (key: string, value: boolean): void => {
   try { localStorage.setItem(key, String(value)); } catch {}
 };
+
+const FNV_OFFSET_BASIS = 2166136261;
+const FNV_PRIME = 16777619;
+
+const updateFvnHash = (hash: number, value: number): number => {
+  const next = hash ^ (value & 0xff_ff_ff_ff);
+  return Math.imul(next, FNV_PRIME) >>> 0;
+};
+
+const roundHashValue = (value: number, factor = 10_000): number =>
+  Number.isFinite(value) ? Math.round(value * factor) : 0;
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
@@ -89,6 +128,16 @@ const profileLineLayer = (color: string): LayerProps => ({
     "line-color": color,
     "line-width": 3.6,
     "line-opacity": 0.9,
+  },
+});
+
+const panoramaRayLayer = (color: string): LayerProps => ({
+  id: "panorama-ray-line",
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": 2.8,
+    "line-opacity": 0.88,
   },
 });
 
@@ -343,46 +392,6 @@ const boundsDiagonalKm = (bounds: TerrainBounds): number => {
   return Math.hypot(latSpanKm, lonSpanKm);
 };
 
-const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
-  const stops: Array<{ v: number; c: [number, number, number] }> = [
-    { v: -125, c: [105, 42, 45] },
-    { v: -114, c: [156, 63, 49] },
-    { v: -104, c: [201, 92, 45] },
-    { v: -95, c: [226, 127, 45] },
-    { v: -86, c: [218, 175, 55] },
-    { v: -78, c: [164, 193, 68] },
-    { v: -70, c: [95, 178, 95] },
-    { v: -62, c: [64, 150, 178] },
-  ];
-  if (valueDbm <= stops[0].v) return stops[0].c;
-  if (valueDbm >= stops[stops.length - 1].v) return stops[stops.length - 1].c;
-  for (let i = 0; i < stops.length - 1; i += 1) {
-    const a = stops[i];
-    const b = stops[i + 1];
-    if (valueDbm < a.v || valueDbm > b.v) continue;
-    const t = (valueDbm - a.v) / (b.v - a.v);
-    return [
-      Math.round(a.c[0] + (b.c[0] - a.c[0]) * t),
-      Math.round(a.c[1] + (b.c[1] - a.c[1]) * t),
-      Math.round(a.c[2] + (b.c[2] - a.c[2]) * t),
-    ];
-  }
-  return [255, 255, 255];
-};
-
-const coverageColorAdaptive = (valueDbm: number, samples: CoverageSampleLite[]): [number, number, number] => {
-  if (samples.length < 2) return coverageColorForDbm(valueDbm);
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  for (const sample of samples) {
-    min = Math.min(min, sample.valueDbm);
-    max = Math.max(max, sample.valueDbm);
-  }
-  const range = Math.max(6, max - min);
-  const normalized = -125 + ((valueDbm - min) / range) * 63;
-  return coverageColorForDbm(clamp(normalized, -125, -62));
-};
-
 const autoBandStepDb = (samples: CoverageSampleLite[], bounds: TerrainBounds): 3 | 5 | 8 | 10 => {
   if (samples.length < 2) return 5;
   let min = Number.POSITIVE_INFINITY;
@@ -406,536 +415,25 @@ const autoBandStepDb = (samples: CoverageSampleLite[], bounds: TerrainBounds): 3
   return 3;
 };
 
-const interpolateCoverageDbm = (samples: CoverageSampleLite[], lat: number, lon: number): number | null => {
-  if (!samples.length) return null;
-  let weightSum = 0;
-  let valueSum = 0;
-  for (const sample of samples) {
-    const dLat = sample.lat - lat;
-    const dLon = sample.lon - lon;
-    const d2 = dLat * dLat + dLon * dLon;
-    if (d2 < 1e-12) return sample.valueDbm;
-    const weight = 1 / d2;
-    weightSum += weight;
-    valueSum += sample.valueDbm * weight;
-  }
-  if (weightSum <= 0) return null;
-  return valueSum / weightSum;
-};
-
-const binarySearchFloor = (values: number[], target: number): number => {
-  let lo = 0;
-  let hi = values.length - 1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const value = values[mid];
-    if (value <= target) {
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return clamp(hi, 0, values.length - 1);
-};
-
-const makeGridInterpolator = (
-  samples: CoverageSampleLite[],
-): ((lat: number, lon: number) => number | null) | null => {
-  if (samples.length < 4) return null;
-  const latSet = new Set<number>();
-  const lonSet = new Set<number>();
-  for (const sample of samples) {
-    latSet.add(sample.lat);
-    lonSet.add(sample.lon);
-  }
-  const lats = Array.from(latSet).sort((a, b) => a - b);
-  const lons = Array.from(lonSet).sort((a, b) => a - b);
-  if (lats.length < 2 || lons.length < 2) return null;
-  if (lats.length * lons.length !== samples.length) return null;
-
-  const latIndex = new globalThis.Map<number, number>();
-  const lonIndex = new globalThis.Map<number, number>();
-  lats.forEach((value, index) => latIndex.set(value, index));
-  lons.forEach((value, index) => lonIndex.set(value, index));
-
-  const values = new Float64Array(lats.length * lons.length);
-  const seen = new Uint8Array(lats.length * lons.length);
-  for (const sample of samples) {
-    const yi = latIndex.get(sample.lat);
-    const xi = lonIndex.get(sample.lon);
-    if (yi === undefined || xi === undefined) return null;
-    const idx = yi * lons.length + xi;
-    values[idx] = sample.valueDbm;
-    seen[idx] = 1;
-  }
-  for (const mark of seen) {
-    if (mark !== 1) return null;
-  }
-
-  return (lat, lon) => {
-    const latClamped = clamp(lat, lats[0], lats[lats.length - 1]);
-    const lonClamped = clamp(lon, lons[0], lons[lons.length - 1]);
-    const y0 = binarySearchFloor(lats, latClamped);
-    const x0 = binarySearchFloor(lons, lonClamped);
-    const y1 = Math.min(y0 + 1, lats.length - 1);
-    const x1 = Math.min(x0 + 1, lons.length - 1);
-
-    const lat0 = lats[y0];
-    const lat1 = lats[y1];
-    const lon0 = lons[x0];
-    const lon1 = lons[x1];
-    const ty = lat1 === lat0 ? 0 : (latClamped - lat0) / (lat1 - lat0);
-    const tx = lon1 === lon0 ? 0 : (lonClamped - lon0) / (lon1 - lon0);
-
-    const q00 = values[y0 * lons.length + x0];
-    const q10 = values[y0 * lons.length + x1];
-    const q01 = values[y1 * lons.length + x0];
-    const q11 = values[y1 * lons.length + x1];
-    const a = q00 + (q10 - q00) * tx;
-    const b = q01 + (q11 - q01) * tx;
-    return a + (b - a) * ty;
-  };
-};
-
-const computeOverlayDimensions = (bounds: TerrainBounds, resolutionScale = 1): { width: number; height: number } => {
-  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-  const latSpanKm = Math.max(0.5, Math.abs(bounds.maxLat - bounds.minLat) * 111.32);
-  const lonSpanKm =
-    Math.max(0.5, Math.abs(bounds.maxLon - bounds.minLon) * 111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)));
-  const aspect = lonSpanKm / latSpanKm;
-  const shortSidePx = 320;
-  const maxSidePx = 540;
-  let width = shortSidePx;
-  let height = shortSidePx;
-  if (aspect >= 1) {
-    width = Math.round(shortSidePx * Math.min(2.6, aspect));
-  } else {
-    height = Math.round(shortSidePx * Math.min(2.6, 1 / Math.max(0.01, aspect)));
-  }
-  const scaledWidth = Math.round(width * resolutionScale);
-  const scaledHeight = Math.round(height * resolutionScale);
-  return {
-    width: clamp(scaledWidth, 200, maxSidePx),
-    height: clamp(scaledHeight, 200, maxSidePx),
-  };
-};
-
-const computeSourceCentricRxDbm = (
-  lat: number,
-  lon: number,
-  fromSite: Site,
-  effectiveLink: Link,
-  receiverAntennaHeightM: number,
-  receiverRxGainDbi: number,
-  terrainSampler: (lat: number, lon: number) => number | null,
-  terrainSamples: number,
-  propagationEnvironment: PropagationEnvironment,
-): number =>
-  computeSourceCentricRxMetrics(
-    lat,
-    lon,
-    fromSite,
-    effectiveLink,
-    receiverAntennaHeightM,
-    receiverRxGainDbi,
-    terrainSampler,
-    terrainSamples,
-    propagationEnvironment,
-  ).rxDbm;
-
-const buildCoverageOverlay = (
+const computeOverlayDimensions = (
   bounds: TerrainBounds,
-  samples: CoverageSampleLite[],
-  mode: "heatmap" | "contours",
-  bandStepDb: number,
-  dimensions: { width: number; height: number },
-  pointMask?: (lat: number, lon: number) => boolean,
-  terrainSampler?: (lat: number, lon: number) => number | null,
-): OverlayRaster | null => {
-  if (!samples.length) return null;
-  const gridInterpolator = makeGridInterpolator(samples);
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      if (pointMask && !pointMask(lat, lon)) continue;
-      if (terrainSampler && terrainSampler(lat, lon) === null) continue;
-      const valueDbm = gridInterpolator
-        ? gridInterpolator(lat, lon)
-        : interpolateCoverageDbm(samples, lat, lon);
-      if (valueDbm === null) continue;
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 180;
-      if (mode === "heatmap") {
-        [r, g, b] = coverageColorAdaptive(valueDbm, samples);
-      } else if (mode === "contours") {
-        const banded = Math.round(valueDbm / Math.max(1, bandStepDb)) * Math.max(1, bandStepDb);
-        [r, g, b] = coverageColorAdaptive(banded, samples);
-        a = 170;
-      }
-      const px = (y * width + x) * 4;
-      image.data[px] = r;
-      image.data[px + 1] = g;
-      image.data[px + 2] = b;
-      image.data[px + 3] = a;
-    }
-  }
-  ctx.putImageData(image, 0, 0);
+  targetGridSize: number,
+  resolutionScale = 1,
+): { width: number; height: number } => {
+  const { rows, cols } = computeCoverageGridDimensions(targetGridSize, bounds, 1);
+  // Match the historical visual baseline (~100k display pixels at 24x24 samples)
+  // while keeping display density proportional to simulation sample density.
+  const targetDisplayPixelsPerSample = 174;
+  const displaySupersample = Math.sqrt(targetDisplayPixelsPerSample);
+  const scaledWidth = Math.round(cols * resolutionScale * displaySupersample);
+  const scaledHeight = Math.round(rows * resolutionScale * displaySupersample);
   return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
+    width: clamp(scaledWidth, 8, 1400),
+    height: clamp(scaledHeight, 8, 1400),
   };
 };
 
-const buildSourcePassFailOverlay = (
-  bounds: TerrainBounds,
-  fromSite: Site,
-  effectiveLink: Link,
-  receiverAntennaHeightM: number,
-  receiverRxGainDbi: number,
-  propagationEnvironment: PropagationEnvironment,
-  rxTargetDbm: number,
-  environmentLossDb: number,
-  terrainSampler: (lat: number, lon: number) => number | null,
-  dimensions: { width: number; height: number },
-  terrainSamples: number,
-  pointMask?: (lat: number, lon: number) => boolean,
-): OverlayRaster | null => {
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      if (pointMask && !pointMask(lat, lon)) {
-        continue;
-      }
-      if (terrainSampler(lat, lon) === null) {
-        continue;
-      }
-      const metrics = computeSourceCentricRxMetrics(
-        lat,
-        lon,
-        fromSite,
-        effectiveLink,
-        receiverAntennaHeightM,
-        receiverRxGainDbi,
-        terrainSampler,
-        terrainSamples,
-        propagationEnvironment,
-      );
-      const pass = metrics.rxDbm - environmentLossDb >= rxTargetDbm;
-      const losBlocked = metrics.terrainObstructed;
-      const state = classifyPassFailState(pass, losBlocked);
-      const px = (y * width + x) * 4;
-      if (state === "pass_clear") {
-        image.data[px] = 82;
-        image.data[px + 1] = 181;
-        image.data[px + 2] = 96;
-      } else if (state === "pass_blocked") {
-        image.data[px] = 232;
-        image.data[px + 1] = 170;
-        image.data[px + 2] = 72;
-      } else if (state === "fail_clear") {
-        image.data[px] = 235;
-        image.data[px + 1] = 120;
-        image.data[px + 2] = 70;
-      } else {
-        image.data[px] = 205;
-        image.data[px + 1] = 87;
-        image.data[px + 2] = 79;
-      }
-      image.data[px + 3] = 162;
-    }
-  }
-
-  ctx.putImageData(image, 0, 0);
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
-  };
-};
-
-const buildRelayCandidateOverlay = (
-  bounds: TerrainBounds,
-  fromSite: Site,
-  toSite: Site,
-  effectiveLink: Link,
-  propagationEnvironment: PropagationEnvironment,
-  environmentLossDb: number,
-  terrainSampler: (lat: number, lon: number) => number | null,
-  dimensions: { width: number; height: number },
-  terrainSamples: number,
-  pointMask?: (lat: number, lon: number) => boolean,
-): (OverlayRaster & { minDbm: number; maxDbm: number }) | null => {
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const relayAntennaHeightM = Math.max(2, (fromSite.antennaHeightM + toSite.antennaHeightM) / 2);
-  const fallbackRelayGround = (fromSite.groundElevationM + toSite.groundElevationM) / 2;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-  const bottleneck = new Float32Array(width * height).fill(-Infinity);
-  let minDbm = Number.POSITIVE_INFINITY;
-  let maxDbm = Number.NEGATIVE_INFINITY;
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      if (pointMask && !pointMask(lat, lon)) {
-        continue;
-      }
-
-      const sampledGround = terrainSampler(lat, lon);
-      if (sampledGround === null) {
-        continue;
-      }
-      const relayGround = sampledGround ?? fallbackRelayGround;
-      const relaySite: Site = {
-        id: "__relay_candidate__",
-        name: "Relay candidate",
-        position: { lat, lon },
-        antennaHeightM: relayAntennaHeightM,
-        groundElevationM: relayGround,
-        txPowerDbm: STANDARD_SITE_RADIO.txPowerDbm,
-        txGainDbi: STANDARD_SITE_RADIO.txGainDbi,
-        rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
-        cableLossDb: STANDARD_SITE_RADIO.cableLossDb,
-      };
-      const fromToRelayRx = computeSourceCentricRxDbm(
-        lat,
-        lon,
-        fromSite,
-        effectiveLink,
-        relayAntennaHeightM,
-        relaySite.rxGainDbi,
-        terrainSampler,
-        terrainSamples,
-        propagationEnvironment,
-      );
-      const relayToTargetRx = computeSourceCentricRxDbm(
-        toSite.position.lat,
-        toSite.position.lon,
-        relaySite,
-        effectiveLink,
-        toSite.antennaHeightM,
-        toSite.rxGainDbi,
-        terrainSampler,
-        terrainSamples,
-        propagationEnvironment,
-      );
-      const bottleneckDbm = Math.min(fromToRelayRx, relayToTargetRx) - environmentLossDb;
-      const i = y * width + x;
-      bottleneck[i] = bottleneckDbm;
-      minDbm = Math.min(minDbm, bottleneckDbm);
-      maxDbm = Math.max(maxDbm, bottleneckDbm);
-    }
-  }
-  if (!Number.isFinite(minDbm) || !Number.isFinite(maxDbm)) return null;
-  const dynamicRange = Math.max(6, maxDbm - minDbm);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const i = y * width + x;
-      if (!Number.isFinite(bottleneck[i])) continue;
-      const px = i * 4;
-      const normalized = -125 + ((bottleneck[i] - minDbm) / dynamicRange) * 63;
-      const [r, g, b] = coverageColorForDbm(clamp(normalized, -125, -62));
-      image.data[px] = r;
-      image.data[px + 1] = g;
-      image.data[px + 2] = b;
-      image.data[px + 3] = 172;
-    }
-  }
-
-  ctx.putImageData(image, 0, 0);
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
-    minDbm,
-    maxDbm,
-  };
-};
-
-const buildTerrainShadeOverlay = (
-  bounds: TerrainBounds,
-  sampler: (lat: number, lon: number) => number | null,
-  dimensions: { width: number; height: number },
-  pointMask?: (lat: number, lon: number) => boolean,
-): OverlayRaster | null => {
-  const width = dimensions.width;
-  const height = dimensions.height;
-  const elevations = new Float32Array(width * height);
-  const valid = new Uint8Array(width * height);
-  const allowed = new Uint8Array(width * height);
-
-  let minElevation = Number.POSITIVE_INFINITY;
-  let maxElevation = Number.NEGATIVE_INFINITY;
-
-  for (let y = 0; y < height; y += 1) {
-    const tY = y / Math.max(1, height - 1);
-    const lat = bounds.maxLat - (bounds.maxLat - bounds.minLat) * tY;
-    for (let x = 0; x < width; x += 1) {
-      const tX = x / Math.max(1, width - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tX;
-      const isAllowed = pointMask ? pointMask(lat, lon) : true;
-      const elevation = sampler(lat, lon);
-      const i = y * width + x;
-      if (isAllowed) {
-        allowed[i] = 1;
-      }
-      if (!isAllowed) continue;
-      if (elevation === null) continue;
-      elevations[i] = elevation;
-      valid[i] = 1;
-      minElevation = Math.min(minElevation, elevation);
-      maxElevation = Math.max(maxElevation, elevation);
-    }
-  }
-
-  if (!Number.isFinite(minElevation) || !Number.isFinite(maxElevation)) return null;
-
-  for (let pass = 0; pass < 3; pass += 1) {
-    for (let y = 1; y < height - 1; y += 1) {
-      for (let x = 1; x < width - 1; x += 1) {
-        const i = y * width + x;
-        if (!allowed[i]) continue;
-        if (valid[i]) continue;
-        const neighbors = [i - 1, i + 1, i - width, i + width];
-        let sum = 0;
-        let count = 0;
-        for (const n of neighbors) {
-          if (!allowed[n]) continue;
-          if (!valid[n]) continue;
-          sum += elevations[n];
-          count += 1;
-        }
-        if (!count) continue;
-        elevations[i] = sum / count;
-        valid[i] = 1;
-      }
-    }
-  }
-
-  const lightAzimuthRad = (315 * Math.PI) / 180;
-  const lightAltitudeRad = (45 * Math.PI) / 180;
-  const lx = Math.cos(lightAltitudeRad) * Math.sin(lightAzimuthRad);
-  const ly = Math.cos(lightAltitudeRad) * Math.cos(lightAzimuthRad);
-  const lz = Math.sin(lightAltitudeRad);
-  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-  const metersPerLon =
-    ((bounds.maxLon - bounds.minLon) * 111_320 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180))) /
-    Math.max(1, width - 1);
-  const metersPerLat = ((bounds.maxLat - bounds.minLat) * 111_320) / Math.max(1, height - 1);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const image = ctx.createImageData(width, height);
-  const range = Math.max(1, maxElevation - minElevation);
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const i = y * width + x;
-      const px = i * 4;
-      if (!allowed[i]) {
-        image.data[px + 3] = 0;
-        continue;
-      }
-      if (!valid[i]) {
-        image.data[px + 3] = 0;
-        continue;
-      }
-
-      const x0 = Math.max(0, x - 1);
-      const x1 = Math.min(width - 1, x + 1);
-      const y0 = Math.max(0, y - 1);
-      const y1 = Math.min(height - 1, y + 1);
-      const left = elevations[y * width + x0];
-      const right = elevations[y * width + x1];
-      const top = elevations[y0 * width + x];
-      const bottom = elevations[y1 * width + x];
-
-      const dzdx = (right - left) / Math.max(1, (x1 - x0) * metersPerLon);
-      const dzdy = (bottom - top) / Math.max(1, (y1 - y0) * metersPerLat);
-
-      const nx = -dzdx;
-      const ny = -dzdy;
-      const nz = 1;
-      const norm = Math.hypot(nx, ny, nz) || 1;
-      const shade = Math.max(0, (nx * lx + ny * ly + nz * lz) / norm);
-
-      const elevationNorm = (elevations[i] - minElevation) / range;
-      const base = 58 + elevationNorm * 112;
-      const lit = clamp(base * 0.65 + shade * 145, 0, 255);
-
-      image.data[px] = lit * 0.95;
-      image.data[px + 1] = lit;
-      image.data[px + 2] = lit * 1.04;
-      image.data[px + 3] = 210;
-    }
-  }
-
-  ctx.putImageData(image, 0, 0);
-
-  return {
-    url: canvas.toDataURL("image/png"),
-    coordinates: [
-      [bounds.minLon, bounds.maxLat],
-      [bounds.maxLon, bounds.maxLat],
-      [bounds.maxLon, bounds.minLat],
-      [bounds.minLon, bounds.minLat],
-    ],
-  };
-};
-
-/** ~20 km geographic margin added around sites before fitting. */
-const FIT_PAD_DEG = 0.18;
+const kmToLatDegrees = (km: number): number => km / 111.32;
 /**
  * Pixel insets reserved for UI chrome inside the map container.
  * Right accounts for the map controls pill; others are minimal breathing room.
@@ -948,22 +446,25 @@ const FIT_CHROME_PADDING = { top: 30, right: 70, bottom: 30, left: 20 } as const
  */
 const computeSiteFitBounds = (
   sites: { position: { lat: number; lon: number } }[],
+  fitRadiusKm = 20,
 ): [[number, number], [number, number]] | null => {
   if (!sites.length) return null;
   const lats = sites.map((s) => s.position.lat);
   const lons = sites.map((s) => s.position.lon);
   const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const latPad = kmToLatDegrees(Math.max(1, fitRadiusKm));
   // Scale lon padding by 1/cos(lat) so the geographic margin is uniform in km.
-  const lonPad = FIT_PAD_DEG / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  const lonPad = latPad / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
   return [
-    [Math.min(...lons) - lonPad, Math.min(...lats) - FIT_PAD_DEG],
-    [Math.max(...lons) + lonPad, Math.max(...lats) + FIT_PAD_DEG],
+    [Math.min(...lons) - lonPad, Math.min(...lats) - latPad],
+    [Math.max(...lons) + lonPad, Math.max(...lats) + latPad],
   ];
 };
 
 type MapViewProps = {
   isMapExpanded: boolean;
   showInspector?: boolean;
+  inspectorPanelClassName?: string;
   showMultiSelectToggle?: boolean;
   readOnly?: boolean;
   canPersist?: boolean;
@@ -977,6 +478,8 @@ type MapViewProps = {
   };
   /** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
   fitBottomInset?: number;
+  /** Pixel insets reserved for map-internal chrome when fitting bounds. */
+  fitChromePadding?: { top: number; right: number; bottom: number; left: number };
 };
 
 type MarkerActionButtonProps = {
@@ -1032,6 +535,12 @@ type MapInspectorHoverInfo = {
   libraryEntryId?: string;
 };
 
+type PanoramaInteractionState = {
+  siteId: string;
+  hover: PanoramaFocusPoint | null;
+  locked: PanoramaFocusPoint | null;
+};
+
 const DEFAULT_MAP_VIEWPORT = {
   center: { lat: 59.9, lon: 10.75 },
   zoom: 8,
@@ -1040,6 +549,7 @@ const DEFAULT_MAP_VIEWPORT = {
 export function MapView({
   isMapExpanded,
   showInspector = true,
+  inspectorPanelClassName,
   showMultiSelectToggle = false,
   readOnly = false,
   canPersist = true,
@@ -1047,6 +557,7 @@ export function MapView({
   inspectorHeaderActions,
   notice,
   fitBottomInset = 30,
+  fitChromePadding = FIT_CHROME_PADDING,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
@@ -1075,6 +586,7 @@ export function MapView({
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
   const coverageSamples = useCoverageStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
+  const terrainLoadEpoch = useAppStore((state) => state.terrainLoadEpoch);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
   const terrainLoadingStartedAtMs = useAppStore((state) => state.terrainLoadingStartedAtMs);
   const terrainProgressPercent = useAppStore((state) => state.terrainProgressPercent);
@@ -1082,6 +594,13 @@ export function MapView({
   const terrainProgressTilesTotal = useAppStore((state) => state.terrainProgressTilesTotal);
   const terrainProgressBytesLoaded = useAppStore((state) => state.terrainProgressBytesLoaded);
   const terrainProgressBytesEstimated = useAppStore((state) => state.terrainProgressBytesEstimated);
+  const terrainProgressTransientDecodeBytesEstimated = useAppStore(
+    (state) => state.terrainProgressTransientDecodeBytesEstimated,
+  );
+  const terrainProgressPhaseLabel = useAppStore((state) => state.terrainProgressPhaseLabel);
+  const terrainProgressPhaseIndex = useAppStore((state) => state.terrainProgressPhaseIndex);
+  const terrainProgressPhaseTotal = useAppStore((state) => state.terrainProgressPhaseTotal);
+  const terrainMemoryDiagnostics = useAppStore((state) => state.terrainMemoryDiagnostics);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
@@ -1091,6 +610,9 @@ export function MapView({
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
   const isSimulationRecomputing = useCoverageStore((state) => state.isSimulationRecomputing);
   const simulationProgress = useCoverageStore((state) => state.simulationProgress);
+  const simulationProgressMode = useCoverageStore((state) => state.simulationProgressMode);
+  const simulationStepLabel = useCoverageStore((state) => state.simulationStepLabel);
+  const simulationRunToken = useCoverageStore((state) => state.simulationRunToken);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const basemapProvider = useAppStore((state) => state.basemapProvider);
@@ -1129,6 +651,11 @@ export function MapView({
   const setCoverageVizMode = useAppStore((state) => state.setMapOverlayMode);
   const selectedCoverageResolution = useAppStore((state) => state.selectedCoverageResolution);
   const setSelectedCoverageResolution = useAppStore((state) => state.setSelectedCoverageResolution);
+  const setDiscoveryVisibility = useAppStore((state) => state.setDiscoveryVisibility);
+  const setMapDiscoveryMqttNodes = useAppStore((state) => state.setMapDiscoveryMqttNodes);
+  const recommendAndFetchTerrainForCurrentArea = useAppStore((state) => state.recommendAndFetchTerrainForCurrentArea);
+  const selectedOverlayRadiusOption = useAppStore((state) => state.selectedOverlayRadiusOption);
+  const setSelectedOverlayRadiusOption = useAppStore((state) => state.setSelectedOverlayRadiusOption);
   const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
@@ -1147,6 +674,7 @@ export function MapView({
   const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
   const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
+  const [panoramaInteraction, setPanoramaInteraction] = useState<PanoramaInteractionState | null>(null);
   const [selectedDiscoveryLibraryEntryId, setSelectedDiscoveryLibraryEntryId] = useState<string | null>(null);
   const [mqttDuplicatePrompt, setMqttDuplicatePrompt] = useState<{
     node: MeshmapNode;
@@ -1161,6 +689,12 @@ export function MapView({
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+  const panoramaLensBaseViewRef = useRef<{
+    center: { lat: number; lon: number };
+    zoom: number;
+    bearing: number;
+    pitch: number;
+  } | null>(null);
 
   useEffect(() => {
     const handleViewportChange = () => {
@@ -1174,20 +708,47 @@ export function MapView({
     };
   }, []);
 
-  // When a scenario or simulation loads (fitSitesEpoch increments), fit the map to
-  // all sites with a ~20 km geographic margin and insets for UI chrome.
   useEffect(() => {
-    if (!fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
-    const bounds = computeSiteFitBounds(sites);
-    if (!bounds) return;
-    mapRef.current.fitBounds(bounds, {
-      padding: { ...FIT_CHROME_PADDING, bottom: fitBottomInset },
-      animate: false,
-      maxZoom: 14,
+    setDiscoveryVisibility({ libraryVisible: showDiscoverySites, mqttVisible: showDiscoveryMqtt });
+  }, [showDiscoverySites, showDiscoveryMqtt, setDiscoveryVisibility]);
+
+  useEffect(() => {
+    setMapDiscoveryMqttNodes(mqttNodes);
+  }, [mqttNodes, setMapDiscoveryMqttNodes]);
+
+  useEffect(() => {
+    const unsubscribe = subscribePanoramaInteraction((event: PanoramaInteractionEvent) => {
+      setPanoramaInteraction((current) => {
+        if (event.type === "clear") {
+          if (!current || current.siteId !== event.siteId) return current;
+          return { ...current, hover: null, locked: null };
+        }
+        if (event.type === "leave") {
+          if (!current || current.siteId !== event.siteId) return current;
+          return { ...current, hover: null };
+        }
+        if (event.type === "hover") {
+          if (!current || current.siteId !== event.payload.siteId) {
+            return { siteId: event.payload.siteId, hover: event.payload, locked: null };
+          }
+          if (current.locked) return current;
+          return { ...current, hover: event.payload };
+        }
+        if (!current || current.siteId !== event.payload.siteId) {
+          return { siteId: event.payload.siteId, hover: null, locked: event.payload };
+        }
+        const unlock =
+          current.locked &&
+          Math.abs(current.locked.azimuthDeg - event.payload.azimuthDeg) < 0.01;
+        return {
+          ...current,
+          locked: unlock ? null : event.payload,
+          hover: unlock ? current.hover : null,
+        };
+      });
     });
-    setInteractionViewState(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitSitesEpoch, isMapLoaded, fitBottomInset]);
+    return unsubscribe;
+  }, []);
 
   const hasNonAutoLinks = useMemo(
     () => links.some((link) => (link.name ?? "").trim().toLowerCase() !== "auto link"),
@@ -1216,6 +777,8 @@ export function MapView({
   );
   const selectedSiteSet = useMemo(() => new Set(selectedSites.map((site) => site.id)), [selectedSites]);
   const selectionCount = selectedSites.length;
+  const singleSelectedSite = selectionCount === 1 ? selectedSites[0] ?? null : null;
+  const previousSelectionCountRef = useRef(selectionCount);
   const selectedFromSite = selectedSites[0] ?? (selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null);
   const selectedToSite =
     selectedSites.length >= 2
@@ -1238,6 +801,71 @@ export function MapView({
       cableLossDb: selectedFromSite.cableLossDb,
     };
   }, [selectedFromSite, selectedToSite, selectedNetwork, selectedLink]);
+
+  useEffect(() => {
+    if (!singleSelectedSite) {
+      setPanoramaInteraction(null);
+      return;
+    }
+    setPanoramaInteraction((current) => {
+      if (!current) return current;
+      if (current.siteId === singleSelectedSite.id) return current;
+      return null;
+    });
+  }, [singleSelectedSite?.id]);
+
+  const activePanoramaFocus = panoramaInteraction?.locked ?? panoramaInteraction?.hover ?? null;
+  const panoramaHoverLensEnabled = Boolean(activePanoramaFocus?.mapHoverZoomEnabled);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (
+      !singleSelectedSite ||
+      !activePanoramaFocus ||
+      activePanoramaFocus.siteId !== singleSelectedSite.id ||
+      !panoramaHoverLensEnabled
+    ) {
+      const previous = panoramaLensBaseViewRef.current;
+      if (previous) {
+        map.easeTo({
+          center: [previous.center.lon, previous.center.lat],
+          zoom: previous.zoom,
+          bearing: previous.bearing,
+          pitch: previous.pitch,
+          duration: 260,
+          essential: true,
+        });
+      }
+      panoramaLensBaseViewRef.current = null;
+      return;
+    }
+
+    if (!panoramaLensBaseViewRef.current) {
+      const center = map.getCenter();
+      panoramaLensBaseViewRef.current = {
+        center: { lat: center.lat, lon: center.lng },
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      };
+    }
+    const baseZoom = panoramaLensBaseViewRef.current?.zoom ?? map.getZoom();
+    map.easeTo({
+      center: [activePanoramaFocus.endpoint.lon, activePanoramaFocus.endpoint.lat],
+      zoom: Math.max(2.8, Math.min(13, baseZoom - 0.8)),
+      duration: 220,
+      essential: true,
+    });
+  }, [
+    singleSelectedSite?.id,
+    singleSelectedSite?.position.lat,
+    singleSelectedSite?.position.lon,
+    activePanoramaFocus?.siteId,
+    activePanoramaFocus?.endpoint.lat,
+    activePanoramaFocus?.endpoint.lon,
+    panoramaHoverLensEnabled,
+  ]);
   const hasHeatTopology = sites.length >= 1;
   const simulationLibrarySiteIds = useMemo(
     () =>
@@ -1282,11 +910,116 @@ export function MapView({
       canceled = true;
     };
   }, [showDiscoveryMqtt, mqttNodes.length]);
+  useEffect(() => {
+    const previousSelectionCount = previousSelectionCountRef.current;
+    previousSelectionCountRef.current = selectionCount;
+    const nextOption = resolveOverlayRadiusOptionForSelectionTransition({
+      previousSelectionCount,
+      selectionCount,
+      option: selectedOverlayRadiusOption,
+    });
+    if (nextOption !== selectedOverlayRadiusOption) {
+      setSelectedOverlayRadiusOption(nextOption);
+    }
+  }, [selectionCount, selectedOverlayRadiusOption, setSelectedOverlayRadiusOption]);
+
   const hasPassFailTopology = selectionCount >= 1;
   const hasRelayTopology = selectionCount >= 2;
   const hasMinimumTopology = sites.length >= 1;
-  const analysisTargetSites = sites;
-  const overlayMaskArea = useMemo(() => buildBufferedSelectionArea(analysisTargetSites, 20), [analysisTargetSites]);
+  const analysisTargetSites = selectionCount === 1 ? selectedSites : sites;
+  const normalizedOverlayRadiusOption = resolveOverlayRadiusOptionForSelectionTransition({
+    previousSelectionCount: selectionCount,
+    selectionCount,
+    option: selectedOverlayRadiusOption,
+  });
+  const targetRadiusKm = useMemo(
+    () => resolveTargetOverlayRadiusKm(selectionCount, normalizedOverlayRadiusOption),
+    [selectionCount, normalizedOverlayRadiusOption],
+  );
+  const loadedRadiusCapKm = useMemo(
+    () => resolveLoadedOverlayRadiusCapKm(analysisTargetSites, targetRadiusKm, srtmTiles, 20),
+    [analysisTargetSites, targetRadiusKm, srtmTiles],
+  );
+  const overlayRadiusKm = useMemo(
+    () =>
+      Math.min(
+        targetRadiusKm,
+        Math.min(
+          loadedRadiusCapKm,
+          resolveEffectiveOverlayRadiusKm({
+            selectionCount,
+            option: normalizedOverlayRadiusOption,
+            selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
+            srtmTiles,
+            isTerrainFetching,
+          }),
+        ),
+      ),
+    [
+      targetRadiusKm,
+      normalizedOverlayRadiusOption,
+      loadedRadiusCapKm,
+      selectionCount,
+      selectedSites,
+      srtmTiles,
+      isTerrainFetching,
+    ],
+  );
+  const overlayRadiusOptions = optionsForSelectionCount(selectionCount);
+  const loaded30mTileKeys = useMemo(
+    () => new Set(srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key)),
+    [srtmTiles],
+  );
+  const targetRadiusBounds = useMemo(
+    () => simulationAreaBoundsForSites(analysisTargetSites, { overlayRadiusKm: targetRadiusKm }),
+    [analysisTargetSites, targetRadiusKm],
+  );
+  const requiredTargetRadiusTileKeys = useMemo(
+    () =>
+      targetRadiusBounds
+        ? tilesForBounds(
+            targetRadiusBounds.minLat,
+            targetRadiusBounds.maxLat,
+            targetRadiusBounds.minLon,
+            targetRadiusBounds.maxLon,
+          )
+        : [],
+    [targetRadiusBounds],
+  );
+  const missingTargetRadiusTileCount = useMemo(
+    () => requiredTargetRadiusTileKeys.filter((key) => !loaded30mTileKeys.has(key)).length,
+    [requiredTargetRadiusTileKeys, loaded30mTileKeys],
+  );
+  const targetRadiusTerrainSignature = `${targetRadiusKm}|${requiredTargetRadiusTileKeys.join(",")}`;
+  const targetRadiusFetchAttemptRef = useRef("");
+  useEffect(() => {
+    if (coverageVizMode === "none") {
+      targetRadiusFetchAttemptRef.current = "";
+      return;
+    }
+    if (!analysisTargetSites.length || missingTargetRadiusTileCount <= 0) {
+      targetRadiusFetchAttemptRef.current = "";
+      return;
+    }
+    if (isTerrainFetching || isTerrainRecommending) return;
+    if (targetRadiusFetchAttemptRef.current === targetRadiusTerrainSignature) return;
+    targetRadiusFetchAttemptRef.current = targetRadiusTerrainSignature;
+    void recommendAndFetchTerrainForCurrentArea(targetRadiusKm);
+  }, [
+    coverageVizMode,
+    analysisTargetSites.length,
+    missingTargetRadiusTileCount,
+    isTerrainFetching,
+    isTerrainRecommending,
+    normalizedOverlayRadiusOption,
+    targetRadiusTerrainSignature,
+    recommendAndFetchTerrainForCurrentArea,
+    targetRadiusKm,
+  ]);
+  const overlayMaskArea = useMemo(
+    () => buildBufferedSelectionArea(analysisTargetSites, overlayRadiusKm),
+    [analysisTargetSites, overlayRadiusKm],
+  );
   const overlayPointMask = overlayMaskArea?.contains;
   const analysisBounds = useMemo(() => {
     if (overlayMaskArea) return overlayMaskArea.bounds;
@@ -1324,7 +1057,6 @@ export function MapView({
     () => (boundedCoverageSamples.length >= 6 ? boundedCoverageSamples : coverageSamples),
     [boundedCoverageSamples, coverageSamples],
   );
-
   const lineFeatures = useMemo(
     () => {
       const showSelectionHighlights = !armAddSiteOnNextEmptyMapClick;
@@ -1406,6 +1138,32 @@ export function MapView({
       ? selectedProfile[Math.max(0, Math.min(selectedProfile.length - 1, profileCursorIndex))]
       : undefined;
 
+  const panoramaRayFeatures = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features:
+        selectionCount === 1 &&
+        singleSelectedSite &&
+        activePanoramaFocus &&
+        activePanoramaFocus.siteId === singleSelectedSite.id
+          ? [
+              {
+                type: "Feature" as const,
+                properties: { id: "panorama-ray" },
+                geometry: {
+                  type: "LineString" as const,
+                  coordinates: [
+                    [singleSelectedSite.position.lon, singleSelectedSite.position.lat],
+                    [activePanoramaFocus.endpoint.lon, activePanoramaFocus.endpoint.lat],
+                  ],
+                },
+              },
+            ]
+          : [],
+    }),
+    [selectionCount, singleSelectedSite, activePanoramaFocus],
+  );
+
   const overlayResolutionScale = useMemo(() => {
     if (analysisBoundsDiagonalKm > 600) return 0.52;
     if (analysisBoundsDiagonalKm > 400) return 0.64;
@@ -1414,52 +1172,403 @@ export function MapView({
   }, [analysisBoundsDiagonalKm]);
   const largeAreaOptimizationActive = overlayResolutionScale < 1;
 
+  // During a site drag, force low-res (24) to keep overlay recomputations cheap.
+  // During simulation recompute, keep using the last completed grid size to avoid
+  // blocking the UI while a higher-resolution recompute is still preparing.
+  const selectedGridSize = Number(selectedCoverageResolution);
+  const [lastCompletedGridSize, setLastCompletedGridSize] = useState(24);
+  useEffect(() => {
+    if (isSimulationRecomputing) return;
+    if (!Number.isFinite(selectedGridSize) || selectedGridSize < 24) return;
+    setLastCompletedGridSize(selectedGridSize);
+  }, [isSimulationRecomputing, selectedGridSize]);
+  const effectiveGridSize =
+    isDraggingSite || !Number.isFinite(selectedGridSize) || selectedGridSize < 24
+      ? 24
+      : isTerrainFetching
+        ? 24
+      : isSimulationRecomputing
+        ? lastCompletedGridSize
+        : selectedGridSize;
+
   const overlayDimensions = useMemo(() => {
     const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
-    if (!bounds) return { width: 320, height: 320 };
-    return computeOverlayDimensions(bounds, overlayResolutionScale);
-  }, [analysisBounds, samplesForOverlay, overlayResolutionScale]);
+    if (!bounds) return { width: 24, height: 24 };
+    return computeOverlayDimensions(bounds, effectiveGridSize, overlayResolutionScale);
+  }, [analysisBounds, samplesForOverlay, effectiveGridSize, overlayResolutionScale]);
 
   const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
+  const resolutionOptionLabels = useMemo(() => {
+    const options = [
+      { gridSize: 24, name: "1x" },
+      { gridSize: 42, name: "2x" },
+      { gridSize: 84, name: "4x" },
+      { gridSize: 168, name: "8x" },
+    ] as const;
+    return options.map(({ gridSize, name }) => {
+      const fallback = { rows: gridSize, cols: gridSize, totalSamples: gridSize * gridSize };
+      const dims = overlayBounds ? computeCoverageGridDimensions(gridSize, overlayBounds, 1) : fallback;
+      const isDefault = gridSize === 24;
+      return {
+        value: String(gridSize) as "24" | "42" | "84" | "168",
+        label: `${name} (${dims.rows}x${dims.cols}, ${dims.totalSamples} samples)${isDefault ? " - Default" : ""}`,
+      };
+    });
+  }, [overlayBounds]);
   const effectiveBandStepDb = useMemo(() => {
     if (!overlayBounds) return 5;
     return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, overlayBounds) : bandStepMode;
   }, [overlayBounds, samplesForOverlay, bandStepMode]);
-  const baseOverlayMode = coverageVizMode === "contours" ? "contours" : coverageVizMode === "heatmap" ? "heatmap" : null;
-  const baseCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
-    if (!overlayBounds || !baseOverlayMode) return null;
-    return buildCoverageOverlay(
-      overlayBounds,
-      samplesForOverlay,
-      baseOverlayMode,
+  const overlayLongTaskWarnedRef = useRef<Set<string>>(new Set());
+  const showOverlayDiagnostics =
+    import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
+  const coverageOverlaySchedulerRef = useRef<ReturnType<typeof createLatestOnlyTaskScheduler> | null>(null);
+  const terrainOverlaySchedulerRef = useRef<ReturnType<typeof createLatestOnlyTaskScheduler> | null>(null);
+  if (!coverageOverlaySchedulerRef.current) {
+    coverageOverlaySchedulerRef.current = createLatestOnlyTaskScheduler();
+  }
+  if (!terrainOverlaySchedulerRef.current) {
+    terrainOverlaySchedulerRef.current = createLatestOnlyTaskScheduler();
+  }
+  const coverageOverlayRunCounterRef = useRef(0);
+  const terrainOverlayRunCounterRef = useRef(0);
+  const latestCoverageRunTokenRef = useRef("");
+  const coverageOverlayCacheRef = useRef(
+    createLruCache<OverlayRaster & { minDbm?: number; maxDbm?: number }>(4),
+  );
+  const terrainOverlayCacheRef = useRef(createLruCache<OverlayRaster>(3));
+  const [overlayJobsInFlight, setOverlayJobsInFlight] = useState(0);
+  const [overlayProgressMode, setOverlayProgressMode] = useState<"determinate" | "indeterminate">("indeterminate");
+  const [overlayProgressPercent, setOverlayProgressPercent] = useState<number | null>(null);
+  const overlayProgressByPipelineRef = useRef<{ coverage: number | null; terrain: number | null }>({
+    coverage: null,
+    terrain: null,
+  });
+  const syncOverlayProgressState = useCallback(() => {
+    const coverageProgress = overlayProgressByPipelineRef.current.coverage;
+    const terrainProgress = overlayProgressByPipelineRef.current.terrain;
+    const numeric = [coverageProgress, terrainProgress].filter((value): value is number => typeof value === "number");
+    if (!numeric.length) {
+      setOverlayProgressMode("indeterminate");
+      setOverlayProgressPercent(null);
+      return;
+    }
+    setOverlayProgressMode("determinate");
+    setOverlayProgressPercent(Math.max(...numeric));
+  }, []);
+  const setOverlayPipelineProgress = useCallback(
+    (pipeline: "coverage" | "terrain", percent: number | null) => {
+      const normalized =
+        typeof percent === "number" && Number.isFinite(percent)
+          ? Math.max(0, Math.min(100, Math.round(percent)))
+          : null;
+      if (overlayProgressByPipelineRef.current[pipeline] === normalized) return;
+      overlayProgressByPipelineRef.current[pipeline] = normalized;
+      syncOverlayProgressState();
+    },
+    [syncOverlayProgressState],
+  );
+  const beginOverlayJob = useCallback((pipeline: "coverage" | "terrain") => {
+    let finished = false;
+    setOverlayJobsInFlight((count) => count + 1);
+    setOverlayPipelineProgress(pipeline, null);
+    return () => {
+      if (finished) return;
+      finished = true;
+      setOverlayJobsInFlight((count) => Math.max(0, count - 1));
+      setOverlayPipelineProgress(pipeline, null);
+    };
+  }, [setOverlayPipelineProgress]);
+  const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
+  const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
+
+  const logOverlaySchedulerEvent = useCallback(
+    (
+      pipeline: "coverage" | "terrain",
+      event: "queued" | "deduped-active" | "deduped-queued" | "cache-hit" | "started",
+      signature: string,
+      extra?: Record<string, unknown>,
+    ) => {
+      if (!showOverlayDiagnostics) return;
+      console.info("[simulation-overlay-scheduler]", {
+        pipeline,
+        event,
+        signature,
+        ...(extra ?? {}),
+      });
+    },
+    [showOverlayDiagnostics],
+  );
+
+  useEffect(() => {
+    if (simulationRunToken) {
+      latestCoverageRunTokenRef.current = simulationRunToken;
+      return;
+    }
+    if (!isSimulationRecomputing) {
+      latestCoverageRunTokenRef.current = "";
+    }
+  }, [simulationRunToken, isSimulationRecomputing]);
+
+  useEffect(() => {
+    return () => {
+      coverageOverlaySchedulerRef.current?.dispose();
+      terrainOverlaySchedulerRef.current?.dispose();
+    };
+  }, []);
+
+  const overlaySampleDigest = useMemo(() => {
+    let hash = FNV_OFFSET_BASIS;
+    for (const sample of samplesForOverlay) {
+      hash = updateFvnHash(hash, roundHashValue(sample.lat, 100_000));
+      hash = updateFvnHash(hash, roundHashValue(sample.lon, 100_000));
+      hash = updateFvnHash(hash, roundHashValue(sample.valueDbm, 10));
+    }
+    return hash.toString(16);
+  }, [samplesForOverlay]);
+  const propagationEnvironmentDigest = useMemo(
+    () =>
+      [
+        propagationEnvironment.clutterHeightM,
+        propagationEnvironment.polarization,
+        propagationEnvironment.groundDielectric,
+        propagationEnvironment.groundConductivity,
+        propagationEnvironment.radioClimate,
+        propagationEnvironment.atmosphericBendingNUnits,
+      ]
+        .map((value) => String(value ?? ""))
+        .join(":"),
+    [propagationEnvironment],
+  );
+  const selectedSiteDigest = useMemo(() => selectedSiteIds.join(","), [selectedSiteIds]);
+
+  useEffect(() => {
+    const scheduler = coverageOverlaySchedulerRef.current!;
+    const cancelCoveragePipeline = (clearOverlay: boolean) => {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("coverage", null);
+      if (clearOverlay) setCoverageOverlay(null);
+    };
+
+    if (coverageVizMode === "none") {
+      cancelCoveragePipeline(true);
+      return;
+    }
+    if (!overlayBounds) {
+      cancelCoveragePipeline(true);
+      return;
+    }
+
+    const mode = coverageVizMode;
+    if (mode === "passfail" && (!activeSelectionLink || !selectedFromSite || !hasPassFailTopology)) {
+      cancelCoveragePipeline(true);
+      return;
+    }
+    if (mode === "relay" && (!activeSelectionLink || !selectedFromSite || !selectedToSite || !hasRelayTopology)) {
+      cancelCoveragePipeline(true);
+      return;
+    }
+
+    const signature = [
+      mode,
+      overlayBounds.minLat.toFixed(5),
+      overlayBounds.maxLat.toFixed(5),
+      overlayBounds.minLon.toFixed(5),
+      overlayBounds.maxLon.toFixed(5),
+      overlayDimensions.width,
+      overlayDimensions.height,
       effectiveBandStepDb,
-      overlayDimensions,
-      overlayPointMask,
-      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-    );
-  }, [overlayBounds, samplesForOverlay, baseOverlayMode, effectiveBandStepDb, overlayDimensions, overlayPointMask, srtmTiles]);
-  // During a site drag, force low-res (24) to keep overlay recomputations cheap.
-  // On mouse release (isDraggingSite → false) the configured resolution is restored.
-  const effectiveGridSize = isDraggingSite || selectedCoverageResolution !== "high" ? 24 : 42;
-  const passFailCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
-    if (coverageVizMode !== "passfail") return null;
-    if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !hasPassFailTopology) return null;
-    const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite.antennaHeightM ?? 2;
-    const receiverRxGainDbi = selectedToSite?.rxGainDbi ?? selectedFromSite.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
-    return buildSourcePassFailOverlay(
-      overlayBounds,
-      selectedFromSite,
-      activeSelectionLink,
-      receiverAntennaHeightM,
-      receiverRxGainDbi,
-      propagationEnvironment,
+      samplesForOverlay.length,
+      overlaySampleDigest,
+      srtmTiles.length,
+      terrainLoadEpoch,
+      effectiveGridSize,
+      overlayRadiusKm,
+      activeSelectionLink?.id ?? "",
+      selectedFromSite?.id ?? "",
+      selectedToSite?.id ?? "",
+      propagationEnvironmentDigest,
       rxSensitivityTargetDbm,
       environmentLossDb,
-      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-      overlayDimensions,
-      effectiveGridSize,
-      overlayPointMask,
-    );
+      selectedSiteDigest,
+    ].join("|");
+    const cached = coverageOverlayCacheRef.current.get(signature);
+    if (cached) {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("coverage", null);
+      logOverlaySchedulerEvent("coverage", "cache-hit", signature);
+      setCoverageOverlay(cached);
+      return;
+    }
+
+    const enqueueResult = scheduler.enqueue({
+      signature,
+      run: async (taskContext) => {
+        const endOverlayJob = beginOverlayJob("coverage");
+        const taskBudget = overlayTaskBudgetForMode(mode);
+        coverageOverlayRunCounterRef.current += 1;
+        const perfRunId =
+          latestCoverageRunTokenRef.current || `overlay:${mode}:${coverageOverlayRunCounterRef.current}`;
+        const overlayBuildStartedAt = performance.now();
+        let lastReportedProgress = -2;
+
+        const onLongTask = (payload: {
+          phase: string;
+          signature: string;
+          durationMs: number;
+          processed: number;
+          total: number;
+        }) => {
+          if (!showOverlayDiagnostics) return;
+          const warnKey = `${payload.phase}|${payload.signature}`;
+          const warned = overlayLongTaskWarnedRef.current;
+          if (warned.has(warnKey)) return;
+          warned.add(warnKey);
+          if (warned.size > 80) warned.clear();
+          console.warn("[simulation-long-task]", {
+            scope: "overlay",
+            ...payload,
+          });
+        };
+
+        const onProgress = (payload: { percent: number }) => {
+          if (taskContext.isCancelled()) return;
+          if (payload.percent < 100 && payload.percent - lastReportedProgress < 2) return;
+          lastReportedProgress = payload.percent;
+          setOverlayPipelineProgress("coverage", payload.percent);
+        };
+
+        const terrainSampler = (lat: number, lon: number) => sampleSrtmElevation(srtmTiles, lat, lon);
+
+        try {
+          const context = {
+            phase: mode,
+            signature,
+            frameBudgetMs: taskBudget.frameBudgetMs,
+            longTaskMs: taskBudget.longTaskMs,
+            shouldCancel: taskContext.isCancelled,
+            onLongTask,
+            onProgress,
+          } as const;
+          let rasterPixels: OverlayRasterPixels | null = null;
+          if (mode === "heatmap" || mode === "contours") {
+            rasterPixels = await buildCoverageOverlayPixelsAsync(
+              overlayBounds,
+              samplesForOverlay,
+              mode,
+              effectiveBandStepDb,
+              overlayDimensions,
+              overlayPointMask,
+              terrainSampler,
+              context,
+            );
+          } else if (mode === "passfail") {
+            const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite!.antennaHeightM ?? 2;
+            const receiverRxGainDbi =
+              selectedToSite?.rxGainDbi ?? selectedFromSite!.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
+            rasterPixels = await buildSourcePassFailOverlayPixelsAsync(
+              overlayBounds,
+              selectedFromSite!,
+              activeSelectionLink!,
+              receiverAntennaHeightM,
+              receiverRxGainDbi,
+              propagationEnvironment,
+              rxSensitivityTargetDbm,
+              environmentLossDb,
+              terrainSampler,
+              overlayDimensions,
+              effectiveGridSize,
+              overlayPointMask,
+              context,
+            );
+          } else if (mode === "relay") {
+            rasterPixels = await buildRelayCandidateOverlayPixelsAsync(
+              overlayBounds,
+              selectedFromSite!,
+              selectedToSite!,
+              activeSelectionLink!,
+              propagationEnvironment,
+              environmentLossDb,
+              terrainSampler,
+              overlayDimensions,
+              effectiveGridSize,
+              overlayPointMask,
+              context,
+            );
+          }
+
+          const overlayBuildCompletedAt = performance.now();
+          if (taskContext.isCancelled()) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "token-mismatch-after-build",
+              signature,
+              mode,
+            });
+            return;
+          }
+          if (!rasterPixels) {
+            setCoverageOverlay(null);
+            return;
+          }
+          const raster = overlayPixelsToDataUrl(rasterPixels);
+          const overlayEncodeCompletedAt = performance.now();
+          if (taskContext.isCancelled()) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "token-mismatch-after-encode",
+              signature,
+              mode,
+            });
+            return;
+          }
+          recordSimulationOverlayPerf({
+            runId: perfRunId,
+            mode,
+            buildDurationMs: overlayBuildCompletedAt - overlayBuildStartedAt,
+            encodeDurationMs: overlayEncodeCompletedAt - overlayBuildCompletedAt,
+            width: rasterPixels.width,
+            height: rasterPixels.height,
+            pixelCount: rasterPixels.width * rasterPixels.height,
+            gridSize: effectiveGridSize,
+            effectiveRadiusKm: overlayRadiusKm,
+          });
+          const overlayValue = raster ? { ...raster } : null;
+          if (overlayValue) {
+            coverageOverlayCacheRef.current.set(signature, overlayValue);
+          }
+          setOverlayPipelineProgress("coverage", 100);
+          setCoverageOverlay(overlayValue);
+        } catch (error) {
+          if (error instanceof OverlayTaskCancelledError) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "overlay-task-cancelled-error",
+              signature,
+              mode,
+            });
+            return;
+          }
+          console.error("Failed to render simulation overlay", error);
+        } finally {
+          endOverlayJob();
+        }
+      },
+    } satisfies LatestOnlyTask);
+    if (enqueueResult !== "started") {
+      logOverlaySchedulerEvent("coverage", enqueueResult, signature, {
+        activeMode: mode,
+      });
+      return;
+    }
+    logOverlaySchedulerEvent("coverage", "started", signature, {
+      activeMode: mode,
+    });
   }, [
     coverageVizMode,
     overlayBounds,
@@ -1467,49 +1576,26 @@ export function MapView({
     selectedFromSite,
     selectedToSite,
     hasPassFailTopology,
+    hasRelayTopology,
+    overlayDimensions,
+    overlayPointMask,
+    srtmTiles,
+    terrainLoadEpoch,
+    effectiveBandStepDb,
+    samplesForOverlay,
+    overlaySampleDigest,
     propagationEnvironment,
+    propagationEnvironmentDigest,
     rxSensitivityTargetDbm,
     environmentLossDb,
-    srtmTiles,
-    overlayDimensions,
-    overlayPointMask,
     effectiveGridSize,
+    overlayRadiusKm,
+    selectedSiteDigest,
+    showOverlayDiagnostics,
+    beginOverlayJob,
+    setOverlayPipelineProgress,
+    logOverlaySchedulerEvent,
   ]);
-  const relayCoverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
-    if (coverageVizMode !== "relay") return null;
-    if (!overlayBounds || !activeSelectionLink || !selectedFromSite || !selectedToSite || !hasRelayTopology) return null;
-    return buildRelayCandidateOverlay(
-      overlayBounds,
-      selectedFromSite,
-      selectedToSite,
-      activeSelectionLink,
-      propagationEnvironment,
-      environmentLossDb,
-      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-      overlayDimensions,
-      effectiveGridSize,
-      overlayPointMask,
-    );
-  }, [
-    coverageVizMode,
-    overlayBounds,
-    activeSelectionLink,
-    selectedFromSite,
-    selectedToSite,
-    hasRelayTopology,
-    propagationEnvironment,
-    environmentLossDb,
-    srtmTiles,
-    overlayDimensions,
-    overlayPointMask,
-    effectiveGridSize,
-  ]);
-  const coverageOverlay = useMemo<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(() => {
-    if (coverageVizMode === "none") return null;
-    if (coverageVizMode === "relay") return relayCoverageOverlay;
-    if (coverageVizMode === "passfail") return passFailCoverageOverlay;
-    return baseCoverageOverlay;
-  }, [coverageVizMode, relayCoverageOverlay, passFailCoverageOverlay, baseCoverageOverlay]);
   const currentBandStepDb = effectiveBandStepDb;
 
   const signalRange = useMemo(() => {
@@ -1539,16 +1625,178 @@ export function MapView({
           ? "Pass/Fail"
           : "Relay";
 
-  const simulationTerrainOverlay = useMemo(() => {
-    if (!hasSimulationTerrain || !analysisBounds) return null;
-    const bounds = analysisBounds;
-    return buildTerrainShadeOverlay(
-      bounds,
-      (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
-      overlayDimensions,
-      overlayPointMask,
-    );
-  }, [hasSimulationTerrain, analysisBounds, srtmTiles, overlayDimensions, overlayPointMask]);
+  useEffect(() => {
+    const scheduler = terrainOverlaySchedulerRef.current!;
+    const cancelTerrainPipeline = (clearOverlay: boolean) => {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("terrain", null);
+      if (clearOverlay) setSimulationTerrainOverlay(null);
+    };
+
+    if (!showTerrainOverlay || !hasSimulationTerrain || !analysisBounds) {
+      cancelTerrainPipeline(true);
+      return;
+    }
+
+    const signature = [
+      "terrain",
+      analysisBounds.minLat.toFixed(5),
+      analysisBounds.maxLat.toFixed(5),
+      analysisBounds.minLon.toFixed(5),
+      analysisBounds.maxLon.toFixed(5),
+      overlayDimensions.width,
+      overlayDimensions.height,
+      srtmTiles.length,
+      terrainLoadEpoch,
+      selectedSiteDigest,
+      overlayRadiusKm,
+    ].join("|");
+    const cached = terrainOverlayCacheRef.current.get(signature);
+    if (cached) {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("terrain", null);
+      logOverlaySchedulerEvent("terrain", "cache-hit", signature);
+      setSimulationTerrainOverlay(cached);
+      return;
+    }
+
+    const enqueueResult = scheduler.enqueue({
+      signature,
+      run: async (taskContext) => {
+        const endOverlayJob = beginOverlayJob("terrain");
+        const taskBudget = overlayTaskBudgetForMode("terrain");
+        terrainOverlayRunCounterRef.current += 1;
+        const perfRunId =
+          latestCoverageRunTokenRef.current || `overlay:terrain:${terrainOverlayRunCounterRef.current}`;
+        const overlayBuildStartedAt = performance.now();
+        let lastReportedProgress = -2;
+
+        const onLongTask = (payload: {
+          phase: string;
+          signature: string;
+          durationMs: number;
+          processed: number;
+          total: number;
+        }) => {
+          if (!showOverlayDiagnostics) return;
+          const warnKey = `${payload.phase}|${payload.signature}`;
+          const warned = overlayLongTaskWarnedRef.current;
+          if (warned.has(warnKey)) return;
+          warned.add(warnKey);
+          if (warned.size > 80) warned.clear();
+          console.warn("[simulation-long-task]", {
+            scope: "overlay",
+            ...payload,
+          });
+        };
+
+        const onProgress = (payload: { percent: number }) => {
+          if (taskContext.isCancelled()) return;
+          if (payload.percent < 100 && payload.percent - lastReportedProgress < 2) return;
+          lastReportedProgress = payload.percent;
+          setOverlayPipelineProgress("terrain", payload.percent);
+        };
+
+        try {
+          const rasterPixels = await buildTerrainShadeOverlayPixelsAsync(
+            analysisBounds,
+            (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+            overlayDimensions,
+            overlayPointMask,
+            {
+              phase: "terrain-shade",
+              signature,
+              frameBudgetMs: taskBudget.frameBudgetMs,
+              longTaskMs: taskBudget.longTaskMs,
+              shouldCancel: taskContext.isCancelled,
+              onLongTask,
+              onProgress,
+            },
+          );
+          const overlayBuildCompletedAt = performance.now();
+          if (taskContext.isCancelled()) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "token-mismatch-after-build",
+              signature,
+              mode: "terrain",
+            });
+            return;
+          }
+          if (!rasterPixels) {
+            setSimulationTerrainOverlay(null);
+            return;
+          }
+          const raster = overlayPixelsToDataUrl(rasterPixels);
+          const overlayEncodeCompletedAt = performance.now();
+          if (taskContext.isCancelled()) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "token-mismatch-after-encode",
+              signature,
+              mode: "terrain",
+            });
+            return;
+          }
+          recordSimulationOverlayPerf({
+            runId: perfRunId,
+            mode: "terrain",
+            buildDurationMs: overlayBuildCompletedAt - overlayBuildStartedAt,
+            encodeDurationMs: overlayEncodeCompletedAt - overlayBuildCompletedAt,
+            width: rasterPixels.width,
+            height: rasterPixels.height,
+            pixelCount: rasterPixels.width * rasterPixels.height,
+            gridSize: effectiveGridSize,
+            effectiveRadiusKm: overlayRadiusKm,
+          });
+          const overlayValue = raster ? { url: raster.url, coordinates: raster.coordinates } : null;
+          if (overlayValue) {
+            terrainOverlayCacheRef.current.set(signature, overlayValue);
+          }
+          setOverlayPipelineProgress("terrain", 100);
+          setSimulationTerrainOverlay(overlayValue);
+        } catch (error) {
+          if (error instanceof OverlayTaskCancelledError) {
+            recordSimulationRunCancelled({
+              runId: perfRunId,
+              phase: "overlay",
+              reason: "overlay-task-cancelled-error",
+              signature,
+              mode: "terrain",
+            });
+            return;
+          }
+          console.error("Failed to render terrain overlay", error);
+        } finally {
+          endOverlayJob();
+        }
+      },
+    } satisfies LatestOnlyTask);
+    if (enqueueResult !== "started") {
+      logOverlaySchedulerEvent("terrain", enqueueResult, signature);
+      return;
+    }
+    logOverlaySchedulerEvent("terrain", "started", signature);
+  }, [
+    showTerrainOverlay,
+    hasSimulationTerrain,
+    analysisBounds,
+    srtmTiles,
+    terrainLoadEpoch,
+    overlayDimensions,
+    overlayPointMask,
+    selectedSiteDigest,
+    effectiveGridSize,
+    overlayRadiusKm,
+    showOverlayDiagnostics,
+    beginOverlayJob,
+    setOverlayPipelineProgress,
+    logOverlaySchedulerEvent,
+  ]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
   const isBackgroundBusy = isTerrainFetching || isTerrainRecommending;
@@ -1568,16 +1816,24 @@ export function MapView({
   const hasTerrainDownloadProgress =
     terrainProgressTilesLoaded > 0 || terrainProgressBytesLoaded > 0 || terrainProgressBytesEstimated > 0;
   const formatMb = (bytes: number) => `${(Math.max(0, bytes) / (1024 * 1024)).toFixed(1)} MB`;
+  const terrainPhasePrefix =
+    isTerrainFetching && terrainProgressPhaseTotal > 0
+      ? `Phase ${Math.max(1, terrainProgressPhaseIndex)}/${terrainProgressPhaseTotal}${
+          terrainProgressPhaseLabel ? `: ${terrainProgressPhaseLabel}` : ""
+        }`
+      : null;
   const terrainProgressLabel =
     isTerrainFetching && hasTerrainDownloadProgress && terrainProgressTilesTotal > 0
-      ? `Loading terrain ${terrainProgressPercent}% — ${formatMb(terrainProgressBytesLoaded)} of ~${formatMb(
+      ? `${terrainPhasePrefix ? `${terrainPhasePrefix} — ` : ""}Loading terrain ${terrainProgressPercent}% — ${formatMb(
+          terrainProgressBytesLoaded,
+        )} of ~${formatMb(
           terrainProgressBytesEstimated || terrainProgressBytesLoaded,
         )} (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles)`
       : null;
   const terrainPreparingLabel =
     isTerrainFetching && !hasTerrainDownloadProgress
       ? terrainProgressTilesTotal > 0
-        ? `Preparing terrain download... (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles queued)`
+        ? `${terrainPhasePrefix ? `${terrainPhasePrefix} — ` : ""}Preparing terrain download... (${terrainProgressTilesLoaded}/${terrainProgressTilesTotal} tiles queued)`
         : "Preparing terrain download..."
       : null;
   const backgroundBusyLabel = (isTerrainFetching
@@ -1585,6 +1841,53 @@ export function MapView({
     : isTerrainRecommending
       ? terrainFetchStatus || "Checking terrain dataset coverage..."
       : "") + keepWorkingSuffix;
+  const simulationBusyIndicator = useMemo(
+    () =>
+      resolveSimulationBusyIndicatorState({
+        isSimulationRecomputing,
+        simulationProgressMode,
+        simulationStepLabel,
+        simulationProgress,
+        overlayJobsInFlight,
+        overlayProgressMode,
+        overlayProgressPercent,
+        isBackgroundBusy,
+        backgroundBusyLabel,
+        isTerrainFetching,
+        hasTerrainDownloadProgress,
+        terrainProgressPercent,
+        terrainProgressTilesTotal,
+      }),
+    [
+      isSimulationRecomputing,
+      simulationProgressMode,
+      simulationStepLabel,
+      simulationProgress,
+      overlayJobsInFlight,
+      overlayProgressMode,
+      overlayProgressPercent,
+      isBackgroundBusy,
+      backgroundBusyLabel,
+      isTerrainFetching,
+      hasTerrainDownloadProgress,
+      terrainProgressPercent,
+      terrainProgressTilesTotal,
+    ],
+  );
+  const showLocalTerrainDiagnostics =
+    import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
+  useEffect(() => {
+    if (!showLocalTerrainDiagnostics) return;
+    const rawThresholdMb = localStorage.getItem("linksim-dev-terrain-memory-warn-mb");
+    const thresholdMb = Number(rawThresholdMb ?? "4096");
+    if (!Number.isFinite(thresholdMb) || thresholdMb <= 0) return;
+    const retainedMb = terrainMemoryDiagnostics.retainedBytesTotal / (1024 * 1024);
+    if (retainedMb < thresholdMb) return;
+    console.warn(
+      `[terrain-memory] retained decoded terrain is ${retainedMb.toFixed(1)} MB (threshold ${thresholdMb} MB)`,
+      terrainMemoryDiagnostics,
+    );
+  }, [showLocalTerrainDiagnostics, terrainMemoryDiagnostics]);
   const activeViewState = interactionViewState ?? {
     longitude: viewport.center.lon,
     latitude: viewport.center.lat,
@@ -1942,6 +2245,8 @@ export function MapView({
     switch (resolvedBasemap.provider) {
       case "kartverket":
         return 20;
+      case "npolar":
+        return 18;
       default:
         return 22;
     }
@@ -1952,12 +2257,36 @@ export function MapView({
     mapRef,
     providerMaxZoom,
     sites,
-    computeSiteFitBounds,
-    fitChromePadding: FIT_CHROME_PADDING,
+    computeSiteFitBounds: (fitSites) => computeSiteFitBounds(fitSites, overlayRadiusKm),
+    fitChromePadding,
     clamp,
     setInteractionViewState,
     updateMapViewport,
   });
+  useEffect(() => {
+    if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
+    const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
+    if (!bounds) return;
+    mapRef.current.fitBounds(bounds, {
+      padding: { ...fitChromePadding, bottom: fitBottomInset },
+      animate: true,
+      linear: false,
+      duration: 900,
+      maxZoom: 14,
+    });
+    setInteractionViewState(null);
+  }, [
+    fitControlActive,
+    fitSitesEpoch,
+    isMapLoaded,
+    sites,
+    overlayRadiusKm,
+    fitBottomInset,
+    fitChromePadding.left,
+    fitChromePadding.right,
+    fitChromePadding.top,
+    fitChromePadding.bottom,
+  ]);
   const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "passfail" | "relay">>(() => {
     if (selectionCount <= 0) return ["none", "heatmap", "contours"];
     if (selectionCount === 1) return ["none", "passfail", "heatmap", "contours"];
@@ -2030,7 +2359,7 @@ export function MapView({
   return (
     <div className={hasMinimumTopology ? "map-panel" : "map-panel map-panel-empty"}>
       <div className="map-controls map-controls-unified map-controls-icon-only">
-        <div className="map-controls-group map-controls-group-utility map-controls-utility-pill">
+        <div className="map-controls-group map-controls-group-utility map-controls-utility-pill ui-surface-pill">
           {showMultiSelectToggle ? (
             <button
               aria-label={isMultiSelectMode ? "Disable multi-select" : "Enable multi-select"}
@@ -2091,20 +2420,18 @@ export function MapView({
         </div>
       ) : null}
       {showInspector ? (
-        <aside className="map-inspector" aria-live="polite">
+        <aside className={`map-inspector ${inspectorPanelClassName ?? ""}`.trim()} aria-live="polite">
           {inspectorHeaderActions ? (
             <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
           ) : null}
-          {(isSimulationRecomputing || isBackgroundBusy) && backgroundBusyLabel ? (
+          {simulationBusyIndicator ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">
-                {isSimulationRecomputing ? `Recalculating simulation... ${simulationProgress}%` : backgroundBusyLabel}
+                {simulationBusyIndicator.label || "Working in background..."}
               </p>
               <div className="map-progress-track">
-                {isSimulationRecomputing ? (
-                  <div className="map-progress-fill" style={{ width: `${simulationProgress}%` }} />
-                ) : isTerrainFetching && hasTerrainDownloadProgress && terrainProgressTilesTotal > 0 ? (
-                  <div className="map-progress-fill" style={{ width: `${terrainProgressPercent}%` }} />
+                {simulationBusyIndicator.progressMode === "determinate" ? (
+                  <div className="map-progress-fill" style={{ width: `${simulationBusyIndicator.progressPercent ?? 0}%` }} />
                 ) : (
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 )}
@@ -2360,14 +2687,34 @@ export function MapView({
               </label>
               {coverageVizMode !== "none" && (
                 <label className="map-inspector-map-setting">
-                  <span>Coverage Detail</span>
+                  <span>Simulation Resolution</span>
                   <select
                     className="locale-select"
-                    onChange={(event) => setSelectedCoverageResolution(event.target.value as "normal" | "high")}
+                    onChange={(event) => setSelectedCoverageResolution(event.target.value as "24" | "42" | "84" | "168")}
                     value={selectedCoverageResolution}
                   >
-                    <option value="normal">Normal</option>
-                    <option value="high">High (slower)</option>
+                    {resolutionOptionLabels.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {coverageVizMode !== "none" && (
+                <label className="map-inspector-map-setting">
+                  <span>Simulation Radius</span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) =>
+                      setSelectedOverlayRadiusOption(event.target.value as SimulationOverlayRadiusOption)}
+                    value={normalizedOverlayRadiusOption}
+                  >
+                    {overlayRadiusOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option === "200" ? "200 km (Slow)" : `${option} km`}
+                      </option>
+                    ))}
                   </select>
                 </label>
               )}
@@ -2572,6 +2919,26 @@ export function MapView({
             <p>Site elevations: Simulation values</p>
             <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
             <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
+            {showLocalTerrainDiagnostics ? (
+              <>
+                <p>
+                  Terrain memory (retained decoded): {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [
+                  30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, 90m{" "}
+                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus90)}, manual{" "}
+                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
+                </p>
+                <p>
+                  Terrain tiles by dataset: 30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, 90m{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.copernicus90}, manual{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other{" "}
+                  {terrainMemoryDiagnostics.tileCountsByDataset.other}
+                </p>
+                <p>
+                  Terrain decode overhead (in-flight estimate):{" "}
+                  {formatMb(terrainProgressTransientDecodeBytesEstimated)}
+                </p>
+              </>
+            ) : null}
             <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
             {largeAreaOptimizationActive ? (
               <p>
@@ -2594,7 +2961,7 @@ export function MapView({
         latitude={activeViewState.latitude}
         zoom={activeViewState.zoom}
         maxZoom={providerMaxZoom}
-        renderWorldCopies={resolvedBasemap.provider !== "kartverket"}
+        renderWorldCopies={resolvedBasemap.provider !== "kartverket" && resolvedBasemap.provider !== "npolar"}
         initialViewState={{
           longitude: activeViewState.longitude,
           latitude: activeViewState.latitude,
@@ -2603,7 +2970,7 @@ export function MapView({
         mapStyle={useFallbackMapStyle ? fallbackMapStyle : resolvedBasemap.style}
         onLoad={() => setIsMapLoaded(true)}
         onError={() => {
-          if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket") {
+          if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket" && resolvedBasemap.provider !== "npolar") {
             setUseFallbackMapStyle(true);
             setBasemapProvider("carto");
             setInteractionViewState({
@@ -2653,6 +3020,9 @@ export function MapView({
 
         <Source data={profileFeatures} id="profile-path" type="geojson">
           <Layer {...profileLineLayer(profileColor)} />
+        </Source>
+        <Source data={panoramaRayFeatures} id="panorama-ray-path" type="geojson">
+          <Layer {...panoramaRayLayer(profileColor)} />
         </Source>
 
         {coverageOverlay ? (
@@ -2791,6 +3161,15 @@ export function MapView({
             longitude={cursorPoint.lon}
           >
             <div className="profile-map-cursor" />
+          </Marker>
+        ) : null}
+        {selectionCount === 1 && activePanoramaFocus && singleSelectedSite && activePanoramaFocus.siteId === singleSelectedSite.id ? (
+          <Marker
+            anchor="center"
+            latitude={activePanoramaFocus.endpoint.lat}
+            longitude={activePanoramaFocus.endpoint.lon}
+          >
+            <div className="profile-map-cursor panorama-map-cursor" />
           </Marker>
         ) : null}
       </Map>

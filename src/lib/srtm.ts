@@ -1,5 +1,6 @@
 import type { SrtmTile } from "../types/radio";
 import { unzipSync } from "fflate";
+import { choosePreferredTerrainTile } from "./terrainTileRank";
 
 const HGT_FILENAME = /^([NS])(\d{2})([EW])(\d{3})\.hgt$/i;
 
@@ -110,12 +111,78 @@ const sampleFromTile = (tile: SrtmTile, lat: number, lon: number): number => {
   return tile.elevations[row * width + col];
 };
 
+const TILE_LOOKUP_CACHE = new WeakMap<ReadonlyArray<SrtmTile>, Map<string, SrtmTile>>();
+
+const tileKeyForStart = (latStart: number, lonStart: number): string => {
+  const ns = latStart >= 0 ? "N" : "S";
+  const ew = lonStart >= 0 ? "E" : "W";
+  return `${ns}${String(Math.floor(Math.abs(latStart))).padStart(2, "0")}${ew}${String(
+    Math.floor(Math.abs(lonStart)),
+  ).padStart(3, "0")}`;
+};
+
+const tileLookupFor = (tiles: ReadonlyArray<SrtmTile>): Map<string, SrtmTile> => {
+  const cached = TILE_LOOKUP_CACHE.get(tiles);
+  if (cached) return cached;
+
+  const lookup = new Map<string, SrtmTile>();
+  for (const tile of tiles) {
+    const existing = lookup.get(tile.key);
+    if (!existing) {
+      lookup.set(tile.key, tile);
+      continue;
+    }
+    lookup.set(tile.key, choosePreferredTerrainTile(existing, tile));
+  }
+
+  TILE_LOOKUP_CACHE.set(tiles, lookup);
+  return lookup;
+};
+
+const NEAR_INTEGER_EPSILON = 1e-9;
+
+const candidateTileKeysForCoordinate = (lat: number, lon: number): string[] => {
+  const latFloor = Math.floor(lat);
+  const lonFloor = Math.floor(lon);
+  const latStarts = [latFloor];
+  const lonStarts = [lonFloor];
+
+  if (Math.abs(lat - latFloor) <= NEAR_INTEGER_EPSILON) latStarts.push(latFloor - 1);
+  if (Math.abs(lon - lonFloor) <= NEAR_INTEGER_EPSILON) lonStarts.push(lonFloor - 1);
+
+  const keys = new Set<string>();
+  for (const latStart of latStarts) {
+    for (const lonStart of lonStarts) {
+      keys.add(tileKeyForStart(latStart, lonStart));
+    }
+  }
+  return Array.from(keys);
+};
+
+const pickTileForCoordinate = (
+  lookup: Map<string, SrtmTile>,
+  lat: number,
+  lon: number,
+): SrtmTile | null => {
+  let chosen: SrtmTile | null = null;
+
+  for (const key of candidateTileKeysForCoordinate(lat, lon)) {
+    const candidate = lookup.get(key);
+    if (!candidate) continue;
+    if (!inTile(candidate, lat, lon)) continue;
+    chosen = chosen ? choosePreferredTerrainTile(chosen, candidate) : candidate;
+  }
+
+  return chosen;
+};
+
 export const sampleSrtmElevation = (
   tiles: ReadonlyArray<SrtmTile>,
   lat: number,
   lon: number,
 ): number | null => {
-  const tile = tiles.find((candidate) => inTile(candidate, lat, lon));
+  const lookup = tileLookupFor(tiles);
+  const tile = pickTileForCoordinate(lookup, lat, lon);
   if (!tile) return null;
 
   const raw = sampleFromTile(tile, lat, lon);

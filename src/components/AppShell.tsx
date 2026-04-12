@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, Maximize2, PanelBottom, PanelBottomClose, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
@@ -27,6 +27,7 @@ import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
+import { PanoramaChart } from "./PanoramaChart";
 import { ActionButton } from "./ActionButton";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { MapView } from "./MapView";
@@ -54,6 +55,8 @@ const BLANK_SIM_NOTICE_ID = "blank-simulation-guidance";
 // - profile => BottomPanel shell (legacy term retained in code for stability)
 type MobileWorkspacePanel = "navigator" | "inspector" | "profile";
 type MobileBottomPanelMode = "hidden" | "normal" | "full";
+type PanelMotionPhase = "idle" | "entering" | "exiting";
+const PANEL_MOTION_MS = 360;
 type AppNotice = {
   id: string;
   message: string;
@@ -156,6 +159,7 @@ export function AppShell() {
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const sites = useAppStore((state) => state.sites);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
+  const isSingleSiteSelection = selectedSiteIds.length === 1;
   const loadDemoScenario = useAppStore((state) => state.loadDemoScenario);
   const initializeCloudSync = useAppStore((state) => state.initializeCloudSync);
   const performCloudSyncPush = useAppStore((state) => state.performCloudSyncPush);
@@ -175,6 +179,9 @@ export function AppShell() {
   const [isNavigatorHidden, setIsNavigatorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.navigatorHidden, false));
   const [isInspectorHidden, setIsInspectorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.inspectorHidden, false));
   const [isProfileHidden, setIsProfileHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.profileHidden, false));
+  const [navigatorMotionPhase, setNavigatorMotionPhase] = useState<PanelMotionPhase>("idle");
+  const [inspectorMotionPhase, setInspectorMotionPhase] = useState<PanelMotionPhase>("idle");
+  const [profileMotionPhase, setProfileMotionPhase] = useState<PanelMotionPhase>("idle");
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   // Derived early so effects below can reference them without temporal dead zone.
@@ -198,7 +205,11 @@ export function AppShell() {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileActivePanel, setMobileActivePanel] = useState<MobileWorkspacePanel>("navigator");
   const [mobileBottomPanelMode, setMobileBottomPanelMode] = useState<MobileBottomPanelMode>("normal");
+  const [mobileBottomMotionPhase, setMobileBottomMotionPhase] = useState<PanelMotionPhase>("idle");
   const [mobileControlsOccupied, setMobileControlsOccupied] = useState(0);
+  const [mobileBottomOccupied, setMobileBottomOccupied] = useState(0);
+  const [measuredSidebarWidth, setMeasuredSidebarWidth] = useState(0);
+  const [measuredInspectorWidth, setMeasuredInspectorWidth] = useState(0);
   const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const [showLibraryFromRequest, setShowLibraryFromRequest] = useState(false);
@@ -208,6 +219,16 @@ export function AppShell() {
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
+  const navigatorMotionTimerRef = useRef<number | null>(null);
+  const inspectorMotionTimerRef = useRef<number | null>(null);
+  const profileMotionTimerRef = useRef<number | null>(null);
+  const mobileBottomMotionTimerRef = useRef<number | null>(null);
+  const navigatorWasHiddenBeforeProfileExpandRef = useRef(false);
+  const inspectorWasHiddenBeforeProfileExpandRef = useRef(false);
+  const mapExpandedNavigatorWasHiddenRef = useRef(false);
+  const mapExpandedInspectorWasHiddenRef = useRef(false);
+  const mapExpandedProfileWasHiddenRef = useRef(false);
+  const mapExpandToggleTimerRef = useRef<number | null>(null);
   const hadAuthenticatedSessionRef = useRef(false);
   const {
     showWelcomeModal,
@@ -878,6 +899,71 @@ export function AppShell() {
   }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel, mobileBottomPanelMode]);
 
   useEffect(() => {
+    const shell = appShellRef.current;
+    if (!shell) return;
+
+    let frameId = 0;
+    const measureVisibleRect = (selector: string) => {
+      const element = shell.querySelector<HTMLElement>(selector);
+      if (!element) return null;
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") return null;
+      return element.getBoundingClientRect();
+    };
+
+    const recompute = () => {
+      const sidebarRect = measureVisibleRect(".sidebar-panel");
+      const inspectorRect = measureVisibleRect(".map-inspector");
+      const tabsRect = measureVisibleRect(".mobile-workspace-tabs");
+      const mobilePanelRect = measureVisibleRect(".mobile-workspace-panel");
+
+      setMeasuredSidebarWidth((current) => {
+        const next = Math.round(sidebarRect?.width ?? 0);
+        return current === next ? current : next;
+      });
+      setMeasuredInspectorWidth((current) => {
+        const next = Math.round(inspectorRect?.width ?? 0);
+        return current === next ? current : next;
+      });
+
+      if (!isMobileViewport) {
+        setMobileBottomOccupied((current) => (current === 0 ? current : 0));
+        return;
+      }
+
+      const bottomCoverages = [tabsRect, mobilePanelRect, inspectorRect]
+        .filter((rect): rect is DOMRect => Boolean(rect))
+        .map((rect) => Math.max(0, Math.round(window.innerHeight - rect.top)));
+      const nextBottomOccupied = bottomCoverages.length ? Math.max(...bottomCoverages) : 0;
+      setMobileBottomOccupied((current) => (current === nextBottomOccupied ? current : nextBottomOccupied));
+    };
+
+    const schedule = () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(recompute);
+    };
+
+    schedule();
+    const followUpTimerA = window.setTimeout(schedule, 120);
+    const followUpTimerB = window.setTimeout(schedule, 280);
+    const observer = new ResizeObserver(schedule);
+    observer.observe(shell);
+    shell.querySelectorAll<HTMLElement>(".sidebar-panel, .map-inspector, .mobile-workspace-tabs, .mobile-workspace-panel").forEach((element) => {
+      observer.observe(element);
+    });
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
+      window.clearTimeout(followUpTimerA);
+      window.clearTimeout(followUpTimerB);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
+    };
+  }, [isMobileViewport, isMapExpanded, isProfileExpanded, mobileActivePanel, mobileBottomPanelMode]);
+
+  useEffect(() => {
     if (isInitializing) {
       cloudInitSeenRef.current = true;
       return;
@@ -1050,39 +1136,12 @@ export function AppShell() {
           // Ignore and use generic message.
         }
       }
+      state = useAppStore.getState();
+      exists = resolvedSimulationId
+        ? state.simulationPresets.some((preset) => preset.id === resolvedSimulationId)
+        : Boolean(resolveBySlug());
 
       if (!exists && accessState !== "readonly") {
-        try {
-          const status = await fetchDeepLinkStatus({
-            simulationId: resolvedSimulationId || undefined,
-            simulationSlug: payload.simulationSlug,
-          });
-          if (status.status === "forbidden") {
-            markDeepLinkFailed();
-            publishAppNotice({
-              id: "shared-simulation-forbidden",
-              message: "You do not have access to this shared simulation.",
-              tone: "warning",
-              persistent: true,
-            });
-            return;
-          }
-          if (status.status === "missing") {
-            markDeepLinkFailed();
-            publishAppNotice({
-              id: "shared-simulation-missing",
-              message: "This shared simulation no longer exists.",
-              tone: "warning",
-              persistent: true,
-            });
-            return;
-          }
-          if (status.simulationId) {
-            resolvedSimulationId = status.simulationId;
-          }
-        } catch {
-          // Ignore and use generic message.
-        }
         publishAppNotice({
           id: "shared-simulation-unavailable",
           message: "This shared simulation is unavailable.",
@@ -1386,9 +1445,9 @@ export function AppShell() {
   const shellStyle = useMemo<CSSProperties | undefined>(() => {
     const style: CSSProperties = {
       ["--sidebar-overlay-width" as string]:
-        isNavigatorHidden && !isMapExpanded && !isProfileExpanded ? "0px" : "clamp(280px, 20vw, 400px)",
+        (isNavigatorHidden || navigatorMotionPhase === "exiting") && !isMapExpanded && !isProfileExpanded ? "0px" : "clamp(280px, 20vw, 400px)",
       ["--inspector-overlay-width" as string]:
-        isInspectorHidden || isMapExpanded || isProfileExpanded ? "0px" : "clamp(280px, 20vw, 400px)",
+        isInspectorHidden || inspectorMotionPhase === "exiting" || isMapExpanded || isProfileExpanded ? "0px" : "clamp(280px, 20vw, 400px)",
     };
     if (!isMobileViewport) return style;
     return {
@@ -1396,13 +1455,39 @@ export function AppShell() {
       ["--mobile-controls-occupied" as string]: `${mobileControlsOccupied}px`,
     };
   }, [
+    inspectorMotionPhase,
     isInspectorHidden,
     isMapExpanded,
     isMobileViewport,
+    navigatorMotionPhase,
     isNavigatorHidden,
     isProfileExpanded,
     mobileControlsOccupied,
   ]);
+  const mapFitChromePadding = useMemo(
+    () => ({
+      top: 30,
+      left: !isMobileViewport && !isMapExpanded ? Math.max(20, measuredSidebarWidth + 20) : 20,
+      right:
+        !isMobileViewport && !isMapExpanded && !isProfileExpanded && !isInspectorHidden
+          ? Math.max(70, measuredInspectorWidth + 20)
+          : 70,
+      bottom: 30,
+    }),
+    [
+      isInspectorHidden,
+      isMapExpanded,
+      isMobileViewport,
+      isProfileExpanded,
+      measuredInspectorWidth,
+      measuredSidebarWidth,
+    ],
+  );
+  const mapFitBottomInset = useMemo(() => {
+    if (isMobileViewport) return Math.max(30, mobileBottomOccupied + 18);
+    if (isMapExpanded || isProfileExpanded || isProfileHidden) return 30;
+    return Math.max(220, typeof window !== "undefined" ? window.innerHeight * 0.32 : 220) + 18 + 18;
+  }, [isMapExpanded, isMobileViewport, isProfileExpanded, isProfileHidden, mobileBottomOccupied]);
   const isAnonymousBootstrapShell = accessState === "checking";
   const isReadOnlyShell = isAnonymousGuestReadonly || isAnonymousBootstrapShell;
   const emitProfileLayoutPulse = useCallback(() => {
@@ -1413,16 +1498,211 @@ export function AppShell() {
     window.setTimeout(fire, 120);
   }, []);
 
+  const clearMotionTimer = useCallback((timerRef: { current: number | null }) => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearMotionTimer(navigatorMotionTimerRef);
+      clearMotionTimer(inspectorMotionTimerRef);
+      clearMotionTimer(profileMotionTimerRef);
+      clearMotionTimer(mobileBottomMotionTimerRef);
+      clearMotionTimer(mapExpandToggleTimerRef);
+    };
+  }, [clearMotionTimer]);
+
+  const showNavigatorPanel = useCallback(() => {
+    clearMotionTimer(navigatorMotionTimerRef);
+    setIsNavigatorHidden(false);
+    setNavigatorMotionPhase("entering");
+    navigatorMotionTimerRef.current = window.setTimeout(() => {
+      setNavigatorMotionPhase("idle");
+      navigatorMotionTimerRef.current = null;
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const hideNavigatorPanel = useCallback(() => {
+    clearMotionTimer(navigatorMotionTimerRef);
+    setNavigatorMotionPhase("exiting");
+    navigatorMotionTimerRef.current = window.setTimeout(() => {
+      setIsNavigatorHidden(true);
+      setNavigatorMotionPhase("idle");
+      navigatorMotionTimerRef.current = null;
+      emitProfileLayoutPulse();
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const showInspectorPanel = useCallback(() => {
+    clearMotionTimer(inspectorMotionTimerRef);
+    setIsInspectorHidden(false);
+    setInspectorMotionPhase("entering");
+    inspectorMotionTimerRef.current = window.setTimeout(() => {
+      setInspectorMotionPhase("idle");
+      inspectorMotionTimerRef.current = null;
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const hideInspectorPanel = useCallback(() => {
+    clearMotionTimer(inspectorMotionTimerRef);
+    setInspectorMotionPhase("exiting");
+    inspectorMotionTimerRef.current = window.setTimeout(() => {
+      setIsInspectorHidden(true);
+      setInspectorMotionPhase("idle");
+      inspectorMotionTimerRef.current = null;
+      emitProfileLayoutPulse();
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const showProfilePanel = useCallback(() => {
+    clearMotionTimer(profileMotionTimerRef);
+    setIsProfileHidden(false);
+    setProfileMotionPhase("entering");
+    profileMotionTimerRef.current = window.setTimeout(() => {
+      setProfileMotionPhase("idle");
+      profileMotionTimerRef.current = null;
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const hideProfilePanel = useCallback(() => {
+    clearMotionTimer(profileMotionTimerRef);
+    setProfileMotionPhase("exiting");
+    profileMotionTimerRef.current = window.setTimeout(() => {
+      setIsProfileHidden(true);
+      setProfileMotionPhase("idle");
+      profileMotionTimerRef.current = null;
+      emitProfileLayoutPulse();
+    }, PANEL_MOTION_MS);
+    emitProfileLayoutPulse();
+  }, [clearMotionTimer, emitProfileLayoutPulse]);
+
+  const shouldRenderNavigatorPanel = !isNavigatorHidden || navigatorMotionPhase === "exiting";
+  const shouldRenderInspectorPanel = !isInspectorHidden || inspectorMotionPhase === "exiting";
+  const shouldRenderProfilePanel = !isProfileHidden || profileMotionPhase === "exiting";
+
+  const navigatorPanelMotionClass =
+    navigatorMotionPhase === "entering" ? "panel-motion-enter-left" : navigatorMotionPhase === "exiting" ? "panel-motion-exit-left" : "";
+  const inspectorPanelMotionClass =
+    inspectorMotionPhase === "entering" ? "panel-motion-enter-right" : inspectorMotionPhase === "exiting" ? "panel-motion-exit-right" : "";
+  const profilePanelMotionClass =
+    profileMotionPhase === "entering" ? "panel-motion-enter-bottom" : profileMotionPhase === "exiting" ? "panel-motion-exit-bottom" : "";
+
   const toggleProfileExpanded = () => {
     setIsMapExpanded(false);
     setMobileActivePanel("profile");
-    setIsProfileExpanded((prev) => !prev);
+    setIsProfileExpanded((prev) => {
+      const next = !prev;
+      if (!isMobileViewport) {
+        if (next) {
+          navigatorWasHiddenBeforeProfileExpandRef.current = isNavigatorHidden;
+          inspectorWasHiddenBeforeProfileExpandRef.current = isInspectorHidden;
+          if (!isNavigatorHidden) hideNavigatorPanel();
+          if (!isInspectorHidden) hideInspectorPanel();
+        } else {
+          if (!navigatorWasHiddenBeforeProfileExpandRef.current) showNavigatorPanel();
+          if (!inspectorWasHiddenBeforeProfileExpandRef.current) showInspectorPanel();
+          navigatorWasHiddenBeforeProfileExpandRef.current = false;
+          inspectorWasHiddenBeforeProfileExpandRef.current = false;
+        }
+      }
+      return next;
+    });
     emitProfileLayoutPulse();
   };
 
   const setMobileBottomPanelVisibility = useCallback((nextMode: MobileBottomPanelMode) => {
+    clearMotionTimer(mobileBottomMotionTimerRef);
+    if (nextMode === "hidden") {
+      setMobileBottomMotionPhase("exiting");
+      mobileBottomMotionTimerRef.current = window.setTimeout(() => {
+        setMobileBottomPanelMode("hidden");
+        setMobileBottomMotionPhase("idle");
+        mobileBottomMotionTimerRef.current = null;
+      }, PANEL_MOTION_MS);
+      return;
+    }
     setMobileBottomPanelMode(nextMode);
-  }, []);
+    if (mobileBottomPanelMode === "hidden") {
+      setMobileBottomMotionPhase("entering");
+      mobileBottomMotionTimerRef.current = window.setTimeout(() => {
+        setMobileBottomMotionPhase("idle");
+        mobileBottomMotionTimerRef.current = null;
+      }, PANEL_MOTION_MS);
+      return;
+    }
+    setMobileBottomMotionPhase("idle");
+  }, [clearMotionTimer, mobileBottomPanelMode]);
+
+  const shouldRenderMobileBottomPanel = mobileBottomPanelMode !== "hidden" || mobileBottomMotionPhase === "exiting";
+  const mobileBottomPanelMotionClass =
+    mobileBottomMotionPhase === "entering"
+      ? "mobile-panel-motion-enter-bottom"
+      : mobileBottomMotionPhase === "exiting"
+        ? "mobile-panel-motion-exit-bottom"
+        : "";
+
+  const toggleMapExpanded = useCallback(() => {
+    if (isMobileViewport) {
+      setIsProfileExpanded(false);
+      if (mobileBottomPanelMode === "full") {
+        setMobileBottomPanelVisibility("normal");
+      }
+      setIsMapExpanded((prev) => !prev);
+      emitProfileLayoutPulse();
+      return;
+    }
+
+    clearMotionTimer(mapExpandToggleTimerRef);
+
+    if (!isMapExpanded) {
+      mapExpandedNavigatorWasHiddenRef.current = isNavigatorHidden;
+      mapExpandedInspectorWasHiddenRef.current = isInspectorHidden;
+      mapExpandedProfileWasHiddenRef.current = isProfileHidden;
+      setIsProfileExpanded(false);
+      if (!isNavigatorHidden) hideNavigatorPanel();
+      if (!isInspectorHidden) hideInspectorPanel();
+      if (!isProfileHidden) hideProfilePanel();
+      mapExpandToggleTimerRef.current = window.setTimeout(() => {
+        setIsMapExpanded(true);
+        mapExpandToggleTimerRef.current = null;
+        emitProfileLayoutPulse();
+      }, PANEL_MOTION_MS);
+      return;
+    }
+
+    setIsMapExpanded(false);
+    if (!mapExpandedNavigatorWasHiddenRef.current) showNavigatorPanel();
+    if (!mapExpandedInspectorWasHiddenRef.current) showInspectorPanel();
+    if (!mapExpandedProfileWasHiddenRef.current) showProfilePanel();
+    mapExpandedNavigatorWasHiddenRef.current = false;
+    mapExpandedInspectorWasHiddenRef.current = false;
+    mapExpandedProfileWasHiddenRef.current = false;
+    emitProfileLayoutPulse();
+  }, [
+    clearMotionTimer,
+    emitProfileLayoutPulse,
+    hideInspectorPanel,
+    hideNavigatorPanel,
+    hideProfilePanel,
+    isInspectorHidden,
+    isMapExpanded,
+    isMobileViewport,
+    isNavigatorHidden,
+    isProfileHidden,
+    mobileBottomPanelMode,
+    setMobileBottomPanelVisibility,
+    showInspectorPanel,
+    showNavigatorPanel,
+    showProfilePanel,
+  ]);
 
   const closeShareModal = useCallback(() => {
     setShowShareModal(false);
@@ -1478,7 +1758,7 @@ export function AppShell() {
             title="Normal size"
             type="button"
           >
-            <PanelBottom aria-hidden="true" strokeWidth={1.8} />
+            <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
           </button>
         ) : (
           <>
@@ -1498,7 +1778,7 @@ export function AppShell() {
               title="Full size"
               type="button"
             >
-              <Maximize2 aria-hidden="true" strokeWidth={1.8} />
+              <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />
             </button>
           </>
         )}
@@ -1638,47 +1918,38 @@ export function AppShell() {
             <button
               aria-label="Show Navigator panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-navigator"
-              onClick={() => {
-                setIsNavigatorHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={showNavigatorPanel}
               title="Show Navigator"
               type="button"
             >
-              <PanelLeft aria-hidden="true" strokeWidth={1.8} />
+<PanelLeftOpen aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
           {isInspectorHidden ? (
             <button
               aria-label="Show Inspector panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-inspector"
-              onClick={() => {
-                setIsInspectorHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={showInspectorPanel}
               title="Show Inspector"
               type="button"
             >
-              <PanelRight aria-hidden="true" strokeWidth={1.8} />
+<PanelRightOpen aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
           {isProfileHidden ? (
             <button
               aria-label="Show Profile panel"
               className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-profile"
-              onClick={() => {
-                setIsProfileHidden(false);
-                emitProfileLayoutPulse();
-              }}
+              onClick={showProfilePanel}
               title="Show Profile"
               type="button"
             >
-              <PanelBottom aria-hidden="true" strokeWidth={1.8} />
+<PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />
             </button>
           ) : null}
         </div>
       ) : null}
-      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && !isNavigatorHidden && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
+      {!isMobileViewport && (!isMapExpanded || navigatorMotionPhase === "exiting") && shouldRenderNavigatorPanel && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
           <Sidebar
             authBootstrapPending={accessState === "checking"}
             hideLibraryBrowsing={isReadOnlyShell}
@@ -1692,16 +1963,20 @@ export function AppShell() {
                   aria-label={isNavigatorHidden ? "Show Navigator panel" : "Hide Navigator panel"}
                   className="user-icon-button"
                   onClick={() => {
-                    setIsNavigatorHidden((prev) => !prev);
-                    emitProfileLayoutPulse();
+                    if (isNavigatorHidden) {
+                      showNavigatorPanel();
+                      return;
+                    }
+                    hideNavigatorPanel();
                   }}
                   title={isNavigatorHidden ? "Show Navigator" : "Hide Navigator"}
                   type="button"
                 >
-                  {isNavigatorHidden ? <PanelLeft aria-hidden="true" strokeWidth={1.8} /> : <PanelLeftClose aria-hidden="true" strokeWidth={1.8} />}
+                  {isNavigatorHidden ? <PanelLeftOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelLeftClose aria-hidden="true" strokeWidth={1.8} />}
                 </button>
               )
             }
+            panelClassName={navigatorPanelMotionClass}
             simulationDisplayLabel={undefined}
         />
       ) : null}
@@ -1745,10 +2020,11 @@ export function AppShell() {
         <MapView
           isMapExpanded={isMapExpanded}
           showInspector={
-            !isMapExpanded &&
-            !isProfileExpanded &&
-            !isInspectorHidden &&
-            (!isMobileViewport || (mobileActivePanel === "inspector" && mobileBottomPanelMode !== "hidden"))
+            (!isMapExpanded || inspectorMotionPhase === "exiting") &&
+            shouldRenderInspectorPanel &&
+            (isMobileViewport
+              ? mobileActivePanel === "inspector" && shouldRenderMobileBottomPanel
+              : true)
           }
           showMultiSelectToggle={isMobileViewport}
           canPersist={canPersistWorkspace}
@@ -1759,13 +2035,16 @@ export function AppShell() {
                   aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
                   className="map-control-btn map-control-btn-icon"
                   onClick={() => {
-                    setIsInspectorHidden((prev) => !prev);
-                    emitProfileLayoutPulse();
+                    if (isInspectorHidden) {
+                      showInspectorPanel();
+                      return;
+                    }
+                    hideInspectorPanel();
                   }}
                   title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
                   type="button"
                 >
-                  {isInspectorHidden ? <PanelRight aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
+                  {isInspectorHidden ? <PanelRightOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
                 </button>
               ) : null}
               <div className="map-inspector-header-actions-right">
@@ -1785,19 +2064,12 @@ export function AppShell() {
             </div>
           }
           readOnly={!canPersistWorkspace}
-          onToggleMapExpanded={() => {
-            setIsProfileExpanded(false);
-            if (isMobileViewport && mobileBottomPanelMode === "full") {
-              setMobileBottomPanelVisibility("normal");
-            }
-            setIsMapExpanded((prev) => !prev);
-            emitProfileLayoutPulse();
-          }}
-          fitBottomInset={
-            isMobileViewport || isMapExpanded || isProfileExpanded || isProfileHidden
-              ? 30
-              : Math.max(220, typeof window !== "undefined" ? window.innerHeight * 0.32 : 220) + 18 + 18
-          }
+          inspectorPanelClassName={`${inspectorPanelMotionClass} ${
+            isMobileViewport && mobileActivePanel === "inspector" ? mobileBottomPanelMotionClass : ""
+          }`.trim()}
+          onToggleMapExpanded={toggleMapExpanded}
+          fitBottomInset={mapFitBottomInset}
+          fitChromePadding={mapFitChromePadding}
         />
         {isMobileViewport ? (
           <MobileWorkspaceTabs
@@ -1814,50 +2086,89 @@ export function AppShell() {
             setMobileBottomPanelVisibility={setMobileBottomPanelVisibility}
           />
         ) : null}
-        {!isMobileViewport && !isMapExpanded && !isProfileHidden ? (
-          <LinkProfileChart
+        {!isMobileViewport && (!isMapExpanded || profileMotionPhase === "exiting") && shouldRenderProfilePanel ? (
+          isSingleSiteSelection ? (
+          <PanoramaChart
             isExpanded={isProfileExpanded}
             onToggleExpanded={toggleProfileExpanded}
             rowControls={
+              isProfileExpanded ? null :
               <button
                 aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
                 className="chart-endpoint-swap chart-endpoint-icon"
                 onClick={() => {
-                  setIsProfileHidden((prev) => {
-                    const next = !prev;
-                    if (next) setIsProfileExpanded(false);
-                    return next;
-                  });
-                  emitProfileLayoutPulse();
+                  if (isProfileHidden) {
+                    showProfilePanel();
+                    return;
+                  }
+                  setIsProfileExpanded(false);
+                  hideProfilePanel();
                 }}
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
                 type="button"
               >
-                {isProfileHidden ? <PanelBottom aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
+                {isProfileHidden ? <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
               </button>
             }
+            panelClassName={profilePanelMotionClass}
             showExpandToggle
           />
+          ) : (
+          <LinkProfileChart
+            isExpanded={isProfileExpanded}
+            onToggleExpanded={toggleProfileExpanded}
+            rowControls={
+              isProfileExpanded ? null :
+              <button
+                aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
+                className="chart-endpoint-swap chart-endpoint-icon"
+                onClick={() => {
+                  if (isProfileHidden) {
+                    showProfilePanel();
+                    return;
+                  }
+                  setIsProfileExpanded(false);
+                  hideProfilePanel();
+                }}
+                title={isProfileHidden ? "Show Profile" : "Hide Profile"}
+                type="button"
+              >
+                {isProfileHidden ? <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
+              </button>
+            }
+            panelClassName={profilePanelMotionClass}
+            showExpandToggle
+          />
+          )
         ) : null}
-        {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && mobileBottomPanelMode !== "hidden" ? (
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "profile" && shouldRenderMobileBottomPanel ? (
           <div
             aria-labelledby={mobileProfileTabId}
-            className="mobile-workspace-panel mobile-workspace-panel-shell"
+            className={`mobile-workspace-panel mobile-workspace-panel-shell ${mobileBottomPanelMotionClass}`.trim()}
             id={mobileProfilePanelId}
             role="tabpanel"
           >
-            <LinkProfileChart
-              isExpanded={mobileBottomPanelMode === "full"}
-              onToggleExpanded={toggleProfileExpanded}
-              rowControls={panelSizeControls("Profile", "chart")}
-              showExpandToggle={false}
-            />
+            {isSingleSiteSelection ? (
+              <PanoramaChart
+                isExpanded={mobileBottomPanelMode === "full"}
+                onToggleExpanded={toggleProfileExpanded}
+                rowControls={panelSizeControls("Profile", "chart")}
+                showExpandToggle={false}
+              />
+            ) : (
+              <LinkProfileChart
+                isExpanded={mobileBottomPanelMode === "full"}
+                onToggleExpanded={toggleProfileExpanded}
+                rowControls={panelSizeControls("Profile", "chart")}
+                showExpandToggle={false}
+              />
+            )}
           </div>
         ) : null}
-        {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && mobileBottomPanelMode !== "hidden" ? (
+        {isMobileViewport && !isMapExpanded && mobileActivePanel === "navigator" && shouldRenderMobileBottomPanel ? (
           <div
             aria-labelledby={mobileNavigatorTabId}
-            className="mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator"
+            className={`mobile-workspace-panel mobile-workspace-panel-shell mobile-workspace-panel-navigator ${mobileBottomPanelMotionClass}`.trim()}
             id={mobileNavigatorPanelId}
             role="tabpanel"
           >
@@ -1927,7 +2238,7 @@ export function AppShell() {
         </section>
       ) : null}
       {isMapExpanded || isProfileExpanded || (!isMobileViewport && (isNavigatorHidden || isInspectorHidden || isProfileHidden)) ? (
-        <div className="floating-attribution-pill">
+        <div className="floating-attribution-pill ui-surface-pill">
           <span>&copy;</span>
           <a href={resolvedBasemap.attributionUrl} rel="noreferrer" target="_blank">
             {resolvedBasemap.attribution.replace(/©/g, "").trim()}

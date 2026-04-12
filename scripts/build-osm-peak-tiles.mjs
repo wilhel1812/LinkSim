@@ -1,0 +1,170 @@
+#!/usr/bin/env node
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import readline from "node:readline";
+import { spawn } from "node:child_process";
+
+const args = process.argv.slice(2);
+const getArg = (name, fallback = undefined) => {
+  const index = args.indexOf(name);
+  if (index < 0) return fallback;
+  return args[index + 1] ?? fallback;
+};
+
+const input = getArg("--input");
+const ndjsonInput = getArg("--ndjson");
+const outDir = getArg("--out", path.join("public", "peak-tiles", "v1"));
+const tileDeg = Number(getArg("--tile-deg", "1"));
+const minNorway = Number(getArg("--norway-min", "1000"));
+const generatedVersion = getArg("--version", `v1-${Date.now()}`);
+
+if (!input && !ndjsonInput) {
+  console.error("Usage: node scripts/build-osm-peak-tiles.mjs --input <planet-or-region.osm.pbf> [--out public/peak-tiles/v1]");
+  console.error("       node scripts/build-osm-peak-tiles.mjs --ndjson <peaks.ndjson> [--out public/peak-tiles/v1]");
+  process.exit(1);
+}
+
+const root = process.cwd();
+const extractScript = path.join(root, "scripts", "extract_osm_peaks.py");
+const ndjsonPath = path.join(os.tmpdir(), `osm-peaks-${Date.now()}.ndjson`);
+
+const run = (cmd, argv) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(cmd, argv, { stdio: "inherit" });
+    child.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${cmd} exited with code ${code}`));
+    });
+  });
+
+const tileKeyPart = (prefix, index) => `${prefix}_${index < 0 ? "m" : "p"}${Math.abs(index)}`;
+const tileKeyFor = (lat, lon) => {
+  const latIndex = Math.floor(lat / tileDeg);
+  const lonIndex = Math.floor(lon / tileDeg);
+  return `${tileKeyPart("la", latIndex)}_${tileKeyPart("lo", lonIndex)}`;
+};
+
+const main = async () => {
+  console.log(`[peaks:osm] Output directory: ${path.join(root, outDir)}`);
+  console.log(`[peaks:osm] Tile size (deg): ${tileDeg}`);
+  console.log(`[peaks:osm] Norway benchmark minimum: ${minNorway}`);
+
+  if (ndjsonInput) {
+    // Skip Python extraction — use pre-built NDJSON directly
+    await fs.copyFile(ndjsonInput, ndjsonPath);
+    console.log(`[peaks:osm] Using pre-built NDJSON from ${ndjsonInput}`);
+  } else {
+    await run("python3", [extractScript, "--input", input, "--output", ndjsonPath]);
+  }
+
+  const tiles = new Map();
+  let featureCount = 0;
+  let norwayNamedCount = 0;
+  let linesRead = 0;
+  let skippedLines = 0;
+
+  const rl = readline.createInterface({
+    input: (await import("node:fs")).createReadStream(ndjsonPath, { encoding: "utf8" }),
+    crlfDelay: Infinity,
+  });
+
+  for await (const line of rl) {
+    linesRead += 1;
+    const text = line.trim();
+    if (!text || text.startsWith("#")) {
+      skippedLines += 1;
+      continue;
+    }
+    const item = JSON.parse(text);
+    if (!item?.name || !item?.id) {
+      skippedLines += 1;
+      continue;
+    }
+    if ((item.kind !== "peak" && item.kind !== "volcano") || !Number.isFinite(item.lat) || !Number.isFinite(item.lon)) {
+      skippedLines += 1;
+      continue;
+    }
+
+    featureCount += 1;
+    if (item.lat >= 57 && item.lat <= 72 && item.lon >= 4 && item.lon <= 32) norwayNamedCount += 1;
+
+    const tileKey = tileKeyFor(item.lat, item.lon);
+    const tile = tiles.get(tileKey) ?? [];
+    tile.push({
+      id: String(item.id),
+      kind: item.kind,
+      name: String(item.name),
+      lat: Number(item.lat),
+      lon: Number(item.lon),
+      elevationM: Number.isFinite(item.elevationM) ? Number(item.elevationM) : null,
+    });
+    tiles.set(tileKey, tile);
+
+    if (linesRead % 50_000 === 0) {
+      console.log(
+        `[peaks:osm] parse progress: lines=${linesRead} accepted=${featureCount} skipped=${skippedLines} tiles=${tiles.size}`,
+      );
+    }
+  }
+
+  console.log(
+    `[peaks:osm] parse complete: lines=${linesRead} accepted=${featureCount} skipped=${skippedLines} tiles=${tiles.size}`,
+  );
+
+  await fs.rm(path.join(root, outDir), { recursive: true, force: true });
+  await fs.mkdir(path.join(root, outDir, "tiles"), { recursive: true });
+
+  let tileWriteCount = 0;
+  const totalTiles = tiles.size;
+  for (const [tileKey, entries] of tiles.entries()) {
+    await fs.writeFile(
+      path.join(root, outDir, "tiles", `${tileKey}.json`),
+      JSON.stringify({ tileKey, version: generatedVersion, entries }),
+      "utf8",
+    );
+    tileWriteCount += 1;
+    if (tileWriteCount % 1000 === 0 || tileWriteCount === totalTiles) {
+      console.log(`[peaks:osm] tile write progress: ${tileWriteCount}/${totalTiles}`);
+    }
+  }
+
+  const benchmarkPass = norwayNamedCount >= minNorway;
+  const manifest = {
+    version: generatedVersion,
+    generatedAt: new Date().toISOString(),
+    tileDeg,
+    tileUrlTemplate: "/peak-tiles/v1/tiles/{tileKey}.json",
+    ttlSeconds: 60 * 60 * 24 * 30,
+    source: {
+      provider: "osm",
+      includeNatural: ["peak", "volcano"],
+      namedOnly: true,
+    },
+    benchmark: {
+      norwayNamedCount,
+      minimumRequired: minNorway,
+      pass: benchmarkPass,
+    },
+    stats: {
+      featureCount,
+      tileCount: tiles.size,
+    },
+    availableTileKeys: [...tiles.keys()].sort((a, b) => a.localeCompare(b)),
+  };
+
+  await fs.writeFile(path.join(root, outDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
+  await fs.rm(ndjsonPath, { force: true });
+
+  console.log(`[peaks:osm] features=${featureCount} tiles=${tiles.size}`);
+  console.log(`[peaks:osm] Norway benchmark=${norwayNamedCount} required=${minNorway} pass=${benchmarkPass}`);
+
+  if (!benchmarkPass) {
+    throw new Error(`Norway benchmark failed: ${norwayNamedCount} < ${minNorway}`);
+  }
+};
+
+main().catch((error) => {
+  console.error("[peaks:osm] failed", error);
+  process.exitCode = 1;
+});

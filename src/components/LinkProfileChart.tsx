@@ -1,6 +1,6 @@
 import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
-import { ArrowLeftRight, Maximize2, Minimize2 } from "lucide-react";
+import { ArrowLeftRight, PanelBottomClose, PanelBottomOpen } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -51,6 +51,7 @@ type LinkProfileChartProps = {
   onToggleExpanded: () => void;
   showExpandToggle?: boolean;
   rowControls?: ReactNode;
+  panelClassName?: string;
 };
 
 export function LinkProfileChart({
@@ -58,6 +59,7 @@ export function LinkProfileChart({
   onToggleExpanded,
   showExpandToggle = true,
   rowControls,
+  panelClassName,
 }: LinkProfileChartProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const [hostAttachRevision, setHostAttachRevision] = useState(0);
@@ -693,7 +695,7 @@ export function LinkProfileChart({
 
   if (!hasMinimumTopology) {
     return (
-      <section className="chart-panel chart-panel-empty">
+      <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
         <div className="chart-empty">
           Select exactly two sites, or choose a saved link, to show path profile and LOS/Fresnel analysis.
         </div>
@@ -703,7 +705,7 @@ export function LinkProfileChart({
 
   if (tooManySelectedForProfile) {
     return (
-      <section className="chart-panel chart-panel-empty">
+      <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
         <div className="chart-empty">
           Select exactly two sites, or choose a saved link, to show path profile analysis.
         </div>
@@ -712,7 +714,7 @@ export function LinkProfileChart({
   }
 
   return (
-    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""}`} data-profile-revision={profileRevision}>
+    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} data-profile-revision={profileRevision}>
       <div className="chart-top-row">
         <div className="chart-endpoints" aria-live="polite">
           <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
@@ -739,7 +741,7 @@ export function LinkProfileChart({
               title={isExpanded ? "Exit full screen" : "Full screen"}
               type="button"
             >
-              {isExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
+              {isExpanded ? <PanelBottomClose aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />}
             </button>
           ) : null}
           {rowControls}

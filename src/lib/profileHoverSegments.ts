@@ -61,18 +61,19 @@ export const buildHoverProfileSegments = (
 
   const fromStart = profile[0];
   const toStart = profile[profile.length - 1];
+  const isFullPath = clampedCursorIndex >= profile.length - 1;
   const fromSegmentPoints = profile.slice(0, clampedCursorIndex + 1);
   const toSegmentPoints = profile.slice(clampedCursorIndex);
 
   const fromSegment = buildSegment(
     fromSegmentPoints,
     fromStart.terrainM + fromAntennaHeightM,
-    cursorPoint.terrainM + toAntennaHeightM,
+    isFullPath ? toStart.terrainM + toAntennaHeightM : cursorPoint.terrainM + 2,
     frequencyMHz,
   );
   const toSegment = buildSegment(
     toSegmentPoints,
-    cursorPoint.terrainM + fromAntennaHeightM,
+    isFullPath ? fromStart.terrainM + fromAntennaHeightM : cursorPoint.terrainM + 2,
     toStart.terrainM + toAntennaHeightM,
     frequencyMHz,
   );
