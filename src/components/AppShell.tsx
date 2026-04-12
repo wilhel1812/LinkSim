@@ -223,6 +223,8 @@ export function AppShell() {
   const inspectorMotionTimerRef = useRef<number | null>(null);
   const profileMotionTimerRef = useRef<number | null>(null);
   const mobileBottomMotionTimerRef = useRef<number | null>(null);
+  const navigatorWasHiddenBeforeProfileExpandRef = useRef(false);
+  const inspectorWasHiddenBeforeProfileExpandRef = useRef(false);
   const hadAuthenticatedSessionRef = useRef(false);
   const {
     showWelcomeModal,
@@ -1618,7 +1620,23 @@ export function AppShell() {
   const toggleProfileExpanded = () => {
     setIsMapExpanded(false);
     setMobileActivePanel("profile");
-    setIsProfileExpanded((prev) => !prev);
+    setIsProfileExpanded((prev) => {
+      const next = !prev;
+      if (!isMobileViewport) {
+        if (next) {
+          navigatorWasHiddenBeforeProfileExpandRef.current = isNavigatorHidden;
+          inspectorWasHiddenBeforeProfileExpandRef.current = isInspectorHidden;
+          if (!isNavigatorHidden) hideNavigatorPanel();
+          if (!isInspectorHidden) hideInspectorPanel();
+        } else {
+          if (!navigatorWasHiddenBeforeProfileExpandRef.current) showNavigatorPanel();
+          if (!inspectorWasHiddenBeforeProfileExpandRef.current) showInspectorPanel();
+          navigatorWasHiddenBeforeProfileExpandRef.current = false;
+          inspectorWasHiddenBeforeProfileExpandRef.current = false;
+        }
+      }
+      return next;
+    });
     emitProfileLayoutPulse();
   };
 
@@ -1898,7 +1916,7 @@ export function AppShell() {
           ) : null}
         </div>
       ) : null}
-      {!isMobileViewport && !isMapExpanded && !isProfileExpanded && shouldRenderNavigatorPanel && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
+      {!isMobileViewport && !isMapExpanded && shouldRenderNavigatorPanel && (accessState === "granted" || accessState === "readonly" || isAnonymousBootstrapShell) ? (
           <Sidebar
             authBootstrapPending={accessState === "checking"}
             hideLibraryBrowsing={isReadOnlyShell}
@@ -1973,7 +1991,7 @@ export function AppShell() {
             shouldRenderInspectorPanel &&
             (isMobileViewport
               ? mobileActivePanel === "inspector" && shouldRenderMobileBottomPanel
-              : !isProfileExpanded)
+              : true)
           }
           showMultiSelectToggle={isMobileViewport}
           canPersist={canPersistWorkspace}
