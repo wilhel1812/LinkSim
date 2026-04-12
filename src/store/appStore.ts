@@ -1123,7 +1123,7 @@ const appendUniqueWindowId = (ids: string[], nextId: string): string[] =>
 
 const initialHolidayWindowState = readHolidayWindowState();
 const normalizeBasemapProvider = (value: unknown): BasemapProvider =>
-  value === "carto" || value === "maptiler" || value === "stadia" || value === "kartverket" ? value : "carto";
+  value === "carto" || value === "maptiler" || value === "stadia" || value === "kartverket" || value === "npolar" ? value : "carto";
 const normalizeBasemapStylePreset = (value: unknown): string =>
   typeof value === "string" && value.trim().length
     ? value.trim() === "auto"
