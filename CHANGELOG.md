@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.16.0] - 2026-04-12
+
+### Added
+- Panorama / Horizon mode: single-site 360° terrain viewshed with LOS-clipped rendering, peak labels (elevation + distance), shading modes, FOV controls, and synchronized map lens. (#101)
+- Distance-based terrain heatmap coloring in panorama view with red-to-blue gradient; FOV range extended to support full 360° and narrow 15° slices. (#633)
+- Adaptive coverage radius for single-site simulations: analysis area automatically expands to match loaded Copernicus terrain tiles (20–100 km range) with manual override control. (#176)
+- Norsk Polarinstitutt Svalbard basemap provider: topographic, satellite, and orthophoto presets using official EPSG:3857 WMTS from geodata.npolar.no. (#635)
+- Terraform infrastructure-as-code scaffolding for Cloudflare resources. (#188)
+
+### Changed
+- Panels animate on expand/collapse and resize with synchronized choreography across desktop and mobile. (#532)
+
+### Fixed
+- Eliminated UI freezes during simulation recompute via non-blocking async pipeline with chunked overlay rendering and work scheduling. (#574)
+- Deep-link cold-load incorrectly flagged slug-resolved shared simulations as unavailable on first load. (#629)
+- Antenna height and cursor height display in hover path profile segments. (#491)
+
 ## [0.15.0] - 2026-04-08
 
 ### Added
