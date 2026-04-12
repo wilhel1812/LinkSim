@@ -2,7 +2,7 @@ import type { StyleSpecification } from "maplibre-gl";
 import { THEMES } from "../themes";
 import type { UiColorTheme } from "../themes/types";
 
-export type BasemapProvider = "carto" | "maptiler" | "stadia" | "kartverket";
+export type BasemapProvider = "carto" | "maptiler" | "stadia" | "kartverket" | "npolar";
 export type BasemapTheme = "light" | "dark";
 export type BasemapStylePreset = {
   id: string;
@@ -82,6 +82,12 @@ const stadiaPresets: BasemapStylePreset[] = [
 
 const kartverketPresets: BasemapStylePreset[] = [
   { id: "topographic", label: "Topographic" },
+];
+
+const npolarPresets: BasemapStylePreset[] = [
+  { id: "topographic", label: "Topographic" },
+  { id: "satellite",   label: "Satellite" },
+  { id: "orthophoto",  label: "Orthophoto" },
 ];
 
 const cartoRasterTilesForTheme = (theme: BasemapTheme): string[] =>
@@ -185,6 +191,58 @@ const stadiaStyle = (preset: string, theme: BasemapTheme): string => {
   return `${base}?api_key=${encodeURIComponent(STADIA_KEY)}`;
 };
 
+const NP_WMTS_BASE = "https://geodata.npolar.no/arcgis/rest/services/Basisdata";
+const NP_TILE_MATRIX_SET = "GoogleMapsCompatible";
+
+const npolarTileUrl = (service: string, layer: string): string =>
+  `${NP_WMTS_BASE}/${service}/MapServer/WMTS/tile/1.0.0/${layer}/default/${NP_TILE_MATRIX_SET}/{z}/{y}/{x}`;
+
+const NP_FULL_SVALBARD_BOUNDS: [number, number, number, number] = [7.47, 73.74, 36.05, 81.16];
+const NP_ORTOFOTO_BOUNDS: [number, number, number, number] = [10.13, 74.32, 34.30, 80.91];
+const NP_ATTRIBUTION = '© Norsk Polarinstitutt';
+
+const npolarStyle = (preset: string): StyleSpecification => {
+  let tileUrl: string;
+  let bounds: [number, number, number, number];
+  switch (preset) {
+    case "satellite":
+      tileUrl = npolarTileUrl("NP_Satellitt_Svalbard_WMTS_3857", "Basisdata_NP_Satellitt_Svalbard_WMTS_3857");
+      bounds = NP_FULL_SVALBARD_BOUNDS;
+      break;
+    case "orthophoto":
+      tileUrl = npolarTileUrl("NP_Ortofoto_Svalbard_WMTS_3857", "Basisdata_NP_Ortofoto_Svalbard_WMTS_3857");
+      bounds = NP_ORTOFOTO_BOUNDS;
+      break;
+    case "topographic":
+    default:
+      tileUrl = npolarTileUrl("NP_Basiskart_Svalbard_WMTS_3857", "Basisdata_NP_Basiskart_Svalbard_WMTS_3857");
+      bounds = NP_FULL_SVALBARD_BOUNDS;
+      break;
+  }
+  return {
+    version: 8,
+    sources: {
+      npolar: {
+        type: "raster",
+        tiles: [tileUrl],
+        tileSize: 256,
+        attribution: NP_ATTRIBUTION,
+        bounds,
+        maxzoom: 18,
+      },
+    },
+    layers: [
+      {
+        id: "npolar-base",
+        type: "raster",
+        source: "npolar",
+        minzoom: 0,
+        maxzoom: 18,
+      },
+    ],
+  } as StyleSpecification;
+};
+
 const kartverketStyleObject = {
   version: 8,
   sources: {
@@ -252,6 +310,16 @@ const providerCapabilities: BasemapProviderCapability[] = [
     available: true,
     presets: kartverketPresets,
   },
+  {
+    provider: "npolar",
+    label: "Norsk Polarinstitutt",
+    group: "regional",
+    attribution: NP_ATTRIBUTION,
+    attributionUrl: "https://npolar.no/",
+    requiresKey: false,
+    available: true,
+    presets: npolarPresets,
+  },
 ];
 
 const styleForPreset = (
@@ -270,6 +338,9 @@ const styleForPreset = (
   }
   if (provider === "stadia") {
     return stadiaStyle(presetId || "normal", theme);
+  }
+  if (provider === "npolar") {
+    return npolarStyle(presetId);
   }
   return kartverketStyleObject as unknown as StyleSpecification;
 };

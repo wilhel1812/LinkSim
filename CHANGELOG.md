@@ -2,26 +2,38 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.16.0] - 2026-04-12
+
+### Added
+- Panorama / Horizon mode: single-site 360° terrain viewshed with LOS-clipped rendering, peak labels (elevation + distance), shading modes, FOV controls, and synchronized map lens. (#101)
+- Distance-based terrain heatmap coloring in panorama view with red-to-blue gradient; FOV range extended to support full 360° and narrow 15° slices. (#633)
+- Adaptive coverage radius for single-site simulations: analysis area automatically expands to match loaded Copernicus terrain tiles (20–100 km range) with manual override control. (#176)
+- Norsk Polarinstitutt Svalbard basemap provider: topographic, satellite, and orthophoto presets using official EPSG:3857 WMTS from geodata.npolar.no. (#635)
+- Terraform infrastructure-as-code scaffolding for Cloudflare resources. (#188)
+
+### Changed
+- Panels animate on expand/collapse and resize with synchronized choreography across desktop and mobile. (#532)
+
+### Fixed
+- Eliminated UI freezes during simulation recompute via non-blocking async pipeline with chunked overlay rendering and work scheduling. (#574)
+- Deep-link cold-load incorrectly flagged slug-resolved shared simulations as unavailable on first load. (#629)
+- Antenna height and cursor height display in hover path profile segments. (#491)
+
 ## [0.15.0] - 2026-04-08
 
 ### Added
 - Added an in-app `/ui-gallery` visual inventory with tabbed families (Actions, Panels, Forms, Notifications, States, Meta/Map UI), status labeling, and gallery-local theme controls aligned with real app styling. (#539)
-- Added reusable UI primitives and helpers used across app chrome cleanup, including shared formatting/filter helpers, avatar/close button primitives, and ActionButton baseline components. (#493, #506, #508, #512, #521)
-- Added mobile workspace tab semantics and reusable map-control accessibility coverage for cross-surface interaction parity. (#430, #431)
+- Added a unified app-level notification queue with debug hooks for local/staging (`window.linksimNotifications`) to support iterative UI verification without code edits. (#539)
 
 ### Changed
-- Converged standard text-bearing app actions toward shared `ActionButton` language across Simulation Library, inspector, and panel action surfaces, reducing mixed legacy inline-action usage. (#521, #523, #525, #529)
-- Normalized panel shell and app-chrome vocabulary/rhythm through glossary-driven cleanup (left/right/bottom shell alignment, section cadence, action-row consistency, and role boundaries). (#527, #529, #539)
-- Improved simulation and path workflows in core UI flows, including frequency plan controls, simulation/library wording consistency, and path profile visibility behavior. (#409, #410, #411, #222)
+- Converged standard text-bearing app actions toward the shared `ActionButton` family across Simulation Library and inspector surfaces, reducing mixed legacy button language. (#521, #523, #525, #529)
+- Aligned panel shell language across left/right/bottom surfaces and improved shell/header rhythm consistency while preserving intentional structural differences. (#529)
+- Updated UI taxonomy and glossary coverage to better map real production families and migration status for future cleanup passes. (#527, #529, #539)
 
 ### Fixed
-- Unified banner-like transient notices into the mini-bar notification system and removed duplicate notice styles in app shell/admin contexts; fixed startup/access/offline notice inconsistencies. (#539)
-- Fixed app-shell visibility regression where `.app-shell` could remain at `opacity: 0` after animation path mismatch. (#539)
+- Unified banner-like transient notices into the mini-bar notification system and removed remaining duplicate notice styles in app shell/admin contexts. (#539)
+- Fixed staging/prod shell visibility regression where `.app-shell` could remain at `opacity: 0` after animation path mismatch. (#539)
 - Fixed notification mini-bar clipping regressions (shadow clipping and mobile spacing under controls) and refined fade/reflow behavior for manual vs timed dismissals. (#539)
-- Fixed modal and panel interaction regressions, including duplicate modal opens, stacked resource/site modal conflicts, and profile/UI slowdown side effects from merge drift. (#500, #502, #504, #514, #517)
-- Fixed path profile rendering/interaction regressions, including initial SVG scaling issues, temporary-hover override behavior, and saved-link radio override handling. (#108, #221, #392, #415)
-- Fixed simulation/library reliability regressions around close-after-load behavior, duplicate-name/sync error handling, and private-site reference auto-push sharing failures. (#252, #283, #391)
-- Resolved staging drift and stabilization chores required to keep promotion flow reliable during the release train. (#420, #497)
 
 ## [0.14.0] - 2026-04-05
 

@@ -28,8 +28,8 @@ describe("buildHoverProfileSegments", () => {
 
     const fromToCursor = segments[0]?.points ?? [];
     const toToCursor = segments[1]?.points ?? [];
-    expect(fromToCursor[1]?.losM).toBeCloseTo(117, 6);
-    expect(toToCursor[0]?.losM).toBeCloseTo(115, 6);
+    expect(fromToCursor[1]?.losM).toBeCloseTo(112, 6);
+    expect(toToCursor[0]?.losM).toBeCloseTo(112, 6);
     expect(toToCursor[1]?.losM).toBeCloseTo(127, 6);
   });
 

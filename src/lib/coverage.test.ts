@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCoverage, buildCoverageAsync } from "./coverage";
+import { buildCoverage, buildCoverageAsync, computeCoverageGridDimensions } from "./coverage";
+import { haversineDistanceKm } from "./geo";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import type { Network, RadioSystem, Site } from "../types/radio";
 
@@ -57,13 +58,13 @@ const NORMAL_GRID = 24;
 const HIGH_GRID = 42;
 
 describe("buildCoverage", () => {
-  it("creates non-empty coverage at normal resolution (24x24 grid)", () => {
+  it("creates non-empty coverage at normal resolution", () => {
     const result = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
     expect(result.length).toBeGreaterThan(100);
     expect(Number.isFinite(result[0].valueDbm)).toBe(true);
   });
 
-  it("creates more samples at high resolution (42x42 grid)", () => {
+  it("creates more samples at high resolution", () => {
     const normal = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
     const high = buildCoverage(HIGH_GRID, network, sites, systems, defaultPropagationEnvironment());
     expect(high.length).toBeGreaterThan(normal.length);
@@ -74,5 +75,47 @@ describe("buildCoverage", () => {
     const asyncResult = await buildCoverageAsync(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
     expect(asyncResult).toHaveLength(sync.length);
     expect(Math.abs(asyncResult[0].valueDbm - sync[0].valueDbm)).toBeLessThan(0.0001);
+  });
+
+  it("uses single-site radius override for sampling bounds", () => {
+    const singleSite = [sites[0]];
+    const base = buildCoverage(NORMAL_GRID, network, singleSite, systems, defaultPropagationEnvironment());
+    const expanded = buildCoverage(NORMAL_GRID, network, singleSite, systems, defaultPropagationEnvironment(), undefined, {
+      singleSiteRadiusKm: 60,
+    });
+    const farthestBase = Math.max(
+      ...base.map((sample) => haversineDistanceKm(sample, singleSite[0].position)),
+    );
+    const farthestExpanded = Math.max(
+      ...expanded.map((sample) => haversineDistanceKm(sample, singleSite[0].position)),
+    );
+    expect(farthestExpanded).toBeGreaterThan(farthestBase + 20);
+  });
+
+  it("uses overlay radius override for multi-site sampling bounds", () => {
+    const base = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
+    const expanded = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment(), undefined, {
+      overlayRadiusKm: 100,
+    });
+    const center = {
+      lat: (sites[0].position.lat + sites[1].position.lat) / 2,
+      lon: (sites[0].position.lon + sites[1].position.lon) / 2,
+    };
+    const farthestBase = Math.max(...base.map((sample) => haversineDistanceKm(sample, center)));
+    const farthestExpanded = Math.max(...expanded.map((sample) => haversineDistanceKm(sample, center)));
+    expect(farthestExpanded).toBeGreaterThan(farthestBase + 30);
+  });
+
+  it("computes aspect-ratio adjusted grid dimensions", () => {
+    const dims = computeCoverageGridDimensions(24, {
+      minLat: 59.8,
+      maxLat: 60.1,
+      minLon: 10.7,
+      maxLon: 10.8,
+    });
+    expect(dims.totalSamples).toBe(dims.rows * dims.cols);
+    expect(dims.targetSamples).toBe(576);
+    expect(dims.rows).toBeGreaterThan(0);
+    expect(dims.cols).toBeGreaterThan(0);
   });
 });

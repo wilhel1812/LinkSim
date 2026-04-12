@@ -53,8 +53,6 @@
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
 - Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
 - Maintain a human-readable `CHANGELOG.md` for every release; do not use raw commit dumps as release notes.
-- `CHANGELOG.md` entries must cover the full shipped release scope (all milestone issues labeled `released` for that version), not only the most recent implementation batch.
-- Before production promotion, cross-check changelog coverage against the milestone issue list and close any notable gaps.
 - Before each production release, verify whether any issues closed since the previous release are missing a milestone and report/fix that metadata drift.
 - Version/channel labeling rule:
   - Local must display `vX.Y.Z-alpha+<commit>`.
@@ -77,6 +75,7 @@
   - Normal production promotion PR must be `staging` -> `main`.
   - Hotfix promotion PR may be `hotfix/<slug>` -> `main` only with explicit user approval in-thread.
 - **After any hotfix merges to main**: immediately create a `chore/sync-main-to-staging` branch from `origin/staging`, run `git merge origin/main -X ours --no-edit`, PR into `staging`, merge, and redeploy staging. Do not start new feature work until staging is back in sync. The `detect-staging-drift` workflow will open a GitHub Issue as a reminder if this is missed.
+- **Release-reconcile fallback rule**: if production promotion cannot be completed via direct `staging` -> `main` and uses a `hotfix/*` snapshot/reconcile PR instead, the same pass is not complete until `main` is synced back into `staging`, staging is redeployed, and the drift issue is closed.
 - Local run reliability:
   - Restart local server whenever runtime/config/env changes can affect behavior.
   - Re-verify affected flows after restart before marking work as done.
@@ -86,7 +85,6 @@
   - Confirm build label matches intended SemVer channel rules
   - Confirm no unresolved issue/project status drift for items in the current pass
   - Confirm `CHANGELOG.md` is updated with user-readable highlights for the target release
-  - Confirm changelog highlights represent the full release/milestone scope (not only latest batch work)
 - Token-efficient execution:
   - Lock scope for each pass before implementation.
   - Define done criteria and no-touch areas at pass start.

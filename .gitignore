@@ -29,6 +29,10 @@ dist-ssr
 .tmp/
 
 debug-logs/
+.playwright-mcp/
+artifacts/
+linksim-home.png
+opencode.json
 
 # Python
 __pycache__/
@@ -36,3 +40,17 @@ __pycache__/
 
 # Claude Code
 .claude/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+infra/terraform/environments/*/backend.hcl
+infra/terraform/environments/*/imports.env
+infra/terraform/environments/*/discovery.json

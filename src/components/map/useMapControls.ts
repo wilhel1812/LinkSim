@@ -26,6 +26,10 @@ export const computeNextZoom = (
   clamp: (value: number, min: number, max: number) => number,
 ) => clamp(currentZoom + delta, 2, providerMaxZoom);
 
+export const computeNextAutoFitEnabledAfterInteraction = (): boolean => false;
+
+export const computeNextAutoFitEnabledAfterFitToggle = (current: boolean): boolean => !current;
+
 export function useMapControls({
   activeViewState,
   fitBottomInset,
@@ -39,20 +43,22 @@ export function useMapControls({
   updateMapViewport,
 }: UseMapControlsParams) {
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [fitControlActive, setFitControlActive] = useState(false);
+  const [fitControlActive, setFitControlActive] = useState(true);
 
   const zoomBy = (delta: number) => {
-    setFitControlActive(false);
+    setFitControlActive(computeNextAutoFitEnabledAfterInteraction());
     const nextZoom = computeNextZoom(activeViewState.zoom, delta, providerMaxZoom, clamp);
     setInteractionViewState(null);
     updateMapViewport({ zoom: nextZoom });
   };
 
   const fitToNodes = () => {
+    const nextEnabled = computeNextAutoFitEnabledAfterFitToggle(fitControlActive);
+    setFitControlActive(nextEnabled);
+    if (!nextEnabled) return;
     if (!mapRef.current) return;
     const bounds = computeSiteFitBounds(sites);
     if (!bounds) return;
-    setFitControlActive(true);
     setInteractionViewState(null);
     mapRef.current.fitBounds(bounds, {
       padding: { ...fitChromePadding, bottom: fitBottomInset },
@@ -65,7 +71,7 @@ export function useMapControls({
     isMultiSelectMode,
     setIsMultiSelectMode,
     fitControlActive,
-    clearFitControlActive: () => setFitControlActive(false),
+    clearFitControlActive: () => setFitControlActive(computeNextAutoFitEnabledAfterInteraction()),
     zoomBy,
     fitToNodes,
   };

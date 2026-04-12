@@ -27,6 +27,9 @@
   --panel-header-row-padding-bottom: 9px;
   --panel-action-row-gap: 8px;
   --panel-action-row-min-height: 34px;
+  --radius-pill: 999px;
+  --radius-card: 12px;
+  --radius-btn:  8px;
 }
 
 * {
@@ -125,6 +128,7 @@ input {
   opacity: 1;
   animation: fade-in 260ms ease;
   animation-fill-mode: both;
+  transition: grid-template-columns 360ms ease-out;
 }
 
 .app-shell.is-map-expanded,
@@ -149,7 +153,7 @@ input {
 .access-locked-alert-icon {
   width: 84px;
   height: 84px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -173,13 +177,122 @@ input {
 @keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
   }
 
   to {
     opacity: 1;
+  }
+}
+
+@keyframes panel-toggle-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+@keyframes panel-toggle-bounce-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.8);
+  }
+}
+
+@keyframes panel-slide-in-left {
+  from {
+    transform: translateX(-108%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes panel-slide-out-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-108%);
+  }
+}
+
+@keyframes panel-slide-in-right {
+  from {
+    transform: translateX(108%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes panel-slide-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(108%);
+  }
+}
+
+@keyframes panel-slide-in-bottom {
+  from {
+    transform: translateY(108%);
+  }
+  to {
     transform: translateY(0);
   }
+}
+
+@keyframes panel-slide-out-bottom {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(108%);
+  }
+}
+
+.panel-motion-enter-left {
+  animation: panel-slide-in-left 360ms ease-out both;
+}
+
+.panel-motion-exit-left {
+  animation: panel-slide-out-left 360ms ease-out both;
+  pointer-events: none;
+}
+
+.panel-motion-enter-right {
+  animation: panel-slide-in-right 360ms ease-out both;
+}
+
+.panel-motion-exit-right {
+  animation: panel-slide-out-right 360ms ease-out both;
+  pointer-events: none;
+}
+
+.panel-motion-enter-bottom {
+  animation: panel-slide-in-bottom 360ms ease-out both;
+}
+
+.panel-motion-exit-bottom {
+  animation: panel-slide-out-bottom 360ms ease-out both;
+  pointer-events: none;
 }
 
 .sidebar-panel,
@@ -195,6 +308,7 @@ input {
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow);
+  transition: transform 350ms ease-out, box-shadow 350ms ease-out;
 }
 
 .sidebar-panel {
@@ -207,6 +321,7 @@ input {
   font-family: "Space Grotesk", "Avenir Next", sans-serif;
   max-height: calc(100vh - 36px);
   overflow: auto;
+  transition: opacity 350ms ease-out, transform 350ms ease-out, box-shadow 350ms ease-out;
 }
 
 .sidebar-grow {
@@ -290,7 +405,7 @@ input {
 .panel-section {
   background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -361,7 +476,7 @@ input {
   z-index: 12000;
   width: 240px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px 9px;
   background: color-mix(in srgb, var(--surface-2) 96%, transparent);
   color: var(--text);
@@ -400,7 +515,7 @@ input {
 .chip-button {
   border: 1px solid var(--border);
   background: var(--surface);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 12px;
   color: var(--text);
   cursor: pointer;
@@ -429,7 +544,7 @@ input {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 6px 8px;
   text-align: right;
   font-family: "IBM Plex Mono", monospace;
@@ -439,7 +554,7 @@ input {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 6px 8px;
 }
 
@@ -663,6 +778,7 @@ input {
   min-height: 0;
   z-index: 30;
   pointer-events: none;
+  transition: grid-template-rows 360ms ease-out, padding-right 360ms ease-out;
 }
 
 .workspace-panel > * {
@@ -694,7 +810,7 @@ input {
   height: 36px;
   min-width: 36px;
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
@@ -714,12 +830,24 @@ input {
   left: 26px;
   top: 50%;
   transform: translateY(-50%);
+  animation: panel-toggle-bounce 200ms ease-out 50ms both;
+  transition: opacity 150ms ease, transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
 .collapsed-panel-btn-inspector {
   right: 26px;
   top: 50%;
   transform: translateY(-50%);
+  animation: panel-toggle-bounce 200ms ease-out 50ms both;
+  transition: opacity 150ms ease, transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.collapsed-panel-btn-profile {
+  left: calc((100% + var(--sidebar-overlay-width) - var(--inspector-overlay-width)) / 2);
+  bottom: 70px;
+  transform: translateX(-50%);
+  animation: panel-toggle-bounce 200ms ease-out 50ms both;
+  transition: opacity 150ms ease, transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
 .app-shell:not(.is-profile-hidden) .collapsed-panel-btn-navigator,
@@ -728,7 +856,7 @@ input {
 }
 
 .collapsed-panel-btn-profile {
-  left: 50%;
+  left: calc((100% + var(--sidebar-overlay-width) - var(--inspector-overlay-width)) / 2);
   bottom: 70px;
   transform: translateX(-50%);
   z-index: 109;
@@ -747,7 +875,7 @@ input {
 
 .workspace-header-actions .field-help {
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   white-space: nowrap;
@@ -780,7 +908,7 @@ input {
   pointer-events: auto;
   text-align: center;
   padding: 24px 32px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow-elev-2);
@@ -794,7 +922,7 @@ input {
 }
 
 .workspace-panel.is-profile-expanded {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 0fr) minmax(0, 1fr);
   padding-right: 0;
   z-index: 101;
 }
@@ -816,7 +944,7 @@ input {
 .workspace-attribution {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: color-mix(in srgb, var(--surface-2) 92%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 10px 12px;
   font-size: 0.78rem;
 }
@@ -921,7 +1049,7 @@ input {
   justify-content: space-between;
   gap: 10px;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   font-size: 0.84rem;
@@ -981,7 +1109,7 @@ input {
   gap: 10px;
   min-height: 36px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   box-shadow: var(--shadow-elev-3);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
@@ -1064,7 +1192,7 @@ input {
   color: var(--muted);
   width: 24px;
   height: 24px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-grid;
   place-items: center;
   cursor: pointer;
@@ -1182,13 +1310,20 @@ input {
   flex: 0 0 auto;
 }
 
-.map-controls-utility-pill {
+.ui-surface-pill {
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow-elev-3);
+}
+
+.ui-surface-pill.is-card {
+  border-radius: var(--radius-card);
+}
+
+.map-controls-utility-pill {
   margin: 2px;
   padding: 4px;
   gap: 4px;
@@ -1206,12 +1341,6 @@ input {
   gap: 4px;
   font-size: 0.68rem;
   color: var(--muted);
-  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-panel-blur));
-  backdrop-filter: blur(var(--glass-panel-blur));
-  box-shadow: var(--shadow-elev-3);
   padding: 6px 12px;
 }
 
@@ -1262,7 +1391,7 @@ input {
   right: 12px;
   z-index: 60;
   padding: 6px 9px;
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   border: 1px solid color-mix(in srgb, var(--selection) 45%, var(--border));
   background: color-mix(in srgb, var(--selection) 18%, var(--surface-2));
   color: var(--text);
@@ -1295,7 +1424,7 @@ input {
   bottom: 18px;
   right: 18px;
   z-index: 60;
-  width: min(var(--inspector-overlay-width), calc(100% - 36px));
+  width: min(clamp(280px, 20vw, 400px), calc(100% - 36px));
   max-height: none;
   overflow: auto;
   padding: 18px;
@@ -1413,7 +1542,7 @@ input {
 
 .map-holiday-note {
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
   padding: 10px;
 }
@@ -1477,7 +1606,7 @@ input {
 .map-progress-track {
   width: 100%;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   background: var(--progress-track-bg);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
@@ -1486,7 +1615,7 @@ input {
 .map-progress-fill {
   height: 100%;
   width: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--progress-gradient-start), var(--progress-gradient-end));
   transition: width 0.16s ease-out;
 }
@@ -1588,7 +1717,7 @@ input {
 .overlay-scale-bar {
   width: 100%;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: linear-gradient(
     90deg,
@@ -1723,7 +1852,7 @@ input {
   background: color-mix(in srgb, var(--surface-2) 82%, var(--accent-soft));
   border: 1px solid var(--accent);
   color: var(--text);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 10px;
   font-size: 0.72rem;
   white-space: nowrap;
@@ -1802,6 +1931,11 @@ input {
   box-shadow: 0 0 0 6px var(--selection-soft);
 }
 
+.panorama-map-cursor {
+  background: var(--state-pass-clear);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--state-pass-clear) 35%, transparent);
+}
+
 .chart-panel {
   overflow: hidden;
   padding: 10px 10px 8px;
@@ -1814,14 +1948,6 @@ input {
   grid-row: 2;
 }
 
-.workspace-panel.is-profile-expanded .chart-panel {
-  grid-row: 1;
-}
-
-.workspace-panel.is-profile-expanded .map-inspector {
-  display: none;
-}
-
 .chart-panel-empty {
   justify-content: center;
 }
@@ -1831,6 +1957,23 @@ input {
   min-height: 90px;
   width: 100%;
   position: relative;
+  touch-action: none;
+  overscroll-behavior: contain;
+  overscroll-behavior-x: none;
+  cursor: grab;
+}
+
+.chart-svg-wrap:active {
+  cursor: grabbing;
+}
+
+.panorama-terrain-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .chart-header {
@@ -1886,12 +2029,40 @@ input {
   text-align: right;
 }
 
+.panorama-header-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
 .chart-panel svg {
   display: block;
   width: 100%;
   height: 100%;
   min-height: 90px;
   max-height: none;
+  position: relative;
+  z-index: 1;
+}
+
+/* Label overlay icons must not inherit the full-bleed svg rule */
+.panorama-label-overlay svg {
+  width: 10px;
+  height: 10px;
+  min-height: unset;
+  flex-shrink: 0;
+}
+
+.chart-panel.is-expanded .panorama-label-overlay svg {
+  width: 10px;
+  height: 10px;
+  min-height: unset;
 }
 
 .chart-panel.is-expanded .chart-svg-wrap {
@@ -1907,7 +2078,7 @@ input {
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   width: auto;
   min-width: 118px;
   height: 26px;
@@ -1960,6 +2131,21 @@ input {
   white-space: nowrap;
 }
 
+.panorama-peaks-loading {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 6px 12px;
+  pointer-events: none;
+}
+
+.panorama-peaks-loading .map-progress-track {
+  width: 64px;
+  margin: 0;
+}
+
 .chart-hover-popover {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -1969,7 +2155,7 @@ input {
   display: grid;
   gap: 6px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, var(--surface) 10%);
   box-shadow: var(--shadow-elev-3);
@@ -2029,6 +2215,304 @@ input {
   justify-content: flex-end;
 }
 
+.ui-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ui-slider-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.ui-slider-value {
+  min-width: 40px;
+  text-align: right;
+  font-size: 0.72rem;
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.ui-slider-vertical .ui-slider-value {
+  min-width: 0;
+  width: 100%;
+  text-align: center;
+}
+
+.ui-slider-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 148px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.ui-slider-input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.ui-slider-input::-webkit-slider-runnable-track {
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--border) 72%, var(--surface) 28%);
+}
+
+.ui-slider-input::-moz-range-track {
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--border) 72%, var(--surface) 28%);
+}
+
+.ui-slider-input::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.ui-slider-vertical {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  justify-items: center;
+  align-items: center;
+  gap: 10px;
+  width: 92px;
+  min-height: 268px;
+  justify-content: center;
+}
+
+.ui-slider-vertical .ui-slider-input {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  width: 44px;
+  height: 178px;
+  writing-mode: vertical-lr;
+  direction: rtl;
+}
+
+.panorama-slider-popover {
+  position: fixed;
+  z-index: 2100;
+  transform: translate(-50%, calc(-100% - 6px));
+  min-width: 136px;
+  padding: 12px 10px;
+  border-radius: var(--radius-card);
+  animation: panorama-popover-rise 140ms ease-out;
+}
+
+.panorama-slider-popover.is-down {
+  transform: translate(-50%, 6px);
+  animation: panorama-popover-drop 140ms ease-out;
+}
+
+.panorama-slider-popover-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.panorama-slider-popover-single {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+}
+
+.panorama-lines-telemetry {
+  display: grid;
+  gap: 4px;
+  font-size: 0.66rem;
+  line-height: 1.2;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  text-align: center;
+}
+
+/* Panorama HTML label overlay — positioned over the canvas */
+.panorama-label-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.panorama-label {
+  position: absolute;
+  transform-origin: top center;
+  transform: translateX(-50%) rotate(45deg);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.62rem;
+  line-height: 1;
+  font-family: "IBM Plex Mono", monospace;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.panorama-label-pill strong,
+.panorama-label-peak span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 20ch;
+}
+
+.panorama-label-peak {
+  opacity: 0.75;
+}
+
+.panorama-label-site .panorama-label-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--panorama-label-state, var(--accent)) 22%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--panorama-label-state, var(--accent)) 60%, transparent);
+  color: var(--text);
+}
+
+.panorama-legend-popover {
+  position: fixed;
+  z-index: 2100;
+  transform: translate(-50%, calc(-100% - 6px));
+  padding: 10px 14px;
+  animation: panorama-popover-rise 140ms ease-out;
+}
+
+.panorama-legend-popover.is-down {
+  transform: translate(-50%, 6px);
+  animation: panorama-popover-drop 140ms ease-out;
+}
+
+.panorama-legend-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.panorama-legend-popover-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+
+.panorama-legend-heatmap {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.panorama-legend-heatmap-title {
+  margin: 0 0 6px;
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.panorama-legend-heatmap-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: linear-gradient(
+    90deg,
+    rgb(105, 42, 45) 0%,
+    rgb(156, 63, 49) 35%,
+    rgb(201, 92, 45) 45%,
+    rgb(226, 127, 45) 55%,
+    rgb(218, 175, 55) 65%,
+    rgb(164, 193, 68) 75%,
+    rgb(95, 178, 95) 85%,
+    rgb(64, 150, 178) 100%
+  );
+}
+
+.panorama-legend-heatmap-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+
+.panorama-shade-band {
+  fill: color-mix(in srgb, var(--terrain) 72%, var(--surface-2) 28%);
+}
+
+@keyframes panorama-popover-rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 4px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 6px));
+  }
+}
+
+@keyframes panorama-popover-drop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -2px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 6px);
+  }
+}
+
+.panorama-scrollbar {
+  width: 100%;
+  height: 22px;
+  position: relative;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-2) 84%, var(--border) 16%);
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  touch-action: none;
+  overscroll-behavior: contain;
+  cursor: ew-resize;
+}
+
+.panorama-scrollbar-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 76%, var(--surface) 24%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, var(--surface) 66%);
+  pointer-events: none;
+}
+
+html.panorama-gesture-lock,
+html.panorama-gesture-lock body {
+  overscroll-behavior: none;
+}
+
 .chart-action-row > .chart-hover-state {
   min-height: 26px;
   flex: 1;
@@ -2086,6 +2570,14 @@ input {
   cursor: crosshair;
 }
 
+/* In panorama mode, use grab instead of crosshair */
+.chart-svg-wrap:has(.panorama-terrain-canvas) .profile-hitbox {
+  cursor: grab;
+}
+.chart-svg-wrap:has(.panorama-terrain-canvas):active .profile-hitbox {
+  cursor: grabbing;
+}
+
 .terrain-fill-path {
   stroke: none;
 }
@@ -2122,6 +2614,77 @@ input {
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.panorama-ridge-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--terrain) 74%, var(--text) 26%);
+  stroke-width: 1.1;
+}
+
+.panorama-clutter-haze {
+  fill: color-mix(in srgb, var(--state-fail-blocked) 34%, transparent);
+  opacity: 0.35;
+}
+
+.panorama-clutter-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--state-fail-blocked) 62%, var(--text) 38%);
+  stroke-width: 1.6;
+  stroke-dasharray: 4 3;
+}
+
+.panorama-node {
+  stroke-width: 1.1;
+}
+
+.panorama-node.is-hidden {
+  opacity: 0.52;
+}
+
+.panorama-node-pass_clear {
+  fill: var(--state-pass-clear);
+  stroke: color-mix(in srgb, var(--state-pass-clear) 40%, var(--text) 60%);
+}
+
+.panorama-node-pass_blocked {
+  fill: var(--state-pass-blocked);
+  stroke: color-mix(in srgb, var(--state-pass-blocked) 40%, var(--text) 60%);
+}
+
+.panorama-node-fail_clear {
+  fill: var(--state-fail-clear);
+  stroke: color-mix(in srgb, var(--state-fail-clear) 40%, var(--text) 60%);
+}
+
+.panorama-node-fail_blocked {
+  fill: var(--state-fail-blocked);
+  stroke: color-mix(in srgb, var(--state-fail-blocked) 40%, var(--text) 60%);
+}
+
+.panorama-label-layer {
+  pointer-events: none;
+}
+
+.panorama-label-line {
+  stroke: color-mix(in srgb, var(--text) 28%, var(--border) 72%);
+  stroke-width: 1;
+  opacity: 0.84;
+}
+
+.panorama-label-text {
+  font-size: 0.64rem;
+  font-family: "IBM Plex Mono", monospace;
+  dominant-baseline: hanging;
+  text-anchor: middle;
+  fill: color-mix(in srgb, var(--text) 88%, var(--surface) 12%);
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--surface) 70%, transparent);
+  stroke-width: 2px;
+}
+
+.panorama-label-text.is-peak {
+  fill: color-mix(in srgb, var(--text) 76%, var(--muted) 24%);
 }
 
 .earth-curvature-horizon {
@@ -2204,7 +2767,7 @@ input {
     gap: 8px;
     padding: 8px;
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    border-radius: 12px;
+    border-radius: var(--radius-card);
     background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
     -webkit-backdrop-filter: blur(var(--glass-panel-blur));
     backdrop-filter: blur(var(--glass-panel-blur));
@@ -2242,6 +2805,18 @@ input {
     box-shadow: none;
     padding: 0;
     z-index: 45;
+    transition: opacity 350ms ease-out, transform 350ms ease-out, height 350ms ease-out, min-height 350ms ease-out;
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .mobile-panel-motion-enter-bottom {
+    animation: panel-slide-in-bottom 360ms ease-out both;
+  }
+
+  .mobile-panel-motion-exit-bottom {
+    animation: panel-slide-out-bottom 360ms ease-out both;
+    pointer-events: none;
   }
 
   .mobile-workspace-panel > * {
@@ -2432,7 +3007,7 @@ input {
   .map-controls-utility-pill {
     max-width: calc(100% - 24px);
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
     -webkit-backdrop-filter: blur(var(--glass-panel-blur));
     backdrop-filter: blur(var(--glass-panel-blur));
@@ -2461,13 +3036,16 @@ input {
     min-height: var(--mobile-panel-height);
     max-height: none;
     z-index: 85;
+    transform: translateY(0);
+    transition: transform 360ms ease-out, height 360ms ease-out, min-height 360ms ease-out;
   }
 
   .app-shell.is-mobile-shell.mobile-bottom-full .workspace-panel .mobile-workspace-panel,
   .app-shell.is-mobile-shell.mobile-bottom-full .workspace-panel .map-inspector {
-    top: calc(12px + env(safe-area-inset-top));
+    top: auto;
     bottom: calc(var(--mobile-tabbar-offset) + var(--mobile-tabbar-height) + var(--mobile-panel-tab-gap));
-    height: auto;
+    height: calc(100dvh - var(--mobile-controls-top) - var(--mobile-tabbar-offset) - var(--mobile-tabbar-height) - var(--mobile-panel-tab-gap) - 12px);
+    min-height: calc(100dvh - var(--mobile-controls-top) - var(--mobile-tabbar-offset) - var(--mobile-tabbar-height) - var(--mobile-panel-tab-gap) - 12px);
     max-height: none;
   }
 
@@ -2497,7 +3075,7 @@ input {
 
 .locale-select {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: var(--surface);
   color: var(--text);
   padding: 8px;
@@ -2515,7 +3093,7 @@ input {
 
 .inline-action {
   border: 1px solid var(--accent);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: var(--accent-soft);
   color: var(--text);
   padding: 8px 10px;
@@ -2626,7 +3204,7 @@ input {
   padding: 0 12px;
   gap: 8px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--panel) 86%, var(--bg));
   font-size: 0.84rem;
   font-weight: 700;
@@ -2649,7 +3227,7 @@ input {
   height: 34px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--panel) 86%, var(--bg));
 }
 
@@ -2849,7 +3427,7 @@ input {
 .profile-avatar {
   width: 30px;
   height: 30px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   display: grid;
   place-items: center;
@@ -2869,7 +3447,7 @@ input {
 .floating-help-button {
   width: 52px;
   height: 52px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border));
   background: color-mix(in srgb, var(--accent-soft) 78%, var(--surface));
   color: var(--text);
@@ -2895,7 +3473,7 @@ input {
 }
 
 .floating-env-badge {
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
   background: color-mix(in srgb, var(--surface) 78%, var(--accent-soft));
   color: var(--text);
@@ -2986,7 +3564,7 @@ input {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px;
   min-height: 88px;
   resize: vertical;
@@ -3012,14 +3590,14 @@ input {
   align-items: center;
   gap: 8px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 4px 8px;
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
 }
 
 .collaborator-candidate-list {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   max-height: 170px;
   overflow: auto;
   display: grid;
@@ -3031,7 +3609,7 @@ input {
 .collaborator-candidate-list .site-quick-item {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: var(--surface);
   color: var(--text);
   display: flex;
@@ -3098,7 +3676,7 @@ input {
 .notification-badge {
   min-width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-grid;
   place-items: center;
   background: var(--danger);
@@ -3157,7 +3735,7 @@ input {
 
 .library-row {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px;
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   display: flex;
@@ -3190,7 +3768,7 @@ input {
   max-height: min(86vh, 980px);
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--shadow);
   padding: 14px;
@@ -3269,7 +3847,7 @@ input {
 .welcome-compact-card {
   width: min(440px, 92vw);
   padding: 24px 28px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface-2);
   color: var(--text);
   display: flex;
@@ -3418,7 +3996,7 @@ input {
 
 .library-manager-row {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -3440,7 +4018,7 @@ input {
 
 .access-badge {
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px 8px;
   font-size: 0.68rem;
   color: var(--muted);
@@ -3456,7 +4034,7 @@ input {
 .row-avatar {
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   color: var(--text);
@@ -3527,7 +4105,7 @@ input {
   gap: 8px;
   padding: 6px;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: color-mix(in srgb, var(--surface-2) 90%, transparent);
   box-shadow: var(--shadow-elev-1);
 }
@@ -3601,7 +4179,7 @@ input {
 
 .margin-status {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 8px 10px;
   font-size: 0.82rem;
   font-family: "IBM Plex Mono", monospace;
@@ -3634,7 +4212,7 @@ input {
 
 .whatif-table {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   overflow: hidden;
 }
 
@@ -3720,7 +4298,7 @@ input {
 
 .ui-pattern-status {
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px 8px;
   font-size: 0.68rem;
   text-transform: uppercase;
@@ -3799,7 +4377,7 @@ input {
 .ui-gallery-map-notice-stage {
   position: relative;
   min-height: 86px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
   background: color-mix(in srgb, var(--surface) 84%, transparent);
   overflow: hidden;

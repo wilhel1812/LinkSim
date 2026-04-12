@@ -224,6 +224,7 @@ type SidebarProps = {
   readOnly?: boolean;
   authBootstrapPending?: boolean;
   panelToggleControl?: ReactNode;
+  panelClassName?: string;
   /** Override the computed simulation name shown in the Simulation section header. */
   simulationDisplayLabel?: string;
 };
@@ -234,6 +235,7 @@ export function Sidebar({
   readOnly = false,
   authBootstrapPending = false,
   panelToggleControl,
+  panelClassName,
   simulationDisplayLabel,
 }: SidebarProps) {
   const { theme, colorTheme, variant } = useThemeVariant();
@@ -1767,7 +1769,7 @@ export function Sidebar({
   };
 
   return (
-    <aside className="sidebar-panel">
+    <aside className={`sidebar-panel ${panelClassName ?? ""}`.trim()}>
       <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} />
       <header>
         <div className="sidebar-title-row">

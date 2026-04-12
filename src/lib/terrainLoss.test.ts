@@ -81,4 +81,28 @@ describe("estimateTerrainExcessLossDb", () => {
 
     expect(loss).toBeGreaterThan(10);
   });
+
+  it("supports terrainSamplerAt fast path with equivalent result", () => {
+    const withCoordinatesSampler = estimateTerrainExcessLossDb({
+      from: { lat: 59.9, lon: 10.7 },
+      to: { lat: 60.0, lon: 10.7 },
+      fromAntennaAbsM: 104,
+      toAntennaAbsM: 104,
+      frequencyMHz: 869.618,
+      terrainSampler: ridgeSampler,
+      samples: 48,
+    });
+    const withDirectSampler = estimateTerrainExcessLossDb({
+      from: { lat: 59.9, lon: 10.7 },
+      to: { lat: 60.0, lon: 10.7 },
+      fromAntennaAbsM: 104,
+      toAntennaAbsM: 104,
+      frequencyMHz: 869.618,
+      terrainSampler: ridgeSampler,
+      terrainSamplerAt: (lat, lon) => ridgeSampler({ lat, lon }),
+      samples: 48,
+    });
+
+    expect(withDirectSampler).toBeCloseTo(withCoordinatesSampler, 12);
+  });
 });
