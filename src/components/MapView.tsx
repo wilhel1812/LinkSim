@@ -2245,6 +2245,8 @@ export function MapView({
     switch (resolvedBasemap.provider) {
       case "kartverket":
         return 20;
+      case "npolar":
+        return 18;
       default:
         return 22;
     }
@@ -2959,7 +2961,7 @@ export function MapView({
         latitude={activeViewState.latitude}
         zoom={activeViewState.zoom}
         maxZoom={providerMaxZoom}
-        renderWorldCopies={resolvedBasemap.provider !== "kartverket"}
+        renderWorldCopies={resolvedBasemap.provider !== "kartverket" && resolvedBasemap.provider !== "npolar"}
         initialViewState={{
           longitude: activeViewState.longitude,
           latitude: activeViewState.latitude,
@@ -2968,7 +2970,7 @@ export function MapView({
         mapStyle={useFallbackMapStyle ? fallbackMapStyle : resolvedBasemap.style}
         onLoad={() => setIsMapLoaded(true)}
         onError={() => {
-          if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket") {
+          if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket" && resolvedBasemap.provider !== "npolar") {
             setUseFallbackMapStyle(true);
             setBasemapProvider("carto");
             setInteractionViewState({
