@@ -1634,12 +1634,16 @@ export function AppShell() {
       return;
     }
     setMobileBottomPanelMode(nextMode);
-    setMobileBottomMotionPhase("entering");
-    mobileBottomMotionTimerRef.current = window.setTimeout(() => {
-      setMobileBottomMotionPhase("idle");
-      mobileBottomMotionTimerRef.current = null;
-    }, PANEL_MOTION_MS);
-  }, [clearMotionTimer]);
+    if (mobileBottomPanelMode === "hidden") {
+      setMobileBottomMotionPhase("entering");
+      mobileBottomMotionTimerRef.current = window.setTimeout(() => {
+        setMobileBottomMotionPhase("idle");
+        mobileBottomMotionTimerRef.current = null;
+      }, PANEL_MOTION_MS);
+      return;
+    }
+    setMobileBottomMotionPhase("idle");
+  }, [clearMotionTimer, mobileBottomPanelMode]);
 
   const shouldRenderMobileBottomPanel = mobileBottomPanelMode !== "hidden" || mobileBottomMotionPhase === "exiting";
   const mobileBottomPanelMotionClass =
@@ -1968,7 +1972,7 @@ export function AppShell() {
             !isMapExpanded &&
             shouldRenderInspectorPanel &&
             (isMobileViewport
-              ? mobileActivePanel === "inspector" && mobileBottomPanelMode !== "hidden"
+              ? mobileActivePanel === "inspector" && shouldRenderMobileBottomPanel
               : !isProfileExpanded)
           }
           showMultiSelectToggle={isMobileViewport}
@@ -2009,7 +2013,9 @@ export function AppShell() {
             </div>
           }
           readOnly={!canPersistWorkspace}
-          inspectorPanelClassName={inspectorPanelMotionClass}
+          inspectorPanelClassName={`${inspectorPanelMotionClass} ${
+            isMobileViewport && mobileActivePanel === "inspector" ? mobileBottomPanelMotionClass : ""
+          }`.trim()}
           onToggleMapExpanded={() => {
             setIsProfileExpanded(false);
             if (isMobileViewport && mobileBottomPanelMode === "full") {

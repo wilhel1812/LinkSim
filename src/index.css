@@ -218,66 +218,54 @@ input {
 
 @keyframes panel-slide-in-left {
   from {
-    opacity: 0;
     transform: translateX(-108%);
   }
   to {
-    opacity: 1;
     transform: translateX(0);
   }
 }
 
 @keyframes panel-slide-out-left {
   from {
-    opacity: 1;
     transform: translateX(0);
   }
   to {
-    opacity: 0;
     transform: translateX(-108%);
   }
 }
 
 @keyframes panel-slide-in-right {
   from {
-    opacity: 0;
     transform: translateX(108%);
   }
   to {
-    opacity: 1;
     transform: translateX(0);
   }
 }
 
 @keyframes panel-slide-out-right {
   from {
-    opacity: 1;
     transform: translateX(0);
   }
   to {
-    opacity: 0;
     transform: translateX(108%);
   }
 }
 
 @keyframes panel-slide-in-bottom {
   from {
-    opacity: 0;
     transform: translateY(108%);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
 
 @keyframes panel-slide-out-bottom {
   from {
-    opacity: 1;
     transform: translateY(0);
   }
   to {
-    opacity: 0;
     transform: translateY(108%);
   }
 }
@@ -322,7 +310,7 @@ input {
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow);
-  transition: opacity 350ms ease-out, transform 350ms ease-out, box-shadow 350ms ease-out;
+  transition: transform 350ms ease-out, box-shadow 350ms ease-out;
 }
 
 .sidebar-panel {
@@ -792,6 +780,7 @@ input {
   min-height: 0;
   z-index: 30;
   pointer-events: none;
+  transition: grid-template-rows 360ms ease-out, padding-right 360ms ease-out;
 }
 
 .workspace-panel > * {
@@ -1437,7 +1426,7 @@ input {
   bottom: 18px;
   right: 18px;
   z-index: 60;
-  width: min(var(--inspector-overlay-width), calc(100% - 36px));
+  width: min(clamp(280px, 20vw, 400px), calc(100% - 36px));
   max-height: none;
   overflow: auto;
   padding: 18px;
@@ -3018,6 +3007,8 @@ html.panorama-gesture-lock body {
     min-height: var(--mobile-panel-height);
     max-height: none;
     z-index: 85;
+    transform: translateY(0);
+    transition: transform 360ms ease-out, height 360ms ease-out, min-height 360ms ease-out;
   }
 
   .app-shell.is-mobile-shell.mobile-bottom-full .workspace-panel .mobile-workspace-panel,
