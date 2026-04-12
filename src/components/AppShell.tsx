@@ -1136,39 +1136,12 @@ export function AppShell() {
           // Ignore and use generic message.
         }
       }
+      state = useAppStore.getState();
+      exists = resolvedSimulationId
+        ? state.simulationPresets.some((preset) => preset.id === resolvedSimulationId)
+        : Boolean(resolveBySlug());
 
       if (!exists && accessState !== "readonly") {
-        try {
-          const status = await fetchDeepLinkStatus({
-            simulationId: resolvedSimulationId || undefined,
-            simulationSlug: payload.simulationSlug,
-          });
-          if (status.status === "forbidden") {
-            markDeepLinkFailed();
-            publishAppNotice({
-              id: "shared-simulation-forbidden",
-              message: "You do not have access to this shared simulation.",
-              tone: "warning",
-              persistent: true,
-            });
-            return;
-          }
-          if (status.status === "missing") {
-            markDeepLinkFailed();
-            publishAppNotice({
-              id: "shared-simulation-missing",
-              message: "This shared simulation no longer exists.",
-              tone: "warning",
-              persistent: true,
-            });
-            return;
-          }
-          if (status.simulationId) {
-            resolvedSimulationId = status.simulationId;
-          }
-        } catch {
-          // Ignore and use generic message.
-        }
         publishAppNotice({
           id: "shared-simulation-unavailable",
           message: "This shared simulation is unavailable.",
