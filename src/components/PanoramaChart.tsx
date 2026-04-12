@@ -1,6 +1,6 @@
 import { scaleLinear } from "d3-scale";
 import { Surface } from "./ui/Surface";
-import { Info, MapPinned, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, MoveVertical, RadioTower, Tags, ZoomIn } from "lucide-react";
+import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, MoveVertical, RadioTower, Tags, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -23,13 +23,14 @@ import { resolveVisiblePanoramaLabels, type PanoramaLabelCandidate } from "../li
 import { loadPanoramaPeaks, type PanoramaPeakCandidate } from "../lib/panoramaPeaks";
 import { isPeakLosVisible, nearestSampleForDistance } from "../lib/panoramaLos";
 import { buildDepthBands, buildNearBiasedDepthFractions, resolveRenderedEndpoint } from "../lib/panoramaRender";
-import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
+import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, FOV_SCALE_DEFAULT, FOV_SCALE_MAX, FOV_SCALE_MIN, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
 import { centerForScaledWindow } from "../lib/panoramaViewport";
 import { passFailStateLabel } from "../lib/passFailState";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { useAppStore } from "../store/appStore";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { UiSlider } from "./UiSlider";
+import { interpolateHeatmapColor } from "../themes/heatmapColors";
 
 const M = { t: 22, r: 20, b: 32, l: 46 };
 const LABEL_RAIL_HEIGHT = 34;
@@ -140,7 +141,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [exaggeration, setExaggeration] = useState(4);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
-  const [fovScale, setFovScale] = useState(3);
+  const [terrainDistanceHeatmap, setTerrainDistanceHeatmap] = useState(false);
+  const [fovScale, setFovScale] = useState(FOV_SCALE_DEFAULT);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
   const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
   const [openSliderPopover, setOpenSliderPopover] = useState<"fov" | "vertical" | null>(null);
@@ -809,6 +811,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         0.001,
         ...rays.map((entry) => (entry.ray.samples.length ? entry.ray.samples[entry.ray.samples.length - 1]?.distanceKm ?? entry.ray.maxDistanceKm : entry.ray.maxDistanceKm)),
       );
+      const validHorizonDistances = rays.map((r) => r.ray.horizonDistanceKm).filter((d): d is number => Number.isFinite(d) && d > 0);
+      const maxHorizonDistanceKm = validHorizonDistances.length > 0 ? Math.max(...validHorizonDistances) : maxDistanceKm;
       const maxSampleCount = Math.max(2, ...rays.map((entry) => entry.ray.samples.length));
       const light = { x: -0.62, y: -0.36, z: 0.7 };
       const lightNorm = Math.hypot(light.x, light.y, light.z) || 1;
@@ -832,7 +836,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         oCtx.clip();
 
         // Helper: draw one terrain pass onto oCtx using the given color function.
-        const drawTerrainPass = (colorFn: (haze: number, lambert: number) => Rgb) => {
+        const drawTerrainPass = (colorFn: (haze: number, lambert: number, distanceKm?: number) => Rgb) => {
           oCtx.clearRect(0, 0, cw, ch);
           oCtx.save();
           oCtx.beginPath();
@@ -867,7 +871,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
               const depth = clamp(avgDistanceKm / maxDistanceKm, 0, 1);
               const haze = Math.pow(depth, 1.15);
 
-              oCtx.fillStyle = toCanvasColor(colorFn(haze, lambert), 1);
+              oCtx.fillStyle = toCanvasColor(colorFn(haze, lambert, avgDistanceKm), 1);
               oCtx.beginPath();
               oCtx.moveTo(x0, y00);
               oCtx.lineTo(x1 + 0.5, y10);
@@ -881,8 +885,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         };
 
         // Pass 1: Relief shading (always rendered).
-        drawTerrainPass((haze, lambert) => {
-          const base = blendRgb(terrainColor, surfaceColor, shadingHazeStart + haze * 0.55);
+        drawTerrainPass((haze, lambert, avgDistanceKm) => {
+          let base: Rgb;
+          if (terrainDistanceHeatmap && maxHorizonDistanceKm > 0 && avgDistanceKm !== undefined) {
+            const normalizedDistance = 1 - avgDistanceKm / maxHorizonDistanceKm;
+            base = interpolateHeatmapColor(normalizedDistance);
+          } else {
+            base = blendRgb(terrainColor, surfaceColor, shadingHazeStart + haze * 0.55);
+          }
           const lighten = lambert > 0.4 ? ((lambert - 0.4) / 0.6) * 1.0 : 0;
           const darken = lambert < 0.4 ? ((0.4 - lambert) / 0.4) * 0.7 : 0;
           return brightenRgb(base, lighten - darken);
@@ -977,7 +987,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       ctx.lineTo(label.x, label.y);
       ctx.stroke();
     }
-  }, [geometry, chartSize, shadingHazeStart]);
+  }, [geometry, chartSize, shadingHazeStart, terrainDistanceHeatmap]);
 
   const focusTarget = hoverTarget ?? pinnedTarget;
   const focusAzimuthDeg = focusTarget?.azimuthDeg ?? null;
@@ -1381,8 +1391,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 <UiSlider
                   ariaLabel="Panorama field of view"
                   label="FOV"
-                  max={4}
-                  min={1}
+                  max={FOV_SCALE_MAX}
+                  min={FOV_SCALE_MIN}
                   onChange={(value) => setFovScale(normalizeFovScale(value))}
                   orientation="vertical"
                   step={0.1}
@@ -1425,6 +1435,16 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
               <li><span className="state-dot state-dot-fail_clear" aria-hidden /><span>Visible + fail</span></li>
               <li><span className="state-dot state-dot-fail_blocked" aria-hidden /><span>Blocked + fail</span></li>
             </ul>
+            {terrainDistanceHeatmap ? (
+              <div className="panorama-legend-heatmap">
+                <p className="panorama-legend-heatmap-title">Terrain distance</p>
+                <div className="panorama-legend-heatmap-bar" />
+                <div className="panorama-legend-heatmap-labels">
+                  <span>Far</span>
+                  <span>Near</span>
+                </div>
+              </div>
+            ) : null}
           </Surface>,
           document.body,
         )
@@ -1477,11 +1497,20 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             <Tags aria-hidden="true" strokeWidth={1.8} />
           </button>
           <button
-            aria-label="Signal coverage legend"
+            aria-label={terrainDistanceHeatmap ? "Disable distance heatmap" : "Enable distance heatmap"}
+            className={`chart-endpoint-swap chart-endpoint-icon ${terrainDistanceHeatmap ? "is-active" : ""}`}
+            onClick={() => setTerrainDistanceHeatmap((value) => !value)}
+            title={terrainDistanceHeatmap ? "Distance heatmap on" : "Distance heatmap off"}
+            type="button"
+          >
+            <Paintbrush aria-hidden="true" strokeWidth={1.8} />
+          </button>
+          <button
+            aria-label="Legend"
             className={`chart-endpoint-swap chart-endpoint-icon ${legendPopoverOpen ? "is-active" : ""}`}
             onClick={() => setLegendPopoverOpen((v) => !v)}
             ref={legendButtonRef}
-            title="Coverage legend"
+            title="Legend"
             type="button"
           >
             <Info aria-hidden="true" strokeWidth={1.8} />

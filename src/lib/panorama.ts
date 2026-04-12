@@ -1,6 +1,6 @@
 import { computeSourceCentricRxMetrics, classifyPassFailState, type PassFailState } from "./passFailState";
 import { haversineDistanceKm } from "./geo";
-import { normalizeFovScale } from "./panoramaView";
+import { normalizeFovScale, FOV_SCALE_DEFAULT } from "./panoramaView";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -90,7 +90,7 @@ export const qualityToSampling = (quality: PanoramaQuality): { azimuthStepDeg: n
 export const resolvePanoramaSampling = (quality: PanoramaQuality, options?: { zoomModeEnabled?: boolean; fovScale?: number }) => {
   const defaults = qualityToSampling(quality);
   if (!options?.zoomModeEnabled) return defaults;
-  const fovScale = normalizeFovScale(options.fovScale ?? 1);
+  const fovScale = normalizeFovScale(options.fovScale ?? FOV_SCALE_DEFAULT);
   return {
     azimuthStepDeg: Math.max(0.25, defaults.azimuthStepDeg / fovScale),
     radialSamples: defaults.radialSamples,

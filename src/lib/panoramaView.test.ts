@@ -28,9 +28,12 @@ describe("panoramaView", () => {
 
   it("maps FOV scale to panorama span", () => {
     expect(normalizeFovScale(0.3)).toBe(1);
-    expect(normalizeFovScale(5)).toBe(4);
+    expect(normalizeFovScale(5)).toBe(5);
+    expect(normalizeFovScale(24)).toBe(24);
+    expect(normalizeFovScale(30)).toBe(24);
     expect(fovScaleToSpanDeg(1)).toBe(360);
     expect(fovScaleToSpanDeg(4)).toBe(90);
+    expect(fovScaleToSpanDeg(24)).toBe(15);
     expect(fovScaleToSpanDeg(1.5)).toBeCloseTo(240);
   });
 
