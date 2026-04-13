@@ -1,6 +1,7 @@
 import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, PanelBottomClose, PanelBottomOpen } from "lucide-react";
+import { FloatingPopover } from "./ui/FloatingPopover";
 import type { MouseEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -62,6 +63,7 @@ export function LinkProfileChart({
   rowControls,
   panelClassName,
 }: LinkProfileChartProps) {
+  const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const [hostAttachRevision, setHostAttachRevision] = useState(0);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
@@ -715,7 +717,7 @@ export function LinkProfileChart({
   }
 
   return (
-    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} data-profile-revision={profileRevision}>
+    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} data-profile-revision={profileRevision} ref={chartPanelRef}>
       <div className="chart-top-row">
         <div className="chart-endpoints" aria-live="polite">
           <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
@@ -856,13 +858,14 @@ export function LinkProfileChart({
           />
         </svg>
         {splitHoverPopoverPosition && cursorStates && cursorStates.length > 1 ? (
-          <div
-            className="chart-hover-popover"
-            role="status"
-            style={{
-              left: `${(splitHoverPopoverPosition.x / chartWidth) * 100}%`,
-              top: `${(splitHoverPopoverPosition.y / chartHeight) * 100}%`,
-            }}
+          <FloatingPopover
+            open={true}
+            onClose={() => {}}
+            containerRef={chartPanelRef}
+            placement="centered"
+            className="panorama-legend-popover"
+            estimatedHeight={160}
+            estimatedWidth={400}
           >
             {cursorStates.map((state) => (
               <div className="chart-hover-popover-row" key={state.key}>
@@ -872,7 +875,7 @@ export function LinkProfileChart({
                 </span>
               </div>
             ))}
-          </div>
+          </FloatingPopover>
         ) : null}
         </>
       ) : (
