@@ -2218,7 +2218,6 @@ input {
 .ui-slider {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
 }
 
@@ -2229,6 +2228,7 @@ input {
   color: var(--muted);
   font-weight: 700;
   font-family: "IBM Plex Mono", monospace;
+  flex: 0 0 auto;
 }
 
 .ui-slider-value {
@@ -2237,12 +2237,7 @@ input {
   font-size: 0.72rem;
   color: var(--text);
   font-family: "IBM Plex Mono", monospace;
-}
-
-.ui-slider-vertical .ui-slider-value {
-  min-width: 0;
-  width: 100%;
-  text-align: center;
+  flex: 0 0 auto;
 }
 
 .ui-slider-input {
@@ -2251,8 +2246,7 @@ input {
   flex: 1 1 0;
   min-width: 0;
   height: 44px;
-  border-radius: var(--radius-pill);
-  background: transparent;
+  background: none;
   outline: none;
   cursor: pointer;
   touch-action: none;
@@ -2272,13 +2266,23 @@ input {
 .ui-slider-input::-webkit-slider-runnable-track {
   height: 7px;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--border) 72%, var(--surface) 28%);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--ui-slider-fill, 0%),
+    color-mix(in srgb, var(--border) 72%, var(--surface) 28%) var(--ui-slider-fill, 0%)
+  );
 }
 
 .ui-slider-input::-moz-range-track {
   height: 7px;
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--border) 72%, var(--surface) 28%);
+}
+
+.ui-slider-input::-moz-range-progress {
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
 }
 
 .ui-slider-input::-moz-range-thumb {
@@ -2292,10 +2296,9 @@ input {
 
 .ui-slider-vertical {
   display: grid;
-  grid-template-rows: auto auto auto;
+  grid-template-rows: auto;
   justify-items: center;
   align-items: center;
-  gap: 10px;
   width: 92px;
   min-height: 268px;
   justify-content: center;
@@ -2334,21 +2337,18 @@ input {
   border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
-.ui-settings-row-slider {
-  display: flex;
-  flex-direction: column;
-  padding: 10px 12px 6px;
-  gap: 2px;
+.ui-settings-row-toggle .ui-slider {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
-.ui-settings-row-slider-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.ui-settings-row-slider .ui-slider {
-  width: 100%;
+.ui-settings-row-slider-value {
+  font-size: 0.72rem;
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--muted);
+  flex: 0 0 auto;
+  min-width: 36px;
+  text-align: right;
 }
 
 .ui-settings-row-toggle {

@@ -1370,37 +1370,33 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             style={{ left: `${settingsPopoverPos.left}px`, top: `${settingsPopoverPos.top}px` }}
           >
             <ul className="ui-settings-popover-list">
-              <li className="ui-settings-popover-row ui-settings-row-slider">
-                <div className="ui-settings-row-slider-header">
-                  <span className="ui-slider-label">FOV</span>
-                  <span className="ui-slider-value">{`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}</span>
-                </div>
-                <UiSlider
-                  ariaLabel="Panorama field of view"
-                  label=""
-                  max={FOV_SCALE_MAX}
-                  min={FOV_SCALE_MIN}
-                  onChange={(value) => setFovScale(normalizeFovScale(value))}
-                  step={0.1}
-                  value={normalizedFovScale}
-                  valueLabel=""
-                />
+              <li className="ui-settings-popover-row">
+                <label className="ui-settings-row-toggle">
+                  <span className="ui-settings-toggle-label">Field of view</span>
+                  <UiSlider
+                    ariaLabel="Panorama field of view"
+                    max={FOV_SCALE_MAX}
+                    min={FOV_SCALE_MIN}
+                    onChange={(value) => setFovScale(normalizeFovScale(value))}
+                    step={0.1}
+                    value={normalizedFovScale}
+                  />
+                  <span className="ui-settings-row-slider-value">{`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}</span>
+                </label>
               </li>
-              <li className="ui-settings-popover-row ui-settings-row-slider">
-                <div className="ui-settings-row-slider-header">
-                  <span className="ui-slider-label">Vertical</span>
-                  <span className="ui-slider-value">{`${exaggeration.toFixed(1)}x`}</span>
-                </div>
-                <UiSlider
-                  ariaLabel="Panorama vertical exaggeration"
-                  label=""
-                  max={20}
-                  min={1}
-                  onChange={(value) => setExaggeration(clamp(value, 1, 20))}
-                  step={0.1}
-                  value={exaggeration}
-                  valueLabel=""
-                />
+              <li className="ui-settings-popover-row">
+                <label className="ui-settings-row-toggle">
+                  <span className="ui-settings-toggle-label">Vertical exaggeration</span>
+                  <UiSlider
+                    ariaLabel="Panorama vertical exaggeration"
+                    max={20}
+                    min={1}
+                    onChange={(value) => setExaggeration(clamp(value, 1, 20))}
+                    step={0.1}
+                    value={exaggeration}
+                  />
+                  <span className="ui-settings-row-slider-value">{`${exaggeration.toFixed(1)}x`}</span>
+                </label>
               </li>
               <li className="ui-settings-popover-row">
                 <button
@@ -1409,7 +1405,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                   onClick={() => setMapHoverZoomEnabled((v) => !v)}
                   type="button"
                 >
-                  <span className="ui-settings-toggle-label">Map hover lens</span>
+                  <span className="ui-settings-toggle-label">Center map on hover</span>
                   <span className={`ui-settings-toggle-icon ${mapHoverZoomEnabled ? "is-active" : ""}`}>
                     <MapPinned aria-hidden="true" size={16} strokeWidth={1.8} />
                   </span>
