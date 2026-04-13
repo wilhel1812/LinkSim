@@ -1,8 +1,7 @@
 import { scaleLinear } from "d3-scale";
-import { Surface } from "./ui/Surface";
+import { FloatingPopover } from "./ui/FloatingPopover";
 import { StateDot } from "./StateDot";
 import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, RadioTower, Settings, Tags } from "lucide-react";
-import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
@@ -122,13 +121,12 @@ type HoverTarget =
 const pointerDistance = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
 
 export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls, panelClassName }: PanoramaChartProps) {
+  const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
-  const settingsPopoverRef = useRef<HTMLDivElement | null>(null);
   const legendButtonRef = useRef<HTMLButtonElement | null>(null);
-  const legendPopoverRef = useRef<HTMLDivElement | null>(null);
   const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStartRef = useRef<{ distance: number; fovScale: number; spanDeg: number; centerDeg: number } | null>(null);
   const panDragRef = useRef<{ pointerId: number; startX: number; startCenterDeg: number } | null>(null);
@@ -146,14 +144,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
   const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
-  const [settingsPopoverPos, setSettingsPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const [peakCandidates, setPeakCandidates] = useState<PanoramaPeakCandidate[]>([]);
   const [peakLoadStatus, setPeakLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [, setPeakLoadError] = useState<string | null>(null);
   const { theme: themeMode } = useThemeVariant();
   const shadingHazeStart = themeMode === "dark" ? 0.5 : 0;
   const [legendPopoverOpen, setLegendPopoverOpen] = useState(false);
-  const [legendPopoverPos, setLegendPopoverPos] = useState<{ left: number; top: number; direction: "up" | "down" } | null>(null);
   const peakErrorLogTsRef = useRef(0);
 
 
@@ -1248,87 +1244,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     });
   };
 
-  useEffect(() => {
-    if (!settingsPopoverOpen) { setSettingsPopoverPos(null); return; }
-    const updatePosition = () => {
-      const rect = settingsButtonRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const estimatedHeight = 290;
-      const spaceAbove = rect.top;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const direction: "up" | "down" = spaceAbove >= estimatedHeight + 12 || spaceAbove >= spaceBelow ? "up" : "down";
-      const left = clamp(rect.left + rect.width / 2, 84, window.innerWidth - 84);
-      setSettingsPopoverPos({ left, top: direction === "up" ? rect.top - 8 : rect.bottom + 8, direction });
-    };
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [settingsPopoverOpen]);
-
-  useEffect(() => {
-    if (!settingsPopoverOpen) return;
-    const onPointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node | null;
-      if (settingsPopoverRef.current?.contains(target)) return;
-      if (settingsButtonRef.current?.contains(target)) return;
-      setSettingsPopoverOpen(false);
-    };
-    const onFocusIn = (event: FocusEvent) => {
-      const target = event.target as Node | null;
-      if (settingsPopoverRef.current?.contains(target)) return;
-      if (settingsButtonRef.current?.contains(target)) return;
-      setSettingsPopoverOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("touchstart", onPointerDown, { passive: true });
-    document.addEventListener("focusin", onFocusIn);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("touchstart", onPointerDown);
-      document.removeEventListener("focusin", onFocusIn);
-    };
-  }, [settingsPopoverOpen]);
-
-  useEffect(() => {
-    if (!legendPopoverOpen) { setLegendPopoverPos(null); return; }
-    const updatePosition = () => {
-      const rect = legendButtonRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const estimatedHeight = 120;
-      const spaceAbove = rect.top;
-      const direction: "up" | "down" = spaceAbove >= estimatedHeight + 12 ? "up" : "down";
-      const left = clamp(rect.left + rect.width / 2, 84, window.innerWidth - 84);
-      setLegendPopoverPos({ left, top: direction === "up" ? rect.top - 8 : rect.bottom + 8, direction });
-    };
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [legendPopoverOpen]);
-
-  useEffect(() => {
-    if (!legendPopoverOpen) return;
-    const onPointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node | null;
-      if (legendPopoverRef.current?.contains(target)) return;
-      if (legendButtonRef.current?.contains(target)) return;
-      setLegendPopoverOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("touchstart", onPointerDown, { passive: true });
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("touchstart", onPointerDown);
-    };
-  }, [legendPopoverOpen]);
-
   if (!selectedSiteEffective) {
     return (
       <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
@@ -1361,128 +1276,140 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     : null;
 
 
-  const settingsPopover =
-    settingsPopoverOpen && settingsPopoverPos && typeof document !== "undefined"
-      ? createPortal(
-          <Surface
-            variant="card"
-            className={`ui-action-popover panorama-settings-popover ${settingsPopoverPos.direction === "down" ? "is-down" : ""}`}
-            ref={settingsPopoverRef}
-            style={{ left: `${settingsPopoverPos.left}px`, top: `${settingsPopoverPos.top}px` }}
-          >
-            <ul className="ui-settings-popover-list">
-              <li className="ui-settings-popover-row">
-                <div className="ui-settings-row-slider">
-                  <div className="ui-settings-row-slider-header">
-                    <span className="ui-settings-toggle-label">Field of view</span>
-                    <span className="ui-settings-row-slider-value">{`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}</span>
-                  </div>
-                  <UiSlider
-                    ariaLabel="Panorama field of view"
-                    max={FOV_SCALE_MAX}
-                    min={FOV_SCALE_MIN}
-                    onChange={(value) => setFovScale(normalizeFovScale(value))}
-                    step={0.1}
-                    value={normalizedFovScale}
-                  />
-                </div>
-              </li>
-              <li className="ui-settings-popover-row">
-                <div className="ui-settings-row-slider">
-                  <div className="ui-settings-row-slider-header">
-                    <span className="ui-settings-toggle-label">Vertical exaggeration</span>
-                    <span className="ui-settings-row-slider-value">{`${exaggeration.toFixed(1)}x`}</span>
-                  </div>
-                  <UiSlider
-                    ariaLabel="Panorama vertical exaggeration"
-                    max={20}
-                    min={1}
-                    onChange={(value) => setExaggeration(clamp(value, 1, 20))}
-                    step={0.1}
-                    value={exaggeration}
-                  />
-                </div>
-              </li>
-              <li className="ui-settings-popover-row">
-                <button
-                  aria-pressed={mapHoverZoomEnabled}
-                  className="ui-settings-row-toggle"
-                  onClick={() => setMapHoverZoomEnabled((v) => !v)}
-                  type="button"
-                >
-                  <span className="ui-settings-toggle-label">Center map on hover</span>
-                  <span className={`ui-settings-toggle-icon ${mapHoverZoomEnabled ? "is-active" : ""}`}>
-                    <MapPinned aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </span>
-                </button>
-              </li>
-              <li className="ui-settings-popover-row">
-                <button
-                  aria-pressed={showLabels}
-                  className="ui-settings-row-toggle"
-                  onClick={() => setShowLabels((v) => !v)}
-                  type="button"
-                >
-                  <span className="ui-settings-toggle-label">Labels</span>
-                  <span className={`ui-settings-toggle-icon ${showLabels ? "is-active" : ""}`}>
-                    <Tags aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </span>
-                </button>
-              </li>
-              <li className="ui-settings-popover-row">
-                <button
-                  aria-pressed={terrainDistanceHeatmap}
-                  className="ui-settings-row-toggle"
-                  onClick={() => setTerrainDistanceHeatmap((v) => !v)}
-                  type="button"
-                >
-                  <span className="ui-settings-toggle-label">Distance heatmap</span>
-                  <span className={`ui-settings-toggle-icon ${terrainDistanceHeatmap ? "is-active" : ""}`}>
-                    <Paintbrush aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </span>
-                </button>
-              </li>
-            </ul>
-          </Surface>,
-          document.body,
-        )
-      : null;
+  const hoverPopoverFloating =
+    hoverPopover && focusTarget ? (
+      <FloatingPopover
+        open={!!focusTarget}
+        onClose={() => {}}
+        containerRef={chartPanelRef}
+        placement="centered"
+        className="panorama-legend-popover"
+        estimatedHeight={200}
+        estimatedWidth={380}
+      >
+        <div className="chart-hover-popover-row"><strong>{hoverPopover.title}</strong></div>
+        {hoverPopover.rows.map((row) => (
+          <div className="chart-hover-popover-row" key={row}>{row}</div>
+        ))}
+      </FloatingPopover>
+    ) : null;
 
-  const legendPopover =
-    legendPopoverOpen && legendPopoverPos && typeof document !== "undefined"
-      ? createPortal(
-          <Surface
-            variant="card"
-            className={`ui-action-popover panorama-legend-popover ${legendPopoverPos.direction === "down" ? "is-down" : ""}`}
-            ref={legendPopoverRef}
-            style={{ left: `${legendPopoverPos.left}px`, top: `${legendPopoverPos.top}px` }}
+  const settingsPopover = (
+    <FloatingPopover
+      open={settingsPopoverOpen}
+      onClose={() => setSettingsPopoverOpen(false)}
+      triggerRef={settingsButtonRef}
+      className="panorama-settings-popover"
+      estimatedHeight={290}
+    >
+      <ul className="ui-settings-popover-list">
+        <li className="ui-settings-popover-row">
+          <div className="ui-settings-row-slider">
+            <div className="ui-settings-row-slider-header">
+              <span className="ui-settings-toggle-label">Field of view</span>
+              <span className="ui-settings-row-slider-value">{`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}</span>
+            </div>
+            <UiSlider
+              ariaLabel="Panorama field of view"
+              max={FOV_SCALE_MAX}
+              min={FOV_SCALE_MIN}
+              onChange={(value) => setFovScale(normalizeFovScale(value))}
+              step={0.1}
+              value={normalizedFovScale}
+            />
+          </div>
+        </li>
+        <li className="ui-settings-popover-row">
+          <div className="ui-settings-row-slider">
+            <div className="ui-settings-row-slider-header">
+              <span className="ui-settings-toggle-label">Vertical exaggeration</span>
+              <span className="ui-settings-row-slider-value">{`${exaggeration.toFixed(1)}x`}</span>
+            </div>
+            <UiSlider
+              ariaLabel="Panorama vertical exaggeration"
+              max={20}
+              min={1}
+              onChange={(value) => setExaggeration(clamp(value, 1, 20))}
+              step={0.1}
+              value={exaggeration}
+            />
+          </div>
+        </li>
+        <li className="ui-settings-popover-row">
+          <button
+            aria-pressed={mapHoverZoomEnabled}
+            className="ui-settings-row-toggle"
+            onClick={() => setMapHoverZoomEnabled((v) => !v)}
+            type="button"
           >
-            <ul className="panorama-legend-popover-list">
-              <li><StateDot state="pass_clear" /><span>Visible + pass</span></li>
-              <li><StateDot state="pass_blocked" /><span>Blocked + pass</span></li>
-              <li><StateDot state="fail_clear" /><span>Visible + fail</span></li>
-              <li><StateDot state="fail_blocked" /><span>Blocked + fail</span></li>
-            </ul>
-            {terrainDistanceHeatmap ? (
-              <div className="panorama-legend-heatmap">
-                <p className="panorama-legend-heatmap-title">Terrain distance</p>
-                <div className="panorama-legend-heatmap-bar" />
-                <div className="panorama-legend-heatmap-labels">
-                  <span>Far</span>
-                  <span>Near</span>
-                </div>
-              </div>
-            ) : null}
-          </Surface>,
-          document.body,
-        )
-      : null;
+            <span className="ui-settings-toggle-label">Center map on hover</span>
+            <span className={`ui-settings-toggle-icon ${mapHoverZoomEnabled ? "is-active" : ""}`}>
+              <MapPinned aria-hidden="true" size={16} strokeWidth={1.8} />
+            </span>
+          </button>
+        </li>
+        <li className="ui-settings-popover-row">
+          <button
+            aria-pressed={showLabels}
+            className="ui-settings-row-toggle"
+            onClick={() => setShowLabels((v) => !v)}
+            type="button"
+          >
+            <span className="ui-settings-toggle-label">Labels</span>
+            <span className={`ui-settings-toggle-icon ${showLabels ? "is-active" : ""}`}>
+              <Tags aria-hidden="true" size={16} strokeWidth={1.8} />
+            </span>
+          </button>
+        </li>
+        <li className="ui-settings-popover-row">
+          <button
+            aria-pressed={terrainDistanceHeatmap}
+            className="ui-settings-row-toggle"
+            onClick={() => setTerrainDistanceHeatmap((v) => !v)}
+            type="button"
+          >
+            <span className="ui-settings-toggle-label">Distance heatmap</span>
+            <span className={`ui-settings-toggle-icon ${terrainDistanceHeatmap ? "is-active" : ""}`}>
+              <Paintbrush aria-hidden="true" size={16} strokeWidth={1.8} />
+            </span>
+          </button>
+        </li>
+      </ul>
+    </FloatingPopover>
+  );
+
+  const legendPopover = (
+    <FloatingPopover
+      open={legendPopoverOpen}
+      onClose={() => setLegendPopoverOpen(false)}
+      triggerRef={legendButtonRef}
+      className="panorama-legend-popover"
+      estimatedHeight={120}
+    >
+      <ul className="panorama-legend-popover-list">
+        <li><StateDot state="pass_clear" /><span>Visible + pass</span></li>
+        <li><StateDot state="pass_blocked" /><span>Blocked + pass</span></li>
+        <li><StateDot state="fail_clear" /><span>Visible + fail</span></li>
+        <li><StateDot state="fail_blocked" /><span>Blocked + fail</span></li>
+      </ul>
+      {terrainDistanceHeatmap ? (
+        <div className="panorama-legend-heatmap">
+          <p className="panorama-legend-heatmap-title">Terrain distance</p>
+          <div className="panorama-legend-heatmap-bar" />
+          <div className="panorama-legend-heatmap-labels">
+            <span>Far</span>
+            <span>Near</span>
+          </div>
+        </div>
+      ) : null}
+    </FloatingPopover>
+  );
 
   const scrubberWidthPct = Math.max(8, (viewportSpanDeg / 360) * 100);
   const scrubberLeftPct = clamp((viewportCenterAzimuthDeg / 360) * 100 - scrubberWidthPct / 2, 0, 100 - scrubberWidthPct);
 
   return (
-    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()}>
+    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} ref={chartPanelRef}>
       <div className="chart-top-row">
         <h3 className="panorama-header-title">Panorama from {selectedSiteEffective.name}</h3>
         <div className="chart-action-row-controls">
@@ -1599,20 +1526,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 );
               })}
             </div>
-            {hoverPopover && focusTarget ? (
-              <div
-                className="chart-hover-popover"
-                style={{
-                  left: `${clamp(focusTarget.x, 170, chartWidth - 170)}px`,
-                  top: `${clamp(focusTarget.y - 12, 46, chartHeight - 14)}px`,
-                }}
-              >
-                <div className="chart-hover-popover-row"><strong>{hoverPopover.title}</strong></div>
-                {hoverPopover.rows.map((row) => (
-                  <div className="chart-hover-popover-row" key={row}>{row}</div>
-                ))}
-              </div>
-            ) : null}
             {peakLoadStatus === "loading" && (
               <div className="ui-surface-pill panorama-peaks-loading">
                 <div className="map-progress-track">
@@ -1640,6 +1553,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           }}
         />
       </div>
+      {hoverPopoverFloating}
       {settingsPopover}
     </section>
   );
