@@ -25,7 +25,7 @@ export function UiSlider({
 }: UiSliderProps) {
   const style = orientation === "vertical" ? ({ "--ui-slider-fill": `${((value - min) / Math.max(0.0001, max - min)) * 100}%` } as CSSProperties) : undefined;
   return (
-    <label className={`ui-slider ui-slider-${orientation}`}>
+    <label className={`ui-slider ui-slider-${orientation}`} style={style}>
       <span className="ui-slider-label">{label}</span>
       <input
         aria-label={ariaLabel}
@@ -34,7 +34,6 @@ export function UiSlider({
         min={min}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
         step={step}
-        style={style}
         type="range"
         value={value}
       />

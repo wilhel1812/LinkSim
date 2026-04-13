@@ -2216,7 +2216,7 @@ input {
 }
 
 .ui-slider {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -2248,7 +2248,8 @@ input {
 .ui-slider-input {
   appearance: none;
   -webkit-appearance: none;
-  width: 148px;
+  flex: 1 1 0;
+  min-width: 0;
   height: 44px;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -2309,19 +2310,91 @@ input {
   direction: rtl;
 }
 
-.panorama-slider-popover {
+.ui-action-popover {
   position: fixed;
   z-index: 2100;
   transform: translate(-50%, calc(-100% - 6px));
-  min-width: 136px;
-  padding: 12px 10px;
-  border-radius: var(--radius-card);
   animation: panorama-popover-rise 140ms ease-out;
 }
 
-.panorama-slider-popover.is-down {
+.ui-action-popover.is-down {
   transform: translate(-50%, 6px);
   animation: panorama-popover-drop 140ms ease-out;
+}
+
+.ui-settings-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-settings-popover-row + .ui-settings-popover-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.ui-settings-row-slider {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 6px;
+  gap: 2px;
+}
+
+.ui-settings-row-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.ui-settings-row-slider .ui-slider {
+  width: 100%;
+}
+
+.ui-settings-row-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+
+.ui-settings-row-toggle:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.ui-settings-toggle-label {
+  font-size: 0.8rem;
+  color: var(--text);
+  user-select: none;
+}
+
+.ui-settings-toggle-icon {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  transition: color 100ms;
+}
+
+.ui-settings-toggle-icon.is-active {
+  color: var(--accent);
+}
+
+.panorama-slider-popover {
+  min-width: 136px;
+  padding: 12px 10px;
+  border-radius: var(--radius-card);
+}
+
+.panorama-settings-popover {
+  width: 220px;
+  padding: 6px 0;
 }
 
 .panorama-slider-popover-stack {
@@ -2391,16 +2464,7 @@ input {
 }
 
 .panorama-legend-popover {
-  position: fixed;
-  z-index: 2100;
-  transform: translate(-50%, calc(-100% - 6px));
   padding: 10px 14px;
-  animation: panorama-popover-rise 140ms ease-out;
-}
-
-.panorama-legend-popover.is-down {
-  transform: translate(-50%, 6px);
-  animation: panorama-popover-drop 140ms ease-out;
 }
 
 .panorama-legend-popover-list {
