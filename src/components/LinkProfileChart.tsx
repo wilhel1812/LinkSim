@@ -14,6 +14,7 @@ import { buildProfileChartSvgProps } from "../lib/profileChartSvg";
 import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
 import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
 import { buildProfile } from "../lib/propagation";
+import { StateDot } from "./StateDot";
 import { buildSelectionEffectiveLink } from "../lib/selectionEffectiveLink";
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
@@ -751,7 +752,7 @@ export function LinkProfileChart({
         <div className="chart-hover-state">
           {cursorPoint && footerCursorState ? (
             <>
-              <span className={`state-dot state-dot-${footerCursorState.state}`} aria-hidden />
+              <StateDot state={footerCursorState.state} />
               <span>
                 {footerCursorState.label} at {footerCursorState.distanceKm.toFixed(2)} km (
                 {footerCursorState.rxAfterEnvLossDbm.toFixed(1)} dBm after env loss)
@@ -865,7 +866,7 @@ export function LinkProfileChart({
           >
             {cursorStates.map((state) => (
               <div className="chart-hover-popover-row" key={state.key}>
-                <span className={`state-dot state-dot-${state.state}`} aria-hidden />
+                <StateDot state={state.state} />
                 <span>
                   {state.sideLabel}: {state.label} at {state.distanceKm.toFixed(2)} km ({state.rxAfterEnvLossDbm.toFixed(1)} dBm after env loss)
                 </span>

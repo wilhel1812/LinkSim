@@ -56,6 +56,7 @@ import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/lates
 import { createLruCache } from "../lib/lruCache";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
+import { StateDot } from "./StateDot";
 import { useMapControls } from "./map/useMapControls";
 
 const UI_SECTION_KEYS = {
@@ -2845,19 +2846,19 @@ export function MapView({
                 <p>Go/no-go map with terrain context.</p>
                 <ul className="overlay-legend">
                   <li>
-                    <span className="state-dot state-dot-pass_clear" />
+                    <StateDot state="pass_clear" />
                     <span>Clear path and meets signal target</span>
                   </li>
                   <li>
-                    <span className="state-dot state-dot-pass_blocked" />
+                    <StateDot state="pass_blocked" />
                     <span>Blocked path, but still meets signal target</span>
                   </li>
                   <li>
-                    <span className="state-dot state-dot-fail_clear" />
+                    <StateDot state="fail_clear" />
                     <span>Clear path, but below signal target</span>
                   </li>
                   <li>
-                    <span className="state-dot state-dot-fail_blocked" />
+                    <StateDot state="fail_blocked" />
                     <span>Blocked path and below signal target</span>
                   </li>
                 </ul>

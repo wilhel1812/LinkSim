@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CircleAlert, CircleCheck, CircleX, Info, Layers, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
 import { ActionButton } from "./ActionButton";
+import { StateDot } from "./StateDot";
 import { Surface } from "./ui/Surface";
 import { UiSlider } from "./UiSlider";
 import { useThemeVariant } from "../hooks/useThemeVariant";
@@ -440,19 +441,19 @@ export function UiGalleryPage() {
               <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
                 <Surface variant="pill" style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <span className="state-dot state-dot-pass_clear" aria-hidden />
+                    <StateDot state="pass_clear" />
                     <span>Visible + pass</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <span className="state-dot state-dot-pass_blocked" aria-hidden />
+                    <StateDot state="pass_blocked" />
                     <span>Blocked + pass</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <span className="state-dot state-dot-fail_clear" aria-hidden />
+                    <StateDot state="fail_clear" />
                     <span>Visible + fail</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <span className="state-dot state-dot-fail_blocked" aria-hidden />
+                    <StateDot state="fail_blocked" />
                     <span>Blocked + fail</span>
                   </div>
                 </Surface>
