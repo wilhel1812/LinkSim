@@ -217,11 +217,25 @@ async function verifyRemoteSchema(targetName, databaseName) {
   // Skip in CI: schema correctness is enforced by the PR/migration review process.
   // The check requires D1 API access beyond what the deploy token provides.
   if (process.env.GITHUB_ACTIONS === "true") return;
-  const { stdout } = await run(
-    wrangler,
-    ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(resource_changes);"],
-    { capture: true },
-  );
+  let d1Result;
+  try {
+    d1Result = await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(resource_changes);"],
+      { capture: true },
+    );
+  } catch (err) {
+    const msg = String(err?.message ?? "");
+    if (msg.includes("Authentication") || msg.includes("code: 10000") || msg.includes("code: 9106") || msg.includes("Authentication failed")) {
+      throw new Error(
+        "D1 preflight failed: Cloudflare authentication error. " +
+        "Deploy scripts require CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID. " +
+        "Do NOT run deploy scripts locally — CI handles all deploys automatically on merge to staging or main.",
+      );
+    }
+    throw err;
+  }
+  const { stdout } = d1Result;
   const parsed = parseWranglerJsonPayload(stdout);
   assert(Array.isArray(parsed) && parsed.length > 0, "Preflight failed: unable to parse D1 schema output.");
   const first = parsed[0];
