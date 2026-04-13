@@ -2302,12 +2302,12 @@ input {
 }
 
 .ui-slider-vertical .ui-slider-input {
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  width: 44px;
-  height: 178px;
-  writing-mode: vertical-lr;
-  direction: rtl;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 178px;
+  height: 44px;
+  transform: rotate(-90deg);
+  transform-origin: center;
 }
 
 .ui-action-popover {
