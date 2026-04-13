@@ -2244,9 +2244,51 @@ input {
   flex: 1 1 0;
   min-width: 0;
   height: 44px;
+  accent-color: var(--accent);
   outline: none;
   cursor: pointer;
   touch-action: none;
+}
+
+.ui-slider-input::-webkit-slider-runnable-track {
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+
+.ui-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.ui-slider-input::-moz-range-track {
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+
+.ui-slider-input::-moz-range-progress {
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 82%, var(--surface)), var(--accent));
+}
+
+.ui-slider-input::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 .ui-slider-vertical {
