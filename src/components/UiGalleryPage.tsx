@@ -265,18 +265,14 @@ export function UiGalleryPage() {
             </PatternCard>
             <PatternCard name="UI Slider Toolkit" status="standard">
               <div className="chip-group" style={{ alignItems: "flex-start" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, width: 220 }}>
-                  <span className="ui-slider-label">FOV</span>
-                  <UiSlider
-                    ariaLabel="Horizontal slider specimen"
-                    max={4}
-                    min={1}
-                    onChange={() => undefined}
-                    step={0.1}
-                    value={1.5}
-                  />
-                  <span className="ui-slider-value">240°</span>
-                </div>
+                <UiSlider
+                  ariaLabel="Horizontal slider specimen"
+                  max={4}
+                  min={1}
+                  onChange={() => undefined}
+                  step={0.1}
+                  value={1.5}
+                />
                 <UiSlider
                   ariaLabel="Vertical slider specimen"
                   max={1}

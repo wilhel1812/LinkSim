@@ -1,5 +1,3 @@
-import type { CSSProperties } from "react";
-
 type UiSliderProps = {
   ariaLabel: string;
   max: number;
@@ -11,7 +9,6 @@ type UiSliderProps = {
 };
 
 export function UiSlider({ ariaLabel, max, min, onChange, orientation = "horizontal", step = 1, value }: UiSliderProps) {
-  const style = { "--ui-slider-fill": `${((value - min) / Math.max(0.0001, max - min)) * 100}%` } as CSSProperties;
   return (
     <label className={`ui-slider ui-slider-${orientation}`}>
       <input
@@ -21,7 +18,6 @@ export function UiSlider({ ariaLabel, max, min, onChange, orientation = "horizon
         min={min}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
         step={step}
-        style={style}
         type="range"
         value={value}
       />

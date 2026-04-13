@@ -1371,8 +1371,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           >
             <ul className="ui-settings-popover-list">
               <li className="ui-settings-popover-row">
-                <label className="ui-settings-row-toggle">
-                  <span className="ui-settings-toggle-label">Field of view</span>
+                <div className="ui-settings-row-slider">
+                  <div className="ui-settings-row-slider-header">
+                    <span className="ui-settings-toggle-label">Field of view</span>
+                    <span className="ui-settings-row-slider-value">{`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}</span>
+                  </div>
                   <UiSlider
                     ariaLabel="Panorama field of view"
                     max={FOV_SCALE_MAX}
@@ -1381,12 +1384,14 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                     step={0.1}
                     value={normalizedFovScale}
                   />
-                  <span className="ui-settings-row-slider-value">{`${Math.round(fovScaleToSpanDeg(normalizedFovScale))}°`}</span>
-                </label>
+                </div>
               </li>
               <li className="ui-settings-popover-row">
-                <label className="ui-settings-row-toggle">
-                  <span className="ui-settings-toggle-label">Vertical exaggeration</span>
+                <div className="ui-settings-row-slider">
+                  <div className="ui-settings-row-slider-header">
+                    <span className="ui-settings-toggle-label">Vertical exaggeration</span>
+                    <span className="ui-settings-row-slider-value">{`${exaggeration.toFixed(1)}x`}</span>
+                  </div>
                   <UiSlider
                     ariaLabel="Panorama vertical exaggeration"
                     max={20}
@@ -1395,8 +1400,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                     step={0.1}
                     value={exaggeration}
                   />
-                  <span className="ui-settings-row-slider-value">{`${exaggeration.toFixed(1)}x`}</span>
-                </label>
+                </div>
               </li>
               <li className="ui-settings-popover-row">
                 <button
