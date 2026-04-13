@@ -21,17 +21,15 @@
 
 2. Live test (staging)
 - Merge approved issue PR into `staging` (squash merge).
-- Deploy from branch `staging` using `npm run deploy:staging`.
-- Verify at https://staging.linksim.link.
-- Use explicit guarded commands only:
-  - Staging deploy: `npm run deploy:staging`.
-  - Preview URL: `npm run deploy:staging:preview` (separate preview URL for side-by-side comparison).
+- CI automatically deploys to https://staging.linksim.link on every merge to `staging`. Monitor the `Deploy LinkSim Pages / deploy-staging` GitHub Actions job and report the commit SHA/build label when complete.
+- Do not run `npm run deploy:staging` manually after a normal merge — CI handles it. Use `workflow_dispatch` only for override deploys.
+- Preview URL for side-by-side comparison (explicit request only): `npm run deploy:staging:preview`.
 
 3. Production
 - Promote only after explicit user approval.
-- Open PR `staging` -> `main`.
-- Deploy the exact verified staging commit to production (no extra code changes in between).
-- Use explicit guarded command only: `npm run deploy:prod:main`.
+- Open PR `staging` -> `main` (direct path — branch policy allows `staging` as head branch).
+- CI automatically deploys to production on every merge to `main`. Monitor the `Deploy LinkSim Pages / deploy-prod-main` GitHub Actions job and report the commit SHA when complete.
+- Note: the CI deploy job runs `validate-prod-release.mjs` which requires a SemVer version bump and git tag at HEAD — ensure these are in place before merging to `main`.
 - After production deploy, continue all new work from updated `origin/staging`.
 - If direct `staging` -> `main` promotion is blocked and a `hotfix/*` reconcile/snapshot PR to `main` is used, treat that as an exception path and immediately run main->staging sync before starting any new work.
 
@@ -55,8 +53,9 @@
   - `hotfix/<slug>`
   - `chore/<slug>`
 - PRs into `main` must come from:
-  - `staging` (default and only normal release path)
+  - `staging` (default and only normal release path — branch policy explicitly allows this)
   - `hotfix/<slug>` (approved production incidents only)
+  - `release/vX.Y.Z` (legacy exception path, not used for normal releases)
 - Merge strategy: squash merge only.
 - Auto-delete merged branches enabled.
 
@@ -115,11 +114,13 @@
 - Milestone production release policy: apply `released` label during the milestone release sweep for shipped issues.
 
 ## CI/CD Controls
-- GitHub Actions deploy workflow is manual (`workflow_dispatch`) with explicit target selection:
-  - `staging`
-  - `prod-main`
+- GitHub Actions deploy workflow triggers automatically on push to `staging` and `main`:
+  - Push to `staging` → `deploy-staging` job → https://staging.linksim.link
+  - Push to `main` → `deploy-prod-main` job → https://linksim.link
+- Manual override available via `workflow_dispatch` with explicit target selection (`staging` or `prod-main`).
 - `prod-main` job runs in the `production` GitHub environment (configure required reviewers in repo settings).
 - `staging` runs in the `staging` environment.
+- Both branches require CI quality gates (`CI Quality Gates / verify` + `PR Branch Policy / enforce`) to pass before merge.
 
 ## Drift prevention rules
 - Issue branches must be created from latest `origin/staging`.

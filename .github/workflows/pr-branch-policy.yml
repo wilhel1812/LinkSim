@@ -27,10 +27,10 @@ jobs:
             exit 1
           fi
           if [ "$BASE_REF" = "main" ]; then
-            if [[ "$HEAD_REF" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9-]+$ ]]; then
+            if [ "$HEAD_REF" = "staging" ] || [[ "$HEAD_REF" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9-]+$ ]]; then
               exit 0
             fi
-            echo "PR to main must come from release/vX.Y.Z or hotfix/<slug>."
+            echo "PR to main must come from staging, release/vX.Y.Z, or hotfix/<slug>."
             exit 1
           fi
       - name: Set commit status on success
@@ -57,5 +57,5 @@ jobs:
               sha: context.payload.pull_request.head.sha,
               state: 'failure',
               context: 'PR Branch Policy / enforce',
-              description: 'Branch naming policy violation',
+              description: 'Branch naming policy violation — PR to main must come from staging, release/vX.Y.Z, or hotfix/<slug>',
             });
