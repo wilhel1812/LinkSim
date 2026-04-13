@@ -1,5 +1,6 @@
 import { scaleLinear } from "d3-scale";
 import { Surface } from "./ui/Surface";
+import { StateDot } from "./StateDot";
 import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, RadioTower, Settings, Tags } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
@@ -1457,10 +1458,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             style={{ left: `${legendPopoverPos.left}px`, top: `${legendPopoverPos.top}px` }}
           >
             <ul className="panorama-legend-popover-list">
-              <li><span className="state-dot state-dot-pass_clear" aria-hidden /><span>Visible + pass</span></li>
-              <li><span className="state-dot state-dot-pass_blocked" aria-hidden /><span>Blocked + pass</span></li>
-              <li><span className="state-dot state-dot-fail_clear" aria-hidden /><span>Visible + fail</span></li>
-              <li><span className="state-dot state-dot-fail_blocked" aria-hidden /><span>Blocked + fail</span></li>
+              <li><StateDot state="pass_clear" /><span>Visible + pass</span></li>
+              <li><StateDot state="pass_blocked" /><span>Blocked + pass</span></li>
+              <li><StateDot state="fail_clear" /><span>Visible + fail</span></li>
+              <li><StateDot state="fail_blocked" /><span>Blocked + fail</span></li>
             </ul>
             {terrainDistanceHeatmap ? (
               <div className="panorama-legend-heatmap">
