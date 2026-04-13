@@ -20,10 +20,19 @@
   - Only promote to production after explicit user approval, using the same verified commit.
 - Branch workflow:
   - Use per-issue branches: `issue/<id>-<slug>`.
+  - **Always branch from `origin/staging`**, not `origin/main`. Creating a branch from `main` will cause merge conflicts when opening a PR to `staging`.
   - Merge issue branches into `staging` first.
   - For normal releases, promote to production only via a direct PR from `staging` into `main` (no release branch needed — the branch policy allows `staging` → `main` directly).
   - Use `hotfix/<slug>` only for explicitly approved incidents.
   - This staging-integration model is the default unless the user explicitly overrides it.
+- Worktree branch vs. issue branch:
+  - When working inside a Claude Code worktree, the session branch is named `claude/<name>` — this is the worktree's own bookkeeping branch, **not** your working branch.
+  - Always create a new `issue/<id>-<slug>` branch from `origin/staging` before making any changes: `git checkout -b issue/<id>-<slug> origin/staging`
+  - Never commit to the `claude/*` session branch. All work goes on the `issue/<id>-<slug>` branch.
+- Deploy policy:
+  - **Never run `npm run deploy:staging`, `npm run deploy:prod:main`, or any deploy script locally.** CI automatically deploys when code merges to `staging` or `main` — you do not need to trigger a deploy.
+  - Local deploy attempts will fail: Cloudflare credentials (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) are only available in the CI environment.
+  - If you encounter a Cloudflare authentication error while running a deploy script, stop immediately — you are running a command that belongs in CI, not locally.
 - Branch/worktree cleanup routine (default after each completed pass):
   - Keep only long-lived branches locally/remotely: `main`, `staging` (unless an active pass needs additional branches).
   - After merge/deploy, prune refs: `git fetch --prune origin`.
