@@ -2246,6 +2246,7 @@ input {
   height: 44px;
   -webkit-appearance: none;
   appearance: none;
+  background: transparent;
   outline: none;
   cursor: pointer;
   touch-action: none;
