@@ -1317,6 +1317,7 @@ input {
   -webkit-backdrop-filter: blur(var(--glass-panel-blur));
   backdrop-filter: blur(var(--glass-panel-blur));
   box-shadow: var(--shadow-elev-3);
+  font-size: 0.75rem;
 }
 
 .ui-surface-pill.is-card {
