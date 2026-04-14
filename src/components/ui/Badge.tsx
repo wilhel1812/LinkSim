@@ -1,7 +1,7 @@
-import { Globe, Lock, EthernetPort, Globe2 } from 'lucide-react';
+import { Globe, Lock, EthernetPort, Globe2, GlobeOff, FlaskConical } from 'lucide-react';
 import type { HTMLAttributes } from 'react';
 
-type BadgeVariant = 'private' | 'public' | 'shared' | 'mqtt';
+type BadgeVariant = 'private' | 'public' | 'shared' | 'mqtt' | 'local' | 'staging';
 
 type BadgeProps = {
   variant: BadgeVariant;
@@ -14,13 +14,17 @@ const variantIcon = {
   public: Globe2,
   shared: Globe,
   mqtt: EthernetPort,
+  local: GlobeOff,
+  staging: FlaskConical,
 };
 
-const variantClassName = {
+const variantClassName: Record<BadgeVariant, string> = {
   private: 'access-badge',
   public: 'access-badge',
   shared: 'access-badge',
   mqtt: 'access-badge mqtt-source-badge',
+  local: 'access-badge',
+  staging: 'access-badge',
 };
 
 export function Badge({ variant, className, children, ...rest }: BadgeProps) {

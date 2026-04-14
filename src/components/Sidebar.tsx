@@ -1775,7 +1775,7 @@ export function Sidebar({
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>
-          {envBadgeLabel ? <span className="sidebar-env-badge">{envBadgeLabel}</span> : null}
+          {envBadgeLabel ? <Badge variant={envBadgeLabel === 'LOCAL' ? 'local' : 'staging'}>{envBadgeLabel}</Badge> : null}
         </div>
       </header>
       <section className="panel-section section-scenario">
