@@ -4088,7 +4088,7 @@ html.panorama-gesture-lock body {
   justify-self: end;
 }
 
-.access-badge {
+.ui-badge {
   display: inline-flex;
   align-items: center;
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
@@ -4098,6 +4098,12 @@ html.panorama-gesture-lock body {
   color: var(--muted);
   text-transform: capitalize;
   letter-spacing: 0.02em;
+}
+
+.ui-badge.prominent {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 50%, var(--surface));
+  color: var(--text);
 }
 
 .mqtt-source-badge {

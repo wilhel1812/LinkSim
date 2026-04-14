@@ -2,9 +2,11 @@ import { Globe, Lock, EthernetPort, Globe2, GlobeOff, FlaskConical } from 'lucid
 import type { HTMLAttributes } from 'react';
 
 type BadgeVariant = 'private' | 'public' | 'shared' | 'mqtt' | 'local' | 'staging';
+type BadgeTone = 'subtle' | 'prominent';
 
 type BadgeProps = {
   variant: BadgeVariant;
+  tone?: BadgeTone;
   className?: string;
   children: string;
 } & HTMLAttributes<HTMLSpanElement>;
@@ -18,19 +20,21 @@ const variantIcon = {
   staging: FlaskConical,
 };
 
-const variantClassName: Record<BadgeVariant, string> = {
-  private: 'access-badge',
-  public: 'access-badge',
-  shared: 'access-badge',
-  mqtt: 'access-badge mqtt-source-badge',
-  local: 'access-badge',
-  staging: 'access-badge',
+const defaultTone: Record<BadgeVariant, BadgeTone> = {
+  private: 'subtle',
+  public: 'subtle',
+  shared: 'subtle',
+  mqtt: 'subtle',
+  local: 'prominent',
+  staging: 'prominent',
 };
 
-export function Badge({ variant, className, children, ...rest }: BadgeProps) {
+export function Badge({ variant, tone, className, children, ...rest }: BadgeProps) {
   const Icon = variantIcon[variant];
+  const effectiveTone = tone ?? defaultTone[variant];
+  const isMqtt = variant === 'mqtt';
   return (
-    <span className={`${variantClassName[variant]} ${className ?? ''}`} {...rest}>
+    <span className={`ui-badge ${effectiveTone === 'prominent' ? 'prominent' : ''} ${isMqtt ? 'mqtt-source-badge' : ''} ${className ?? ''}`} {...rest}>
       <Icon aria-hidden size={10} strokeWidth={2.2} style={{ marginRight: 4 }} />
       {children}
     </span>
