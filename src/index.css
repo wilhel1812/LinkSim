@@ -2870,11 +2870,6 @@ html.panorama-gesture-lock body {
     display: grid;
     height: var(--mobile-panel-height);
     min-height: var(--mobile-panel-height);
-    overflow: hidden;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
     padding: 0;
     z-index: 45;
     transition: opacity 350ms ease-out, transform 350ms ease-out, height 350ms ease-out, min-height 350ms ease-out;
@@ -2911,10 +2906,6 @@ html.panorama-gesture-lock body {
     max-height: 100%;
     grid-row: 1;
     overflow: auto;
-    border-radius: 0;
-    border: 0;
-    box-shadow: none;
-    background: transparent;
     padding-top: 4px;
   }
 
@@ -2938,10 +2929,6 @@ html.panorama-gesture-lock body {
     max-height: 100%;
     min-height: 100%;
     overflow: auto;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    background: transparent;
   }
 
   .app-shell.is-mobile-shell.is-map-expanded .mobile-workspace-panel,
@@ -3029,9 +3016,6 @@ html.panorama-gesture-lock body {
     height: 100dvh;
     min-height: 100dvh;
     margin: 0;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
   }
 
   .map-controls {
