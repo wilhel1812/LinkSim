@@ -2898,18 +2898,10 @@ html.panorama-gesture-lock body {
   .mobile-workspace-panel-shell > :last-child {
     height: 100%;
     min-height: 0;
-    overflow: auto;
   }
 
   .mobile-workspace-panel-shell {
     grid-template-rows: minmax(0, 1fr);
-    border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
-    -webkit-backdrop-filter: blur(var(--glass-panel-blur));
-    backdrop-filter: blur(var(--glass-panel-blur));
-    box-shadow: var(--shadow-elev-2);
-    overflow: hidden;
   }
 
   .mobile-workspace-panel .chart-panel {
