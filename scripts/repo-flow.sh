@@ -1,5 +1,63 @@
 #!/usr/bin/env bash
 
+# Repo workflow helper for LinkSim.
+#
+# Purpose
+# - Automate the normal local Git/GitHub flow for repo changes without bypassing
+#   the workflow guardrails in agents.md.
+# - Reduce manual step memory while keeping the user in control at every risky
+#   point.
+#
+# Intended workflow
+# 1. Inspect current repo state and optionally surface agents guidance.
+# 2. Fetch origin/staging.
+# 3. Collect issue number, branch slug, commit message, PR title, PR body, and
+#    optional validation steps.
+# 4. Create or reuse a feature branch from origin/staging using the naming
+#    pattern issue/<id>-<slug>.
+# 5. Let the user explicitly choose which files to stage.
+# 6. Show the staged diff.
+# 7. Confirm commit, push, PR creation, optional checks watching, optional
+#    merge, and optional local staging sync.
+#
+# Design rules / guardrails
+# - Do not auto-stage all changes. The repo may contain unrelated modified files.
+# - Do not silently discard working tree changes.
+# - Do not assume the current branch is staging. New branches are created from
+#   origin/staging explicitly.
+# - Do not hide important Git/GitHub actions behind implicit behavior. Prompt
+#   before commit, push, PR creation, merge, and local sync.
+# - Prefer plain Bash + git + gh so the script stays repo-local and easy to run.
+# - Keep compatibility with macOS's default Bash where practical.
+#
+# Why the flow works this way
+# - Branching from origin/staging avoids accidental dependence on local staging
+#   drift.
+# - Explicit staging protects against committing generated files or unrelated
+#   edits.
+# - The inline PR body prompt avoids editor-specific issues during interactive
+#   runs.
+# - Separate confirmations keep the script as an assistant for the workflow,
+#   not a bypass around it.
+#
+# Editing guidance for future agents
+# - Keep this script interactive-first and conservative.
+# - Prefer narrow edits over large rewrites. Small mistakes can break the whole
+#   flow in shell scripts.
+# - After changing this file, validate with: bash -n scripts/repo-flow.sh
+# - If changing staging/branch logic, preserve the invariant that the feature
+#   branch base is origin/staging.
+# - If changing file selection logic, preserve the invariant that only explicit
+#   user-selected files are staged.
+# - If adding automation, default to more confirmation rather than less.
+# - Prefer safe inferred defaults over asking the user to retype information that
+#   can be derived from the GitHub issue or the current repo state.
+#
+# Future-agent usage note
+# - An agent may use this script to execute the standard repo workflow, but the
+#   script is intentionally not a full policy engine. Agents should still read
+#   agents.md and respect repo-specific guidance.
+
 set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
@@ -132,6 +190,14 @@ sanitize_slug() {
   printf '%s' "$raw"
 }
 
+sanitize_commit_fragment() {
+  local raw="$1"
+  raw="$(sanitize_slug "$raw")"
+  raw="$(printf '%s' "$raw" | cut -c1-60)"
+  raw="$(printf '%s' "$raw" | sed -E 's/-+$//')"
+  printf '%s' "$raw"
+}
+
 issue_title_for_number() {
   local issue_number="$1"
   gh issue view "$issue_number" --json title -q .title 2>/dev/null || true
@@ -163,7 +229,7 @@ show_agents_guidance() {
   local agents_file="$1"
 
   say "Found agents guidance: ${agents_file#$PWD/}"
-  if confirm "Show the first 120 lines now?" "Y"; then
+  if confirm "Show the first 120 lines now?" "N"; then
     echo
     sed -n '1,120p' "$agents_file"
   fi
@@ -344,6 +410,8 @@ main() {
   local agents_file=""
   local issue_number
   local issue_title=""
+  local issue_title_for_display=""
+  local issue_slug_default=""
   local branch_slug_default=""
   local branch_slug_raw
   local branch_slug
@@ -353,6 +421,9 @@ main() {
   local pr_body_default
   local pr_body
   local pr_body_file
+  local commit_fragment_default=""
+  local commit_message_default=""
+  local pr_title_default=""
 
   root="$(repo_root)" || fail "Not inside a git repository."
   cd "$root"
@@ -379,14 +450,22 @@ main() {
 
   issue_title="$(issue_title_for_number "$issue_number")"
   if [[ -n "$issue_title" ]]; then
-    branch_slug_default="$(sanitize_slug "$issue_title")"
-    if [[ -n "$branch_slug_default" ]]; then
+    issue_title_for_display="$issue_title"
+    issue_slug_default="$(sanitize_slug "$issue_title")"
+    if [[ -n "$issue_slug_default" ]]; then
+      branch_slug_default="$issue_slug_default"
       say "Issue #${issue_number}: ${issue_title}"
     fi
+  else
+    issue_title_for_display="Issue ${issue_number}"
   fi
 
   if [[ -n "$branch_slug_default" ]]; then
-    branch_slug_raw="$(prompt "Branch slug" "$branch_slug_default")"
+    branch_slug_raw="$branch_slug_default"
+    say "Proposed branch slug: $branch_slug_raw"
+    if confirm "Override branch slug?" "N"; then
+      branch_slug_raw="$(prompt "Branch slug" "$branch_slug_default")"
+    fi
   else
     branch_slug_raw="$(prompt "Branch slug")"
   fi
@@ -398,15 +477,27 @@ main() {
   branch_name="issue/${issue_number}-${branch_slug}"
   say "Proposed branch: $branch_name"
 
-  commit_message="$(prompt "Commit message" "feat: issue #${issue_number} ${branch_slug}")"
+  if [[ -n "$issue_title" ]]; then
+    commit_fragment_default="$(sanitize_commit_fragment "$issue_title")"
+  fi
+  if [[ -z "$commit_fragment_default" ]]; then
+    commit_fragment_default="$branch_slug"
+  fi
+  commit_message_default="feat: #${issue_number} ${commit_fragment_default}"
+  commit_message="$(prompt "Commit message" "$commit_message_default")"
   [[ -n "$commit_message" ]] || fail "Commit message cannot be empty."
 
-  pr_title="$(prompt "PR title" "[#${issue_number}] ${branch_slug_raw}")"
+  if [[ -n "$issue_title" ]]; then
+    pr_title_default="#${issue_number} ${issue_title}"
+  else
+    pr_title_default="[#${issue_number}] ${branch_slug_raw}"
+  fi
+  pr_title="$(prompt "PR title" "$pr_title_default")"
   [[ -n "$pr_title" ]] || fail "PR title cannot be empty."
 
   pr_body_default=$(cat <<EOF
 ## Summary
-- 
+- ${issue_title_for_display}
 
 ## Testing
 - 
@@ -416,7 +507,11 @@ main() {
 EOF
 )
 
-  pr_body="$(multiline_prompt "PR body" "$pr_body_default")"
+  if confirm "Use default PR body?" "Y"; then
+    pr_body="$pr_body_default"
+  else
+    pr_body="$(multiline_prompt "PR body" "$pr_body_default")"
+  fi
   [[ -n "$pr_body" ]] || fail "PR body cannot be empty."
 
   pr_body_file="$(mktemp)"
@@ -431,9 +526,9 @@ EOF
   ensure_staged_changes
 
   say "Staged diff summary"
-  git diff --cached --stat
+  git --no-pager diff --cached --stat
   echo
-  git diff --cached
+  git --no-pager diff --cached
 
   confirm "Create commit with this staged content?" "Y" || fail "Cancelled before commit."
   create_commit "$commit_message"
