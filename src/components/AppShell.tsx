@@ -2066,7 +2066,7 @@ export function AppShell() {
           readOnly={!canPersistWorkspace}
           inspectorPanelClassName={`${inspectorPanelMotionClass} ${
             isMobileViewport && mobileActivePanel === "inspector" ? mobileBottomPanelMotionClass : ""
-          }`.trim()}
+          } ${isMobileViewport && mobileActivePanel === "inspector" && mobileBottomPanelMode === "full" ? "is-expanded" : ""}`.trim()}
           onToggleMapExpanded={toggleMapExpanded}
           fitBottomInset={mapFitBottomInset}
           fitChromePadding={mapFitChromePadding}
@@ -2178,6 +2178,7 @@ export function AppShell() {
                 hideLibraryBrowsing={isReadOnlyShell}
                 onOpenHelp={openOnboardingTutorial}
                 readOnly={!canPersistWorkspace}
+                panelClassName={mobileBottomPanelMode === "full" ? "is-expanded" : undefined}
                 panelToggleControl={panelSizeControls("Navigator")}
               />
             ) : null}
