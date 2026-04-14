@@ -14,6 +14,13 @@ export default defineConfig(({ command }) => {
       format: "es",
     },
     server: {
+      host: "127.0.0.1",
+      port: 5174,
+      strictPort: true,
+      watch: {
+        usePolling: true,
+        interval: 100,
+      },
       proxy: {
         "/api": {
           target: "http://127.0.0.1:8788",
