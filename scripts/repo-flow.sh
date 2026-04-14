@@ -1,0 +1,463 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_NAME="$(basename "$0")"
+
+say() {
+  printf '\n[%s] %s\n' "$SCRIPT_NAME" "$*"
+}
+
+warn() {
+  printf '\n[%s] WARNING: %s\n' "$SCRIPT_NAME" "$*" >&2
+}
+
+fail() {
+  printf '\n[%s] ERROR: %s\n' "$SCRIPT_NAME" "$*" >&2
+  exit 1
+}
+
+prompt() {
+  local message="$1"
+  local default="${2-}"
+  local value
+
+  if [[ -n "$default" ]]; then
+    read -r -p "$message [$default]: " value
+    printf '%s' "${value:-$default}"
+  else
+    read -r -p "$message: " value
+    printf '%s' "$value"
+  fi
+}
+
+confirm() {
+  local message="$1"
+  local default="${2:-Y}"
+  local reply
+  local suffix="[y/N]"
+
+  if [[ "$default" == "Y" ]]; then
+    suffix="[Y/n]"
+  fi
+
+  while true; do
+    read -r -p "$message $suffix " reply
+    reply="${reply:-$default}"
+
+    case "$reply" in
+      y|Y|yes|YES) return 0 ;;
+      n|N|no|NO) return 1 ;;
+      *) warn "Please answer yes or no." ;;
+    esac
+  done
+}
+
+multiline_prompt() {
+  local heading="$1"
+  local default_value="${2-}"
+  local line
+  local result=""
+
+  echo >&2
+  echo "$heading" >&2
+  echo "Finish by entering a single dot (.) on its own line." >&2
+  if [[ -n "$default_value" ]]; then
+    echo "Press Enter on the first line, or enter only '.' immediately, to keep the default template." >&2
+    echo >&2
+    printf '%s\n' "$default_value" >&2
+  fi
+  echo >&2
+
+  while IFS= read -r line; do
+    if [[ "$line" == "." ]]; then
+      if [[ -z "$result" && -n "$default_value" ]]; then
+        printf '%s' "$default_value"
+        return 0
+      fi
+      break
+    fi
+
+    if [[ -z "$result" && -z "$line" && -n "$default_value" ]]; then
+      printf '%s' "$default_value"
+      return 0
+    fi
+
+    if [[ -n "$result" ]]; then
+      result+=$'\n'
+    fi
+    result+="$line"
+  done
+
+  printf '%s' "$result"
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+}
+
+repo_root() {
+  git rev-parse --show-toplevel 2>/dev/null
+}
+
+find_agents_file() {
+  local root="$1"
+  local candidate
+
+  for candidate in \
+    "$root/agents.md" \
+    "$root/AGENTS.md" \
+    "$root/.github/agents.md" \
+    "$root/.github/AGENTS.md"
+  do
+    if [[ -f "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  candidate="$(find "$root" -maxdepth 3 \( -name 'agents.md' -o -name 'AGENTS.md' \) -print | head -n 1 || true)"
+  if [[ -n "$candidate" ]]; then
+    printf '%s' "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+sanitize_slug() {
+  local raw="$1"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  raw="$(printf '%s' "$raw" | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')"
+  printf '%s' "$raw"
+}
+
+issue_title_for_number() {
+  local issue_number="$1"
+  gh issue view "$issue_number" --json title -q .title 2>/dev/null || true
+}
+
+current_branch() {
+  git rev-parse --abbrev-ref HEAD
+}
+
+ensure_clean_index() {
+  if ! git diff --cached --quiet; then
+    fail "You already have staged changes. Unstage or commit them before running this workflow."
+  fi
+}
+
+fetch_staging() {
+  say "Fetching origin/staging"
+  git fetch origin staging --prune
+}
+
+show_repo_state() {
+  say "Repository: $(repo_root)"
+  say "Current branch: $(current_branch)"
+  echo
+  git status --short
+}
+
+show_agents_guidance() {
+  local agents_file="$1"
+
+  say "Found agents guidance: ${agents_file#$PWD/}"
+  if confirm "Show the first 120 lines now?" "Y"; then
+    echo
+    sed -n '1,120p' "$agents_file"
+  fi
+}
+
+choose_files_to_stage() {
+  local files_text
+  local -a files
+  local index=1
+  local selection
+  local token
+  local -a chosen
+  local old_ifs="$IFS"
+
+  files_text="$(git status --short | sed -E 's/^.. //' | awk 'NF' | sort -u)"
+
+  if [[ -z "$files_text" ]]; then
+    fail "No modified or untracked files found."
+  fi
+
+  IFS=$'\n'
+  files=($files_text)
+  IFS="$old_ifs"
+
+  say "Changed files"
+  for file in "${files[@]}"; do
+    printf '  %2d) %s\n' "$index" "$file"
+    index=$((index + 1))
+  done
+
+  echo
+  read -r -p "Enter file numbers to stage (space-separated), or type 'patch' for git add -p: " selection
+
+  if [[ "$selection" == "patch" ]]; then
+    git add -p
+    return 0
+  fi
+
+  [[ -n "$selection" ]] || fail "No files selected."
+
+  for token in $selection; do
+    [[ "$token" =~ ^[0-9]+$ ]] || fail "Invalid selection: $token"
+    (( token >= 1 && token <= ${#files[@]} )) || fail "Selection out of range: $token"
+    chosen+=("${files[$((token - 1))]}")
+  done
+
+  if [[ ${#chosen[@]} -eq 0 ]]; then
+    fail "No files selected."
+  fi
+
+  git add -- "${chosen[@]}"
+}
+
+handle_existing_branch() {
+  local branch_name="$1"
+  local choice
+
+  warn "Branch already exists: $branch_name"
+  echo "  1) switch to existing branch"
+  echo "  2) delete local branch and recreate from origin/staging"
+  echo "  3) cancel"
+
+  while true; do
+    read -r -p "Choose [1-3]: " choice
+    case "$choice" in
+      1|"")
+        git switch "$branch_name"
+        return 0
+        ;;
+      2)
+        git branch -D "$branch_name"
+        git switch -c "$branch_name" --no-track origin/staging
+        return 0
+        ;;
+      3)
+        fail "Cancelled because branch already exists."
+        ;;
+      *)
+        warn "Please choose 1, 2, or 3."
+        ;;
+    esac
+  done
+}
+
+create_feature_branch() {
+  local branch_name="$1"
+
+  if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+    handle_existing_branch "$branch_name"
+    return 0
+  fi
+
+  if git ls-remote --exit-code --heads origin "$branch_name" >/dev/null 2>&1; then
+    fail "Remote branch already exists: $branch_name"
+  fi
+
+  git switch -c "$branch_name" --no-track origin/staging
+}
+
+create_commit() {
+  local message="$1"
+  git commit -m "$message"
+}
+
+push_branch() {
+  local branch_name="$1"
+  git push -u origin "$branch_name"
+}
+
+create_pr() {
+  local branch_name="$1"
+  local pr_title="$2"
+  local pr_body_file="$3"
+
+  gh pr create \
+    --base staging \
+    --head "$branch_name" \
+    --title "$pr_title" \
+    --body-file "$pr_body_file"
+}
+
+sync_local_staging() {
+  say "Syncing local staging with origin/staging"
+  git switch staging
+  git fetch origin staging --prune
+  git reset --hard origin/staging
+}
+
+ensure_staged_changes() {
+  if git diff --cached --quiet; then
+    fail "No staged changes found after staging step."
+  fi
+}
+
+run_optional_checks() {
+  local root="$1"
+  local choice
+
+  echo
+  echo "Run checks before commit?"
+  echo "  1) none"
+  echo "  2) npm test"
+  echo "  3) npm run build"
+  echo "  4) npm test && npm run build"
+  echo "  5) custom command"
+  read -r -p "Choose [1-5]: " choice
+
+  case "$choice" in
+    1|"")
+      say "Skipping checks"
+      ;;
+    2)
+      (cd "$root" && npm test)
+      ;;
+    3)
+      (cd "$root" && npm run build)
+      ;;
+    4)
+      (cd "$root" && npm test && npm run build)
+      ;;
+    5)
+      local cmd
+      cmd="$(prompt "Enter command to run from repo root")"
+      [[ -n "$cmd" ]] || fail "Custom command cannot be empty."
+      (cd "$root" && bash -lc "$cmd")
+      ;;
+    *)
+      fail "Invalid checks option: $choice"
+      ;;
+  esac
+}
+
+main() {
+  require_cmd git
+  require_cmd gh
+
+  local root
+  local agents_file=""
+  local issue_number
+  local issue_title=""
+  local branch_slug_default=""
+  local branch_slug_raw
+  local branch_slug
+  local branch_name
+  local commit_message
+  local pr_title
+  local pr_body_default
+  local pr_body
+  local pr_body_file
+
+  root="$(repo_root)" || fail "Not inside a git repository."
+  cd "$root"
+
+  ensure_clean_index
+  show_repo_state
+
+  if agents_file="$(find_agents_file "$root")"; then
+    show_agents_guidance "$agents_file"
+  else
+    warn "No agents.md/AGENTS.md found in the repo. Proceeding without displaying guidance."
+  fi
+
+  fetch_staging
+
+  [[ "$(current_branch)" == "staging" ]] || warn "You are not currently on staging. The script will create the new branch from origin/staging anyway."
+
+  if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+    say "Working tree contains changes. That is allowed, but you will explicitly choose what to stage."
+  fi
+
+  issue_number="$(prompt "Issue number")"
+  [[ "$issue_number" =~ ^[0-9]+$ ]] || fail "Issue number must be numeric."
+
+  issue_title="$(issue_title_for_number "$issue_number")"
+  if [[ -n "$issue_title" ]]; then
+    branch_slug_default="$(sanitize_slug "$issue_title")"
+    if [[ -n "$branch_slug_default" ]]; then
+      say "Issue #${issue_number}: ${issue_title}"
+    fi
+  fi
+
+  if [[ -n "$branch_slug_default" ]]; then
+    branch_slug_raw="$(prompt "Branch slug" "$branch_slug_default")"
+  else
+    branch_slug_raw="$(prompt "Branch slug")"
+  fi
+  [[ -n "$branch_slug_raw" ]] || fail "Branch slug cannot be empty."
+
+  branch_slug="$(sanitize_slug "$branch_slug_raw")"
+  [[ -n "$branch_slug" ]] || fail "Branch slug became empty after sanitization."
+
+  branch_name="issue/${issue_number}-${branch_slug}"
+  say "Proposed branch: $branch_name"
+
+  commit_message="$(prompt "Commit message" "feat: issue #${issue_number} ${branch_slug}")"
+  [[ -n "$commit_message" ]] || fail "Commit message cannot be empty."
+
+  pr_title="$(prompt "PR title" "[#${issue_number}] ${branch_slug_raw}")"
+  [[ -n "$pr_title" ]] || fail "PR title cannot be empty."
+
+  pr_body_default=$(cat <<EOF
+## Summary
+- 
+
+## Testing
+- 
+
+## Issue
+- Closes #${issue_number}
+EOF
+)
+
+  pr_body="$(multiline_prompt "PR body" "$pr_body_default")"
+  [[ -n "$pr_body" ]] || fail "PR body cannot be empty."
+
+  pr_body_file="$(mktemp)"
+  printf '%s\n' "$pr_body" > "$pr_body_file"
+
+  run_optional_checks "$root"
+
+  create_feature_branch "$branch_name"
+  say "Using branch: $(current_branch)"
+
+  choose_files_to_stage
+  ensure_staged_changes
+
+  say "Staged diff summary"
+  git diff --cached --stat
+  echo
+  git diff --cached
+
+  confirm "Create commit with this staged content?" "Y" || fail "Cancelled before commit."
+  create_commit "$commit_message"
+
+  confirm "Push branch to origin?" "Y" || fail "Cancelled before push."
+  push_branch "$branch_name"
+
+  confirm "Create PR into staging with GitHub CLI?" "Y" || fail "Cancelled before PR creation."
+  create_pr "$branch_name" "$pr_title" "$pr_body_file"
+
+  if confirm "Watch PR checks now?" "Y"; then
+    gh pr checks --watch
+  fi
+
+  if confirm "Attempt merge when ready?" "N"; then
+    gh pr merge --squash --delete-branch
+  fi
+
+  if confirm "Sync local staging now?" "Y"; then
+    sync_local_staging
+  fi
+
+  rm -f "$pr_body_file"
+  say "Done"
+}
+
+main "$@"
