@@ -68,6 +68,7 @@ import { AvatarBadge } from "./AvatarBadge";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
+import { Badge } from "./ui/Badge";
 import { UserAdminPanel } from "./UserAdminPanel";
 
 const parseNumber = (value: string): number => {
@@ -3705,9 +3706,9 @@ export function Sidebar({
                     {entry.name} ({entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)})
                   </span>
                   <span className="library-row-meta">
-                    <span className="access-badge">{toAccessVisibility((entry as { visibility?: unknown }).visibility)}</span>
+                    {(() => { const v = toAccessVisibility((entry as { visibility?: unknown }).visibility); return <Badge variant={v as "private" | "public" | "shared"}>{v}</Badge>; })()}
                     {(entry as { sourceMeta?: { sourceType?: string } }).sourceMeta?.sourceType === "mqtt-feed" ? (
-                      <span className="access-badge mqtt-source-badge">MQTT</span>
+                      <Badge variant="mqtt">MQTT</Badge>
                     ) : null}
                     <button
                       className="row-avatar owner-avatar"

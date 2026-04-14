@@ -3,6 +3,7 @@ import { CircleAlert, CircleCheck, CircleX, Info, Layers, Maximize2, Minus, Pane
 import { ActionButton } from "./ActionButton";
 import { StateDot } from "./StateDot";
 import { Surface } from "./ui/Surface";
+import { Badge } from "./ui/Badge";
 import { UiSlider } from "./UiSlider";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
@@ -259,8 +260,8 @@ export function UiGalleryPage() {
             </PatternCard>
             <PatternCard name="Badges/Chips/Pills" status="standard">
               <div className="chip-group ui-gallery-chip-specimen">
-                <span className="access-badge">shared</span>
-                <span className="access-badge mqtt-source-badge">MQTT</span>
+                <Badge variant="shared">shared</Badge>
+                <Badge variant="mqtt">MQTT</Badge>
                 <span className="map-band-chip">Mesh</span>
               </div>
             </PatternCard>
