@@ -4406,6 +4406,66 @@ html.panorama-gesture-lock body {
   background: color-mix(in srgb, var(--muted) 18%, transparent);
 }
 
+.ui-pattern-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-pattern-source {
+  font-size: 0.65rem;
+  color: var(--muted);
+  font-family: monospace;
+}
+
+.ui-pattern-grid-theme {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.ui-theme-token {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ui-theme-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ui-theme-value {
+  font-size: 0.72rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.ui-theme-category {
+  margin: 24px 0 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.ui-pattern-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ui-pattern-variants code {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  color: var(--muted);
+}
+
 .ui-gallery-theme-toggle .action-button[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
