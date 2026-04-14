@@ -27,8 +27,8 @@ export function Badge({ variant, className, children, ...rest }: BadgeProps) {
   const Icon = variantIcon[variant];
   return (
     <span className={`${variantClassName[variant]} ${className ?? ''}`} {...rest}>
-      <Icon aria-hidden size={10} strokeWidth={2.2} style={{ display: 'inline-flex', marginRight: 4, verticalAlign: 'text-bottom', flexShrink: 0 }} />
-      <span style={{ verticalAlign: 'middle' }}>{children}</span>
+      <Icon aria-hidden size={10} strokeWidth={2.2} style={{ marginRight: 4 }} />
+      {children}
     </span>
   );
 }

@@ -4089,9 +4089,11 @@ html.panorama-gesture-lock body {
 }
 
 .access-badge {
+  display: inline-flex;
+  align-items: center;
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   border-radius: var(--radius-pill);
-  padding: 2px 8px;
+  padding: 2px 6px;
   font-size: 0.68rem;
   color: var(--muted);
   text-transform: capitalize;
