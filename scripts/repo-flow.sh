@@ -29,6 +29,8 @@
 #   before commit, push, PR creation, merge, and local sync.
 # - Prefer plain Bash + git + gh so the script stays repo-local and easy to run.
 # - Keep compatibility with macOS's default Bash where practical.
+# - Keep terminal UX enhancements lightweight. Prefer simple colors and progress
+#   markers over heavy TUI dependencies.
 #
 # Why the flow works this way
 # - Branching from origin/staging avoids accidental dependence on local staging
@@ -62,17 +64,44 @@ set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
 
+if [[ -t 1 ]]; then
+  COLOR_BLUE=$'\033[0;34m'
+  COLOR_YELLOW=$'\033[0;33m'
+  COLOR_RED=$'\033[0;31m'
+  COLOR_GREEN=$'\033[0;32m'
+  COLOR_BOLD=$'\033[1m'
+  COLOR_RESET=$'\033[0m'
+else
+  COLOR_BLUE=''
+  COLOR_YELLOW=''
+  COLOR_RED=''
+  COLOR_GREEN=''
+  COLOR_BOLD=''
+  COLOR_RESET=''
+fi
+
 say() {
-  printf '\n[%s] %s\n' "$SCRIPT_NAME" "$*"
+  printf '\n%s[%s]%s %s\n' "$COLOR_BLUE" "$SCRIPT_NAME" "$COLOR_RESET" "$*"
 }
 
 warn() {
-  printf '\n[%s] WARNING: %s\n' "$SCRIPT_NAME" "$*" >&2
+  printf '\n%s[%s WARNING]%s %s\n' "$COLOR_YELLOW" "$SCRIPT_NAME" "$COLOR_RESET" "$*" >&2
 }
 
 fail() {
-  printf '\n[%s] ERROR: %s\n' "$SCRIPT_NAME" "$*" >&2
+  printf '\n%s[%s ERROR]%s %s\n' "$COLOR_RED" "$SCRIPT_NAME" "$COLOR_RESET" "$*" >&2
   exit 1
+}
+
+step() {
+  local current="$1"
+  local total="$2"
+  local label="$3"
+  printf '\n%s[%s/%s]%s %s%s%s\n' "$COLOR_BOLD" "$current" "$total" "$COLOR_RESET" "$COLOR_BLUE" "$label" "$COLOR_RESET"
+}
+
+success() {
+  printf '%s%s%s\n' "$COLOR_GREEN" "$*" "$COLOR_RESET"
 }
 
 prompt() {
@@ -351,6 +380,11 @@ create_pr() {
     --body-file "$pr_body_file"
 }
 
+pr_url_for_branch() {
+  local branch_name="$1"
+  gh pr view --head "$branch_name" --json url -q .url 2>/dev/null || true
+}
+
 sync_local_staging() {
   say "Syncing local staging with origin/staging"
   git switch staging
@@ -424,10 +458,13 @@ main() {
   local commit_fragment_default=""
   local commit_message_default=""
   local pr_title_default=""
+  local pr_url=""
+  local watched_checks=0
 
   root="$(repo_root)" || fail "Not inside a git repository."
   cd "$root"
 
+  step 1 7 "Inspect repo"
   ensure_clean_index
   show_repo_state
 
@@ -437,6 +474,7 @@ main() {
     warn "No agents.md/AGENTS.md found in the repo. Proceeding without displaying guidance."
   fi
 
+  step 2 7 "Fetch staging"
   fetch_staging
 
   [[ "$(current_branch)" == "staging" ]] || warn "You are not currently on staging. The script will create the new branch from origin/staging anyway."
@@ -445,6 +483,7 @@ main() {
     say "Working tree contains changes. That is allowed, but you will explicitly choose what to stage."
   fi
 
+  step 3 7 "Prepare branch and metadata"
   issue_number="$(prompt "Issue number")"
   [[ "$issue_number" =~ ^[0-9]+$ ]] || fail "Issue number must be numeric."
 
@@ -517,8 +556,10 @@ EOF
   pr_body_file="$(mktemp)"
   printf '%s\n' "$pr_body" > "$pr_body_file"
 
+  step 4 7 "Run optional checks"
   run_optional_checks "$root"
 
+  step 5 7 "Create or reuse branch and stage files"
   create_feature_branch "$branch_name"
   say "Using branch: $(current_branch)"
 
@@ -530,21 +571,35 @@ EOF
   echo
   git --no-pager diff --cached
 
+  step 6 7 "Commit and push"
   confirm "Create commit with this staged content?" "Y" || fail "Cancelled before commit."
   create_commit "$commit_message"
 
   confirm "Push branch to origin?" "Y" || fail "Cancelled before push."
   push_branch "$branch_name"
 
+  step 7 7 "Create PR and finish"
   confirm "Create PR into staging with GitHub CLI?" "Y" || fail "Cancelled before PR creation."
   create_pr "$branch_name" "$pr_title" "$pr_body_file"
 
+  pr_url="$(pr_url_for_branch "$branch_name")"
+  if [[ -n "$pr_url" ]]; then
+    say "PR created: $pr_url"
+  fi
+
   if confirm "Watch PR checks now?" "Y"; then
+    watched_checks=1
     gh pr checks --watch
   fi
 
-  if confirm "Attempt merge when ready?" "N"; then
-    gh pr merge --squash --delete-branch
+  if [[ "$watched_checks" -eq 1 ]]; then
+    if confirm "Merge PR now that checks have been watched?" "Y"; then
+      gh pr merge --squash --delete-branch
+    fi
+  else
+    if confirm "Attempt merge when ready?" "N"; then
+      gh pr merge --squash --delete-branch
+    fi
   fi
 
   if confirm "Sync local staging now?" "Y"; then
@@ -552,7 +607,14 @@ EOF
   fi
 
   rm -f "$pr_body_file"
-  say "Done"
+
+  echo
+  success "✓ Workflow complete"
+  success "✓ Branch: $(current_branch)"
+  success "✓ Commit: $commit_message"
+  if [[ -n "$pr_url" ]]; then
+    success "✓ PR: $pr_url"
+  fi
 }
 
 main "$@"
