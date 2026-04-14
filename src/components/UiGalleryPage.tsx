@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useMemo, type ReactNode } from "react";
 import { CircleAlert, CircleCheck, CircleX, Info, Layers, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
 import { ActionButton } from "./ActionButton";
 import { StateDot } from "./StateDot";
@@ -9,8 +9,10 @@ import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
 
+const GALLERY_TAB_STORAGE_KEY = "linksim-ui-gallery-tab-v1";
+
 type GalleryStatus = "standard" | "exception" | "legacy" | "under migration" | "mapped only";
-type GalleryTab = "actions" | "panels" | "forms" | "notifications" | "states" | "meta-map-ui";
+type GalleryTab = "actions" | "panels" | "forms" | "notifications" | "states" | "meta-map-ui" | "theme";
 
 const GALLERY_TABS: Array<{ id: GalleryTab; label: string }> = [
   { id: "actions", label: "Actions" },
@@ -19,12 +21,139 @@ const GALLERY_TABS: Array<{ id: GalleryTab; label: string }> = [
   { id: "notifications", label: "Notifications" },
   { id: "states", label: "States" },
   { id: "meta-map-ui", label: "Meta/Map UI" },
+  { id: "theme", label: "Theme" },
 ];
+
+const SOURCE_PATHS: Record<string, string> = {
+  "ActionButton": "src/components/ActionButton.tsx",
+  "MapControlButton": "src/components/MapControlButton.tsx",
+  "LinkButton": "src/components/LinkButton.tsx",
+  "PanelShell.LeftSidePanel": "src/components/app-shell/LeftSidePanel.tsx",
+  "PanelShell.RightSidePanel": "src/components/app-shell/RightSidePanel.tsx",
+  "PanelShell.BottomPanel": "src/components/app-shell/BottomPanel.tsx",
+  "FormActionRow": "src/components/FormActionRow.tsx",
+  "Input": "src/components/ui/Input.tsx",
+  "Select": "src/components/ui/Select.tsx",
+  "Badge": "src/components/ui/Badge.tsx",
+  "UI Slider": "src/components/UiSlider.tsx",
+  "NotificationStack": "src/components/NotificationStack.tsx",
+  "NotificationBanner": "src/components/NotificationBanner.tsx",
+  "MapInlineNotice": "src/components/MapInlineNotice.tsx",
+  "OfflineBanner": "src/components/OfflineBanner.tsx",
+  "NotificationBell": "src/components/NotificationBell.tsx",
+  "EmptyState": "src/components/ui/EmptyState.tsx",
+  "LoadingState": "src/components/ui/LoadingState.tsx",
+  "ErrorHelperStates": "src/components/ErrorHelperStates.tsx",
+  "MapControls": "src/components/MapControls.tsx",
+  "SidebarFooter": "src/components/SidebarFooter.tsx",
+  "Surface.Pill": "src/components/ui/Surface.tsx",
+  "Surface.Card": "src/components/ui/Surface.tsx",
+  "StateDot": "src/components/StateDot.tsx",
+};
+
+const THEME_TOKENS = {
+  semanticPrimary: [
+    { token: "bg", label: "bg" },
+    { token: "surface", label: "surface" },
+    { token: "surface-2", label: "surface2" },
+    { token: "border", label: "border" },
+    { token: "text", label: "text" },
+    { token: "muted", label: "muted" },
+    { token: "accent", label: "accent" },
+    { token: "success", label: "success" },
+    { token: "warning", label: "warning" },
+    { token: "danger", label: "danger" },
+  ],
+  semanticSecondary: [
+    { token: "selection", label: "selection" },
+    { token: "temporary", label: "temporary" },
+    { token: "staging-frame", label: "staging-frame" },
+    { token: "local-frame", label: "local-frame" },
+    { token: "cursor-outline", label: "cursor-outline" },
+    { token: "focus-outline", label: "focus-outline" },
+  ],
+  visualization: [
+    { token: "terrain", label: "terrain" },
+    { token: "fresnel", label: "fresnel" },
+    { token: "los", label: "los" },
+    { token: "mesh-halo", label: "mesh-halo" },
+    { token: "mesh-stroke", label: "mesh-stroke" },
+    { token: "progress-gradient-start", label: "progress-start" },
+    { token: "progress-gradient-end", label: "progress-end" },
+  ],
+  compatibility: [
+    { token: "accent-soft", label: "accent-soft" },
+    { token: "warning-soft", label: "warning-soft" },
+    { token: "warning-text", label: "warning-text" },
+    { token: "selection-soft", label: "selection-soft" },
+    { token: "temporary-soft", label: "temporary-soft" },
+    { token: "temporary-ring", label: "temporary-ring" },
+    { token: "overlay-backdrop", label: "overlay-backdrop" },
+    { token: "shadow", label: "shadow" },
+    { token: "shadow-elev-1", label: "shadow-elev-1" },
+    { token: "shadow-elev-2", label: "shadow-elev-2" },
+    { token: "shadow-elev-3", label: "shadow-elev-3" },
+    { token: "shadow-elev-4", label: "shadow-elev-4" },
+    { token: "shadow-elev-5", label: "shadow-elev-5" },
+  ],
+} as const;
+
+const getCssVarKey = (token: string): string => {
+  if (token === "surface-2") return "--surface-2";
+  if (token === "surface-2") return "--surface-2";
+  if (token === "staging-frame") return "--staging-frame";
+  if (token === "local-frame") return "--local-frame";
+  if (token === "cursor-outline") return "--cursor-outline";
+  if (token === "focus-outline") return "--focus-outline";
+  if (token === "mesh-halo") return "--mesh-halo";
+  if (token === "mesh-stroke") return "--mesh-stroke";
+  if (token === "progress-gradient-start") return "--progress-gradient-start";
+  if (token === "progress-gradient-end") return "--progress-gradient-end";
+  if (token === "accent-soft") return "--accent-soft";
+  if (token === "warning-soft") return "--warning-soft";
+  if (token === "warning-text") return "--warning-text";
+  if (token === "selection-soft") return "--selection-soft";
+  if (token === "temporary-soft") return "--temporary-soft";
+  if (token === "temporary-ring") return "--temporary-ring";
+  if (token === "overlay-backdrop") return "--overlay-backdrop";
+  if (token.startsWith("shadow-elev-")) return `--${token}`;
+  return `--${token}`;
+};
+
+const VariantList = ({ variants }: { variants: readonly string[] }) => (
+  <div className="ui-pattern-variants">
+    {variants.map((v) => (
+      <code key={v}>{v}</code>
+    ))}
+  </div>
+);
+
+const StateToken = ({ varKey }: { varKey: string }) => {
+  const [value, setValue] = useState<string>("—");
+  useEffect(() => {
+    const computed = getComputedStyle(document.documentElement);
+    const val = computed.getPropertyValue(varKey).trim();
+    setValue(val || "—");
+  }, [varKey]);
+  return (
+    <>
+      <div
+        className="ui-theme-swatch"
+        style={{ backgroundColor: value.startsWith("var(") ? undefined : value }}
+      />
+      <code className="ui-theme-value">{value}</code>
+    </>
+  );
+};
 
 const statusClassName = (status: GalleryStatus) => status.replace(/\s+/g, "-");
 
 const StatusPill = ({ status }: { status: GalleryStatus }) => (
   <span className={`ui-pattern-status is-${statusClassName(status)}`}>{status}</span>
+);
+
+const SourcePath = ({ path }: { path: string }) => (
+  <span className="ui-pattern-source">{path}</span>
 );
 
 const PatternCard = ({
@@ -35,23 +164,47 @@ const PatternCard = ({
   name: string;
   status: GalleryStatus;
   children: ReactNode;
-}) => (
-  <article className="ui-pattern-card">
-    <header className="ui-pattern-card-header">
-      <strong>{name}</strong>
-      <StatusPill status={status} />
-    </header>
-    <div className="ui-pattern-card-body">{children}</div>
-  </article>
-);
+}) => {
+  const source = SOURCE_PATHS[name];
+  return (
+    <article className="ui-pattern-card">
+      <header className="ui-pattern-card-header">
+        <div className="ui-pattern-card-title">
+          <strong>{name}</strong>
+          {source ? <SourcePath path={source} /> : null}
+        </div>
+        <StatusPill status={status} />
+      </header>
+      <div className="ui-pattern-card-body">{children}</div>
+    </article>
+  );
+};
 
 export function UiGalleryPage() {
   const { theme, variant, colorTheme, activeHolidayTheme } = useThemeVariant();
-  const [activeTab, setActiveTab] = useState<GalleryTab>("actions");
+  const [activeTab, setActiveTab] = useState<GalleryTab>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(GALLERY_TAB_STORAGE_KEY);
+      if (stored && GALLERY_TABS.some((t) => t.id === stored)) {
+        return stored as GalleryTab;
+      }
+    }
+    return "actions";
+  });
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
   const colorThemes: UiColorTheme[] = ["blue", "pink", "red", "green", "yellow"];
+
+  const activeTabLabel = useMemo(
+    () => GALLERY_TABS.find((t) => t.id === activeTab)?.label ?? "Gallery",
+    [activeTab]
+  );
+
+  useEffect(() => {
+    localStorage.setItem(GALLERY_TAB_STORAGE_KEY, activeTab);
+    document.title = `LinkSim UI Gallery — ${activeTabLabel}`;
+  }, [activeTab, activeTabLabel]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -125,8 +278,9 @@ export function UiGalleryPage() {
                 <ActionButton>Details</ActionButton>
                 <ActionButton variant="danger">Remove From Simulation</ActionButton>
               </div>
+              <VariantList variants={["default", "variant=\"danger\""]} />
             </PatternCard>
-            <PatternCard name="OverlayIconControl (map controls pill)" status="standard">
+            <PatternCard name="MapControlButton" status="standard">
               <div className="chip-group">
                 <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" title="Zoom out" type="button">
                   <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
@@ -144,19 +298,6 @@ export function UiGalleryPage() {
                 Open change log
               </button>
             </PatternCard>
-            <PatternCard name="Overlay icon controls (mapped inventory)" status="mapped only">
-              <div className="chip-group">
-                <button className="map-control-btn map-control-btn-icon" title="Zoom out" type="button">
-                  <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
-                <button className="map-control-btn map-control-btn-icon" title="Zoom in" type="button">
-                  <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
-                <button className="inline-action inline-action-icon" title="Close" type="button">
-                  <PanelRightClose aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
-              </div>
-            </PatternCard>
           </div>
         </section>
       ) : null}
@@ -165,7 +306,7 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Panels</h3>
           <div className="ui-pattern-grid ui-pattern-grid-shells">
-            <PatternCard name="PanelShell.LeftSidePanel + PanelHeader" status="under migration">
+            <PatternCard name="PanelShell.LeftSidePanel" status="under migration">
               <aside className="sidebar-panel">
                 <header>
                   <div className="section-heading">
@@ -185,7 +326,7 @@ export function UiGalleryPage() {
                 </section>
               </aside>
             </PatternCard>
-            <PatternCard name="PanelShell.RightSidePanel + PanelHeader" status="under migration">
+            <PatternCard name="PanelShell.RightSidePanel" status="under migration">
               <aside className="map-inspector">
                 <div className="map-inspector-header-row">
                   <div className="map-inspector-header-actions">
@@ -202,7 +343,7 @@ export function UiGalleryPage() {
                 </div>
               </aside>
             </PatternCard>
-            <PatternCard name="PanelShell.BottomPanel + header/action rows" status="under migration">
+            <PatternCard name="PanelShell.BottomPanel" status="under migration">
               <section className="chart-panel">
                 <div className="chart-top-row">
                   <div className="chart-hover-state">
@@ -241,11 +382,17 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="Input + Select + FieldGroup" status="standard">
+            <PatternCard name="Input" status="standard">
               <label className="field-grid">
                 <span>Simulation Name</span>
                 <input defaultValue="Mountain Relay Net" type="text" />
               </label>
+              <label className="field-grid">
+                <span>Clutter Height (m)</span>
+                <input defaultValue={7} type="number" />
+              </label>
+            </PatternCard>
+            <PatternCard name="Select" status="standard">
               <label className="field-grid">
                 <span>Frequency Plan</span>
                 <select className="locale-select" defaultValue="oslo">
@@ -253,19 +400,15 @@ export function UiGalleryPage() {
                   <option value="eu">EU 868</option>
                 </select>
               </label>
-              <label className="field-grid">
-                <span>Clutter Height (m)</span>
-                <input defaultValue={7} type="number" />
-              </label>
             </PatternCard>
-            <PatternCard name="Badges/Chips/Pills" status="standard">
+            <PatternCard name="Badge" status="standard">
               <div className="chip-group ui-gallery-chip-specimen">
                 <Badge variant="shared">shared</Badge>
                 <Badge variant="mqtt">MQTT</Badge>
-                <span className="map-band-chip">Mesh</span>
               </div>
+              <VariantList variants={["private", "public", "shared", "mqtt", "local", "staging"]} />
             </PatternCard>
-            <PatternCard name="UI Slider Toolkit" status="standard">
+            <PatternCard name="UI Slider" status="standard">
               <div className="chip-group" style={{ alignItems: "flex-start" }}>
                 <UiSlider
                   ariaLabel="Horizontal slider specimen"
@@ -294,7 +437,7 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Notifications</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="Unified app notification stack (auto/manual + overflow)" status="under migration">
+            <PatternCard name="NotificationStack" status="under migration">
               <div className="app-notification-stack app-notification-stack-gallery">
                 <div className="app-notification-stack-list">
                   <div className="app-notification-item app-notification-item-info" role="status">
@@ -347,7 +490,7 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="Notification banner (legacy)" status="legacy">
+            <PatternCard name="NotificationBanner" status="legacy">
               <div className="notification-banner" role="status">
                 <strong>2 moderator notifications</strong> need review.
               </div>
@@ -355,7 +498,7 @@ export function UiGalleryPage() {
                 <strong>Schema warning:</strong> missing optional index metadata.
               </div>
             </PatternCard>
-            <PatternCard name="Map inline notice baseline" status="exception">
+            <PatternCard name="MapInlineNotice" status="exception">
               <div className="ui-gallery-map-notice-stage">
                 <div className="map-inline-notice map-inline-notice-warning" role="status">
                   <span>Offline mode active. Changes will sync later.</span>
@@ -363,7 +506,7 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="Offline banner (legacy)" status="legacy">
+            <PatternCard name="OfflineBanner" status="legacy">
               <div className="offline-banner" role="status">
                 <span>Offline. Changes are saved locally and will sync when connection returns.</span>
                 <div className="chip-group">
@@ -372,7 +515,7 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="Notification bell + badge" status="exception">
+            <PatternCard name="NotificationBell" status="exception">
               <div className="chip-group">
                 <button className="notification-bell" type="button">
                   🔔
@@ -388,16 +531,16 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>States</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="Empty state" status="standard">
+            <PatternCard name="EmptyState" status="standard">
               <div className="chart-empty">No profile available for current selection.</div>
             </PatternCard>
-            <PatternCard name="Loading state" status="standard">
+            <PatternCard name="LoadingState" status="standard">
               <div className="map-progress-track">
                 <div className="map-progress-fill map-progress-fill-indeterminate" />
               </div>
               <p className="field-help">Loading terrain and profile data…</p>
             </PatternCard>
-            <PatternCard name="Error/helper states" status="under migration">
+            <PatternCard name="ErrorHelperStates" status="under migration">
               <p className="field-help field-help-error">Name must be at least 3 characters.</p>
               <div className="terrain-alert">
                 <p>Terrain fetch failed for one tile. Retry when network is stable.</p>
@@ -411,7 +554,7 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Meta / Map UI</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="Map control cluster (overlay family)" status="standard">
+            <PatternCard name="MapControls" status="standard">
               <div className="map-controls map-controls-unified">
                 <div className="map-controls-group">
                   <button className="map-control-btn map-control-btn-icon" title="Layers" type="button">
@@ -423,7 +566,7 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="Attribution / low-priority meta UI" status="standard">
+            <PatternCard name="SidebarFooter" status="standard">
               <footer className="sidebar-footer">
                 <div className="sidebar-footer-links">
                   <span>©</span>
@@ -438,7 +581,16 @@ export function UiGalleryPage() {
                 <div className="sidebar-footer-version">Build: v0.14.0-beta+fc9813a</div>
               </footer>
             </PatternCard>
-            <PatternCard name="Popover — pill variant (tall / label use-case)" status="standard">
+            <PatternCard name="StateDot" status="standard">
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <StateDot state="pass_clear" />
+                <StateDot state="pass_blocked" />
+                <StateDot state="fail_clear" />
+                <StateDot state="fail_blocked" />
+              </div>
+              <VariantList variants={["pass_clear", "pass_blocked", "fail_clear", "fail_blocked"]} />
+            </PatternCard>
+            <PatternCard name="Surface.Pill" status="standard">
               <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
                 <Surface variant="pill" style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
@@ -460,8 +612,9 @@ export function UiGalleryPage() {
                 </Surface>
                 <p className="field-help" style={{ marginTop: 0 }}>Strict pill shape (border-radius: 999px) for tall or long content such as label lists and narrow context menus. Uses the base <code>ui-surface-pill</code> class.</p>
               </div>
+              <VariantList variants={["pill", "card"]} />
             </PatternCard>
-            <PatternCard name="Popover — card variant (square / content-rich use-case)" status="standard">
+            <PatternCard name="Surface.Card" status="standard">
               <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
                 <Surface variant="card" style={{ padding: "12px 16px", display: "inline-grid", gap: "8px", minWidth: "160px" }}>
                   <strong style={{ fontSize: "0.75rem" }}>Signal overview</strong>
@@ -474,9 +627,138 @@ export function UiGalleryPage() {
                 <p className="field-help" style={{ marginTop: 0 }}>Card variant (border-radius: 12px) for larger, square-ish popovers with structured content. Add <code>is-card</code> modifier to <code>ui-surface-pill</code>.</p>
               </div>
             </PatternCard>
-            <PatternCard name="Icon-only controls policy" status="mapped only">
-              <p className="field-help">Mapped for taxonomy coverage only in this pass. No visual convergence or restyling is applied.</p>
-            </PatternCard>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "theme" ? (
+        <section className="ui-gallery-section">
+          <h3>Theme Tokens</h3>
+          <p className="field-help">All CSS custom properties set by the theme system. Values reflect current theme mode and color theme.</p>
+
+          <h4 className="ui-theme-category">Semantic (Primary)</h4>
+          <p className="field-help" style={{ fontSize: "0.75rem", marginBottom: "8px" }}>Core surface and content colors</p>
+          <div className="ui-pattern-grid ui-pattern-grid-theme">
+            {THEME_TOKENS.semanticPrimary.map(({ token, label }) => {
+              const varKey = getCssVarKey(token);
+              const value = variant.cssVars[varKey] ?? "—";
+              return (
+                <article key={token} className="ui-pattern-card">
+                  <header className="ui-pattern-card-header">
+                    <strong>{label}</strong>
+                    <span className="ui-pattern-source">{varKey}</span>
+                  </header>
+                  <div className="ui-pattern-card-body">
+                    <div className="ui-theme-token">
+                      <div
+                        className="ui-theme-swatch"
+                        style={{ backgroundColor: value.startsWith("var(") ? undefined : value }}
+                      />
+                      <code className="ui-theme-value">{value}</code>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <h4 className="ui-theme-category">Semantic (Secondary)</h4>
+          <p className="field-help" style={{ fontSize: "0.75rem", marginBottom: "8px" }}>Selection, frames, and focus</p>
+          <div className="ui-pattern-grid ui-pattern-grid-theme">
+            {THEME_TOKENS.semanticSecondary.map(({ token, label }) => {
+              const varKey = getCssVarKey(token);
+              const value = variant.cssVars[varKey] ?? "—";
+              return (
+                <article key={token} className="ui-pattern-card">
+                  <header className="ui-pattern-card-header">
+                    <strong>{label}</strong>
+                    <span className="ui-pattern-source">{varKey}</span>
+                  </header>
+                  <div className="ui-pattern-card-body">
+                    <div className="ui-theme-token">
+                      <div
+                        className="ui-theme-swatch"
+                        style={{ backgroundColor: value.startsWith("var(") ? undefined : value }}
+                      />
+                      <code className="ui-theme-value">{value}</code>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <h4 className="ui-theme-category">Visualization</h4>
+          <p className="field-help" style={{ fontSize: "0.75rem", marginBottom: "8px" }}>Map and chart rendering colors</p>
+          <div className="ui-pattern-grid ui-pattern-grid-theme">
+            {THEME_TOKENS.visualization.map(({ token, label }) => {
+              const varKey = getCssVarKey(token);
+              const value = variant.cssVars[varKey] ?? "—";
+              return (
+                <article key={token} className="ui-pattern-card">
+                  <header className="ui-pattern-card-header">
+                    <strong>{label}</strong>
+                    <span className="ui-pattern-source">{varKey}</span>
+                  </header>
+                  <div className="ui-pattern-card-body">
+                    <div className="ui-theme-token">
+                      <div
+                        className="ui-theme-swatch"
+                        style={{ backgroundColor: value.startsWith("var(") ? undefined : value }}
+                      />
+                      <code className="ui-theme-value">{value}</code>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <h4 className="ui-theme-category">Compatibility (Derived)</h4>
+          <p className="field-help" style={{ fontSize: "0.75rem", marginBottom: "8px" }}>Mixed/soft variants and elevation</p>
+          <div className="ui-pattern-grid ui-pattern-grid-theme">
+            {THEME_TOKENS.compatibility.map(({ token, label }) => {
+              const varKey = getCssVarKey(token);
+              const value = variant.cssVars[varKey] ?? "—";
+              return (
+                <article key={token} className="ui-pattern-card">
+                  <header className="ui-pattern-card-header">
+                    <strong>{label}</strong>
+                    <span className="ui-pattern-source">{varKey}</span>
+                  </header>
+                  <div className="ui-pattern-card-body">
+                    <div className="ui-theme-token">
+                      <div
+                        className="ui-theme-swatch"
+                        style={{ backgroundColor: value.startsWith("var(") ? undefined : value }}
+                      />
+                      <code className="ui-theme-value">{value}</code>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <h4 className="ui-theme-category">State (CSS-only)</h4>
+          <p className="field-help" style={{ fontSize: "0.75rem", marginBottom: "8px" }}>Defined in CSS, reference theme tokens.</p>
+          <div className="ui-pattern-grid ui-pattern-grid-theme">
+            {(["state-pass-clear", "state-pass-blocked", "state-fail-clear", "state-fail-blocked"] as const).map((token) => {
+              const varKey = `--${token}`;
+              return (
+                <article key={token} className="ui-pattern-card">
+                  <header className="ui-pattern-card-header">
+                    <strong>{token.replace("state-", "")}</strong>
+                    <span className="ui-pattern-source">{varKey}</span>
+                  </header>
+                  <div className="ui-pattern-card-body">
+                    <div className="ui-theme-token">
+                      <StateToken varKey={varKey} />
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       ) : null}
