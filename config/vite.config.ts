@@ -31,11 +31,6 @@ export default defineConfig(({ command }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/meshmap/, ""),
         },
-        "/ve2dbe": {
-          target: "https://www.ve2dbe.com",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/ve2dbe/, ""),
-        },
       },
     },
     preview: {
@@ -44,11 +39,6 @@ export default defineConfig(({ command }) => {
           target: "https://meshmap.net",
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/meshmap/, ""),
-        },
-        "/ve2dbe": {
-          target: "https://www.ve2dbe.com",
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/ve2dbe/, ""),
         },
       },
     },
