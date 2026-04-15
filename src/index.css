@@ -1805,6 +1805,63 @@ input {
   margin: 0 0 2px;
 }
 
+.map-sim-section {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+}
+
+.map-sim-section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.map-sim-section-title {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.map-sim-row {
+  display: grid;
+  gap: 2px;
+}
+
+.map-sim-row-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.map-sim-row-value {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.map-sim-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.map-sim-status.active {
+  color: var(--accent);
+}
+
+.map-sim-footnote {
+  color: var(--muted);
+  font-size: 0.72rem;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+}
+
 .map-control-btn {
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
