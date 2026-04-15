@@ -23,7 +23,55 @@ const trimToUndefined = (value: string | null): string | undefined => {
 
 const isReservedPathHead = (head: string): boolean => {
   const value = head.toLowerCase();
-  return value === "api" || value === "cdn-cgi" || value === "assets" || value === "meshmap";
+  return (
+    value === "api" ||
+    value === "cdn-cgi" ||
+    value === "assets" ||
+    value === "meshmap" ||
+    value === "settings"
+  );
+};
+
+export const SETTINGS_PATH_HEAD = "settings";
+
+export type SettingsSectionId = "profile" | "preferences" | "admin";
+
+const SETTINGS_SECTIONS: ReadonlySet<SettingsSectionId> = new Set<SettingsSectionId>([
+  "profile",
+  "preferences",
+  "admin",
+]);
+
+export type SettingsRouteMatch = {
+  matched: true;
+  section: SettingsSectionId | null;
+};
+
+/**
+ * Detects whether a pathname points at the Settings panel (`/settings` or
+ * `/settings/<section>`). Returns the matched section id when valid, or `null`
+ * when the pathname is `/settings` with no section (caller should default to
+ * `profile`).
+ */
+export const matchSettingsPath = (pathname: string | null | undefined): SettingsRouteMatch | null => {
+  const segments = (pathname ?? "/")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (!segments.length) return null;
+  if (segments[0].toLowerCase() !== SETTINGS_PATH_HEAD) return null;
+  const next = segments[1]?.toLowerCase();
+  if (!next) return { matched: true, section: null };
+  if (SETTINGS_SECTIONS.has(next as SettingsSectionId)) {
+    return { matched: true, section: next as SettingsSectionId };
+  }
+  // Unknown section — still match Settings route but report null so caller can redirect.
+  return { matched: true, section: null };
+};
+
+export const buildSettingsPath = (section?: SettingsSectionId | null): string => {
+  if (!section) return `/${SETTINGS_PATH_HEAD}`;
+  return `/${SETTINGS_PATH_HEAD}/${section}`;
 };
 
 const safeDecodeURIComponent = (value: string): string => {

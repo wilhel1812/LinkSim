@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "./deepLink";
+import {
+  buildDeepLinkPathname,
+  buildDeepLinkUrl,
+  buildSettingsPath,
+  canonicalizeDeepLinkKey,
+  matchSettingsPath,
+  parseDeepLinkFromLocation,
+  slugifyName,
+} from "./deepLink";
 
 describe("deepLink", () => {
   it("parses old v1 deep link payload and converts to v2", () => {
@@ -256,5 +264,56 @@ describe("deepLink", () => {
       selectedSiteSlugs: ["남산-서울-타워", "평양텔레비죤탑"],
     });
     expect(pathname).toBe("/한국조선/남산-서울-타워+평양텔레비죤탑");
+  });
+
+  it("treats /settings as a reserved path head (no simulation parsed)", () => {
+    const parsed = parseDeepLinkFromLocation({ pathname: "/settings", search: "" });
+    expect(parsed).toEqual({ ok: false, reason: "missing_sim" });
+  });
+
+  it("treats /settings/profile as a reserved path head (no simulation parsed)", () => {
+    const parsed = parseDeepLinkFromLocation({ pathname: "/settings/profile", search: "" });
+    expect(parsed).toEqual({ ok: false, reason: "missing_sim" });
+  });
+
+  describe("matchSettingsPath", () => {
+    it("returns null for unrelated paths", () => {
+      expect(matchSettingsPath("/")).toBeNull();
+      expect(matchSettingsPath("/Høgevarde")).toBeNull();
+      expect(matchSettingsPath("/Høgevarde/site")).toBeNull();
+    });
+
+    it("matches /settings without a section", () => {
+      expect(matchSettingsPath("/settings")).toEqual({ matched: true, section: null });
+      expect(matchSettingsPath("/settings/")).toEqual({ matched: true, section: null });
+    });
+
+    it("matches /settings/<known-section>", () => {
+      expect(matchSettingsPath("/settings/profile")).toEqual({ matched: true, section: "profile" });
+      expect(matchSettingsPath("/settings/preferences")).toEqual({ matched: true, section: "preferences" });
+      expect(matchSettingsPath("/settings/admin")).toEqual({ matched: true, section: "admin" });
+    });
+
+    it("matches /settings/<unknown-section> as settings with null section", () => {
+      expect(matchSettingsPath("/settings/unknown")).toEqual({ matched: true, section: null });
+    });
+
+    it("is case-insensitive on the settings head", () => {
+      expect(matchSettingsPath("/Settings")).toEqual({ matched: true, section: null });
+      expect(matchSettingsPath("/SETTINGS/Profile")).toEqual({ matched: true, section: "profile" });
+    });
+  });
+
+  describe("buildSettingsPath", () => {
+    it("returns /settings without a section", () => {
+      expect(buildSettingsPath()).toBe("/settings");
+      expect(buildSettingsPath(null)).toBe("/settings");
+    });
+
+    it("returns /settings/<section> when provided", () => {
+      expect(buildSettingsPath("profile")).toBe("/settings/profile");
+      expect(buildSettingsPath("preferences")).toBe("/settings/preferences");
+      expect(buildSettingsPath("admin")).toBe("/settings/admin");
+    });
   });
 });

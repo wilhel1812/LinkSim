@@ -123,9 +123,28 @@ type UserAdminPanelProps = {
   onOpenHelp?: () => void;
   authBootstrapPending?: boolean;
   extraActions?: ReactNode;
+  /**
+   * "chip" (default): render the header user chip, sync chip, sync modal, and
+   * the legacy user-settings modal.
+   * "admin-inline": render only the admin tools inline (no chip, no modal
+   * wrapper) — used by the Settings panel's Admin section.
+   */
+  renderMode?: "chip" | "admin-inline";
+  /**
+   * When provided, the settings-icon button (and user chip click) invoke this
+   * callback instead of opening the legacy User Settings modal. Used by
+   * AppShell to navigate to `/settings/profile`.
+   */
+  onOpenSettings?: () => void;
 };
 
-export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extraActions }: UserAdminPanelProps) {
+export function UserAdminPanel({
+  onOpenHelp,
+  authBootstrapPending = false,
+  extraActions,
+  renderMode = "chip",
+  onOpenSettings,
+}: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
@@ -698,6 +717,395 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     };
   }, []);
 
+  if (renderMode === "admin-inline") {
+    if (!canModerate) {
+      return (
+        <p className="field-help">You do not have access to admin tools.</p>
+      );
+    }
+    return (
+      <div className="user-admin-inline">
+        {canAdmin ? (
+          <div className="user-manager-list">
+            <div className="section-heading">
+              <p className="field-help">System diagnostics</p>
+              <div className="chip-group">
+                <ActionButton disabled={busy} onClick={() => void load()} type="button">
+                  Refresh
+                </ActionButton>
+                <ActionButton disabled={busy} onClick={() => void repairMetadata()} type="button">
+                  Repair Metadata
+                </ActionButton>
+              </div>
+            </div>
+            {authWarnings.length ? (
+              <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                <span className="app-notification-glyph" aria-hidden="true">
+                  <CircleAlert size={14} strokeWidth={2} />
+                </span>
+                <div className="app-notification-copy">
+                  <span>
+                    <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="field-help">Auth configuration checks passed.</p>
+            )}
+            {schemaWarnings.length ? (
+              <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                <span className="app-notification-glyph" aria-hidden="true">
+                  <CircleAlert size={14} strokeWidth={2} />
+                </span>
+                <div className="app-notification-copy">
+                  <span>
+                    <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="field-help">Schema diagnostics passed.</p>
+            )}
+            <p className="field-help">
+              Schema version: {schemaDiagnostics?.schema.version ?? "-"} | Auth source: {authDiagnostics?.auth.source ?? "-"} | JWT:{" "}
+              {authDiagnostics?.auth.signals.hasJwtAssertion ? "yes" : "no"} | Header email:{" "}
+              {authDiagnostics?.auth.signals.hasEmailHeader ? "yes" : "no"}
+            </p>
+          </div>
+        ) : null}
+
+        {canAdmin ? (
+          <div className="user-manager-list">
+            <div className="section-heading">
+              <p className="field-help">Admin ownership tools</p>
+              <div className="chip-group">
+                <ActionButton disabled={busy || auditBusy} onClick={() => void loadAdminAudit()} type="button">
+                  Refresh Audit
+                </ActionButton>
+              </div>
+            </div>
+            <label className="field-grid user-field-grid">
+              <span>Resource type</span>
+              <select
+                className="locale-select"
+                onChange={(event) => setOwnershipKind(event.target.value as "site" | "simulation")}
+                value={ownershipKind}
+              >
+                <option value="site">Site</option>
+                <option value="simulation">Simulation</option>
+              </select>
+            </label>
+            <label className="field-grid user-field-grid">
+              <span>Resource ID</span>
+              <input
+                onChange={(event) => setOwnershipResourceId(event.target.value)}
+                placeholder="site-id or simulation-id"
+                type="text"
+                value={ownershipResourceId}
+              />
+            </label>
+            <label className="field-grid user-field-grid">
+              <span>New owner ID</span>
+              <input
+                list="admin-user-ids-inline"
+                onChange={(event) => setOwnershipNewOwnerId(event.target.value)}
+                placeholder="target user ID"
+                type="text"
+                value={ownershipNewOwnerId}
+              />
+            </label>
+            <ActionButton disabled={busy} onClick={() => void runOwnerReassign()} type="button">
+              Reassign Owner
+            </ActionButton>
+
+            <label className="field-grid user-field-grid">
+              <span>Bulk from owner ID</span>
+              <input
+                list="admin-user-ids-inline"
+                onChange={(event) => setBulkFromOwnerId(event.target.value)}
+                placeholder="source owner user ID"
+                type="text"
+                value={bulkFromOwnerId}
+              />
+            </label>
+            <label className="field-grid user-field-grid">
+              <span>Bulk to owner ID</span>
+              <input
+                list="admin-user-ids-inline"
+                onChange={(event) => setBulkToOwnerId(event.target.value)}
+                placeholder="target owner user ID"
+                type="text"
+                value={bulkToOwnerId}
+              />
+            </label>
+            <ActionButton disabled={busy} onClick={() => void runBulkOwnerReassign()} type="button">
+              Bulk Reassign Ownership
+            </ActionButton>
+
+            <p className="field-help">Recent admin audit events</p>
+            {auditBusy ? <p className="field-help">Loading audit events…</p> : null}
+            <div className="notifications-list">
+              {auditEvents.slice(0, 12).map((event) => (
+                <div className="library-row" key={event.id}>
+                  <strong>{event.eventType}</strong>
+                  <p className="field-help">
+                    actor: {event.actorUserId ?? "-"} | target: {event.targetUserId}
+                  </p>
+                  <p className="field-help">
+                    source: {event.sourceUserId ?? "-"} | at: {fmtDate(event.createdAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {!auditEvents.length ? <p className="field-help">No admin audit events yet.</p> : null}
+            <datalist id="admin-user-ids-inline">
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.username}
+                </option>
+              ))}
+            </datalist>
+          </div>
+        ) : null}
+
+        {canModerate ? (
+          <div className="user-manager-list notifications-center">
+            {unreadNotifications.length > 0 ? (
+              <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+                <span className="app-notification-glyph" aria-hidden="true">
+                  <CircleAlert size={14} strokeWidth={2} />
+                </span>
+                <div className="app-notification-copy">
+                  <span>
+                    <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
+                  </span>
+                </div>
+              </div>
+            ) : null}
+            <div className="section-heading">
+              <p className="field-help">Notification Center</p>
+              <div className="chip-group">
+                <ActionButton onClick={() => setNotificationOpen((prev) => !prev)} type="button">
+                  {notificationOpen ? "Hide" : "Open"}
+                </ActionButton>
+                <ActionButton onClick={() => void loadNotifications()} type="button">
+                  Refresh
+                </ActionButton>
+              </div>
+            </div>
+            {notificationOpen ? (
+              <>
+                {notificationBusy ? <p className="field-help">Loading notifications…</p> : null}
+                {notificationStatus ? <p className="field-help">{notificationStatus}</p> : null}
+                {notificationFeed.items.length ? (
+                  <div className="notifications-list">
+                    {notificationFeed.items.map((item) => {
+                      const isDismissed = dismissedNotifications.has(item.id);
+                      return (
+                        <div className="library-row" key={item.id}>
+                          <strong>{item.title}</strong>
+                          <p className="field-help">{item.message}</p>
+                          <p className="field-help">Updated: {fmtDate(item.createdAt)}</p>
+                          <div className="chip-group">
+                            <ActionButton
+                              disabled={isDismissed}
+                              onClick={() => dismissNotification(item.id)}
+                              type="button"
+                            >
+                              {isDismissed ? "Dismissed" : "Dismiss Badge"}
+                            </ActionButton>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="field-help">No notifications yet.</p>
+                )}
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {canModerate ? (
+          <div className="user-manager-list">
+            <div className="section-heading">
+              <p className="field-help">Users: open a profile to review and moderate.</p>
+              <p className="field-help">Pending: {pendingUserCount} | Revoked: {revokedUserCount}</p>
+            </div>
+            <label className="field-grid user-field-grid">
+              <span>Filter</span>
+              <select
+                className="locale-select"
+                onChange={(event) => setUserFilter(event.target.value as "all" | "pending" | "approved" | "revoked")}
+                value={userFilter}
+              >
+                <option value="all">All users</option>
+                <option value="pending">Pending only</option>
+                <option value="approved">Approved only</option>
+                <option value="revoked">Revoked only</option>
+              </select>
+            </label>
+            <label className="field-grid user-field-grid">
+              <span>Search</span>
+              <input onChange={(event) => setUserSearch(event.target.value)} placeholder="Name, email, or user ID" type="text" value={userSearch} />
+            </label>
+            {filteredUserRows.map((user) => (
+              <button className="library-row user-list-row-btn" key={user.id} onClick={() => openManagedUser(user)} type="button">
+                <div className="user-list-row">
+                  <ProfileAvatar avatarUrl={user.avatarUrl} name={user.username} />
+                  <div>
+                    <p className="field-help">
+                      <strong>{user.username}</strong>
+                    </p>
+                    <p className="field-help">
+                      {user.accountState === "revoked"
+                        ? "Revoked"
+                        : user.isApproved
+                          ? "Approved"
+                          : "Pending"}
+                    </p>
+                    <p className="field-help">{user.email ?? "-"}</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+            {!filteredUserRows.length ? <p className="field-help">No users match this filter.</p> : null}
+          </div>
+        ) : null}
+
+        {canAdmin ? (
+          <div className="user-manager-list">
+            <p className="field-help">Deleted users: remove lock to allow immediate re-creation.</p>
+            {deletedUsers.map((entry) => (
+              <div className="library-row" key={entry.id}>
+                <p className="field-help">
+                  <strong>{entry.id}</strong>
+                </p>
+                <p className="field-help">Deleted: {fmtDate(entry.deletedAt)}</p>
+                <p className="field-help">Deleted by: {entry.deletedByUserId ?? "-"}</p>
+                <div className="chip-group">
+                  <ActionButton onClick={() => void restoreDeletedUser(entry.id)} type="button">
+                    Restore
+                  </ActionButton>
+                </div>
+              </div>
+            ))}
+            {!deletedUsers.length ? <p className="field-help">No deleted-user locks.</p> : null}
+          </div>
+        ) : null}
+
+        {managedUser ? (
+          <ModalOverlay aria-label="Managed User Profile" onClose={closeManagedUser} tier="raised">
+            <div className="library-manager-card user-profile-popup">
+              <div className="library-manager-header">
+                <h2>User Profile</h2>
+                <InlineCloseIconButton onClick={closeManagedUser} />
+              </div>
+              <div className="user-list-row">
+                <ProfileAvatar avatarUrl={managedUser.avatarUrl} name={managedUser.username} size="large" />
+                <div>
+                  <p className="field-help">
+                    <strong>{managedUser.username}</strong> ({managedUser.id})
+                  </p>
+                  <p className="field-help">Created: {fmtDate(managedUser.createdAt)}</p>
+                  <p className="field-help">
+                    Access:{" "}
+                    {managedUser.accountState === "revoked"
+                      ? "Revoked"
+                      : managedUser.isApproved
+                        ? "Approved"
+                        : "Pending"}{" "}
+                    | Role: {managedUser.role ?? (managedUser.isAdmin ? "admin" : managedUser.isModerator ? "moderator" : managedUser.isApproved ? "user" : "pending")}
+                  </p>
+                </div>
+              </div>
+              <label className="field-grid user-field-grid">
+                <span>Name</span>
+                <input
+                  className={managedNameError ? "input-error" : ""}
+                  onChange={(event) => {
+                    setManagedNameDraft(event.target.value);
+                    if (managedNameError) setManagedNameError("");
+                  }}
+                  type="text"
+                  value={managedNameDraft}
+                />
+              </label>
+              {managedNameError ? <p className="field-help field-help-error">{managedNameError}</p> : null}
+              <label className="field-grid user-field-grid">
+                <span>Email</span>
+                <input
+                  className={managedEmailError ? "input-error" : ""}
+                  onChange={(event) => {
+                    setManagedEmailDraft(event.target.value);
+                    if (managedEmailError) setManagedEmailError("");
+                  }}
+                  type="email"
+                  value={managedEmailDraft}
+                />
+              </label>
+              {managedEmailError ? <p className="field-help field-help-error">{managedEmailError}</p> : null}
+              {managedUser.accessRequestNote ? (
+                <p className="field-help">Access request note: {managedUser.accessRequestNote}</p>
+              ) : (
+                <p className="field-help">No access request note.</p>
+              )}
+              <div className="chip-group">
+                <ActionButton
+                  onClick={() => void saveManagedProfile(managedUser, { username: managedNameDraft, email: managedEmailDraft })}
+                  type="button"
+                >
+                  Save Profile
+                </ActionButton>
+                <label className="field-grid user-field-grid">
+                  <span>
+                    Role{" "}
+                    <InfoTip text="Role changes are audited. Admins can assign all roles except their own. Moderators can only approve pending users to User, or move existing users back to Pending." />
+                  </span>
+                  <select
+                    className="locale-select"
+                    onChange={(event) => {
+                      const nextRole = event.target.value as "admin" | "moderator" | "user" | "pending";
+                      if (!canAssignManagedRole(managedUser, nextRole)) return;
+                      void updateRole(managedUser, nextRole);
+                    }}
+                    value={resolveRole(managedUser)}
+                  >
+                    <option disabled={!canAssignManagedRole(managedUser, "pending")} value="pending">Pending</option>
+                    <option disabled={!canAssignManagedRole(managedUser, "user")} value="user">User</option>
+                    <option disabled={!canAssignManagedRole(managedUser, "moderator")} value="moderator">Moderator</option>
+                    <option disabled={!canAssignManagedRole(managedUser, "admin")} value="admin">Admin</option>
+                  </select>
+                </label>
+                {!managedUser.isApproved ? (
+                  <ActionButton onClick={() => void updateRole(managedUser, "user")} type="button">
+                    Approve Access
+                  </ActionButton>
+                ) : null}
+                {canAdmin ? (
+                  <ActionButton
+                    disabled={managedUser.id === me?.id || resolveRole(managedUser) === "admin"}
+                    onClick={() => void deleteUserAccount(managedUser)}
+                    type="button"
+                    variant="danger"
+                  >
+                    Delete User
+                  </ActionButton>
+                ) : null}
+              </div>
+              <p className="field-help">
+                Role and approval changes are audited. Moderators can only approve pending users to User, or move existing users back to Pending.
+              </p>
+            </div>
+          </ModalOverlay>
+        ) : null}
+
+        {status ? <p className="field-help">{status}</p> : null}
+      </div>
+    );
+  }
+
   const syncIndicator = deriveSyncIndicator({
     isLocalRuntime,
     isOnline,
@@ -718,7 +1126,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
     <>
       <div className="user-chip-row">
         {isSignedIn && displayUser ? (
-          <button aria-label="Open user settings" className="user-chip" onClick={() => setOpen(true)} type="button">
+          <button aria-label="Open user settings" className="user-chip" onClick={() => (onOpenSettings ? onOpenSettings() : setOpen(true))} type="button">
             <ProfileAvatar avatarUrl={displayUser.avatarUrl ?? ""} name={displayUser.username ?? "User"} />
             {canModerate && unreadNotifications.length > 0 ? (
               <span className="notification-badge">{unreadNotifications.length}</span>
@@ -752,7 +1160,7 @@ export function UserAdminPanel({ onOpenHelp, authBootstrapPending = false, extra
                   title={syncIndicator.label}
                 />
               </button>
-              <button aria-label="Open user settings" className="user-icon-button" onClick={() => setOpen(true)} type="button">
+              <button aria-label="Open user settings" className="user-icon-button" onClick={() => (onOpenSettings ? onOpenSettings() : setOpen(true))} type="button">
                 <SettingsIcon title="Settings" />
               </button>
             </>
