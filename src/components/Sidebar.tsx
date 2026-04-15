@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
+import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import Map, {
   Layer,
   Marker,
@@ -1983,8 +1984,8 @@ export function Sidebar({
                   ))}
               </select>
             </label>
-            <details className="compact-details">
-              <summary>Link Radio Overrides</summary>
+            <CompactDetails>
+              <CompactDetailsSummary>Link Radio Overrides</CompactDetailsSummary>
               <label className="field-grid">
                 <span>Use site radio defaults</span>
                 <input
@@ -2054,7 +2055,7 @@ export function Sidebar({
               </label>
                 </>
               ) : null}
-            </details>
+            </CompactDetails>
             <div className="chip-group">
               <ActionButton onClick={saveLinkModal} type="button">
                 {linkModal.mode === "add" ? "Create Link" : "Save Link"}
@@ -2570,17 +2571,17 @@ export function Sidebar({
               </ActionButton>
             </div>
             {resourceDetailsPopup.kind === "site" && currentResourceMqttMetaLines.length ? (
-              <details className="compact-details">
-                <summary>MQTT Metadata</summary>
+              <CompactDetails>
+                <CompactDetailsSummary>MQTT Metadata</CompactDetailsSummary>
                 <div className="field-help">
                   {currentResourceMqttMetaLines.map((line) => (
                     <p key={line}>{line}</p>
                   ))}
                 </div>
-              </details>
+              </CompactDetails>
             ) : null}
-            <details className="compact-details">
-              <summary>Access</summary>
+            <CompactDetails>
+              <CompactDetailsSummary>Access</CompactDetailsSummary>
               <label className="field-grid">
                 <span>
                   Access level{" "}
@@ -2665,7 +2666,7 @@ export function Sidebar({
                 the share link when logged in.
               </p>
               {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
-            </details>
+            </CompactDetails>
             </fieldset>
             {resourceDetailsPopup.kind === "simulation" ? (
               <div className="compact-details">
@@ -3460,8 +3461,8 @@ export function Sidebar({
                     ))}
                   </div>
                 ) : null}
-                <details className="compact-details">
-                  <summary>Browse Meshtastic MQTT Nodes</summary>
+                <CompactDetails>
+                  <CompactDetailsSummary>Browse Meshtastic MQTT Nodes</CompactDetailsSummary>
                   <p className="field-help">
                     Default source uses a same-origin proxy route (`/meshmap/nodes.json`) to avoid browser CORS
                     blocking. You can switch to your own relay endpoint later.
@@ -3561,7 +3562,7 @@ export function Sidebar({
                       )}
                     </div>
                   ) : null}
-                </details>
+            </CompactDetails>
                   </div>
                   <div className="library-editor-map">
                     <div className="library-editor-map-controls">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import Map, {
   Layer,
   type MapRef,
@@ -2586,12 +2587,12 @@ export function MapView({
               </span>
             </div>
           ) : null}
-          <details
+          <CompactDetails
             className="compact-details map-inspector-details"
             onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, v); setShowOverlayGuide(v); }}
             open={showOverlayGuide}
           >
-            <summary>Map</summary>
+            <CompactDetailsSummary>Map</CompactDetailsSummary>
             <div className="map-inspector-map-settings">
               <label className="map-inspector-map-setting">
                 <span>Map Provider</span>
@@ -2880,21 +2881,21 @@ export function MapView({
                 <p className="overlay-scale-help">Left side is worse relay quality. Right side is better relay quality.</p>
               </>
             ) : null}
-          </details>
-          <details
+          </CompactDetails>
+          <CompactDetails
             className="compact-details map-inspector-details"
             onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
             open={showResultsSummary}
           >
-            <summary>Results</summary>
+            <CompactDetailsSummary>Results</CompactDetailsSummary>
             <SimulationResultsSection />
-          </details>
-          <details
+          </CompactDetails>
+          <CompactDetails
             className="compact-details map-inspector-details"
             onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewSimSummary, v); setShowSimulationSummary(v); }}
             open={showSimulationSummary}
           >
-            <summary>Simulation Sources</summary>
+            <CompactDetailsSummary>Simulation Sources</CompactDetailsSummary>
             <p>
               Model: {propagationModel} / {selectedCoverageResolution} / View: {coverageVizMode}
             </p>
@@ -2953,7 +2954,7 @@ export function MapView({
               Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
             </p>
             <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
-          </details>
+          </CompactDetails>
         </aside>
       ) : null}
       <Map
