@@ -718,7 +718,7 @@ input {
   align-items: center;
 }
 
-.compact-details > summary.section-heading {
+.compact-details:not([open]) > summary.section-heading {
   min-height: unset;
   padding-bottom: 0;
 }
