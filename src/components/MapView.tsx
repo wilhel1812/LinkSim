@@ -2896,64 +2896,120 @@ export function MapView({
               open={showSimulationSummary}
             >
               <CompactDetailsSummary>Simulation Sources</CompactDetailsSummary>
-              <p>
-              Model: {propagationModel} / {selectedCoverageResolution} / View: {coverageVizMode}
-            </p>
-            <p>
-              Network: {selectedNetwork?.name ?? "n/a"} @ {" "}
-              {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
-            </p>
-            <p>
-              Terrain dataset: {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
-              {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
-            </p>
-            {terrainSourceSummary.length ? (
-              <ul className="map-sim-sources">
-                {terrainSourceSummary.map((entry) => (
-                  <li key={entry.label}>
-                    {entry.label}: {entry.count}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>Terrain source: simulation/manual site elevations only</p>
-            )}
-            <p>Site elevations: Simulation values</p>
-            <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
-            <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
-            {showLocalTerrainDiagnostics ? (
-              <>
-                <p>
-                  Terrain memory (retained decoded): {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [
-                  30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, 90m{" "}
-                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus90)}, manual{" "}
-                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
-                </p>
-                <p>
-                  Terrain tiles by dataset: 30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, 90m{" "}
-                  {terrainMemoryDiagnostics.tileCountsByDataset.copernicus90}, manual{" "}
-                  {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other{" "}
-                  {terrainMemoryDiagnostics.tileCountsByDataset.other}
-                </p>
-                <p>
-                  Terrain decode overhead (in-flight estimate):{" "}
-                  {formatMb(terrainProgressTransientDecodeBytesEstimated)}
-                </p>
-              </>
-            ) : null}
-            <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
-            {largeAreaOptimizationActive ? (
-              <p>
-                Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
-                Zoom in or narrow site spread for higher detail.
-              </p>
-            ) : (
-              <p>Large-area optimization inactive at this simulation extent.</p>
-            )}
-            <p>
-              Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
-            </p>
-            <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
+
+              {/* Simulation section */}
+              <div className="map-sim-section">
+                <div className="map-sim-section-title">Simulation</div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Model</div>
+                  <div className="map-sim-row-value">{propagationModel}</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Resolution</div>
+                  <div className="map-sim-row-value">{selectedCoverageResolution}</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">View</div>
+                  <div className="map-sim-row-value">{coverageVizMode}</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Network</div>
+                  <div className="map-sim-row-value">
+                    {selectedNetwork?.name ?? "n/a"} @ {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
+                  </div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Grid</div>
+                  <div className="map-sim-row-value">Auto ({overlayDimensions.width}×{overlayDimensions.height})</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Coverage Area</div>
+                  <div className="map-sim-row-value">{analysisBoundsDiagonalKm.toFixed(0)} km diagonal</div>
+                </div>
+              </div>
+
+              {/* Terrain section */}
+              <div className="map-sim-section">
+                <div className="map-sim-section-title">Terrain</div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Dataset</div>
+                  <div className="map-sim-row-value">
+                    {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
+                    {selectedDatasetTileCount === 1 ? "" : "s"} · {srtmTiles.length} total loaded)
+                  </div>
+                </div>
+                {terrainSourceSummary.length ? (
+                  <div className="map-sim-row">
+                    <div className="map-sim-row-label">Sources</div>
+                    <ul className="map-sim-sources">
+                      {terrainSourceSummary.map((entry) => (
+                        <li key={entry.label}>
+                          {entry.label} · {entry.count}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="map-sim-row">
+                    <div className="map-sim-row-label">Sources</div>
+                    <div className="map-sim-row-value">Simulation/manual site elevations</div>
+                  </div>
+                )}
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Site Elevations</div>
+                  <div className="map-sim-row-value">Simulation values</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Overlay</div>
+                  <div className="map-sim-row-value">{showTerrainOverlay ? "Visible" : "Hidden"}</div>
+                </div>
+                {showLocalTerrainDiagnostics ? (
+                  <>
+                    <div className="map-sim-row">
+                      <div className="map-sim-row-label">Memory (Decoded)</div>
+                      <div className="map-sim-row-value">
+                        {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, 90m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus90)}, manual {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
+                      </div>
+                    </div>
+                    <div className="map-sim-row">
+                      <div className="map-sim-row-label">Tile Counts</div>
+                      <div className="map-sim-row-value">
+                        30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, 90m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus90}, manual {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other {terrainMemoryDiagnostics.tileCountsByDataset.other}
+                      </div>
+                    </div>
+                    <div className="map-sim-row">
+                      <div className="map-sim-row-label">Decode Overhead</div>
+                      <div className="map-sim-row-value">{formatMb(terrainProgressTransientDecodeBytesEstimated)} (in-flight estimate)</div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
+              {/* Optimization section */}
+              <div className="map-sim-section">
+                <div className="map-sim-section-title">Rendering</div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Optimization Thresholds</div>
+                  <div className="map-sim-row-value">&gt;250 · &gt;400 · &gt;600 km</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Status</div>
+                  <div className={`map-sim-status ${largeAreaOptimizationActive ? "active" : ""}`}>
+                    {largeAreaOptimizationActive ? (
+                      <>
+                        Active · Preview scale {Math.round(overlayResolutionScale * 100)}%
+                      </>
+                    ) : (
+                      "Inactive at this extent"
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footnote */}
+              <div className="map-sim-footnote">
+                Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
+              </div>
           </CompactDetails>
         </aside>
       ) : null}
