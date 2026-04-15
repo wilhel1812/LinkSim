@@ -713,15 +713,34 @@ input {
 .compact-details > summary {
   cursor: pointer;
   list-style: none;
-  font-size: 0.82rem;
-  font-weight: 600;
   color: var(--text);
   display: flex;
   align-items: center;
 }
 
+.compact-details > summary.section-heading {
+  min-height: unset;
+  padding-bottom: 0;
+}
+
 .compact-details > summary::-webkit-details-marker {
   display: none;
+}
+
+.compact-details > summary h2 {
+  font-size: 0.96rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.compact-details-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compact-details:not([open]) > summary.section-heading {
+  border-bottom: none;
 }
 
 .compact-details > summary .compact-details-icon {
