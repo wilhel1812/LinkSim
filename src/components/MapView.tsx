@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
-import { CompactDetails } from "./ui/CompactDetails";
+import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import Map, {
   Layer,
   type MapRef,
@@ -2588,14 +2588,12 @@ export function MapView({
             </div>
           ) : null}
           <CompactDetails
-            className="compact-details map-inspector-details"
-            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, v); setShowOverlayGuide(v); }}
-            open={showOverlayGuide}
-          >
-            <div className="section-heading">
-              <h2>Map</h2>
-            </div>
-            <div className="map-inspector-map-settings">
+              className="compact-details map-inspector-details"
+              onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, v); setShowOverlayGuide(v); }}
+              open={showOverlayGuide}
+            >
+              <CompactDetailsSummary>Map</CompactDetailsSummary>
+              <div className="map-inspector-map-settings">
               <label className="map-inspector-map-setting">
                 <span>Map Provider</span>
                 <select
@@ -2884,25 +2882,21 @@ export function MapView({
               </>
             ) : null}
           </CompactDetails>
-          <CompactDetails
-            className="compact-details map-inspector-details"
-            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
-            open={showResultsSummary}
-          >
-            <div className="section-heading">
-              <h2>Results</h2>
-            </div>
-            <SimulationResultsSection />
-          </CompactDetails>
-          <CompactDetails
-            className="compact-details map-inspector-details"
-            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewSimSummary, v); setShowSimulationSummary(v); }}
-            open={showSimulationSummary}
-          >
-            <div className="section-heading">
-              <h2>Simulation Sources</h2>
-            </div>
-            <p>
+            <CompactDetails
+              className="compact-details map-inspector-details"
+              onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
+              open={showResultsSummary}
+            >
+              <CompactDetailsSummary infoTipText="Computed link budget summary for the selected path and current channel/model settings.">Results</CompactDetailsSummary>
+              <SimulationResultsSection />
+            </CompactDetails>
+            <CompactDetails
+              className="compact-details map-inspector-details"
+              onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewSimSummary, v); setShowSimulationSummary(v); }}
+              open={showSimulationSummary}
+            >
+              <CompactDetailsSummary>Simulation Sources</CompactDetailsSummary>
+              <p>
               Model: {propagationModel} / {selectedCoverageResolution} / View: {coverageVizMode}
             </p>
             <p>

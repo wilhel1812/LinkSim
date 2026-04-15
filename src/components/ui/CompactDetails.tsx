@@ -1,5 +1,6 @@
 import { CircleChevronDown, CircleChevronRight } from 'lucide-react';
 import type { HTMLAttributes, ReactNode } from 'react';
+import { InfoTip } from "../InfoTip";
 
 type CompactDetailsProps = {
   children: ReactNode;
@@ -19,14 +20,18 @@ export function CompactDetails({ children, className, open, onToggle, ...rest }:
 type CompactDetailsSummaryProps = {
   children: ReactNode;
   className?: string;
+  infoTipText?: string;
 };
 
-export function CompactDetailsSummary({ children, className }: CompactDetailsSummaryProps) {
+export function CompactDetailsSummary({ children, className, infoTipText }: CompactDetailsSummaryProps) {
   return (
-    <summary className={className}>
-      <CircleChevronRight className="compact-details-icon collapsed" aria-hidden size={16} strokeWidth={2} />
-      <CircleChevronDown className="compact-details-icon expanded" aria-hidden size={16} strokeWidth={2} />
-      <span>{children}</span>
+    <summary className={`section-heading ${className ?? ''}`}>
+      <span className="compact-details-header">
+        <CircleChevronRight className="compact-details-icon collapsed" aria-hidden size={16} strokeWidth={2} />
+        <CircleChevronDown className="compact-details-icon expanded" aria-hidden size={16} strokeWidth={2} />
+        <h2>{children}</h2>
+      </span>
+      {infoTipText ? <InfoTip text={infoTipText} /> : null}
     </summary>
   );
 }
