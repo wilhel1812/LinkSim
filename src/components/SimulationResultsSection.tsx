@@ -292,23 +292,11 @@ export function SimulationResultsSection() {
         : selectionCount >= 3
           ? "Select exactly two sites to see link analysis."
           : "Select two sites or choose a saved link.";
-    return (
-      <>
-        <div className="section-heading">
-          <h2>Results</h2>
-          <InfoTip text="Computed link budget summary for the selected path and current channel/model settings." />
-        </div>
-        <div className="chart-empty">{message}</div>
-      </>
-    );
+    return <div className="chart-empty">{message}</div>;
   }
 
   return (
     <>
-      <div className="section-heading">
-        <h2>Results</h2>
-        <InfoTip text="Computed link budget summary for the selected path and current channel/model settings." />
-      </div>
       <div className="metrics">
         {metric("Network", selectedNetwork.name)}
         {metric(
