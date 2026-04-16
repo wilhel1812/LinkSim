@@ -1085,6 +1085,27 @@ get_milestone_issues() {
   gh api "repos/$repo/issues?milestone=$milestone_number&state=open" -q '.[] | "#\(.number) \(.title)"' 2>/dev/null
 }
 
+format_issue_option() {
+  local raw="$1"
+  local width="${2:-72}"
+  local issue_number
+  local issue_title
+
+  issue_number="$(printf '%s' "$raw" | sed -E 's/^#([0-9]+).*/\1/')"
+  issue_title="$(printf '%s' "$raw" | sed -E 's/^#[0-9]+[[:space:]]+//')"
+  issue_title="$(printf '%s' "$issue_title" | tr '\n' ' ' | tr -s ' ')"
+
+  if [[ "$issue_number" =~ ^[0-9]+$ ]]; then
+    if (( ${#issue_title} > width )); then
+      issue_title="${issue_title:0:$((width - 1))}…"
+    fi
+    printf '#%s  %s' "$issue_number" "$issue_title"
+    return 0
+  fi
+
+  printf '%s' "$raw"
+}
+
 choose_milestone() {
   local use_ui="$1"
   local -a milestones
@@ -1139,6 +1160,7 @@ choose_issue() {
   local use_ui="$1"
   local milestone_number="$2"
   local -a issues
+  local -a issue_options
 
   local raw_output
   raw_output="$(get_milestone_issues "$milestone_number")"
@@ -1157,9 +1179,26 @@ choose_issue() {
     fail "No open issues in this milestone. (Found $issue_count issues)"
   fi
 
+  local issue_display_width=72
+  if command -v tput >/dev/null 2>&1; then
+    local cols
+    cols="$(tput cols 2>/dev/null || echo 80)"
+    if [[ "$cols" =~ ^[0-9]+$ ]] && (( cols > 50 )); then
+      issue_display_width=$((cols - 14))
+      if (( issue_display_width > 96 )); then
+        issue_display_width=96
+      fi
+    fi
+  fi
+
+  local issue_line
+  for issue_line in "${issues[@]}"; do
+    issue_options+=("$(format_issue_option "$issue_line" "$issue_display_width")")
+  done
+
   if [[ "$use_ui" -eq 1 ]] && have_gum; then
     local selected
-    selected="$(ui_choose "Select issue" 0 "${issues[@]}")" || fail "No issue selected."
+    selected="$(ui_choose "Select issue" 0 "${issue_options[@]}")" || fail "No issue selected."
     printf '%s' "$selected" | sed -E 's/^#([0-9]+).*/\1/'
     return 0
   fi
@@ -1167,7 +1206,7 @@ choose_issue() {
   say "Select issue"
 
   local index=0
-  for item in "${issues[@]}"; do
+  for item in "${issue_options[@]}"; do
     printf '  %2d) %s\n' "$((index + 1))" "$item"
     index=$((index + 1))
   done
@@ -1209,7 +1248,7 @@ create_pr() {
     --head "$branch_name" \
     --title "$pr_title" \
     --body-file "$pr_body_file" 2>&1); then
-    printf '%s' "$pr_output"
+    printf '%s\n' "$pr_output"
     return 0
   fi
 
@@ -2091,7 +2130,9 @@ EOF
     say "Existing PR found for this branch: $pr_url"
     pr_state="reused existing PR"
   else
+    local pr_created_this_run=0
     if create_pr "$branch_name" "$pr_title" "$pr_body_file"; then
+      pr_created_this_run=1
       pr_url="$(pr_url_for_branch "$branch_name")"
       if [[ -n "$pr_url" ]]; then
         say "PR created: $pr_url"
@@ -2102,8 +2143,13 @@ EOF
     if [[ -z "$pr_url" ]]; then
       pr_url="$(existing_pr_url_for_branch "$branch_name")"
       if [[ -n "$pr_url" ]]; then
-        say "Existing PR found for this branch: $pr_url"
-        pr_state="reused existing PR"
+        if [[ "$pr_created_this_run" -eq 1 ]]; then
+          say "PR created: $pr_url"
+          pr_state="created new PR"
+        else
+          say "Existing PR found for this branch: $pr_url"
+          pr_state="reused existing PR"
+        fi
       else
         fail "PR lookup failed after create attempt."
       fi
