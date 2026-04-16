@@ -1178,6 +1178,11 @@ is_no_checks_output() {
   [[ "$output" == *"no checks reported"* || "$output" == *"no checks"* ]]
 }
 
+checks_output_is_success() {
+  local output="$1"
+  [[ "$output" == *"All checks were successful"* ]]
+}
+
 checks_output_has_rows() {
   local output="$1"
   [[ "$output" =~ (^|[[:space:]])(pending|in_progress|queued|pass|fail|cancelled|skipping|startup_failure|action_required|neutral)([[:space:]]|$) ]]
@@ -1251,8 +1256,20 @@ watch_pr_checks_resilient() {
     done
 
     if [[ "$checks_found" -eq 1 ]]; then
-      gh pr checks "$target" --watch
-      return 0
+      local watch_output=""
+      local watch_status=0
+      if watch_output=$(gh pr checks "$target" --watch 2>&1); then
+        return 0
+      else
+        watch_status=$?
+      fi
+
+      if checks_output_is_success "$watch_output"; then
+        return 0
+      fi
+
+      warn "Failed while watching PR checks."
+      [[ -n "$watch_output" ]] && warn "$watch_output"
     else
       ui_warn "Checks still have not appeared for this PR after retries."
     fi
@@ -1854,6 +1871,7 @@ EOF
     case "$checks_result" in
       0)
         watched_checks=1
+        ui_info "Checks passed; proceeding to merge."
         ;;
       2)
         watched_checks=0
