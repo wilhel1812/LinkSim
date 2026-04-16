@@ -1308,18 +1308,34 @@ sync_local_staging() {
 }
 
 merge_pr_safely() {
+  local merge_output=""
+
   if safe_to_switch_branches; then
-    ui_spin "Merging pull request" gh pr merge --squash --delete-branch
-    MERGE_RESULT="Merged PR and deleted local branch"
-    BRANCH_CLEANUP_SKIPPED=0
-    return 0
+    if merge_output=$(gh pr merge --squash --delete-branch 2>&1); then
+      [[ -n "$merge_output" ]] && ui_info "$merge_output"
+      MERGE_RESULT="Merged PR and deleted local branch"
+      BRANCH_CLEANUP_SKIPPED=0
+      return 0
+    fi
+
+    ui_error "Failed to merge PR"
+    [[ -n "$merge_output" ]] && printf '%s\n' "$merge_output" >&2
+    return 1
   fi
 
   warn "Local changes remain; merging without --delete-branch to avoid checkout failure."
   warn "Local branch cleanup was skipped."
-  ui_spin "Merging pull request" gh pr merge --squash
-  MERGE_RESULT="Merged PR; local branch cleanup skipped"
-  BRANCH_CLEANUP_SKIPPED=1
+
+  if merge_output=$(gh pr merge --squash 2>&1); then
+    [[ -n "$merge_output" ]] && ui_info "$merge_output"
+    MERGE_RESULT="Merged PR; local branch cleanup skipped"
+    BRANCH_CLEANUP_SKIPPED=1
+    return 0
+  fi
+
+  ui_error "Failed to merge PR"
+  [[ -n "$merge_output" ]] && printf '%s\n' "$merge_output" >&2
+  return 1
 }
 
 safe_to_switch_branches() {
@@ -1884,7 +1900,18 @@ EOF
   fi
 
   if [[ "$opt_merge" == "Y" && "$watched_checks" -eq 1 ]]; then
-    merge_pr_safely
+    ui_info "Merging PR..."
+    if merge_pr_safely; then
+      ui_info "Merge step completed."
+    else
+      fail "Merge step failed; stopping before sync."
+    fi
+  elif [[ "$opt_merge" == "Y" ]]; then
+    MERGE_RESULT="Merge skipped (checks not completed in this run)"
+    warn "Merge skipped because checks were not watched to completion."
+  else
+    MERGE_RESULT="Merge disabled"
+    ui_info "Merge disabled by settings."
   fi
 
   if [[ "$opt_sync" == "Y" ]]; then
