@@ -4908,11 +4908,6 @@ html.panorama-gesture-lock body {
 
 /* The interactive drop zone: avatar preview on the left, copy text on the right */
 .avatar-dropzone {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 14px;
-  padding: 14px;
   border: 1.5px dashed var(--border);
   border-radius: var(--radius-btn);
   background: var(--surface-2);
