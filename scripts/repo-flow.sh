@@ -1251,17 +1251,8 @@ watch_pr_checks_resilient() {
     done
 
     if [[ "$checks_found" -eq 1 ]]; then
-      local watch_output=""
-      if watch_output=$(gh pr checks "$target" --watch 2>&1); then
-        return 0
-      fi
-
-      if is_no_checks_output "$watch_output"; then
-        ui_warn "Checks are still not available for the latest commit."
-      else
-        warn "Failed while watching PR checks."
-        [[ -n "$watch_output" ]] && warn "$watch_output"
-      fi
+      gh pr checks "$target" --watch
+      return 0
     else
       ui_warn "Checks still have not appeared for this PR after retries."
     fi
