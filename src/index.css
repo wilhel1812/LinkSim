@@ -4685,6 +4685,7 @@ html.panorama-gesture-lock body {
 .settings-panel-content {
   flex: 1;
   min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 24px 28px 48px;
   outline: none;
@@ -4797,8 +4798,9 @@ html.panorama-gesture-lock body {
 
 .settings-profile-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 260px) 1fr;
+  grid-template-columns: minmax(0, 260px) 1fr;
   gap: 32px;
+  min-width: 0;
 }
 
 @media (max-width: 980px) {
@@ -4896,15 +4898,18 @@ html.panorama-gesture-lock body {
 }
 
 /* Avatar drop zone */
-.avatar-dropzone {
+
+/* Outer wrapper: vertical stack of [zone] + [progress] + [actions] */
+.avatar-dropzone-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-.avatar-dropzone-wrapper {
-  position: relative;
+/* The interactive drop zone: avatar preview on the left, copy text on the right */
+.avatar-dropzone {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 14px;
   padding: 14px;
@@ -4913,23 +4918,24 @@ html.panorama-gesture-lock body {
   background: var(--surface-2);
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
+  overflow: hidden;
 }
 
-.avatar-dropzone-wrapper:hover,
-.avatar-dropzone-wrapper:focus-visible {
+.avatar-dropzone:hover,
+.avatar-dropzone:focus-visible {
   border-color: var(--text);
   outline: none;
 }
 
-.avatar-dropzone-wrapper.is-dragover {
+.avatar-dropzone.avatar-dropzone-drag-over {
   border-style: solid;
   background: var(--accent-soft);
 }
 
 .avatar-dropzone-preview {
   flex-shrink: 0;
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   overflow: hidden;
   display: flex;
@@ -4948,16 +4954,28 @@ html.panorama-gesture-lock body {
 .avatar-dropzone-copy {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 0.85rem;
-  color: var(--muted);
+  gap: 3px;
   min-width: 0;
+  overflow: hidden;
 }
 
-.avatar-dropzone-copy strong {
-  color: var(--text);
+.avatar-dropzone-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
   font-weight: 600;
-  font-size: 0.95rem;
+  color: var(--text);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.avatar-dropzone-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .avatar-dropzone-progress {
@@ -4968,17 +4986,26 @@ html.panorama-gesture-lock body {
   color: var(--muted);
 }
 
+.avatar-dropzone-error-text {
+  font-size: 0.85rem;
+  color: var(--danger, #c2410c);
+}
+
 .avatar-dropzone-actions {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .avatar-dropzone-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-btn);
-  padding: 4px 10px;
+  padding: 5px 10px;
   color: var(--text);
   cursor: pointer;
   font-size: 0.85rem;
@@ -4998,4 +5025,11 @@ html.panorama-gesture-lock body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* In the settings panel, the user list should not scroll internally — the
+   settings-panel-content pane already scrolls the whole page. */
+.user-admin-inline .user-manager-list {
+  max-height: none;
+  overflow: visible;
 }

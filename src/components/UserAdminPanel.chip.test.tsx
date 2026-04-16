@@ -36,7 +36,7 @@ vi.mock("../lib/environment", () => ({
   getCurrentRuntimeEnvironment: vi.fn().mockReturnValue("production"),
 }));
 
-const signedInUser: CloudUser = {
+const signedInUser = {
   id: "u1",
   username: "Alice",
   email: "alice@example.com",
@@ -44,7 +44,11 @@ const signedInUser: CloudUser = {
   isModerator: false,
   isApproved: true,
   accountState: "active",
-} as CloudUser;
+  bio: null,
+  avatarUrl: null,
+  createdAt: null,
+  updatedAt: null,
+} as unknown as CloudUser;
 
 const { mockStoreState } = vi.hoisted(() => {
   const mockStoreState = {

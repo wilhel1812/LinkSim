@@ -102,7 +102,7 @@ export function ProfileSection({ me, onMeUpdated }: ProfileSectionProps) {
       <header className="settings-section-header">
         <h2 id="settings-profile-heading">Profile</h2>
         <p className="field-help">
-          Changes save automatically as you leave each field. Account settings are separate from simulation sync.
+          Changes save automatically as you leave each field.
         </p>
       </header>
 
