@@ -4914,6 +4914,7 @@ html.panorama-gesture-lock body {
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
   overflow: hidden;
+  padding: 14px;
 }
 
 .avatar-dropzone:hover,
@@ -4947,14 +4948,17 @@ html.panorama-gesture-lock body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  text-align: center;
+  align-content: center;
 }
 
 .avatar-dropzone-copy {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
   overflow: hidden;
+  margin: 10px 0px;
 }
 
 .avatar-dropzone-title {
