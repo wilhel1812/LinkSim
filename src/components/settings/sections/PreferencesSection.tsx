@@ -32,9 +32,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
 
   const [presetState, setPresetState] = useState<SelectFieldState>(IDLE_SELECT);
 
-  const canModerate = Boolean(me?.isAdmin || me?.isModerator);
-  const canEditAccessRequestNote = Boolean(canModerate || !me?.isApproved);
-  const showAccessRequestNoteField = Boolean(canModerate || !me?.isApproved);
+  const showAccessRequestNoteField = Boolean(me && !me.isApproved);
 
   const savePreset = useCallback(
     async (value: string | null) => {
@@ -161,17 +159,9 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
             textareaProps={{
               maxLength: 1200,
               rows: 5,
-              readOnly: !canEditAccessRequestNote,
-              disabled: !canEditAccessRequestNote,
-              placeholder: canEditAccessRequestNote
-                ? "Optional private note to moderators/admins."
-                : "Request note is locked after approval.",
+              placeholder: "Optional private note to moderators/admins.",
             }}
-            help={
-              canEditAccessRequestNote
-                ? "Visible to moderators and admins. Up to 1200 characters."
-                : "Request note is locked after approval."
-            }
+            help="Visible to moderators and admins. Up to 1200 characters."
           />
         ) : null}
       </div>
