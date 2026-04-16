@@ -1307,7 +1307,51 @@ sync_local_staging() {
   ui_spin "Resetting staging to origin/staging" git reset --hard origin/staging
 }
 
+handle_merge_conflict_options() {
+  local use_ui="$1"
+  local pr_ref="$2"
+  local branch_name="$3"
+
+  while true; do
+    local action
+    action=$(choose_action "$use_ui" "0" \
+      "Enable auto-merge" "auto_merge" \
+      "Show local conflict-resolution commands" "show_commands" \
+      "Skip merge and continue summary" "skip")
+
+    case "$action" in
+      auto_merge)
+        local auto_output=""
+        if auto_output=$(gh pr merge "$pr_ref" --squash --auto 2>&1); then
+          [[ -n "$auto_output" ]] && ui_info "$auto_output"
+          MERGE_RESULT="Auto-merge enabled (waiting for mergeability/checks)"
+          return 0
+        fi
+        ui_error "Failed to enable auto-merge"
+        [[ -n "$auto_output" ]] && printf '%s\n' "$auto_output" >&2
+        ;;
+      show_commands)
+        ui_info "Resolve conflicts locally with:"
+        ui_info "  gh pr checkout $pr_ref"
+        ui_info "  git fetch origin staging"
+        ui_info "  git merge origin/staging"
+        ui_info "  # resolve conflicts, commit, and push"
+        ;;
+      skip)
+        MERGE_RESULT="Merge skipped (PR not mergeable in this run)"
+        return 2
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+}
+
 merge_pr_safely() {
+  local use_ui="$1"
+  local pr_ref="$2"
+  local branch_name="$3"
   local merge_output=""
 
   if safe_to_switch_branches; then
@@ -1320,6 +1364,10 @@ merge_pr_safely() {
 
     ui_error "Failed to merge PR"
     [[ -n "$merge_output" ]] && printf '%s\n' "$merge_output" >&2
+    if [[ "$merge_output" == *"not mergeable"* || "$merge_output" == *"cannot be cleanly created"* || "$merge_output" == *"merge conflict"* ]]; then
+      handle_merge_conflict_options "$use_ui" "$pr_ref" "$branch_name"
+      return $?
+    fi
     return 1
   fi
 
@@ -1335,6 +1383,10 @@ merge_pr_safely() {
 
   ui_error "Failed to merge PR"
   [[ -n "$merge_output" ]] && printf '%s\n' "$merge_output" >&2
+  if [[ "$merge_output" == *"not mergeable"* || "$merge_output" == *"cannot be cleanly created"* || "$merge_output" == *"merge conflict"* ]]; then
+    handle_merge_conflict_options "$use_ui" "$pr_ref" "$branch_name"
+    return $?
+  fi
   return 1
 }
 
@@ -1901,11 +1953,24 @@ EOF
 
   if [[ "$opt_merge" == "Y" && "$watched_checks" -eq 1 ]]; then
     ui_info "Merging PR..."
-    if merge_pr_safely; then
-      ui_info "Merge step completed."
+    local merge_status=0
+    if merge_pr_safely "$use_ui" "$pr_url" "$branch_name"; then
+      merge_status=0
     else
-      fail "Merge step failed; stopping before sync."
+      merge_status=$?
     fi
+
+    case "$merge_status" in
+      0)
+        ui_info "Merge step completed."
+        ;;
+      2)
+        warn "Merge skipped by choice; continuing to summary."
+        ;;
+      *)
+        fail "Merge step failed; stopping before sync."
+        ;;
+    esac
   elif [[ "$opt_merge" == "Y" ]]; then
     MERGE_RESULT="Merge skipped (checks not completed in this run)"
     warn "Merge skipped because checks were not watched to completion."
