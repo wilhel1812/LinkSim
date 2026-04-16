@@ -88,6 +88,8 @@ DETECTED_NEED_PUSH=0
 MERGE_RESULT=""
 SYNC_RESULT=""
 BRANCH_CLEANUP_SKIPPED=0
+AUTO_STASH_CREATED=0
+AUTO_STASH_REF=""
 
 if [[ -t 1 ]]; then
   COLOR_BLUE=$'\033[0;34m'
@@ -963,6 +965,59 @@ detect_existing_branch() {
     return 1
   fi
 
+  local open_pr_url
+  open_pr_url="$(existing_pr_url_for_branch "$current")"
+  if [[ -z "$open_pr_url" ]]; then
+    local merged_pr_url
+    merged_pr_url="$(latest_merged_pr_url_for_branch "$current")"
+    if [[ -n "$merged_pr_url" ]]; then
+      ui_warn "Current branch '$current' already has a merged PR: $merged_pr_url"
+      ui_info "This branch is already shipped. Switch to staging and continue with a fresh issue branch."
+
+      while true; do
+        local action
+        action=$(choose_action "$use_ui" "0" \
+          "Auto-fix: stash changes, switch to staging, continue" "stash_switch" \
+          "Switch to staging without stashing" "switch" \
+          "Cancel" "cancel")
+
+        case "$action" in
+          stash_switch)
+            local stash_before stash_after
+            stash_before="$(git rev-parse -q --verify refs/stash 2>/dev/null || true)"
+            git stash push -u -m "repo-flow auto-stash before switching from merged issue branch" >/dev/null 2>&1 || true
+            stash_after="$(git rev-parse -q --verify refs/stash 2>/dev/null || true)"
+            if [[ -n "$stash_after" && "$stash_after" != "$stash_before" ]]; then
+              AUTO_STASH_CREATED=1
+              AUTO_STASH_REF="stash@{0}"
+            fi
+            if git switch staging; then
+              ui_info "Switched to staging."
+              if [[ "$AUTO_STASH_CREATED" -eq 1 ]]; then
+                ui_info "Auto-stashed local edits. You can restore later with: git stash list && git stash pop"
+              fi
+              return 1
+            fi
+            warn "Could not switch to staging automatically."
+            ;;
+          switch)
+            if git switch staging; then
+              ui_info "Switched to staging."
+              return 1
+            fi
+            warn "Could not switch to staging. You may need to stash/commit local changes first."
+            ;;
+          cancel)
+            fail "Cancelled."
+            ;;
+          *)
+            warn "Invalid selection."
+            ;;
+        esac
+      done
+    fi
+  fi
+
   if git ls-remote --exit-code --heads origin "$current" >/dev/null 2>&1; then
     local commit_count
     commit_count=$(git rev-list --count "origin/$current" ^origin/staging 2>/dev/null || echo "0")
@@ -1171,6 +1226,44 @@ pr_url_for_branch() {
 existing_pr_url_for_branch() {
   local branch_name="$1"
   gh pr list --head "$branch_name" --state open --json url -q '.[0].url' 2>/dev/null || true
+}
+
+latest_merged_pr_url_for_branch() {
+  local branch_name="$1"
+  gh pr list --head "$branch_name" --state merged --json url,mergedAt -q 'sort_by(.mergedAt) | reverse | .[0].url' 2>/dev/null || true
+}
+
+next_available_issue_branch_name() {
+  local issue_number="$1"
+  local slug="$2"
+  local base="issue/${issue_number}-${slug}"
+  local candidate="$base"
+  local index=2
+
+  while true; do
+    local open_pr_url
+    local merged_pr_url
+    local local_exists=0
+    local remote_exists=0
+
+    open_pr_url="$(existing_pr_url_for_branch "$candidate")"
+    merged_pr_url="$(latest_merged_pr_url_for_branch "$candidate")"
+
+    if git show-ref --verify --quiet "refs/heads/$candidate"; then
+      local_exists=1
+    fi
+    if git ls-remote --exit-code --heads origin "$candidate" >/dev/null 2>&1; then
+      remote_exists=1
+    fi
+
+    if [[ -z "$open_pr_url" && -z "$merged_pr_url" && "$local_exists" -eq 0 && "$remote_exists" -eq 0 ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+
+    candidate="${base}-${index}"
+    index=$((index + 1))
+  done
 }
 
 pr_merge_state_for_ref() {
@@ -1808,7 +1901,9 @@ main() {
     local milestone_number
     milestone_number="$(choose_milestone "$use_ui")"
     issue_number="$(choose_issue "$use_ui" "$milestone_number")"
-    branch_name="issue/${issue_number}-$(sanitize_slug "$(issue_title_for_number "$issue_number")")"
+    local selected_issue_slug
+    selected_issue_slug="$(sanitize_slug "$(issue_title_for_number "$issue_number")")"
+    branch_name="$(next_available_issue_branch_name "$issue_number" "$selected_issue_slug")"
     run_mode="new_commit"
   fi
 
@@ -1846,7 +1941,7 @@ main() {
     branch_slug="$(sanitize_slug "$branch_slug_raw")"
     [[ -n "$branch_slug" ]] || fail "Branch slug became empty after sanitization."
 
-    branch_name="issue/${issue_number}-${branch_slug}"
+    branch_name="$(next_available_issue_branch_name "$issue_number" "$branch_slug")"
   fi
   ui_info "Using branch: $branch_name"
 
@@ -1912,6 +2007,20 @@ EOF
     else
       create_feature_branch "$use_ui" "$branch_name"
       say "Using branch: $(current_branch)"
+    fi
+
+    if [[ "$AUTO_STASH_CREATED" -eq 1 ]]; then
+      if confirm "Apply auto-stashed local edits to this branch now?" "Y" "$use_ui"; then
+        if git stash pop "$AUTO_STASH_REF"; then
+          say "Auto-stashed changes restored."
+        else
+          warn "Could not auto-apply stash cleanly. Resolve conflicts or apply manually via git stash list/pop."
+        fi
+      else
+        warn "Leaving auto-stashed edits untouched. Restore later via: git stash list && git stash pop"
+      fi
+      AUTO_STASH_CREATED=0
+      AUTO_STASH_REF=""
     fi
 
     choose_files_to_stage "$use_fzf" "$use_ui"
