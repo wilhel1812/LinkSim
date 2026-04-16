@@ -1173,6 +1173,105 @@ existing_pr_url_for_branch() {
   gh pr list --head "$branch_name" --state open --json url -q '.[0].url' 2>/dev/null || true
 }
 
+is_no_checks_output() {
+  local output="$1"
+  [[ "$output" == *"no checks reported"* || "$output" == *"no checks"* ]]
+}
+
+watch_pr_checks_resilient() {
+  local use_ui="$1"
+  local pr_url="$2"
+  local branch_name="$3"
+  local target="$branch_name"
+  local max_attempts=6
+  local attempt=1
+  local sleep_seconds=10
+
+  if [[ -n "$pr_url" ]]; then
+    target="$pr_url"
+  fi
+
+  while true; do
+    local checks_found=0
+
+    while (( attempt <= max_attempts )); do
+      local checks_output=""
+      local checks_status=0
+      if checks_output=$(gh pr checks "$target" 2>&1); then
+        checks_status=0
+      else
+        checks_status=$?
+      fi
+
+      if is_no_checks_output "$checks_output"; then
+        ui_info "Checks have not appeared yet for the latest commit (attempt ${attempt}/${max_attempts})."
+        if (( attempt < max_attempts )); then
+          ui_info "Waiting ${sleep_seconds}s and retrying..."
+          sleep "$sleep_seconds"
+          attempt=$((attempt + 1))
+          continue
+        fi
+        break
+      fi
+
+      if [[ "$checks_status" -eq 0 ]]; then
+        checks_found=1
+        break
+      fi
+
+      warn "Could not fetch PR checks yet (attempt ${attempt}/${max_attempts})."
+      [[ -n "$checks_output" ]] && warn "$checks_output"
+      if (( attempt < max_attempts )); then
+        ui_info "Waiting ${sleep_seconds}s and retrying..."
+        sleep "$sleep_seconds"
+        attempt=$((attempt + 1))
+      else
+        break
+      fi
+    done
+
+    if [[ "$checks_found" -eq 1 ]]; then
+      local watch_output=""
+      if watch_output=$(gh pr checks "$target" --watch 2>&1); then
+        return 0
+      fi
+
+      if is_no_checks_output "$watch_output"; then
+        ui_warn "Checks are still not available for the latest commit."
+      else
+        warn "Failed while watching PR checks."
+        [[ -n "$watch_output" ]] && warn "$watch_output"
+      fi
+    else
+      ui_warn "Checks still have not appeared for this PR after retries."
+    fi
+
+    local action
+    action=$(choose_action "$use_ui" "0" \
+      "Retry checks lookup" "retry" \
+      "Show PR URL and continue without waiting" "continue" \
+      "Cancel" "cancel")
+
+    case "$action" in
+      retry)
+        attempt=1
+        ;;
+      continue)
+        if [[ -n "$pr_url" ]]; then
+          ui_info "PR: $pr_url"
+        fi
+        return 2
+        ;;
+      cancel)
+        return 1
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+}
+
 sync_local_staging() {
   say "Syncing local staging with origin/staging"
   ui_spin "Switching to staging" git switch staging
@@ -1734,8 +1833,25 @@ EOF
   fi
 
   if [[ "$opt_watch" == "Y" ]]; then
-    watched_checks=1
-    gh pr checks --watch
+    local checks_result=0
+    if watch_pr_checks_resilient "$use_ui" "$pr_url" "$branch_name"; then
+      checks_result=0
+    else
+      checks_result=$?
+    fi
+
+    case "$checks_result" in
+      0)
+        watched_checks=1
+        ;;
+      2)
+        watched_checks=0
+        warn "Continuing without waiting for checks."
+        ;;
+      *)
+        fail "Cancelled while waiting for PR checks."
+        ;;
+    esac
   fi
 
   if [[ "$opt_merge" == "Y" && "$watched_checks" -eq 1 ]]; then
