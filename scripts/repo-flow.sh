@@ -1173,6 +1173,64 @@ existing_pr_url_for_branch() {
   gh pr list --head "$branch_name" --state open --json url -q '.[0].url' 2>/dev/null || true
 }
 
+pr_merge_state_for_ref() {
+  local pr_ref="$1"
+  gh pr view "$pr_ref" --json mergeStateStatus -q .mergeStateStatus 2>/dev/null || true
+}
+
+prepare_pr_for_merge() {
+  local use_ui="$1"
+  local pr_ref="$2"
+
+  local merge_state
+  merge_state="$(pr_merge_state_for_ref "$pr_ref")"
+
+  if [[ -z "$merge_state" || "$merge_state" == "CLEAN" || "$merge_state" == "HAS_HOOKS" || "$merge_state" == "UNSTABLE" ]]; then
+    return 0
+  fi
+
+  if [[ "$merge_state" != "DIRTY" && "$merge_state" != "BEHIND" ]]; then
+    ui_info "PR merge status: $merge_state"
+    return 0
+  fi
+
+  ui_warn "PR merge status is $merge_state. Merge may fail until the branch is updated with staging."
+
+  while true; do
+    local action
+    action=$(choose_action "$use_ui" "0" \
+      "Update PR branch with staging now (Recommended)" "update" \
+      "Continue without update" "continue" \
+      "Skip merge in this run" "skip" \
+      "Cancel" "cancel")
+
+    case "$action" in
+      update)
+        local update_output=""
+        if update_output=$(gh pr update-branch "$pr_ref" 2>&1); then
+          [[ -n "$update_output" ]] && ui_info "$update_output"
+          ui_info "PR branch updated. Checks may re-run on the updated head commit."
+          return 0
+        fi
+        ui_error "Failed to update PR branch with staging"
+        [[ -n "$update_output" ]] && printf '%s\n' "$update_output" >&2
+        ;;
+      continue)
+        return 0
+        ;;
+      skip)
+        return 2
+        ;;
+      cancel)
+        return 1
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+}
+
 is_no_checks_output() {
   local output="$1"
   [[ "$output" == *"no checks reported"* || "$output" == *"no checks"* ]]
@@ -1926,6 +1984,28 @@ EOF
         fail "PR lookup failed after create attempt."
       fi
     fi
+  fi
+
+  if [[ "$opt_merge" == "Y" ]]; then
+    local prep_merge_status=0
+    if prepare_pr_for_merge "$use_ui" "$pr_url"; then
+      prep_merge_status=0
+    else
+      prep_merge_status=$?
+    fi
+
+    case "$prep_merge_status" in
+      0)
+        ;;
+      2)
+        opt_merge="N"
+        MERGE_RESULT="Merge skipped by choice before checks"
+        warn "Merge disabled for this run by choice."
+        ;;
+      *)
+        fail "Cancelled before checks/merge."
+        ;;
+    esac
   fi
 
   if [[ "$opt_watch" == "Y" ]]; then
