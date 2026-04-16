@@ -1181,6 +1181,7 @@ pr_merge_state_for_ref() {
 prepare_pr_for_merge() {
   local use_ui="$1"
   local pr_ref="$2"
+  local default_idx="0"
 
   local merge_state
   merge_state="$(pr_merge_state_for_ref "$pr_ref")"
@@ -1202,8 +1203,9 @@ prepare_pr_for_merge() {
 
   while true; do
     local action
-    action=$(choose_action "$use_ui" "0" \
+    action=$(choose_action "$use_ui" "$default_idx" \
       "Update PR branch with staging now (Recommended)" "update" \
+      "Show local conflict-resolution commands" "show_commands" \
       "Continue without update" "continue" \
       "Skip merge in this run" "skip" \
       "Cancel" "cancel")
@@ -1214,10 +1216,19 @@ prepare_pr_for_merge() {
         if update_output=$(gh pr update-branch "$pr_ref" 2>&1); then
           [[ -n "$update_output" ]] && ui_info "$update_output"
           ui_info "PR branch updated. Checks may re-run on the updated head commit."
+          default_idx="0"
           return 0
         fi
         ui_error "Failed to update PR branch with staging"
         [[ -n "$update_output" ]] && printf '%s\n' "$update_output" >&2
+        default_idx="3"
+        ;;
+      show_commands)
+        ui_info "Resolve conflicts locally with:"
+        ui_info "  gh pr checkout $pr_ref"
+        ui_info "  git fetch origin staging"
+        ui_info "  git merge origin/staging"
+        ui_info "  # resolve conflicts, commit, and push"
         ;;
       continue)
         return 0
