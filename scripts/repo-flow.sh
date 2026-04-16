@@ -1427,6 +1427,7 @@ main() {
   local detected_branch=""
   local detected_issue=""
   local detected_need_push=0
+  local existing_branch_action="reuse_existing"
   local issue_number
   local issue_title=""
   local issue_title_for_display=""
@@ -1490,6 +1491,34 @@ main() {
     detected_branch="$DETECTED_BRANCH"
     detected_issue="$DETECTED_ISSUE"
     detected_need_push="$DETECTED_NEED_PUSH"
+
+    if [[ "$detected_need_push" -eq 0 ]]; then
+      if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+        ui_header "Existing pushed branch with local changes"
+        ui_info "An existing pushed issue branch was detected, and local changes are also present."
+        ui_info "Choose whether to reuse the already-pushed branch state only, or include your local edits in a new commit first."
+
+        existing_branch_action=$(choose_action "$use_ui" "1" \
+          "Use existing pushed branch state only" "reuse_existing" \
+          "Stage, commit, and push current local changes first" "commit_local" \
+          "Cancel" "cancel")
+
+        case "$existing_branch_action" in
+          reuse_existing)
+            run_mode="reuse_existing"
+            ;;
+          commit_local)
+            run_mode="new_commit"
+            ;;
+          cancel)
+            fail "Cancelled."
+            ;;
+          *)
+            fail "Invalid selection."
+            ;;
+        esac
+      fi
+    fi
   fi
 
   [[ "$(current_branch)" == "staging" ]] || warn "You are not currently on staging. The script will create the new branch from origin/staging anyway."
@@ -1503,7 +1532,9 @@ main() {
   if [[ -n "$detected_branch" ]]; then
     issue_number="$detected_issue"
     branch_name="$detected_branch"
-    run_mode="reuse_existing"
+    if [[ "$existing_branch_action" == "reuse_existing" ]]; then
+      run_mode="reuse_existing"
+    fi
   else
     say "Select an issue to work on"
     local milestone_number
@@ -1596,22 +1627,24 @@ EOF
   pr_body_file="$(mktemp)"
   printf '%s\n' "$pr_body" > "$pr_body_file"
 
-  if [[ -n "$detected_branch" ]]; then
-    if [[ "$detected_need_push" -eq 1 ]]; then
+  if [[ -n "$detected_branch" && "$detected_need_push" -eq 0 && "$existing_branch_action" == "reuse_existing" ]]; then
+    say "Skipping checks, staging, commit, push - using existing pushed branch state"
+    step 4 4 "Open or reuse PR and finish"
+  elif [[ -n "$detected_branch" && "$detected_need_push" -eq 1 ]]; then
       say "Pushing branch to origin..."
       step 4 4 "Push branch and open or reuse PR"
       push_branch "$detected_branch"
-    else
-      say "Skipping checks, staging, commit, push - branch already pushed"
-      step 4 4 "Open or reuse PR and finish"
-    fi
   else
     step 4 7 "Run optional checks"
     run_optional_checks "$use_ui" "$root"
 
     step 5 7 "Create or reuse branch and stage files"
-    create_feature_branch "$use_ui" "$branch_name"
-    say "Using branch: $(current_branch)"
+    if [[ -n "$detected_branch" ]]; then
+      say "Using existing branch: $branch_name"
+    else
+      create_feature_branch "$use_ui" "$branch_name"
+      say "Using branch: $(current_branch)"
+    fi
 
     choose_files_to_stage "$use_fzf" "$use_ui"
     ensure_staged_changes
