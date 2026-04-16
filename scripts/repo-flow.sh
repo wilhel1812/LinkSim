@@ -1178,6 +1178,16 @@ is_no_checks_output() {
   [[ "$output" == *"no checks reported"* || "$output" == *"no checks"* ]]
 }
 
+checks_output_has_rows() {
+  local output="$1"
+  [[ "$output" =~ (^|[[:space:]])(pending|in_progress|queued|pass|fail|cancelled|skipping|startup_failure|action_required|neutral)([[:space:]]|$) ]]
+}
+
+checks_output_has_error() {
+  local output="$1"
+  [[ "$output" == *"error"* || "$output" == *"authentication"* || "$output" == *"forbidden"* || "$output" == *"not found"* || "$output" == *"failed to"* ]]
+}
+
 watch_pr_checks_resilient() {
   local use_ui="$1"
   local pr_url="$2"
@@ -1214,12 +1224,22 @@ watch_pr_checks_resilient() {
         break
       fi
 
+      if checks_output_has_rows "$checks_output"; then
+        ui_info "Checks found; waiting for completion..."
+        checks_found=1
+        break
+      fi
+
       if [[ "$checks_status" -eq 0 ]]; then
         checks_found=1
         break
       fi
 
-      warn "Could not fetch PR checks yet (attempt ${attempt}/${max_attempts})."
+      if checks_output_has_error "$checks_output"; then
+        warn "Could not fetch PR checks yet (attempt ${attempt}/${max_attempts})."
+      else
+        warn "Checks output was not recognized yet (attempt ${attempt}/${max_attempts})."
+      fi
       [[ -n "$checks_output" ]] && warn "$checks_output"
       if (( attempt < max_attempts )); then
         ui_info "Waiting ${sleep_seconds}s and retrying..."
