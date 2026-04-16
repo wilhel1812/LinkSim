@@ -597,18 +597,6 @@ export function UiGalleryPage() {
                     <StateDot state="pass_clear" />
                     <span>Visible + pass</span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <StateDot state="pass_blocked" />
-                    <span>Blocked + pass</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <StateDot state="fail_clear" />
-                    <span>Visible + fail</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <StateDot state="fail_blocked" />
-                    <span>Blocked + fail</span>
-                  </div>
                 </Surface>
                 <p className="field-help" style={{ marginTop: 0 }}>Strict pill shape (border-radius: 999px) for tall or long content such as label lists and narrow context menus. Uses the base <code>ui-surface-pill</code> class.</p>
               </div>
