@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+export BASH_ENV=""
+
+if [[ -n "${ZSH_VERSION:-}" ]]; then
+  exec /bin/bash "$0" "$@"
+fi
 
 # Repo workflow helper for LinkSim.
 #
@@ -64,6 +69,10 @@ set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
 
+DETECTED_BRANCH=""
+DETECTED_ISSUE=""
+DETECTED_NEED_PUSH=0
+
 if [[ -t 1 ]]; then
   COLOR_BLUE=$'\033[0;34m'
   COLOR_YELLOW=$'\033[0;33m'
@@ -81,7 +90,7 @@ else
 fi
 
 say() {
-  printf '\n%s[%s]%s %s\n' "$COLOR_BLUE" "$SCRIPT_NAME" "$COLOR_RESET" "$*"
+  printf '\n%s[%s]%s %s\n' "$COLOR_BLUE" "$SCRIPT_NAME" "$COLOR_RESET" "$*" >&2
 }
 
 warn() {
@@ -183,8 +192,61 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
 }
 
+have_fzf() {
+  command -v fzf >/dev/null 2>&1
+}
+
+ensure_fzf() {
+  if have_fzf; then
+    return 0
+  fi
+
+  warn "fzf not found. fzf provides an interactive arrow-key picker."
+  if confirm "Install fzf now?" "Y"; then
+    say "Installing fzf..."
+    brew install fzf
+    if have_fzf; then
+      say "fzf installed successfully."
+      return 0
+    else
+      fail "fzf installation failed."
+    fi
+  fi
+  return 1
+}
+
+choose_with_fzf() {
+  local -a items=("$@")
+  printf '%s\n' "${items[@]}" | fzf --height=15 --reverse --ansi
+}
+
+choose_with_menu() {
+  local -a items=("$@")
+  local index=0
+  local choice
+
+  for item in "${items[@]}"; do
+    printf '  %2d) %s\n' "$((index + 1))" "$item"
+    index=$((index + 1))
+  done
+  echo
+
+  while true; do
+    read -r -p "Choose [1-${#items[@]}]: " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#items[@]} )); then
+      printf '%s' "${items[$((choice - 1))]}"
+      return 0
+    fi
+    warn "Please enter a number between 1 and ${#items[@]}"
+  done
+}
+
 repo_root() {
   git rev-parse --show-toplevel 2>/dev/null
+}
+
+get_gh_repo() {
+  gh repo view --json name,owner -q '.owner.login + "/" + .name'
 }
 
 find_agents_file() {
@@ -358,6 +420,192 @@ create_feature_branch() {
   git switch -c "$branch_name" --no-track origin/staging
 }
 
+detect_existing_branch() {
+  local current
+  current="$(current_branch)"
+
+  if [[ "$current" != issue/* ]]; then
+    return 1
+  fi
+
+  if git ls-remote --exit-code --heads origin "$current" >/dev/null 2>&1; then
+    local commit_count
+    commit_count=$(git rev-list --count "origin/$current" ^origin/staging 2>/dev/null || echo "0")
+
+    if [[ "$commit_count" -gt 0 ]]; then
+      say "Detected pushed branch: ${current} (${commit_count} commit(s) ahead of staging)"
+
+      local issue_number
+      issue_number="$(printf '%s' "$current" | sed -E 's/^issue\/([[:digit:]]+)-.*/\1/')"
+
+      if [[ "$issue_number" =~ ^[[:digit:]]+$ ]]; then
+        local issue_title
+        issue_title="$(issue_title_for_number "$issue_number")"
+        if [[ -n "$issue_title" ]]; then
+          say "Linked to issue #${issue_number}: ${issue_title}"
+        fi
+      fi
+
+      if confirm "Create PR for this branch?" "Y"; then
+        DETECTED_BRANCH="$current"
+        DETECTED_ISSUE="$issue_number"
+        return 0
+      fi
+    fi
+  else
+    local local_commit_count
+    local_commit_count=$(git rev-list --count HEAD ^origin/staging 2>/dev/null || echo "0")
+
+    if [[ "$local_commit_count" -gt 0 ]]; then
+      say "Detected local branch with unpushed commits: ${current} (${local_commit_count} commit(s) ahead of staging)"
+
+      local issue_number
+      issue_number="$(printf '%s' "$current" | sed -E 's/^issue\/([[:digit:]]+)-.*/\1/')"
+
+      if [[ "$issue_number" =~ ^[[:digit:]]+$ ]]; then
+        local issue_title
+        issue_title="$(issue_title_for_number "$issue_number")"
+        if [[ -n "$issue_title" ]]; then
+          say "Linked to issue #${issue_number}: ${issue_title}"
+        fi
+      fi
+
+      if confirm "Push and create PR for this branch?" "Y"; then
+        DETECTED_BRANCH="$current"
+        DETECTED_ISSUE="$issue_number"
+        DETECTED_NEED_PUSH=1
+        return 0
+      fi
+    fi
+  fi
+
+  return 1
+}
+
+get_open_milestones() {
+  local repo
+  repo="$(get_gh_repo)"
+  gh api "repos/$repo/milestones?state=open" -q '.[] | "\(.number) \(.title) (\(.open_issues) open issues)"' 2>/dev/null
+}
+
+get_milestone_issues() {
+  local repo milestone_number
+  repo="$(get_gh_repo)"
+  milestone_number="$1"
+  gh api "repos/$repo/issues?milestone=$milestone_number&state=open" -q '.[] | "#\(.number) \(.title)"' 2>/dev/null
+}
+
+choose_milestone() {
+  local use_fzf="$1"
+  local -a milestones
+  local tmpfile
+  tmpfile="$(mktemp)"
+
+  get_open_milestones > "$tmpfile"
+
+  local milestone_count=0
+  while IFS= read -r line; do
+    milestones+=("$line")
+    milestone_count=$((milestone_count + 1))
+  done < "$tmpfile"
+  rm -f "$tmpfile"
+
+  if [[ $milestone_count -eq 0 ]]; then
+    fail "No open milestones found."
+  fi
+
+  if [[ "$use_fzf" -eq 1 ]]; then
+    say "Select milestone (arrow keys to navigate, enter to select)"
+    local selected
+    selected="$(printf '%s\n' "${milestones[@]}" | fzf --height=12 --reverse --prompt="Select milestone: ")"
+    if [[ -n "$selected" ]]; then
+      printf '%s' "$selected" | sed -E 's/^([0-9]+).*/\1/'
+      return 0
+    fi
+    fail "No milestone selected."
+  fi
+
+  say "Select milestone"
+
+  local index=0
+  for item in "${milestones[@]}"; do
+    printf '  %2d) %s\n' "$((index + 1))" "$item"
+    index=$((index + 1))
+  done
+  echo
+
+  local choice
+  while true; do
+    read -r -p "Choose [1-$milestone_count] or enter milestone #: " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= milestone_count )); then
+      printf '%s' "${milestones[$((choice - 1))]}" | sed -E 's/^([0-9]+).*/\1/'
+      return 0
+    elif [[ "$choice" =~ ^[0-9]+$ ]]; then
+      say "Interpreting as milestone number: $choice"
+      printf '%s' "$choice"
+      return 0
+    fi
+    warn "Please enter a number between 1 and $milestone_count, or a milestone number"
+  done
+}
+
+choose_issue() {
+  local use_fzf="$1"
+  local milestone_number="$2"
+  local -a issues
+
+  local raw_output
+  raw_output="$(get_milestone_issues "$milestone_number")"
+  
+  if [[ -z "$raw_output" ]]; then
+    fail "No open issues in this milestone. (API returned empty)"
+  fi
+
+  while IFS= read -r line; do
+    issues+=("$line")
+  done <<< "$raw_output"
+
+  local issue_count="${#issues[@]}"
+
+  if [[ $issue_count -eq 0 ]]; then
+    fail "No open issues in this milestone. (Found $issue_count issues)"
+  fi
+
+  if [[ "$use_fzf" -eq 1 ]]; then
+    say "Select issue (arrow keys to navigate, enter to select)"
+    local selected
+    selected="$(printf '%s\n' "${issues[@]}" | fzf --height=15 --reverse --prompt="Select issue: ")"
+    if [[ -n "$selected" ]]; then
+      printf '%s' "$selected" | sed -E 's/^#([0-9]+).*/\1/'
+      return 0
+    fi
+    fail "No issue selected."
+  fi
+
+  say "Select issue"
+
+  local index=0
+  for item in "${issues[@]}"; do
+    printf '  %2d) %s\n' "$((index + 1))" "$item"
+    index=$((index + 1))
+  done
+  echo
+
+  local choice
+  while true; do
+    read -r -p "Choose [1-$issue_count] or enter issue #: " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= issue_count )); then
+      printf '%s' "${issues[$((choice - 1))]}" | sed -E 's/^#([0-9]+).*/\1/'
+      return 0
+    elif [[ "$choice" =~ ^[0-9]+$ ]]; then
+      say "Interpreting as issue number: $choice"
+      printf '%s' "$choice"
+      return 0
+    fi
+    warn "Please enter a number between 1 and $issue_count, or an issue number"
+  done
+}
+
 create_commit() {
   local message="$1"
   git commit -m "$message"
@@ -440,8 +688,16 @@ main() {
   require_cmd git
   require_cmd gh
 
+  local use_fzf=0
+  if ensure_fzf; then
+    use_fzf=1
+  fi
+
   local root
   local agents_file=""
+  local detected_branch=""
+  local detected_issue=""
+  local detected_need_push=0
   local issue_number
   local issue_title=""
   local issue_title_for_display=""
@@ -477,6 +733,12 @@ main() {
   step 2 7 "Fetch staging"
   fetch_staging
 
+  if detect_existing_branch; then
+    detected_branch="$DETECTED_BRANCH"
+    detected_issue="$DETECTED_ISSUE"
+    detected_need_push="$DETECTED_NEED_PUSH"
+  fi
+
   [[ "$(current_branch)" == "staging" ]] || warn "You are not currently on staging. The script will create the new branch from origin/staging anyway."
 
   if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
@@ -484,8 +746,17 @@ main() {
   fi
 
   step 3 7 "Prepare branch and metadata"
-  issue_number="$(prompt "Issue number")"
-  [[ "$issue_number" =~ ^[0-9]+$ ]] || fail "Issue number must be numeric."
+
+  if [[ -n "$detected_branch" ]]; then
+    issue_number="$detected_issue"
+    branch_name="$detected_branch"
+  else
+    say "Select an issue to work on"
+    local milestone_number
+    milestone_number="$(choose_milestone "$use_fzf")"
+    issue_number="$(choose_issue "$use_fzf" "$milestone_number")"
+    branch_name="issue/${issue_number}-$(sanitize_slug "$(issue_title_for_number "$issue_number")")"
+  fi
 
   issue_title="$(issue_title_for_number "$issue_number")"
   if [[ -n "$issue_title" ]]; then
@@ -499,22 +770,24 @@ main() {
     issue_title_for_display="Issue ${issue_number}"
   fi
 
-  if [[ -n "$branch_slug_default" ]]; then
-    branch_slug_raw="$branch_slug_default"
-    say "Proposed branch slug: $branch_slug_raw"
-    if confirm "Override branch slug?" "N"; then
-      branch_slug_raw="$(prompt "Branch slug" "$branch_slug_default")"
+  if [[ -z "$detected_branch" ]]; then
+    if [[ -n "$branch_slug_default" ]]; then
+      branch_slug_raw="$branch_slug_default"
+      say "Proposed branch slug: $branch_slug_raw"
+      if confirm "Override branch slug?" "N"; then
+        branch_slug_raw="$(prompt "Branch slug" "$branch_slug_default")"
+      fi
+    else
+      branch_slug_raw="$(prompt "Branch slug")"
     fi
-  else
-    branch_slug_raw="$(prompt "Branch slug")"
+    [[ -n "$branch_slug_raw" ]] || fail "Branch slug cannot be empty."
+
+    branch_slug="$(sanitize_slug "$branch_slug_raw")"
+    [[ -n "$branch_slug" ]] || fail "Branch slug became empty after sanitization."
+
+    branch_name="issue/${issue_number}-${branch_slug}"
   fi
-  [[ -n "$branch_slug_raw" ]] || fail "Branch slug cannot be empty."
-
-  branch_slug="$(sanitize_slug "$branch_slug_raw")"
-  [[ -n "$branch_slug" ]] || fail "Branch slug became empty after sanitization."
-
-  branch_name="issue/${issue_number}-${branch_slug}"
-  say "Proposed branch: $branch_name"
+  say "Using branch: $branch_name"
 
   if [[ -n "$issue_title" ]]; then
     commit_fragment_default="$(sanitize_commit_fragment "$issue_title")"
@@ -556,29 +829,41 @@ EOF
   pr_body_file="$(mktemp)"
   printf '%s\n' "$pr_body" > "$pr_body_file"
 
-  step 4 7 "Run optional checks"
-  run_optional_checks "$root"
+  if [[ -n "$detected_branch" ]]; then
+    if [[ "$detected_need_push" -eq 1 ]]; then
+      say "Pushing branch to origin..."
+      step 4 4 "Push branch and create PR"
+      push_branch "$detected_branch"
+    else
+      say "Skipping checks, staging, commit, push - branch already pushed"
+      step 4 4 "Create PR and finish"
+    fi
+  else
+    step 4 7 "Run optional checks"
+    run_optional_checks "$root"
 
-  step 5 7 "Create or reuse branch and stage files"
-  create_feature_branch "$branch_name"
-  say "Using branch: $(current_branch)"
+    step 5 7 "Create or reuse branch and stage files"
+    create_feature_branch "$branch_name"
+    say "Using branch: $(current_branch)"
 
-  choose_files_to_stage
-  ensure_staged_changes
+    choose_files_to_stage
+    ensure_staged_changes
 
-  say "Staged diff summary"
-  git --no-pager diff --cached --stat
-  echo
-  git --no-pager diff --cached
+    say "Staged diff summary"
+    git --no-pager diff --cached --stat
+    echo
+    git --no-pager diff --cached
 
-  step 6 7 "Commit and push"
-  confirm "Create commit with this staged content?" "Y" || fail "Cancelled before commit."
-  create_commit "$commit_message"
+    step 6 7 "Commit and push"
+    confirm "Create commit with this staged content?" "Y" || fail "Cancelled before commit."
+    create_commit "$commit_message"
 
-  confirm "Push branch to origin?" "Y" || fail "Cancelled before push."
-  push_branch "$branch_name"
+    confirm "Push branch to origin?" "Y" || fail "Cancelled before push."
+    push_branch "$branch_name"
 
-  step 7 7 "Create PR and finish"
+    step 7 7 "Create PR and finish"
+  fi
+
   confirm "Create PR into staging with GitHub CLI?" "Y" || fail "Cancelled before PR creation."
   create_pr "$branch_name" "$pr_title" "$pr_body_file"
 
@@ -611,7 +896,9 @@ EOF
   echo
   success "✓ Workflow complete"
   success "✓ Branch: $(current_branch)"
-  success "✓ Commit: $commit_message"
+  if [[ -n "$commit_message" ]]; then
+    success "✓ Commit: $commit_message"
+  fi
   if [[ -n "$pr_url" ]]; then
     success "✓ PR: $pr_url"
   fi
