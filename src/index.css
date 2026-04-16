@@ -4926,6 +4926,9 @@ html.panorama-gesture-lock body {
   border-style: solid;
   background: var(--accent-soft);
 }
+.avatar-dropzone-input {
+  width: 100%;
+}
 
 .avatar-dropzone-preview {
   flex-shrink: 0;
