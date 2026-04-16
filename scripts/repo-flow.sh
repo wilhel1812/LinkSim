@@ -1148,16 +1148,29 @@ create_pr() {
   local pr_title="$2"
   local pr_body_file="$3"
 
-  ui_spin "Creating pull request" gh pr create \
+  local pr_output
+  if pr_output=$(gh pr create \
     --base staging \
     --head "$branch_name" \
     --title "$pr_title" \
-    --body-file "$pr_body_file"
+    --body-file "$pr_body_file" 2>&1); then
+    printf '%s' "$pr_output"
+    return 0
+  fi
+
+  printf '\n%s\n' "Failed to create PR" >&2
+  printf '%s\n' "$pr_output" >&2
+  return 1
 }
 
 pr_url_for_branch() {
   local branch_name="$1"
   gh pr view --head "$branch_name" --json url -q .url 2>/dev/null || true
+}
+
+existing_pr_url_for_branch() {
+  local branch_name="$1"
+  gh pr list --head "$branch_name" --state open --json url -q '.[0].url' 2>/dev/null || true
 }
 
 sync_local_staging() {
@@ -1433,6 +1446,7 @@ main() {
   local pr_body_file
   local pr_title_default=""
   local pr_url=""
+  local pr_state=""
   local watched_checks=0
   local opt_watch="Y"
   local opt_merge="Y"
@@ -1461,10 +1475,12 @@ main() {
   ensure_clean_index "$use_ui"
   show_repo_state
 
-  if agents_file="$(find_agents_file "$root")"; then
-    show_agents_guidance "$use_ui" "$agents_file"
-  else
-    warn "No agents.md/AGENTS.md found in the repo. Proceeding without displaying guidance."
+  if [[ "$agent_mode" -eq 1 ]]; then
+    if agents_file="$(find_agents_file "$root")"; then
+      show_agents_guidance "$use_ui" "$agents_file"
+    else
+      warn "No agents.md/AGENTS.md found for agent mode."
+    fi
   fi
 
   step 2 7 "Fetch staging"
@@ -1487,35 +1503,44 @@ main() {
   if [[ -n "$detected_branch" ]]; then
     issue_number="$detected_issue"
     branch_name="$detected_branch"
+    run_mode="reuse_existing"
   else
     say "Select an issue to work on"
     local milestone_number
-      milestone_number="$(choose_milestone "$use_ui")"
-      issue_number="$(choose_issue "$use_ui" "$milestone_number")"
+    milestone_number="$(choose_milestone "$use_ui")"
+    issue_number="$(choose_issue "$use_ui" "$milestone_number")"
     branch_name="issue/${issue_number}-$(sanitize_slug "$(issue_title_for_number "$issue_number")")"
+    run_mode="new_commit"
   fi
 
   issue_title="$(issue_title_for_number "$issue_number")"
+  issue_display="#${issue_number}"
   if [[ -n "$issue_title" ]]; then
     issue_title_for_display="$issue_title"
     issue_slug_default="$(sanitize_slug "$issue_title")"
     if [[ -n "$issue_slug_default" ]]; then
       branch_slug_default="$issue_slug_default"
-      say "Issue #${issue_number}: ${issue_title}"
+      issue_display="#${issue_number} ${issue_title}"
+      ui_header "Metadata"
+      ui_info "Issue: $issue_display"
+      ui_info "Branch: $branch_name"
     fi
   else
     issue_title_for_display="Issue ${issue_number}"
+    ui_header "Metadata"
+    ui_info "Issue: $issue_display"
+    ui_info "Branch: $branch_name"
   fi
 
   if [[ -z "$detected_branch" ]]; then
     if [[ -n "$branch_slug_default" ]]; then
       branch_slug_raw="$branch_slug_default"
-      say "Proposed branch slug: $branch_slug_raw"
+      ui_info "Proposed branch slug: $branch_slug_raw"
       if confirm "Override branch slug?" "N" "$use_ui"; then
         branch_slug_raw="$(prompt "Branch slug" "$branch_slug_default")"
       fi
     else
-    branch_slug_raw="$(prompt "Branch slug")"
+      branch_slug_raw="$(prompt "Branch slug")"
     fi
     [[ -n "$branch_slug_raw" ]] || fail "Branch slug cannot be empty."
 
@@ -1524,17 +1549,17 @@ main() {
 
     branch_name="issue/${issue_number}-${branch_slug}"
   fi
-  say "Using branch: $branch_name"
+  ui_info "Using branch: $branch_name"
 
   if [[ -n "$issue_title" ]]; then
-    commit_fragment_default="$(sanitize_commit_fragment "$issue_title")"
+    commit_summary_default="$(sanitize_commit_fragment "$issue_title")"
   fi
-  if [[ -z "$commit_fragment_default" ]]; then
-    commit_fragment_default="$branch_slug"
+  if [[ -z "$commit_summary_default" ]]; then
+    commit_summary_default="$branch_slug"
   fi
-  commit_message_default="feat: #${issue_number} ${commit_fragment_default}"
-  commit_message="$(prompt "Commit message" "$commit_message_default")"
-  [[ -n "$commit_message" ]] || fail "Commit message cannot be empty."
+  commit_summary="$(prompt "Commit summary" "$commit_summary_default")"
+  [[ -n "$commit_summary" ]] || fail "Commit summary cannot be empty."
+  commit_message="feat: #${issue_number} ${commit_summary}"
 
   if [[ -n "$issue_title" ]]; then
     pr_title_default="#${issue_number} ${issue_title}"
@@ -1556,7 +1581,12 @@ main() {
 EOF
 )
 
-  if confirm "Use default PR body?" "Y" "$use_ui"; then
+  local pr_body_choice
+  pr_body_choice=$(choose_action "$use_ui" "0" \
+    "Use standard template" "standard" \
+    "Edit PR body" "edit")
+
+  if [[ "$pr_body_choice" == "standard" ]]; then
     pr_body="$pr_body_default"
   else
     pr_body="$(multiline_prompt "PR body" "$pr_body_default")"
@@ -1569,11 +1599,11 @@ EOF
   if [[ -n "$detected_branch" ]]; then
     if [[ "$detected_need_push" -eq 1 ]]; then
       say "Pushing branch to origin..."
-      step 4 4 "Push branch and create PR"
+      step 4 4 "Push branch and open or reuse PR"
       push_branch "$detected_branch"
     else
       say "Skipping checks, staging, commit, push - branch already pushed"
-      step 4 4 "Create PR and finish"
+      step 4 4 "Open or reuse PR and finish"
     fi
   else
     step 4 7 "Run optional checks"
@@ -1611,7 +1641,7 @@ EOF
       fi
     done
 
-    show_preflight_summary "$branch_name" "$commit_message" "$pr_title" "$opt_watch" "$opt_merge" "$opt_sync" "$staged_count" "$staged_filesCompact" "$generated_excluded"
+    show_preflight_summary "$issue_display" "$branch_name" "$commit_summary" "$commit_message" "$pr_title" "$opt_watch" "$opt_merge" "$opt_sync" "$staged_count" "$staged_filesCompact" "$generated_excluded"
     
     confirm_execution "$use_ui"
     local preflight_result=$?
@@ -1630,7 +1660,7 @@ EOF
         fi
       done
       
-      show_preflight_summary "$branch_name" "$commit_message" "$pr_title" "$opt_watch" "$opt_merge" "$opt_sync" "$staged_count" "$staged_filesCompact" "$generated_excluded"
+      show_preflight_summary "$issue_display" "$branch_name" "$commit_summary" "$commit_message" "$pr_title" "$opt_watch" "$opt_merge" "$opt_sync" "$staged_count" "$staged_filesCompact" "$generated_excluded"
       
       confirm_execution "$use_ui"
       local retry_result=$?
@@ -1643,14 +1673,31 @@ EOF
     create_commit "$commit_message"
     push_branch "$branch_name"
 
-    step 7 7 "Create PR and finish"
+    step 7 7 "Open or reuse PR and finish"
   fi
 
-  create_pr "$branch_name" "$pr_title" "$pr_body_file"
-
-  pr_url="$(pr_url_for_branch "$branch_name")"
+  pr_url="$(existing_pr_url_for_branch "$branch_name")"
   if [[ -n "$pr_url" ]]; then
-    say "PR created: $pr_url"
+    say "Existing PR found for this branch: $pr_url"
+    pr_state="reused existing PR"
+  else
+    if create_pr "$branch_name" "$pr_title" "$pr_body_file"; then
+      pr_url="$(pr_url_for_branch "$branch_name")"
+      if [[ -n "$pr_url" ]]; then
+        say "PR created: $pr_url"
+      fi
+      pr_state="created new PR"
+    fi
+
+    if [[ -z "$pr_url" ]]; then
+      pr_url="$(existing_pr_url_for_branch "$branch_name")"
+      if [[ -n "$pr_url" ]]; then
+        say "Existing PR found for this branch: $pr_url"
+        pr_state="reused existing PR"
+      else
+        fail "PR lookup failed after create attempt."
+      fi
+    fi
   fi
 
   if [[ "$opt_watch" == "Y" ]]; then
@@ -1673,12 +1720,28 @@ EOF
 
   rm -f "$pr_body_file"
 
+  local local_changes_remain="no"
+  if ! safe_to_switch_branches; then
+    local_changes_remain="yes"
+  fi
+
   ui_header "Run complete"
-  ui_info "Branch: $(current_branch)"
+  ui_info "Issue: $issue_display"
+  ui_info "Branch used: $branch_name"
+  ui_info "Current branch: $(current_branch)"
+  if [[ "$run_mode" == "reuse_existing" ]]; then
+    ui_info "Run mode: reused existing branch commits"
+  else
+    ui_info "Run mode: created and committed changes in this run"
+  fi
+  ui_info "Summary: $commit_summary"
   [[ -n "$commit_message" ]] && ui_info "Commit: $commit_message"
+  ui_info "PR body: ${pr_body_choice:-standard}"
+  [[ -n "$pr_state" ]] && ui_info "PR state: $pr_state"
   [[ -n "$pr_url" ]] && ui_info "PR: $pr_url"
   [[ -n "$MERGE_RESULT" ]] && ui_info "Merge: $MERGE_RESULT"
   [[ -n "$SYNC_RESULT" ]] && ui_info "Sync: $SYNC_RESULT"
+  ui_info "Local changes remain: $local_changes_remain"
   if [[ "$BRANCH_CLEANUP_SKIPPED" -eq 1 ]]; then
     ui_warn "Local branch cleanup was skipped"
   fi
