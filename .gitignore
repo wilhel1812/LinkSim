@@ -28,6 +28,9 @@ dist-ssr
 
 .tmp/
 
+src/lib/buildInfo.ts
+functions/_lib/buildInfo.ts
+
 debug-logs/
 .playwright-mcp/
 artifacts/
