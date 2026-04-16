@@ -1189,12 +1189,16 @@ prepare_pr_for_merge() {
     return 0
   fi
 
-  if [[ "$merge_state" != "DIRTY" && "$merge_state" != "BEHIND" ]]; then
+  if [[ "$merge_state" != "DIRTY" && "$merge_state" != "BEHIND" && "$merge_state" != "UNKNOWN" ]]; then
     ui_info "PR merge status: $merge_state"
     return 0
   fi
 
-  ui_warn "PR merge status is $merge_state. Merge may fail until the branch is updated with staging."
+  if [[ "$merge_state" == "UNKNOWN" ]]; then
+    ui_warn "PR merge status is UNKNOWN. Mergeability is not confirmed yet and merge may still fail."
+  else
+    ui_warn "PR merge status is $merge_state. Merge may fail until the branch is updated with staging."
+  fi
 
   while true; do
     local action
