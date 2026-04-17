@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.16.1] - 2026-04-17
+
+### Fixed
+- Newly created Sites now stay in cloud sync after reload because the new site-library entry is marked dirty before the next delta push.
+
 ## [0.16.0] - 2026-04-12
 
 ### Added
