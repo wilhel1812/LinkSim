@@ -1481,7 +1481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             simulations: payload.simulationPresets.length,
             skipped: skippedCount,
           });
-          await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
+          await pushCloudLibrary(payload);
           lastSyncedPayloadSignature = signature;
           writeStorage(SYNC_SIGNATURE_KEY, signature);
           console.log("[appStore] Post-init Push SUCCESS");
@@ -1624,7 +1624,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           skipped: skippedCount,
           isDelta: !isFullPush,
         });
-        await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
+        await pushCloudLibrary(payload);
         dirtySiteIds = new Set();
         dirtySimIds = new Set();
         requiresFullPush = false;
@@ -1719,7 +1719,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         simulations: editableSims.length,
         skipped: skippedCount,
       });
-      await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
+      await pushCloudLibrary(payload);
       lastSyncedPayloadSignature = payloadSignature;
       writeStorage(SYNC_SIGNATURE_KEY, payloadSignature);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");

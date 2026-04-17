@@ -66,26 +66,24 @@ export const fetchPublicSimulationLibrary = async (params: {
   };
 };
 
-export const pushCloudLibrary = async (payload: CloudLibraryPayload, opts?: { suppressConflicts?: string[] }): Promise<void> => {
+export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<void> => {
   const result = await apiCall<CloudPushResult>("/api/library", {
     method: "PUT",
     body: JSON.stringify(payload),
   });
   const allConflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
-  const conflicts = allConflicts.filter((c) => !(opts?.suppressConflicts ?? []).includes(c));
   if (!allConflicts.length) return;
-  if (!conflicts.length) return;
-  if (conflicts.includes("simulation_private_site_reference")) {
+  if (allConflicts.includes("simulation_private_site_reference")) {
     const simulationNames = listSimulationNames(payload);
     const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
     throw new Error(
       `Cannot publish/shared simulation(s) with private Library Site references${suffix}. Set Simulation visibility to Private or use non-private Site entries.`,
     );
   }
-  if (conflicts.includes("simulation_name_taken")) {
+  if (allConflicts.includes("simulation_name_taken")) {
     const simulationNames = listSimulationNames(payload);
     const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
     throw new Error(`Simulation name already exists${suffix}. Use unique Simulation names.`);
   }
-  throw new Error(`Cloud rejected ${conflicts.length} item(s): ${conflicts.join(", ")}`);
+  throw new Error(`Cloud rejected ${allConflicts.length} item(s): ${allConflicts.join(", ")}`);
 };
