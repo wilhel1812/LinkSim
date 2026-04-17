@@ -61,6 +61,13 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Resolve release tag
+        id: release_tag
+        run: echo "tag=v$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release tag
+        run: git checkout --force "${{ steps.release_tag.outputs.tag }}"
+
       - name: Install dependencies
         run: npm ci
 
