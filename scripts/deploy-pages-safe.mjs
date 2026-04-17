@@ -259,6 +259,17 @@ async function getGitRef(args = ["rev-parse", "--abbrev-ref", "HEAD"]) {
 async function preflight(targetName, target) {
   const branch = await getGitRef();
   const commit = await getGitRef(["rev-parse", "--short", "HEAD"]);
+  const headTags =
+    targetName === "prod-main"
+      ? (await run("git", ["tag", "--points-at", "HEAD"], { capture: true })).stdout
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+      : [];
+  const expectedReleaseTag =
+    targetName === "prod-main"
+      ? `v${JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version}`
+      : "";
   const status = await run("git", ["status", "--porcelain"], { capture: true });
   const dirtyPaths = parseDirtyPathsFromPorcelain(status.stdout);
   const unexpectedDirty = dirtyPaths.filter((file) => !ALLOWED_DIRTY_PATHS.has(file));
@@ -391,7 +402,7 @@ async function main() {
       ]);
     });
 
-    await verifyDeployment(target.projectName, commit);
+    await verifyDeployment(targetName, target.projectName, commit);
     console.log(
       `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
     );
