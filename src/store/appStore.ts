@@ -2131,6 +2131,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
         effectiveRole: "owner" as const,
       };
+      markDirtySite(entry.id);
       const nextLibrary = normalizeSiteLibrary([entry, ...state.siteLibrary]);
       writeStorage(SITE_LIBRARY_KEY, nextLibrary);
       return {

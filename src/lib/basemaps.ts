@@ -275,6 +275,16 @@ const PROVIDER_ATTRIBUTIONS: ProviderAttribution[] = [
     attribution: NP_ATTRIBUTION,
     attributionUrl: "https://npolar.no/",
   },
+  {
+    provider: "npolar",
+    label: "Norsk Polarinstitutt",
+    group: "regional",
+    attribution: NP_ATTRIBUTION,
+    attributionUrl: "https://npolar.no/",
+    requiresKey: false,
+    available: true,
+    presets: npolarPresets,
+  },
 ];
 
 const styleForPreset = (
