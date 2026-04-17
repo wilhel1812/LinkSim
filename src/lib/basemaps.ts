@@ -4,10 +4,6 @@ import type { UiColorTheme } from "../themes/types";
 
 export type BasemapProvider = "carto" | "maptiler" | "stadia" | "kartverket" | "npolar";
 export type BasemapTheme = "light" | "dark";
-export type BasemapStylePreset = {
-  id: string;
-  label: string;
-};
 export type BasemapCategory = "street" | "terrain" | "topographic" | "photo" | "artistic" | "regional";
 
 export type BasemapStyleEntry = {
@@ -272,6 +268,12 @@ const PROVIDER_ATTRIBUTIONS: ProviderAttribution[] = [
     label: "Kartverket",
     attribution: "© Kartverket",
     attributionUrl: "https://kartverket.no/",
+  },
+  {
+    provider: "npolar",
+    label: "Norsk Polarinstitutt",
+    attribution: NP_ATTRIBUTION,
+    attributionUrl: "https://npolar.no/",
   },
   {
     provider: "npolar",
