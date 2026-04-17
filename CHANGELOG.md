@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.16.2] - 2026-04-17
+
+### Fixed
+- Shared simulations now persist private Site references instead of silently skipping the save, so newly added Sites survive sync and reload in shared workspaces.
+
 ## [0.16.0] - 2026-04-12
 
 ### Added
