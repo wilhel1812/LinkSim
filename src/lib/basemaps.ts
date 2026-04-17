@@ -54,6 +54,12 @@ const kartverketTileTemplate = (() => {
   return `${base}${glue}api_key=${encodeURIComponent(KARTVERKET_KEY)}`;
 })();
 
+const npolarPresets: BasemapStylePreset[] = [
+  { id: "topographic", label: "Topographic" },
+  { id: "satellite", label: "Satellite" },
+  { id: "orthophoto", label: "Orthophoto" },
+];
+
 const cartoRasterTilesForTheme = (theme: BasemapTheme): string[] =>
   theme === "dark"
     ? [
