@@ -60,6 +60,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -67,15 +69,28 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Resolve release tag
+        id: release_tag
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release worktree
+        run: git worktree add --detach "$RUNNER_TEMP/linksim-release" "${{ steps.release_tag.outputs.tag }}"
+
       - name: Install dependencies
+        working-directory: ${{ runner.temp }}/linksim-release
         run: npm ci
 
       - name: Validate release gate
+        working-directory: ${{ runner.temp }}/linksim-release
         run: node scripts/validate-prod-release.mjs
 
       - name: Deploy prod/main with guardrails
+        working-directory: ${{ runner.temp }}/linksim-release
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
-        run: npm run deploy:prod:main
+          DEPLOY_VERIFY_COMMIT: ${{ github.sha }}
+        run: npm run build:bundle && npm run build:verify && node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main
