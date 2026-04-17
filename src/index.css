@@ -1942,6 +1942,7 @@ input {
   cursor: pointer;
   user-select: none;
   transition: opacity 0.12s ease, filter 0.12s ease, transform 0.12s ease;
+  backdrop-filter: blur(var(--glass-panel-blur));
 }
 
 .site-pin:focus-visible {
