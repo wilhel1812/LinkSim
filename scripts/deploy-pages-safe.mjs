@@ -260,11 +260,10 @@ async function preflight(targetName, target) {
     console.log(`[deploy-pages-safe] Allowing expected dirty files: ${dirtyPaths.join(", ")}`);
   }
   if (target.requiredBranch) {
-    const isTaggedProdCheckout =
-      targetName === "prod-main" && branch === "HEAD" && headTags.includes(expectedReleaseTag);
+    const isTaggedProdCheckout = targetName === "prod-main" && headTags.includes(expectedReleaseTag);
     assert(
       branch === target.requiredBranch || isTaggedProdCheckout,
-      `Preflight failed: target ${targetName} requires current branch '${target.requiredBranch}'.`,
+      `Preflight failed: target ${targetName} requires current branch '${target.requiredBranch}' or the tagged release commit.`,
     );
   }
 
