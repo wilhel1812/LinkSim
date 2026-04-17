@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
+## [0.17.0] - 2026-04-17
+
+Rolls up all merged work since `0.16.0`, including the `0.16.2` shared-site sync hotfix and the release/deploy guardrail fixes.
+
+### Added
+- Panorama / single-site 360° mode with FOV controls, adaptive zoom sampling, peak labels, global peak tiles, and true shading/LOS-clipped terrain rendering. (#101)
+- A new `/settings` panel with per-field auto-save, plus settings layout, avatar drop-zone, and access-request refinements. (#125, #688, #689, #690, #691)
+- Norsk Polarinstitutt Svalbard basemap provider with topographic, satellite, and orthophoto presets. (#635)
+- The live in-app UI gallery plus continued componentization of badge, popover, state-dot, and ActionButton patterns across the shell. (#540, #616)
+- Mobile tabbed map overlays and expanded accessibility semantics for mobile tabs and markers. (#171, #430, #431, #433)
+
+### Changed
+- Bumped the app and release line to `0.17.0` so the next milestone train starts from the current staging baseline.
+- Standardized panel/sidebar headers, ActionButton usage, and iconography across the shell, inspector, sidebar, and settings surfaces.
+- Continued mobile map, panel, and attribution polish, including synchronized animation timing and viewport-fit behavior.
+- Hardened release and deploy automation, CI guardrails, and staging-main workflow rules.
+- Improved local test-server startup, change polling, and developer workflow reliability.
+
+### Fixed
+- Shared simulations now persist private Site references during sync and reload.
+- Deep-link handling is more stable for shared simulations, emoji/Korean names, and guest/public auth flows.
+- Panorama/profile sizing, path override handling, and overlay recompute/performance stability were improved.
+- Terrain loading, geocode throttling, meshmap MQTT/proxy caching, and other sync/network edge cases were hardened.
+- Production deploy verification now checks the correct release checkout and Pages project again, so tagged releases complete cleanly.
+- Rolled unfinished milestone work forward one step to keep the backlog aligned with the new release boundary.
+
 ## [0.16.2] - 2026-04-17
 
 ### Fixed
