@@ -251,7 +251,7 @@ async function getGitRef(args = ["rev-parse", "--abbrev-ref", "HEAD"]) {
 
 async function preflight(targetName, target) {
   const branch = await getGitRef();
-  const commit = await getGitRef(["rev-parse", "--short", "HEAD"]);
+  const commit = String(process.env.DEPLOY_VERIFY_COMMIT ?? "").trim() || (await getGitRef(["rev-parse", "--short", "HEAD"]));
   const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   const expectedReleaseTag = `v${String(pkg.version ?? "").trim()}`;
   const { stdout: headTagsStdout } = await run("git", ["tag", "--points-at", "HEAD"], { capture: true });

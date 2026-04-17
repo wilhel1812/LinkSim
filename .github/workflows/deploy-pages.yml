@@ -84,4 +84,5 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+          DEPLOY_VERIFY_COMMIT: ${{ github.sha }}
         run: npm run build:bundle && npm run build:verify && node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main
