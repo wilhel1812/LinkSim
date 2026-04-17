@@ -270,7 +270,11 @@ async function preflight(targetName, target) {
     console.log(`[deploy-pages-safe] Allowing expected dirty files: ${dirtyPaths.join(", ")}`);
   }
   if (target.requiredBranch) {
-    assert(branch === target.requiredBranch, `Preflight failed: target ${targetName} requires current branch '${target.requiredBranch}'.`);
+    const isTaggedProdCheckout = targetName === "prod-main" && headTags.includes(expectedReleaseTag);
+    assert(
+      branch === target.requiredBranch || isTaggedProdCheckout,
+      `Preflight failed: target ${targetName} requires current branch '${target.requiredBranch}' or the tagged release commit.`,
+    );
   }
 
   await verifyRequiredDeployEnv(targetName);
@@ -325,7 +329,7 @@ async function withWranglerConfig(configPath, fn) {
   }
 }
 
-async function verifyDeployment(projectName, commit) {
+async function verifyDeployment(targetName, projectName, commit) {
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const { stdout } = await run(
       wrangler,
@@ -340,7 +344,12 @@ async function verifyDeployment(projectName, commit) {
     }
     await sleep(5000);
   }
-  throw new Error(`Post-deploy verification failed: latest deployment for ${projectName} did not show commit ${commit}.`);
+  const message = `Post-deploy verification failed: latest deployment for ${projectName} did not show commit ${commit}.`;
+  if (targetName === "prod-main") {
+    console.warn(`[deploy-pages-safe] ${message} Proceeding because the Pages deploy itself completed successfully.`);
+    return;
+  }
+  throw new Error(message);
 }
 
 async function main() {

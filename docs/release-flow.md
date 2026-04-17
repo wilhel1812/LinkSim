@@ -144,6 +144,17 @@
   4. `npm run deploy:staging` and verify deployment
   5. close the drift issue
 
+## Drift prevention rules
+- Issue branches must be created from latest `origin/staging`.
+- PRs into `staging` or `main` must be up-to-date with the base branch before merge.
+- Never promote from `issue/*` or `chore/*` directly into `main`.
+- After any `hotfix/*` merge into `main` (including release-reconcile fallback), immediately:
+  1. create `chore/sync-main-to-staging` from `origin/staging`
+  2. `git merge origin/main -X ours --no-edit`
+  3. PR and merge into `staging`
+  4. `npm run deploy:staging` and verify deployment
+  5. close the drift issue
+
 ## Deploy Targets Reference
 | Target | URL | Description |
 |--------|-----|-------------|
