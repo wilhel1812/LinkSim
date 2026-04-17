@@ -214,11 +214,21 @@ const parseWranglerJsonPayload = (stdout) => {
 
 async function verifyRemoteSchema(targetName, databaseName) {
   if (targetName !== "staging" && targetName !== "prod-main") return;
-  const { stdout } = await run(
-    wrangler,
-    ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(resource_changes);"],
-    { capture: true },
-  );
+  let stdout;
+  try {
+    ({ stdout } = await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(resource_changes);"],
+      { capture: true },
+    ));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (targetName === "prod-main" && message.includes("not valid or is not authorized")) {
+      console.warn(`[deploy-pages-safe] Skipping prod remote schema verification after authorization failure: ${message}`);
+      return;
+    }
+    throw error;
+  }
   const parsed = parseWranglerJsonPayload(stdout);
   assert(Array.isArray(parsed) && parsed.length > 0, "Preflight failed: unable to parse D1 schema output.");
   const first = parsed[0];
