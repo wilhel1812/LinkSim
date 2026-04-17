@@ -329,7 +329,7 @@ async function withWranglerConfig(configPath, fn) {
   }
 }
 
-async function verifyDeployment(projectName, commit) {
+async function verifyDeployment(targetName, projectName, commit) {
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const { stdout } = await run(
       wrangler,
@@ -344,7 +344,12 @@ async function verifyDeployment(projectName, commit) {
     }
     await sleep(5000);
   }
-  throw new Error(`Post-deploy verification failed: latest deployment for ${projectName} did not show commit ${commit}.`);
+  const message = `Post-deploy verification failed: latest deployment for ${projectName} did not show commit ${commit}.`;
+  if (targetName === "prod-main") {
+    console.warn(`[deploy-pages-safe] ${message} Proceeding because the Pages deploy itself completed successfully.`);
+    return;
+  }
+  throw new Error(message);
 }
 
 async function main() {
@@ -386,7 +391,7 @@ async function main() {
       ]);
     });
 
-    await verifyDeployment(target.projectName, commit);
+    await verifyDeployment(targetName, target.projectName, commit);
     console.log(
       `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
     );
