@@ -4,6 +4,10 @@ import type { UiColorTheme } from "../themes/types";
 
 export type BasemapProvider = "carto" | "maptiler" | "stadia" | "kartverket" | "npolar";
 export type BasemapTheme = "light" | "dark";
+export type BasemapStylePreset = {
+  id: string;
+  label: string;
+};
 export type BasemapCategory = "street" | "terrain" | "topographic" | "photo" | "artistic" | "regional";
 
 export type BasemapStyleEntry = {
@@ -53,12 +57,6 @@ const kartverketTileTemplate = (() => {
   const glue = base.includes("?") ? "&" : "?";
   return `${base}${glue}api_key=${encodeURIComponent(KARTVERKET_KEY)}`;
 })();
-
-const npolarPresets: BasemapStylePreset[] = [
-  { id: "topographic", label: "Topographic" },
-  { id: "satellite", label: "Satellite" },
-  { id: "orthophoto", label: "Orthophoto" },
-];
 
 const cartoRasterTilesForTheme = (theme: BasemapTheme): string[] =>
   theme === "dark"
@@ -280,16 +278,6 @@ const PROVIDER_ATTRIBUTIONS: ProviderAttribution[] = [
     label: "Norsk Polarinstitutt",
     attribution: NP_ATTRIBUTION,
     attributionUrl: "https://npolar.no/",
-  },
-  {
-    provider: "npolar",
-    label: "Norsk Polarinstitutt",
-    group: "regional",
-    attribution: NP_ATTRIBUTION,
-    attributionUrl: "https://npolar.no/",
-    requiresKey: false,
-    available: true,
-    presets: npolarPresets,
   },
 ];
 
