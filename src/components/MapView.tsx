@@ -16,7 +16,16 @@ import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
-import { getBasemapProviderCapabilities, getCartoFallbackStyle, resolveBasemapSelection } from "../lib/basemaps";
+import {
+  BASEMAP_CATEGORIES,
+  DEFAULT_BASEMAP_STYLE_ID,
+  getCategoryForStyleId,
+  getCartoFallbackStyle,
+  getDefaultStyleIdForCategory,
+  getStylesForCategory,
+  resolveBasemapSelection,
+  type BasemapCategory,
+} from "../lib/basemaps";
 import {
   PROFILE_DRAFT_SITE_REQUEST_EVENT,
   type ProfileDraftSiteRequestDetail,
@@ -90,6 +99,16 @@ const updateFvnHash = (hash: number, value: number): number => {
 
 const roundHashValue = (value: number, factor = 10_000): number =>
   Number.isFinite(value) ? Math.round(value * factor) : 0;
+
+// Full-world polygon used for the themed basemap color overlay.
+const WORLD_POLYGON_GEOJSON = {
+  type: "Feature" as const,
+  geometry: {
+    type: "Polygon" as const,
+    coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]],
+  },
+  properties: {},
+};
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
@@ -617,10 +636,8 @@ export function MapView({
   const simulationRunToken = useCoverageStore((state) => state.simulationRunToken);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
-  const basemapProvider = useAppStore((state) => state.basemapProvider);
-  const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
-  const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
-  const setBasemapStylePreset = useAppStore((state) => state.setBasemapStylePreset);
+  const basemapStyleId = useAppStore((state) => state.basemapStyleId);
+  const setBasemapStyleId = useAppStore((state) => state.setBasemapStyleId);
   const {
     theme,
     colorTheme,
@@ -2226,23 +2243,28 @@ export function MapView({
     );
   }
 
-  const providerCapabilities = useMemo(() => getBasemapProviderCapabilities(), []);
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
-    [basemapProvider, basemapStylePreset, theme, colorTheme],
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
+    [basemapStyleId, theme, colorTheme],
   );
   const fallbackMapStyle = useMemo(() => getCartoFallbackStyle(theme, colorTheme), [theme, colorTheme]);
-  const requestedProviderConfig =
-    providerCapabilities.find((entry) => entry.provider === basemapProvider) ?? providerCapabilities[0];
-  const activeProviderConfig =
-    providerCapabilities.find((entry) => entry.provider === resolvedBasemap.provider) ?? providerCapabilities[0];
-  const resolvedPresetOptions = activeProviderConfig?.presets ?? [];
-  const styleSelectValue =
-    resolvedPresetOptions.length <= 1
-      ? resolvedPresetOptions[0]?.id ?? basemapStylePreset
-      : basemapStylePreset;
-  const globalProviders = providerCapabilities.filter((entry) => entry.group === "global");
-  const regionalProviders = providerCapabilities.filter((entry) => entry.group === "regional");
+  // Themed styles show an official style URL + a translucent color overlay using the app's terrain token.
+  const themedOverlay = resolvedBasemap.isThemed
+    ? { color: variant.cssVars["--terrain"], opacity: theme === "dark" ? 0.1 : 0.08 }
+    : null;
+  // Track the selected category in local state; initialize from the current style's category.
+  const [selectedCategory, setSelectedCategory] = useState<BasemapCategory>(
+    () => getCategoryForStyleId(basemapStyleId),
+  );
+  const categoryStyles = useMemo(() => getStylesForCategory(selectedCategory), [selectedCategory]);
+  const globalCategoryStyles = useMemo(
+    () => categoryStyles.filter((s) => !s.regional),
+    [categoryStyles],
+  );
+  const regionalCategoryStyles = useMemo(
+    () => categoryStyles.filter((s) => s.regional),
+    [categoryStyles],
+  );
   const providerMaxZoom = useMemo(() => {
     switch (resolvedBasemap.provider) {
       case "kartverket":
@@ -2595,60 +2617,51 @@ export function MapView({
               <CompactDetailsSummary>Map</CompactDetailsSummary>
               <div className="map-inspector-map-settings">
               <label className="map-inspector-map-setting">
-                <span>Map Provider</span>
+                <span>Category</span>
                 <select
                   className="locale-select"
                   onChange={(event) => {
-                    const nextProvider = event.target.value as typeof basemapProvider;
-                    const nextProviderConfig =
-                      providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
-                    setBasemapProvider(nextProvider);
-                    setBasemapStylePreset(
-                      nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
-                        nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
-                        nextProviderConfig.presets[0]?.id ??
-                        "normal",
-                    );
+                    const nextCategory = event.target.value as BasemapCategory;
+                    setSelectedCategory(nextCategory);
+                    const nextStyleId = getDefaultStyleIdForCategory(nextCategory);
+                    setBasemapStyleId(nextStyleId);
                     setUseFallbackMapStyle(false);
                     setMapProviderWarning(null);
                   }}
-                  value={basemapProvider}
+                  value={selectedCategory}
                 >
-                  <optgroup label="Global">
-                    {globalProviders.map((provider) => (
-                      <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                        {provider.label}
-                        {!provider.available ? " (unavailable)" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Regional">
-                    {regionalProviders.map((provider) => (
-                      <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                        {provider.label}
-                        {!provider.available ? " (unavailable)" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
+                  {BASEMAP_CATEGORIES.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="map-inspector-map-setting">
                 <span>Map Style</span>
                 <select
                   className="locale-select"
-                  disabled={resolvedPresetOptions.length <= 1}
                   onChange={(event) => {
-                    setBasemapStylePreset(event.target.value);
+                    setBasemapStyleId(event.target.value);
                     setUseFallbackMapStyle(false);
                     setMapProviderWarning(null);
                   }}
-                  value={styleSelectValue}
+                  value={resolvedBasemap.styleId}
                 >
-                  {resolvedPresetOptions.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
+                  {globalCategoryStyles.map((style) => (
+                    <option disabled={!style.available} key={style.id} value={style.id}>
+                      {style.label}{style.requiresKey && !style.available ? " (key required)" : ""}
                     </option>
                   ))}
+                  {regionalCategoryStyles.length > 0 ? (
+                    <optgroup label="Regional">
+                      {regionalCategoryStyles.map((style) => (
+                        <option key={style.id} value={style.id}>
+                          {style.label}{style.regional ? ` — ${style.regional.region}` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
                 </select>
               </label>
               <label className="map-inspector-map-setting">
@@ -3030,14 +3043,14 @@ export function MapView({
         onError={() => {
           if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket" && resolvedBasemap.provider !== "npolar") {
             setUseFallbackMapStyle(true);
-            setBasemapProvider("carto");
+            setBasemapStyleId(DEFAULT_BASEMAP_STYLE_ID);
             setInteractionViewState({
               longitude: activeViewState.longitude,
               latitude: activeViewState.latitude,
               zoom: Math.min(activeViewState.zoom, 20),
             });
             setMapProviderWarning(
-              `${requestedProviderConfig?.label ?? "Selected provider"} failed (network, quota, or style error).`,
+              `${resolvedBasemap.providerLabel} failed (network, quota, or style error).`,
             );
           }
         }}
@@ -3058,6 +3071,16 @@ export function MapView({
         }}
         onMoveEnd={onMoveEnd}
       >
+        {themedOverlay ? (
+          <Source data={WORLD_POLYGON_GEOJSON} id="theme-tint-source" type="geojson">
+            <Layer
+              id="theme-tint-overlay"
+              paint={{ "fill-color": themedOverlay.color, "fill-opacity": themedOverlay.opacity }}
+              type="fill"
+            />
+          </Source>
+        ) : null}
+
         {showTerrainOverlay && simulationTerrainOverlay ? (
           <Source
             coordinates={simulationTerrainOverlay.coordinates}

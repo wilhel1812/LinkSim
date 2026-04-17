@@ -41,10 +41,9 @@ describe("appStore basemap defaults", () => {
     vi.resetModules();
   });
 
-  it("defaults to carto normal-themed when local storage is empty", async () => {
+  it("defaults to street-linksim when local storage is empty", async () => {
     const { useAppStore } = await import("./appStore");
     const state = useAppStore.getState();
-    expect(state.basemapProvider).toBe("carto");
-    expect(state.basemapStylePreset).toBe("normal-themed");
+    expect(state.basemapStyleId).toBe("street-linksim");
   });
 });

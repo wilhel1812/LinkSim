@@ -284,12 +284,11 @@ export function AppShell() {
   });
 
   const { theme, colorTheme, variant } = useThemeVariant();
-  const basemapProvider = useAppStore((state) => state.basemapProvider);
-  const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
+  const basemapStyleId = useAppStore((state) => state.basemapStyleId);
 
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
-    [basemapProvider, basemapStylePreset, theme, colorTheme],
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
+    [basemapStyleId, theme, colorTheme],
   );
 
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
