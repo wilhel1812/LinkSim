@@ -18,7 +18,14 @@ import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../lib/frequencyPlans"
 import { searchLocations, type GeocodeResult } from "../lib/geocode";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
-import { getBasemapProviderCapabilities, resolveBasemapSelection } from "../lib/basemaps";
+import {
+  BASEMAP_CATEGORIES,
+  getCategoryForStyleId,
+  getDefaultStyleIdForCategory,
+  getStylesForCategory,
+  resolveBasemapSelection,
+  type BasemapCategory,
+} from "../lib/basemaps";
 import { parseDeepLinkFromLocation } from "../lib/deepLink";
 import {
   fetchCollaboratorDirectory,
@@ -269,10 +276,8 @@ export function Sidebar({
   const selectSiteById = useAppStore((state) => state.selectSiteById);
   const setSelectedNetworkId = useAppStore((state) => state.setSelectedNetworkId);
   const setSelectedFrequencyPresetId = useAppStore((state) => state.setSelectedFrequencyPresetId);
-  const basemapProvider = useAppStore((state) => state.basemapProvider);
-  const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
-  const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
-  const setBasemapStylePreset = useAppStore((state) => state.setBasemapStylePreset);
+  const basemapStyleId = useAppStore((state) => state.basemapStyleId);
+  const setBasemapStyleId = useAppStore((state) => state.setBasemapStyleId);
   const setAutoPropagationEnvironment = useAppStore((state) => state.setAutoPropagationEnvironment);
   const setPropagationEnvironment = useAppStore((state) => state.setPropagationEnvironment);
   const applyClimateDefaults = useAppStore((state) => state.applyClimateDefaults);
@@ -320,25 +325,21 @@ export function Sidebar({
   const toSite = sites.find((site) => site.id === selectedLink.toSiteId);
   const sourceSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
-    [basemapProvider, basemapStylePreset, theme, colorTheme],
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
+    [basemapStyleId, theme, colorTheme],
   );
-  const providerCapabilities = useMemo(() => getBasemapProviderCapabilities(), []);
-  const globalProviders = useMemo(
-    () => providerCapabilities.filter((entry) => entry.group === "global"),
-    [providerCapabilities],
+  const [sidebarMapCategory, setSidebarMapCategory] = useState<BasemapCategory>(
+    () => getCategoryForStyleId(basemapStyleId),
   );
-  const regionalProviders = useMemo(
-    () => providerCapabilities.filter((entry) => entry.group === "regional"),
-    [providerCapabilities],
+  const sidebarCategoryStyles = useMemo(() => getStylesForCategory(sidebarMapCategory), [sidebarMapCategory]);
+  const sidebarGlobalStyles = useMemo(
+    () => sidebarCategoryStyles.filter((s) => !s.regional),
+    [sidebarCategoryStyles],
   );
-  const activeProviderConfig =
-    providerCapabilities.find((entry) => entry.provider === resolvedBasemap.provider) ?? providerCapabilities[0];
-  const resolvedPresetOptions = activeProviderConfig?.presets ?? [];
-  const styleSelectValue =
-    resolvedPresetOptions.length <= 1
-      ? resolvedPresetOptions[0]?.id ?? basemapStylePreset
-      : basemapStylePreset;
+  const sidebarRegionalStyles = useMemo(
+    () => sidebarCategoryStyles.filter((s) => s.regional),
+    [sidebarCategoryStyles],
+  );
   const effectivePropagationEnvironment = useMemo(() => {
     if (!autoPropagationEnvironment || !fromSite || !toSite) return propagationEnvironment;
     return deriveDynamicPropagationEnvironment({
@@ -2440,55 +2441,44 @@ export function Sidebar({
                 <div className="library-editor-map">
                   <div className="library-editor-map-controls">
                     <label className="map-provider-field">
-                      <span>Map Provider</span>
+                      <span>Category</span>
                       <select
                         className="locale-select"
                         onChange={(event) => {
-                          const nextProvider = event.target.value as typeof basemapProvider;
-                          const nextProviderConfig =
-                            providerCapabilities.find((entry) => entry.provider === nextProvider) ??
-                            providerCapabilities[0];
-                          setBasemapProvider(nextProvider);
-                          setBasemapStylePreset(
-                            nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
-                              nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
-                              nextProviderConfig.presets[0]?.id ??
-                              "normal",
-                          );
+                          const nextCategory = event.target.value as BasemapCategory;
+                          setSidebarMapCategory(nextCategory);
+                          setBasemapStyleId(getDefaultStyleIdForCategory(nextCategory));
                         }}
-                        value={basemapProvider}
+                        value={sidebarMapCategory}
                       >
-                        <optgroup label="Global">
-                          {globalProviders.map((provider) => (
-                            <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                              {provider.label}
-                              {!provider.available ? " (unavailable)" : ""}
-                            </option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="Regional">
-                          {regionalProviders.map((provider) => (
-                            <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                              {provider.label}
-                              {!provider.available ? " (unavailable)" : ""}
-                            </option>
-                          ))}
-                        </optgroup>
+                        {BASEMAP_CATEGORIES.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.label}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <label className="map-provider-field">
                       <span>Map Style</span>
                       <select
                         className="locale-select"
-                        disabled={resolvedPresetOptions.length <= 1}
-                        onChange={(event) => setBasemapStylePreset(event.target.value)}
-                        value={styleSelectValue}
+                        onChange={(event) => setBasemapStyleId(event.target.value)}
+                        value={resolvedBasemap.styleId}
                       >
-                        {resolvedPresetOptions.map((preset) => (
-                          <option key={preset.id} value={preset.id}>
-                            {preset.label}
+                        {sidebarGlobalStyles.map((style) => (
+                          <option disabled={!style.available} key={style.id} value={style.id}>
+                            {style.label}{style.requiresKey && !style.available ? " (key required)" : ""}
                           </option>
                         ))}
+                        {sidebarRegionalStyles.length > 0 ? (
+                          <optgroup label="Regional">
+                            {sidebarRegionalStyles.map((style) => (
+                              <option key={style.id} value={style.id}>
+                                {style.label}{style.regional ? ` — ${style.regional.region}` : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : null}
                       </select>
                     </label>
                   </div>
@@ -3569,55 +3559,44 @@ export function Sidebar({
                   <div className="library-editor-map">
                     <div className="library-editor-map-controls">
                       <label className="map-provider-field">
-                        <span>Map Provider</span>
+                        <span>Category</span>
                         <select
                           className="locale-select"
                           onChange={(event) => {
-                            const nextProvider = event.target.value as typeof basemapProvider;
-                            const nextProviderConfig =
-                              providerCapabilities.find((entry) => entry.provider === nextProvider) ??
-                              providerCapabilities[0];
-                            setBasemapProvider(nextProvider);
-                            setBasemapStylePreset(
-                              nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
-                                nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
-                                nextProviderConfig.presets[0]?.id ??
-                                "normal",
-                            );
+                            const nextCategory = event.target.value as BasemapCategory;
+                            setSidebarMapCategory(nextCategory);
+                            setBasemapStyleId(getDefaultStyleIdForCategory(nextCategory));
                           }}
-                          value={basemapProvider}
+                          value={sidebarMapCategory}
                         >
-                          <optgroup label="Global">
-                            {globalProviders.map((provider) => (
-                              <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                                {provider.label}
-                                {!provider.available ? " (unavailable)" : ""}
-                              </option>
-                            ))}
-                          </optgroup>
-                          <optgroup label="Regional">
-                            {regionalProviders.map((provider) => (
-                              <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                                {provider.label}
-                                {!provider.available ? " (unavailable)" : ""}
-                              </option>
-                            ))}
-                          </optgroup>
+                          {BASEMAP_CATEGORIES.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.label}
+                            </option>
+                          ))}
                         </select>
                       </label>
                       <label className="map-provider-field">
                         <span>Map Style</span>
                         <select
                           className="locale-select"
-                          disabled={resolvedPresetOptions.length <= 1}
-                          onChange={(event) => setBasemapStylePreset(event.target.value)}
-                          value={styleSelectValue}
+                          onChange={(event) => setBasemapStyleId(event.target.value)}
+                          value={resolvedBasemap.styleId}
                         >
-                          {resolvedPresetOptions.map((preset) => (
-                            <option key={preset.id} value={preset.id}>
-                              {preset.label}
+                          {sidebarGlobalStyles.map((style) => (
+                            <option disabled={!style.available} key={style.id} value={style.id}>
+                              {style.label}{style.requiresKey && !style.available ? " (key required)" : ""}
                             </option>
                           ))}
+                          {sidebarRegionalStyles.length > 0 ? (
+                            <optgroup label="Regional">
+                              {sidebarRegionalStyles.map((style) => (
+                                <option key={style.id} value={style.id}>
+                                  {style.label}{style.regional ? ` — ${style.regional.region}` : ""}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ) : null}
                         </select>
                       </label>
                     </div>

@@ -55,8 +55,7 @@ const hoisted = vi.hoisted(() => {
     setShowSimulationLibraryRequest: () => {},
     setShowNewSimulationRequest: () => {},
     setShowSiteLibraryRequest: () => {},
-    basemapProvider: "maptiler",
-    basemapStylePreset: "outdoor",
+    basemapStyleId: "street-linksim",
   };
 
   const useAppStore = ((selector: (value: Record<string, unknown>) => unknown) => selector(state)) as unknown as {
