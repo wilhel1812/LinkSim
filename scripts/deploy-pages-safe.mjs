@@ -242,6 +242,13 @@ async function getGitRef(args = ["rev-parse", "--abbrev-ref", "HEAD"]) {
 async function preflight(targetName, target) {
   const branch = await getGitRef();
   const commit = await getGitRef(["rev-parse", "--short", "HEAD"]);
+  const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+  const expectedReleaseTag = `v${String(pkg.version ?? "").trim()}`;
+  const { stdout: headTagsStdout } = await run("git", ["tag", "--points-at", "HEAD"], { capture: true });
+  const headTags = headTagsStdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
   const status = await run("git", ["status", "--porcelain"], { capture: true });
   const dirtyPaths = parseDirtyPathsFromPorcelain(status.stdout);
   const unexpectedDirty = dirtyPaths.filter((file) => !ALLOWED_DIRTY_PATHS.has(file));
@@ -253,7 +260,12 @@ async function preflight(targetName, target) {
     console.log(`[deploy-pages-safe] Allowing expected dirty files: ${dirtyPaths.join(", ")}`);
   }
   if (target.requiredBranch) {
-    assert(branch === target.requiredBranch, `Preflight failed: target ${targetName} requires current branch '${target.requiredBranch}'.`);
+    const isTaggedProdCheckout =
+      targetName === "prod-main" && branch === "HEAD" && headTags.includes(expectedReleaseTag);
+    assert(
+      branch === target.requiredBranch || isTaggedProdCheckout,
+      `Preflight failed: target ${targetName} requires current branch '${target.requiredBranch}'.`,
+    );
   }
 
   await verifyRequiredDeployEnv(targetName);
