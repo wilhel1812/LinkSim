@@ -18,6 +18,7 @@ import {
 } from "../lib/libraryFilterUi";
 import { formatDate } from "../lib/locale";
 import { toAccessVisibility } from "../lib/uiFormatting";
+import { Badge } from "./ui/Badge";
 import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
 import { ActionButton } from "./ActionButton";
@@ -429,9 +430,7 @@ export default function SimulationLibraryPanel({
                   Updated {formatDate(preset.updatedAt)}
                 </span>
                 <span className="library-row-meta">
-                  <span className="access-badge">
-                    {toAccessVisibility((preset as { visibility?: unknown }).visibility)}
-                  </span>
+                  {((v: string) => <Badge variant={v as "private" | "public" | "shared"}>{v}</Badge>)(toAccessVisibility((preset as { visibility?: unknown }).visibility))}
                   <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
                     <AvatarBadge
                       avatarUrl={owner.avatarUrl}

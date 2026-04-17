@@ -206,8 +206,22 @@ const verifyByHeadersOnly = (request: Request): AuthContext | null => {
 };
 
 const allowInsecureDevAuth = (env: Env): AuthContext | null => {
-  if ((env.ALLOW_INSECURE_DEV_AUTH ?? "").toLowerCase() !== "true") return null;
-  const userId = (env.DEV_AUTH_USER_ID ?? "local-dev-user").trim();
+  const envFlag = (env.ALLOW_INSECURE_DEV_AUTH ?? "").toLowerCase();
+
+  const processEnv =
+    typeof process !== "undefined" && process?.env ? process.env : undefined;
+
+  const processFlag = (processEnv?.ALLOW_INSECURE_DEV_AUTH ?? "").toLowerCase();
+  const allowProcessFallback = processFlag === "true";
+  const allowDevAuth = envFlag === "true" || (allowProcessFallback && !envFlag);
+  if (!allowDevAuth) return null;
+
+  const userId = (
+    env.DEV_AUTH_USER_ID ??
+    (allowProcessFallback ? processEnv?.DEV_AUTH_USER_ID : undefined) ??
+    "local-dev-user"
+  ).trim();
+
   if (!userId) return null;
   return {
     userId,

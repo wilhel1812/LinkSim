@@ -2,7 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
-import { buildDeepLinkPathname, buildDeepLinkUrl, canonicalizeDeepLinkKey, parseDeepLinkFromLocation, slugifyName } from "../lib/deepLink";
+import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
   formatPrivateSiteReferenceBlockMessage,
@@ -37,6 +37,7 @@ import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { UserAdminPanel } from "./UserAdminPanel";
+import { SettingsPanel } from "./settings/SettingsPanel";
 import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
 import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 
@@ -188,6 +189,42 @@ export function AppShell() {
   const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
   const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const [activeUserId, setActiveUserId] = useState("");
+  const [settingsRoute, setSettingsRoute] = useState<{ section: SettingsSectionId | null } | null>(() => {
+    if (typeof window === "undefined") return null;
+    const match = matchSettingsPath(window.location.pathname);
+    return match ? { section: match.section } : null;
+  });
+  const returnPathBeforeSettingsRef = useRef<string | null>(null);
+  const openSettings = useCallback((section: SettingsSectionId = "profile") => {
+    if (typeof window === "undefined") return;
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    const match = matchSettingsPath(window.location.pathname);
+    if (!match) {
+      returnPathBeforeSettingsRef.current = currentPath;
+    }
+    window.history.pushState(null, "", buildSettingsPath(section));
+    setSettingsRoute({ section });
+  }, []);
+  const closeSettings = useCallback(() => {
+    const returnPath = returnPathBeforeSettingsRef.current;
+    returnPathBeforeSettingsRef.current = null;
+    setSettingsRoute(null);
+    if (typeof window === "undefined") return;
+    if (returnPath && returnPath !== window.location.pathname + window.location.search + window.location.hash) {
+      window.history.pushState(null, "", returnPath);
+    } else {
+      window.history.pushState(null, "", "/");
+    }
+  }, []);
+  useEffect(() => {
+    const onPop = () => {
+      if (typeof window === "undefined") return;
+      const match = matchSettingsPath(window.location.pathname);
+      setSettingsRoute(match ? { section: match.section } : null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
@@ -247,12 +284,11 @@ export function AppShell() {
   });
 
   const { theme, colorTheme, variant } = useThemeVariant();
-  const basemapProvider = useAppStore((state) => state.basemapProvider);
-  const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
+  const basemapStyleId = useAppStore((state) => state.basemapStyleId);
 
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
-    [basemapProvider, basemapStylePreset, theme, colorTheme],
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
+    [basemapStyleId, theme, colorTheme],
   );
 
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
@@ -420,7 +456,7 @@ export function AppShell() {
       return;
     }
 
-    const reserved = ["api", "cdn-cgi", "assets", "meshmap"];
+    const reserved = ["api", "cdn-cgi", "assets", "meshmap", "settings"];
     const head = (window.location.pathname ?? "/").split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
     if (reserved.includes(head)) return;
 
@@ -1791,7 +1827,7 @@ export function AppShell() {
     return (
       <main className="app-shell access-locked-shell">
         <section className="panel-section access-locked-panel">
-          <UserAdminPanel />
+          <UserAdminPanel onOpenSettings={() => openSettings("profile")} />
           <h2>Closed Beta: Access Pending Approval</h2>
           <p className="field-help">
             You can sign in and edit your profile, but simulation tools stay locked until a moderator or admin approves your access.
@@ -1954,6 +1990,7 @@ export function AppShell() {
             authBootstrapPending={accessState === "checking"}
             hideLibraryBrowsing={isReadOnlyShell}
             onOpenHelp={openOnboardingTutorial}
+            onOpenSettings={() => openSettings("profile")}
             readOnly={!canPersistWorkspace}
             panelToggleControl={
               isMobileViewport ? (
@@ -2177,6 +2214,7 @@ export function AppShell() {
                 authBootstrapPending={accessState === "checking"}
                 hideLibraryBrowsing={isReadOnlyShell}
                 onOpenHelp={openOnboardingTutorial}
+            onOpenSettings={() => openSettings("profile")}
                 readOnly={!canPersistWorkspace}
                 panelToggleControl={panelSizeControls("Navigator")}
               />
@@ -2413,6 +2451,9 @@ export function AppShell() {
             )}
           </div>
         </ModalOverlay>
+      ) : null}
+      {settingsRoute ? (
+        <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} />
       ) : null}
     </main>
   );

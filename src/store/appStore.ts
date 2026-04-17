@@ -23,7 +23,7 @@ import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulatio
 import { tilesForBounds } from "../lib/terrainTiles";
 import { mergeSrtmTiles } from "../lib/terrainMerge";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
-import type { BasemapProvider } from "../lib/basemaps";
+import { DEFAULT_BASEMAP_STYLE_ID, BASEMAP_STYLE_REGISTRY } from "../lib/basemaps";
 import {
   clearCopernicusCache,
   loadCopernicusTilesForAreaPhased,
@@ -393,8 +393,7 @@ type AppState = {
   uiThemePreference: "system" | "light" | "dark";
   uiColorTheme: UiColorTheme;
   holidayWindowState: HolidayThemeWindowState;
-  basemapProvider: BasemapProvider;
-  basemapStylePreset: string;
+  basemapStyleId: string;
   selectedScenarioId: string;
   selectedFrequencyPresetId: string;
   rxSensitivityTargetDbm: number;
@@ -463,8 +462,7 @@ type AppState = {
   setUiColorTheme: (value: UiColorTheme) => void;
   revertHolidayThemeForWindow: () => void;
   dismissHolidayThemeNotice: () => void;
-  setBasemapProvider: (value: BasemapProvider) => void;
-  setBasemapStylePreset: (value: string) => void;
+  setBasemapStyleId: (value: string) => void;
   selectScenario: (id: string) => void;
   loadDemoScenario: () => void;
   requestFitToSites: () => void;
@@ -608,8 +606,7 @@ const SIM_PRESETS_KEY = "rmw-sim-presets-v1";
 const LAST_SESSION_KEY = "linksim-last-session-v1";
 const UI_THEME_PREFERENCE_KEY = "linksim-ui-theme-v1";
 const UI_COLOR_THEME_KEY = "linksim-ui-color-theme-v1";
-const BASEMAP_PROVIDER_KEY = "linksim-basemap-provider-v1";
-const BASEMAP_STYLE_PRESET_KEY = "linksim-basemap-style-preset-v1";
+const BASEMAP_STYLE_ID_KEY = "linksim-basemap-style-v2";
 
 const readStorage = <T,>(key: string, fallback: T): T => {
   try {
@@ -1122,14 +1119,10 @@ const appendUniqueWindowId = (ids: string[], nextId: string): string[] =>
   ids.includes(nextId) ? ids : [...ids, nextId];
 
 const initialHolidayWindowState = readHolidayWindowState();
-const normalizeBasemapProvider = (value: unknown): BasemapProvider =>
-  value === "carto" || value === "maptiler" || value === "stadia" || value === "kartverket" || value === "npolar" ? value : "carto";
-const normalizeBasemapStylePreset = (value: unknown): string =>
-  typeof value === "string" && value.trim().length
-    ? value.trim() === "auto"
-      ? "normal"
-      : value.trim()
-    : "normal";
+const normalizeBasemapStyleId = (value: unknown): string =>
+  typeof value === "string" && BASEMAP_STYLE_REGISTRY.some((e) => e.id === value.trim())
+    ? value.trim()
+    : DEFAULT_BASEMAP_STYLE_ID;
 
 const normalizeSelectedSiteIds = (ids: string[], sites: Site[]): string[] => {
   if (!ids.length) return [];
@@ -1178,9 +1171,8 @@ const bufferedBoundsForSites = (sites: Site[], radiusKm: number): TerrainFetchBo
   };
 };
 
-const initialBasemapProvider = normalizeBasemapProvider(readStorage<string>(BASEMAP_PROVIDER_KEY, "carto"));
-const initialBasemapStylePreset = normalizeBasemapStylePreset(
-  readStorage<string>(BASEMAP_STYLE_PRESET_KEY, "normal-themed"),
+const initialBasemapStyleId = normalizeBasemapStyleId(
+  readStorage<string>(BASEMAP_STYLE_ID_KEY, DEFAULT_BASEMAP_STYLE_ID),
 );
 
 const normalizeCoverageResolution = (value: unknown): CoverageResolution => {
@@ -1214,8 +1206,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   uiThemePreference: initialUiThemePreference,
   uiColorTheme: initialUiColorTheme,
   holidayWindowState: initialHolidayWindowState,
-  basemapProvider: initialBasemapProvider,
-  basemapStylePreset: initialBasemapStylePreset,
+  basemapStyleId: initialBasemapStyleId,
   selectedScenarioId: getInitialScenarioId(),
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
   rxSensitivityTargetDbm: -120,
@@ -1490,7 +1481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             simulations: payload.simulationPresets.length,
             skipped: skippedCount,
           });
-          await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
+          await pushCloudLibrary(payload);
           lastSyncedPayloadSignature = signature;
           writeStorage(SYNC_SIGNATURE_KEY, signature);
           console.log("[appStore] Post-init Push SUCCESS");
@@ -1633,7 +1624,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           skipped: skippedCount,
           isDelta: !isFullPush,
         });
-        await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
+        await pushCloudLibrary(payload);
         dirtySiteIds = new Set();
         dirtySimIds = new Set();
         requiresFullPush = false;
@@ -1728,7 +1719,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         simulations: editableSims.length,
         skipped: skippedCount,
       });
-      await pushCloudLibrary(payload, { suppressConflicts: ["simulation_private_site_reference"] });
+      await pushCloudLibrary(payload);
       lastSyncedPayloadSignature = payloadSignature;
       writeStorage(SYNC_SIGNATURE_KEY, payloadSignature);
       console.log("[appStore] Push SUCCESS, fetching cloud data...");
@@ -1811,15 +1802,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeHolidayWindowState(next);
     set({ holidayWindowState: next });
   },
-  setBasemapProvider: (value) => {
-    const normalized = normalizeBasemapProvider(value);
-    writeStorage(BASEMAP_PROVIDER_KEY, normalized);
-    set({ basemapProvider: normalized });
-  },
-  setBasemapStylePreset: (value) => {
-    const normalized = normalizeBasemapStylePreset(value);
-    writeStorage(BASEMAP_STYLE_PRESET_KEY, normalized);
-    set({ basemapStylePreset: normalized });
+  setBasemapStyleId: (value) => {
+    const normalized = normalizeBasemapStyleId(value);
+    writeStorage(BASEMAP_STYLE_ID_KEY, normalized);
+    set({ basemapStyleId: normalized });
   },
   selectScenario: (id) => {
     const scenario = getScenarioById(id);

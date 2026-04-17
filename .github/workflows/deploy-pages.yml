@@ -1,6 +1,10 @@
 name: Deploy LinkSim Pages
 
 on:
+  push:
+    branches:
+      - staging
+      - main
   workflow_dispatch:
     inputs:
       target:
@@ -14,7 +18,9 @@ on:
 
 jobs:
   deploy-staging:
-    if: ${{ github.event.inputs.target == 'staging' }}
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'staging')
     runs-on: ubuntu-latest
     environment: staging
     permissions:
@@ -42,7 +48,9 @@ jobs:
         run: npm run deploy:staging
 
   deploy-prod-main:
-    if: ${{ github.event.inputs.target == 'prod-main' }}
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod-main')
     runs-on: ubuntu-latest
     environment: production
     permissions:

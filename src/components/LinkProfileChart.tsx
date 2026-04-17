@@ -1,6 +1,7 @@
 import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, PanelBottomClose, PanelBottomOpen } from "lucide-react";
+import { FloatingPopover } from "./ui/FloatingPopover";
 import type { MouseEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -14,6 +15,7 @@ import { buildProfileChartSvgProps } from "../lib/profileChartSvg";
 import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
 import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
 import { buildProfile } from "../lib/propagation";
+import { StateDot } from "./StateDot";
 import { buildSelectionEffectiveLink } from "../lib/selectionEffectiveLink";
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
@@ -61,6 +63,7 @@ export function LinkProfileChart({
   rowControls,
   panelClassName,
 }: LinkProfileChartProps) {
+  const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const [hostAttachRevision, setHostAttachRevision] = useState(0);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
@@ -714,7 +717,7 @@ export function LinkProfileChart({
   }
 
   return (
-    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} data-profile-revision={profileRevision}>
+    <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} data-profile-revision={profileRevision} ref={chartPanelRef}>
       <div className="chart-top-row">
         <div className="chart-endpoints" aria-live="polite">
           <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
@@ -751,7 +754,7 @@ export function LinkProfileChart({
         <div className="chart-hover-state">
           {cursorPoint && footerCursorState ? (
             <>
-              <span className={`state-dot state-dot-${footerCursorState.state}`} aria-hidden />
+              <StateDot state={footerCursorState.state} />
               <span>
                 {footerCursorState.label} at {footerCursorState.distanceKm.toFixed(2)} km (
                 {footerCursorState.rxAfterEnvLossDbm.toFixed(1)} dBm after env loss)
@@ -855,23 +858,24 @@ export function LinkProfileChart({
           />
         </svg>
         {splitHoverPopoverPosition && cursorStates && cursorStates.length > 1 ? (
-          <div
-            className="chart-hover-popover"
-            role="status"
-            style={{
-              left: `${(splitHoverPopoverPosition.x / chartWidth) * 100}%`,
-              top: `${(splitHoverPopoverPosition.y / chartHeight) * 100}%`,
-            }}
+          <FloatingPopover
+            open={true}
+            onClose={() => {}}
+            containerRef={chartPanelRef}
+            placement="centered"
+            className="panorama-legend-popover"
+            estimatedHeight={160}
+            estimatedWidth={400}
           >
             {cursorStates.map((state) => (
               <div className="chart-hover-popover-row" key={state.key}>
-                <span className={`state-dot state-dot-${state.state}`} aria-hidden />
+                <StateDot state={state.state} />
                 <span>
                   {state.sideLabel}: {state.label} at {state.distanceKm.toFixed(2)} km ({state.rxAfterEnvLossDbm.toFixed(1)} dBm after env loss)
                 </span>
               </div>
             ))}
-          </div>
+          </FloatingPopover>
         ) : null}
         </>
       ) : (

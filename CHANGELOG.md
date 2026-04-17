@@ -2,10 +2,10 @@
 
 All notable changes to this project are documented here in a human-readable format.
 
-## [0.16.1] - 2026-04-17
+## [0.16.2] - 2026-04-17
 
 ### Fixed
-- Newly created Sites now stay in cloud sync after reload because the new site-library entry is marked dirty before the next delta push.
+- Shared simulations now persist private Site references instead of silently skipping the save, so newly added Sites survive sync and reload in shared workspaces.
 
 ## [0.16.0] - 2026-04-12
 

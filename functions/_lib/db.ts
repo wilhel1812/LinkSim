@@ -1284,25 +1284,6 @@ const upsertOwnedResource = async (
   };
   const payload = JSON.stringify(nextRecord);
 
-  if (kind === "simulation" && visibility !== "private") {
-    const referencedSiteIds = referencedLibrarySiteIdsFromSimulation(item);
-    if (referencedSiteIds.length) {
-      const checks = await env.DB.batch(
-        referencedSiteIds.map((siteId) =>
-          env.DB.prepare("SELECT id, visibility FROM sites WHERE id = ?").bind(siteId),
-        ),
-      );
-      const hasPrivateReference = checks.some((check) => {
-        const row = check.results[0] as { visibility?: unknown } | undefined;
-        if (!row) return false;
-        return visibilityFromDbVisibility(row.visibility) === "private";
-      });
-      if (hasPrivateReference) {
-        return { ok: false, reason: "simulation_private_site_reference" };
-      }
-    }
-  }
-
   const isCreate = !existing;
   const changed =
     isCreate ||

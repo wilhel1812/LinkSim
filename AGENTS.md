@@ -20,10 +20,19 @@
   - Only promote to production after explicit user approval, using the same verified commit.
 - Branch workflow:
   - Use per-issue branches: `issue/<id>-<slug>`.
+  - **Always branch from `origin/staging`**, not `origin/main`. Creating a branch from `main` will cause merge conflicts when opening a PR to `staging`.
   - Merge issue branches into `staging` first.
-  - For normal releases, promote to production only via a direct PR from `staging` into `main` (no release branch).
+  - For normal releases, promote to production only via a direct PR from `staging` into `main` (no release branch needed — the branch policy allows `staging` → `main` directly).
   - Use `hotfix/<slug>` only for explicitly approved incidents.
   - This staging-integration model is the default unless the user explicitly overrides it.
+- Worktree branch vs. issue branch:
+  - When working inside a Claude Code worktree, the session branch is named `claude/<name>` — this is the worktree's own bookkeeping branch, **not** your working branch.
+  - Always create a new `issue/<id>-<slug>` branch from `origin/staging` before making any changes: `git checkout -b issue/<id>-<slug> origin/staging`
+  - Never commit to the `claude/*` session branch. All work goes on the `issue/<id>-<slug>` branch.
+- Deploy policy:
+  - **Never run `npm run deploy:staging`, `npm run deploy:prod:main`, or any deploy script locally.** CI automatically deploys when code merges to `staging` or `main` — you do not need to trigger a deploy.
+  - Local deploy attempts will fail: Cloudflare credentials (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) are only available in the CI environment.
+  - If you encounter a Cloudflare authentication error while running a deploy script, stop immediately — you are running a command that belongs in CI, not locally.
 - Branch/worktree cleanup routine (default after each completed pass):
   - Keep only long-lived branches locally/remotely: `main`, `staging` (unless an active pass needs additional branches).
   - After merge/deploy, prune refs: `git fetch --prune origin`.
@@ -49,7 +58,7 @@
 - For user-added issues:
   - Keep them labeled `pending-discussion` until discussed.
   - Do not move them to in-progress automatically.
-- After every live deploy, monitor Cloudflare Pages deployment status (`wrangler pages deployment list --project-name linksim`) and explicitly notify the user when deployment is complete.
+- After every merge to `staging` or `main`, CI auto-deploys via the `Deploy LinkSim Pages` GitHub Actions workflow. Monitor the workflow run in GitHub Actions and report the commit SHA and build label when the deploy job completes. Do not run `npm run deploy:staging` or `npm run deploy:prod:main` manually after a merge — CI handles it. Manual deploys via `workflow_dispatch` are reserved for overrides only.
 - Follow and maintain `docs/release-flow.md` as the source of truth for release promotion steps.
 - Follow `docs/release-flow.md` versioning policy (SemVer + explicit bump rules) for all releases.
 - Maintain a human-readable `CHANGELOG.md` for every release; do not use raw commit dumps as release notes.
@@ -96,6 +105,7 @@
   - Maintain explicit status labels: `pending-discussion` -> `in-progress` -> `in-staging` (while open) -> issue closed after staging sign-off -> `released` label applied during milestone production release sweep.
   - After every staging merge/deploy, automatically update the related GitHub Issue(s) label from `in-progress` to `in-staging`. Do not wait for the user to ask.
   - Milestone release policy: at production release time, apply `released` to the milestone's shipped issues (including already-closed staging-verified issues).
+  - **Milestone required before closing**: always assign a milestone to an issue before closing it as completed. Closing without a milestone triggers an automated workflow that reopens the issue with a warning. Exception: add label `no-milestone-close-ok` for approved exceptions (e.g., chore/housekeeping issues that don't belong to a release).
   - If a historical `docs/BACKLOG.md` file still exists, treat it as legacy reference only unless the user explicitly asks to maintain it.
 
 ## Staging-First Milestone Workflow (Single Source)
@@ -126,8 +136,8 @@
     - `/<simulation>/<site1>+<site2>`
     - `/<simulation>/<site1>~<site2>`
 - Merge and staging deploy sequence per issue:
-  - Open PR into `staging`, merge, then deploy with `npm run deploy:staging`.
-  - After deploy, always confirm completion with `wrangler pages deployment list --project-name linksim-staging --environment production` and report the commit SHA/build label.
+  - Open PR into `staging` and merge. CI auto-deploys to https://staging.linksim.link — do NOT run `npm run deploy:staging` manually.
+  - After merge, monitor the `Deploy LinkSim Pages / deploy-staging` GitHub Actions job and report the commit SHA and build label from the workflow output when it completes.
 - Milestone promotion model:
   - Complete and verify all milestone issues on `staging` first.
   - Promote to production in one batch with a direct PR from `staging` to `main`.

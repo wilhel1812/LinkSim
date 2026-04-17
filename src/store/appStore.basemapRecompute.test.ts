@@ -41,7 +41,7 @@ describe("appStore basemap changes", () => {
     vi.resetModules();
   });
 
-  it("does not trigger simulation recompute when basemap provider/style changes", async () => {
+  it("does not trigger simulation recompute when basemap style changes", async () => {
     const recomputeCoverage = vi.fn();
     vi.doMock("./coverageStore", () => ({
       useCoverageStore: {
@@ -52,8 +52,8 @@ describe("appStore basemap changes", () => {
 
     const { useAppStore } = await import("./appStore");
     const state = useAppStore.getState();
-    state.setBasemapProvider("carto");
-    state.setBasemapStylePreset("normal");
+    state.setBasemapStyleId("street-positron");
+    state.setBasemapStyleId("artistic-toner");
 
     expect(recomputeCoverage).not.toHaveBeenCalled();
   });

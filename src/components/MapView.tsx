@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import Map, {
   Layer,
   type MapRef,
@@ -15,7 +16,16 @@ import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { useThemeVariant } from "../hooks/useThemeVariant";
-import { getBasemapProviderCapabilities, getCartoFallbackStyle, resolveBasemapSelection } from "../lib/basemaps";
+import {
+  BASEMAP_CATEGORIES,
+  DEFAULT_BASEMAP_STYLE_ID,
+  getCategoryForStyleId,
+  getCartoFallbackStyle,
+  getDefaultStyleIdForCategory,
+  getStylesForCategory,
+  resolveBasemapSelection,
+  type BasemapCategory,
+} from "../lib/basemaps";
 import {
   PROFILE_DRAFT_SITE_REQUEST_EVENT,
   type ProfileDraftSiteRequestDetail,
@@ -56,6 +66,7 @@ import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/lates
 import { createLruCache } from "../lib/lruCache";
 import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
+import { StateDot } from "./StateDot";
 import { useMapControls } from "./map/useMapControls";
 
 const UI_SECTION_KEYS = {
@@ -88,6 +99,16 @@ const updateFvnHash = (hash: number, value: number): number => {
 
 const roundHashValue = (value: number, factor = 10_000): number =>
   Number.isFinite(value) ? Math.round(value * factor) : 0;
+
+// Full-world polygon used for the themed basemap color overlay.
+const WORLD_POLYGON_GEOJSON = {
+  type: "Feature" as const,
+  geometry: {
+    type: "Polygon" as const,
+    coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]],
+  },
+  properties: {},
+};
 
 const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
   id: "link-lines",
@@ -615,10 +636,8 @@ export function MapView({
   const simulationRunToken = useCoverageStore((state) => state.simulationRunToken);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
-  const basemapProvider = useAppStore((state) => state.basemapProvider);
-  const basemapStylePreset = useAppStore((state) => state.basemapStylePreset);
-  const setBasemapProvider = useAppStore((state) => state.setBasemapProvider);
-  const setBasemapStylePreset = useAppStore((state) => state.setBasemapStylePreset);
+  const basemapStyleId = useAppStore((state) => state.basemapStyleId);
+  const setBasemapStyleId = useAppStore((state) => state.setBasemapStyleId);
   const {
     theme,
     colorTheme,
@@ -2224,23 +2243,28 @@ export function MapView({
     );
   }
 
-  const providerCapabilities = useMemo(() => getBasemapProviderCapabilities(), []);
   const resolvedBasemap = useMemo(
-    () => resolveBasemapSelection(basemapProvider, basemapStylePreset, theme, colorTheme),
-    [basemapProvider, basemapStylePreset, theme, colorTheme],
+    () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
+    [basemapStyleId, theme, colorTheme],
   );
   const fallbackMapStyle = useMemo(() => getCartoFallbackStyle(theme, colorTheme), [theme, colorTheme]);
-  const requestedProviderConfig =
-    providerCapabilities.find((entry) => entry.provider === basemapProvider) ?? providerCapabilities[0];
-  const activeProviderConfig =
-    providerCapabilities.find((entry) => entry.provider === resolvedBasemap.provider) ?? providerCapabilities[0];
-  const resolvedPresetOptions = activeProviderConfig?.presets ?? [];
-  const styleSelectValue =
-    resolvedPresetOptions.length <= 1
-      ? resolvedPresetOptions[0]?.id ?? basemapStylePreset
-      : basemapStylePreset;
-  const globalProviders = providerCapabilities.filter((entry) => entry.group === "global");
-  const regionalProviders = providerCapabilities.filter((entry) => entry.group === "regional");
+  // Themed styles show an official style URL + a translucent color overlay using the app's terrain token.
+  const themedOverlay = resolvedBasemap.isThemed
+    ? { color: variant.cssVars["--terrain"], opacity: theme === "dark" ? 0.1 : 0.08 }
+    : null;
+  // Track the selected category in local state; initialize from the current style's category.
+  const [selectedCategory, setSelectedCategory] = useState<BasemapCategory>(
+    () => getCategoryForStyleId(basemapStyleId),
+  );
+  const categoryStyles = useMemo(() => getStylesForCategory(selectedCategory), [selectedCategory]);
+  const globalCategoryStyles = useMemo(
+    () => categoryStyles.filter((s) => !s.regional),
+    [categoryStyles],
+  );
+  const regionalCategoryStyles = useMemo(
+    () => categoryStyles.filter((s) => s.regional),
+    [categoryStyles],
+  );
   const providerMaxZoom = useMemo(() => {
     switch (resolvedBasemap.provider) {
       case "kartverket":
@@ -2585,68 +2609,59 @@ export function MapView({
               </span>
             </div>
           ) : null}
-          <details
-            className="compact-details map-inspector-details"
-            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, v); setShowOverlayGuide(v); }}
-            open={showOverlayGuide}
-          >
-            <summary>Map</summary>
-            <div className="map-inspector-map-settings">
+          <CompactDetails
+              className="compact-details map-inspector-details"
+              onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewOverlayGuide, v); setShowOverlayGuide(v); }}
+              open={showOverlayGuide}
+            >
+              <CompactDetailsSummary>Map</CompactDetailsSummary>
+              <div className="map-inspector-map-settings">
               <label className="map-inspector-map-setting">
-                <span>Map Provider</span>
+                <span>Category</span>
                 <select
                   className="locale-select"
                   onChange={(event) => {
-                    const nextProvider = event.target.value as typeof basemapProvider;
-                    const nextProviderConfig =
-                      providerCapabilities.find((entry) => entry.provider === nextProvider) ?? providerCapabilities[0];
-                    setBasemapProvider(nextProvider);
-                    setBasemapStylePreset(
-                      nextProviderConfig.presets.find((preset) => preset.id === "normal-themed")?.id ??
-                        nextProviderConfig.presets.find((preset) => preset.id === "normal")?.id ??
-                        nextProviderConfig.presets[0]?.id ??
-                        "normal",
-                    );
+                    const nextCategory = event.target.value as BasemapCategory;
+                    setSelectedCategory(nextCategory);
+                    const nextStyleId = getDefaultStyleIdForCategory(nextCategory);
+                    setBasemapStyleId(nextStyleId);
                     setUseFallbackMapStyle(false);
                     setMapProviderWarning(null);
                   }}
-                  value={basemapProvider}
+                  value={selectedCategory}
                 >
-                  <optgroup label="Global">
-                    {globalProviders.map((provider) => (
-                      <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                        {provider.label}
-                        {!provider.available ? " (unavailable)" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Regional">
-                    {regionalProviders.map((provider) => (
-                      <option disabled={!provider.available} key={provider.provider} value={provider.provider}>
-                        {provider.label}
-                        {!provider.available ? " (unavailable)" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
+                  {BASEMAP_CATEGORIES.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="map-inspector-map-setting">
                 <span>Map Style</span>
                 <select
                   className="locale-select"
-                  disabled={resolvedPresetOptions.length <= 1}
                   onChange={(event) => {
-                    setBasemapStylePreset(event.target.value);
+                    setBasemapStyleId(event.target.value);
                     setUseFallbackMapStyle(false);
                     setMapProviderWarning(null);
                   }}
-                  value={styleSelectValue}
+                  value={resolvedBasemap.styleId}
                 >
-                  {resolvedPresetOptions.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
+                  {globalCategoryStyles.map((style) => (
+                    <option disabled={!style.available} key={style.id} value={style.id}>
+                      {style.label}{style.requiresKey && !style.available ? " (key required)" : ""}
                     </option>
                   ))}
+                  {regionalCategoryStyles.length > 0 ? (
+                    <optgroup label="Regional">
+                      {regionalCategoryStyles.map((style) => (
+                        <option key={style.id} value={style.id}>
+                          {style.label}{style.regional ? ` — ${style.regional.region}` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
                 </select>
               </label>
               <label className="map-inspector-map-setting">
@@ -2845,19 +2860,19 @@ export function MapView({
                 <p>Go/no-go map with terrain context.</p>
                 <ul className="overlay-legend">
                   <li>
-                    <span className="state-dot state-dot-pass_clear" />
+                    <StateDot state="pass_clear" />
                     <span>Clear path and meets signal target</span>
                   </li>
                   <li>
-                    <span className="state-dot state-dot-pass_blocked" />
+                    <StateDot state="pass_blocked" />
                     <span>Blocked path, but still meets signal target</span>
                   </li>
                   <li>
-                    <span className="state-dot state-dot-fail_clear" />
+                    <StateDot state="fail_clear" />
                     <span>Clear path, but below signal target</span>
                   </li>
                   <li>
-                    <span className="state-dot state-dot-fail_blocked" />
+                    <StateDot state="fail_blocked" />
                     <span>Blocked path and below signal target</span>
                   </li>
                 </ul>
@@ -2879,80 +2894,136 @@ export function MapView({
                 <p className="overlay-scale-help">Left side is worse relay quality. Right side is better relay quality.</p>
               </>
             ) : null}
-          </details>
-          <details
-            className="compact-details map-inspector-details"
-            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
-            open={showResultsSummary}
-          >
-            <summary>Results</summary>
-            <SimulationResultsSection />
-          </details>
-          <details
-            className="compact-details map-inspector-details"
-            onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewSimSummary, v); setShowSimulationSummary(v); }}
-            open={showSimulationSummary}
-          >
-            <summary>Simulation Sources</summary>
-            <p>
-              Model: {propagationModel} / {selectedCoverageResolution} / View: {coverageVizMode}
-            </p>
-            <p>
-              Network: {selectedNetwork?.name ?? "n/a"} @ {" "}
-              {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
-            </p>
-            <p>
-              Terrain dataset: {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
-              {selectedDatasetTileCount === 1 ? "" : "s"}, {srtmTiles.length} total loaded)
-            </p>
-            {terrainSourceSummary.length ? (
-              <ul className="map-sim-sources">
-                {terrainSourceSummary.map((entry) => (
-                  <li key={entry.label}>
-                    {entry.label}: {entry.count}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>Terrain source: simulation/manual site elevations only</p>
-            )}
-            <p>Site elevations: Simulation values</p>
-            <p>Resolution: Auto ({overlayDimensions.width}x{overlayDimensions.height})</p>
-            <p>Overlay area diagonal: {analysisBoundsDiagonalKm.toFixed(0)} km</p>
-            {showLocalTerrainDiagnostics ? (
-              <>
-                <p>
-                  Terrain memory (retained decoded): {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [
-                  30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, 90m{" "}
-                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus90)}, manual{" "}
-                  {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
-                </p>
-                <p>
-                  Terrain tiles by dataset: 30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, 90m{" "}
-                  {terrainMemoryDiagnostics.tileCountsByDataset.copernicus90}, manual{" "}
-                  {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other{" "}
-                  {terrainMemoryDiagnostics.tileCountsByDataset.other}
-                </p>
-                <p>
-                  Terrain decode overhead (in-flight estimate):{" "}
-                  {formatMb(terrainProgressTransientDecodeBytesEstimated)}
-                </p>
-              </>
-            ) : null}
-            <p>Optimization thresholds (by simulation area): &gt;250 km, &gt;400 km, &gt;600 km.</p>
-            {largeAreaOptimizationActive ? (
-              <p>
-                Large-area optimization active (preview resolution scale {Math.round(overlayResolutionScale * 100)}%).
-                Zoom in or narrow site spread for higher detail.
-              </p>
-            ) : (
-              <p>Large-area optimization inactive at this simulation extent.</p>
-            )}
-            <p>
-              Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
-            </p>
-            <p>Terrain overlay: {showTerrainOverlay ? "Visible" : "Hidden"} (simulation still uses loaded terrain)</p>
-          </details>
+          </CompactDetails>
+            <CompactDetails
+              className="compact-details map-inspector-details"
+              onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewResults, v); setShowResultsSummary(v); }}
+              open={showResultsSummary}
+            >
+              <CompactDetailsSummary infoTipText="Computed link budget summary for the selected path and current channel/model settings.">Results</CompactDetailsSummary>
+              <SimulationResultsSection />
+            </CompactDetails>
+            <CompactDetails
+              className="compact-details map-inspector-details"
+              onToggle={(event) => { const v = event.currentTarget.open; writeSectionBool(UI_SECTION_KEYS.mapViewSimSummary, v); setShowSimulationSummary(v); }}
+              open={showSimulationSummary}
+            >
+              <CompactDetailsSummary>Simulation Sources</CompactDetailsSummary>
+
+              {/* Simulation section */}
+              <div className="map-sim-section">
+                <div className="map-sim-section-title">Simulation</div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Model</div>
+                  <div className="map-sim-row-value">{propagationModel}</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Resolution</div>
+                  <div className="map-sim-row-value">{selectedCoverageResolution}</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">View</div>
+                  <div className="map-sim-row-value">{coverageVizMode}</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Network</div>
+                  <div className="map-sim-row-value">
+                    {selectedNetwork?.name ?? "n/a"} @ {(selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? 0).toFixed(3)} MHz
+                  </div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Grid</div>
+                  <div className="map-sim-row-value">Auto ({overlayDimensions.width}×{overlayDimensions.height})</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Coverage Area</div>
+                  <div className="map-sim-row-value">{analysisBoundsDiagonalKm.toFixed(0)} km diagonal</div>
+                </div>
+              </div>
+
+              {/* Terrain section */}
+              <div className="map-sim-section">
+                <div className="map-sim-section-title">Terrain</div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Dataset</div>
+                  <div className="map-sim-row-value">
+                    {TERRAIN_DATASET_LABEL[terrainDataset]} ({selectedDatasetTileCount} matching tile
+                    {selectedDatasetTileCount === 1 ? "" : "s"} · {srtmTiles.length} total loaded)
+                  </div>
+                </div>
+                {terrainSourceSummary.length ? (
+                  <div className="map-sim-row">
+                    <div className="map-sim-row-label">Sources</div>
+                    <ul className="map-sim-sources">
+                      {terrainSourceSummary.map((entry) => (
+                        <li key={entry.label}>
+                          {entry.label} · {entry.count}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="map-sim-row">
+                    <div className="map-sim-row-label">Sources</div>
+                    <div className="map-sim-row-value">Simulation/manual site elevations</div>
+                  </div>
+                )}
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Site Elevations</div>
+                  <div className="map-sim-row-value">Simulation values</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Overlay</div>
+                  <div className="map-sim-row-value">{showTerrainOverlay ? "Visible" : "Hidden"}</div>
+                </div>
+                {showLocalTerrainDiagnostics ? (
+                  <>
+                    <div className="map-sim-row">
+                      <div className="map-sim-row-label">Memory (Decoded)</div>
+                      <div className="map-sim-row-value">
+                        {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, 90m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus90)}, manual {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
+                      </div>
+                    </div>
+                    <div className="map-sim-row">
+                      <div className="map-sim-row-label">Tile Counts</div>
+                      <div className="map-sim-row-value">
+                        30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, 90m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus90}, manual {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other {terrainMemoryDiagnostics.tileCountsByDataset.other}
+                      </div>
+                    </div>
+                    <div className="map-sim-row">
+                      <div className="map-sim-row-label">Decode Overhead</div>
+                      <div className="map-sim-row-value">{formatMb(terrainProgressTransientDecodeBytesEstimated)} (in-flight estimate)</div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
+              {/* Optimization section */}
+              <div className="map-sim-section">
+                <div className="map-sim-section-title">Rendering</div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Optimization Thresholds</div>
+                  <div className="map-sim-row-value">&gt;250 · &gt;400 · &gt;600 km</div>
+                </div>
+                <div className="map-sim-row">
+                  <div className="map-sim-row-label">Status</div>
+                  <div className={`map-sim-status ${largeAreaOptimizationActive ? "active" : ""}`}>
+                    {largeAreaOptimizationActive ? (
+                      <>
+                        Active · Preview scale {Math.round(overlayResolutionScale * 100)}%
+                      </>
+                    ) : (
+                      "Inactive at this extent"
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footnote */}
+              <div className="map-sim-footnote">
+                Coverage values are terrain-aware when ITM model is selected and terrain tiles are loaded.
+              </div>
+          </CompactDetails>
         </aside>
       ) : null}
       <Map
@@ -2972,14 +3043,14 @@ export function MapView({
         onError={() => {
           if (!useFallbackMapStyle && resolvedBasemap.provider !== "kartverket" && resolvedBasemap.provider !== "npolar") {
             setUseFallbackMapStyle(true);
-            setBasemapProvider("carto");
+            setBasemapStyleId(DEFAULT_BASEMAP_STYLE_ID);
             setInteractionViewState({
               longitude: activeViewState.longitude,
               latitude: activeViewState.latitude,
               zoom: Math.min(activeViewState.zoom, 20),
             });
             setMapProviderWarning(
-              `${requestedProviderConfig?.label ?? "Selected provider"} failed (network, quota, or style error).`,
+              `${resolvedBasemap.providerLabel} failed (network, quota, or style error).`,
             );
           }
         }}
@@ -3000,6 +3071,16 @@ export function MapView({
         }}
         onMoveEnd={onMoveEnd}
       >
+        {themedOverlay ? (
+          <Source data={WORLD_POLYGON_GEOJSON} id="theme-tint-source" type="geojson">
+            <Layer
+              id="theme-tint-overlay"
+              paint={{ "fill-color": themedOverlay.color, "fill-opacity": themedOverlay.opacity }}
+              type="fill"
+            />
+          </Source>
+        ) : null}
+
         {showTerrainOverlay && simulationTerrainOverlay ? (
           <Source
             coordinates={simulationTerrainOverlay.coordinates}
