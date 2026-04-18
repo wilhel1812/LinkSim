@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, X } from "lucide-react";
 import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
@@ -26,11 +26,11 @@ import { initializeMigrations, runMigrations } from "../lib/migrations";
 import { resolveBasemapSelection } from "../lib/basemaps";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
-import { LinkProfileChart } from "./LinkProfileChart";
-import { PanoramaChart } from "./PanoramaChart";
+import { LinkProfileChart, type LinkProfileChartHandle } from "./LinkProfileChart";
+import { PanoramaChart, type PanoramaChartHandle } from "./PanoramaChart";
 import { ActionButton } from "./ActionButton";
-import { InlineCloseIconButton } from "./InlineCloseIconButton";
-import { MapView } from "./MapView";
+import { MapView, type MapViewHandle } from "./MapView";
+import { ShareModal } from "./ShareModal";
 import { ModalOverlay } from "./ModalOverlay";
 import OnboardingTutorialModal from "./OnboardingTutorialModal";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
@@ -256,6 +256,10 @@ export function AppShell() {
   const cloudInitSeenRef = useRef(false);
   const cloudInitSettledRef = useRef(false);
   const appShellRef = useRef<HTMLElement | null>(null);
+  // Refs for snapshot export
+  const mapViewRef = useRef<MapViewHandle | null>(null);
+  const panoramaChartRef = useRef<PanoramaChartHandle | null>(null);
+  const linkProfileChartRef = useRef<LinkProfileChartHandle | null>(null);
   const navigatorMotionTimerRef = useRef<number | null>(null);
   const inspectorMotionTimerRef = useRef<number | null>(null);
   const profileMotionTimerRef = useRef<number | null>(null);
@@ -406,6 +410,8 @@ export function AppShell() {
     return siteLibrary.filter((site) => ids.has(site.id) && toVisibility(site.visibility) === "private");
   }, [activeSimulation, siteLibrary]);
 
+  const profileAvailable = selectedSiteIds.length > 0 || Boolean(selectedLinkId);
+
   const currentShareLink = useMemo(() => {
     if (!activeSimulation) return "";
     const simulationSlug = activeSimulation.name;
@@ -444,6 +450,12 @@ export function AppShell() {
       "/",
     );
   }, [activeSimulation, selectedLink, selectedSiteIds, sites]);
+
+  const shareUrlForExport = useMemo(() => {
+    if (!activeSimulation) return null;
+    const isPublic = toVisibility(activeSimulation.visibility) !== "private";
+    return isPublic ? currentShareLink || null : "https://linksim.link";
+  }, [activeSimulation, currentShareLink]);
 
   useEffect(() => {
     if (
@@ -1748,40 +1760,22 @@ export function AppShell() {
     setShareSpecificStatus("");
   }, []);
 
-  const openShareModalOrCopy = useCallback(() => {
+  const openShareModal = useCallback(() => {
     clearNotifications();
-    if (!activeSimulation) {
-      publishAppNotice({
-        id: "share-open-simulation-first",
-        message: "Open a saved simulation first. Unsaved workspace state cannot be shared as a deep link.",
-        tone: "warning",
-        persistent: true,
-      });
-      return;
-    }
-    if (toVisibility(activeSimulation.visibility) === "private") {
-      setShareSpecificUsers([]);
-      setShareSpecificRoles({});
-      setShareUserQuery("");
-      setShareSpecificStatus("");
-      setShareDirectory([]);
+    setShareSpecificUsers([]);
+    setShareSpecificRoles({});
+    setShareUserQuery("");
+    setShareSpecificStatus("");
+    setShareDirectory([]);
+    if (activeSimulation && toVisibility(activeSimulation.visibility) === "private") {
       setShareDirectoryBusy(true);
-      setShowShareModal(true);
       void fetchCollaboratorDirectory()
         .then((users) => setShareDirectory(users))
         .catch(() => {})
         .finally(() => setShareDirectoryBusy(false));
-      return;
     }
-    void copyCurrentLink().catch((error) => {
-      publishAppNotice({
-        id: "share-copy-failed",
-        message: getUiErrorMessage(error),
-        tone: "error",
-        persistent: true,
-      });
-    });
-  }, [activeSimulation, clearNotifications, copyCurrentLink, publishAppNotice]);
+    setShowShareModal(true);
+  }, [activeSimulation, clearNotifications]);
 
   const panelSizeControls = useCallback(
     (labelPrefix: string, variant: "map" | "chart" = "map") => (
@@ -2055,6 +2049,7 @@ export function AppShell() {
           ) : null}
         </div>
         <MapView
+          ref={mapViewRef}
           isMapExpanded={isMapExpanded}
           showInspector={
             (!isMapExpanded || inspectorMotionPhase === "exiting") &&
@@ -2089,7 +2084,7 @@ export function AppShell() {
                   <button
                     aria-label="Share"
                     className="map-control-btn map-control-btn-icon"
-                    onClick={openShareModalOrCopy}
+                    onClick={openShareModal}
                     title="Share"
                     type="button"
                   >
@@ -2126,6 +2121,7 @@ export function AppShell() {
         {!isMobileViewport && (!isMapExpanded || profileMotionPhase === "exiting") && shouldRenderProfilePanel ? (
           isSingleSiteSelection ? (
           <PanoramaChart
+            ref={panoramaChartRef}
             isExpanded={isProfileExpanded}
             onToggleExpanded={toggleProfileExpanded}
             rowControls={
@@ -2152,6 +2148,7 @@ export function AppShell() {
           />
           ) : (
           <LinkProfileChart
+            ref={linkProfileChartRef}
             isExpanded={isProfileExpanded}
             onToggleExpanded={toggleProfileExpanded}
             rowControls={
@@ -2314,143 +2311,39 @@ export function AppShell() {
         </ModalOverlay>
       ) : null}
       {showShareModal ? (
-        <ModalOverlay aria-label="Share simulation" onClose={closeShareModal}>
-          <div className="library-manager-card">
-            <div className="library-manager-header">
-              <h2>Share Simulation</h2>
-              <InlineCloseIconButton onClick={closeShareModal} />
-            </div>
-            {!activeSimulation ? (
-              <p className="field-help">Open a saved simulation first. Unsaved workspace state cannot be deep-linked.</p>
-            ) : (
-              <>
-                <p className="field-help">This link opens the same simulation, selected path, map view, and overlay mode.</p>
-                <div style={{ display: "flex", gap: "0.5em", alignItems: "center" }}>
-                  <input className="locale-select" readOnly style={{ flex: 1, minWidth: 0 }} value={currentShareLink} />
-                  <button
-                    aria-label="Copy link"
-                    className="inline-action inline-action-icon"
-                    onClick={() => void copyCurrentLink()}
-                    title="Copy link"
-                    type="button"
-                  >
-                    <Copy aria-hidden="true" strokeWidth={1.8} />
-                  </button>
-                </div>
-                {toVisibility(activeSimulation.visibility) === "private" ? (
-                  <div className="panel-section compact-panel">
-                    <h4>Private Simulation</h4>
-                    <p className="field-help">This simulation is private. Choose how to share it:</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75em", marginTop: "0.5em" }}>
-                      {/* Option A: Upgrade to shared */}
-                      <div className="panel-section compact-panel" style={{ display: "flex", flexDirection: "column", gap: "0.5em" }}>
-                        <Globe aria-hidden="true" size={22} strokeWidth={1.6} />
-                        <strong>Make Broadly Accessible</strong>
-                        <p className="field-help" style={{ flex: 1 }}>
-                          Anyone with the link can view. The simulation
-                          {referencedPrivateSites.length ? ` and ${referencedPrivateSites.length} referenced site(s)` : ""} will be set to Shared.
-                          {referencedPrivateSites.some((site) => !canEditResource(site)) ? " Some sites require owner access." : ""}
-                        </p>
-                        <ActionButton disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
-                          Upgrade &amp; Copy Link
-                        </ActionButton>
-                      </div>
-                      {/* Option B: Specific users */}
-                      <div className="panel-section compact-panel" style={{ display: "flex", flexDirection: "column", gap: "0.5em" }}>
-                        <Users aria-hidden="true" size={22} strokeWidth={1.6} />
-                        <strong>Share with Specific Users</strong>
-                        <p className="field-help">
-                          Stays private. Only the users you add can access the link when signed in.
-                        </p>
-                        {/* Selected users */}
-                        {shareSpecificUsers.length > 0 ? (
-                          <div className="chip-group collaborator-selected-list">
-                            {shareSpecificUsers.map((uid) => {
-                              const user = shareDirectory.find((u) => u.id === uid);
-                              return (
-                                <span className="site-quick-item" key={uid}>
-                                  <span>{user?.username ?? uid}</span>
-                                  <select
-                                    aria-label={`Role for ${user?.username ?? uid}`}
-                                    onChange={(e) => setShareSpecificRoles((prev) => ({ ...prev, [uid]: e.target.value as "viewer" | "editor" }))}
-                                    value={shareSpecificRoles[uid] ?? "viewer"}
-                                  >
-                                    <option value="viewer">Viewer</option>
-                                    <option value="editor">Editor</option>
-                                  </select>
-                                  <ActionButton
-                                    onClick={() => setShareSpecificUsers((prev) => prev.filter((id) => id !== uid))}
-                                    type="button"
-                                  >
-                                    Remove
-                                  </ActionButton>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                        {/* Search */}
-                        <div style={{ display: "flex", gap: "0.4em", alignItems: "center" }}>
-                          <UserRoundSearch aria-hidden="true" size={16} strokeWidth={1.6} style={{ flexShrink: 0 }} />
-                          <input
-                            onChange={(e) => setShareUserQuery(e.target.value)}
-                            placeholder="Search by name or email"
-                            style={{ flex: 1, minWidth: 0 }}
-                            type="text"
-                            value={shareUserQuery}
-                          />
-                        </div>
-                        {/* Candidates — only show when typing */}
-                        {shareUserQuery.trim() ? (
-                          <div className="collaborator-candidate-list">
-                            {shareDirectoryBusy ? (
-                              <p className="field-help">Loading…</p>
-                            ) : (
-                              shareDirectory
-                                .filter((u) => !shareSpecificUsers.includes(u.id) && u.id !== currentUser?.id)
-                                .filter((u) => u.username.toLowerCase().includes(shareUserQuery.toLowerCase()) || u.email.toLowerCase().includes(shareUserQuery.toLowerCase()))
-                                .slice(0, 6)
-                                .map((u) => (
-                                  <button
-                                    className="site-quick-item"
-                                    key={u.id}
-                                    onClick={() => {
-                                      setShareSpecificUsers((prev) => prev.includes(u.id) ? prev : [...prev, u.id]);
-                                      setShareUserQuery("");
-                                    }}
-                                    type="button"
-                                  >
-                                    <UserRoundPlus aria-hidden="true" size={14} strokeWidth={1.6} />
-                                    <span>{u.username}</span>
-                                    {u.email ? <span className="field-help">{u.email}</span> : null}
-                                  </button>
-                                ))
-                            )}
-                            {!shareDirectoryBusy && shareDirectory.filter((u) => !shareSpecificUsers.includes(u.id) && u.id !== currentUser?.id && (u.username.toLowerCase().includes(shareUserQuery.toLowerCase()) || u.email.toLowerCase().includes(shareUserQuery.toLowerCase()))).length === 0 ? (
-                              <p className="field-help">No matching users.</p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        <div style={{ marginTop: "auto" }}>
-                          <ActionButton
-                            disabled={shareSpecificBusy || !shareSpecificUsers.length}
-                            onClick={() => void runShareWithSpecificUsers()}
-                            style={{ display: "flex", alignItems: "center", gap: "0.35em" }}
-                            type="button"
-                          >
-                            <Copy aria-hidden="true" size={14} strokeWidth={1.8} />
-                            Save &amp; Copy Link
-                          </ActionButton>
-                        </div>
-                        {shareSpecificStatus ? <p className="field-help">{shareSpecificStatus}</p> : null}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-        </ModalOverlay>
+        <ShareModal
+          onClose={closeShareModal}
+          exportProps={{
+            mapViewHandle: mapViewRef.current,
+            panoramaHandle: panoramaChartRef.current,
+            profileHandle: linkProfileChartRef.current,
+            profileAvailable,
+            isSingleSiteSelection,
+            shareUrl: shareUrlForExport,
+            overlayDataUrl: mapViewRef.current?.getOverlayDataUrl() ?? null,
+            simulationName: activeSimulation?.name ?? "linksim-export",
+          }}
+          currentShareLink={activeSimulation ? currentShareLink : undefined}
+          onCopyLink={() => void copyCurrentLink()}
+          isPrivate={Boolean(activeSimulation && toVisibility(activeSimulation.visibility) === "private")}
+          shareBusy={shareBusy}
+          referencedPrivateSiteCount={referencedPrivateSites.length}
+          canUpgrade={Boolean(activeSimulation && canEditResource(activeSimulation) && !referencedPrivateSites.some((site) => !canEditResource(site)))}
+          onUpgradeAndShare={() => void runUpgradeAndShare()}
+          shareSpecificUsers={shareSpecificUsers}
+          shareSpecificRoles={shareSpecificRoles}
+          onSetSpecificRoles={(uid, role) => setShareSpecificRoles((prev) => ({ ...prev, [uid]: role }))}
+          shareDirectory={shareDirectory}
+          shareDirectoryBusy={shareDirectoryBusy}
+          shareUserQuery={shareUserQuery}
+          onShareUserQueryChange={setShareUserQuery}
+          onAddUser={(uid) => setShareSpecificUsers((prev) => prev.includes(uid) ? prev : [...prev, uid])}
+          onRemoveUser={(uid) => setShareSpecificUsers((prev) => prev.filter((id) => id !== uid))}
+          shareSpecificBusy={shareSpecificBusy}
+          shareSpecificStatus={shareSpecificStatus}
+          onShareWithSpecificUsers={() => void runShareWithSpecificUsers()}
+          currentUserId={currentUser?.id}
+        />
       ) : null}
       {settingsRoute ? (
         <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} />

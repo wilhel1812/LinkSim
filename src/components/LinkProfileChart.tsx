@@ -3,7 +3,7 @@ import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, PanelBottomClose, PanelBottomOpen } from "lucide-react";
 import { FloatingPopover } from "./ui/FloatingPopover";
 import type { MouseEvent } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
 import type { ReactNode } from "react";
 import {
   classifyPassFailState,
@@ -48,6 +48,11 @@ const earthBulgeM = (distanceKm: number, t: number): number => {
   return (x * (dTotalM - x)) / (2 * earthRadiusM);
 };
 
+export type LinkProfileChartHandle = {
+  /** Returns the root SVG element of the path profile chart, or null if not rendered. */
+  getChartElement(): SVGSVGElement | null;
+};
+
 type LinkProfileChartProps = {
   isExpanded: boolean;
   onToggleExpanded: () => void;
@@ -56,15 +61,22 @@ type LinkProfileChartProps = {
   panelClassName?: string;
 };
 
-export function LinkProfileChart({
+export const LinkProfileChart = forwardRef<LinkProfileChartHandle, LinkProfileChartProps>(function LinkProfileChart({
   isExpanded,
   onToggleExpanded,
   showExpandToggle = true,
   rowControls,
   panelClassName,
-}: LinkProfileChartProps) {
+}: LinkProfileChartProps, ref) {
   const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    getChartElement() {
+      return svgRef.current;
+    },
+  }));
   const [hostAttachRevision, setHostAttachRevision] = useState(0);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
@@ -773,6 +785,7 @@ export function LinkProfileChart({
         <svg
           aria-label="Link profile"
           height={svgProps.height}
+          ref={svgRef}
           role="img"
           width={svgProps.width}
         >
@@ -884,4 +897,4 @@ export function LinkProfileChart({
       </div>
     </section>
   );
-}
+});
