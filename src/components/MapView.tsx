@@ -485,10 +485,18 @@ const computeSiteFitBounds = (
 export type MapViewHandle = {
   /**
    * Captures the current map as a PNG data URL by triggering a repaint and
-   * reading the canvas during the render callback (avoids needing preserveDrawingBuffer).
+   * reading the GL canvas during the render callback (avoids needing preserveDrawingBuffer).
+   * The returned image already includes any active coverage/overlay layer.
    * Resolves to null if the map is not mounted.
    */
-  captureMapSnapshot(): Promise<string | null>;
+  captureMapSnapshot(): Promise<{ dataUrl: string; naturalW: number; naturalH: number } | null>;
+  /**
+   * Returns site positions as normalised [0,1] coordinates relative to the
+   * current map viewport. Used to draw vector markers in the export SVG.
+   * Sites that project outside the visible area (norm < 0 or > 1) are included;
+   * the document builder clips them as needed.
+   */
+  getSiteProjections(): Array<{ id: string; name: string; normX: number; normY: number }>;
   /** Returns the current coverage overlay PNG data URL, or null if no overlay is active. */
   getOverlayDataUrl(): string | null;
 };
@@ -1315,10 +1323,11 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     captureMapSnapshot() {
       const map = mapRef.current?.getMap();
       if (!map) return Promise.resolve(null);
-      return new Promise<string | null>((resolve) => {
+      return new Promise<{ dataUrl: string; naturalW: number; naturalH: number } | null>((resolve) => {
         map.once("render", () => {
           try {
-            resolve(map.getCanvas().toDataURL("image/png"));
+            const canvas = map.getCanvas();
+            resolve({ dataUrl: canvas.toDataURL("image/png"), naturalW: canvas.width, naturalH: canvas.height });
           } catch {
             resolve(null);
           }
@@ -1326,10 +1335,23 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         map.triggerRepaint();
       });
     },
+    getSiteProjections() {
+      const map = mapRef.current?.getMap();
+      if (!map) return [];
+      const canvas = map.getCanvas();
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = canvas.width / dpr;
+      const cssH = canvas.height / dpr;
+      if (cssW <= 0 || cssH <= 0) return [];
+      return sites.map((site) => {
+        const pt = map.project([site.position.lon, site.position.lat]);
+        return { id: site.id, name: site.name, normX: pt.x / cssW, normY: pt.y / cssH };
+      });
+    },
     getOverlayDataUrl() {
       return coverageOverlay?.url ?? null;
     },
-  }), [coverageOverlay]);
+  }), [coverageOverlay, sites]);
   const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
 
   const logOverlaySchedulerEvent = useCallback(

@@ -93,9 +93,22 @@ const resolveCssColor = (value: string, fallback: string): string => {
   return resolved || fallback;
 };
 
+export type PanoramaExportData = {
+  /** PNG data URL of the terrain canvas (includes terrain quads, grid, node circles). */
+  terrainDataUrl: string;
+  /** CSS-pixel width of the chart container (the coordinate space for labels/nodes). */
+  cssW: number;
+  /** CSS-pixel height of the chart container. */
+  cssH: number;
+  /** Resolved visible labels in chart CSS-pixel coordinates. */
+  labels: import("../lib/panoramaLabels").PanoramaLabelLayout[];
+  /** Node projections with chart CSS-pixel positions. */
+  nodes: Array<{ node: PanoramaNodeProjection; cx: number; cy: number }>;
+};
+
 export type PanoramaChartHandle = {
-  /** Returns the terrain canvas element used for rendering, or null if not yet mounted. */
-  getCanvas(): HTMLCanvasElement | null;
+  /** Returns export data for compositing into the export SVG. */
+  getExportData(): PanoramaExportData | null;
 };
 
 type PanoramaChartProps = {
@@ -129,10 +142,34 @@ export const PanoramaChart = forwardRef<PanoramaChartHandle, PanoramaChartProps>
   const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Mutable refs for imperative handle — avoids forward-declaration issues.
+  // Typed as unknown here; the actual shape is set via useEffect after declaration.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exportGeometryRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exportChartSizeRef = useRef<any>(null);
 
   useImperativeHandle(ref, () => ({
-    getCanvas() {
-      return terrainCanvasRef.current;
+    getExportData(): PanoramaExportData | null {
+      const canvas = terrainCanvasRef.current;
+      const geom = exportGeometryRef.current;
+      const size = exportChartSizeRef.current;
+      if (!canvas || !geom || !size) return null;
+      let dataUrl: string;
+      try {
+        dataUrl = canvas.toDataURL("image/png");
+      } catch {
+        return null;
+      }
+      return {
+        terrainDataUrl: dataUrl,
+        cssW: size.width,
+        cssH: size.height,
+        labels: geom.labels,
+        nodes: (geom.nodes as Array<{ node: PanoramaNodeProjection; cx: number; cy: number }>).map(
+          ({ node, cx, cy }) => ({ node, cx, cy }),
+        ),
+      };
     },
   }));
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
@@ -146,6 +183,8 @@ export const PanoramaChart = forwardRef<PanoramaChartHandle, PanoramaChartProps>
   const [gestureLockActive, setGestureLockActive] = useState(false);
 
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
+  // Keep export refs in sync so the imperative handle can access latest values.
+  exportChartSizeRef.current = chartSize;
   const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(180);
   const [exaggeration, setExaggeration] = useState(4);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
@@ -776,6 +815,9 @@ export const PanoramaChart = forwardRef<PanoramaChartHandle, PanoramaChartProps>
     propagationEnvironment.atmosphericBendingNUnits,
     showLabels,
   ]);
+
+  // Keep export ref in sync with the latest computed geometry.
+  exportGeometryRef.current = geometry;
 
   // useLayoutEffect fires synchronously after DOM mutations, same tick as SVG,
   // eliminating the one-frame lag between terrain shading and other chart elements.

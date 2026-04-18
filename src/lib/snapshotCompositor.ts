@@ -1,217 +1,91 @@
 import { jsPDF } from "jspdf";
 import { svg2pdf } from "svg2pdf.js";
+import { buildExportLayout, type SnapshotDimensions } from "./exportLayout";
+import { resolveExportTheme } from "./exportTheme";
+import { buildExportSvg, svgToDataUrl, type ExportDocumentInput } from "./exportDocument";
+import type { PanoramaExportData } from "../components/PanoramaChart";
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-export type SnapshotDimensions = "auto" | "16:9" | "1:1" | "9:16";
+export type { SnapshotDimensions };
 
 export type SnapshotOptions = {
   includeProfile: boolean;
   includeFooter: boolean;
-  theme: "light" | "dark";
+  exportTheme: "light" | "dark";
   dimensions: SnapshotDimensions;
   /** URL shown in the footer. null → omit footer even if includeFooter is true. */
   footerUrl: string | null;
+  simulationName: string;
 };
 
 export type CompositorInput = {
-  /** PNG data URL for the map, captured via MapViewHandle.captureMapSnapshot(). */
-  mapSnapshotUrl: string | null;
-  /** Data URL for the coverage/heatmap overlay, composited on top of the map. */
-  overlayDataUrl: string | null;
-  /** Profile panel content. Canvas for panorama, SVG element for path profile, null if unavailable. */
+  /** Result of MapViewHandle.captureMapSnapshot(). Already includes the overlay. */
+  mapSnapshot: { dataUrl: string; naturalW: number; naturalH: number } | null;
+  /** Normalised [0,1] site positions from MapViewHandle.getSiteProjections(). */
+  siteProjections: Array<{ id: string; name: string; normX: number; normY: number }>;
   profileContent:
-    | { type: "canvas"; el: HTMLCanvasElement }
-    | { type: "svg"; el: SVGSVGElement }
+    | { type: "panorama"; data: PanoramaExportData }
+    | { type: "linkprofile"; svgEl: SVGSVGElement }
     | null;
   options: SnapshotOptions;
 };
 
 // ---------------------------------------------------------------------------
-// Layout constants (output pixels at 2× density)
+// Orchestrator — composeSnapshot
 // ---------------------------------------------------------------------------
 
-const EXPORT_WIDTH_AUTO = 2400;
-const PROFILE_HEIGHT_AUTO = 560;
-const FOOTER_HEIGHT = 64;
+/**
+ * Builds the export SVG document from the collected input data and returns it.
+ * The returned element is detached from the DOM.
+ */
+export function composeExportSvg(input: CompositorInput): SVGSVGElement {
+  const { mapSnapshot, siteProjections, profileContent, options } = input;
+  const { exportTheme, dimensions, includeProfile, includeFooter, footerUrl } = options;
 
-type Layout = {
-  width: number;
-  height: number;
-  mapRect: Rect;
-  profileRect: Rect | null;
-  footerRect: Rect | null;
-};
+  const theme = resolveExportTheme(exportTheme);
 
-type Rect = { x: number; y: number; w: number; h: number };
+  const hasProfile = includeProfile && profileContent != null;
+  const hasFooter = includeFooter && footerUrl != null;
 
-function buildLayout(options: SnapshotOptions, hasProfile: boolean): Layout {
-  const { dimensions, includeProfile, includeFooter, footerUrl } = options;
+  const layout = buildExportLayout({ preset: dimensions, hasProfile, hasFooter });
 
-  const showProfile = includeProfile && hasProfile;
-  const showFooter = includeFooter && footerUrl != null;
-
-  let W: number;
-  let mapAspect: number;
-
-  switch (dimensions) {
-    case "16:9":
-      W = 3840;
-      mapAspect = 16 / 9;
-      break;
-    case "1:1":
-      W = 2400;
-      mapAspect = 1;
-      break;
-    case "9:16":
-      W = 2160;
-      mapAspect = 9 / 16;
-      break;
-    default: // "auto"
-      W = EXPORT_WIDTH_AUTO;
-      mapAspect = 16 / 9;
-  }
-
-  const mapH = Math.round(W / mapAspect);
-  const profileH = showProfile ? (dimensions === "auto" ? PROFILE_HEIGHT_AUTO : Math.round(W * 0.15)) : 0;
-  const footerH = showFooter ? FOOTER_HEIGHT : 0;
-  const H = mapH + profileH + footerH;
-
-  return {
-    width: W,
-    height: H,
-    mapRect: { x: 0, y: 0, w: W, h: mapH },
-    profileRect: showProfile ? { x: 0, y: mapH, w: W, h: profileH } : null,
-    footerRect: showFooter ? { x: 0, y: mapH + profileH, w: W, h: footerH } : null,
+  const docInput: ExportDocumentInput = {
+    mapSnapshot,
+    siteProjections,
+    profileContent: hasProfile ? profileContent : null,
+    footerUrl: hasFooter ? footerUrl : null,
   };
+
+  return buildExportSvg(docInput, layout, theme);
 }
 
 // ---------------------------------------------------------------------------
-// Theme colours
+// Helper — load an SVG element into a canvas for PNG rasterisation
 // ---------------------------------------------------------------------------
 
-const THEME = {
-  light: {
-    background: "#ffffff",
-    footerBg: "#f5f5f5",
-    footerText: "#444444",
-    profileBg: "#ffffff",
-  },
-  dark: {
-    background: "#1a1a1a",
-    footerBg: "#111111",
-    footerText: "#cccccc",
-    profileBg: "#1a1a1a",
-  },
-};
+async function svgToCanvas(svgEl: SVGSVGElement): Promise<HTMLCanvasElement> {
+  const w = parseInt(svgEl.getAttribute("width") ?? "800", 10);
+  const h = parseInt(svgEl.getAttribute("height") ?? "600", 10);
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+  const dataUrl = svgToDataUrl(svgEl);
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
+  return new Promise<HTMLCanvasElement>((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { reject(new Error("Could not get 2D context")); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas);
+    };
+    img.onerror = () => reject(new Error("SVG rasterisation failed"));
+    img.src = dataUrl;
   });
-}
-
-function svgToDataUrl(el: SVGSVGElement): string {
-  const clone = el.cloneNode(true) as SVGSVGElement;
-  const serializer = new XMLSerializer();
-  const svgStr = serializer.serializeToString(clone);
-  const encoded = encodeURIComponent(svgStr);
-  return `data:image/svg+xml;charset=utf-8,${encoded}`;
-}
-
-async function svgToImage(el: SVGSVGElement): Promise<HTMLImageElement> {
-  return loadImage(svgToDataUrl(el));
-}
-
-// ---------------------------------------------------------------------------
-// Core compositor — produces an HTMLCanvasElement
-// ---------------------------------------------------------------------------
-
-export async function composeSnapshot(input: CompositorInput): Promise<HTMLCanvasElement> {
-  const { mapSnapshotUrl, overlayDataUrl, profileContent, options } = input;
-  const theme = THEME[options.theme];
-
-  const hasProfile = profileContent != null;
-  const layout = buildLayout(options, hasProfile);
-  const { width, height, mapRect, profileRect, footerRect } = layout;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d")!;
-
-  // Background
-  ctx.fillStyle = theme.background;
-  ctx.fillRect(0, 0, width, height);
-
-  // --- Map ---
-  if (mapSnapshotUrl) {
-    try {
-      const mapImg = await loadImage(mapSnapshotUrl);
-      ctx.drawImage(mapImg, mapRect.x, mapRect.y, mapRect.w, mapRect.h);
-    } catch {
-      // Map image unavailable — leave background colour
-    }
-  }
-
-  // --- Overlay raster (composited on top of map) ---
-  if (overlayDataUrl) {
-    try {
-      const overlayImg = await loadImage(overlayDataUrl);
-      ctx.drawImage(overlayImg, mapRect.x, mapRect.y, mapRect.w, mapRect.h);
-    } catch {
-      // Overlay unavailable — skip silently
-    }
-  }
-
-  // --- Profile / Panorama ---
-  if (profileRect && profileContent) {
-    ctx.fillStyle = theme.profileBg;
-    ctx.fillRect(profileRect.x, profileRect.y, profileRect.w, profileRect.h);
-
-    if (profileContent.type === "canvas") {
-      try {
-        ctx.drawImage(profileContent.el, profileRect.x, profileRect.y, profileRect.w, profileRect.h);
-      } catch {
-        // Canvas read failure — skip
-      }
-    } else {
-      try {
-        const img = await svgToImage(profileContent.el);
-        ctx.drawImage(img, profileRect.x, profileRect.y, profileRect.w, profileRect.h);
-      } catch {
-        // SVG render failure — skip
-      }
-    }
-  }
-
-  // --- Footer ---
-  if (footerRect && options.footerUrl) {
-    ctx.fillStyle = theme.footerBg;
-    ctx.fillRect(footerRect.x, footerRect.y, footerRect.w, footerRect.h);
-
-    ctx.fillStyle = theme.footerText;
-    const fontSize = Math.round(footerRect.h * 0.38);
-    ctx.font = `${fontSize}px ui-monospace, "SF Mono", Menlo, monospace`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(
-      options.footerUrl,
-      footerRect.x + footerRect.w / 2,
-      footerRect.y + footerRect.h / 2,
-    );
-  }
-
-  return canvas;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,127 +93,85 @@ export async function composeSnapshot(input: CompositorInput): Promise<HTMLCanva
 // ---------------------------------------------------------------------------
 
 export async function composeToPng(input: CompositorInput): Promise<Blob> {
-  const canvas = await composeSnapshot(input);
-  return new Promise((resolve, reject) => {
+  const svgEl = composeExportSvg(input);
+  const canvas = await svgToCanvas(svgEl);
+  return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error("Canvas toBlob returned null"))),
+      (blob) => (blob ? resolve(blob) : reject(new Error("canvas.toBlob returned null"))),
       "image/png",
     );
   });
 }
 
 // ---------------------------------------------------------------------------
-// PDF export — raster map/panorama, vector path profile + text
+// PDF export — primary: svg2pdf.js (vector); fallback: raster JPEG
 // ---------------------------------------------------------------------------
 
-export async function composeToPdf(input: CompositorInput): Promise<Blob> {
-  const { mapSnapshotUrl, overlayDataUrl, profileContent, options } = input;
-  const theme = THEME[options.theme];
-
-  const hasProfile = profileContent != null;
-  const layout = buildLayout(options, hasProfile);
-  const { width, height, mapRect, profileRect, footerRect } = layout;
+export async function composeToPdf(input: CompositorInput): Promise<{ blob: Blob; usedFallback: boolean }> {
+  const svgEl = composeExportSvg(input);
+  const w = parseInt(svgEl.getAttribute("width") ?? "2400", 10);
+  const h = parseInt(svgEl.getAttribute("height") ?? "1350", 10);
 
   const doc = new jsPDF({
-    orientation: width >= height ? "landscape" : "portrait",
+    orientation: w >= h ? "landscape" : "portrait",
     unit: "px",
-    format: [width, height],
+    format: [w, h],
     compress: true,
   });
 
-  // Background
-  doc.setFillColor(theme.background);
-  doc.rect(0, 0, width, height, "F");
+  // Attach to DOM so svg2pdf can access computed styles on nested elements.
+  svgEl.style.position = "absolute";
+  svgEl.style.left = "-99999px";
+  svgEl.style.top = "-99999px";
+  svgEl.style.visibility = "hidden";
+  document.body.appendChild(svgEl);
 
-  // --- Map (raster) ---
-  if (mapSnapshotUrl) {
-    if (overlayDataUrl) {
-      // Composite map + overlay into a temporary canvas, then embed
-      try {
-        const mapImg = await loadImage(mapSnapshotUrl);
-        const overlayImg = await loadImage(overlayDataUrl);
-        const tmpCanvas = document.createElement("canvas");
-        tmpCanvas.width = mapRect.w;
-        tmpCanvas.height = mapRect.h;
-        const tmpCtx = tmpCanvas.getContext("2d")!;
-        tmpCtx.drawImage(mapImg, 0, 0, mapRect.w, mapRect.h);
-        tmpCtx.drawImage(overlayImg, 0, 0, mapRect.w, mapRect.h);
-        doc.addImage(tmpCanvas.toDataURL("image/jpeg", 0.92), "JPEG", mapRect.x, mapRect.y, mapRect.w, mapRect.h);
-      } catch {
-        doc.addImage(mapSnapshotUrl, "PNG", mapRect.x, mapRect.y, mapRect.w, mapRect.h);
-      }
-    } else {
-      doc.addImage(mapSnapshotUrl, "PNG", mapRect.x, mapRect.y, mapRect.w, mapRect.h);
-    }
+  try {
+    await svg2pdf(svgEl, doc, { x: 0, y: 0, width: w, height: h });
+    document.body.removeChild(svgEl);
+    return { blob: doc.output("blob"), usedFallback: false };
+  } catch (primaryErr) {
+    // Fallback: rasterise the SVG and embed as a single JPEG image.
+    console.warn("[export] svg2pdf failed, falling back to raster PDF:", primaryErr);
+    document.body.removeChild(svgEl);
+
+    const canvas = await svgToCanvas(composeExportSvg(input));
+    const fallbackDoc = new jsPDF({
+      orientation: w >= h ? "landscape" : "portrait",
+      unit: "px",
+      format: [w, h],
+      compress: true,
+    });
+    fallbackDoc.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, w, h);
+    return { blob: fallbackDoc.output("blob"), usedFallback: true };
   }
-
-  // --- Profile panel ---
-  if (profileRect && profileContent) {
-    doc.setFillColor(theme.profileBg);
-    doc.rect(profileRect.x, profileRect.y, profileRect.w, profileRect.h, "F");
-
-    if (profileContent.type === "canvas") {
-      // Panorama: raster (accepted by user)
-      try {
-        const dataUrl = profileContent.el.toDataURL("image/jpeg", 0.9);
-        doc.addImage(dataUrl, "JPEG", profileRect.x, profileRect.y, profileRect.w, profileRect.h);
-      } catch {
-        // Skip on failure
-      }
-    } else {
-      // Path profile: embed as vector SVG using svg2pdf.js
-      try {
-        const clone = profileContent.el.cloneNode(true) as SVGSVGElement;
-        clone.style.position = "absolute";
-        clone.style.visibility = "hidden";
-        clone.setAttribute("width", String(profileRect.w));
-        clone.setAttribute("height", String(profileRect.h));
-        document.body.appendChild(clone);
-        await svg2pdf(clone, doc, {
-          x: profileRect.x,
-          y: profileRect.y,
-          width: profileRect.w,
-          height: profileRect.h,
-        });
-        document.body.removeChild(clone);
-      } catch {
-        // Fallback: rasterise SVG and embed
-        try {
-          const img = await svgToImage(profileContent.el);
-          const tmpC = document.createElement("canvas");
-          tmpC.width = profileRect.w;
-          tmpC.height = profileRect.h;
-          tmpC.getContext("2d")!.drawImage(img, 0, 0, profileRect.w, profileRect.h);
-          doc.addImage(tmpC.toDataURL("image/png"), "PNG", profileRect.x, profileRect.y, profileRect.w, profileRect.h);
-        } catch {
-          // Give up
-        }
-      }
-    }
-  }
-
-  // --- Footer (vector text) ---
-  if (footerRect && options.footerUrl) {
-    doc.setFillColor(theme.footerBg);
-    doc.rect(footerRect.x, footerRect.y, footerRect.w, footerRect.h, "F");
-
-    const [r, g, b] = hexToRgb(theme.footerText);
-    doc.setTextColor(r, g, b);
-    const fontSize = Math.round(footerRect.h * 0.38);
-    doc.setFontSize(fontSize);
-    doc.text(
-      options.footerUrl,
-      footerRect.x + footerRect.w / 2,
-      footerRect.y + footerRect.h / 2,
-      { align: "center", baseline: "middle" },
-    );
-  }
-
-  return doc.output("blob");
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return [0, 0, 0];
-  return [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)];
+// ---------------------------------------------------------------------------
+// Preview — renders the export SVG to a small canvas for the live preview
+// ---------------------------------------------------------------------------
+
+export async function composePreview(
+  input: CompositorInput,
+  previewWidth: number,
+): Promise<HTMLCanvasElement> {
+  const svgEl = composeExportSvg(input);
+  const svgW = parseInt(svgEl.getAttribute("width") ?? "2400", 10);
+  const svgH = parseInt(svgEl.getAttribute("height") ?? "1350", 10);
+
+  const aspect = svgH / svgW;
+  const outW = previewWidth;
+  const outH = Math.round(previewWidth * aspect);
+
+  // Scale the SVG down to preview size before rasterising (faster than scaling on canvas).
+  svgEl.setAttribute("width", String(outW));
+  svgEl.setAttribute("height", String(outH));
+
+  const canvas = await svgToCanvas(svgEl);
+
+  // Restore original dimensions (not strictly necessary for detached element but defensive).
+  svgEl.setAttribute("width", String(svgW));
+  svgEl.setAttribute("height", String(svgH));
+
+  return canvas;
 }

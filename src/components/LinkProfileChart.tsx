@@ -49,8 +49,12 @@ const earthBulgeM = (distanceKm: number, t: number): number => {
 };
 
 export type LinkProfileChartHandle = {
-  /** Returns the root SVG element of the path profile chart, or null if not rendered. */
-  getChartElement(): SVGSVGElement | null;
+  /**
+   * Returns a detached clone of the path profile SVG with all CSS-class-based
+   * and CSS-variable-based styles resolved to concrete inline styles.
+   * Safe to embed in an export SVG or pass to svg2pdf.js.
+   */
+  getResolvedSvgElement(): SVGSVGElement | null;
 };
 
 type LinkProfileChartProps = {
@@ -73,8 +77,62 @@ export const LinkProfileChart = forwardRef<LinkProfileChartHandle, LinkProfileCh
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useImperativeHandle(ref, () => ({
-    getChartElement() {
-      return svgRef.current;
+    getResolvedSvgElement(): SVGSVGElement | null {
+      const original = svgRef.current;
+      if (!original) return null;
+
+      const clone = original.cloneNode(true) as SVGSVGElement;
+
+      // Presentational SVG/CSS properties to inline from getComputedStyle.
+      // getComputedStyle resolves CSS vars, class rules, and inheritance in one pass.
+      const PROPS = [
+        "fill",
+        "stroke",
+        "stroke-width",
+        "stroke-dasharray",
+        "stroke-dashoffset",
+        "stroke-linecap",
+        "stroke-linejoin",
+        "opacity",
+        "fill-opacity",
+        "stroke-opacity",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "text-anchor",
+        "dominant-baseline",
+        "alignment-baseline",
+        "stop-color",
+        "stop-opacity",
+      ];
+
+      // Walk original + clone trees in parallel.
+      const walk = (orig: Element, cln: Element): void => {
+        // Remove <style> elements — class rules won't be present outside the document.
+        if (cln.tagName.toLowerCase() === "style") {
+          cln.parentElement?.removeChild(cln);
+          return;
+        }
+        cln.removeAttribute("class");
+
+        if (orig instanceof Element) {
+          const computed = getComputedStyle(orig);
+          for (const prop of PROPS) {
+            const val = computed.getPropertyValue(prop).trim();
+            if (val) (cln as HTMLElement | SVGElement).style.setProperty(prop, val);
+          }
+        }
+
+        const origKids = Array.from(orig.children);
+        // Re-read clone children AFTER possible removals above.
+        const clnKids = Array.from(cln.children);
+        for (let i = 0; i < origKids.length; i++) {
+          if (clnKids[i]) walk(origKids[i], clnKids[i]);
+        }
+      };
+
+      walk(original, clone);
+      return clone;
     },
   }));
   const [hostAttachRevision, setHostAttachRevision] = useState(0);

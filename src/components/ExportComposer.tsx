@@ -2,7 +2,7 @@ import { Download, Share2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionButton";
 import {
-  composeSnapshot,
+  composePreview,
   composeToPdf,
   composeToPng,
   type CompositorInput,
@@ -27,8 +27,6 @@ export type ExportComposerProps = {
   isSingleSiteSelection: boolean;
   /** Deep-link URL for public sims; https://linksim.link for private; null when no active simulation. */
   shareUrl: string | null;
-  /** The current overlay data URL from the store, or null. */
-  overlayDataUrl: string | null;
   simulationName: string;
 };
 
@@ -52,47 +50,52 @@ export function ExportComposer({
   profileAvailable,
   isSingleSiteSelection,
   shareUrl,
-  overlayDataUrl,
   simulationName,
 }: ExportComposerProps) {
   const [includeProfile, setIncludeProfile] = useState(true);
   const [includeFooter, setIncludeFooter] = useState(true);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [exportTheme, setExportTheme] = useState<"light" | "dark">("light");
   const [dimensions, setDimensions] = useState<SnapshotDimensions>("auto");
   const [previewing, setPreviewing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [pdfFallbackWarning, setPdfFallbackWarning] = useState(false);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // The footer URL: public deeplink, or homepage for private/unsaved sims.
   const footerUrl = shareUrl ?? "https://linksim.link";
+
+  // ---------------------------------------------------------------------------
+  // Collect compositor input
+  // ---------------------------------------------------------------------------
 
   const buildInput = useCallback(async (): Promise<CompositorInput | null> => {
     if (!mapViewHandle) return null;
 
-    const mapSnapshotUrl = await mapViewHandle.captureMapSnapshot();
+    const mapSnapshot = await mapViewHandle.captureMapSnapshot();
+    const siteProjections = mapViewHandle.getSiteProjections();
 
     let profileContent: CompositorInput["profileContent"] = null;
     if (profileAvailable) {
       if (isSingleSiteSelection) {
-        const canvas = panoramaHandle?.getCanvas() ?? null;
-        if (canvas) profileContent = { type: "canvas", el: canvas };
+        const data = panoramaHandle?.getExportData() ?? null;
+        if (data) profileContent = { type: "panorama", data };
       } else {
-        const svgEl = profileHandle?.getChartElement() ?? null;
-        if (svgEl) profileContent = { type: "svg", el: svgEl };
+        const svgEl = profileHandle?.getResolvedSvgElement() ?? null;
+        if (svgEl) profileContent = { type: "linkprofile", svgEl };
       }
     }
 
     const options: SnapshotOptions = {
       includeProfile: includeProfile && profileAvailable,
       includeFooter,
-      theme,
+      exportTheme,
       dimensions,
       footerUrl: includeFooter ? footerUrl : null,
+      simulationName,
     };
 
-    return { mapSnapshotUrl, overlayDataUrl, profileContent, options };
+    return { mapSnapshot, siteProjections, profileContent, options };
   }, [
     mapViewHandle,
     panoramaHandle,
@@ -101,10 +104,10 @@ export function ExportComposer({
     isSingleSiteSelection,
     includeProfile,
     includeFooter,
-    theme,
+    exportTheme,
     dimensions,
-    overlayDataUrl,
     footerUrl,
+    simulationName,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -117,21 +120,19 @@ export function ExportComposer({
 
     setPreviewing(true);
     try {
-      const composed = await composeSnapshot(input);
-      const previewCanvas = previewCanvasRef.current;
-      if (!previewCanvas) return;
-
-      const aspect = composed.height / composed.width;
-      previewCanvas.width = PREVIEW_WIDTH;
-      previewCanvas.height = Math.round(PREVIEW_WIDTH * aspect);
-      const ctx = previewCanvas.getContext("2d");
-      ctx?.drawImage(composed, 0, 0, previewCanvas.width, previewCanvas.height);
+      const previewCanvas = await composePreview(input, PREVIEW_WIDTH);
+      const dest = previewCanvasRef.current;
+      if (!dest) return;
+      dest.width = previewCanvas.width;
+      dest.height = previewCanvas.height;
+      dest.getContext("2d")?.drawImage(previewCanvas, 0, 0);
+    } catch {
+      // Silently skip failed preview renders
     } finally {
       setPreviewing(false);
     }
   }, [buildInput]);
 
-  // Debounce preview re-render when options change
   useEffect(() => {
     if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current);
     previewDebounceRef.current = setTimeout(() => {
@@ -168,11 +169,13 @@ export function ExportComposer({
 
   const handleDownloadPdf = useCallback(async () => {
     setExportError(null);
+    setPdfFallbackWarning(false);
     setExporting(true);
     try {
       const input = await buildInput();
       if (!input) throw new Error("Map not ready.");
-      const blob = await composeToPdf(input);
+      const { blob, usedFallback } = await composeToPdf(input);
+      if (usedFallback) setPdfFallbackWarning(true);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -202,7 +205,7 @@ export function ExportComposer({
       if (!navigator.canShare?.(shareData)) throw new Error("Native sharing not supported.");
       await navigator.share(shareData);
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return; // user cancelled
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setExportError(err instanceof Error ? err.message : "Share failed.");
     } finally {
       setExporting(false);
@@ -265,17 +268,17 @@ export function ExportComposer({
           <span className="export-label">Theme</span>
           <div className="chip-group">
             <button
-              aria-pressed={theme === "light"}
-              className={`inline-action${theme === "light" ? " is-active" : ""}`}
-              onClick={() => setTheme("light")}
+              aria-pressed={exportTheme === "light"}
+              className={`inline-action${exportTheme === "light" ? " is-active" : ""}`}
+              onClick={() => setExportTheme("light")}
               type="button"
             >
               Light
             </button>
             <button
-              aria-pressed={theme === "dark"}
-              className={`inline-action${theme === "dark" ? " is-active" : ""}`}
-              onClick={() => setTheme("dark")}
+              aria-pressed={exportTheme === "dark"}
+              className={`inline-action${exportTheme === "dark" ? " is-active" : ""}`}
+              onClick={() => setExportTheme("dark")}
               type="button"
             >
               Dark
@@ -335,6 +338,12 @@ export function ExportComposer({
           </ActionButton>
         )}
       </div>
+
+      {pdfFallbackWarning && !exportError && (
+        <p className="field-help" role="status" style={{ color: "var(--warning-text)" }}>
+          Vector PDF could not be generated; a raster PDF was exported instead.
+        </p>
+      )}
 
       {exportError && (
         <p className="field-help" role="alert" style={{ color: "var(--danger)" }}>

@@ -2320,7 +2320,6 @@ export function AppShell() {
             profileAvailable,
             isSingleSiteSelection,
             shareUrl: shareUrlForExport,
-            overlayDataUrl: mapViewRef.current?.getOverlayDataUrl() ?? null,
             simulationName: activeSimulation?.name ?? "linksim-export",
           }}
           currentShareLink={activeSimulation ? currentShareLink : undefined}
