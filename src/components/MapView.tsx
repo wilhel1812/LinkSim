@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import Map, {
@@ -482,6 +482,17 @@ const computeSiteFitBounds = (
   ];
 };
 
+export type MapViewHandle = {
+  /**
+   * Captures the current map as a PNG data URL by triggering a repaint and
+   * reading the canvas during the render callback (avoids needing preserveDrawingBuffer).
+   * Resolves to null if the map is not mounted.
+   */
+  captureMapSnapshot(): Promise<string | null>;
+  /** Returns the current coverage overlay PNG data URL, or null if no overlay is active. */
+  getOverlayDataUrl(): string | null;
+};
+
 type MapViewProps = {
   isMapExpanded: boolean;
   showInspector?: boolean;
@@ -567,7 +578,7 @@ const DEFAULT_MAP_VIEWPORT = {
   zoom: 8,
 };
 
-export function MapView({
+export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({
   isMapExpanded,
   showInspector = true,
   inspectorPanelClassName,
@@ -579,7 +590,7 @@ export function MapView({
   notice,
   fitBottomInset = 30,
   fitChromePadding = FIT_CHROME_PADDING,
-}: MapViewProps) {
+}: MapViewProps, ref) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const links = useAppStore((state) => state.links);
@@ -1299,6 +1310,26 @@ export function MapView({
     };
   }, [setOverlayPipelineProgress]);
   const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    captureMapSnapshot() {
+      const map = mapRef.current?.getMap();
+      if (!map) return Promise.resolve(null);
+      return new Promise<string | null>((resolve) => {
+        map.once("render", () => {
+          try {
+            resolve(map.getCanvas().toDataURL("image/png"));
+          } catch {
+            resolve(null);
+          }
+        });
+        map.triggerRepaint();
+      });
+    },
+    getOverlayDataUrl() {
+      return coverageOverlay?.url ?? null;
+    },
+  }), [coverageOverlay]);
   const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
 
   const logOverlaySchedulerEvent = useCallback(
@@ -3256,4 +3287,4 @@ export function MapView({
       </Map>
     </div>
   );
-}
+});

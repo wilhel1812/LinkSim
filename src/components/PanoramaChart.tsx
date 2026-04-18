@@ -3,7 +3,7 @@ import { FloatingPopover } from "./ui/FloatingPopover";
 import { StateDot } from "./StateDot";
 import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, RadioTower, Settings, Tags } from "lucide-react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/latestOnlyTaskScheduler";
 import { dispatchPanoramaInteraction } from "../lib/panoramaEvents";
@@ -93,6 +93,11 @@ const resolveCssColor = (value: string, fallback: string): string => {
   return resolved || fallback;
 };
 
+export type PanoramaChartHandle = {
+  /** Returns the terrain canvas element used for rendering, or null if not yet mounted. */
+  getCanvas(): HTMLCanvasElement | null;
+};
+
 type PanoramaChartProps = {
   isExpanded: boolean;
   onToggleExpanded: () => void;
@@ -120,10 +125,16 @@ type HoverTarget =
 
 const pointerDistance = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
 
-export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls, panelClassName }: PanoramaChartProps) {
+export const PanoramaChart = forwardRef<PanoramaChartHandle, PanoramaChartProps>(function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls, panelClassName }: PanoramaChartProps, ref) {
   const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    getCanvas() {
+      return terrainCanvasRef.current;
+    },
+  }));
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const legendButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1557,4 +1568,4 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       {settingsPopover}
     </section>
   );
-}
+});
