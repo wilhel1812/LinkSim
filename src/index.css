@@ -5428,6 +5428,23 @@ html.panorama-gesture-lock body {
   flex-shrink: 0;
 }
 
+.export-print-portal-frame {
+  position: relative;
+}
+
+.export-print-capture-frame {
+  position: absolute;
+  left: -99999px;
+  top: 0;
+  pointer-events: none;
+}
+
+.export-print-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 /* @media print — show only the export frame */
 @media print {
   body > *:not(#export-print-portal) {
@@ -5475,6 +5492,15 @@ html.panorama-gesture-lock body {
   }
 
   .export-frame-map-slot canvas {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .export-print-capture-frame {
+    display: none !important;
+  }
+
+  .export-print-image {
     width: 100% !important;
     height: auto !important;
   }

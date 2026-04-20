@@ -94,9 +94,13 @@ export function ExportComposer({
   const [includeFooter,  setIncludeFooter]  = useState(true);
   const [dimensions,     setDimensions]     = useState<SnapshotDimensions>("auto");
   const [exportError,    setExportError]    = useState<string | null>(null);
+  const [printImageUrl,  setPrintImageUrl]  = useState<string | null>(null);
+  const [isPrintReady,   setIsPrintReady]   = useState(false);
 
   // Portal ExportFrame ref — full-size, hidden, used for PNG / print capture.
   const captureFrameRef = useRef<HTMLDivElement>(null);
+  const printImageUrlRef = useRef<string | null>(null);
+  const printRequestedRef = useRef(false);
 
   // Preview column ref — measured to compute zoom scale.
   const previewColRef   = useRef<HTMLDivElement>(null);
@@ -122,6 +126,40 @@ export function ExportComposer({
   useEffect(() => {
     setPrintPortal(ensurePrintPortal());
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (printImageUrlRef.current) {
+        URL.revokeObjectURL(printImageUrlRef.current);
+        printImageUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    printImageUrlRef.current = printImageUrl;
+  }, [printImageUrl]);
+
+  useEffect(() => {
+    const onAfterPrint = () => {
+      printRequestedRef.current = false;
+      setIsPrintReady(false);
+      if (printImageUrlRef.current) {
+        URL.revokeObjectURL(printImageUrlRef.current);
+        printImageUrlRef.current = null;
+      }
+      setPrintImageUrl(null);
+    };
+    window.addEventListener("afterprint", onAfterPrint);
+    return () => window.removeEventListener("afterprint", onAfterPrint);
+  }, []);
+
+  useEffect(() => {
+    if (!isPrintReady || !printImageUrl || !printRequestedRef.current) return;
+    printRequestedRef.current = false;
+    const timer = window.setTimeout(() => window.print(), 0);
+    return () => window.clearTimeout(timer);
+  }, [isPrintReady, printImageUrl]);
 
   // ---------------------------------------------------------------------------
   // Map capture
@@ -179,7 +217,24 @@ export function ExportComposer({
     }
   }, [simulationName, mapDataUrl]);
 
-  const handlePrint = useCallback(() => window.print(), []);
+  const handlePrint = useCallback(async () => {
+    if (!captureFrameRef.current) return;
+    setExportError(null);
+    try {
+      const blob = await captureExportFrame(captureFrameRef.current, mapDataUrl);
+      if (printImageUrlRef.current) {
+        URL.revokeObjectURL(printImageUrlRef.current);
+      }
+      printRequestedRef.current = true;
+      setIsPrintReady(false);
+      setPrintImageUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      console.warn("[export] print failed:", err);
+      setExportError(err instanceof Error ? err.message : "Print failed.");
+      printRequestedRef.current = false;
+      setIsPrintReady(false);
+    }
+  }, [mapDataUrl]);
 
   const handleNativeShare = useCallback(async () => {
     if (!captureFrameRef.current) return;
@@ -387,7 +442,19 @@ export function ExportComposer({
 
       {/* Full-size ExportFrame in body portal — for PNG capture + @media print */}
       {printPortal && createPortal(
-        <ExportFrame ref={captureFrameRef} {...frameProps} />,
+        <div className="export-print-portal-frame" aria-hidden="true">
+          <div className="export-print-capture-frame">
+            <ExportFrame ref={captureFrameRef} {...frameProps} />
+          </div>
+          {printImageUrl ? (
+            <img
+              alt=""
+              className="export-print-image"
+              onLoad={() => setIsPrintReady(true)}
+              src={printImageUrl}
+            />
+          ) : null}
+        </div>,
         printPortal,
       )}
     </div>
