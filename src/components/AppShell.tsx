@@ -514,7 +514,7 @@ export function AppShell() {
       return;
     }
     void performCloudSyncPush();
-  }, [performCloudSyncPush, isInitializing, siteLibrary, simulationPresets, sites]);
+  }, [isInitializing]);
 
   useEffect(() => {
     const onOnline = () => {
@@ -531,7 +531,7 @@ export function AppShell() {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, [performCloudSyncPush, setIsOnline]);
+  }, [setIsOnline]);
 
   useEffect(() => {
     if (isOnline) {
@@ -2313,15 +2313,34 @@ export function AppShell() {
       {showShareModal ? (
         <ShareModal
           onClose={closeShareModal}
-          exportProps={{
-            mapViewHandle: mapViewRef.current,
-            panoramaHandle: panoramaChartRef.current,
-            profileHandle: linkProfileChartRef.current,
-            profileAvailable,
-            isSingleSiteSelection,
-            shareUrl: shareUrlForExport,
-            simulationName: activeSimulation?.name ?? "linksim-export",
-          }}
+          exportProps={(() => {
+            const fromSiteName = selectedLink
+              ? (sites.find((s) => s.id === selectedLink.fromSiteId)?.name ?? "")
+              : selectedSiteIds.length >= 2
+                ? (sites.find((s) => s.id === selectedSiteIds[0])?.name ?? "")
+                : "";
+            const toSiteName = selectedLink
+              ? (sites.find((s) => s.id === selectedLink.toSiteId)?.name ?? "")
+              : selectedSiteIds.length >= 2
+                ? (sites.find((s) => s.id === selectedSiteIds[selectedSiteIds.length - 1])?.name ?? "")
+                : "";
+            const singleSiteName = isSingleSiteSelection
+              ? (sites.find((s) => s.id === selectedSiteIds[0])?.name ?? "")
+              : "";
+            const profileLabel = isSingleSiteSelection
+              ? `Panorama — ${singleSiteName || "Site"}`
+              : `${fromSiteName || "A"} → ${toSiteName || "B"}`;
+            return {
+              mapViewHandle: mapViewRef.current,
+              panoramaHandle: panoramaChartRef.current,
+              profileAvailable,
+              isSingleSiteSelection,
+              isLinkSelected: Boolean(selectedLinkId) || selectedSiteIds.length >= 2,
+              shareUrl: shareUrlForExport,
+              simulationName: activeSimulation?.name ?? "linksim-export",
+              profileLabel,
+            };
+          })()}
           currentShareLink={activeSimulation ? currentShareLink : undefined}
           onCopyLink={() => void copyCurrentLink()}
           isPrivate={Boolean(activeSimulation && toVisibility(activeSimulation.visibility) === "private")}

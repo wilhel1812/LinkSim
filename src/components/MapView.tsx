@@ -492,13 +492,11 @@ export type MapViewHandle = {
   captureMapSnapshot(): Promise<{ dataUrl: string; naturalW: number; naturalH: number } | null>;
   /**
    * Returns site positions as normalised [0,1] coordinates relative to the
-   * current map viewport. Used to draw vector markers in the export SVG.
-   * Sites that project outside the visible area (norm < 0 or > 1) are included;
-   * the document builder clips them as needed.
+   * current map viewport. Used to draw markers in the export layout.
    */
   getSiteProjections(): Array<{ id: string; name: string; normX: number; normY: number }>;
-  /** Returns the current coverage overlay PNG data URL, or null if no overlay is active. */
-  getOverlayDataUrl(): string | null;
+  /** Returns the Link Inspector panel element for DOM capture. */
+  getInspectorPanelElement(): HTMLElement | null;
 };
 
 type MapViewProps = {
@@ -1318,6 +1316,7 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     };
   }, [setOverlayPipelineProgress]);
   const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
+  const inspectorPanelElRef = useRef<HTMLElement | null>(null);
 
   useImperativeHandle(ref, () => ({
     captureMapSnapshot() {
@@ -1348,10 +1347,10 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         return { id: site.id, name: site.name, normX: pt.x / cssW, normY: pt.y / cssH };
       });
     },
-    getOverlayDataUrl() {
-      return coverageOverlay?.url ?? null;
+    getInspectorPanelElement() {
+      return inspectorPanelElRef.current;
     },
-  }), [coverageOverlay, sites]);
+  }), [sites]);
   const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
 
   const logOverlaySchedulerEvent = useCallback(
@@ -2497,7 +2496,7 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         </div>
       ) : null}
       {showInspector ? (
-        <aside className={`map-inspector ${inspectorPanelClassName ?? ""}`.trim()} aria-live="polite">
+        <aside className={`map-inspector ${inspectorPanelClassName ?? ""}`.trim()} aria-live="polite" ref={inspectorPanelElRef}>
           {inspectorHeaderActions ? (
             <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
           ) : null}

@@ -5042,7 +5042,7 @@ html.panorama-gesture-lock body {
    ========================================================= */
 
 .share-modal {
-  width: min(760px, 96vw);
+  width: min(960px, 96vw);
 }
 
 .share-modal-tabs {
@@ -5080,42 +5080,82 @@ html.panorama-gesture-lock body {
    Export Composer
    ========================================================= */
 
+/* Two-column layout: preview on left, controls on right */
 .export-composer {
   display: grid;
-  gap: 14px;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
   padding-top: 6px;
+  align-items: start;
+}
+
+/* On narrow screens, stack vertically */
+@media (max-width: 680px) {
+  .export-composer {
+    grid-template-columns: 1fr;
+  }
+  .export-composer-preview-col { order: 1; }
+  .export-composer-controls-col { order: 2; }
+}
+
+.export-composer-preview-col {
+  min-width: 0;
+}
+
+.export-composer-controls-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
 .export-preview-wrap {
   position: relative;
-  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   overflow: hidden;
-  min-height: 120px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
 }
 
-.export-preview-canvas {
+.export-preview-scale-wrap {
+  /* zoom is set inline; this wrapper clips the scaled ExportFrame */
+  display: block;
+  transform-origin: top left;
+}
+
+.export-preview-img {
   display: block;
   width: 100%;
   border-radius: var(--radius-card);
 }
 
-.export-preview-canvas.is-loading {
-  opacity: 0.5;
+.export-preview-placeholder {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
-.export-preview-status {
+.export-preview-spinner {
   position: absolute;
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
+}
+
+.export-preview-spinner-icon {
+  color: var(--accent);
+  animation: export-spin 1s linear infinite;
+}
+
+@keyframes export-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: export-spin 1s linear infinite;
 }
 
 .export-options {
@@ -5171,4 +5211,271 @@ html.panorama-gesture-lock body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ===== Export frame (off-screen portal for capture + print) ===== */
+
+#export-print-portal {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  pointer-events: none;
+  /* No overflow / width / height constraints — children determine their own size.
+     This ensures ResizeObserver and getBoundingClientRect work for html-to-image. */
+}
+
+.export-frame {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+/* Fixed-canvas presets */
+.export-frame[data-dims="16:9"] { width: 1920px; height: 1080px; }
+.export-frame[data-dims="1:1"]  { width: 1200px; height: 1200px; }
+.export-frame[data-dims="9:16"] { width: 1080px; height: 1920px; }
+/* auto: 1200px wide, height auto */
+.export-frame { width: 1200px; }
+
+/* 16:9 side-by-side body: left col (map+profile) | right col (results) */
+.export-frame-body {
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+.export-frame-left-col {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+.export-frame-right-col {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Site pins in export: match app appearance but suppress interactivity */
+.export-frame-map-slot .site-pin {
+  cursor: default;
+  pointer-events: none;
+}
+
+.export-frame-header {
+  padding: 16px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.export-frame-sim-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.export-frame-map-slot {
+  position: relative;
+  width: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  /* height is always set inline from JS — no aspect-ratio (collapses in portal) */
+}
+
+/* ===== Profile slot — live chart component ===== */
+.export-frame-profile-slot {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  /* height is set inline from JS */
+}
+
+.export-chart-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ===== Results slot — live SimulationResultsSection ===== */
+.export-frame-results-slot {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+  /* height is set inline from JS */
+  display: flex;
+  flex-direction: column;
+}
+
+.export-results-inner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ===== Slot section label ===== */
+.export-frame-slot-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 6px 16px 0;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* Override chart-panel card styling inside export slots */
+.export-frame-profile-slot .chart-panel,
+.export-frame-profile-slot .chart-panel-empty {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 4px 16px 8px;
+  z-index: auto;
+}
+
+/* Clip metrics/scroll wrappers inside the results inner div */
+.export-results-inner .metrics,
+.export-results-inner > * {
+  overflow: hidden;
+}
+
+/* 16:9 side-by-side bottom strip */
+.export-frame-strip-row {
+  display: flex;
+  flex-direction: row;
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.export-frame-strip-row .export-frame-section {
+  border-top: none;
+}
+
+.export-frame-strip-row .export-frame-section + .export-frame-section {
+  border-left: 1px solid var(--border);
+}
+
+.export-frame-map-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.export-frame-section {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Fixed-height presets: profile + results sections use proportional heights */
+.export-frame[data-dims="16:9"] .export-frame-section:nth-of-type(2),
+.export-frame[data-dims="1:1"] .export-frame-section:nth-of-type(2),
+.export-frame[data-dims="9:16"] .export-frame-section:nth-of-type(2) {
+  max-height: 28%;
+}
+
+.export-frame[data-dims="16:9"] .export-frame-section:nth-of-type(3),
+.export-frame[data-dims="1:1"] .export-frame-section:nth-of-type(3),
+.export-frame[data-dims="9:16"] .export-frame-section:nth-of-type(3) {
+  max-height: 16%;
+}
+
+.export-frame-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 6px 16px 0;
+  flex-shrink: 0;
+}
+
+.export-frame-section-img {
+  display: block;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.export-frame-footer {
+  border-top: 1px solid var(--border);
+  padding: 10px 20px;
+  font-family: ui-monospace, 'SF Mono', Menlo, 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+/* @media print — show only the export frame */
+@media print {
+  body > *:not(#export-print-portal) {
+    display: none !important;
+  }
+
+  #export-print-portal {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    pointer-events: auto !important;
+  }
+
+  .export-frame {
+    width: 100% !important;
+    height: auto !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    page-break-inside: avoid;
+  }
+
+  /* In print, unwind fixed heights and let content flow naturally */
+  .export-frame-body {
+    flex-direction: column !important;
+    height: auto !important;
+  }
+
+  .export-frame-left-col,
+  .export-frame-right-col {
+    flex: none !important;
+    width: 100% !important;
+    border-right: none !important;
+  }
+
+  .export-frame-map-slot,
+  .export-frame-profile-slot,
+  .export-frame-results-slot {
+    height: auto !important;
+    min-height: 0 !important;
+    flex: none !important;
+  }
+
+  .export-frame-map-slot {
+    aspect-ratio: 16 / 9;
+  }
+
+  .export-frame-map-slot canvas {
+    width: 100% !important;
+    height: auto !important;
+  }
 }
