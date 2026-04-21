@@ -485,18 +485,12 @@ const computeSiteFitBounds = (
 export type MapViewHandle = {
   /**
    * Captures the current map as a PNG data URL by triggering a repaint and
-   * reading the GL canvas during the render callback (avoids needing preserveDrawingBuffer).
-   * The returned image already includes any active coverage/overlay layer.
+   * reading the canvas during the render callback (avoids needing preserveDrawingBuffer).
    * Resolves to null if the map is not mounted.
    */
-  captureMapSnapshot(): Promise<{ dataUrl: string; naturalW: number; naturalH: number } | null>;
-  /**
-   * Returns site positions as normalised [0,1] coordinates relative to the
-   * current map viewport. Used to draw markers in the export layout.
-   */
-  getSiteProjections(): Array<{ id: string; name: string; normX: number; normY: number }>;
-  /** Returns the Link Inspector panel element for DOM capture. */
-  getInspectorPanelElement(): HTMLElement | null;
+  captureMapSnapshot(): Promise<string | null>;
+  /** Returns the current coverage overlay PNG data URL, or null if no overlay is active. */
+  getOverlayDataUrl(): string | null;
 };
 
 type MapViewProps = {
@@ -1316,17 +1310,15 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     };
   }, [setOverlayPipelineProgress]);
   const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
-  const inspectorPanelElRef = useRef<HTMLElement | null>(null);
 
   useImperativeHandle(ref, () => ({
     captureMapSnapshot() {
       const map = mapRef.current?.getMap();
       if (!map) return Promise.resolve(null);
-      return new Promise<{ dataUrl: string; naturalW: number; naturalH: number } | null>((resolve) => {
+      return new Promise<string | null>((resolve) => {
         map.once("render", () => {
           try {
-            const canvas = map.getCanvas();
-            resolve({ dataUrl: canvas.toDataURL("image/png"), naturalW: canvas.width, naturalH: canvas.height });
+            resolve(map.getCanvas().toDataURL("image/png"));
           } catch {
             resolve(null);
           }
@@ -1334,23 +1326,10 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         map.triggerRepaint();
       });
     },
-    getSiteProjections() {
-      const map = mapRef.current?.getMap();
-      if (!map) return [];
-      const canvas = map.getCanvas();
-      const dpr = window.devicePixelRatio || 1;
-      const cssW = canvas.width / dpr;
-      const cssH = canvas.height / dpr;
-      if (cssW <= 0 || cssH <= 0) return [];
-      return sites.map((site) => {
-        const pt = map.project([site.position.lon, site.position.lat]);
-        return { id: site.id, name: site.name, normX: pt.x / cssW, normY: pt.y / cssH };
-      });
+    getOverlayDataUrl() {
+      return coverageOverlay?.url ?? null;
     },
-    getInspectorPanelElement() {
-      return inspectorPanelElRef.current;
-    },
-  }), [sites]);
+  }), [coverageOverlay]);
   const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
 
   const logOverlaySchedulerEvent = useCallback(
@@ -2496,7 +2475,7 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         </div>
       ) : null}
       {showInspector ? (
-        <aside className={`map-inspector ${inspectorPanelClassName ?? ""}`.trim()} aria-live="polite" ref={inspectorPanelElRef}>
+        <aside className={`map-inspector ${inspectorPanelClassName ?? ""}`.trim()} aria-live="polite">
           {inspectorHeaderActions ? (
             <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
           ) : null}

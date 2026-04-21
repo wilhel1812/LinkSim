@@ -83,31 +83,19 @@ const brightenRgb = (color: Rgb, amount: number): Rgb => {
   return blendRgb(color, { r: 0, g: 0, b: 0 }, clamp(-amount, 0, 1));
 };
 
-const resolveCssColor = (value: string, fallback: string, contextEl?: Element | null): string => {
+const resolveCssColor = (value: string, fallback: string): string => {
   if (typeof document === "undefined") return fallback;
   const sample = document.createElement("span");
   sample.style.color = value;
-  sample.style.display = "none";
-  // Append to contextEl so CSS variables from ancestor inline styles are resolved correctly.
-  (contextEl ?? document.body).appendChild(sample);
+  document.body.appendChild(sample);
   const resolved = getComputedStyle(sample).color;
   sample.remove();
   return resolved || fallback;
 };
 
-export type PanoramaConfig = {
-  exaggeration: number;
-  fovScale: number;
-  viewportCenterAzimuthDeg: number;
-  showLabels: boolean;
-  terrainDistanceHeatmap: boolean;
-};
-
 export type PanoramaChartHandle = {
-  /** Returns the chart host element for DOM capture via html-to-image. */
-  getChartWrapElement(): HTMLElement | null;
-  /** Returns the current panorama display config (for transfer to export instance). */
-  getPanoramaConfig(): PanoramaConfig;
+  /** Returns the terrain canvas element used for rendering, or null if not yet mounted. */
+  getCanvas(): HTMLCanvasElement | null;
 };
 
 type PanoramaChartProps = {
@@ -116,8 +104,6 @@ type PanoramaChartProps = {
   showExpandToggle?: boolean;
   rowControls?: ReactNode;
   panelClassName?: string;
-  /** When provided, seeds the local state of a fresh instance (e.g. in the export modal). */
-  initialPanoramaConfig?: PanoramaConfig;
 };
 
 type HoverTarget =
@@ -139,17 +125,14 @@ type HoverTarget =
 
 const pointerDistance = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
 
-export const PanoramaChart = forwardRef<PanoramaChartHandle, PanoramaChartProps>(function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls, panelClassName, initialPanoramaConfig }: PanoramaChartProps, ref) {
+export const PanoramaChart = forwardRef<PanoramaChartHandle, PanoramaChartProps>(function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle = true, rowControls, panelClassName }: PanoramaChartProps, ref) {
   const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useImperativeHandle(ref, () => ({
-    getChartWrapElement(): HTMLElement | null {
-      return chartHostRef.current;
-    },
-    getPanoramaConfig(): PanoramaConfig {
-      return { exaggeration, fovScale, viewportCenterAzimuthDeg, showLabels, terrainDistanceHeatmap };
+    getCanvas() {
+      return terrainCanvasRef.current;
     },
   }));
   const scrollbarTrackRef = useRef<HTMLDivElement | null>(null);
@@ -163,12 +146,12 @@ export const PanoramaChart = forwardRef<PanoramaChartHandle, PanoramaChartProps>
   const [gestureLockActive, setGestureLockActive] = useState(false);
 
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
-  const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(initialPanoramaConfig?.viewportCenterAzimuthDeg ?? 180);
-  const [exaggeration, setExaggeration] = useState(initialPanoramaConfig?.exaggeration ?? 4);
+  const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(180);
+  const [exaggeration, setExaggeration] = useState(4);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
-  const [showLabels, setShowLabels] = useState(initialPanoramaConfig?.showLabels ?? true);
-  const [terrainDistanceHeatmap, setTerrainDistanceHeatmap] = useState(initialPanoramaConfig?.terrainDistanceHeatmap ?? false);
-  const [fovScale, setFovScale] = useState(initialPanoramaConfig?.fovScale ?? FOV_SCALE_DEFAULT);
+  const [showLabels, setShowLabels] = useState(true);
+  const [terrainDistanceHeatmap, setTerrainDistanceHeatmap] = useState(false);
+  const [fovScale, setFovScale] = useState(FOV_SCALE_DEFAULT);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
   const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
@@ -812,20 +795,17 @@ export const PanoramaChart = forwardRef<PanoramaChartHandle, PanoramaChartProps>
     ctx.clearRect(0, 0, chartSize.width, chartSize.height);
 
     // Resolve CSS color variables once per frame.
-    // Pass chartPanelRef.current as context so vars from ancestor inline styles
-    // (e.g. ExportFrame's export-theme overrides) are resolved correctly.
-    const ctx2 = chartPanelRef.current;
-    const terrainColor = parseRgb(resolveCssColor("var(--terrain)", "rgb(100,100,100)", ctx2)) ?? { r: 100, g: 100, b: 100 };
-    const surfaceColor = parseRgb(resolveCssColor("var(--surface-2)", "rgb(40,40,40)", ctx2)) ?? { r: 40, g: 40, b: 40 };
-    const textColor = parseRgb(resolveCssColor("var(--text)", "rgb(200,200,200)", ctx2)) ?? { r: 200, g: 200, b: 200 };
-    const mutedColor = parseRgb(resolveCssColor("var(--muted)", "rgb(130,130,130)", ctx2)) ?? { r: 130, g: 130, b: 130 };
-    const borderColor = parseRgb(resolveCssColor("var(--border)", "rgb(80,80,80)", ctx2)) ?? { r: 80, g: 80, b: 80 };
+    const terrainColor = parseRgb(resolveCssColor("var(--terrain)", "rgb(100,100,100)")) ?? { r: 100, g: 100, b: 100 };
+    const surfaceColor = parseRgb(resolveCssColor("var(--surface-2)", "rgb(40,40,40)")) ?? { r: 40, g: 40, b: 40 };
+    const textColor = parseRgb(resolveCssColor("var(--text)", "rgb(200,200,200)")) ?? { r: 200, g: 200, b: 200 };
+    const mutedColor = parseRgb(resolveCssColor("var(--muted)", "rgb(130,130,130)")) ?? { r: 130, g: 130, b: 130 };
+    const borderColor = parseRgb(resolveCssColor("var(--border)", "rgb(80,80,80)")) ?? { r: 80, g: 80, b: 80 };
 
     const stateColors: Record<string, Rgb> = {
-      pass_clear: parseRgb(resolveCssColor("var(--state-pass-clear)", "rgb(76,175,80)", ctx2)) ?? { r: 76, g: 175, b: 80 },
-      pass_blocked: parseRgb(resolveCssColor("var(--state-pass-blocked)", "rgb(255,152,0)", ctx2)) ?? { r: 255, g: 152, b: 0 },
-      fail_clear: parseRgb(resolveCssColor("var(--state-fail-clear)", "rgb(244,67,54)", ctx2)) ?? { r: 244, g: 67, b: 54 },
-      fail_blocked: parseRgb(resolveCssColor("var(--state-fail-blocked)", "rgb(200,50,50)", ctx2)) ?? { r: 200, g: 50, b: 50 },
+      pass_clear: parseRgb(resolveCssColor("var(--state-pass-clear)", "rgb(76,175,80)")) ?? { r: 76, g: 175, b: 80 },
+      pass_blocked: parseRgb(resolveCssColor("var(--state-pass-blocked)", "rgb(255,152,0)")) ?? { r: 255, g: 152, b: 0 },
+      fail_clear: parseRgb(resolveCssColor("var(--state-fail-clear)", "rgb(244,67,54)")) ?? { r: 244, g: 67, b: 54 },
+      fail_blocked: parseRgb(resolveCssColor("var(--state-fail-blocked)", "rgb(200,50,50)")) ?? { r: 200, g: 50, b: 50 },
     };
 
     const rays = geometry.visibleRays;

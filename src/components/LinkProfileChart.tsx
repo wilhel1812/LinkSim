@@ -49,8 +49,8 @@ const earthBulgeM = (distanceKm: number, t: number): number => {
 };
 
 export type LinkProfileChartHandle = {
-  /** Returns the chart host element for DOM capture via html-to-image. */
-  getChartWrapElement(): HTMLElement | null;
+  /** Returns the root SVG element of the path profile chart, or null if not rendered. */
+  getChartElement(): SVGSVGElement | null;
 };
 
 type LinkProfileChartProps = {
@@ -70,10 +70,11 @@ export const LinkProfileChart = forwardRef<LinkProfileChartHandle, LinkProfileCh
 }: LinkProfileChartProps, ref) {
   const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
   useImperativeHandle(ref, () => ({
-    getChartWrapElement(): HTMLElement | null {
-      return chartHostRef.current;
+    getChartElement() {
+      return svgRef.current;
     },
   }));
   const [hostAttachRevision, setHostAttachRevision] = useState(0);
@@ -784,6 +785,7 @@ export const LinkProfileChart = forwardRef<LinkProfileChartHandle, LinkProfileCh
         <svg
           aria-label="Link profile"
           height={svgProps.height}
+          ref={svgRef}
           role="img"
           width={svgProps.width}
         >
