@@ -3,7 +3,7 @@ import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, PanelBottomClose, PanelBottomOpen } from "lucide-react";
 import { FloatingPopover } from "./ui/FloatingPopover";
 import type { MouseEvent } from "react";
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   classifyPassFailState,
@@ -48,11 +48,6 @@ const earthBulgeM = (distanceKm: number, t: number): number => {
   return (x * (dTotalM - x)) / (2 * earthRadiusM);
 };
 
-export type LinkProfileChartHandle = {
-  /** Returns the chart host element for DOM capture via html-to-image. */
-  getChartWrapElement(): HTMLElement | null;
-};
-
 type LinkProfileChartProps = {
   isExpanded: boolean;
   onToggleExpanded: () => void;
@@ -61,21 +56,15 @@ type LinkProfileChartProps = {
   panelClassName?: string;
 };
 
-export const LinkProfileChart = forwardRef<LinkProfileChartHandle, LinkProfileChartProps>(function LinkProfileChart({
+export function LinkProfileChart({
   isExpanded,
   onToggleExpanded,
   showExpandToggle = true,
   rowControls,
   panelClassName,
-}: LinkProfileChartProps, ref) {
+}: LinkProfileChartProps) {
   const chartPanelRef = useRef<HTMLElement | null>(null);
   const chartHostRef = useRef<HTMLDivElement | null>(null);
-
-  useImperativeHandle(ref, () => ({
-    getChartWrapElement(): HTMLElement | null {
-      return chartHostRef.current;
-    },
-  }));
   const [hostAttachRevision, setHostAttachRevision] = useState(0);
   const segmentStateCacheRef = useRef<Map<string, PassFailState[]>>(new Map());
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
@@ -895,4 +884,4 @@ export const LinkProfileChart = forwardRef<LinkProfileChartHandle, LinkProfileCh
       </div>
     </section>
   );
-});
+}

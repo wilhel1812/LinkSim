@@ -11,33 +11,11 @@ VITE_PID_FILE="$SCRIPT_DIR/.tmp/local-vite.pid"
 VITE_LOG_FILE="$SCRIPT_DIR/.tmp/local-vite.log"
 VITE_PORT="5174"
 
-cleanup_stale() {
-  echo "Cleaning up stale processes..."
-  local pids
-  pids="$(lsof -ti tcp:8788 2>/dev/null || true)"
-  [ -n "$pids" ] && echo "$pids" | xargs kill -TERM >/dev/null 2>&1 || true
-  sleep 1
-  pids="$(lsof -ti tcp:8788 2>/dev/null || true)"
-  [ -n "$pids" ] && echo "$pids" | xargs kill -KILL >/dev/null 2>&1 || true
-
-  pids="$(lsof -ti tcp:$VITE_PORT 2>/dev/null || true)"
-  [ -n "$pids" ] && echo "$pids" | xargs kill -TERM >/dev/null 2>&1 || true
-  sleep 1
-  pids="$(lsof -ti tcp:$VITE_PORT 2>/dev/null || true)"
-  [ -n "$pids" ] && echo "$pids" | xargs kill -KILL >/dev/null 2>&1 || true
-
-  pkill -f "esbuild.*esbuild" >/dev/null 2>&1 || true
-  pkill -f "workerd" >/dev/null 2>&1 || true
-  echo "Done."
-}
-
-start_edge() {
+start_servers() {
+  : > "$LOG_FILE"
+  : > "$VITE_LOG_FILE"
   nohup npm run dev:edge > "$LOG_FILE" 2>&1 &
   echo $! > "$PID_FILE"
-}
-
-start_vite() {
-  : > "$VITE_LOG_FILE"
   nohup npm run dev -- --host 127.0.0.1 --port "$VITE_PORT" --strictPort > "$VITE_LOG_FILE" 2>&1 &
   echo $! > "$VITE_PID_FILE"
 }
@@ -45,35 +23,23 @@ start_vite() {
 wait_for_servers() {
   READY=0
   for i in {1..150}; do
-    EDGE_OK=0
-    VITE_OK=0
-    if [ "$START_EDGE" -eq 1 ]; then
-      if [ -f "$PID_FILE" ]; then
-        PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-        if [ -n "${PID:-}" ] && ! kill -0 "$PID" 2>/dev/null; then
-          echo "Edge server exited during startup."
-          tail -n 80 "$LOG_FILE" || true
-        else
-          curl -fsS "http://127.0.0.1:8788" >/dev/null 2>&1 && EDGE_OK=1
-        fi
+    if [ -f "$PID_FILE" ]; then
+      PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+      if [ -n "${PID:-}" ] && ! kill -0 "$PID" 2>/dev/null; then
+        echo "Edge server exited during startup."
+        tail -n 80 "$LOG_FILE" || true
+        break
       fi
-    else
-      EDGE_OK=1
     fi
-    if [ "$START_VITE" -eq 1 ]; then
-      if [ -f "$VITE_PID_FILE" ]; then
-        VITE_PID="$(cat "$VITE_PID_FILE" 2>/dev/null || true)"
-        if [ -n "${VITE_PID:-}" ] && ! kill -0 "$VITE_PID" 2>/dev/null; then
-          echo "Vite server exited during startup."
-          tail -n 80 "$VITE_LOG_FILE" || true
-        else
-          curl -fsS "http://127.0.0.1:$VITE_PORT" >/dev/null 2>&1 && VITE_OK=1
-        fi
+    if [ -f "$VITE_PID_FILE" ]; then
+      VITE_PID="$(cat "$VITE_PID_FILE" 2>/dev/null || true)"
+      if [ -n "${VITE_PID:-}" ] && ! kill -0 "$VITE_PID" 2>/dev/null; then
+        echo "Vite server exited during startup."
+        tail -n 80 "$VITE_LOG_FILE" || true
+        break
       fi
-    else
-      VITE_OK=1
     fi
-    if [ "$EDGE_OK" -eq 1 ] && [ "$VITE_OK" -eq 1 ]; then
+    if curl -fsS "http://127.0.0.1:8788" >/dev/null 2>&1 && curl -fsS "http://127.0.0.1:$VITE_PORT" >/dev/null 2>&1; then
       READY=1
       break
     fi
@@ -141,53 +107,19 @@ stop_server() {
   fi
 }
 
-# Clean up stale processes from previous sessions, then stop old PID file process
-cleanup_stale
+# Stop old PID file process if present
 stop_server
 
-echo "Choose mode:"
-echo "  E - Edge only (faster, no live CSS)"
-echo "  B - Both edge + Vite (live reload)"
-echo ""
-printf "Mode [E/B]? "
-read -rs -k 1 MODE
-echo ""
-
-START_EDGE=1
-START_VITE=0
-if [[ "$MODE" == "b" ]] || [[ "$MODE" == "B" ]]; then
-  START_VITE=1
-fi
-
-echo "Starting..."
-if [ "$START_EDGE" -eq 1 ]; then
-  echo "  - Edge (http://127.0.0.1:8788)"
-fi
-if [ "$START_VITE" -eq 1 ]; then
-  echo "  - Vite (http://localhost:$VITE_PORT)"
-fi
-
-: > "$LOG_FILE"
-[ "$START_VITE" -eq 1 ] && : > "$VITE_LOG_FILE"
-
-[ "$START_EDGE" -eq 1 ] && start_edge
-[ "$START_VITE" -eq 1 ] && start_vite
-
+echo "Starting edge + Vite on fixed port $VITE_PORT ..."
+start_servers
 wait_for_servers
 
 if [ "$READY" -eq 1 ]; then
-  if [ "$START_VITE" -eq 1 ]; then
-    open "http://localhost:$VITE_PORT/"
-  fi
+  open "http://localhost:$VITE_PORT/"
   while true; do
     echo ""
-    if [ "$START_VITE" -eq 1 ]; then
-      echo "Ready: app http://localhost:$VITE_PORT/  api http://127.0.0.1:8788"
-      echo "R restart  Q quit  L edge log  V vite log"
-    else
-      echo "Ready: api http://127.0.0.1:8788"
-      echo "R restart  Q quit  L edge log"
-    fi
+    echo "Ready: app http://localhost:$VITE_PORT/  api http://127.0.0.1:8788"
+    echo "R restart  Q quit  L edge log  V vite log"
     read -rs -k 1 response
     if [[ "$response" == "q" ]] || [[ "$response" == "Q" ]]; then
       stop_server
@@ -202,13 +134,12 @@ if [ "$READY" -eq 1 ]; then
       continue
     fi
     if [[ "$response" == "r" ]] || [[ "$response" == "R" ]]; then
-      echo "Restarting..."
+      echo "Restarting edge + Vite ..."
       stop_server
-      [ "$START_EDGE" -eq 1 ] && start_edge
-      [ "$START_VITE" -eq 1 ] && start_vite
+      start_servers
       wait_for_servers
       if [ "$READY" -eq 1 ]; then
-        [ "$START_VITE" -eq 1 ] && open "http://localhost:$VITE_PORT/"
+        open "http://localhost:$VITE_PORT/"
         echo "Ready again."
       fi
     fi
