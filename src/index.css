@@ -3783,6 +3783,7 @@ html.panorama-gesture-lock body {
 
 .access-collaborator-popover {
   z-index: 12000;
+  padding: 12px;
   width: min(420px, calc(100vw - 24px));
 }
 
