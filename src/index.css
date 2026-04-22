@@ -2447,6 +2447,7 @@ input {
 
 .beam-visualizer-popover {
   width: min(300px, calc(100vw - 24px));
+  z-index: 12050;
   pointer-events: none;
 }
 
