@@ -3742,6 +3742,93 @@ html.panorama-gesture-lock body {
   gap: 8px;
 }
 
+.access-settings-control {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.access-settings-caption {
+  margin: 0;
+}
+
+.access-collaborators-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.access-collaborator-avatars {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.access-collaborator-avatars .row-avatar + .row-avatar {
+  margin-left: -7px;
+}
+
+.access-collaborator-avatars .row-avatar {
+  position: relative;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.access-collaborators-empty {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.access-collaborator-popover {
+  width: min(420px, calc(100vw - 24px));
+}
+
+.access-collaborator-popover-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.access-collaborator-search input {
+  width: 100%;
+}
+
+.access-collaborator-candidates {
+  max-height: 150px;
+}
+
+.access-collaborator-list {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.access-collaborator-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  padding: 6px 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.access-collaborator-row select {
+  max-width: 112px;
+}
+
+.access-collaborator-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
 .collaborator-selected-list {
   max-height: 148px;
   overflow: auto;
