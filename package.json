@@ -19,7 +19,7 @@
     "security:scan": "node scripts/security-scan.mjs",
     "preview": "vite preview --config config/vite.config.ts",
     "test": "npm run build:meta && vitest run --config config/vitest.config.ts",
-    "test:ci": "vitest run --coverage --config config/vitest.config.ts",
+    "test:ci": "npm run build:meta && vitest run --coverage --config config/vitest.config.ts",
     "test:watch": "vitest --config config/vitest.config.ts",
     "smoke:edge": "node scripts/scripts_pw_check.mjs",
     "smoke:pw": "node scripts/scripts_pw_check.mjs",
