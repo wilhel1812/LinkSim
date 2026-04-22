@@ -5,6 +5,7 @@ import { StateDot } from "./StateDot";
 import { Surface } from "./ui/Surface";
 import { Badge } from "./ui/Badge";
 import { UiSlider } from "./UiSlider";
+import { SiteBeamVisualizer } from "./SiteBeamVisualizer";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
@@ -36,6 +37,7 @@ const SOURCE_PATHS: Record<string, string> = {
   "Select": "src/components/ui/Select.tsx",
   "Badge": "src/components/ui/Badge.tsx",
   "UI Slider": "src/components/UiSlider.tsx",
+  "SiteBeamVisualizer": "src/components/SiteBeamVisualizer.tsx",
   "NotificationStack": "src/components/NotificationStack.tsx",
   "NotificationBanner": "src/components/NotificationBanner.tsx",
   "MapInlineNotice": "src/components/MapInlineNotice.tsx",
@@ -438,6 +440,17 @@ export function UiGalleryPage() {
                   value={0.75}
                 />
               </div>
+            </PatternCard>
+            <PatternCard name="SiteBeamVisualizer" status="standard">
+              <SiteBeamVisualizer
+                values={{
+                  antennaHeightM: 8,
+                  txPowerDbm: 22,
+                  txGainDbi: 9,
+                  rxGainDbi: 9,
+                  cableLossDb: 1.8,
+                }}
+              />
             </PatternCard>
           </div>
         </section>
