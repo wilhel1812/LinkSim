@@ -182,6 +182,7 @@ const PatternCard = ({
 
 export function UiGalleryPage() {
   const { theme, variant, colorTheme, activeHolidayTheme } = useThemeVariant();
+  const [showCheckerboard, setShowCheckerboard] = useState(false);
   const [activeTab, setActiveTab] = useState<GalleryTab>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(GALLERY_TAB_STORAGE_KEY);
@@ -217,7 +218,7 @@ export function UiGalleryPage() {
   }, [theme, variant]);
 
   return (
-    <main className="ui-gallery-page">
+    <main className={`ui-gallery-page ${showCheckerboard ? "is-checkerboard-enabled" : ""}`}>
       <header className="ui-gallery-topbar panel-section">
         <div className="section-heading">
           <h2>LinkSim UI Gallery</h2>
@@ -252,6 +253,15 @@ export function UiGalleryPage() {
               Holiday: {activeHolidayTheme.title}
             </span>
           ) : null}
+        </div>
+        <div className="chip-group ui-gallery-theme-toggle">
+          <ActionButton
+            aria-pressed={showCheckerboard}
+            onClick={() => setShowCheckerboard((value) => !value)}
+            type="button"
+          >
+            Checkerboard
+          </ActionButton>
         </div>
         <nav className="ui-gallery-tabs" aria-label="UI gallery tabs">
           {GALLERY_TABS.map((tab) => (
@@ -598,7 +608,24 @@ export function UiGalleryPage() {
                     <span>Visible + pass</span>
                   </div>
                 </Surface>
-                <p className="field-help" style={{ marginTop: 0 }}>Strict pill shape (border-radius: 999px) for tall or long content such as label lists and narrow context menus. Uses the base <code>ui-surface-pill</code> class.</p>
+                <Surface variant="pill" tone="muted" style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
+                    <StateDot state="pass_blocked" />
+                    <span>Inactive</span>
+                  </div>
+                </Surface>
+                <Surface
+                  variant="pill"
+                  pointerTail
+                  pointerTone="selection"
+                  style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
+                    <StateDot state="fail_clear" />
+                    <span>Pointer tail</span>
+                  </div>
+                </Surface>
+                <p className="field-help" style={{ marginTop: 0 }}>Strict pill shape (border-radius: 999px) for tall or long content such as label lists and narrow context menus. The shared pill surface now also supports a muted state and an optional pointer/tail modifier.</p>
               </div>
               <VariantList variants={["pill", "card"]} />
             </PatternCard>

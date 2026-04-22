@@ -77,6 +77,7 @@ import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { Badge } from "./ui/Badge";
+import { Surface } from "./ui/Surface";
 import { UserAdminPanel } from "./UserAdminPanel";
 
 const parseNumber = (value: string): number => {
@@ -130,6 +131,8 @@ const meshmapLabelsLayer = (color: string, haloColor: string): LayerProps => ({
     "text-halo-width": 1.3,
   },
 });
+
+const SITE_PIN_MARKER_OFFSET: [number, number] = [0, -11];
 
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
@@ -2503,6 +2506,16 @@ export function Sidebar({
                         padding: event.viewState.padding as { left: number; right: number; top: number; bottom: number },
                       });
                     }}
+                    onMove={(event) => {
+                      setInlineMapView({
+                        longitude: event.viewState.longitude,
+                        latitude: event.viewState.latitude,
+                        zoom: event.viewState.zoom,
+                        bearing: event.viewState.bearing ?? 0,
+                        pitch: event.viewState.pitch ?? 0,
+                        padding: event.viewState.padding as { left: number; right: number; top: number; bottom: number },
+                      });
+                    }}
                     mapStyle={resolvedBasemap.style}
                     onClick={(event) => {
                       if (!resourceCanWrite) return;
@@ -2513,23 +2526,24 @@ export function Sidebar({
                       void persistResourceAccessSettings({ lat: nextLat, lon: nextLon });
                     }}
                   >
-                    <Marker
-                      anchor="bottom"
-                      draggable={resourceCanWrite}
-                      latitude={resourceLatDraft}
-                      longitude={resourceLonDraft}
-                      onDragEnd={(event: MarkerDragEvent) => {
-                        if (!resourceCanWrite) return;
-                        const nextLat = event.lngLat.lat;
+                      <Marker
+                        anchor="bottom"
+                        draggable={resourceCanWrite}
+                        latitude={resourceLatDraft}
+                        longitude={resourceLonDraft}
+                        offset={SITE_PIN_MARKER_OFFSET}
+                        onDragEnd={(event: MarkerDragEvent) => {
+                          if (!resourceCanWrite) return;
+                          const nextLat = event.lngLat.lat;
                         const nextLon = event.lngLat.lng;
                         setResourceLatDraft(nextLat);
                         setResourceLonDraft(nextLon);
                         void persistResourceAccessSettings({ lat: nextLat, lon: nextLon });
                       }}
                     >
-                      <div className="site-pin library-edit-pin">
+                      <Surface variant="pill" className="map-site-surface library-edit-pin" pointerTail>
                         <span>{resourceNameDraft.trim() || "Site"}</span>
-                      </div>
+                      </Surface>
                     </Marker>
                   </Map>
                 </div>
@@ -3618,6 +3632,17 @@ export function Sidebar({
                           padding: { left: p.left ?? 0, right: p.right ?? 0, top: p.top ?? 0, bottom: p.bottom ?? 0 },
                         });
                       }}
+                      onMove={(event) => {
+                        const p = event.viewState.padding;
+                        setNewLibraryMapView({
+                          longitude: event.viewState.longitude,
+                          latitude: event.viewState.latitude,
+                          zoom: event.viewState.zoom,
+                          bearing: event.viewState.bearing,
+                          pitch: event.viewState.pitch,
+                          padding: { left: p.left ?? 0, right: p.right ?? 0, top: p.top ?? 0, bottom: p.bottom ?? 0 },
+                        });
+                      }}
                       mapStyle={resolvedBasemap.style}
                       onClick={(event) => {
                         const nextLat = event.lngLat.lat;
@@ -3628,23 +3653,24 @@ export function Sidebar({
                         if (elevation !== null) setNewLibraryGroundM(elevation);
                       }}
                     >
-                      <Marker
-                        anchor="bottom"
-                        draggable
-                        latitude={newLibraryLat}
-                        longitude={newLibraryLon}
-                        onDragEnd={(event: MarkerDragEvent) => {
-                          const nextLat = event.lngLat.lat;
-                          const nextLon = event.lngLat.lng;
+                    <Marker
+                      anchor="bottom"
+                      draggable
+                      latitude={newLibraryLat}
+                      longitude={newLibraryLon}
+                      offset={SITE_PIN_MARKER_OFFSET}
+                      onDragEnd={(event: MarkerDragEvent) => {
+                        const nextLat = event.lngLat.lat;
+                        const nextLon = event.lngLat.lng;
                           setNewLibraryLat(nextLat);
                           setNewLibraryLon(nextLon);
                           const elevation = fetchGroundFromLoadedTerrain(nextLat, nextLon);
                           if (elevation !== null) setNewLibraryGroundM(elevation);
                         }}
                       >
-                        <div className="site-pin library-edit-pin">
+                        <Surface variant="pill" className="map-site-surface library-edit-pin" pointerTail>
                           <span>{newLibraryName.trim() || "Site"}</span>
-                        </div>
+                        </Surface>
                       </Marker>
                     </Map>
                   </div>

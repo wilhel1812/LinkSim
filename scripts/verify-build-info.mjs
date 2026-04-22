@@ -12,17 +12,14 @@ const extractVersion = (filePath) => {
   return match?.[1] ?? "";
 };
 
-const srcVersion = extractVersion(resolve(root, "src/lib/buildInfo.ts"));
-const functionsVersion = extractVersion(resolve(root, "functions/_lib/buildInfo.ts"));
+const generatedVersion = extractVersion(resolve(root, ".tmp/buildInfo.ts"));
 
 if (!expectedVersion) {
   console.error("[build-info:verify] package.json version missing");
   process.exit(1);
 }
-if (srcVersion !== expectedVersion || functionsVersion !== expectedVersion) {
-  console.error(
-    `[build-info:verify] version mismatch: package=${expectedVersion}, src=${srcVersion || "-"}, functions=${functionsVersion || "-"}`,
-  );
+if (generatedVersion !== expectedVersion) {
+  console.error(`[build-info:verify] version mismatch: package=${expectedVersion}, generated=${generatedVersion || "-"}`);
   console.error("Run: npm run build:meta");
   process.exit(1);
 }

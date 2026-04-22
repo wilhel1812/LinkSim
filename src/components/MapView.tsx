@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
+import { Surface } from "./ui/Surface";
 import Map, {
   Layer,
   type MapRef,
@@ -507,7 +508,10 @@ type MarkerActionButtonProps = {
   ariaLabel: string;
   children: ReactNode;
   className: string;
-  onActivate: (event: MouseEvent<HTMLButtonElement>) => void;
+  pointerTail?: boolean;
+  pointerTone?: "accent" | "selection" | "temporary";
+  tone?: "default" | "muted";
+  onActivate: (event: MouseEvent<HTMLElement>) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 };
@@ -516,14 +520,22 @@ function MarkerActionButton({
   ariaLabel,
   children,
   className,
+  pointerTail = false,
+  pointerTone = "accent",
+  tone = "default",
   onActivate,
   onMouseEnter,
   onMouseLeave,
 }: MarkerActionButtonProps) {
   return (
-    <button
+    <Surface
+      as="button"
       aria-label={ariaLabel}
       className={className}
+      variant="pill"
+      pointerTail={pointerTail}
+      pointerTone={pointerTone}
+      tone={tone}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -531,10 +543,9 @@ function MarkerActionButton({
       }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      type="button"
     >
       {children}
-    </button>
+    </Surface>
   );
 }
 
@@ -566,6 +577,8 @@ const DEFAULT_MAP_VIEWPORT = {
   center: { lat: 59.9, lon: 10.75 },
   zoom: 8,
 };
+
+const SITE_PIN_MARKER_OFFSET: [number, number] = [0, -11];
 
 export function MapView({
   isMapExpanded,
@@ -2104,7 +2117,7 @@ export function MapView({
 
   const onMapClick = (event: MapLayerMouseEvent) => {
     const rawTarget = event.originalEvent?.target;
-    if (rawTarget instanceof Element && rawTarget.closest(".site-pin")) return;
+    if (rawTarget instanceof Element && rawTarget.closest(".map-site-surface")) return;
     if (endpointPickTarget) return;
     const interactiveFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
     let id = interactiveFeature?.properties ? String(interactiveFeature.properties.id ?? "") : "";
@@ -3133,6 +3146,7 @@ export function MapView({
             : isRelayMode
               ? site.id === selectedFromSite?.id || site.id === selectedToSite?.id
               : true;
+          const markerZIndex = isSelected ? 4 : isTemporarilyMoved ? 3 : isFocusNode ? 2 : 1;
           return (
             <Marker
               anchor="bottom"
@@ -3140,14 +3154,17 @@ export function MapView({
               key={site.id}
               latitude={markerPosition.lat}
               longitude={markerPosition.lon}
+              offset={SITE_PIN_MARKER_OFFSET}
+              style={{ zIndex: markerZIndex }}
               onDrag={(event) => onSiteDrag(site.id, event)}
               onDragEnd={(event) => onSiteDragEnd(site.id, event)}
             >
               <MarkerActionButton
                 ariaLabel={site.name}
-                className={`site-pin ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""} ${
-                  isFocusNode ? "is-mode-focus" : "is-dimmed"
-                }`}
+                className={`map-site-surface ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""}`}
+                pointerTail
+                pointerTone={isSelected ? "selection" : "temporary"}
+                tone={isFocusNode ? "default" : "muted"}
                 onMouseEnter={() =>
                   setOverlayHoverInfo({
                     text: `${site.name} · ${markerPosition.lat.toFixed(5)}, ${markerPosition.lon.toFixed(5)} · ${
@@ -3175,10 +3192,14 @@ export function MapView({
                 key={`discover-site-${entry.id}`}
                 latitude={entry.position.lat}
                 longitude={entry.position.lon}
+                offset={SITE_PIN_MARKER_OFFSET}
+                style={{ zIndex: 1 }}
               >
                 <MarkerActionButton
                   ariaLabel={entry.name}
-                  className="site-pin is-temporary"
+                  className="map-site-surface is-temporary"
+                  pointerTail
+                  pointerTone="temporary"
                   onMouseEnter={() =>
                     setOverlayHoverInfo({
                       text: `${entry.name} · ${entry.position.lat.toFixed(5)}, ${entry.position.lon.toFixed(5)}`,
@@ -3199,10 +3220,19 @@ export function MapView({
 
         {showDiscoveryMqtt
           ? (mqttTooDenseInView ? [] : mqttNodesInView).map((node) => (
-              <Marker anchor="bottom" key={`discover-mqtt-${node.nodeId}`} latitude={node.lat} longitude={node.lon}>
+              <Marker
+                anchor="bottom"
+                key={`discover-mqtt-${node.nodeId}`}
+                latitude={node.lat}
+                longitude={node.lon}
+                offset={SITE_PIN_MARKER_OFFSET}
+                style={{ zIndex: 1 }}
+              >
                 <MarkerActionButton
                   ariaLabel={node.longName ?? node.shortName ?? node.nodeId}
-                  className="site-pin is-temporary"
+                  className="map-site-surface is-temporary"
+                  pointerTail
+                  pointerTone="temporary"
                   onMouseEnter={() =>
                     setOverlayHoverInfo({
                       text: `${node.longName ?? node.shortName ?? node.nodeId} · ${node.nodeId}${
@@ -3227,11 +3257,13 @@ export function MapView({
             draggable
             latitude={pendingNewSiteDraft.lat}
             longitude={pendingNewSiteDraft.lon}
+            offset={SITE_PIN_MARKER_OFFSET}
+            style={{ zIndex: 3 }}
             onDragEnd={onPendingNewSiteDragEnd}
           >
-            <div className="site-pin is-temporary">
+            <Surface variant="pill" className="map-site-surface is-temporary" pointerTail pointerTone="temporary">
               <span>New Site</span>
-            </div>
+            </Surface>
           </Marker>
         ) : null}
 
@@ -3240,6 +3272,7 @@ export function MapView({
             anchor="center"
             latitude={cursorPoint.lat}
             longitude={cursorPoint.lon}
+            style={{ zIndex: 0 }}
           >
             <div className="profile-map-cursor" />
           </Marker>
@@ -3249,6 +3282,7 @@ export function MapView({
             anchor="center"
             latitude={activePanoramaFocus.endpoint.lat}
             longitude={activePanoramaFocus.endpoint.lon}
+            style={{ zIndex: 0 }}
           >
             <div className="profile-map-cursor panorama-map-cursor" />
           </Marker>
