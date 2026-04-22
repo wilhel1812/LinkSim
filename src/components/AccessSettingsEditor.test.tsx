@@ -63,6 +63,7 @@ describe("AccessSettingsEditor", () => {
     const surface = popover.closest(".ui-surface-pill");
     expect(surface).toHaveClass("ui-surface-pill");
     expect(surface).toHaveClass("is-card");
+    expect(surface).toHaveClass("access-collaborator-popover");
     expect(within(popover).queryByRole("button", { name: /Add Alice/i })).not.toBeInTheDocument();
 
     await userEvent.type(within(popover).getByLabelText("Search users"), "ali");
