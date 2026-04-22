@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import clsx from "clsx";
 import { Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
@@ -81,6 +81,7 @@ import {
 import { AvatarBadge } from "./AvatarBadge";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
+import { SiteBeamVisualizerPopover } from "./SiteBeamVisualizer";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { Badge } from "./ui/Badge";
 import { Surface } from "./ui/Surface";
@@ -167,6 +168,17 @@ const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.
 const ALL_SITE_SOURCE_FILTERS = SITE_SOURCE_FILTER_OPTIONS.map((option) => option.key);
 
 type SiteFilterGroupKey = "role" | "visibility" | "source";
+type BeamPreviewFieldKey =
+  | "add-antenna"
+  | "add-tx-power"
+  | "add-tx-gain"
+  | "add-rx-gain"
+  | "add-cable-loss"
+  | "edit-antenna"
+  | "edit-tx-power"
+  | "edit-tx-gain"
+  | "edit-rx-gain"
+  | "edit-cable-loss";
 
 const formatChangeSummary = (action: string, note: string | null): string => {
   if (note && note.trim()) return note;
@@ -553,6 +565,17 @@ export function Sidebar({
   const [resourceTxGainDraft, setResourceTxGainDraft] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [resourceRxGainDraft, setResourceRxGainDraft] = useState(STANDARD_SITE_RADIO.rxGainDbi);
   const [resourceCableLossDraft, setResourceCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
+  const [activeBeamPreviewField, setActiveBeamPreviewField] = useState<BeamPreviewFieldKey | null>(null);
+  const addAntennaBeamRef = useRef<HTMLInputElement | null>(null);
+  const addTxPowerBeamRef = useRef<HTMLInputElement | null>(null);
+  const addTxGainBeamRef = useRef<HTMLInputElement | null>(null);
+  const addRxGainBeamRef = useRef<HTMLInputElement | null>(null);
+  const addCableLossBeamRef = useRef<HTMLInputElement | null>(null);
+  const editAntennaBeamRef = useRef<HTMLInputElement | null>(null);
+  const editTxPowerBeamRef = useRef<HTMLInputElement | null>(null);
+  const editTxGainBeamRef = useRef<HTMLInputElement | null>(null);
+  const editRxGainBeamRef = useRef<HTMLInputElement | null>(null);
+  const editCableLossBeamRef = useRef<HTMLInputElement | null>(null);
   const [resourceCollaboratorUserIds, setResourceCollaboratorUserIds] = useState<string[]>([]);
   const [resourceCollaboratorRoles, setResourceCollaboratorRoles] = useState<Record<string, "viewer" | "editor">>({});
   const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
@@ -565,6 +588,37 @@ export function Sidebar({
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
   } | null>(null);
+
+  const beamPreviewTriggerRefs: Record<BeamPreviewFieldKey, RefObject<HTMLInputElement | null>> = {
+    "add-antenna": addAntennaBeamRef,
+    "add-tx-power": addTxPowerBeamRef,
+    "add-tx-gain": addTxGainBeamRef,
+    "add-rx-gain": addRxGainBeamRef,
+    "add-cable-loss": addCableLossBeamRef,
+    "edit-antenna": editAntennaBeamRef,
+    "edit-tx-power": editTxPowerBeamRef,
+    "edit-tx-gain": editTxGainBeamRef,
+    "edit-rx-gain": editRxGainBeamRef,
+    "edit-cable-loss": editCableLossBeamRef,
+  };
+  const activeBeamPreviewValues = activeBeamPreviewField?.startsWith("edit-")
+    ? {
+        antennaHeightM: resourceAntennaDraft,
+        txPowerDbm: resourceTxPowerDraft,
+        txGainDbi: resourceTxGainDraft,
+        rxGainDbi: resourceRxGainDraft,
+        cableLossDb: resourceCableLossDraft,
+      }
+    : {
+        antennaHeightM: newLibraryAntennaM,
+        txPowerDbm: newLibraryTxPowerDbm,
+        txGainDbi: newLibraryTxGainDbi,
+        rxGainDbi: newLibraryRxGainDbi,
+        cableLossDb: newLibraryCableLossDb,
+      };
+  const activeBeamPreviewTriggerRef = activeBeamPreviewField
+    ? (beamPreviewTriggerRefs[activeBeamPreviewField] as RefObject<HTMLElement | null>)
+    : undefined;
 
 
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -2340,11 +2394,23 @@ export function Sidebar({
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Edit" onClose={() => setResourceDetailsPopup(null)} tier="raised">
+        <ModalOverlay
+          aria-label="Resource Edit"
+          onClose={() => {
+            setResourceDetailsPopup(null);
+            setActiveBeamPreviewField(null);
+          }}
+          tier="raised"
+        >
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
               <h2>Edit · {resourceDetailsPopup.label}</h2>
-              <InlineCloseIconButton onClick={() => setResourceDetailsPopup(null)} />
+              <InlineCloseIconButton
+                onClick={() => {
+                  setResourceDetailsPopup(null);
+                  setActiveBeamPreviewField(null);
+                }}
+              />
             </div>
             <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
             <p className="field-help">ID: {resourceDetailsPopup.resourceId}</p>
@@ -2467,9 +2533,11 @@ export function Sidebar({
                     <span>Antenna (m)</span>
                     <input
                       onChange={(event) => setResourceAntennaDraft(parseNumber(event.target.value))}
+                      onFocus={() => setActiveBeamPreviewField("edit-antenna")}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
+                      ref={editAntennaBeamRef}
                       type="number"
                       value={resourceAntennaDraft}
                     />
@@ -2478,9 +2546,11 @@ export function Sidebar({
                     <span>Tx power (dBm)</span>
                     <input
                       onChange={(event) => setResourceTxPowerDraft(parseNumber(event.target.value))}
+                      onFocus={() => setActiveBeamPreviewField("edit-tx-power")}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
+                      ref={editTxPowerBeamRef}
                       type="number"
                       value={resourceTxPowerDraft}
                     />
@@ -2489,9 +2559,11 @@ export function Sidebar({
                     <span>Tx gain (dBi)</span>
                     <input
                       onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
+                      onFocus={() => setActiveBeamPreviewField("edit-tx-gain")}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
+                      ref={editTxGainBeamRef}
                       type="number"
                       value={resourceTxGainDraft}
                     />
@@ -2500,9 +2572,11 @@ export function Sidebar({
                     <span>Rx gain (dBi)</span>
                     <input
                       onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
+                      onFocus={() => setActiveBeamPreviewField("edit-rx-gain")}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
+                      ref={editRxGainBeamRef}
                       type="number"
                       value={resourceRxGainDraft}
                     />
@@ -2511,9 +2585,11 @@ export function Sidebar({
                     <span>Cable loss (dB)</span>
                     <input
                       onChange={(event) => setResourceCableLossDraft(parseNumber(event.target.value))}
+                      onFocus={() => setActiveBeamPreviewField("edit-cable-loss")}
                       onBlur={() => {
                         void persistResourceAccessSettings();
                       }}
+                      ref={editCableLossBeamRef}
                       type="number"
                       value={resourceCableLossDraft}
                     />
@@ -3275,6 +3351,7 @@ export function Sidebar({
                 onClick={() => {
                   setShowAddLibraryForm((current) => !current);
                   if (showAddLibraryForm) {
+                    setActiveBeamPreviewField(null);
                     setPendingDraftAutoInsert(false);
                     setNewLibraryDescription("");
                     setNewLibraryVisibility("private");
@@ -3412,6 +3489,8 @@ export function Sidebar({
                   <span>Antenna (m)</span>
                   <input
                     onChange={(event) => setNewLibraryAntennaM(parseNumber(event.target.value))}
+                    onFocus={() => setActiveBeamPreviewField("add-antenna")}
+                    ref={addAntennaBeamRef}
                     type="number"
                     value={newLibraryAntennaM}
                   />
@@ -3420,6 +3499,8 @@ export function Sidebar({
                   <span>Tx power (dBm)</span>
                   <input
                     onChange={(event) => setNewLibraryTxPowerDbm(parseNumber(event.target.value))}
+                    onFocus={() => setActiveBeamPreviewField("add-tx-power")}
+                    ref={addTxPowerBeamRef}
                     type="number"
                     value={newLibraryTxPowerDbm}
                   />
@@ -3428,6 +3509,8 @@ export function Sidebar({
                   <span>Tx gain (dBi)</span>
                   <input
                     onChange={(event) => setNewLibraryTxGainDbi(parseNumber(event.target.value))}
+                    onFocus={() => setActiveBeamPreviewField("add-tx-gain")}
+                    ref={addTxGainBeamRef}
                     type="number"
                     value={newLibraryTxGainDbi}
                   />
@@ -3436,6 +3519,8 @@ export function Sidebar({
                   <span>Rx gain (dBi)</span>
                   <input
                     onChange={(event) => setNewLibraryRxGainDbi(parseNumber(event.target.value))}
+                    onFocus={() => setActiveBeamPreviewField("add-rx-gain")}
+                    ref={addRxGainBeamRef}
                     type="number"
                     value={newLibraryRxGainDbi}
                   />
@@ -3444,6 +3529,8 @@ export function Sidebar({
                   <span>Cable loss (dB)</span>
                   <input
                     onChange={(event) => setNewLibraryCableLossDb(parseNumber(event.target.value))}
+                    onFocus={() => setActiveBeamPreviewField("add-cable-loss")}
+                    ref={addCableLossBeamRef}
                     type="number"
                     value={newLibraryCableLossDb}
                   />
@@ -3804,6 +3891,12 @@ export function Sidebar({
           </div>
         </ModalOverlay>
       ) : null}
+      <SiteBeamVisualizerPopover
+        onClose={() => setActiveBeamPreviewField(null)}
+        open={Boolean(activeBeamPreviewField && activeBeamPreviewTriggerRef?.current)}
+        triggerRef={activeBeamPreviewTriggerRef}
+        values={activeBeamPreviewValues}
+      />
       {deleteConfirm ? (
         <ModalOverlay aria-label="Confirm Delete" onClose={() => setDeleteConfirm(null)} tier="raised">
           <div className="library-manager-card user-profile-popup">

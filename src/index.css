@@ -2445,6 +2445,100 @@ input {
   border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
+.beam-visualizer-popover {
+  width: min(300px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.beam-visualizer {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+}
+
+.beam-visualizer-header,
+.beam-visualizer-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.beam-visualizer-header span,
+.beam-visualizer-stats {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.beam-visualizer-stats {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.beam-visualizer-chart {
+  width: 100%;
+  height: 132px;
+  border-radius: var(--radius-card);
+  background:
+    radial-gradient(circle at 50% 88%, color-mix(in srgb, var(--accent-soft) 46%, transparent), transparent 38%),
+    color-mix(in srgb, var(--surface-2) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.beam-visualizer-axis {
+  stroke: color-mix(in srgb, var(--muted) 42%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.beam-visualizer-band {
+  stroke: color-mix(in srgb, var(--surface) 42%, transparent);
+  stroke-width: 1;
+}
+
+.beam-visualizer-band-pass_clear {
+  fill: color-mix(in srgb, var(--state-pass-clear) 72%, transparent);
+}
+
+.beam-visualizer-band-pass_blocked {
+  fill: color-mix(in srgb, var(--state-pass-blocked) 58%, transparent);
+}
+
+.beam-visualizer-band-fail_clear {
+  fill: color-mix(in srgb, var(--state-fail-clear) 50%, transparent);
+}
+
+.beam-visualizer-band-fail_blocked {
+  fill: color-mix(in srgb, var(--state-fail-blocked) 42%, transparent);
+}
+
+.beam-visualizer-origin {
+  fill: var(--text);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.beam-visualizer-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.75rem;
+}
+
+.beam-visualizer-legend li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.beam-visualizer-note {
+  margin: 0;
+}
+
 .ui-settings-row-slider {
   display: flex;
   flex-direction: column;
