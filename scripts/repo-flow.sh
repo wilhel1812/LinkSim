@@ -72,8 +72,7 @@ fi
 # These files will be excluded from "recommended" staging by default.
 
 GENERATED_FILES=(
-  "src/lib/buildInfo.ts"
-  "functions/_lib/buildInfo.ts"
+  ".tmp/buildInfo.ts"
 )
 
 # =============================================================================

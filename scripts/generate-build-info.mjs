@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
@@ -20,6 +20,8 @@ const shortSha = (() => {
 
 const version = String(pkg.version ?? "0.0.0");
 
+mkdirSync(resolve(root, ".tmp"), { recursive: true });
+
 const content = `export const APP_VERSION = "${version}";
 export const APP_COMMIT = "${shortSha}";
 export const APP_BUILD_LABEL = \`v\${APP_VERSION}+\${APP_COMMIT}\`;
@@ -30,6 +32,5 @@ export const buildLabelForChannel = (channel: BuildChannel): string => {
 };
 `;
 
-writeFileSync(resolve(root, "src/lib/buildInfo.ts"), content, "utf8");
-writeFileSync(resolve(root, "functions/_lib/buildInfo.ts"), content, "utf8");
+writeFileSync(resolve(root, ".tmp/buildInfo.ts"), content, "utf8");
 console.log(`[build-info] ${version}+${shortSha}`);

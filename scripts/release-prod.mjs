@@ -77,7 +77,7 @@ async function main() {
   assert(versionAfter !== versionBefore, "Version bump did not change package.json version.");
 
   const tag = `v${versionAfter}`;
-  await run("git", ["add", "package.json", "package-lock.json", "src/lib/buildInfo.ts", "functions/_lib/buildInfo.ts"]);
+  await run("git", ["add", "package.json", "package-lock.json"]);
   await run("git", ["commit", "-m", `release: bump version to ${versionAfter}`]);
   await run("git", ["tag", "-a", tag, "-m", `Release ${tag}`]);
   await run("git", ["push", "origin", "main", "--follow-tags"]);

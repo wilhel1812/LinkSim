@@ -9,7 +9,6 @@ const wranglerStaging = path.join(root, "wrangler.staging.toml");
 const wranglerBackup = path.join(root, "wrangler.toml.__deploy_backup__");
 const distDir = path.join(root, "dist");
 const releaseManifestPath = path.join(distDir, "release.json");
-const ALLOWED_DIRTY_PATHS = new Set(["src/lib/buildInfo.ts", "functions/_lib/buildInfo.ts"]);
 const ENV_FILES_FOR_VITE = [".env", ".env.local", ".env.production", ".env.production.local"];
 const LINK_PROFILE_CHART_PATH = path.join(root, "src", "components", "LinkProfileChart.tsx");
 
@@ -159,27 +158,6 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
-const parseDirtyPathsFromPorcelain = (statusStdout) =>
-  statusStdout
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => {
-      const payload = line.length >= 4 ? line.slice(3).trim() : line.trim();
-      const renameIdx = payload.indexOf(" -> ");
-      if (renameIdx >= 0) return payload.slice(renameIdx + 4).trim();
-      return payload;
-    })
-    .filter(Boolean);
-
-async function cleanupAllowedDirtyFiles() {
-  const status = await run("git", ["status", "--porcelain"], { capture: true });
-  const dirtyPaths = parseDirtyPathsFromPorcelain(status.stdout);
-  const allowedDirty = dirtyPaths.filter((file) => ALLOWED_DIRTY_PATHS.has(file));
-  if (!allowedDirty.length) return;
-  await run("git", ["checkout", "--", ...allowedDirty]);
-  console.log(`[deploy-pages-safe] Cleaned generated files: ${allowedDirty.join(", ")}`);
-}
-
 async function verifyChartRegressionGuards() {
   const chartSource = await readFile(LINK_PROFILE_CHART_PATH, "utf8");
   const forbiddenPatterns = [
@@ -271,15 +249,7 @@ async function preflight(targetName, target) {
       ? `v${JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version}`
       : "";
   const status = await run("git", ["status", "--porcelain"], { capture: true });
-  const dirtyPaths = parseDirtyPathsFromPorcelain(status.stdout);
-  const unexpectedDirty = dirtyPaths.filter((file) => !ALLOWED_DIRTY_PATHS.has(file));
-  assert(
-    unexpectedDirty.length === 0,
-    `Preflight failed: unexpected dirty files before deploy: ${unexpectedDirty.join(", ")}`,
-  );
-  if (dirtyPaths.length > 0) {
-    console.log(`[deploy-pages-safe] Allowing expected dirty files: ${dirtyPaths.join(", ")}`);
-  }
+  assert(status.stdout.trim().length === 0, "Preflight failed: unexpected dirty files before deploy.");
   if (target.requiredBranch) {
     const isTaggedProdCheckout = targetName === "prod-main" && headTags.includes(expectedReleaseTag);
     assert(
@@ -406,8 +376,6 @@ async function main() {
     console.log(
       `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
     );
-  } finally {
-    await cleanupAllowedDirtyFiles();
   }
 }
 
