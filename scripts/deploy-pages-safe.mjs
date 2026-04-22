@@ -376,6 +376,9 @@ async function main() {
     console.log(
       `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
     );
+  } catch (error) {
+    console.error(`[deploy-pages-safe] ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
   }
 }
 
