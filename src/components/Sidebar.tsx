@@ -1814,6 +1814,28 @@ export function Sidebar({
     void persistResourceAccessSettings({ collaboratorRoles: nextRoles });
   };
 
+  const resourceAccessSettingsEditor = resourceDetailsPopup ? (
+    <AccessSettingsEditor
+      collaborators={resourceSelectedCollaboratorUsers}
+      directory={resourceCollaboratorDirectory}
+      directoryBusy={resourceCollaboratorDirectoryBusy}
+      directoryStatus={resourceCollaboratorDirectoryStatus}
+      disabled={!resourceCanWrite}
+      onAddCollaborator={addCollaborator}
+      onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+      onRemoveCollaborator={removeCollaborator}
+      onRoleChange={setCollaboratorRole}
+      onVisibilityChange={(next) => {
+        setResourceAccessVisibility(next);
+        void persistResourceAccessSettings({ visibility: next });
+      }}
+      ownerUserId={currentResourceOwnerId}
+      showStatusFallback
+      status={resourceAccessStatus}
+      visibility={resourceAccessVisibility === "private" ? "private" : "shared"}
+    />
+  ) : null;
+
   const changeProfileRole = async (nextRole: "admin" | "moderator" | "user" | "pending") => {
     if (!profilePopupUser) return;
     setProfilePopupBusy(true);
@@ -2355,6 +2377,7 @@ export function Sidebar({
                     value={resourceDescriptionDraft}
                   />
                 </label>
+                {resourceAccessSettingsEditor}
               </>
             ) : null}
             {resourceDetailsPopup.kind === "site" ? (
@@ -2383,6 +2406,7 @@ export function Sidebar({
                       value={resourceDescriptionDraft}
                     />
                   </label>
+                  {resourceAccessSettingsEditor}
                   <label className="field-grid">
                     <span>Latitude</span>
                     <input
@@ -2640,25 +2664,6 @@ export function Sidebar({
                 </div>
               </CompactDetails>
             ) : null}
-            <AccessSettingsEditor
-              collaborators={resourceSelectedCollaboratorUsers}
-              directory={resourceCollaboratorDirectory}
-              directoryBusy={resourceCollaboratorDirectoryBusy}
-              directoryStatus={resourceCollaboratorDirectoryStatus}
-              disabled={!resourceCanWrite}
-              onAddCollaborator={addCollaborator}
-              onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
-              onRemoveCollaborator={removeCollaborator}
-              onRoleChange={setCollaboratorRole}
-              onVisibilityChange={(next) => {
-                setResourceAccessVisibility(next);
-                void persistResourceAccessSettings({ visibility: next });
-              }}
-              ownerUserId={currentResourceOwnerId}
-              showStatusFallback
-              status={resourceAccessStatus}
-              visibility={resourceAccessVisibility === "private" ? "private" : "shared"}
-            />
             </fieldset>
             {resourceDetailsPopup.kind === "simulation" ? (
               <div className="compact-details">
@@ -3346,6 +3351,15 @@ export function Sidebar({
                   />
                 </label>
                 {newLibraryNameError ? <p className="field-help field-help-error">{newLibraryNameError}</p> : null}
+                <label className="field-grid">
+                  <span>Description</span>
+                  <textarea
+                    onChange={(event) => setNewLibraryDescription(event.target.value)}
+                    placeholder="Optional site notes"
+                    rows={3}
+                    value={newLibraryDescription}
+                  />
+                </label>
                 <AccessSettingsEditor
                   collaborators={newLibrarySelectedCollaboratorUsers}
                   directory={resourceCollaboratorDirectory}
@@ -3360,15 +3374,6 @@ export function Sidebar({
                   ownerUserId={currentUser?.id ?? ""}
                   visibility={newLibraryVisibility}
                 />
-                <label className="field-grid">
-                  <span>Description</span>
-                  <textarea
-                    onChange={(event) => setNewLibraryDescription(event.target.value)}
-                    placeholder="Optional site notes"
-                    rows={3}
-                    value={newLibraryDescription}
-                  />
-                </label>
                 <label className="field-grid">
                   <span>Latitude</span>
                   <input
