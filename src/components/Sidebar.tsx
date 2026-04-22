@@ -72,6 +72,12 @@ import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ActionButton } from "./ActionButton";
+import {
+  AccessSettingsEditor,
+  type AccessCollaborator,
+  type AccessRole,
+  type AccessVisibility,
+} from "./AccessSettingsEditor";
 import { AvatarBadge } from "./AvatarBadge";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
@@ -420,6 +426,9 @@ export function Sidebar({
   const [newLibraryTxGainDbi, setNewLibraryTxGainDbi] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [newLibraryRxGainDbi, setNewLibraryRxGainDbi] = useState(STANDARD_SITE_RADIO.rxGainDbi);
   const [newLibraryCableLossDb, setNewLibraryCableLossDb] = useState(STANDARD_SITE_RADIO.cableLossDb);
+  const [newLibraryVisibility, setNewLibraryVisibility] = useState<AccessVisibility>("private");
+  const [newLibraryCollaboratorUserIds, setNewLibraryCollaboratorUserIds] = useState<string[]>([]);
+  const [newLibraryCollaboratorRoles, setNewLibraryCollaboratorRoles] = useState<Record<string, AccessRole>>({});
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const [librarySearchStatus, setLibrarySearchStatus] = useState("");
   const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
@@ -546,7 +555,6 @@ export function Sidebar({
   const [resourceCableLossDraft, setResourceCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
   const [resourceCollaboratorUserIds, setResourceCollaboratorUserIds] = useState<string[]>([]);
   const [resourceCollaboratorRoles, setResourceCollaboratorRoles] = useState<Record<string, "viewer" | "editor">>({});
-  const [resourceCollaboratorQuery, setResourceCollaboratorQuery] = useState("");
   const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
   const [resourceCollaboratorDirectoryBusy, setResourceCollaboratorDirectoryBusy] = useState(false);
   const [resourceCollaboratorDirectoryStatus, setResourceCollaboratorDirectoryStatus] = useState("");
@@ -720,6 +728,28 @@ export function Sidebar({
       }),
     [collaboratorDirectoryById, resourceCollaboratorUserIds],
   );
+  const newLibrarySelectedCollaboratorUsers = useMemo<AccessCollaborator[]>(
+    () =>
+      newLibraryCollaboratorUserIds.map((userId) => {
+        const user = collaboratorDirectoryById.get(userId);
+        return {
+          id: userId,
+          username: user?.username ?? userId,
+          email: user?.email ?? "",
+          avatarUrl: user?.avatarUrl ?? "",
+          role: newLibraryCollaboratorRoles[userId] ?? "viewer",
+        };
+      }),
+    [collaboratorDirectoryById, newLibraryCollaboratorRoles, newLibraryCollaboratorUserIds],
+  );
+  const resourceSelectedCollaboratorUsers = useMemo<AccessCollaborator[]>(
+    () =>
+      selectedCollaboratorUsers.map((user) => ({
+        ...user,
+        role: resourceCollaboratorRoles[user.id] ?? "viewer",
+      })),
+    [resourceCollaboratorRoles, selectedCollaboratorUsers],
+  );
   const resolveOwnerDisplay = (
     ownerUserId: string | undefined,
     fallbackName: string | undefined,
@@ -766,18 +796,6 @@ export function Sidebar({
     if (!resourceDetailsPopup) return false;
     return canWriteResource(resourceDetailsPopup.kind, resourceDetailsPopup.resourceId);
   }, [resourceDetailsPopup, siteLibrary, simulationPresets]);
-  const collaboratorCandidates = useMemo(() => {
-    const q = resourceCollaboratorQuery.trim().toLowerCase();
-    const selectedIds = new Set(resourceCollaboratorUserIds);
-    const filtered = resourceCollaboratorDirectory.filter((user) => {
-      if (currentResourceOwnerId && user.id === currentResourceOwnerId) return false;
-      if (selectedIds.has(user.id)) return false;
-      if (!q) return true;
-      const hay = `${user.username} ${user.email}`.toLowerCase();
-      return hay.includes(q);
-    });
-    return filtered.slice(0, 30);
-  }, [currentResourceOwnerId, resourceCollaboratorDirectory, resourceCollaboratorUserIds, resourceCollaboratorQuery]);
   useEffect(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -914,6 +932,9 @@ export function Sidebar({
     setShowSiteLibraryManager(true);
     setShowAddLibraryForm(true);
     setNewLibraryNameError("");
+    setNewLibraryVisibility("private");
+    setNewLibraryCollaboratorUserIds([]);
+    setNewLibraryCollaboratorRoles({});
     setNewLibrarySourceMeta(pendingSiteLibraryDraft.sourceMeta);
     setPendingDraftAutoInsert(true);
     setNewLibraryName(pendingSiteLibraryDraft.suggestedName ?? "");
@@ -1206,6 +1227,9 @@ export function Sidebar({
     setShowAddLibraryForm(true);
     setNewLibraryName("");
     setNewLibraryDescription("");
+    setNewLibraryVisibility("private");
+    setNewLibraryCollaboratorUserIds([]);
+    setNewLibraryCollaboratorRoles({});
     setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(selectedSite.position.lat);
     setNewLibraryLon(selectedSite.position.lon);
@@ -1239,13 +1263,19 @@ export function Sidebar({
       newLibraryRxGainDbi,
       newLibraryCableLossDb,
       (newLibrarySourceMeta as Parameters<typeof addSiteLibraryEntry>[9]) ?? undefined,
-      pendingDraftAutoInsert ? activeSimulationVisibility : "private",
+      newLibraryVisibility,
       newLibraryDescription,
     );
     if (!createdId) {
       setNewLibraryNameError("A name is required.");
       setLibrarySearchStatus("");
       return;
+    }
+    const sharedWith = newLibraryCollaboratorUserIds
+      .filter((userId) => userId !== currentUser.id)
+      .map((userId) => ({ userId, role: (newLibraryCollaboratorRoles[userId] ?? "viewer") as AccessRole }));
+    if (sharedWith.length) {
+      updateSiteLibraryEntry(createdId, { sharedWith });
     }
     if (pendingDraftAutoInsert && createdId) {
       insertSiteFromLibrary(createdId);
@@ -1259,6 +1289,9 @@ export function Sidebar({
     setNewLibraryTxGainDbi(STANDARD_SITE_RADIO.txGainDbi);
     setNewLibraryRxGainDbi(STANDARD_SITE_RADIO.rxGainDbi);
     setNewLibraryCableLossDb(STANDARD_SITE_RADIO.cableLossDb);
+    setNewLibraryVisibility("private");
+    setNewLibraryCollaboratorUserIds([]);
+    setNewLibraryCollaboratorRoles({});
     setShowAddLibraryForm(false);
   };
   const fetchGroundFromLoadedTerrain = (lat: number, lon: number): number | null => {
@@ -1542,7 +1575,6 @@ export function Sidebar({
         Object.fromEntries(simGrants.map((grant) => [grant.userId, grant.role === "editor" || grant.role === "admin" ? "editor" : "viewer"])),
       );
     }
-    setResourceCollaboratorQuery("");
     setResourceAccessStatus("");
     const resolvedCreatedAvatar =
       createdByAvatarUrl.trim() || (createdByUserId && createdByUserId === lastEditedByUserId ? lastEditedByAvatarUrl : "");
@@ -1703,6 +1735,29 @@ export function Sidebar({
     setResourceAccessStatus("Saved");
   };
 
+  const addNewLibraryCollaborator = (userId: string) => {
+    if (!userId.trim()) return;
+    if (currentUser?.id && userId === currentUser.id) {
+      setLibrarySearchStatus("Owner is implicit and cannot be added as collaborator.");
+      return;
+    }
+    setNewLibraryCollaboratorUserIds((current) => (current.includes(userId) ? current : [...current, userId]));
+    setNewLibraryCollaboratorRoles((current) => (current[userId] ? current : { ...current, [userId]: "viewer" }));
+  };
+
+  const removeNewLibraryCollaborator = (userId: string) => {
+    setNewLibraryCollaboratorUserIds((current) => current.filter((id) => id !== userId));
+    setNewLibraryCollaboratorRoles((current) => {
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    });
+  };
+
+  const setNewLibraryCollaboratorRole = (userId: string, role: AccessRole) => {
+    setNewLibraryCollaboratorRoles((current) => ({ ...current, [userId]: role }));
+  };
+
   const addCollaborator = (userId: string) => {
     if (!resourceCanWrite) {
       setResourceAccessStatus("Read-only: you do not have edit permission for this resource.");
@@ -1721,7 +1776,6 @@ export function Sidebar({
       setResourceCollaboratorRoles((prev) => ({ ...prev, [userId]: "viewer" }));
     }
     void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
-    setResourceCollaboratorQuery("");
   };
 
   const removeCollaborator = (userId: string) => {
@@ -2586,93 +2640,25 @@ export function Sidebar({
                 </div>
               </CompactDetails>
             ) : null}
-            <CompactDetails>
-              <CompactDetailsSummary>Access</CompactDetailsSummary>
-              <label className="field-grid">
-                <span>
-                  Access level{" "}
-                  <InfoTip text="Private: visible to owner/admin. Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
-                </span>
-                <select
-                  className="locale-select"
-                    onChange={(event) =>
-                    {
-                      const next = event.target.value as "private" | "public" | "shared";
-                      setResourceAccessVisibility(next);
-                      void persistResourceAccessSettings({ visibility: next });
-                    }
-                  }
-                  value={resourceAccessVisibility}
-                >
-                  <option value="private">Private</option>
-                  <option value="shared">Shared</option>
-                </select>
-              </label>
-              <p className="field-help warning-text">
-                Access levels are not a confidential storage guarantee. Never place passwords, tokens, private keys, or
-                other secrets in resource content.
-              </p>
-              <div className="field-grid user-bio-field collaborator-picker-grid">
-                <span>
-                  Collaborators{" "}
-                  <InfoTip text="Add specific users and assign them viewer or editor access. Viewers can view and run; editors can also modify and add collaborators. Owners/admins can remove collaborators." />
-                </span>
-                <div className="collaborator-picker">
-                  <div className="chip-group collaborator-selected-list">
-                    {selectedCollaboratorUsers.length ? (
-                      selectedCollaboratorUsers.map((user) => (
-                        <span className="site-quick-item" key={user.id}>
-                          <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
-                          <select
-                            aria-label={`Role for ${user.username}`}
-                            onChange={(e) => setCollaboratorRole(user.id, e.target.value as "viewer" | "editor")}
-                            value={resourceCollaboratorRoles[user.id] ?? "viewer"}
-                          >
-                            <option value="viewer">Viewer</option>
-                            <option value="editor">Editor</option>
-                          </select>
-                          <ActionButton onClick={() => removeCollaborator(user.id)} type="button">
-                            Remove
-                          </ActionButton>
-                        </span>
-                      ))
-                    ) : (
-                      <span className="field-help">No collaborators yet.</span>
-                    )}
-                  </div>
-                  <input
-                    onChange={(event) => setResourceCollaboratorQuery(event.target.value)}
-                    placeholder="Search users by name or email"
-                    type="text"
-                    value={resourceCollaboratorQuery}
-                  />
-                  <div className="collaborator-candidate-list">
-                    {resourceCollaboratorDirectoryBusy ? (
-                      <p className="field-help">Loading users…</p>
-                    ) : collaboratorCandidates.length ? (
-                      collaboratorCandidates.map((user) => (
-                        <button className="site-quick-item" key={user.id} onClick={() => addCollaborator(user.id)} type="button">
-                          <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
-                          <span className="field-help">{user.email}</span>
-                          <span className="inline-action">Add</span>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="field-help">No matching users.</p>
-                    )}
-                  </div>
-                  {resourceCollaboratorDirectoryStatus ? (
-                    <p className="field-help">{resourceCollaboratorDirectoryStatus}</p>
-                  ) : null}
-                </div>
-              </div>
-              <p className="field-help">
-                Viewers can view and run the simulation. Editors can also modify it and add collaborators. Owners/admins
-                can remove collaborators. Private simulations remain private — only added collaborators gain access via
-                the share link when logged in.
-              </p>
-              {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
-            </CompactDetails>
+            <AccessSettingsEditor
+              collaborators={resourceSelectedCollaboratorUsers}
+              directory={resourceCollaboratorDirectory}
+              directoryBusy={resourceCollaboratorDirectoryBusy}
+              directoryStatus={resourceCollaboratorDirectoryStatus}
+              disabled={!resourceCanWrite}
+              onAddCollaborator={addCollaborator}
+              onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+              onRemoveCollaborator={removeCollaborator}
+              onRoleChange={setCollaboratorRole}
+              onVisibilityChange={(next) => {
+                setResourceAccessVisibility(next);
+                void persistResourceAccessSettings({ visibility: next });
+              }}
+              ownerUserId={currentResourceOwnerId}
+              showStatusFallback
+              status={resourceAccessStatus}
+              visibility={resourceAccessVisibility === "private" ? "private" : "shared"}
+            />
             </fieldset>
             {resourceDetailsPopup.kind === "simulation" ? (
               <div className="compact-details">
@@ -3286,6 +3272,9 @@ export function Sidebar({
                   if (showAddLibraryForm) {
                     setPendingDraftAutoInsert(false);
                     setNewLibraryDescription("");
+                    setNewLibraryVisibility("private");
+                    setNewLibraryCollaboratorUserIds([]);
+                    setNewLibraryCollaboratorRoles({});
                   }
                 }}
                 type="button"
@@ -3357,6 +3346,20 @@ export function Sidebar({
                   />
                 </label>
                 {newLibraryNameError ? <p className="field-help field-help-error">{newLibraryNameError}</p> : null}
+                <AccessSettingsEditor
+                  collaborators={newLibrarySelectedCollaboratorUsers}
+                  directory={resourceCollaboratorDirectory}
+                  directoryBusy={resourceCollaboratorDirectoryBusy}
+                  directoryStatus={resourceCollaboratorDirectoryStatus}
+                  disabled={!currentUser?.id}
+                  onAddCollaborator={addNewLibraryCollaborator}
+                  onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+                  onRemoveCollaborator={removeNewLibraryCollaborator}
+                  onRoleChange={setNewLibraryCollaboratorRole}
+                  onVisibilityChange={setNewLibraryVisibility}
+                  ownerUserId={currentUser?.id ?? ""}
+                  visibility={newLibraryVisibility}
+                />
                 <label className="field-grid">
                   <span>Description</span>
                   <textarea
@@ -3683,9 +3686,12 @@ export function Sidebar({
                   onClick={() => {
                     setShowAddLibraryForm(false);
                     setNewLibraryNameError("");
-                      setNewLibraryDescription("");
-                      setNewLibrarySourceMeta(undefined);
-                      setPendingDraftAutoInsert(false);
+                    setNewLibraryDescription("");
+                    setNewLibraryVisibility("private");
+                    setNewLibraryCollaboratorUserIds([]);
+                    setNewLibraryCollaboratorRoles({});
+                    setNewLibrarySourceMeta(undefined);
+                    setPendingDraftAutoInsert(false);
                   }}
                   type="button"
                 >
