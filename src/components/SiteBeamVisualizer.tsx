@@ -31,9 +31,21 @@ const sectorPath = (cx: number, cy: number, radius: number, widthDeg: number): s
 
 export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
   const metrics = useMemo(() => computeBeamPreviewMetrics(values), [values]);
+  const heltecBaselineMetrics = useMemo(
+    () =>
+      computeBeamPreviewMetrics({
+        antennaHeightM: values.antennaHeightM,
+        txPowerDbm: 22,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      }),
+    [values.antennaHeightM],
+  );
   const cx = 110;
   const cy = 116;
   const maxRadius = 96 * metrics.rangeScore;
+  const baselineRadius = 96 * heltecBaselineMetrics.rangeScore;
 
   return (
     <div
@@ -54,6 +66,10 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
             key={band.state}
           />
         ))}
+        <path
+          className="beam-visualizer-baseline"
+          d={sectorPath(cx, cy, baselineRadius, heltecBaselineMetrics.beamWidthDeg)}
+        />
         <circle className="beam-visualizer-origin" cx={cx} cy={cy} r="5" />
       </svg>
       <ul className="beam-visualizer-legend">
@@ -66,6 +82,9 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
           <span>Fail</span>
         </li>
       </ul>
+      <p className="field-help beam-visualizer-baseline-note">
+        Gray outline: Heltec v3 baseline (22 dBm, 2 dBi, 1 dB cable loss).
+      </p>
       <p className="field-help beam-visualizer-note">Not to scale, illustration only.</p>
     </div>
   );

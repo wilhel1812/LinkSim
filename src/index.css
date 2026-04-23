@@ -2507,6 +2507,13 @@ input {
   stroke-width: 1;
 }
 
+.beam-visualizer-baseline {
+  fill: none;
+  stroke: color-mix(in srgb, var(--muted) 72%, var(--surface));
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+}
+
 .beam-visualizer-band-pass_clear {
   fill: color-mix(in srgb, var(--state-pass-clear) 72%, transparent);
 }
@@ -2547,6 +2554,10 @@ input {
 }
 
 .beam-visualizer-note {
+  margin: 0;
+}
+
+.beam-visualizer-baseline-note {
   margin: 0;
 }
 
