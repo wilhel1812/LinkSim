@@ -2039,7 +2039,7 @@ input {
 
 .chart-panel {
   overflow: hidden;
-  padding: 10px 18px 8px;
+  padding: 18px 18px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3071,7 +3071,6 @@ html.panorama-gesture-lock body {
     max-height: 100%;
     grid-row: 1;
     overflow: auto;
-    padding-top: 4px;
   }
 
   .mobile-workspace-panel .chart-svg-wrap {
