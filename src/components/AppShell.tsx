@@ -2057,36 +2057,36 @@ export function AppShell() {
           }
           showMultiSelectToggle={isMobileViewport}
           canPersist={canPersistWorkspace}
-          inspectorHeaderActions={
-            <div className="map-inspector-header-actions">
-              {!isMobileViewport ? (
+          inspectorPanelToggle={
+            !isMobileViewport ? (
+              <MapControlButton
+                aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
+                onClick={() => {
+                  if (isInspectorHidden) {
+                    showInspectorPanel();
+                    return;
+                  }
+                  hideInspectorPanel();
+                }}
+                title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
+              >
+                {isInspectorHidden ? <PanelRightOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
+              </MapControlButton>
+            ) : undefined
+          }
+          inspectorActions={
+            <>
+              {accessState === "granted" ? (
                 <MapControlButton
-                  aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
-                  onClick={() => {
-                    if (isInspectorHidden) {
-                      showInspectorPanel();
-                      return;
-                    }
-                    hideInspectorPanel();
-                  }}
-                  title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
+                  aria-label="Share"
+                  onClick={openShareModalOrCopy}
+                  title="Share"
                 >
-                  {isInspectorHidden ? <PanelRightOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
+                  <Share aria-hidden="true" strokeWidth={1.8} />
                 </MapControlButton>
               ) : null}
-              <div className="map-inspector-header-actions-right">
-                {accessState === "granted" ? (
-                  <MapControlButton
-                    aria-label="Share"
-                    onClick={openShareModalOrCopy}
-                    title="Share"
-                  >
-                    <Share aria-hidden="true" strokeWidth={1.8} />
-                  </MapControlButton>
-                ) : null}
-                {isMobileViewport ? panelSizeControls("Inspector") : null}
-              </div>
-            </div>
+              {isMobileViewport ? panelSizeControls("Inspector") : null}
+            </>
           }
           readOnly={!canPersistWorkspace}
           inspectorPanelClassName={`${inspectorPanelMotionClass} ${

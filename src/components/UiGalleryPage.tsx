@@ -6,6 +6,7 @@ import { Surface } from "./ui/Surface";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { MapControlButton } from "./ui/MapControlButton";
+import { PanelToolbar } from "./ui/PanelToolbar";
 import { UiSlider } from "./UiSlider";
 import { SiteBeamVisualizer } from "./SiteBeamVisualizer";
 import { useThemeVariant } from "../hooks/useThemeVariant";
@@ -32,6 +33,7 @@ const SOURCE_PATHS: Record<string, string> = {
   "Button": "src/components/ui/Button.tsx",
   "ActionButton": "src/components/ActionButton.tsx",
   "MapControlButton": "src/components/ui/MapControlButton.tsx",
+  "PanelToolbar": "src/components/ui/PanelToolbar.tsx",
   "LinkButton": "src/components/LinkButton.tsx",
   "PanelShell.LeftSidePanel": "src/components/app-shell/LeftSidePanel.tsx",
   "PanelShell.RightSidePanel": "src/components/app-shell/RightSidePanel.tsx",
@@ -358,17 +360,11 @@ export function UiGalleryPage() {
           <div className="ui-pattern-grid ui-pattern-grid-shells">
             <PatternCard name="PanelShell.LeftSidePanel" status="under migration">
               <aside className="sidebar-panel">
-                <header>
-                  <div className="section-heading">
-                    <h2>Simulation</h2>
-                    <span className="field-help">left shell</span>
-                  </div>
-                </header>
                 <section className="panel-section">
-                  <div className="section-heading">
-                    <h2>Sites</h2>
-                    <span className="field-help">header rhythm</span>
-                  </div>
+                  <PanelToolbar
+                    title={<h2>Sites</h2>}
+                    actions={<span className="field-help">InfoTip slot</span>}
+                  />
                   <div className="chip-group">
                     <ActionButton>Library</ActionButton>
                     <ActionButton>New</ActionButton>
@@ -378,16 +374,13 @@ export function UiGalleryPage() {
             </PatternCard>
             <PatternCard name="PanelShell.RightSidePanel" status="under migration">
               <aside className="map-inspector">
-                <div className="map-inspector-header-row">
-                  <div className="map-inspector-header-actions">
-                    <strong>Inspector</strong>
-                    <div className="map-inspector-header-actions-right">
-                      <MapControlButton title="Hide panel">
-                        <PanelRightClose aria-hidden="true" size={16} strokeWidth={1.8} />
-                      </MapControlButton>
-                    </div>
-                  </div>
-                </div>
+                <PanelToolbar
+                  title={
+                    <MapControlButton title="Hide panel">
+                      <PanelRightClose aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </MapControlButton>
+                  }
+                />
                 <div className="map-inspector-section">
                   <p className="map-inspector-line">Section/divider cadence shared with panel shell family.</p>
                 </div>
@@ -395,16 +388,15 @@ export function UiGalleryPage() {
             </PatternCard>
             <PatternCard name="PanelShell.BottomPanel" status="under migration">
               <section className="chart-panel">
-                <div className="chart-top-row">
-                  <div className="chart-hover-state">
-                    <span>Path Profile</span>
-                  </div>
-                  <div className="chart-action-row-controls">
+                <PanelToolbar
+                  className="chart-top-row"
+                  title={<span className="field-help">Path Profile A → B</span>}
+                  actions={
                     <MapControlButton title="Full size">
                       <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
                     </MapControlButton>
-                  </div>
-                </div>
+                  }
+                />
                 <div className="chart-action-row">
                   <div className="chart-hover-state">
                     <span>Action row cadence aligned with shell family.</span>
