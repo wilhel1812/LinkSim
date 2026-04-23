@@ -2039,7 +2039,7 @@ input {
 
 .chart-panel {
   overflow: hidden;
-  padding: 10px 10px 8px;
+  padding: 10px 18px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
