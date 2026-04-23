@@ -2142,7 +2142,7 @@ input {
   letter-spacing: 0.01em;
 }
 
-.chart-panel svg {
+.chart-svg-wrap svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -2170,7 +2170,7 @@ input {
   min-height: clamp(280px, 62vh, 760px);
 }
 
-.chart-panel.is-expanded svg {
+.chart-panel.is-expanded .chart-svg-wrap svg {
   max-height: none;
   min-height: clamp(280px, 62vh, 760px);
 }
@@ -3094,7 +3094,7 @@ html.panorama-gesture-lock body {
     min-height: 0;
   }
 
-  .mobile-workspace-panel .chart-panel svg {
+  .mobile-workspace-panel .chart-svg-wrap svg {
     min-height: 0;
     max-height: none;
   }
