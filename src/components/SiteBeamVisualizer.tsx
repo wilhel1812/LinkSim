@@ -39,7 +39,7 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
     <div
       className="beam-visualizer"
       role="img"
-      aria-label={`Educational beam preview: ${metrics.rangeLabel.toLowerCase()} relative range, ${metrics.beamWidthDeg} deg relative beam width.`}
+      aria-label={`Educational beam preview: ${metrics.rangeLabel.toLowerCase()} relative range with stronger and weaker illustrated beam areas.`}
     >
       <div className="beam-visualizer-header">
         <strong>Beam preview</strong>
@@ -56,26 +56,14 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
         ))}
         <circle className="beam-visualizer-origin" cx={cx} cy={cy} r="5" />
       </svg>
-      <div className="beam-visualizer-stats">
-        <span>Width {metrics.beamWidthDeg} deg</span>
-        <span>Budget {metrics.linkBudgetScoreDb.toFixed(1)} dB</span>
-      </div>
       <ul className="beam-visualizer-legend">
         <li>
           <StateDot state="pass_clear" />
-          <span>Strong core</span>
-        </li>
-        <li>
-          <StateDot state="pass_blocked" />
-          <span>Usable</span>
-        </li>
-        <li>
-          <StateDot state="fail_clear" />
-          <span>Marginal</span>
+          <span>Pass</span>
         </li>
         <li>
           <StateDot state="fail_blocked" />
-          <span>Weak edge</span>
+          <span>Fail</span>
         </li>
       </ul>
       <p className="field-help beam-visualizer-note">Not to scale, illustration only.</p>

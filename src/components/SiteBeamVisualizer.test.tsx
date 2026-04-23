@@ -57,15 +57,19 @@ describe("SiteBeamVisualizerPopover", () => {
     expect(screen.getByText("Not to scale, illustration only.")).toBeInTheDocument();
   });
 
-  it("updates the educational budget when form values change", async () => {
+  it("keeps non-real numeric readouts out of the educational preview", async () => {
     render(<Harness />);
 
     const input = screen.getByLabelText("Tx power");
     await userEvent.click(input);
-    expect(await screen.findByText("Budget 23.0 dB")).toBeInTheDocument();
+    expect(await screen.findByText("Pass")).toBeInTheDocument();
+    expect(screen.getByText("Fail")).toBeInTheDocument();
+    expect(screen.queryByText(/Budget/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Width/i)).not.toBeInTheDocument();
 
     await userEvent.clear(input);
     await userEvent.type(input, "28");
-    expect(await screen.findByText("Budget 31.0 dB")).toBeInTheDocument();
+    expect(screen.queryByText(/Budget/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Width/i)).not.toBeInTheDocument();
   });
 });

@@ -2541,26 +2541,6 @@ export function Sidebar({
                         value={resourceTxPowerDraft}
                       />
                     </label>
-                    <div className="field-grid">
-                      <span>Gain mode</span>
-                      <label className="checkbox-field">
-                        <input
-                          checked={resourceSeparateGain}
-                          onChange={(event) => {
-                            const checked = event.target.checked;
-                            setResourceSeparateGain(checked);
-                            if (!checked) {
-                              const nextGain = collapseSiteGainToTx(resourceTxGainDraft);
-                              setResourceTxGainDraft(nextGain.txGainDbi);
-                              setResourceRxGainDraft(nextGain.rxGainDbi);
-                              void persistResourceAccessSettings(nextGain);
-                            }
-                          }}
-                          type="checkbox"
-                        />
-                        <span>Separate Tx/Rx gain</span>
-                      </label>
-                    </div>
                     {resourceSeparateGain ? (
                       <>
                         <label className="field-grid">
@@ -2606,6 +2586,24 @@ export function Sidebar({
                         />
                       </label>
                     )}
+                    <div className="field-grid gain-mode-toggle">
+                      <span>Separate RX/TX gain</span>
+                      <input
+                        aria-label="Separate RX/TX gain"
+                        checked={resourceSeparateGain}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setResourceSeparateGain(checked);
+                          if (!checked) {
+                            const nextGain = collapseSiteGainToTx(resourceTxGainDraft);
+                            setResourceTxGainDraft(nextGain.txGainDbi);
+                            setResourceRxGainDraft(nextGain.rxGainDbi);
+                            void persistResourceAccessSettings(nextGain);
+                          }
+                        }}
+                        type="checkbox"
+                      />
+                    </div>
                     <label className="field-grid">
                       <span>Cable loss (dB)</span>
                       <input
@@ -3531,25 +3529,6 @@ export function Sidebar({
                       value={newLibraryTxPowerDbm}
                     />
                   </label>
-                  <div className="field-grid">
-                    <span>Gain mode</span>
-                    <label className="checkbox-field">
-                      <input
-                        checked={newLibrarySeparateGain}
-                        onChange={(event) => {
-                          const checked = event.target.checked;
-                          setNewLibrarySeparateGain(checked);
-                          if (!checked) {
-                            const nextGain = collapseSiteGainToTx(newLibraryTxGainDbi);
-                            setNewLibraryTxGainDbi(nextGain.txGainDbi);
-                            setNewLibraryRxGainDbi(nextGain.rxGainDbi);
-                          }
-                        }}
-                        type="checkbox"
-                      />
-                      <span>Separate Tx/Rx gain</span>
-                    </label>
-                  </div>
                   {newLibrarySeparateGain ? (
                     <>
                       <label className="field-grid">
@@ -3586,6 +3565,23 @@ export function Sidebar({
                       />
                     </label>
                   )}
+                  <div className="field-grid gain-mode-toggle">
+                    <span>Separate RX/TX gain</span>
+                    <input
+                      aria-label="Separate RX/TX gain"
+                      checked={newLibrarySeparateGain}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setNewLibrarySeparateGain(checked);
+                        if (!checked) {
+                          const nextGain = collapseSiteGainToTx(newLibraryTxGainDbi);
+                          setNewLibraryTxGainDbi(nextGain.txGainDbi);
+                          setNewLibraryRxGainDbi(nextGain.rxGainDbi);
+                        }
+                      }}
+                      type="checkbox"
+                    />
+                  </div>
                   <label className="field-grid">
                     <span>Cable loss (dB)</span>
                     <input
