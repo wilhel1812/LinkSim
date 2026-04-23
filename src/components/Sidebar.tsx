@@ -85,6 +85,7 @@ import { ModalOverlay } from "./ModalOverlay";
 import { SiteBeamVisualizerPopover } from "./SiteBeamVisualizer";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { Badge } from "./ui/Badge";
+import { PanelToolbar } from "./ui/PanelToolbar";
 import { Surface } from "./ui/Surface";
 import { UserAdminPanel } from "./UserAdminPanel";
 
@@ -1903,10 +1904,10 @@ export function Sidebar({
         </div>
       </header>
       <section className="panel-section section-scenario">
-        <div className="section-heading">
-          <h2>Simulation: {simulationDisplayLabel ?? activeSimulationLabel}</h2>
-          <InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />
-        </div>
+        <PanelToolbar
+          title={<h2>Simulation: {simulationDisplayLabel ?? activeSimulationLabel}</h2>}
+          actions={<InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />}
+        />
         <div className="chip-group simulation-buttons">
           {!hideLibraryBrowsing ? (
             <>
@@ -1946,10 +1947,10 @@ export function Sidebar({
       </section>
 
       <section className="panel-section section-sites">
-        <div className="section-heading">
-          <h2>Sites</h2>
-          <InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />
-        </div>
+        <PanelToolbar
+          title={<h2>Sites</h2>}
+          actions={<InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />}
+        />
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
         <div className="site-list">
           {sites.map((site) => (
@@ -2003,10 +2004,10 @@ export function Sidebar({
       </section>
 
       <section className="panel-section section-path">
-        <div className="section-heading">
-          <h2>Links</h2>
-          <InfoTip text={`Select multiple sites by ${isMac ? "Cmd" : "Ctrl"}+Clicking to instantly view a link. When a link is active on the map, you can save it permanently to this simulation by pressing "Save" in the inspector.`} />
-        </div>
+        <PanelToolbar
+          title={<h2>Links</h2>}
+          actions={<InfoTip text={`Select multiple sites by ${isMac ? "Cmd" : "Ctrl"}+Clicking to instantly view a link. When a link is active on the map, you can save it permanently to this simulation by pressing "Save" in the inspector.`} />}
+        />
         <div className="link-list">
           {visibleLinks.map((link) => (
             <button

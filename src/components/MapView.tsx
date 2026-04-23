@@ -70,6 +70,7 @@ import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { StateDot } from "./StateDot";
 import { useMapControls } from "./map/useMapControls";
+import { PanelToolbar } from "./ui/PanelToolbar";
 
 const UI_SECTION_KEYS = {
   mapViewResults: "linksim-ui-mapview-results-v1",
@@ -492,8 +493,10 @@ type MapViewProps = {
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
-  // Legacy prop name retained for stability; this renders in the RightSidePanel shell.
-  inspectorHeaderActions?: ReactNode;
+  /** Left-side element in the inspector toolbar (e.g. panel toggle button). */
+  inspectorPanelToggle?: ReactNode;
+  /** Right-side actions in the inspector toolbar (e.g. share button, mobile size controls). */
+  inspectorActions?: ReactNode;
   notice?: {
     message: string;
     tone: "info" | "warning" | "error";
@@ -589,7 +592,8 @@ export function MapView({
   readOnly = false,
   canPersist = true,
   onToggleMapExpanded,
-  inspectorHeaderActions,
+  inspectorPanelToggle,
+  inspectorActions,
   notice,
   fitBottomInset = 30,
   fitChromePadding = FIT_CHROME_PADDING,
@@ -2456,8 +2460,8 @@ export function MapView({
       ) : null}
       {showInspector ? (
         <aside className={`map-inspector ${inspectorPanelClassName ?? ""}`.trim()} aria-live="polite">
-          {inspectorHeaderActions ? (
-            <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
+          {(inspectorPanelToggle != null || inspectorActions != null) ? (
+            <PanelToolbar title={inspectorPanelToggle} actions={inspectorActions} />
           ) : null}
           {simulationBusyIndicator ? (
             <div className="map-inspector-section">

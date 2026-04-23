@@ -451,6 +451,31 @@ input {
   border-bottom: 1px solid var(--panel-shell-divider);
 }
 
+/* Unified panel toolbar row — used by PanelToolbar component */
+.panel-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--panel-header-row-gap);
+  min-height: var(--panel-header-row-min-height);
+  padding-bottom: var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
+}
+
+.panel-toolbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--panel-header-row-gap);
+}
+
+.panel-toolbar-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--panel-action-row-gap);
+}
+
 .info-tip {
   width: 18px;
   height: 18px;
@@ -1513,37 +1538,12 @@ input {
   font-family: "Space Grotesk", "Avenir Next", sans-serif;
 }
 
-.map-inspector-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--panel-header-row-gap);
-  min-height: var(--panel-header-row-min-height);
-  padding-bottom: var(--panel-header-row-padding-bottom);
-  border-bottom: 1px solid var(--panel-shell-divider);
-}
-
-.map-inspector-header-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  gap: 6px;
-}
-
 .panel-size-controls {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.map-inspector-header-actions-right {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
 
 .workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-panel .maplibregl-ctrl-bottom-right,
 .workspace-panel:not(.is-map-expanded):not(.is-profile-expanded) .map-panel .maplibregl-ctrl-bottom-left {
@@ -2093,14 +2093,6 @@ input {
   font-size: 0.83rem;
 }
 
-.chart-top-row {
-  display: flex;
-  align-items: center;
-  gap: var(--panel-header-row-gap);
-  min-height: var(--panel-header-row-min-height);
-  padding: 0 0 var(--panel-header-row-padding-bottom);
-  border-bottom: 1px solid var(--panel-shell-divider);
-}
 
 .chart-endpoints {
   display: grid;
@@ -2273,13 +2265,6 @@ input {
   flex: 0 0 auto;
 }
 
-/* Chart toolbar rows have padding-bottom: 9px, so btn-icon must fit in ~25px content area */
-.chart-top-row .btn-icon,
-.chart-action-row-controls .btn-icon {
-  width: 26px;
-  height: 26px;
-  min-width: 26px;
-}
 
 .chart-action-row-controls .panel-size-controls {
   justify-content: flex-end;
