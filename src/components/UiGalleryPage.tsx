@@ -288,27 +288,60 @@ export function UiGalleryPage() {
           <h3>Actions</h3>
           <div className="ui-pattern-grid">
             <PatternCard name="Button" status="standard">
-              <div className="chip-group">
-                <Button>Save Selected Path</Button>
-                <Button>Details</Button>
-                <Button variant="danger">Remove From Simulation</Button>
+              <div className="ui-specimen-rows">
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">default</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button>Save Selected Path</Button>
+                    <Button>Details</Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"ghost\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button variant="ghost">Smooth</Button>
+                    <Button variant="ghost">Bands</Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"ghost\"\nisSelected"}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button variant="ghost" isSelected>Smooth</Button>
+                    <Button variant="ghost" isSelected>Bands</Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"danger\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button variant="danger">Remove From Simulation</Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"size=\"icon\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button size="icon" aria-label="Zoom out" title="Zoom out">
+                      <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                    <Button size="icon" aria-label="Zoom in" title="Zoom in">
+                      <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                    <Button size="icon" aria-label="Fit bounds" title="Fit bounds">
+                      <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"size=\"icon\"\nisSelected"}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button size="icon" isSelected aria-label="Zoom out (selected)" title="Zoom out (selected)">
+                      <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                    <Button size="icon" isSelected aria-label="Fit bounds (selected)" title="Fit bounds (selected)">
+                      <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                  </div>
+                </div>
               </div>
-              <div className="chip-group">
-                <Button variant="ghost">Smooth</Button>
-                <Button variant="ghost" isSelected>Bands</Button>
-              </div>
-              <div className="chip-group">
-                <Button size="icon" aria-label="Zoom out" title="Zoom out">
-                  <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
-                </Button>
-                <Button size="icon" aria-label="Zoom in" title="Zoom in">
-                  <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
-                </Button>
-                <Button size="icon" isSelected aria-label="Fit bounds" title="Fit bounds (selected)">
-                  <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
-                </Button>
-              </div>
-              <VariantList variants={["default", "variant=\"ghost\"", "variant=\"danger\"", "size=\"icon\"", "isSelected"]} />
             </PatternCard>
             <PatternCard name="LinkButton" status="exception">
               <button className="inline-link-button" type="button">
@@ -420,10 +453,13 @@ export function UiGalleryPage() {
             </PatternCard>
             <PatternCard name="Badge" status="standard">
               <div className="chip-group ui-gallery-chip-specimen">
+                <Badge variant="private">private</Badge>
+                <Badge variant="public">public</Badge>
                 <Badge variant="shared">shared</Badge>
                 <Badge variant="mqtt">MQTT</Badge>
+                <Badge variant="local">local</Badge>
+                <Badge variant="staging">staging</Badge>
               </div>
-              <VariantList variants={["private", "public", "shared", "mqtt", "local", "staging"]} />
             </PatternCard>
             <PatternCard name="UI Slider" status="standard">
               <div className="chip-group" style={{ alignItems: "flex-start" }}>
