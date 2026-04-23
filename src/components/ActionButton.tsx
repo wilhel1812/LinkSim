@@ -1,25 +1,11 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import clsx from "clsx";
+import { Button } from "./ui/Button";
 
 type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
   variant?: "default" | "danger";
 };
 
-export function ActionButton({
-  children,
-  className,
-  type = "button",
-  variant = "default",
-  ...buttonProps
-}: ActionButtonProps) {
-  return (
-    <button
-      {...buttonProps}
-      className={clsx("inline-action", "action-button", variant === "danger" && "danger", className)}
-      type={type}
-    >
-      {children}
-    </button>
-  );
+export function ActionButton({ variant = "default", ...props }: ActionButtonProps) {
+  return <Button variant={variant} {...props} />;
 }

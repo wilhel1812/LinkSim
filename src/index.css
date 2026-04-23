@@ -513,24 +513,6 @@ input {
   justify-content: flex-end;
 }
 
-.chip-button {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: var(--radius-pill);
-  padding: 5px 12px;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.chip-button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.chip-button.is-selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
 
 .field-grid {
   display: grid;
@@ -575,21 +557,20 @@ input {
   min-width: 0;
 }
 
-.field-inline-btn {
+.field-inline .btn {
   padding: 6px 8px;
   min-height: 32px;
 }
 
+/* Upload label piggybacks off btn-ghost; only overrides live here */
 .upload-button {
-  border: 1px dashed var(--border);
-  border-radius: 10px;
+  border-style: dashed;
   background: var(--surface);
-  color: var(--text);
   display: inline-flex;
   justify-content: center;
   align-items: center;
   min-height: 38px;
-  cursor: pointer;
+  height: auto;
 }
 
 .upload-button input {
@@ -834,7 +815,7 @@ input {
   pointer-events: auto;
 }
 
-.collapsed-panel-btn.map-control-btn-icon {
+.collapsed-panel-btn.btn-icon {
   width: 36px;
   height: 36px;
   min-width: 36px;
@@ -849,8 +830,8 @@ input {
   justify-content: center;
 }
 
-.collapsed-panel-btn.map-control-btn-icon:hover,
-.collapsed-panel-btn.map-control-btn-icon:focus-visible {
+.collapsed-panel-btn.btn-icon:hover,
+.collapsed-panel-btn.btn-icon:focus-visible {
   border: 1px solid var(--accent);
   background: color-mix(in srgb, var(--surface-2) var(--glass-panel-opacity), transparent);
 }
@@ -1098,7 +1079,7 @@ input {
   border-color: color-mix(in srgb, var(--text) 34%, var(--border));
 }
 
-.map-inline-notice .inline-action {
+.map-inline-notice .btn {
   white-space: nowrap;
   padding: 4px 10px;
 }
@@ -1793,7 +1774,7 @@ input {
   font-size: 0.74rem;
 }
 
-.overlay-inline-controls .map-control-btn {
+.overlay-inline-controls .btn-ghost {
   height: 28px;
   min-width: 72px;
   font-size: 0.72rem;
@@ -1937,7 +1918,7 @@ input {
   border-top: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
 }
 
-.map-control-btn {
+.btn-ghost {
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   color: var(--text);
@@ -1949,7 +1930,7 @@ input {
   box-shadow: var(--shadow-elev-3);
 }
 
-.map-control-btn-icon {
+.btn-icon {
   min-width: 34px;
   width: 34px;
   height: 34px;
@@ -1960,29 +1941,30 @@ input {
   border: 0;
   background: transparent;
   box-shadow: none;
+  border-radius: var(--radius-pill);
 }
 
-.map-control-btn-icon svg {
+.btn-icon svg {
   width: 18px;
   height: 18px;
 }
 
-.map-control-btn-icon:hover,
-.map-control-btn-icon:focus-visible {
+.btn-icon:hover,
+.btn-icon:focus-visible {
   border: 0;
   background: transparent;
 }
 
-.map-control-btn-icon.is-selected {
+.btn-icon.is-selected {
   background: var(--accent-soft);
   color: color-mix(in srgb, var(--accent) 82%, var(--text));
 }
 
-.map-control-btn:hover {
+.btn-ghost:hover {
   border-color: var(--accent);
 }
 
-.map-control-btn.is-selected {
+.btn-ghost.is-selected {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -2193,46 +2175,6 @@ input {
   min-height: clamp(280px, 62vh, 760px);
 }
 
-.chart-endpoint-swap {
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
-  color: var(--text);
-  border-radius: var(--radius-btn);
-  width: auto;
-  min-width: 118px;
-  height: 26px;
-  padding: 0 10px;
-  line-height: 1.1;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.74rem;
-}
-
-.chart-endpoint-swap:hover {
-  border-color: var(--accent);
-}
-
-.chart-endpoint-swap.is-active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.chart-endpoint-icon {
-  min-width: 34px;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-}
-
-.chart-endpoint-icon svg {
-  width: 18px;
-  height: 18px;
-}
 
 .chart-hover-state {
   display: flex;
@@ -2329,6 +2271,14 @@ input {
   justify-content: flex-end;
   gap: var(--panel-action-row-gap);
   flex: 0 0 auto;
+}
+
+/* Chart toolbar rows have padding-bottom: 9px, so btn-icon must fit in ~25px content area */
+.chart-top-row .btn-icon,
+.chart-action-row-controls .btn-icon {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
 }
 
 .chart-action-row-controls .panel-size-controls {
@@ -3369,7 +3319,7 @@ html.panorama-gesture-lock body {
   font-weight: 600;
 }
 
-.inline-action {
+.btn {
   border: 1px solid var(--accent);
   border-radius: var(--radius-btn);
   background: var(--accent-soft);
@@ -3379,9 +3329,6 @@ html.panorama-gesture-lock body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-
-.action-button {
   font-family: "Space Grotesk", "Avenir Next", sans-serif;
   font-size: 0.82rem;
   font-weight: 600;
@@ -3389,27 +3336,10 @@ html.panorama-gesture-lock body {
   min-height: 34px;
 }
 
-.inline-action.danger {
+.btn-danger {
   border-color: color-mix(in srgb, var(--danger) 78%, var(--border));
   background: var(--danger);
   color: var(--danger-on);
-}
-
-.inline-action-icon {
-  min-width: 34px;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-}
-
-.inline-action-icon svg {
-  width: 18px;
-  height: 18px;
 }
 
 .user-admin-panel {
@@ -3722,23 +3652,6 @@ html.panorama-gesture-lock body {
   font-size: 1.2rem;
 }
 
-.floating-help-button {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 78%, var(--surface));
-  color: var(--text);
-  font-size: 1.4rem;
-  font-weight: 700;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: var(--shadow-elev-4);
-  z-index: 920;
-}
 
 .floating-help-cluster {
   position: fixed;
@@ -3762,14 +3675,6 @@ html.panorama-gesture-lock body {
   box-shadow: var(--shadow-elev-5);
 }
 
-.floating-help-button:hover {
-  background: color-mix(in srgb, var(--accent-soft) 88%, var(--surface));
-}
-
-.floating-help-button:focus-visible {
-  outline: 2px solid var(--focus-outline);
-  outline-offset: 2px;
-}
 
 .tutorial-report-cta {
   margin-top: 16px;
@@ -4770,7 +4675,7 @@ html.panorama-gesture-lock body {
   color: var(--muted);
 }
 
-.ui-gallery-theme-toggle .action-button[aria-pressed="true"] {
+.ui-gallery-theme-toggle .btn[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
 }

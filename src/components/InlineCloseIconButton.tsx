@@ -1,4 +1,5 @@
 import { CircleX } from "lucide-react";
+import { Button } from "./ui/Button";
 
 type InlineCloseIconButtonProps = {
   onClick: () => void;
@@ -6,8 +7,8 @@ type InlineCloseIconButtonProps = {
 
 export function InlineCloseIconButton({ onClick }: InlineCloseIconButtonProps) {
   return (
-    <button aria-label="Close" className="inline-action inline-action-icon" onClick={onClick} title="Close" type="button">
+    <Button aria-label="Close" size="icon" onClick={onClick} title="Close">
       <CircleX aria-hidden="true" strokeWidth={1.8} />
-    </button>
+    </Button>
   );
 }
