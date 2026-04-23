@@ -82,9 +82,7 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
           <span>Fail</span>
         </li>
       </ul>
-      <p className="field-help beam-visualizer-baseline-note">
-        Gray outline: Typical Heltec V3 setup
-      </p>
+      <p className="field-help beam-visualizer-baseline-note">Outline: Typical Heltec V3 setup</p>
       <p className="field-help beam-visualizer-note">Not to scale, illustration only.</p>
     </div>
   );
