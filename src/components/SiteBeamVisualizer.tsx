@@ -34,13 +34,13 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
   const heltecBaselineMetrics = useMemo(
     () =>
       computeBeamPreviewMetrics({
-        antennaHeightM: values.antennaHeightM,
+        antennaHeightM: 2,
         txPowerDbm: 22,
         txGainDbi: 2,
         rxGainDbi: 2,
         cableLossDb: 1,
       }),
-    [values.antennaHeightM],
+    [],
   );
   const cx = 110;
   const cy = 116;
@@ -83,7 +83,7 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
         </li>
       </ul>
       <p className="field-help beam-visualizer-baseline-note">
-        Gray outline: Heltec v3 baseline (22 dBm, 2 dBi, 1 dB cable loss).
+        Gray outline: Typical Heltec V3 setup
       </p>
       <p className="field-help beam-visualizer-note">Not to scale, illustration only.</p>
     </div>

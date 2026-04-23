@@ -54,7 +54,7 @@ describe("SiteBeamVisualizerPopover", () => {
 
     await userEvent.click(screen.getByLabelText("Tx power"));
     expect(await screen.findByText("Beam preview")).toBeInTheDocument();
-    expect(screen.getByText(/Gray outline: Heltec v3 baseline/)).toBeInTheDocument();
+    expect(screen.getByText("Gray outline: Typical Heltec V3 setup")).toBeInTheDocument();
     expect(screen.getByText("Not to scale, illustration only.")).toBeInTheDocument();
   });
 
