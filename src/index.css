@@ -3370,13 +3370,16 @@ html.panorama-gesture-lock body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: var(--panel-header-row-min-height);
+  padding-bottom: var(--panel-header-row-padding-bottom);
+  border-bottom: 1px solid var(--panel-shell-divider);
 }
 
 .user-chip-actions {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--panel-action-row-gap);
 }
 
 .user-chip-row .user-chip {
@@ -3432,8 +3435,8 @@ html.panorama-gesture-lock body {
   border: 0;
   background: transparent;
   border-radius: 0;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   display: inline-flex;
   align-items: center;
