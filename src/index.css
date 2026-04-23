@@ -551,6 +551,11 @@ input {
   font-family: "IBM Plex Mono", monospace;
 }
 
+.gain-mode-toggle input {
+  justify-self: end;
+  width: auto;
+}
+
 .field-grid textarea {
   border: 1px solid var(--border);
   background: var(--surface);
@@ -2469,22 +2474,16 @@ input {
   color: var(--text);
 }
 
-.beam-visualizer-header,
-.beam-visualizer-stats {
+.beam-visualizer-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.beam-visualizer-header span,
-.beam-visualizer-stats {
+.beam-visualizer-header span {
   color: var(--muted);
   font-size: 0.75rem;
-}
-
-.beam-visualizer-stats {
-  font-family: "IBM Plex Mono", monospace;
 }
 
 .beam-visualizer-chart {
