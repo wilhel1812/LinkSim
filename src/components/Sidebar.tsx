@@ -47,6 +47,7 @@ import {
 } from "../lib/meshtasticMqtt";
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
+import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain } from "../lib/siteGainFields";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { toAccessVisibility } from "../lib/uiFormatting";
 import {
@@ -427,6 +428,9 @@ export function Sidebar({
   const [newLibraryTxPowerDbm, setNewLibraryTxPowerDbm] = useState(STANDARD_SITE_RADIO.txPowerDbm);
   const [newLibraryTxGainDbi, setNewLibraryTxGainDbi] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [newLibraryRxGainDbi, setNewLibraryRxGainDbi] = useState(STANDARD_SITE_RADIO.rxGainDbi);
+  const [newLibrarySeparateGain, setNewLibrarySeparateGain] = useState(
+    shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi),
+  );
   const [newLibraryCableLossDb, setNewLibraryCableLossDb] = useState(STANDARD_SITE_RADIO.cableLossDb);
   const [newLibraryVisibility, setNewLibraryVisibility] = useState<AccessVisibility>("private");
   const [newLibraryCollaboratorUserIds, setNewLibraryCollaboratorUserIds] = useState<string[]>([]);
@@ -554,6 +558,9 @@ export function Sidebar({
   const [resourceTxPowerDraft, setResourceTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
   const [resourceTxGainDraft, setResourceTxGainDraft] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [resourceRxGainDraft, setResourceRxGainDraft] = useState(STANDARD_SITE_RADIO.rxGainDbi);
+  const [resourceSeparateGain, setResourceSeparateGain] = useState(
+    shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi),
+  );
   const [resourceCableLossDraft, setResourceCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
   const [activeBeamPreviewField, setActiveBeamPreviewField] = useState<BeamPreviewFieldKey | null>(null);
   const addBeamPreviewAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -963,6 +970,7 @@ export function Sidebar({
     setNewLibraryCollaboratorUserIds([]);
     setNewLibraryCollaboratorRoles({});
     setNewLibrarySourceMeta(pendingSiteLibraryDraft.sourceMeta);
+    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(newLibraryTxGainDbi, newLibraryRxGainDbi));
     setPendingDraftAutoInsert(true);
     setNewLibraryName(pendingSiteLibraryDraft.suggestedName ?? "");
     setNewLibraryDescription("");
@@ -1265,6 +1273,7 @@ export function Sidebar({
     setNewLibraryTxPowerDbm(selectedSite.txPowerDbm);
     setNewLibraryTxGainDbi(selectedSite.txGainDbi);
     setNewLibraryRxGainDbi(selectedSite.rxGainDbi);
+    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(selectedSite.txGainDbi, selectedSite.rxGainDbi));
     setNewLibraryCableLossDb(selectedSite.cableLossDb);
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
   };
@@ -1315,6 +1324,7 @@ export function Sidebar({
     setNewLibraryTxPowerDbm(STANDARD_SITE_RADIO.txPowerDbm);
     setNewLibraryTxGainDbi(STANDARD_SITE_RADIO.txGainDbi);
     setNewLibraryRxGainDbi(STANDARD_SITE_RADIO.rxGainDbi);
+    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi));
     setNewLibraryCableLossDb(STANDARD_SITE_RADIO.cableLossDb);
     setNewLibraryVisibility("private");
     setNewLibraryCollaboratorUserIds([]);
@@ -1575,8 +1585,11 @@ export function Sidebar({
       setResourceGroundDraft(site?.groundElevationM ?? 0);
       setResourceAntennaDraft(site?.antennaHeightM ?? 2);
       setResourceTxPowerDraft(site?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm);
-      setResourceTxGainDraft(site?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi);
-      setResourceRxGainDraft(site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi);
+      const nextTxGainDbi = site?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi;
+      const nextRxGainDbi = site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
+      setResourceTxGainDraft(nextTxGainDbi);
+      setResourceRxGainDraft(nextRxGainDbi);
+      setResourceSeparateGain(shouldUseSeparateSiteGain(nextTxGainDbi, nextRxGainDbi));
       setResourceCableLossDraft(site?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(toAccessVisibility(site?.visibility));
       const siteGrants = (site?.sharedWith ?? []).filter((grant) => grant.userId !== site?.ownerUserId);
@@ -1594,6 +1607,7 @@ export function Sidebar({
       setResourceTxPowerDraft(STANDARD_SITE_RADIO.txPowerDbm);
       setResourceTxGainDraft(STANDARD_SITE_RADIO.txGainDbi);
       setResourceRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
+      setResourceSeparateGain(shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi));
       setResourceCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(toAccessVisibility(simulation?.visibility));
       const simGrants = (simulation?.sharedWith ?? []).filter((grant) => grant.userId !== simulation?.ownerUserId);
@@ -2527,30 +2541,71 @@ export function Sidebar({
                         value={resourceTxPowerDraft}
                       />
                     </label>
-                    <label className="field-grid">
-                      <span>Tx gain (dBi)</span>
-                      <input
-                        onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
-                        onFocus={() => setActiveBeamPreviewField("edit")}
-                        onBlur={() => {
-                          void persistResourceAccessSettings();
-                        }}
-                        type="number"
-                        value={resourceTxGainDraft}
-                      />
-                    </label>
-                    <label className="field-grid">
-                      <span>Rx gain (dBi)</span>
-                      <input
-                        onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
-                        onFocus={() => setActiveBeamPreviewField("edit")}
-                        onBlur={() => {
-                          void persistResourceAccessSettings();
-                        }}
-                        type="number"
-                        value={resourceRxGainDraft}
-                      />
-                    </label>
+                    <div className="field-grid">
+                      <span>Gain mode</span>
+                      <label className="checkbox-field">
+                        <input
+                          checked={resourceSeparateGain}
+                          onChange={(event) => {
+                            const checked = event.target.checked;
+                            setResourceSeparateGain(checked);
+                            if (!checked) {
+                              const nextGain = collapseSiteGainToTx(resourceTxGainDraft);
+                              setResourceTxGainDraft(nextGain.txGainDbi);
+                              setResourceRxGainDraft(nextGain.rxGainDbi);
+                              void persistResourceAccessSettings(nextGain);
+                            }
+                          }}
+                          type="checkbox"
+                        />
+                        <span>Separate Tx/Rx gain</span>
+                      </label>
+                    </div>
+                    {resourceSeparateGain ? (
+                      <>
+                        <label className="field-grid">
+                          <span>Tx gain (dBi)</span>
+                          <input
+                            onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
+                            onFocus={() => setActiveBeamPreviewField("edit")}
+                            onBlur={() => {
+                              void persistResourceAccessSettings();
+                            }}
+                            type="number"
+                            value={resourceTxGainDraft}
+                          />
+                        </label>
+                        <label className="field-grid">
+                          <span>Rx gain (dBi)</span>
+                          <input
+                            onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
+                            onFocus={() => setActiveBeamPreviewField("edit")}
+                            onBlur={() => {
+                              void persistResourceAccessSettings();
+                            }}
+                            type="number"
+                            value={resourceRxGainDraft}
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <label className="field-grid">
+                        <span>Gain (dBi)</span>
+                        <input
+                          onChange={(event) => {
+                            const nextGain = getSyncedSiteGainPair(parseNumber(event.target.value));
+                            setResourceTxGainDraft(nextGain.txGainDbi);
+                            setResourceRxGainDraft(nextGain.rxGainDbi);
+                          }}
+                          onFocus={() => setActiveBeamPreviewField("edit")}
+                          onBlur={(event) => {
+                            void persistResourceAccessSettings(getSyncedSiteGainPair(parseNumber(event.currentTarget.value)));
+                          }}
+                          type="number"
+                          value={resourceTxGainDraft}
+                        />
+                      </label>
+                    )}
                     <label className="field-grid">
                       <span>Cable loss (dB)</span>
                       <input
@@ -3327,6 +3382,8 @@ export function Sidebar({
                     setNewLibraryVisibility("private");
                     setNewLibraryCollaboratorUserIds([]);
                     setNewLibraryCollaboratorRoles({});
+                  } else {
+                    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(newLibraryTxGainDbi, newLibraryRxGainDbi));
                   }
                 }}
                 type="button"
@@ -3474,24 +3531,61 @@ export function Sidebar({
                       value={newLibraryTxPowerDbm}
                     />
                   </label>
-                  <label className="field-grid">
-                    <span>Tx gain (dBi)</span>
-                    <input
-                      onChange={(event) => setNewLibraryTxGainDbi(parseNumber(event.target.value))}
-                      onFocus={() => setActiveBeamPreviewField("add")}
-                      type="number"
-                      value={newLibraryTxGainDbi}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Rx gain (dBi)</span>
-                    <input
-                      onChange={(event) => setNewLibraryRxGainDbi(parseNumber(event.target.value))}
-                      onFocus={() => setActiveBeamPreviewField("add")}
-                      type="number"
-                      value={newLibraryRxGainDbi}
-                    />
-                  </label>
+                  <div className="field-grid">
+                    <span>Gain mode</span>
+                    <label className="checkbox-field">
+                      <input
+                        checked={newLibrarySeparateGain}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setNewLibrarySeparateGain(checked);
+                          if (!checked) {
+                            const nextGain = collapseSiteGainToTx(newLibraryTxGainDbi);
+                            setNewLibraryTxGainDbi(nextGain.txGainDbi);
+                            setNewLibraryRxGainDbi(nextGain.rxGainDbi);
+                          }
+                        }}
+                        type="checkbox"
+                      />
+                      <span>Separate Tx/Rx gain</span>
+                    </label>
+                  </div>
+                  {newLibrarySeparateGain ? (
+                    <>
+                      <label className="field-grid">
+                        <span>Tx gain (dBi)</span>
+                        <input
+                          onChange={(event) => setNewLibraryTxGainDbi(parseNumber(event.target.value))}
+                          onFocus={() => setActiveBeamPreviewField("add")}
+                          type="number"
+                          value={newLibraryTxGainDbi}
+                        />
+                      </label>
+                      <label className="field-grid">
+                        <span>Rx gain (dBi)</span>
+                        <input
+                          onChange={(event) => setNewLibraryRxGainDbi(parseNumber(event.target.value))}
+                          onFocus={() => setActiveBeamPreviewField("add")}
+                          type="number"
+                          value={newLibraryRxGainDbi}
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <label className="field-grid">
+                      <span>Gain (dBi)</span>
+                      <input
+                        onChange={(event) => {
+                          const nextGain = getSyncedSiteGainPair(parseNumber(event.target.value));
+                          setNewLibraryTxGainDbi(nextGain.txGainDbi);
+                          setNewLibraryRxGainDbi(nextGain.rxGainDbi);
+                        }}
+                        onFocus={() => setActiveBeamPreviewField("add")}
+                        type="number"
+                        value={newLibraryTxGainDbi}
+                      />
+                    </label>
+                  )}
                   <label className="field-grid">
                     <span>Cable loss (dB)</span>
                     <input
@@ -3750,6 +3844,7 @@ export function Sidebar({
                     setNewLibraryCollaboratorUserIds([]);
                     setNewLibraryCollaboratorRoles({});
                     setNewLibrarySourceMeta(undefined);
+                    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(newLibraryTxGainDbi, newLibraryRxGainDbi));
                     setPendingDraftAutoInsert(false);
                   }}
                   type="button"
