@@ -4675,6 +4675,38 @@ html.panorama-gesture-lock body {
   color: var(--muted);
 }
 
+/* Labeled specimen rows — one row per variant, label on the left */
+.ui-specimen-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ui-specimen-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.ui-specimen-row-label {
+  flex: 0 0 180px;
+  font-size: 0.65rem;
+  color: var(--muted);
+  font-family: var(--font-mono, monospace);
+  text-align: right;
+  padding-right: 4px;
+  line-height: 1.3;
+  white-space: pre-wrap;
+}
+
+.ui-specimen-row-specimens {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .ui-gallery-theme-toggle .btn[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
