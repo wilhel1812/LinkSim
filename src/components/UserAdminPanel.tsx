@@ -1281,7 +1281,7 @@ export function UserAdminPanel({
             <div className="user-settings-layout">
               <div className="user-settings-avatar-column">
                 <ProfileAvatar avatarUrl={avatarDraft} name={nameDraft || "User"} size="large" />
-                <label className="upload-button">
+                <label className="btn-ghost upload-button">
                   Upload Picture
                   <input accept="image/*" onChange={(event) => void onUploadAvatar(event)} type="file" />
                 </label>

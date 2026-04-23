@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
+import { MapControlButton } from "./ui/MapControlButton";
 import { Surface } from "./ui/Surface";
 import Map, {
   Layer,
@@ -2398,40 +2399,37 @@ export function MapView({
       <div className="map-controls map-controls-unified map-controls-icon-only">
         <div className="map-controls-group map-controls-group-utility map-controls-utility-pill ui-surface-pill">
           {showMultiSelectToggle ? (
-            <button
+            <MapControlButton
               aria-label={isMultiSelectMode ? "Disable multi-select" : "Enable multi-select"}
-              className={`map-control-btn map-control-btn-icon ${isMultiSelectMode ? "is-selected" : ""}`}
+              isSelected={isMultiSelectMode}
               onClick={() => setIsMultiSelectMode((current) => !current)}
               title={isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
-              type="button"
             >
               <SquareStack aria-hidden="true" strokeWidth={1.8} />
-            </button>
+            </MapControlButton>
           ) : null}
-          <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(-1)} title="Zoom out" type="button">
+          <MapControlButton aria-label="Zoom out" onClick={() => zoomBy(-1)} title="Zoom out">
             <ZoomOut aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(1)} title="Zoom in" type="button">
+          </MapControlButton>
+          <MapControlButton aria-label="Zoom in" onClick={() => zoomBy(1)} title="Zoom in">
             <ZoomIn aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
+          </MapControlButton>
+          <MapControlButton
             aria-label="Fit map to sites"
-            className={`map-control-btn map-control-btn-icon ${fitControlActive ? "is-selected" : ""}`}
+            isSelected={fitControlActive}
             onClick={fitToNodes}
             title="Fit"
-            type="button"
           >
             <Fullscreen aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
+          </MapControlButton>
+          <MapControlButton
             aria-label={isMapExpanded ? "Show panels" : "Hide panels"}
-            className={`map-control-btn map-control-btn-icon ${isMapExpanded ? "is-selected" : ""}`}
+            isSelected={isMapExpanded}
             onClick={onToggleMapExpanded}
             title={isMapExpanded ? "Show panels" : "Hide panels"}
-            type="button"
           >
             {isMapExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
-          </button>
+          </MapControlButton>
         </div>
       </div>
       {notice ? (
@@ -2786,20 +2784,19 @@ export function MapView({
                 <div className="overlay-inline-controls">
                   <span>Style</span>
                   <div className="chip-group">
-                    <button
-                      className="map-control-btn is-selected"
+                    <MapControlButton
+                      isSelected
                       onClick={() => setCoverageVizMode("heatmap")}
-                      type="button"
+                      variant="labeled"
                     >
                       Smooth
-                    </button>
-                    <button
-                      className="map-control-btn"
+                    </MapControlButton>
+                    <MapControlButton
                       onClick={() => setCoverageVizMode("contours")}
-                      type="button"
+                      variant="labeled"
                     >
                       Bands
-                    </button>
+                    </MapControlButton>
                   </div>
                 </div>
                 <div className="overlay-scale">
@@ -2818,20 +2815,19 @@ export function MapView({
                 <div className="overlay-inline-controls">
                   <span>Style</span>
                   <div className="chip-group">
-                    <button
-                      className="map-control-btn"
+                    <MapControlButton
                       onClick={() => setCoverageVizMode("heatmap")}
-                      type="button"
+                      variant="labeled"
                     >
                       Smooth
-                    </button>
-                    <button
-                      className="map-control-btn is-selected"
+                    </MapControlButton>
+                    <MapControlButton
+                      isSelected
                       onClick={() => setCoverageVizMode("contours")}
-                      type="button"
+                      variant="labeled"
                     >
                       Bands
-                    </button>
+                    </MapControlButton>
                   </div>
                 </div>
                 <div className="overlay-inline-controls">

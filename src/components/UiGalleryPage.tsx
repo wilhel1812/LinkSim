@@ -4,6 +4,8 @@ import { ActionButton } from "./ActionButton";
 import { StateDot } from "./StateDot";
 import { Surface } from "./ui/Surface";
 import { Badge } from "./ui/Badge";
+import { Button } from "./ui/Button";
+import { MapControlButton } from "./ui/MapControlButton";
 import { UiSlider } from "./UiSlider";
 import { SiteBeamVisualizer } from "./SiteBeamVisualizer";
 import { useThemeVariant } from "../hooks/useThemeVariant";
@@ -26,8 +28,9 @@ const GALLERY_TABS: Array<{ id: GalleryTab; label: string }> = [
 ];
 
 const SOURCE_PATHS: Record<string, string> = {
+  "Button": "src/components/ui/Button.tsx",
   "ActionButton": "src/components/ActionButton.tsx",
-  "MapControlButton": "src/components/MapControlButton.tsx",
+  "MapControlButton": "src/components/ui/MapControlButton.tsx",
   "LinkButton": "src/components/LinkButton.tsx",
   "PanelShell.LeftSidePanel": "src/components/app-shell/LeftSidePanel.tsx",
   "PanelShell.RightSidePanel": "src/components/app-shell/RightSidePanel.tsx",
@@ -284,26 +287,28 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Actions</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="ActionButton" status="under migration">
+            <PatternCard name="Button" status="standard">
               <div className="chip-group">
-                <ActionButton>Save Selected Path</ActionButton>
-                <ActionButton>Details</ActionButton>
-                <ActionButton variant="danger">Remove From Simulation</ActionButton>
+                <Button>Save Selected Path</Button>
+                <Button>Details</Button>
+                <Button variant="danger">Remove From Simulation</Button>
               </div>
-              <VariantList variants={["default", "variant=\"danger\""]} />
-            </PatternCard>
-            <PatternCard name="MapControlButton" status="standard">
               <div className="chip-group">
-                <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" title="Zoom out" type="button">
+                <Button variant="ghost">Smooth</Button>
+                <Button variant="ghost" isSelected>Bands</Button>
+              </div>
+              <div className="chip-group">
+                <Button size="icon" aria-label="Zoom out" title="Zoom out">
                   <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
-                <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" title="Zoom in" type="button">
+                </Button>
+                <Button size="icon" aria-label="Zoom in" title="Zoom in">
                   <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
-                <button aria-label="Fit bounds" className="map-control-btn map-control-btn-icon" title="Fit bounds" type="button">
+                </Button>
+                <Button size="icon" isSelected aria-label="Fit bounds" title="Fit bounds (selected)">
                   <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
+                </Button>
               </div>
+              <VariantList variants={["default", "variant=\"ghost\"", "variant=\"danger\"", "size=\"icon\"", "isSelected"]} />
             </PatternCard>
             <PatternCard name="LinkButton" status="exception">
               <button className="inline-link-button" type="button">
@@ -344,9 +349,9 @@ export function UiGalleryPage() {
                   <div className="map-inspector-header-actions">
                     <strong>Inspector</strong>
                     <div className="map-inspector-header-actions-right">
-                      <button className="map-control-btn map-control-btn-icon" title="Hide panel" type="button">
+                      <MapControlButton title="Hide panel">
                         <PanelRightClose aria-hidden="true" size={16} strokeWidth={1.8} />
-                      </button>
+                      </MapControlButton>
                     </div>
                   </div>
                 </div>
@@ -362,9 +367,9 @@ export function UiGalleryPage() {
                     <span>Path Profile</span>
                   </div>
                   <div className="chart-action-row-controls">
-                    <button className="chart-endpoint-swap chart-endpoint-icon" title="Full size" type="button">
+                    <MapControlButton title="Full size">
                       <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
-                    </button>
+                    </MapControlButton>
                   </div>
                 </div>
                 <div className="chart-action-row">
@@ -580,12 +585,12 @@ export function UiGalleryPage() {
             <PatternCard name="MapControls" status="standard">
               <div className="map-controls map-controls-unified">
                 <div className="map-controls-group">
-                  <button className="map-control-btn map-control-btn-icon" title="Layers" type="button">
+                  <MapControlButton title="Layers">
                     <Layers aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </button>
-                  <button className="map-control-btn map-control-btn-icon" title="Refresh" type="button">
+                  </MapControlButton>
+                  <MapControlButton title="Refresh">
                     <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </button>
+                  </MapControlButton>
                 </div>
               </div>
             </PatternCard>

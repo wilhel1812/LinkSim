@@ -1,5 +1,6 @@
 import { scaleLinear } from "d3-scale";
 import { FloatingPopover } from "./ui/FloatingPopover";
+import { MapControlButton } from "./ui/MapControlButton";
 import { StateDot } from "./StateDot";
 import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, RadioTower, Settings, Tags } from "lucide-react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
@@ -1413,36 +1414,33 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       <div className="chart-top-row">
         <h3 className="panorama-header-title">Panorama from {selectedSiteEffective.name}</h3>
         <div className="chart-action-row-controls">
-          <button
+          <MapControlButton
             aria-label="Panorama settings"
-            className={`chart-endpoint-swap chart-endpoint-icon ${settingsPopoverOpen ? "is-active" : ""}`}
+            isSelected={settingsPopoverOpen}
             onClick={() => setSettingsPopoverOpen((v) => !v)}
             ref={settingsButtonRef}
             title="Settings"
-            type="button"
           >
             <Settings aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
+          </MapControlButton>
+          <MapControlButton
             aria-label="Legend"
-            className={`chart-endpoint-swap chart-endpoint-icon ${legendPopoverOpen ? "is-active" : ""}`}
+            isSelected={legendPopoverOpen}
             onClick={() => setLegendPopoverOpen((v) => !v)}
             ref={legendButtonRef}
             title="Legend"
-            type="button"
           >
             <Info aria-hidden="true" strokeWidth={1.8} />
-          </button>
+          </MapControlButton>
           {showExpandToggle ? (
-            <button
+            <MapControlButton
               aria-label={isExpanded ? "Exit full screen" : "Full screen"}
-              className={`chart-endpoint-swap chart-endpoint-icon ${isExpanded ? "is-active" : ""}`}
+              isSelected={isExpanded}
               onClick={onToggleExpanded}
               title={isExpanded ? "Exit full screen" : "Full screen"}
-              type="button"
             >
               {isExpanded ? <PanelBottomClose aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />}
-            </button>
+            </MapControlButton>
           ) : null}
           {rowControls}
         </div>

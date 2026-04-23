@@ -2,6 +2,7 @@ import { extent, max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import { ArrowLeftRight, PanelBottomClose, PanelBottomOpen } from "lucide-react";
 import { FloatingPopover } from "./ui/FloatingPopover";
+import { MapControlButton } from "./ui/MapControlButton";
 import type { MouseEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -727,25 +728,23 @@ export function LinkProfileChart({
           <span className="chart-endpoint chart-endpoint-right">{toSiteName}</span>
         </div>
         <div className="chart-action-row-controls">
-          <button
+          <MapControlButton
             aria-label="Reverse path direction for this view"
-            className={`chart-endpoint-swap chart-endpoint-icon ${temporaryDirectionReversed ? "is-active" : ""}`}
+            isSelected={temporaryDirectionReversed}
             onClick={toggleTemporaryDirectionReversed}
             title="Temporarily reverse path direction"
-            type="button"
           >
             <ArrowLeftRight aria-hidden="true" strokeWidth={1.8} />
-          </button>
+          </MapControlButton>
           {showExpandToggle ? (
-            <button
+            <MapControlButton
               aria-label={isExpanded ? "Exit full screen" : "Full screen"}
-              className={`chart-endpoint-swap chart-endpoint-icon ${isExpanded ? "is-active" : ""}`}
+              isSelected={isExpanded}
               onClick={onToggleExpanded}
               title={isExpanded ? "Exit full screen" : "Full screen"}
-              type="button"
             >
               {isExpanded ? <PanelBottomClose aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />}
-            </button>
+            </MapControlButton>
           ) : null}
           {rowControls}
         </div>

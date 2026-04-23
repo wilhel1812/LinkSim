@@ -29,6 +29,7 @@ import { useAppStore } from "../store/appStore";
 import { LinkProfileChart } from "./LinkProfileChart";
 import { PanoramaChart } from "./PanoramaChart";
 import { ActionButton } from "./ActionButton";
+import { MapControlButton } from "./ui/MapControlButton";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
@@ -1784,38 +1785,32 @@ export function AppShell() {
   }, [activeSimulation, clearNotifications, copyCurrentLink, publishAppNotice]);
 
   const panelSizeControls = useCallback(
-    (labelPrefix: string, variant: "map" | "chart" = "map") => (
+    (labelPrefix: string) => (
       <div className="panel-size-controls">
         {mobileBottomPanelMode === "full" ? (
-          <button
+          <MapControlButton
             aria-label={`Set ${labelPrefix} panel to normal size`}
-            className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
             onClick={() => setMobileBottomPanelVisibility("normal")}
             title="Normal size"
-            type="button"
           >
             <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
-          </button>
+          </MapControlButton>
         ) : (
           <>
-            <button
+            <MapControlButton
               aria-label={`Hide ${labelPrefix} panel`}
-              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
               onClick={() => setMobileBottomPanelVisibility("hidden")}
               title="Hide panel"
-              type="button"
             >
               <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />
-            </button>
-            <button
+            </MapControlButton>
+            <MapControlButton
               aria-label={`Expand ${labelPrefix} panel to full height`}
-              className={variant === "chart" ? "chart-endpoint-swap chart-endpoint-icon" : "map-control-btn map-control-btn-icon"}
               onClick={() => setMobileBottomPanelVisibility("full")}
               title="Full size"
-              type="button"
             >
               <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />
-            </button>
+            </MapControlButton>
           </>
         )}
       </div>
@@ -1951,37 +1946,34 @@ export function AppShell() {
       {!isMobileViewport && !isMapExpanded && !isProfileExpanded && (isNavigatorHidden || isInspectorHidden || isProfileHidden) ? (
         <div className="collapsed-panel-controls" aria-label="Restore hidden panels">
           {isNavigatorHidden ? (
-            <button
+            <MapControlButton
               aria-label="Show Navigator panel"
-              className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-navigator"
+              className="collapsed-panel-btn collapsed-panel-btn-navigator"
               onClick={showNavigatorPanel}
               title="Show Navigator"
-              type="button"
             >
-<PanelLeftOpen aria-hidden="true" strokeWidth={1.8} />
-            </button>
+              <PanelLeftOpen aria-hidden="true" strokeWidth={1.8} />
+            </MapControlButton>
           ) : null}
           {isInspectorHidden ? (
-            <button
+            <MapControlButton
               aria-label="Show Inspector panel"
-              className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-inspector"
+              className="collapsed-panel-btn collapsed-panel-btn-inspector"
               onClick={showInspectorPanel}
               title="Show Inspector"
-              type="button"
             >
-<PanelRightOpen aria-hidden="true" strokeWidth={1.8} />
-            </button>
+              <PanelRightOpen aria-hidden="true" strokeWidth={1.8} />
+            </MapControlButton>
           ) : null}
           {isProfileHidden ? (
-            <button
+            <MapControlButton
               aria-label="Show Profile panel"
-              className="map-control-btn map-control-btn-icon collapsed-panel-btn collapsed-panel-btn-profile"
+              className="collapsed-panel-btn collapsed-panel-btn-profile"
               onClick={showProfilePanel}
               title="Show Profile"
-              type="button"
             >
-<PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />
-            </button>
+              <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />
+            </MapControlButton>
           ) : null}
         </div>
       ) : null}
@@ -2068,9 +2060,8 @@ export function AppShell() {
           inspectorHeaderActions={
             <div className="map-inspector-header-actions">
               {!isMobileViewport ? (
-                <button
+                <MapControlButton
                   aria-label={isInspectorHidden ? "Show Inspector panel" : "Hide Inspector panel"}
-                  className="map-control-btn map-control-btn-icon"
                   onClick={() => {
                     if (isInspectorHidden) {
                       showInspectorPanel();
@@ -2079,22 +2070,19 @@ export function AppShell() {
                     hideInspectorPanel();
                   }}
                   title={isInspectorHidden ? "Show Inspector" : "Hide Inspector"}
-                  type="button"
                 >
                   {isInspectorHidden ? <PanelRightOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelRightClose aria-hidden="true" strokeWidth={1.8} />}
-                </button>
+                </MapControlButton>
               ) : null}
               <div className="map-inspector-header-actions-right">
                 {accessState === "granted" ? (
-                  <button
+                  <MapControlButton
                     aria-label="Share"
-                    className="map-control-btn map-control-btn-icon"
                     onClick={openShareModalOrCopy}
                     title="Share"
-                    type="button"
                   >
                     <Share aria-hidden="true" strokeWidth={1.8} />
-                  </button>
+                  </MapControlButton>
                 ) : null}
                 {isMobileViewport ? panelSizeControls("Inspector") : null}
               </div>
@@ -2130,9 +2118,8 @@ export function AppShell() {
             onToggleExpanded={toggleProfileExpanded}
             rowControls={
               isProfileExpanded ? null :
-              <button
+              <MapControlButton
                 aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
-                className="chart-endpoint-swap chart-endpoint-icon"
                 onClick={() => {
                   if (isProfileHidden) {
                     showProfilePanel();
@@ -2142,10 +2129,9 @@ export function AppShell() {
                   hideProfilePanel();
                 }}
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
-                type="button"
               >
                 {isProfileHidden ? <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
-              </button>
+              </MapControlButton>
             }
             panelClassName={profilePanelMotionClass}
             showExpandToggle
@@ -2156,9 +2142,8 @@ export function AppShell() {
             onToggleExpanded={toggleProfileExpanded}
             rowControls={
               isProfileExpanded ? null :
-              <button
+              <MapControlButton
                 aria-label={isProfileHidden ? "Show Profile panel" : "Hide Profile panel"}
-                className="chart-endpoint-swap chart-endpoint-icon"
                 onClick={() => {
                   if (isProfileHidden) {
                     showProfilePanel();
@@ -2168,10 +2153,9 @@ export function AppShell() {
                   hideProfilePanel();
                 }}
                 title={isProfileHidden ? "Show Profile" : "Hide Profile"}
-                type="button"
               >
                 {isProfileHidden ? <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomClose aria-hidden="true" strokeWidth={1.8} />}
-              </button>
+              </MapControlButton>
             }
             panelClassName={profilePanelMotionClass}
             showExpandToggle
@@ -2189,14 +2173,14 @@ export function AppShell() {
               <PanoramaChart
                 isExpanded={mobileBottomPanelMode === "full"}
                 onToggleExpanded={toggleProfileExpanded}
-                rowControls={panelSizeControls("Profile", "chart")}
+                rowControls={panelSizeControls("Profile")}
                 showExpandToggle={false}
               />
             ) : (
               <LinkProfileChart
                 isExpanded={mobileBottomPanelMode === "full"}
                 onToggleExpanded={toggleProfileExpanded}
-                rowControls={panelSizeControls("Profile", "chart")}
+                rowControls={panelSizeControls("Profile")}
                 showExpandToggle={false}
               />
             )}
@@ -2327,15 +2311,13 @@ export function AppShell() {
                 <p className="field-help">This link opens the same simulation, selected path, map view, and overlay mode.</p>
                 <div style={{ display: "flex", gap: "0.5em", alignItems: "center" }}>
                   <input className="locale-select" readOnly style={{ flex: 1, minWidth: 0 }} value={currentShareLink} />
-                  <button
+                  <MapControlButton
                     aria-label="Copy link"
-                    className="inline-action inline-action-icon"
                     onClick={() => void copyCurrentLink()}
                     title="Copy link"
-                    type="button"
                   >
                     <Copy aria-hidden="true" strokeWidth={1.8} />
-                  </button>
+                  </MapControlButton>
                 </div>
                 {toVisibility(activeSimulation.visibility) === "private" ? (
                   <div className="panel-section compact-panel">
