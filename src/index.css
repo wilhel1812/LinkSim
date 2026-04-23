@@ -2451,6 +2451,11 @@ input {
   pointer-events: none;
 }
 
+.beam-visualizer-field-group {
+  display: grid;
+  gap: 8px;
+}
+
 .beam-visualizer {
   display: grid;
   gap: 8px;
