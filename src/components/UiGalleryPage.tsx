@@ -15,7 +15,7 @@ import type { UiColorTheme } from "../themes/types";
 const GALLERY_TAB_STORAGE_KEY = "linksim-ui-gallery-tab-v1";
 
 type GalleryStatus = "standard" | "exception" | "legacy" | "under migration" | "mapped only";
-type GalleryTab = "actions" | "panels" | "forms" | "notifications" | "states" | "meta-map-ui" | "theme";
+type GalleryTab = "actions" | "panels" | "forms" | "notifications" | "states" | "surfaces" | "meta-map-ui" | "theme";
 
 const GALLERY_TABS: Array<{ id: GalleryTab; label: string }> = [
   { id: "actions", label: "Actions" },
@@ -23,6 +23,7 @@ const GALLERY_TABS: Array<{ id: GalleryTab; label: string }> = [
   { id: "forms", label: "Forms" },
   { id: "notifications", label: "Notifications" },
   { id: "states", label: "States" },
+  { id: "surfaces", label: "Surfaces" },
   { id: "meta-map-ui", label: "Meta/Map UI" },
   { id: "theme", label: "Theme" },
 ];
@@ -49,10 +50,9 @@ const SOURCE_PATHS: Record<string, string> = {
   "EmptyState": "src/components/ui/EmptyState.tsx",
   "LoadingState": "src/components/ui/LoadingState.tsx",
   "ErrorHelperStates": "src/components/ErrorHelperStates.tsx",
-  "MapControls": "src/components/MapControls.tsx",
+  "MapControls": "src/components/MapView.tsx",
   "SidebarFooter": "src/components/SidebarFooter.tsx",
-  "Surface.Pill": "src/components/ui/Surface.tsx",
-  "Surface.Card": "src/components/ui/Surface.tsx",
+  "Surface": "src/components/ui/Surface.tsx",
   "StateDot": "src/components/StateDot.tsx",
 };
 
@@ -614,6 +614,75 @@ export function UiGalleryPage() {
         </section>
       ) : null}
 
+      {activeTab === "surfaces" ? (
+        <section className="ui-gallery-section">
+          <h3>Surfaces</h3>
+          <div className="ui-pattern-grid">
+            <PatternCard name="Surface" status="standard">
+              <div className="ui-specimen-rows">
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Visible + pass
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\"\ntone=\"muted\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" tone="muted" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Inactive
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\"\npointerTail"}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Accent tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"pointerTail\npointerTone=\"selection\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail pointerTone="selection" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Selection tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"pointerTail\npointerTone=\"temporary\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail pointerTone="temporary" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Temporary tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"card\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="card" style={{ padding: "12px 16px", display: "inline-grid", gap: "4px", minWidth: "140px", fontSize: "0.75rem" }}>
+                      <strong>Signal overview</strong>
+                      <span style={{ color: "var(--muted)", fontSize: "0.7rem" }}>Azimuth: 142° · 12.4 km</span>
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"as=\"button\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface as="button" variant="pill" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Clickable pill
+                    </Surface>
+                  </div>
+                </div>
+              </div>
+            </PatternCard>
+          </div>
+        </section>
+      ) : null}
+
       {activeTab === "meta-map-ui" ? (
         <section className="ui-gallery-section">
           <h3>Meta / Map UI</h3>
@@ -653,48 +722,6 @@ export function UiGalleryPage() {
                 <StateDot state="fail_blocked" />
               </div>
               <VariantList variants={["pass_clear", "pass_blocked", "fail_clear", "fail_blocked"]} />
-            </PatternCard>
-            <PatternCard name="Surface.Pill" status="standard">
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
-                <Surface variant="pill" style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <StateDot state="pass_clear" />
-                    <span>Visible + pass</span>
-                  </div>
-                </Surface>
-                <Surface variant="pill" tone="muted" style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <StateDot state="pass_blocked" />
-                    <span>Inactive</span>
-                  </div>
-                </Surface>
-                <Surface
-                  variant="pill"
-                  pointerTail
-                  pointerTone="selection"
-                  style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <StateDot state="fail_clear" />
-                    <span>Pointer tail</span>
-                  </div>
-                </Surface>
-                <p className="field-help" style={{ marginTop: 0 }}>Strict pill shape (border-radius: 999px) for tall or long content such as label lists and narrow context menus. The shared pill surface now also supports a muted state and an optional pointer/tail modifier.</p>
-              </div>
-              <VariantList variants={["pill", "card"]} />
-            </PatternCard>
-            <PatternCard name="Surface.Card" status="standard">
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
-                <Surface variant="card" style={{ padding: "12px 16px", display: "inline-grid", gap: "8px", minWidth: "160px" }}>
-                  <strong style={{ fontSize: "0.75rem" }}>Signal overview</strong>
-                  <div style={{ display: "grid", gap: "4px", fontSize: "0.7rem", color: "var(--muted)" }}>
-                    <span>Azimuth: 142°</span>
-                    <span>Distance: 12.4 km</span>
-                    <span>State: Visible + pass</span>
-                  </div>
-                </Surface>
-                <p className="field-help" style={{ marginTop: 0 }}>Card variant (border-radius: 12px) for larger, square-ish popovers with structured content. Add <code>is-card</code> modifier to <code>ui-surface-pill</code>.</p>
-              </div>
             </PatternCard>
           </div>
         </section>
