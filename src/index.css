@@ -2510,7 +2510,7 @@ input {
 .beam-visualizer-baseline {
   fill: none;
   stroke: color-mix(in srgb, var(--muted) 72%, var(--surface));
-  stroke-width: 1.4;
+  stroke-width: 0.9;
   stroke-dasharray: 4 3;
 }
 
