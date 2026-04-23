@@ -2456,6 +2456,12 @@ input {
   gap: 8px;
 }
 
+@media (max-width: 980px) {
+  .beam-visualizer-popover {
+    left: 50vw !important;
+  }
+}
+
 .beam-visualizer {
   display: grid;
   gap: 8px;
