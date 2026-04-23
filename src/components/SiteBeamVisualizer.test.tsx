@@ -54,7 +54,7 @@ describe("SiteBeamVisualizerPopover", () => {
 
     await userEvent.click(screen.getByLabelText("Tx power"));
     expect(await screen.findByText("Beam preview")).toBeInTheDocument();
-    expect(screen.getByText("Educational only. Terrain, line of sight, and selected Path target are not evaluated here.")).toBeInTheDocument();
+    expect(screen.getByText("Not to scale, illustration only.")).toBeInTheDocument();
   });
 
   it("updates the educational budget when form values change", async () => {

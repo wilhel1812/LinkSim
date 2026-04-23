@@ -78,9 +78,7 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
           <span>Weak edge</span>
         </li>
       </ul>
-      <p className="field-help beam-visualizer-note">
-        Educational only. Terrain, line of sight, and selected Path target are not evaluated here.
-      </p>
+      <p className="field-help beam-visualizer-note">Not to scale, illustration only.</p>
     </div>
   );
 }
