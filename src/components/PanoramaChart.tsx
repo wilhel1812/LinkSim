@@ -1413,7 +1413,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   return (
     <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} ref={chartPanelRef}>
       <PanelToolbar
-        className="chart-top-row"
         title={<h3 className="panorama-header-title">Panorama from {selectedSiteEffective.name}</h3>}
         actions={
           <>

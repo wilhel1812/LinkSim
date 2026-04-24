@@ -7,6 +7,7 @@ import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { MapControlButton } from "./ui/MapControlButton";
 import { PanelToolbar } from "./ui/PanelToolbar";
+import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import { UiSlider } from "./UiSlider";
 import { SiteBeamVisualizer } from "./SiteBeamVisualizer";
 import { useThemeVariant } from "../hooks/useThemeVariant";
@@ -35,9 +36,10 @@ const SOURCE_PATHS: Record<string, string> = {
   "MapControlButton": "src/components/ui/MapControlButton.tsx",
   "PanelToolbar": "src/components/ui/PanelToolbar.tsx",
   "LinkButton": "src/components/LinkButton.tsx",
-  "PanelShell.LeftSidePanel": "src/components/app-shell/LeftSidePanel.tsx",
-  "PanelShell.RightSidePanel": "src/components/app-shell/RightSidePanel.tsx",
-  "PanelShell.BottomPanel": "src/components/app-shell/BottomPanel.tsx",
+  "CompactDetails": "src/components/ui/CompactDetails.tsx",
+  "PanelShell.LeftSidePanel": "src/components/Sidebar.tsx",
+  "PanelShell.RightSidePanel": "src/components/MapView.tsx",
+  "PanelShell.BottomPanel": "src/components/LinkProfileChart.tsx",
   "FormActionRow": "src/components/FormActionRow.tsx",
   "Input": "src/components/ui/Input.tsx",
   "Select": "src/components/ui/Select.tsx",
@@ -358,7 +360,34 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Panels</h3>
           <div className="ui-pattern-grid ui-pattern-grid-shells">
-            <PatternCard name="PanelShell.LeftSidePanel" status="under migration">
+            <PatternCard name="PanelToolbar" status="standard">
+              <div className="panel-section">
+                <PanelToolbar
+                  title={<h2>Title + Actions</h2>}
+                  actions={
+                    <MapControlButton title="Settings">
+                      <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </MapControlButton>
+                  }
+                />
+                <PanelToolbar
+                  title={<h2>Title Only</h2>}
+                />
+                <PanelToolbar
+                  actions={
+                    <>
+                      <MapControlButton title="Close">
+                        <X aria-hidden="true" size={16} strokeWidth={1.8} />
+                      </MapControlButton>
+                      <MapControlButton title="Settings">
+                        <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
+                      </MapControlButton>
+                    </>
+                  }
+                />
+              </div>
+            </PatternCard>
+            <PatternCard name="PanelShell.LeftSidePanel" status="standard">
               <aside className="sidebar-panel">
                 <section className="panel-section">
                   <PanelToolbar
@@ -372,7 +401,7 @@ export function UiGalleryPage() {
                 </section>
               </aside>
             </PatternCard>
-            <PatternCard name="PanelShell.RightSidePanel" status="under migration">
+            <PatternCard name="PanelShell.RightSidePanel" status="standard">
               <aside className="map-inspector">
                 <PanelToolbar
                   title={
@@ -386,10 +415,9 @@ export function UiGalleryPage() {
                 </div>
               </aside>
             </PatternCard>
-            <PatternCard name="PanelShell.BottomPanel" status="under migration">
+            <PatternCard name="PanelShell.BottomPanel" status="standard">
               <section className="chart-panel">
                 <PanelToolbar
-                  className="chart-top-row"
                   title={<span className="field-help">Path Profile A → B</span>}
                   actions={
                     <MapControlButton title="Full size">
@@ -401,11 +429,21 @@ export function UiGalleryPage() {
                   <div className="chart-hover-state">
                     <span>Action row cadence aligned with shell family.</span>
                   </div>
-                  <div className="chart-action-row-controls">
-                    <ActionButton>Save</ActionButton>
-                  </div>
+                  <ActionButton>Save</ActionButton>
                 </div>
               </section>
+            </PatternCard>
+            <PatternCard name="CompactDetails" status="standard">
+              <div className="panel-section">
+                <CompactDetails>
+                  <CompactDetailsSummary>Collapsed by default</CompactDetailsSummary>
+                  <p className="map-inspector-line">Content revealed when expanded.</p>
+                </CompactDetails>
+                <CompactDetails open>
+                  <CompactDetailsSummary>Open by default</CompactDetailsSummary>
+                  <p className="map-inspector-line">Content visible on load.</p>
+                </CompactDetails>
+              </div>
             </PatternCard>
           </div>
         </section>
