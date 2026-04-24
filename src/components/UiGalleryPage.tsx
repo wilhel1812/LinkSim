@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, type ReactNode } from "react";
-import { CircleAlert, CircleCheck, CircleX, Info, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
+import { Bell as BellIcon, CircleAlert, CircleCheck, CircleX, Info, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
 import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
 import { StateDot } from "./StateDot";
@@ -662,10 +662,10 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="NotificationBell" status="exception">
+            <PatternCard name="NotificationBell" status="standard">
               <div className="chip-group">
-                <button className="notification-bell" type="button">
-                  🔔
+                <button aria-label="Notifications" className="notification-bell" title="Notifications" type="button">
+                  <BellIcon aria-hidden="true" size={16} strokeWidth={1.8} />
                   <span className="notification-badge">3</span>
                 </button>
               </div>
