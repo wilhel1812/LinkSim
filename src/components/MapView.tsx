@@ -497,12 +497,7 @@ type MapViewProps = {
   inspectorPanelToggle?: ReactNode;
   /** Right-side actions in the inspector toolbar (e.g. share button, mobile size controls). */
   inspectorActions?: ReactNode;
-  notice?: {
-    message: string;
-    tone: "info" | "warning" | "error";
-    onDismiss?: () => void;
-  };
-  /** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
+/** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
   fitBottomInset?: number;
   /** Pixel insets reserved for map-internal chrome when fitting bounds. */
   fitChromePadding?: { top: number; right: number; bottom: number; left: number };
@@ -594,7 +589,6 @@ export function MapView({
   onToggleMapExpanded,
   inspectorPanelToggle,
   inspectorActions,
-  notice,
   fitBottomInset = 30,
   fitChromePadding = FIT_CHROME_PADDING,
 }: MapViewProps) {
@@ -2436,17 +2430,7 @@ export function MapView({
           </MapControlButton>
         </div>
       </div>
-      {notice ? (
-        <div className={`map-inline-notice map-inline-notice-${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>
-          <span>{notice.message}</span>
-          {notice.onDismiss ? (
-            <ActionButton aria-label="Dismiss notice" onClick={notice.onDismiss} title="Dismiss">
-              Dismiss
-            </ActionButton>
-          ) : null}
-        </div>
-      ) : null}
-      {(coverageVizMode !== "none" &&
+{(coverageVizMode !== "none" &&
         (!hasHeatTopology ||
         (coverageVizMode === "relay" && !hasRelayTopology) ||
         ((coverageVizMode === "passfail" || coverageVizMode === "relay") && !hasPassFailTopology))) ? (
