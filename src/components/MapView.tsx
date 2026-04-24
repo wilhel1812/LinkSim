@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Locate, LocateFixed, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import { MapControlButton } from "./ui/MapControlButton";
 import { Surface } from "./ui/Surface";
@@ -181,6 +181,16 @@ const terrainRasterPaint = {
   "raster-saturation": -0.06,
 };
 
+const userLocationAccuracyLayer = (color: string): LayerProps => ({
+  id: "user-location-accuracy-layer",
+  type: "fill",
+  paint: {
+    "fill-color": color,
+    "fill-opacity": 0.16,
+    "fill-outline-color": color,
+  },
+});
+
 const supportsWebgl = (): boolean => {
   try {
     const canvas = document.createElement("canvas");
@@ -197,6 +207,8 @@ const supportsWebgl = (): boolean => {
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 const fmtDbm = (value: number): string => `${value.toFixed(1)} dBm`;
+const fmtAccuracy = (value: number | null): string =>
+  typeof value === "number" && Number.isFinite(value) ? `accuracy ${Math.round(value)} m` : "accuracy unavailable";
 
 const guessSiteNameForPosition = async (lat: number, lon: number): Promise<string> => {
   const fallback = `Site ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
@@ -501,6 +513,7 @@ type MapViewProps = {
   fitBottomInset?: number;
   /** Pixel insets reserved for map-internal chrome when fitting bounds. */
   fitChromePadding?: { top: number; right: number; bottom: number; left: number };
+  onPublishNotice?: (notice: { id: string; message: string; tone: "info" | "warning" | "error"; persistent: boolean }) => void;
 };
 
 type MarkerActionButtonProps = {
@@ -553,6 +566,12 @@ type PendingNewSiteDraft = {
   lon: number;
 };
 
+type UserLocationFix = {
+  lat: number;
+  lon: number;
+  accuracyM: number | null;
+};
+
 type PendingSiteMove = {
   siteId: string;
   originalPosition: { lat: number; lon: number };
@@ -578,6 +597,53 @@ const DEFAULT_MAP_VIEWPORT = {
 };
 
 const SITE_PIN_MARKER_OFFSET: [number, number] = [0, -11];
+const USER_LOCATION_ZOOM = 12;
+const USER_LOCATION_WATCH_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 15_000,
+};
+const USER_LOCATION_NOTICE_ID = "user-location";
+
+const userLocationErrorMessage = (error: GeolocationPositionError): string => {
+  if (error.code === error.PERMISSION_DENIED) return "Location permission was denied.";
+  if (error.code === error.POSITION_UNAVAILABLE) return "Your location is currently unavailable.";
+  if (error.code === error.TIMEOUT) return "Location request timed out.";
+  return "Could not get your location.";
+};
+
+const buildUserLocationAccuracyGeoJson = (fix: UserLocationFix | null) => {
+  const accuracyM = fix?.accuracyM;
+  if (!fix || typeof accuracyM !== "number" || !Number.isFinite(accuracyM) || accuracyM <= 0) {
+    return {
+      type: "FeatureCollection" as const,
+      features: [],
+    };
+  }
+  const pointCount = 64;
+  const latRadius = accuracyM / 111_320;
+  const lonRadius = latRadius / Math.max(0.1, Math.cos((fix.lat * Math.PI) / 180));
+  const coordinates = Array.from({ length: pointCount + 1 }, (_, index) => {
+    const angle = (index / pointCount) * Math.PI * 2;
+    return [
+      fix.lon + Math.cos(angle) * lonRadius,
+      fix.lat + Math.sin(angle) * latRadius,
+    ];
+  });
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: {},
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [coordinates],
+        },
+      },
+    ],
+  };
+};
 
 export function MapView({
   isMapExpanded,
@@ -591,6 +657,7 @@ export function MapView({
   inspectorActions,
   fitBottomInset = 30,
   fitChromePadding = FIT_CHROME_PADDING,
+  onPublishNotice,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
@@ -714,18 +781,100 @@ export function MapView({
   } | null>(null);
   const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
   const [mapProviderWarning, setMapProviderWarning] = useState<string | null>(null);
+  const [isUserLocationActive, setIsUserLocationActive] = useState(false);
+  const [userLocationFix, setUserLocationFix] = useState<UserLocationFix | null>(null);
   const [interactionViewState, setInteractionViewState] = useState<{
     longitude: number;
     latitude: number;
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+  const userLocationWatchIdRef = useRef<number | null>(null);
+  const isUserLocationActiveRef = useRef(false);
+  const isUserLocationFollowingRef = useRef(false);
   const panoramaLensBaseViewRef = useRef<{
     center: { lat: number; lon: number };
     zoom: number;
     bearing: number;
     pitch: number;
   } | null>(null);
+
+  const stopUserLocation = useCallback(() => {
+    if (userLocationWatchIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(userLocationWatchIdRef.current);
+    }
+    userLocationWatchIdRef.current = null;
+    isUserLocationActiveRef.current = false;
+    isUserLocationFollowingRef.current = false;
+    setIsUserLocationActive(false);
+    setUserLocationFix(null);
+  }, []);
+
+  useEffect(() => () => stopUserLocation(), [stopUserLocation]);
+
+  const publishLocationNotice = useCallback(
+    (message: string, tone: "info" | "warning" | "error" = "error") => {
+      onPublishNotice?.({
+        id: USER_LOCATION_NOTICE_ID,
+        message,
+        tone,
+        persistent: false,
+      });
+    },
+    [onPublishNotice],
+  );
+
+  const startUserLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      publishLocationNotice("Your browser does not support location services.");
+      return;
+    }
+    isUserLocationActiveRef.current = true;
+    isUserLocationFollowingRef.current = true;
+    setIsUserLocationActive(true);
+    setUserLocationFix(null);
+    try {
+      userLocationWatchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const nextFix: UserLocationFix = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+            accuracyM: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+          };
+          setUserLocationFix(nextFix);
+          if (isUserLocationFollowingRef.current) {
+            updateMapViewport({
+              center: { lat: nextFix.lat, lon: nextFix.lon },
+              zoom: USER_LOCATION_ZOOM,
+            });
+            setInteractionViewState({
+              longitude: nextFix.lon,
+              latitude: nextFix.lat,
+              zoom: USER_LOCATION_ZOOM,
+            });
+          }
+        },
+        (error) => {
+          console.error("[user-location] geolocation watch failed", error);
+          publishLocationNotice(userLocationErrorMessage(error));
+          stopUserLocation();
+        },
+        USER_LOCATION_WATCH_OPTIONS,
+      );
+    } catch (error) {
+      console.error("[user-location] geolocation watch failed", error);
+      publishLocationNotice("Could not get your location.");
+      stopUserLocation();
+    }
+  }, [publishLocationNotice, stopUserLocation, updateMapViewport]);
+
+  const toggleUserLocation = useCallback(() => {
+    if (isUserLocationActiveRef.current) {
+      stopUserLocation();
+      return;
+    }
+    startUserLocation();
+  }, [startUserLocation, stopUserLocation]);
 
   useEffect(() => {
     const handleViewportChange = () => {
@@ -2114,6 +2263,11 @@ export function MapView({
     setSiteDraftStatus(null);
   };
 
+  const beginUserLocationSiteDraft = () => {
+    if (!canPersist || !userLocationFix || pendingNewSiteDraft) return;
+    beginPendingNewSiteDraft(userLocationFix.lat, userLocationFix.lon);
+  };
+
   const onMapClick = (event: MapLayerMouseEvent) => {
     const rawTarget = event.originalEvent?.target;
     if (rawTarget instanceof Element && rawTarget.closest(".map-site-surface")) return;
@@ -2264,6 +2418,11 @@ export function MapView({
   const themedOverlay = resolvedBasemap.isThemed
     ? { color: variant.cssVars["--terrain"], opacity: theme === "dark" ? 0.1 : 0.08 }
     : null;
+  const userLocationAccuracyGeoJson = useMemo(
+    () => buildUserLocationAccuracyGeoJson(userLocationFix),
+    [userLocationFix],
+  );
+  const userLocationSelectionColor = variant.cssVars["--selection"] ?? selectedLinkColor;
   // Track the selected category in local state; initialize from the current style's category.
   const [selectedCategory, setSelectedCategory] = useState<BasemapCategory>(
     () => getCategoryForStyleId(basemapStyleId),
@@ -2411,6 +2570,14 @@ export function MapView({
           </MapControlButton>
           <MapControlButton aria-label="Zoom in" onClick={() => zoomBy(1)} title="Zoom in">
             <ZoomIn aria-hidden="true" strokeWidth={1.8} />
+          </MapControlButton>
+          <MapControlButton
+            aria-label="Use my location"
+            isSelected={isUserLocationActive}
+            onClick={toggleUserLocation}
+            title="Use my location"
+          >
+            {isUserLocationActive ? <LocateFixed aria-hidden="true" strokeWidth={1.8} /> : <Locate aria-hidden="true" strokeWidth={1.8} />}
           </MapControlButton>
           <MapControlButton
             aria-label="Fit map to sites"
@@ -3059,6 +3226,9 @@ export function MapView({
         onMove={(event) => {
           if (event.originalEvent) {
             clearFitControlActive();
+            if (isUserLocationActiveRef.current && isUserLocationFollowingRef.current) {
+              isUserLocationFollowingRef.current = false;
+            }
           }
           setInteractionViewState({
             longitude: event.viewState.longitude,
@@ -3111,6 +3281,12 @@ export function MapView({
             url={coverageOverlay.url}
           >
             <Layer {...coverageRasterLayer} />
+          </Source>
+        ) : null}
+
+        {userLocationFix ? (
+          <Source data={userLocationAccuracyGeoJson} id="user-location-accuracy" type="geojson">
+            <Layer {...userLocationAccuracyLayer(userLocationSelectionColor)} />
           </Source>
         ) : null}
 
@@ -3248,6 +3424,33 @@ export function MapView({
             <Surface variant="pill" className="map-site-surface is-temporary" pointerTail pointerTone="temporary">
               <span>New Site</span>
             </Surface>
+          </Marker>
+        ) : null}
+
+        {userLocationFix ? (
+          <Marker
+            anchor="bottom"
+            latitude={userLocationFix.lat}
+            longitude={userLocationFix.lon}
+            offset={SITE_PIN_MARKER_OFFSET}
+            style={{ zIndex: pendingNewSiteDraft ? 2 : 5 }}
+          >
+            <MarkerActionButton
+              ariaLabel={`User location, ${userLocationFix.lat.toFixed(5)}, ${userLocationFix.lon.toFixed(5)}, ${fmtAccuracy(userLocationFix.accuracyM)}`}
+              className="map-site-surface is-selected"
+              pointerTail
+              pointerTone="selection"
+              tone={canPersist && !pendingNewSiteDraft ? "default" : "muted"}
+              onMouseEnter={() =>
+                setOverlayHoverInfo({
+                  text: `User location · ${userLocationFix.lat.toFixed(5)}, ${userLocationFix.lon.toFixed(5)} · ${fmtAccuracy(userLocationFix.accuracyM)}`,
+                })
+              }
+              onMouseLeave={() => setOverlayHoverInfo(null)}
+              onActivate={beginUserLocationSiteDraft}
+            >
+              <span>User Location</span>
+            </MarkerActionButton>
           </Marker>
         ) : null}
 

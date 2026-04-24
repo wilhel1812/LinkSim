@@ -2094,6 +2094,7 @@ export function AppShell() {
           onToggleMapExpanded={toggleMapExpanded}
           fitBottomInset={mapFitBottomInset}
           fitChromePadding={mapFitChromePadding}
+          onPublishNotice={publishAppNotice}
         />
         {isMobileViewport ? (
           <MobileWorkspaceTabs
