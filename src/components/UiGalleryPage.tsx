@@ -50,7 +50,6 @@ const SOURCE_PATHS: Record<string, string> = {
   "NotificationBell": "src/components/NotificationBell.tsx",
   "EmptyState": "src/components/ui/EmptyState.tsx",
   "LoadingState": "src/components/ui/LoadingState.tsx",
-  "ErrorHelperStates": "src/components/ErrorHelperStates.tsx",
   "SidebarFooter": "src/components/SidebarFooter.tsx",
   "Surface": "src/components/ui/Surface.tsx",
   "StateDot": "src/components/StateDot.tsx",
@@ -458,6 +457,13 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
+            <PatternCard name="field-help-error" status="standard">
+              <label className="field-grid">
+                <span>Simulation Name</span>
+                <input defaultValue="AB" type="text" aria-describedby="gallery-field-error" />
+              </label>
+              <p id="gallery-field-error" className="field-help field-help-error">Name must be at least 3 characters.</p>
+            </PatternCard>
             <PatternCard name="Input" status="standard">
               <label className="field-grid">
                 <span>Simulation Name</span>
@@ -604,12 +610,6 @@ export function UiGalleryPage() {
                 <div className="map-progress-fill map-progress-fill-indeterminate" />
               </div>
               <p className="field-help">Loading terrain and profile data…</p>
-            </PatternCard>
-            <PatternCard name="ErrorHelperStates" status="under migration">
-              <p className="field-help field-help-error">Name must be at least 3 characters.</p>
-              <div className="terrain-alert">
-                <p>Terrain fetch failed for one tile. Retry when network is stable.</p>
-              </div>
             </PatternCard>
           </div>
         </section>
