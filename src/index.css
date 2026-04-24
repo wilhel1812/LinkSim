@@ -3552,29 +3552,6 @@ html.panorama-gesture-lock body {
   word-break: break-word;
 }
 
-.offline-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: nowrap;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-  padding: 0.65rem 0.8rem;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
-  background: color-mix(in srgb, var(--warning) 14%, var(--surface));
-  color: var(--text);
-}
-
-.offline-banner > span {
-  white-space: nowrap;
-}
-
-.offline-banner .chip-group {
-  margin-left: auto;
-  flex-wrap: nowrap;
-}
-
 .resource-edit-fieldset {
   border: 0;
   margin: 0;
@@ -3918,15 +3895,6 @@ html.panorama-gesture-lock body {
   font-size: 0.72rem;
   font-weight: 700;
   padding: 0 6px;
-}
-
-.notification-banner {
-  border: 1px solid color-mix(in srgb, var(--warning) 52%, var(--border));
-  background: var(--warning-soft);
-  color: var(--text);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 0.78rem;
 }
 
 .notifications-popover {
@@ -4699,10 +4667,6 @@ html.panorama-gesture-lock body {
 .ui-gallery-page .chart-panel {
   padding: 12px;
   gap: 10px;
-}
-
-.ui-gallery-page .offline-banner {
-  position: relative;
 }
 
 .ui-gallery-page .map-controls {
