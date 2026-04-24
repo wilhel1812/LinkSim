@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, type ReactNode } from "react";
 import { CircleAlert, CircleCheck, CircleX, Info, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
 import { ActionButton } from "./ActionButton";
+import { AvatarBadge } from "./AvatarBadge";
 import { StateDot } from "./StateDot";
 import { Surface } from "./ui/Surface";
 import { Badge } from "./ui/Badge";
@@ -14,19 +15,16 @@ import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
 
-const GALLERY_TAB_STORAGE_KEY = "linksim-ui-gallery-tab-v1";
+const GALLERY_TAB_STORAGE_KEY = "linksim-ui-gallery-tab-v2";
 
 type GalleryStatus = "standard" | "exception" | "legacy" | "under migration" | "mapped only";
-type GalleryTab = "actions" | "panels" | "forms" | "notifications" | "states" | "surfaces" | "meta-map-ui" | "theme";
+type GalleryTab = "actions" | "forms" | "surfaces" | "feedback" | "theme";
 
 const GALLERY_TABS: Array<{ id: GalleryTab; label: string }> = [
   { id: "actions", label: "Actions" },
-  { id: "panels", label: "Panels" },
   { id: "forms", label: "Forms" },
-  { id: "notifications", label: "Notifications" },
-  { id: "states", label: "States" },
   { id: "surfaces", label: "Surfaces" },
-  { id: "meta-map-ui", label: "Meta/Map UI" },
+  { id: "feedback", label: "Feedback" },
   { id: "theme", label: "Theme" },
 ];
 
@@ -34,24 +32,25 @@ const SOURCE_PATHS: Record<string, string> = {
   "Button": "src/components/ui/Button.tsx",
   "ActionButton": "src/components/ActionButton.tsx",
   "MapControlButton": "src/components/ui/MapControlButton.tsx",
-  "PanelToolbar": "src/components/ui/PanelToolbar.tsx",
   "LinkButton": "src/components/LinkButton.tsx",
-  "CompactDetails": "src/components/ui/CompactDetails.tsx",
-  "PanelShell.LeftSidePanel": "src/components/Sidebar.tsx",
-  "PanelShell.RightSidePanel": "src/components/MapView.tsx",
-  "PanelShell.BottomPanel": "src/components/LinkProfileChart.tsx",
-  "FormActionRow": "src/components/FormActionRow.tsx",
+  "chip-group": "src/index.css",
+  "field-help-error": "src/index.css",
   "Input": "src/components/ui/Input.tsx",
   "Select": "src/components/ui/Select.tsx",
   "Badge": "src/components/ui/Badge.tsx",
   "UI Slider": "src/components/UiSlider.tsx",
   "SiteBeamVisualizer": "src/components/SiteBeamVisualizer.tsx",
+  "Surface": "src/components/ui/Surface.tsx",
+  "PanelToolbar": "src/components/ui/PanelToolbar.tsx",
+  "CompactDetails": "src/components/ui/CompactDetails.tsx",
+  "PanelShell.LeftSidePanel": "src/components/Sidebar.tsx",
+  "PanelShell.RightSidePanel": "src/components/MapView.tsx",
+  "PanelShell.BottomPanel": "src/components/LinkProfileChart.tsx",
+  "SidebarFooter": "src/components/SidebarFooter.tsx",
   "NotificationStack": "src/components/NotificationStack.tsx",
   "NotificationBell": "src/components/NotificationBell.tsx",
   "EmptyState": "src/components/ui/EmptyState.tsx",
   "LoadingState": "src/components/ui/LoadingState.tsx",
-  "SidebarFooter": "src/components/SidebarFooter.tsx",
-  "Surface": "src/components/ui/Surface.tsx",
   "StateDot": "src/components/StateDot.tsx",
 };
 
@@ -103,7 +102,6 @@ const THEME_TOKENS = {
 } as const;
 
 const getCssVarKey = (token: string): string => {
-  if (token === "surface-2") return "--surface-2";
   if (token === "surface-2") return "--surface-2";
   if (token === "staging-frame") return "--staging-frame";
   if (token === "local-frame") return "--local-frame";
@@ -226,7 +224,6 @@ export function UiGalleryPage() {
       <header className="ui-gallery-topbar panel-section">
         <div className="section-heading">
           <h2>LinkSim UI Gallery</h2>
-          <StatusPill status="under migration" />
         </div>
         <p className="field-help">Live UI inventory grounded in real app classes/components. Route: /ui-gallery</p>
         <div className="chip-group ui-gallery-theme-toggle">
@@ -344,101 +341,11 @@ export function UiGalleryPage() {
             </PatternCard>
             <PatternCard name="LinkButton" status="exception">
               <button className="inline-link-button" type="button">
-                Open change log
+                <span className="user-list-row">
+                  <AvatarBadge name="Alex Rivera" imageClassName="profile-avatar" />
+                  <span>Alex Rivera</span>
+                </span>
               </button>
-            </PatternCard>
-          </div>
-        </section>
-      ) : null}
-
-      {activeTab === "panels" ? (
-        <section className="ui-gallery-section">
-          <h3>Panels</h3>
-          <div className="ui-pattern-grid ui-pattern-grid-shells">
-            <PatternCard name="PanelToolbar" status="standard">
-              <div className="panel-section">
-                <PanelToolbar
-                  title={<h2>Title + Actions</h2>}
-                  actions={
-                    <MapControlButton title="Settings">
-                      <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
-                    </MapControlButton>
-                  }
-                />
-                <PanelToolbar
-                  title={<h2>Title Only</h2>}
-                />
-                <PanelToolbar
-                  actions={
-                    <>
-                      <MapControlButton title="Close">
-                        <X aria-hidden="true" size={16} strokeWidth={1.8} />
-                      </MapControlButton>
-                      <MapControlButton title="Settings">
-                        <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
-                      </MapControlButton>
-                    </>
-                  }
-                />
-              </div>
-            </PatternCard>
-            <PatternCard name="PanelShell.LeftSidePanel" status="standard">
-              <aside className="sidebar-panel">
-                <section className="panel-section">
-                  <PanelToolbar
-                    title={<h2>Sites</h2>}
-                    actions={<span className="field-help">InfoTip slot</span>}
-                  />
-                  <div className="chip-group">
-                    <ActionButton>Library</ActionButton>
-                    <ActionButton>New</ActionButton>
-                  </div>
-                </section>
-              </aside>
-            </PatternCard>
-            <PatternCard name="PanelShell.RightSidePanel" status="standard">
-              <aside className="map-inspector">
-                <PanelToolbar
-                  title={
-                    <MapControlButton title="Hide panel">
-                      <PanelRightClose aria-hidden="true" size={16} strokeWidth={1.8} />
-                    </MapControlButton>
-                  }
-                />
-                <div className="map-inspector-section">
-                  <p className="map-inspector-line">Section/divider cadence shared with panel shell family.</p>
-                </div>
-              </aside>
-            </PatternCard>
-            <PatternCard name="PanelShell.BottomPanel" status="standard">
-              <section className="chart-panel">
-                <PanelToolbar
-                  title={<span className="field-help">Path Profile A → B</span>}
-                  actions={
-                    <MapControlButton title="Full size">
-                      <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
-                    </MapControlButton>
-                  }
-                />
-                <div className="chart-action-row">
-                  <div className="chart-hover-state">
-                    <span>Action row cadence aligned with shell family.</span>
-                  </div>
-                  <ActionButton>Save</ActionButton>
-                </div>
-              </section>
-            </PatternCard>
-            <PatternCard name="CompactDetails" status="standard">
-              <div className="panel-section">
-                <CompactDetails>
-                  <CompactDetailsSummary>Collapsed by default</CompactDetailsSummary>
-                  <p className="map-inspector-line">Content revealed when expanded.</p>
-                </CompactDetails>
-                <CompactDetails open>
-                  <CompactDetailsSummary>Open by default</CompactDetailsSummary>
-                  <p className="map-inspector-line">Content visible on load.</p>
-                </CompactDetails>
-              </div>
             </PatternCard>
           </div>
         </section>
@@ -529,9 +436,178 @@ export function UiGalleryPage() {
         </section>
       ) : null}
 
-      {activeTab === "notifications" ? (
+      {activeTab === "surfaces" ? (
         <section className="ui-gallery-section">
-          <h3>Notifications</h3>
+          <h3>Surfaces</h3>
+          <div className="ui-pattern-grid ui-pattern-grid-shells">
+            <PatternCard name="Surface" status="standard">
+              <div className="ui-specimen-rows">
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Visible + pass
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\"\ntone=\"muted\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" tone="muted" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Inactive
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\"\npointerTail"}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Accent tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"pointerTail\npointerTone=\"selection\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail pointerTone="selection" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Selection tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"pointerTail\npointerTone=\"temporary\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail pointerTone="temporary" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Temporary tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"card\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="card" style={{ padding: "12px 16px", display: "inline-grid", gap: "4px", minWidth: "140px", fontSize: "0.75rem" }}>
+                      <strong>Signal overview</strong>
+                      <span style={{ color: "var(--muted)", fontSize: "0.7rem" }}>Azimuth: 142° · 12.4 km</span>
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"as=\"button\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface as="button" variant="pill" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Clickable pill
+                    </Surface>
+                  </div>
+                </div>
+              </div>
+            </PatternCard>
+            <PatternCard name="PanelToolbar" status="standard">
+              <div className="panel-section">
+                <PanelToolbar
+                  title={<h2>Title + Actions</h2>}
+                  actions={
+                    <MapControlButton title="Settings">
+                      <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </MapControlButton>
+                  }
+                />
+                <PanelToolbar
+                  title={<h2>Title Only</h2>}
+                />
+                <PanelToolbar
+                  actions={
+                    <>
+                      <MapControlButton title="Close">
+                        <X aria-hidden="true" size={16} strokeWidth={1.8} />
+                      </MapControlButton>
+                      <MapControlButton title="Settings">
+                        <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
+                      </MapControlButton>
+                    </>
+                  }
+                />
+              </div>
+            </PatternCard>
+            <PatternCard name="PanelShell.LeftSidePanel" status="standard">
+              <aside className="sidebar-panel">
+                <section className="panel-section">
+                  <PanelToolbar
+                    title={<h2>Sites</h2>}
+                    actions={<span className="field-help">InfoTip slot</span>}
+                  />
+                  <div className="chip-group">
+                    <ActionButton>Library</ActionButton>
+                    <ActionButton>New</ActionButton>
+                  </div>
+                </section>
+              </aside>
+            </PatternCard>
+            <PatternCard name="PanelShell.RightSidePanel" status="standard">
+              <aside className="map-inspector">
+                <PanelToolbar
+                  title={
+                    <MapControlButton title="Hide panel">
+                      <PanelRightClose aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </MapControlButton>
+                  }
+                />
+                <div className="map-inspector-section">
+                  <p className="map-inspector-line">Section/divider cadence shared with panel shell family.</p>
+                </div>
+              </aside>
+            </PatternCard>
+            <PatternCard name="PanelShell.BottomPanel" status="standard">
+              <section className="chart-panel">
+                <PanelToolbar
+                  title={<span className="field-help">Path Profile A → B</span>}
+                  actions={
+                    <MapControlButton title="Full size">
+                      <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </MapControlButton>
+                  }
+                />
+                <div className="chart-action-row">
+                  <div className="chart-hover-state">
+                    <span>Action row cadence aligned with shell family.</span>
+                  </div>
+                  <ActionButton>Save</ActionButton>
+                </div>
+              </section>
+            </PatternCard>
+            <PatternCard name="CompactDetails" status="standard">
+              <div className="panel-section">
+                <CompactDetails>
+                  <CompactDetailsSummary>Collapsed by default</CompactDetailsSummary>
+                  <p className="map-inspector-line">Content revealed when expanded.</p>
+                </CompactDetails>
+                <CompactDetails open>
+                  <CompactDetailsSummary>Open by default</CompactDetailsSummary>
+                  <p className="map-inspector-line">Content visible on load.</p>
+                </CompactDetails>
+              </div>
+            </PatternCard>
+            <PatternCard name="SidebarFooter" status="standard">
+              <footer className="sidebar-footer">
+                <div className="sidebar-footer-links">
+                  <span>©</span>
+                  <a href="https://maplibre.org" rel="noreferrer" target="_blank">
+                    MapLibre
+                  </a>
+                  <span>©</span>
+                  <a href="https://www.openstreetmap.org" rel="noreferrer" target="_blank">
+                    OpenStreetMap
+                  </a>
+                </div>
+                <div className="sidebar-footer-version">Build: v0.14.0-beta+fc9813a</div>
+              </footer>
+            </PatternCard>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "feedback" ? (
+        <section className="ui-gallery-section">
+          <h3>Feedback</h3>
           <div className="ui-pattern-grid">
             <PatternCard name="NotificationStack" status="under migration">
               <div className="app-notification-stack app-notification-stack-gallery">
@@ -594,14 +670,6 @@ export function UiGalleryPage() {
                 </button>
               </div>
             </PatternCard>
-          </div>
-        </section>
-      ) : null}
-
-      {activeTab === "states" ? (
-        <section className="ui-gallery-section">
-          <h3>States</h3>
-          <div className="ui-pattern-grid">
             <PatternCard name="EmptyState" status="standard">
               <div className="chart-empty">No profile available for current selection.</div>
             </PatternCard>
@@ -610,98 +678,6 @@ export function UiGalleryPage() {
                 <div className="map-progress-fill map-progress-fill-indeterminate" />
               </div>
               <p className="field-help">Loading terrain and profile data…</p>
-            </PatternCard>
-          </div>
-        </section>
-      ) : null}
-
-      {activeTab === "surfaces" ? (
-        <section className="ui-gallery-section">
-          <h3>Surfaces</h3>
-          <div className="ui-pattern-grid">
-            <PatternCard name="Surface" status="standard">
-              <div className="ui-specimen-rows">
-                <div className="ui-specimen-row">
-                  <span className="ui-specimen-row-label">{"variant=\"pill\""}</span>
-                  <div className="ui-specimen-row-specimens">
-                    <Surface variant="pill" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
-                      Visible + pass
-                    </Surface>
-                  </div>
-                </div>
-                <div className="ui-specimen-row">
-                  <span className="ui-specimen-row-label">{"variant=\"pill\"\ntone=\"muted\""}</span>
-                  <div className="ui-specimen-row-specimens">
-                    <Surface variant="pill" tone="muted" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
-                      Inactive
-                    </Surface>
-                  </div>
-                </div>
-                <div className="ui-specimen-row">
-                  <span className="ui-specimen-row-label">{"variant=\"pill\"\npointerTail"}</span>
-                  <div className="ui-specimen-row-specimens">
-                    <Surface variant="pill" pointerTail style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
-                      Accent tail
-                    </Surface>
-                  </div>
-                </div>
-                <div className="ui-specimen-row">
-                  <span className="ui-specimen-row-label">{"pointerTail\npointerTone=\"selection\""}</span>
-                  <div className="ui-specimen-row-specimens">
-                    <Surface variant="pill" pointerTail pointerTone="selection" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
-                      Selection tail
-                    </Surface>
-                  </div>
-                </div>
-                <div className="ui-specimen-row">
-                  <span className="ui-specimen-row-label">{"pointerTail\npointerTone=\"temporary\""}</span>
-                  <div className="ui-specimen-row-specimens">
-                    <Surface variant="pill" pointerTail pointerTone="temporary" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
-                      Temporary tail
-                    </Surface>
-                  </div>
-                </div>
-                <div className="ui-specimen-row">
-                  <span className="ui-specimen-row-label">{"variant=\"card\""}</span>
-                  <div className="ui-specimen-row-specimens">
-                    <Surface variant="card" style={{ padding: "12px 16px", display: "inline-grid", gap: "4px", minWidth: "140px", fontSize: "0.75rem" }}>
-                      <strong>Signal overview</strong>
-                      <span style={{ color: "var(--muted)", fontSize: "0.7rem" }}>Azimuth: 142° · 12.4 km</span>
-                    </Surface>
-                  </div>
-                </div>
-                <div className="ui-specimen-row">
-                  <span className="ui-specimen-row-label">{"as=\"button\""}</span>
-                  <div className="ui-specimen-row-specimens">
-                    <Surface as="button" variant="pill" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
-                      Clickable pill
-                    </Surface>
-                  </div>
-                </div>
-              </div>
-            </PatternCard>
-          </div>
-        </section>
-      ) : null}
-
-      {activeTab === "meta-map-ui" ? (
-        <section className="ui-gallery-section">
-          <h3>Meta / Map UI</h3>
-          <div className="ui-pattern-grid">
-            <PatternCard name="SidebarFooter" status="standard">
-              <footer className="sidebar-footer">
-                <div className="sidebar-footer-links">
-                  <span>©</span>
-                  <a href="https://maplibre.org" rel="noreferrer" target="_blank">
-                    MapLibre
-                  </a>
-                  <span>©</span>
-                  <a href="https://www.openstreetmap.org" rel="noreferrer" target="_blank">
-                    OpenStreetMap
-                  </a>
-                </div>
-                <div className="sidebar-footer-version">Build: v0.14.0-beta+fc9813a</div>
-              </footer>
             </PatternCard>
             <PatternCard name="StateDot" status="standard">
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
