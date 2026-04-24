@@ -721,7 +721,6 @@ export function LinkProfileChart({
   return (
     <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} data-profile-revision={profileRevision} ref={chartPanelRef}>
       <PanelToolbar
-        className="chart-top-row"
         title={
           <div className="chart-endpoints" aria-live="polite">
             <span className="chart-endpoint chart-endpoint-left">{fromSiteName}</span>
