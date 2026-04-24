@@ -706,8 +706,7 @@ export function AppShell() {
     }
   }, [accessState, initializeCloudSync]);
 
-  // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink,
-  // and publish a persistent map notice (uses the existing map-inline-notice UI).
+  // Auto-load the Oslo demo workspace for anonymous visitors with no deeplink.
   useEffect(() => {
     const isAnonNoDeepLink = !deepLinkParse.ok && isAnonymousGuestReadonly;
     if (!isAnonNoDeepLink) return;

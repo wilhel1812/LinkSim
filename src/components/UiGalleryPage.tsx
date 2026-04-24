@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, type ReactNode } from "react";
-import { CircleAlert, CircleCheck, CircleX, Info, Layers, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleX, Info, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
 import { ActionButton } from "./ActionButton";
 import { StateDot } from "./StateDot";
 import { Surface } from "./ui/Surface";
@@ -47,12 +47,10 @@ const SOURCE_PATHS: Record<string, string> = {
   "UI Slider": "src/components/UiSlider.tsx",
   "SiteBeamVisualizer": "src/components/SiteBeamVisualizer.tsx",
   "NotificationStack": "src/components/NotificationStack.tsx",
-  "MapInlineNotice": "src/components/MapInlineNotice.tsx",
   "NotificationBell": "src/components/NotificationBell.tsx",
   "EmptyState": "src/components/ui/EmptyState.tsx",
   "LoadingState": "src/components/ui/LoadingState.tsx",
   "ErrorHelperStates": "src/components/ErrorHelperStates.tsx",
-  "MapControls": "src/components/MapView.tsx",
   "SidebarFooter": "src/components/SidebarFooter.tsx",
   "Surface": "src/components/ui/Surface.tsx",
   "StateDot": "src/components/StateDot.tsx",
@@ -451,7 +449,7 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Forms</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="FormActionRow" status="under migration">
+            <PatternCard name="chip-group" status="standard">
               <div className="panel-section">
                 <div className="chip-group">
                   <ActionButton>Apply</ActionButton>
@@ -582,14 +580,6 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="MapInlineNotice" status="exception">
-              <div className="ui-gallery-map-notice-stage">
-                <div className="map-inline-notice map-inline-notice-warning" role="status">
-                  <span>Offline mode active. Changes will sync later.</span>
-                  <ActionButton>Dismiss</ActionButton>
-                </div>
-              </div>
-            </PatternCard>
             <PatternCard name="NotificationBell" status="exception">
               <div className="chip-group">
                 <button className="notification-bell" type="button">
@@ -698,18 +688,6 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Meta / Map UI</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="MapControls" status="standard">
-              <div className="map-controls map-controls-unified">
-                <div className="map-controls-group">
-                  <MapControlButton title="Layers">
-                    <Layers aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </MapControlButton>
-                  <MapControlButton title="Refresh">
-                    <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </MapControlButton>
-                </div>
-              </div>
-            </PatternCard>
             <PatternCard name="SidebarFooter" status="standard">
               <footer className="sidebar-footer">
                 <div className="sidebar-footer-links">

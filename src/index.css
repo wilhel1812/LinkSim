@@ -1073,43 +1073,6 @@ input {
   z-index: 60;
 }
 
-.map-inline-notice {
-  position: absolute;
-  top: calc(18px + 36px + (var(--workspace-panel-gap) * 2));
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: min(calc(100% - 36px), calc(100% - (var(--sidebar-overlay-width) * 2) - 60px));
-  z-index: 55;
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
-  font-size: 0.84rem;
-  box-shadow: var(--shadow-elev-3);
-}
-
-.workspace-panel.is-map-expanded .map-inline-notice,
-.workspace-panel.is-profile-expanded .map-inline-notice {
-  max-width: calc(100% - 36px);
-}
-
-.map-inline-notice-warning {
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
-}
-
-.map-inline-notice-error {
-  border-color: color-mix(in srgb, var(--text) 34%, var(--border));
-}
-
-.map-inline-notice .btn {
-  white-space: nowrap;
-  padding: 4px 10px;
-}
 
 .app-notification-stack {
   position: absolute;
@@ -3185,10 +3148,6 @@ html.panorama-gesture-lock body {
     right: 12px;
   }
 
-  .map-inline-notice {
-    top: calc(var(--mobile-controls-top) + 42px + (var(--workspace-panel-gap) * 2));
-    max-width: calc(100% - 24px);
-  }
 
   .map-provider-field .locale-select {
     min-width: 100%;
@@ -4681,22 +4640,6 @@ html.panorama-gesture-lock body {
   align-items: center;
 }
 
-.ui-gallery-map-notice-stage {
-  position: relative;
-  min-height: 86px;
-  border-radius: var(--radius-card);
-  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
-  background: color-mix(in srgb, var(--surface) 84%, transparent);
-  overflow: hidden;
-}
-
-.ui-gallery-map-notice-stage .map-inline-notice {
-  left: 12px;
-  right: 12px;
-  top: 12px;
-  transform: none;
-  max-width: calc(100% - 24px);
-}
 
 @media (max-width: 980px) {
   .app-notification-stack {
