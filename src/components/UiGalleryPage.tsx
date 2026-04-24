@@ -47,9 +47,7 @@ const SOURCE_PATHS: Record<string, string> = {
   "UI Slider": "src/components/UiSlider.tsx",
   "SiteBeamVisualizer": "src/components/SiteBeamVisualizer.tsx",
   "NotificationStack": "src/components/NotificationStack.tsx",
-  "NotificationBanner": "src/components/NotificationBanner.tsx",
   "MapInlineNotice": "src/components/MapInlineNotice.tsx",
-  "OfflineBanner": "src/components/OfflineBanner.tsx",
   "NotificationBell": "src/components/NotificationBell.tsx",
   "EmptyState": "src/components/ui/EmptyState.tsx",
   "LoadingState": "src/components/ui/LoadingState.tsx",
@@ -584,27 +582,10 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="NotificationBanner" status="legacy">
-              <div className="notification-banner" role="status">
-                <strong>2 moderator notifications</strong> need review.
-              </div>
-              <div className="notification-banner" role="status">
-                <strong>Schema warning:</strong> missing optional index metadata.
-              </div>
-            </PatternCard>
             <PatternCard name="MapInlineNotice" status="exception">
               <div className="ui-gallery-map-notice-stage">
                 <div className="map-inline-notice map-inline-notice-warning" role="status">
                   <span>Offline mode active. Changes will sync later.</span>
-                  <ActionButton>Dismiss</ActionButton>
-                </div>
-              </div>
-            </PatternCard>
-            <PatternCard name="OfflineBanner" status="legacy">
-              <div className="offline-banner" role="status">
-                <span>Offline. Changes are saved locally and will sync when connection returns.</span>
-                <div className="chip-group">
-                  <ActionButton>Open Sync Status</ActionButton>
                   <ActionButton>Dismiss</ActionButton>
                 </div>
               </div>
