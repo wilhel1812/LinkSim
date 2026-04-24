@@ -456,7 +456,8 @@ input {
   display: flex;
   align-items: center;
   gap: var(--panel-header-row-gap);
-  min-height: var(--panel-header-row-min-height);
+  /* min-height accounts for padding-bottom + border-bottom so all toolbars share the same total height */
+  min-height: calc(var(--panel-header-row-min-height) + var(--panel-header-row-padding-bottom) + 1px);
   padding-bottom: var(--panel-header-row-padding-bottom);
   border-bottom: 1px solid var(--panel-shell-divider);
 }
@@ -474,6 +475,7 @@ input {
   display: inline-flex;
   align-items: center;
   gap: var(--panel-action-row-gap);
+  margin-left: auto; /* push actions to the right even when no title is present */
 }
 
 .info-tip {
