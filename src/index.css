@@ -4364,21 +4364,6 @@ html.panorama-gesture-lock body {
   background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
-.terrain-alert {
-  border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border));
-  background: color-mix(in srgb, var(--warning) 16%, transparent);
-  border-radius: 10px;
-  padding: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.terrain-alert p {
-  margin: 0;
-  color: var(--text);
-  font-size: 0.79rem;
-}
-
 .whatif-table {
   border: 1px solid var(--border);
   border-radius: var(--radius-btn);
