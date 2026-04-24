@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.18.0] - 2026-04-24
+
+### Added
+- User location map with live camera follow: tap "Locate me" to centre the map on your GPS position; the camera follows as you move until you pan away. (#765)
+- Site beam visualizer popover: interactive gain/beam-pattern overlay with anchored popover and unified gain fields across antenna types. (#737, #740)
+- Site access editor redesign: cleaner layout, padded collaborator popover, and improved modal structure. (#733)
+- PanelToolbar component unifying toolbar layout and action alignment across all panels (Navigator, Inspector, chart panel, sidebar). (#616, #751)
+- Unified button system: `btn`, `btn-ghost`, and `btn-icon` CSS roles + shared `Button` component consolidation; removes mixed legacy button language. (#616, #748)
+
+### Fixed
+- Notification bell replaced with Lucide Bell icon (removes emoji dependency). (#616, #763)
+- Map pin anchoring and stacking order corrected. (#731)
+- Deploy script syntax error. (#732)
+
+### Internal
+- Removed dead UI patterns: `NotificationBanner`, `OfflineBanner` (#759), `MapInlineNotice`, `MapControls`, `FormActionRow` (#760), `terrain-alert` (#761), stale gallery class refs (#758).
+- `require-milestone-on-close` workflow now honours `no-milestone-close-ok` label. (#764)
+- README landing page simplified. (#747)
+
 ## [0.17.0] - 2026-04-17
 
 Rolls up all merged work since `0.16.0`, including the `0.16.2` shared-site sync hotfix and the release/deploy guardrail fixes.
