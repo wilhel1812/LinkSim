@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Egg, Fullscreen, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Locate, LocateFixed, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
+import { MapControlButton } from "./ui/MapControlButton";
+import { Surface } from "./ui/Surface";
 import Map, {
   Layer,
   type MapRef,
@@ -68,6 +70,8 @@ import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { StateDot } from "./StateDot";
 import { useMapControls } from "./map/useMapControls";
+import { animateMapToCenter, fitMapToBounds, resolveMapCameraPadding } from "./map/mapCamera";
+import { PanelToolbar } from "./ui/PanelToolbar";
 
 const UI_SECTION_KEYS = {
   mapViewResults: "linksim-ui-mapview-results-v1",
@@ -178,6 +182,16 @@ const terrainRasterPaint = {
   "raster-saturation": -0.06,
 };
 
+const userLocationAccuracyLayer = (color: string): LayerProps => ({
+  id: "user-location-accuracy-layer",
+  type: "fill",
+  paint: {
+    "fill-color": color,
+    "fill-opacity": 0.16,
+    "fill-outline-color": color,
+  },
+});
+
 const supportsWebgl = (): boolean => {
   try {
     const canvas = document.createElement("canvas");
@@ -194,6 +208,8 @@ const supportsWebgl = (): boolean => {
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 const fmtDbm = (value: number): string => `${value.toFixed(1)} dBm`;
+const fmtAccuracy = (value: number | null): string =>
+  typeof value === "number" && Number.isFinite(value) ? `accuracy ${Math.round(value)} m` : "accuracy unavailable";
 
 const guessSiteNameForPosition = async (lat: number, lon: number): Promise<string> => {
   const fallback = `Site ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
@@ -490,24 +506,25 @@ type MapViewProps = {
   readOnly?: boolean;
   canPersist?: boolean;
   onToggleMapExpanded: () => void;
-  // Legacy prop name retained for stability; this renders in the RightSidePanel shell.
-  inspectorHeaderActions?: ReactNode;
-  notice?: {
-    message: string;
-    tone: "info" | "warning" | "error";
-    onDismiss?: () => void;
-  };
-  /** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
+  /** Left-side element in the inspector toolbar (e.g. panel toggle button). */
+  inspectorPanelToggle?: ReactNode;
+  /** Right-side actions in the inspector toolbar (e.g. share button, mobile size controls). */
+  inspectorActions?: ReactNode;
+/** Pixel inset for the bottom edge when computing fitBounds, to avoid UI chrome. */
   fitBottomInset?: number;
   /** Pixel insets reserved for map-internal chrome when fitting bounds. */
   fitChromePadding?: { top: number; right: number; bottom: number; left: number };
+  onPublishNotice?: (notice: { id: string; message: string; tone: "info" | "warning" | "error"; persistent: boolean }) => void;
 };
 
 type MarkerActionButtonProps = {
   ariaLabel: string;
   children: ReactNode;
   className: string;
-  onActivate: (event: MouseEvent<HTMLButtonElement>) => void;
+  pointerTail?: boolean;
+  pointerTone?: "accent" | "selection" | "temporary";
+  tone?: "default" | "muted";
+  onActivate: (event: MouseEvent<HTMLElement>) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 };
@@ -516,14 +533,22 @@ function MarkerActionButton({
   ariaLabel,
   children,
   className,
+  pointerTail = false,
+  pointerTone = "accent",
+  tone = "default",
   onActivate,
   onMouseEnter,
   onMouseLeave,
 }: MarkerActionButtonProps) {
   return (
-    <button
+    <Surface
+      as="button"
       aria-label={ariaLabel}
       className={className}
+      variant="pill"
+      pointerTail={pointerTail}
+      pointerTone={pointerTone}
+      tone={tone}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -531,16 +556,21 @@ function MarkerActionButton({
       }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      type="button"
     >
       {children}
-    </button>
+    </Surface>
   );
 }
 
 type PendingNewSiteDraft = {
   lat: number;
   lon: number;
+};
+
+type UserLocationFix = {
+  lat: number;
+  lon: number;
+  accuracyM: number | null;
 };
 
 type PendingSiteMove = {
@@ -567,6 +597,55 @@ const DEFAULT_MAP_VIEWPORT = {
   zoom: 8,
 };
 
+const SITE_PIN_MARKER_OFFSET: [number, number] = [0, -11];
+const USER_LOCATION_ZOOM = 12;
+const USER_LOCATION_WATCH_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 15_000,
+};
+const USER_LOCATION_NOTICE_ID = "user-location";
+
+const userLocationErrorMessage = (error: GeolocationPositionError): string => {
+  if (error.code === error.PERMISSION_DENIED) return "Location permission was denied.";
+  if (error.code === error.POSITION_UNAVAILABLE) return "Your location is currently unavailable.";
+  if (error.code === error.TIMEOUT) return "Location request timed out.";
+  return "Could not get your location.";
+};
+
+const buildUserLocationAccuracyGeoJson = (fix: UserLocationFix | null) => {
+  const accuracyM = fix?.accuracyM;
+  if (!fix || typeof accuracyM !== "number" || !Number.isFinite(accuracyM) || accuracyM <= 0) {
+    return {
+      type: "FeatureCollection" as const,
+      features: [],
+    };
+  }
+  const pointCount = 64;
+  const latRadius = accuracyM / 111_320;
+  const lonRadius = latRadius / Math.max(0.1, Math.cos((fix.lat * Math.PI) / 180));
+  const coordinates = Array.from({ length: pointCount + 1 }, (_, index) => {
+    const angle = (index / pointCount) * Math.PI * 2;
+    return [
+      fix.lon + Math.cos(angle) * lonRadius,
+      fix.lat + Math.sin(angle) * latRadius,
+    ];
+  });
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: {},
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [coordinates],
+        },
+      },
+    ],
+  };
+};
+
 export function MapView({
   isMapExpanded,
   showInspector = true,
@@ -575,10 +654,11 @@ export function MapView({
   readOnly = false,
   canPersist = true,
   onToggleMapExpanded,
-  inspectorHeaderActions,
-  notice,
+  inspectorPanelToggle,
+  inspectorActions,
   fitBottomInset = 30,
   fitChromePadding = FIT_CHROME_PADDING,
+  onPublishNotice,
 }: MapViewProps) {
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
@@ -702,18 +782,112 @@ export function MapView({
   } | null>(null);
   const [useFallbackMapStyle, setUseFallbackMapStyle] = useState(false);
   const [mapProviderWarning, setMapProviderWarning] = useState<string | null>(null);
+  const [isUserLocationActive, setIsUserLocationActive] = useState(false);
+  const [userLocationFix, setUserLocationFix] = useState<UserLocationFix | null>(null);
   const [interactionViewState, setInteractionViewState] = useState<{
     longitude: number;
     latitude: number;
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+  const userLocationWatchIdRef = useRef<number | null>(null);
+  const isUserLocationActiveRef = useRef(false);
+  const isUserLocationFollowingRef = useRef(false);
   const panoramaLensBaseViewRef = useRef<{
     center: { lat: number; lon: number };
     zoom: number;
     bearing: number;
     pitch: number;
   } | null>(null);
+
+  const stopUserLocation = useCallback(() => {
+    if (userLocationWatchIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(userLocationWatchIdRef.current);
+    }
+    userLocationWatchIdRef.current = null;
+    isUserLocationActiveRef.current = false;
+    isUserLocationFollowingRef.current = false;
+    setIsUserLocationActive(false);
+    setUserLocationFix(null);
+  }, []);
+
+  useEffect(() => () => stopUserLocation(), [stopUserLocation]);
+
+  const publishLocationNotice = useCallback(
+    (message: string, tone: "info" | "warning" | "error" = "error") => {
+      onPublishNotice?.({
+        id: USER_LOCATION_NOTICE_ID,
+        message,
+        tone,
+        persistent: false,
+      });
+    },
+    [onPublishNotice],
+  );
+
+  const startUserLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      publishLocationNotice("Your browser does not support location services.");
+      return;
+    }
+    isUserLocationActiveRef.current = true;
+    isUserLocationFollowingRef.current = true;
+    setIsUserLocationActive(true);
+    setUserLocationFix(null);
+    try {
+      userLocationWatchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const nextFix: UserLocationFix = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+            accuracyM: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+          };
+          setUserLocationFix(nextFix);
+          if (isUserLocationFollowingRef.current) {
+            setInteractionViewState(null);
+            const didAnimate = animateMapToCenter(mapRef, {
+              center: { lat: nextFix.lat, lon: nextFix.lon },
+              zoom: USER_LOCATION_ZOOM,
+              padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
+            });
+            if (!didAnimate) {
+              updateMapViewport({
+                center: { lat: nextFix.lat, lon: nextFix.lon },
+                zoom: USER_LOCATION_ZOOM,
+              });
+            }
+          }
+        },
+        (error) => {
+          console.error("[user-location] geolocation watch failed", error);
+          publishLocationNotice(userLocationErrorMessage(error));
+          stopUserLocation();
+        },
+        USER_LOCATION_WATCH_OPTIONS,
+      );
+    } catch (error) {
+      console.error("[user-location] geolocation watch failed", error);
+      publishLocationNotice("Could not get your location.");
+      stopUserLocation();
+    }
+  }, [
+    fitBottomInset,
+    fitChromePadding.bottom,
+    fitChromePadding.left,
+    fitChromePadding.right,
+    fitChromePadding.top,
+    publishLocationNotice,
+    stopUserLocation,
+    updateMapViewport,
+  ]);
+
+  const toggleUserLocation = useCallback(() => {
+    if (isUserLocationActiveRef.current) {
+      stopUserLocation();
+      return;
+    }
+    startUserLocation();
+  }, [startUserLocation, stopUserLocation]);
 
   useEffect(() => {
     const handleViewportChange = () => {
@@ -2102,9 +2276,14 @@ export function MapView({
     setSiteDraftStatus(null);
   };
 
+  const beginUserLocationSiteDraft = () => {
+    if (!canPersist || !userLocationFix || pendingNewSiteDraft) return;
+    beginPendingNewSiteDraft(userLocationFix.lat, userLocationFix.lon);
+  };
+
   const onMapClick = (event: MapLayerMouseEvent) => {
     const rawTarget = event.originalEvent?.target;
-    if (rawTarget instanceof Element && rawTarget.closest(".site-pin")) return;
+    if (rawTarget instanceof Element && rawTarget.closest(".map-site-surface")) return;
     if (endpointPickTarget) return;
     const interactiveFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
     let id = interactiveFeature?.properties ? String(interactiveFeature.properties.id ?? "") : "";
@@ -2252,6 +2431,11 @@ export function MapView({
   const themedOverlay = resolvedBasemap.isThemed
     ? { color: variant.cssVars["--terrain"], opacity: theme === "dark" ? 0.1 : 0.08 }
     : null;
+  const userLocationAccuracyGeoJson = useMemo(
+    () => buildUserLocationAccuracyGeoJson(userLocationFix),
+    [userLocationFix],
+  );
+  const userLocationSelectionColor = variant.cssVars["--selection"] ?? selectedLinkColor;
   // Track the selected category in local state; initialize from the current style's category.
   const [selectedCategory, setSelectedCategory] = useState<BasemapCategory>(
     () => getCategoryForStyleId(basemapStyleId),
@@ -2291,11 +2475,8 @@ export function MapView({
     if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
     const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
     if (!bounds) return;
-    mapRef.current.fitBounds(bounds, {
-      padding: { ...fitChromePadding, bottom: fitBottomInset },
-      animate: true,
-      linear: false,
-      duration: 900,
+    fitMapToBounds(mapRef, bounds, {
+      padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
       maxZoom: 14,
     });
     setInteractionViewState(null);
@@ -2385,53 +2566,48 @@ export function MapView({
       <div className="map-controls map-controls-unified map-controls-icon-only">
         <div className="map-controls-group map-controls-group-utility map-controls-utility-pill ui-surface-pill">
           {showMultiSelectToggle ? (
-            <button
+            <MapControlButton
               aria-label={isMultiSelectMode ? "Disable multi-select" : "Enable multi-select"}
-              className={`map-control-btn map-control-btn-icon ${isMultiSelectMode ? "is-selected" : ""}`}
+              isSelected={isMultiSelectMode}
               onClick={() => setIsMultiSelectMode((current) => !current)}
               title={isMultiSelectMode ? "Multi-select On" : "Multi-select Off"}
-              type="button"
             >
               <SquareStack aria-hidden="true" strokeWidth={1.8} />
-            </button>
+            </MapControlButton>
           ) : null}
-          <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(-1)} title="Zoom out" type="button">
+          <MapControlButton aria-label="Zoom out" onClick={() => zoomBy(-1)} title="Zoom out">
             <ZoomOut aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" onClick={() => zoomBy(1)} title="Zoom in" type="button">
+          </MapControlButton>
+          <MapControlButton aria-label="Zoom in" onClick={() => zoomBy(1)} title="Zoom in">
             <ZoomIn aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
+          </MapControlButton>
+          <MapControlButton
+            aria-label="Use my location"
+            isSelected={isUserLocationActive}
+            onClick={toggleUserLocation}
+            title="Use my location"
+          >
+            {isUserLocationActive ? <LocateFixed aria-hidden="true" strokeWidth={1.8} /> : <Locate aria-hidden="true" strokeWidth={1.8} />}
+          </MapControlButton>
+          <MapControlButton
             aria-label="Fit map to sites"
-            className={`map-control-btn map-control-btn-icon ${fitControlActive ? "is-selected" : ""}`}
+            isSelected={fitControlActive}
             onClick={fitToNodes}
             title="Fit"
-            type="button"
           >
             <Fullscreen aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
+          </MapControlButton>
+          <MapControlButton
             aria-label={isMapExpanded ? "Show panels" : "Hide panels"}
-            className={`map-control-btn map-control-btn-icon ${isMapExpanded ? "is-selected" : ""}`}
+            isSelected={isMapExpanded}
             onClick={onToggleMapExpanded}
             title={isMapExpanded ? "Show panels" : "Hide panels"}
-            type="button"
           >
             {isMapExpanded ? <Minimize2 aria-hidden="true" strokeWidth={1.8} /> : <Maximize2 aria-hidden="true" strokeWidth={1.8} />}
-          </button>
+          </MapControlButton>
         </div>
       </div>
-      {notice ? (
-        <div className={`map-inline-notice map-inline-notice-${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>
-          <span>{notice.message}</span>
-          {notice.onDismiss ? (
-            <ActionButton aria-label="Dismiss notice" onClick={notice.onDismiss} title="Dismiss">
-              Dismiss
-            </ActionButton>
-          ) : null}
-        </div>
-      ) : null}
-      {(coverageVizMode !== "none" &&
+{(coverageVizMode !== "none" &&
         (!hasHeatTopology ||
         (coverageVizMode === "relay" && !hasRelayTopology) ||
         ((coverageVizMode === "passfail" || coverageVizMode === "relay") && !hasPassFailTopology))) ? (
@@ -2445,8 +2621,8 @@ export function MapView({
       ) : null}
       {showInspector ? (
         <aside className={`map-inspector ${inspectorPanelClassName ?? ""}`.trim()} aria-live="polite">
-          {inspectorHeaderActions ? (
-            <div className="map-inspector-header-row">{inspectorHeaderActions}</div>
+          {(inspectorPanelToggle != null || inspectorActions != null) ? (
+            <PanelToolbar title={inspectorPanelToggle} actions={inspectorActions} />
           ) : null}
           {simulationBusyIndicator ? (
             <div className="map-inspector-section">
@@ -2773,20 +2949,19 @@ export function MapView({
                 <div className="overlay-inline-controls">
                   <span>Style</span>
                   <div className="chip-group">
-                    <button
-                      className="map-control-btn is-selected"
+                    <MapControlButton
+                      isSelected
                       onClick={() => setCoverageVizMode("heatmap")}
-                      type="button"
+                      variant="labeled"
                     >
                       Smooth
-                    </button>
-                    <button
-                      className="map-control-btn"
+                    </MapControlButton>
+                    <MapControlButton
                       onClick={() => setCoverageVizMode("contours")}
-                      type="button"
+                      variant="labeled"
                     >
                       Bands
-                    </button>
+                    </MapControlButton>
                   </div>
                 </div>
                 <div className="overlay-scale">
@@ -2805,20 +2980,19 @@ export function MapView({
                 <div className="overlay-inline-controls">
                   <span>Style</span>
                   <div className="chip-group">
-                    <button
-                      className="map-control-btn"
+                    <MapControlButton
                       onClick={() => setCoverageVizMode("heatmap")}
-                      type="button"
+                      variant="labeled"
                     >
                       Smooth
-                    </button>
-                    <button
-                      className="map-control-btn is-selected"
+                    </MapControlButton>
+                    <MapControlButton
+                      isSelected
                       onClick={() => setCoverageVizMode("contours")}
-                      type="button"
+                      variant="labeled"
                     >
                       Bands
-                    </button>
+                    </MapControlButton>
                   </div>
                 </div>
                 <div className="overlay-inline-controls">
@@ -3062,6 +3236,9 @@ export function MapView({
         onMove={(event) => {
           if (event.originalEvent) {
             clearFitControlActive();
+            if (isUserLocationActiveRef.current && isUserLocationFollowingRef.current) {
+              isUserLocationFollowingRef.current = false;
+            }
           }
           setInteractionViewState({
             longitude: event.viewState.longitude,
@@ -3117,6 +3294,12 @@ export function MapView({
           </Source>
         ) : null}
 
+        {userLocationFix ? (
+          <Source data={userLocationAccuracyGeoJson} id="user-location-accuracy" type="geojson">
+            <Layer {...userLocationAccuracyLayer(userLocationSelectionColor)} />
+          </Source>
+        ) : null}
+
         <Source data={lineFeatures} id="links" type="geojson">
           <Layer {...mapLineLayer(linkColor, selectedLinkColor)} />
         </Source>
@@ -3133,6 +3316,7 @@ export function MapView({
             : isRelayMode
               ? site.id === selectedFromSite?.id || site.id === selectedToSite?.id
               : true;
+          const markerZIndex = isSelected ? 4 : isTemporarilyMoved ? 3 : isFocusNode ? 2 : 1;
           return (
             <Marker
               anchor="bottom"
@@ -3140,14 +3324,17 @@ export function MapView({
               key={site.id}
               latitude={markerPosition.lat}
               longitude={markerPosition.lon}
+              offset={SITE_PIN_MARKER_OFFSET}
+              style={{ zIndex: markerZIndex }}
               onDrag={(event) => onSiteDrag(site.id, event)}
               onDragEnd={(event) => onSiteDragEnd(site.id, event)}
             >
               <MarkerActionButton
                 ariaLabel={site.name}
-                className={`site-pin ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""} ${
-                  isFocusNode ? "is-mode-focus" : "is-dimmed"
-                }`}
+                className={`map-site-surface ${isSelected ? "is-selected" : ""} ${isTemporarilyMoved ? "is-temporary" : ""}`}
+                pointerTail
+                pointerTone={isSelected ? "selection" : "temporary"}
+                tone={isFocusNode ? "default" : "muted"}
                 onMouseEnter={() =>
                   setOverlayHoverInfo({
                     text: `${site.name} · ${markerPosition.lat.toFixed(5)}, ${markerPosition.lon.toFixed(5)} · ${
@@ -3175,10 +3362,14 @@ export function MapView({
                 key={`discover-site-${entry.id}`}
                 latitude={entry.position.lat}
                 longitude={entry.position.lon}
+                offset={SITE_PIN_MARKER_OFFSET}
+                style={{ zIndex: 1 }}
               >
                 <MarkerActionButton
                   ariaLabel={entry.name}
-                  className="site-pin is-temporary"
+                  className="map-site-surface is-temporary"
+                  pointerTail
+                  pointerTone="temporary"
                   onMouseEnter={() =>
                     setOverlayHoverInfo({
                       text: `${entry.name} · ${entry.position.lat.toFixed(5)}, ${entry.position.lon.toFixed(5)}`,
@@ -3199,10 +3390,19 @@ export function MapView({
 
         {showDiscoveryMqtt
           ? (mqttTooDenseInView ? [] : mqttNodesInView).map((node) => (
-              <Marker anchor="bottom" key={`discover-mqtt-${node.nodeId}`} latitude={node.lat} longitude={node.lon}>
+              <Marker
+                anchor="bottom"
+                key={`discover-mqtt-${node.nodeId}`}
+                latitude={node.lat}
+                longitude={node.lon}
+                offset={SITE_PIN_MARKER_OFFSET}
+                style={{ zIndex: 1 }}
+              >
                 <MarkerActionButton
                   ariaLabel={node.longName ?? node.shortName ?? node.nodeId}
-                  className="site-pin is-temporary"
+                  className="map-site-surface is-temporary"
+                  pointerTail
+                  pointerTone="temporary"
                   onMouseEnter={() =>
                     setOverlayHoverInfo({
                       text: `${node.longName ?? node.shortName ?? node.nodeId} · ${node.nodeId}${
@@ -3227,11 +3427,40 @@ export function MapView({
             draggable
             latitude={pendingNewSiteDraft.lat}
             longitude={pendingNewSiteDraft.lon}
+            offset={SITE_PIN_MARKER_OFFSET}
+            style={{ zIndex: 3 }}
             onDragEnd={onPendingNewSiteDragEnd}
           >
-            <div className="site-pin is-temporary">
+            <Surface variant="pill" className="map-site-surface is-temporary" pointerTail pointerTone="temporary">
               <span>New Site</span>
-            </div>
+            </Surface>
+          </Marker>
+        ) : null}
+
+        {userLocationFix ? (
+          <Marker
+            anchor="center"
+            latitude={userLocationFix.lat}
+            longitude={userLocationFix.lon}
+            style={{ zIndex: pendingNewSiteDraft ? 2 : 5 }}
+          >
+            <button
+              type="button"
+              aria-label={`User location, ${userLocationFix.lat.toFixed(5)}, ${userLocationFix.lon.toFixed(5)}, ${fmtAccuracy(userLocationFix.accuracyM)}`}
+              className={`user-location-marker ${canPersist && !pendingNewSiteDraft ? "" : "is-muted"}`}
+              title="User location"
+              onMouseEnter={() =>
+                setOverlayHoverInfo({
+                  text: `User location · ${userLocationFix.lat.toFixed(5)}, ${userLocationFix.lon.toFixed(5)} · ${fmtAccuracy(userLocationFix.accuracyM)}`,
+                })
+              }
+              onMouseLeave={() => setOverlayHoverInfo(null)}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                beginUserLocationSiteDraft();
+              }}
+            />
           </Marker>
         ) : null}
 
@@ -3240,6 +3469,7 @@ export function MapView({
             anchor="center"
             latitude={cursorPoint.lat}
             longitude={cursorPoint.lon}
+            style={{ zIndex: 0 }}
           >
             <div className="profile-map-cursor" />
           </Marker>
@@ -3249,6 +3479,7 @@ export function MapView({
             anchor="center"
             latitude={activePanoramaFocus.endpoint.lat}
             longitude={activePanoramaFocus.endpoint.lon}
+            style={{ zIndex: 0 }}
           >
             <div className="profile-map-cursor panorama-map-cursor" />
           </Marker>

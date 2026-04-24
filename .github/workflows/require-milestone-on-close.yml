@@ -6,7 +6,7 @@ on:
 
 jobs:
   enforce-milestone:
-    if: github.event.issue.state_reason == 'completed' && github.event.issue.milestone == null && !contains(toJson(github.event.issue.labels), '\"name\":\"no-milestone-close-ok\"')
+    if: github.event.issue.state_reason == 'completed' && github.event.issue.milestone == null && !contains(github.event.issue.labels.*.name, 'no-milestone-close-ok')
     runs-on: ubuntu-latest
     permissions:
       issues: write

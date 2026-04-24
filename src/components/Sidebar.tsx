@@ -47,6 +47,7 @@ import {
 } from "../lib/meshtasticMqtt";
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
+import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain } from "../lib/siteGainFields";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { toAccessVisibility } from "../lib/uiFormatting";
 import {
@@ -72,11 +73,20 @@ import type { RadioClimate } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ActionButton } from "./ActionButton";
+import {
+  AccessSettingsEditor,
+  type AccessCollaborator,
+  type AccessRole,
+  type AccessVisibility,
+} from "./AccessSettingsEditor";
 import { AvatarBadge } from "./AvatarBadge";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
+import { SiteBeamVisualizerPopover } from "./SiteBeamVisualizer";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { Badge } from "./ui/Badge";
+import { PanelToolbar } from "./ui/PanelToolbar";
+import { Surface } from "./ui/Surface";
 import { UserAdminPanel } from "./UserAdminPanel";
 
 const parseNumber = (value: string): number => {
@@ -131,6 +141,8 @@ const meshmapLabelsLayer = (color: string, haloColor: string): LayerProps => ({
   },
 });
 
+const SITE_PIN_MARKER_OFFSET: [number, number] = [0, -11];
+
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
@@ -158,6 +170,7 @@ const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.
 const ALL_SITE_SOURCE_FILTERS = SITE_SOURCE_FILTER_OPTIONS.map((option) => option.key);
 
 type SiteFilterGroupKey = "role" | "visibility" | "source";
+type BeamPreviewFieldKey = "add" | "edit";
 
 const formatChangeSummary = (action: string, note: string | null): string => {
   if (note && note.trim()) return note;
@@ -416,7 +429,13 @@ export function Sidebar({
   const [newLibraryTxPowerDbm, setNewLibraryTxPowerDbm] = useState(STANDARD_SITE_RADIO.txPowerDbm);
   const [newLibraryTxGainDbi, setNewLibraryTxGainDbi] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [newLibraryRxGainDbi, setNewLibraryRxGainDbi] = useState(STANDARD_SITE_RADIO.rxGainDbi);
+  const [newLibrarySeparateGain, setNewLibrarySeparateGain] = useState(
+    shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi),
+  );
   const [newLibraryCableLossDb, setNewLibraryCableLossDb] = useState(STANDARD_SITE_RADIO.cableLossDb);
+  const [newLibraryVisibility, setNewLibraryVisibility] = useState<AccessVisibility>("private");
+  const [newLibraryCollaboratorUserIds, setNewLibraryCollaboratorUserIds] = useState<string[]>([]);
+  const [newLibraryCollaboratorRoles, setNewLibraryCollaboratorRoles] = useState<Record<string, AccessRole>>({});
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const [librarySearchStatus, setLibrarySearchStatus] = useState("");
   const [librarySearchResults, setLibrarySearchResults] = useState<GeocodeResult[]>([]);
@@ -540,10 +559,15 @@ export function Sidebar({
   const [resourceTxPowerDraft, setResourceTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
   const [resourceTxGainDraft, setResourceTxGainDraft] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [resourceRxGainDraft, setResourceRxGainDraft] = useState(STANDARD_SITE_RADIO.rxGainDbi);
+  const [resourceSeparateGain, setResourceSeparateGain] = useState(
+    shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi),
+  );
   const [resourceCableLossDraft, setResourceCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
+  const [activeBeamPreviewField, setActiveBeamPreviewField] = useState<BeamPreviewFieldKey | null>(null);
+  const addBeamPreviewAnchorRef = useRef<HTMLDivElement | null>(null);
+  const editBeamPreviewAnchorRef = useRef<HTMLDivElement | null>(null);
   const [resourceCollaboratorUserIds, setResourceCollaboratorUserIds] = useState<string[]>([]);
   const [resourceCollaboratorRoles, setResourceCollaboratorRoles] = useState<Record<string, "viewer" | "editor">>({});
-  const [resourceCollaboratorQuery, setResourceCollaboratorQuery] = useState("");
   const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
   const [resourceCollaboratorDirectoryBusy, setResourceCollaboratorDirectoryBusy] = useState(false);
   const [resourceCollaboratorDirectoryStatus, setResourceCollaboratorDirectoryStatus] = useState("");
@@ -554,6 +578,28 @@ export function Sidebar({
     targetVisibility: "public" | "shared";
     referencedPrivateSiteIds: string[];
   } | null>(null);
+
+  const activeBeamPreviewValues = activeBeamPreviewField === "edit"
+    ? {
+        antennaHeightM: resourceAntennaDraft,
+        txPowerDbm: resourceTxPowerDraft,
+        txGainDbi: resourceTxGainDraft,
+        rxGainDbi: resourceRxGainDraft,
+        cableLossDb: resourceCableLossDraft,
+      }
+    : {
+        antennaHeightM: newLibraryAntennaM,
+        txPowerDbm: newLibraryTxPowerDbm,
+        txGainDbi: newLibraryTxGainDbi,
+        rxGainDbi: newLibraryRxGainDbi,
+        cableLossDb: newLibraryCableLossDb,
+      };
+  const activeBeamPreviewTriggerRef =
+    activeBeamPreviewField === "edit"
+      ? editBeamPreviewAnchorRef
+      : activeBeamPreviewField === "add"
+        ? addBeamPreviewAnchorRef
+        : undefined;
 
 
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -717,6 +763,28 @@ export function Sidebar({
       }),
     [collaboratorDirectoryById, resourceCollaboratorUserIds],
   );
+  const newLibrarySelectedCollaboratorUsers = useMemo<AccessCollaborator[]>(
+    () =>
+      newLibraryCollaboratorUserIds.map((userId) => {
+        const user = collaboratorDirectoryById.get(userId);
+        return {
+          id: userId,
+          username: user?.username ?? userId,
+          email: user?.email ?? "",
+          avatarUrl: user?.avatarUrl ?? "",
+          role: newLibraryCollaboratorRoles[userId] ?? "viewer",
+        };
+      }),
+    [collaboratorDirectoryById, newLibraryCollaboratorRoles, newLibraryCollaboratorUserIds],
+  );
+  const resourceSelectedCollaboratorUsers = useMemo<AccessCollaborator[]>(
+    () =>
+      selectedCollaboratorUsers.map((user) => ({
+        ...user,
+        role: resourceCollaboratorRoles[user.id] ?? "viewer",
+      })),
+    [resourceCollaboratorRoles, selectedCollaboratorUsers],
+  );
   const resolveOwnerDisplay = (
     ownerUserId: string | undefined,
     fallbackName: string | undefined,
@@ -763,18 +831,6 @@ export function Sidebar({
     if (!resourceDetailsPopup) return false;
     return canWriteResource(resourceDetailsPopup.kind, resourceDetailsPopup.resourceId);
   }, [resourceDetailsPopup, siteLibrary, simulationPresets]);
-  const collaboratorCandidates = useMemo(() => {
-    const q = resourceCollaboratorQuery.trim().toLowerCase();
-    const selectedIds = new Set(resourceCollaboratorUserIds);
-    const filtered = resourceCollaboratorDirectory.filter((user) => {
-      if (currentResourceOwnerId && user.id === currentResourceOwnerId) return false;
-      if (selectedIds.has(user.id)) return false;
-      if (!q) return true;
-      const hay = `${user.username} ${user.email}`.toLowerCase();
-      return hay.includes(q);
-    });
-    return filtered.slice(0, 30);
-  }, [currentResourceOwnerId, resourceCollaboratorDirectory, resourceCollaboratorUserIds, resourceCollaboratorQuery]);
   useEffect(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -911,7 +967,11 @@ export function Sidebar({
     setShowSiteLibraryManager(true);
     setShowAddLibraryForm(true);
     setNewLibraryNameError("");
+    setNewLibraryVisibility("private");
+    setNewLibraryCollaboratorUserIds([]);
+    setNewLibraryCollaboratorRoles({});
     setNewLibrarySourceMeta(pendingSiteLibraryDraft.sourceMeta);
+    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(newLibraryTxGainDbi, newLibraryRxGainDbi));
     setPendingDraftAutoInsert(true);
     setNewLibraryName(pendingSiteLibraryDraft.suggestedName ?? "");
     setNewLibraryDescription("");
@@ -1203,6 +1263,9 @@ export function Sidebar({
     setShowAddLibraryForm(true);
     setNewLibraryName("");
     setNewLibraryDescription("");
+    setNewLibraryVisibility("private");
+    setNewLibraryCollaboratorUserIds([]);
+    setNewLibraryCollaboratorRoles({});
     setNewLibrarySourceMeta(undefined);
     setNewLibraryLat(selectedSite.position.lat);
     setNewLibraryLon(selectedSite.position.lon);
@@ -1211,6 +1274,7 @@ export function Sidebar({
     setNewLibraryTxPowerDbm(selectedSite.txPowerDbm);
     setNewLibraryTxGainDbi(selectedSite.txGainDbi);
     setNewLibraryRxGainDbi(selectedSite.rxGainDbi);
+    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(selectedSite.txGainDbi, selectedSite.rxGainDbi));
     setNewLibraryCableLossDb(selectedSite.cableLossDb);
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
   };
@@ -1236,13 +1300,19 @@ export function Sidebar({
       newLibraryRxGainDbi,
       newLibraryCableLossDb,
       (newLibrarySourceMeta as Parameters<typeof addSiteLibraryEntry>[9]) ?? undefined,
-      pendingDraftAutoInsert ? activeSimulationVisibility : "private",
+      newLibraryVisibility,
       newLibraryDescription,
     );
     if (!createdId) {
       setNewLibraryNameError("A name is required.");
       setLibrarySearchStatus("");
       return;
+    }
+    const sharedWith = newLibraryCollaboratorUserIds
+      .filter((userId) => userId !== currentUser.id)
+      .map((userId) => ({ userId, role: (newLibraryCollaboratorRoles[userId] ?? "viewer") as AccessRole }));
+    if (sharedWith.length) {
+      updateSiteLibraryEntry(createdId, { sharedWith });
     }
     if (pendingDraftAutoInsert && createdId) {
       insertSiteFromLibrary(createdId);
@@ -1255,7 +1325,11 @@ export function Sidebar({
     setNewLibraryTxPowerDbm(STANDARD_SITE_RADIO.txPowerDbm);
     setNewLibraryTxGainDbi(STANDARD_SITE_RADIO.txGainDbi);
     setNewLibraryRxGainDbi(STANDARD_SITE_RADIO.rxGainDbi);
+    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi));
     setNewLibraryCableLossDb(STANDARD_SITE_RADIO.cableLossDb);
+    setNewLibraryVisibility("private");
+    setNewLibraryCollaboratorUserIds([]);
+    setNewLibraryCollaboratorRoles({});
     setShowAddLibraryForm(false);
   };
   const fetchGroundFromLoadedTerrain = (lat: number, lon: number): number | null => {
@@ -1512,8 +1586,11 @@ export function Sidebar({
       setResourceGroundDraft(site?.groundElevationM ?? 0);
       setResourceAntennaDraft(site?.antennaHeightM ?? 2);
       setResourceTxPowerDraft(site?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm);
-      setResourceTxGainDraft(site?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi);
-      setResourceRxGainDraft(site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi);
+      const nextTxGainDbi = site?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi;
+      const nextRxGainDbi = site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
+      setResourceTxGainDraft(nextTxGainDbi);
+      setResourceRxGainDraft(nextRxGainDbi);
+      setResourceSeparateGain(shouldUseSeparateSiteGain(nextTxGainDbi, nextRxGainDbi));
       setResourceCableLossDraft(site?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(toAccessVisibility(site?.visibility));
       const siteGrants = (site?.sharedWith ?? []).filter((grant) => grant.userId !== site?.ownerUserId);
@@ -1531,6 +1608,7 @@ export function Sidebar({
       setResourceTxPowerDraft(STANDARD_SITE_RADIO.txPowerDbm);
       setResourceTxGainDraft(STANDARD_SITE_RADIO.txGainDbi);
       setResourceRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
+      setResourceSeparateGain(shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi));
       setResourceCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
       setResourceAccessVisibility(toAccessVisibility(simulation?.visibility));
       const simGrants = (simulation?.sharedWith ?? []).filter((grant) => grant.userId !== simulation?.ownerUserId);
@@ -1539,7 +1617,6 @@ export function Sidebar({
         Object.fromEntries(simGrants.map((grant) => [grant.userId, grant.role === "editor" || grant.role === "admin" ? "editor" : "viewer"])),
       );
     }
-    setResourceCollaboratorQuery("");
     setResourceAccessStatus("");
     const resolvedCreatedAvatar =
       createdByAvatarUrl.trim() || (createdByUserId && createdByUserId === lastEditedByUserId ? lastEditedByAvatarUrl : "");
@@ -1700,6 +1777,29 @@ export function Sidebar({
     setResourceAccessStatus("Saved");
   };
 
+  const addNewLibraryCollaborator = (userId: string) => {
+    if (!userId.trim()) return;
+    if (currentUser?.id && userId === currentUser.id) {
+      setLibrarySearchStatus("Owner is implicit and cannot be added as collaborator.");
+      return;
+    }
+    setNewLibraryCollaboratorUserIds((current) => (current.includes(userId) ? current : [...current, userId]));
+    setNewLibraryCollaboratorRoles((current) => (current[userId] ? current : { ...current, [userId]: "viewer" }));
+  };
+
+  const removeNewLibraryCollaborator = (userId: string) => {
+    setNewLibraryCollaboratorUserIds((current) => current.filter((id) => id !== userId));
+    setNewLibraryCollaboratorRoles((current) => {
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    });
+  };
+
+  const setNewLibraryCollaboratorRole = (userId: string, role: AccessRole) => {
+    setNewLibraryCollaboratorRoles((current) => ({ ...current, [userId]: role }));
+  };
+
   const addCollaborator = (userId: string) => {
     if (!resourceCanWrite) {
       setResourceAccessStatus("Read-only: you do not have edit permission for this resource.");
@@ -1718,7 +1818,6 @@ export function Sidebar({
       setResourceCollaboratorRoles((prev) => ({ ...prev, [userId]: "viewer" }));
     }
     void persistResourceAccessSettings({ collaboratorUserIds: nextCollaborators });
-    setResourceCollaboratorQuery("");
   };
 
   const removeCollaborator = (userId: string) => {
@@ -1757,6 +1856,28 @@ export function Sidebar({
     void persistResourceAccessSettings({ collaboratorRoles: nextRoles });
   };
 
+  const resourceAccessSettingsEditor = resourceDetailsPopup ? (
+    <AccessSettingsEditor
+      collaborators={resourceSelectedCollaboratorUsers}
+      directory={resourceCollaboratorDirectory}
+      directoryBusy={resourceCollaboratorDirectoryBusy}
+      directoryStatus={resourceCollaboratorDirectoryStatus}
+      disabled={!resourceCanWrite}
+      onAddCollaborator={addCollaborator}
+      onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+      onRemoveCollaborator={removeCollaborator}
+      onRoleChange={setCollaboratorRole}
+      onVisibilityChange={(next) => {
+        setResourceAccessVisibility(next);
+        void persistResourceAccessSettings({ visibility: next });
+      }}
+      ownerUserId={currentResourceOwnerId}
+      showStatusFallback
+      status={resourceAccessStatus}
+      visibility={resourceAccessVisibility === "private" ? "private" : "shared"}
+    />
+  ) : null;
+
   const changeProfileRole = async (nextRole: "admin" | "moderator" | "user" | "pending") => {
     if (!profilePopupUser) return;
     setProfilePopupBusy(true);
@@ -1783,10 +1904,10 @@ export function Sidebar({
         </div>
       </header>
       <section className="panel-section section-scenario">
-        <div className="section-heading">
-          <h2>Simulation: {simulationDisplayLabel ?? activeSimulationLabel}</h2>
-          <InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />
-        </div>
+        <PanelToolbar
+          title={<h2>Simulation: {simulationDisplayLabel ?? activeSimulationLabel}</h2>}
+          actions={<InfoTip text="Open a simulation from the library or create a new one. A simulation is a workspace where you can add sites and tweak settings. They can be private or shared." />}
+        />
         <div className="chip-group simulation-buttons">
           {!hideLibraryBrowsing ? (
             <>
@@ -1826,10 +1947,10 @@ export function Sidebar({
       </section>
 
       <section className="panel-section section-sites">
-        <div className="section-heading">
-          <h2>Sites</h2>
-          <InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />
-        </div>
+        <PanelToolbar
+          title={<h2>Sites</h2>}
+          actions={<InfoTip text="Add a site from the site library or create a new site. You can also create or add sites from the map. A site can be private or shared." />}
+        />
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
         <div className="site-list">
           {sites.map((site) => (
@@ -1883,10 +2004,10 @@ export function Sidebar({
       </section>
 
       <section className="panel-section section-path">
-        <div className="section-heading">
-          <h2>Links</h2>
-          <InfoTip text={`Select multiple sites by ${isMac ? "Cmd" : "Ctrl"}+Clicking to instantly view a link. When a link is active on the map, you can save it permanently to this simulation by pressing "Save" in the inspector.`} />
-        </div>
+        <PanelToolbar
+          title={<h2>Links</h2>}
+          actions={<InfoTip text={`Select multiple sites by ${isMac ? "Cmd" : "Ctrl"}+Clicking to instantly view a link. When a link is active on the map, you can save it permanently to this simulation by pressing "Save" in the inspector.`} />}
+        />
         <div className="link-list">
           {visibleLinks.map((link) => (
             <button
@@ -2261,11 +2382,23 @@ export function Sidebar({
       ) : null}
 
       {resourceDetailsPopup ? (
-        <ModalOverlay aria-label="Resource Edit" onClose={() => setResourceDetailsPopup(null)} tier="raised">
+        <ModalOverlay
+          aria-label="Resource Edit"
+          onClose={() => {
+            setResourceDetailsPopup(null);
+            setActiveBeamPreviewField(null);
+          }}
+          tier="raised"
+        >
           <div className="library-manager-card user-profile-popup resource-details-card">
             <div className="library-manager-header">
               <h2>Edit · {resourceDetailsPopup.label}</h2>
-              <InlineCloseIconButton onClick={() => setResourceDetailsPopup(null)} />
+              <InlineCloseIconButton
+                onClick={() => {
+                  setResourceDetailsPopup(null);
+                  setActiveBeamPreviewField(null);
+                }}
+              />
             </div>
             <p className="field-help">Type: {resourceDetailsPopup.kind === "site" ? "Site" : "Simulation"}</p>
             <p className="field-help">ID: {resourceDetailsPopup.resourceId}</p>
@@ -2298,6 +2431,7 @@ export function Sidebar({
                     value={resourceDescriptionDraft}
                   />
                 </label>
+                {resourceAccessSettingsEditor}
               </>
             ) : null}
             {resourceDetailsPopup.kind === "site" ? (
@@ -2326,6 +2460,7 @@ export function Sidebar({
                       value={resourceDescriptionDraft}
                     />
                   </label>
+                  {resourceAccessSettingsEditor}
                   <label className="field-grid">
                     <span>Latitude</span>
                     <input
@@ -2382,61 +2517,107 @@ export function Sidebar({
                       </ActionButton>
                     </div>
                   </label>
-                  <label className="field-grid">
-                    <span>Antenna (m)</span>
-                    <input
-                      onChange={(event) => setResourceAntennaDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceAntennaDraft}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Tx power (dBm)</span>
-                    <input
-                      onChange={(event) => setResourceTxPowerDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceTxPowerDraft}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Tx gain (dBi)</span>
-                    <input
-                      onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceTxGainDraft}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Rx gain (dBi)</span>
-                    <input
-                      onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceRxGainDraft}
-                    />
-                  </label>
-                  <label className="field-grid">
-                    <span>Cable loss (dB)</span>
-                    <input
-                      onChange={(event) => setResourceCableLossDraft(parseNumber(event.target.value))}
-                      onBlur={() => {
-                        void persistResourceAccessSettings();
-                      }}
-                      type="number"
-                      value={resourceCableLossDraft}
-                    />
-                  </label>
+                  <div className="beam-visualizer-field-group" ref={editBeamPreviewAnchorRef}>
+                    <label className="field-grid">
+                      <span>Antenna (m)</span>
+                      <input
+                        onChange={(event) => setResourceAntennaDraft(parseNumber(event.target.value))}
+                        onFocus={() => setActiveBeamPreviewField("edit")}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceAntennaDraft}
+                      />
+                    </label>
+                    <label className="field-grid">
+                      <span>Tx power (dBm)</span>
+                      <input
+                        onChange={(event) => setResourceTxPowerDraft(parseNumber(event.target.value))}
+                        onFocus={() => setActiveBeamPreviewField("edit")}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceTxPowerDraft}
+                      />
+                    </label>
+                    {resourceSeparateGain ? (
+                      <>
+                        <label className="field-grid">
+                          <span>Tx gain (dBi)</span>
+                          <input
+                            onChange={(event) => setResourceTxGainDraft(parseNumber(event.target.value))}
+                            onFocus={() => setActiveBeamPreviewField("edit")}
+                            onBlur={() => {
+                              void persistResourceAccessSettings();
+                            }}
+                            type="number"
+                            value={resourceTxGainDraft}
+                          />
+                        </label>
+                        <label className="field-grid">
+                          <span>Rx gain (dBi)</span>
+                          <input
+                            onChange={(event) => setResourceRxGainDraft(parseNumber(event.target.value))}
+                            onFocus={() => setActiveBeamPreviewField("edit")}
+                            onBlur={() => {
+                              void persistResourceAccessSettings();
+                            }}
+                            type="number"
+                            value={resourceRxGainDraft}
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <label className="field-grid">
+                        <span>Gain (dBi)</span>
+                        <input
+                          onChange={(event) => {
+                            const nextGain = getSyncedSiteGainPair(parseNumber(event.target.value));
+                            setResourceTxGainDraft(nextGain.txGainDbi);
+                            setResourceRxGainDraft(nextGain.rxGainDbi);
+                          }}
+                          onFocus={() => setActiveBeamPreviewField("edit")}
+                          onBlur={(event) => {
+                            void persistResourceAccessSettings(getSyncedSiteGainPair(parseNumber(event.currentTarget.value)));
+                          }}
+                          type="number"
+                          value={resourceTxGainDraft}
+                        />
+                      </label>
+                    )}
+                    <div className="field-grid gain-mode-toggle">
+                      <span>Separate RX/TX gain</span>
+                      <input
+                        aria-label="Separate RX/TX gain"
+                        checked={resourceSeparateGain}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setResourceSeparateGain(checked);
+                          if (!checked) {
+                            const nextGain = collapseSiteGainToTx(resourceTxGainDraft);
+                            setResourceTxGainDraft(nextGain.txGainDbi);
+                            setResourceRxGainDraft(nextGain.rxGainDbi);
+                            void persistResourceAccessSettings(nextGain);
+                          }
+                        }}
+                        type="checkbox"
+                      />
+                    </div>
+                    <label className="field-grid">
+                      <span>Cable loss (dB)</span>
+                      <input
+                        onChange={(event) => setResourceCableLossDraft(parseNumber(event.target.value))}
+                        onFocus={() => setActiveBeamPreviewField("edit")}
+                        onBlur={() => {
+                          void persistResourceAccessSettings();
+                        }}
+                        type="number"
+                        value={resourceCableLossDraft}
+                      />
+                    </label>
+                  </div>
                 </div>
                 <div className="library-editor-map">
                   <div className="library-editor-map-controls">
@@ -2503,6 +2684,16 @@ export function Sidebar({
                         padding: event.viewState.padding as { left: number; right: number; top: number; bottom: number },
                       });
                     }}
+                    onMove={(event) => {
+                      setInlineMapView({
+                        longitude: event.viewState.longitude,
+                        latitude: event.viewState.latitude,
+                        zoom: event.viewState.zoom,
+                        bearing: event.viewState.bearing ?? 0,
+                        pitch: event.viewState.pitch ?? 0,
+                        padding: event.viewState.padding as { left: number; right: number; top: number; bottom: number },
+                      });
+                    }}
                     mapStyle={resolvedBasemap.style}
                     onClick={(event) => {
                       if (!resourceCanWrite) return;
@@ -2513,23 +2704,24 @@ export function Sidebar({
                       void persistResourceAccessSettings({ lat: nextLat, lon: nextLon });
                     }}
                   >
-                    <Marker
-                      anchor="bottom"
-                      draggable={resourceCanWrite}
-                      latitude={resourceLatDraft}
-                      longitude={resourceLonDraft}
-                      onDragEnd={(event: MarkerDragEvent) => {
-                        if (!resourceCanWrite) return;
-                        const nextLat = event.lngLat.lat;
+                      <Marker
+                        anchor="bottom"
+                        draggable={resourceCanWrite}
+                        latitude={resourceLatDraft}
+                        longitude={resourceLonDraft}
+                        offset={SITE_PIN_MARKER_OFFSET}
+                        onDragEnd={(event: MarkerDragEvent) => {
+                          if (!resourceCanWrite) return;
+                          const nextLat = event.lngLat.lat;
                         const nextLon = event.lngLat.lng;
                         setResourceLatDraft(nextLat);
                         setResourceLonDraft(nextLon);
                         void persistResourceAccessSettings({ lat: nextLat, lon: nextLon });
                       }}
                     >
-                      <div className="site-pin library-edit-pin">
+                      <Surface variant="pill" className="map-site-surface library-edit-pin" pointerTail>
                         <span>{resourceNameDraft.trim() || "Site"}</span>
-                      </div>
+                      </Surface>
                     </Marker>
                   </Map>
                 </div>
@@ -2572,93 +2764,6 @@ export function Sidebar({
                 </div>
               </CompactDetails>
             ) : null}
-            <CompactDetails>
-              <CompactDetailsSummary>Access</CompactDetailsSummary>
-              <label className="field-grid">
-                <span>
-                  Access level{" "}
-                  <InfoTip text="Private: visible to owner/admin. Shared: readable by everyone. Editing is limited to owner, admins, and explicit collaborators." />
-                </span>
-                <select
-                  className="locale-select"
-                    onChange={(event) =>
-                    {
-                      const next = event.target.value as "private" | "public" | "shared";
-                      setResourceAccessVisibility(next);
-                      void persistResourceAccessSettings({ visibility: next });
-                    }
-                  }
-                  value={resourceAccessVisibility}
-                >
-                  <option value="private">Private</option>
-                  <option value="shared">Shared</option>
-                </select>
-              </label>
-              <p className="field-help warning-text">
-                Access levels are not a confidential storage guarantee. Never place passwords, tokens, private keys, or
-                other secrets in resource content.
-              </p>
-              <div className="field-grid user-bio-field collaborator-picker-grid">
-                <span>
-                  Collaborators{" "}
-                  <InfoTip text="Add specific users and assign them viewer or editor access. Viewers can view and run; editors can also modify and add collaborators. Owners/admins can remove collaborators." />
-                </span>
-                <div className="collaborator-picker">
-                  <div className="chip-group collaborator-selected-list">
-                    {selectedCollaboratorUsers.length ? (
-                      selectedCollaboratorUsers.map((user) => (
-                        <span className="site-quick-item" key={user.id}>
-                          <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
-                          <select
-                            aria-label={`Role for ${user.username}`}
-                            onChange={(e) => setCollaboratorRole(user.id, e.target.value as "viewer" | "editor")}
-                            value={resourceCollaboratorRoles[user.id] ?? "viewer"}
-                          >
-                            <option value="viewer">Viewer</option>
-                            <option value="editor">Editor</option>
-                          </select>
-                          <ActionButton onClick={() => removeCollaborator(user.id)} type="button">
-                            Remove
-                          </ActionButton>
-                        </span>
-                      ))
-                    ) : (
-                      <span className="field-help">No collaborators yet.</span>
-                    )}
-                  </div>
-                  <input
-                    onChange={(event) => setResourceCollaboratorQuery(event.target.value)}
-                    placeholder="Search users by name or email"
-                    type="text"
-                    value={resourceCollaboratorQuery}
-                  />
-                  <div className="collaborator-candidate-list">
-                    {resourceCollaboratorDirectoryBusy ? (
-                      <p className="field-help">Loading users…</p>
-                    ) : collaboratorCandidates.length ? (
-                      collaboratorCandidates.map((user) => (
-                        <button className="site-quick-item" key={user.id} onClick={() => addCollaborator(user.id)} type="button">
-                          <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
-                          <span className="field-help">{user.email}</span>
-                          <span className="inline-action">Add</span>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="field-help">No matching users.</p>
-                    )}
-                  </div>
-                  {resourceCollaboratorDirectoryStatus ? (
-                    <p className="field-help">{resourceCollaboratorDirectoryStatus}</p>
-                  ) : null}
-                </div>
-              </div>
-              <p className="field-help">
-                Viewers can view and run the simulation. Editors can also modify it and add collaborators. Owners/admins
-                can remove collaborators. Private simulations remain private — only added collaborators gain access via
-                the share link when logged in.
-              </p>
-              {resourceAccessStatus ? <p className="field-help">{resourceAccessStatus}</p> : <p className="field-help">Saved automatically.</p>}
-            </CompactDetails>
             </fieldset>
             {resourceDetailsPopup.kind === "simulation" ? (
               <div className="compact-details">
@@ -3270,8 +3375,14 @@ export function Sidebar({
                 onClick={() => {
                   setShowAddLibraryForm((current) => !current);
                   if (showAddLibraryForm) {
+                    setActiveBeamPreviewField(null);
                     setPendingDraftAutoInsert(false);
                     setNewLibraryDescription("");
+                    setNewLibraryVisibility("private");
+                    setNewLibraryCollaboratorUserIds([]);
+                    setNewLibraryCollaboratorRoles({});
+                  } else {
+                    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(newLibraryTxGainDbi, newLibraryRxGainDbi));
                   }
                 }}
                 type="button"
@@ -3352,6 +3463,20 @@ export function Sidebar({
                     value={newLibraryDescription}
                   />
                 </label>
+                <AccessSettingsEditor
+                  collaborators={newLibrarySelectedCollaboratorUsers}
+                  directory={resourceCollaboratorDirectory}
+                  directoryBusy={resourceCollaboratorDirectoryBusy}
+                  directoryStatus={resourceCollaboratorDirectoryStatus}
+                  disabled={!currentUser?.id}
+                  onAddCollaborator={addNewLibraryCollaborator}
+                  onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+                  onRemoveCollaborator={removeNewLibraryCollaborator}
+                  onRoleChange={setNewLibraryCollaboratorRole}
+                  onVisibilityChange={setNewLibraryVisibility}
+                  ownerUserId={currentUser?.id ?? ""}
+                  visibility={newLibraryVisibility}
+                />
                 <label className="field-grid">
                   <span>Latitude</span>
                   <input
@@ -3386,46 +3511,88 @@ export function Sidebar({
                     </ActionButton>
                   </div>
                 </label>
-                <label className="field-grid">
-                  <span>Antenna (m)</span>
-                  <input
-                    onChange={(event) => setNewLibraryAntennaM(parseNumber(event.target.value))}
-                    type="number"
-                    value={newLibraryAntennaM}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Tx power (dBm)</span>
-                  <input
-                    onChange={(event) => setNewLibraryTxPowerDbm(parseNumber(event.target.value))}
-                    type="number"
-                    value={newLibraryTxPowerDbm}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Tx gain (dBi)</span>
-                  <input
-                    onChange={(event) => setNewLibraryTxGainDbi(parseNumber(event.target.value))}
-                    type="number"
-                    value={newLibraryTxGainDbi}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Rx gain (dBi)</span>
-                  <input
-                    onChange={(event) => setNewLibraryRxGainDbi(parseNumber(event.target.value))}
-                    type="number"
-                    value={newLibraryRxGainDbi}
-                  />
-                </label>
-                <label className="field-grid">
-                  <span>Cable loss (dB)</span>
-                  <input
-                    onChange={(event) => setNewLibraryCableLossDb(parseNumber(event.target.value))}
-                    type="number"
-                    value={newLibraryCableLossDb}
-                  />
-                </label>
+                <div className="beam-visualizer-field-group" ref={addBeamPreviewAnchorRef}>
+                  <label className="field-grid">
+                    <span>Antenna (m)</span>
+                    <input
+                      onChange={(event) => setNewLibraryAntennaM(parseNumber(event.target.value))}
+                      onFocus={() => setActiveBeamPreviewField("add")}
+                      type="number"
+                      value={newLibraryAntennaM}
+                    />
+                  </label>
+                  <label className="field-grid">
+                    <span>Tx power (dBm)</span>
+                    <input
+                      onChange={(event) => setNewLibraryTxPowerDbm(parseNumber(event.target.value))}
+                      onFocus={() => setActiveBeamPreviewField("add")}
+                      type="number"
+                      value={newLibraryTxPowerDbm}
+                    />
+                  </label>
+                  {newLibrarySeparateGain ? (
+                    <>
+                      <label className="field-grid">
+                        <span>Tx gain (dBi)</span>
+                        <input
+                          onChange={(event) => setNewLibraryTxGainDbi(parseNumber(event.target.value))}
+                          onFocus={() => setActiveBeamPreviewField("add")}
+                          type="number"
+                          value={newLibraryTxGainDbi}
+                        />
+                      </label>
+                      <label className="field-grid">
+                        <span>Rx gain (dBi)</span>
+                        <input
+                          onChange={(event) => setNewLibraryRxGainDbi(parseNumber(event.target.value))}
+                          onFocus={() => setActiveBeamPreviewField("add")}
+                          type="number"
+                          value={newLibraryRxGainDbi}
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <label className="field-grid">
+                      <span>Gain (dBi)</span>
+                      <input
+                        onChange={(event) => {
+                          const nextGain = getSyncedSiteGainPair(parseNumber(event.target.value));
+                          setNewLibraryTxGainDbi(nextGain.txGainDbi);
+                          setNewLibraryRxGainDbi(nextGain.rxGainDbi);
+                        }}
+                        onFocus={() => setActiveBeamPreviewField("add")}
+                        type="number"
+                        value={newLibraryTxGainDbi}
+                      />
+                    </label>
+                  )}
+                  <div className="field-grid gain-mode-toggle">
+                    <span>Separate RX/TX gain</span>
+                    <input
+                      aria-label="Separate RX/TX gain"
+                      checked={newLibrarySeparateGain}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setNewLibrarySeparateGain(checked);
+                        if (!checked) {
+                          const nextGain = collapseSiteGainToTx(newLibraryTxGainDbi);
+                          setNewLibraryTxGainDbi(nextGain.txGainDbi);
+                          setNewLibraryRxGainDbi(nextGain.rxGainDbi);
+                        }
+                      }}
+                      type="checkbox"
+                    />
+                  </div>
+                  <label className="field-grid">
+                    <span>Cable loss (dB)</span>
+                    <input
+                      onChange={(event) => setNewLibraryCableLossDb(parseNumber(event.target.value))}
+                      onFocus={() => setActiveBeamPreviewField("add")}
+                      type="number"
+                      value={newLibraryCableLossDb}
+                    />
+                  </label>
+                </div>
                 <label className="field-grid">
                   <span>Map Search</span>
                   <input
@@ -3618,6 +3785,17 @@ export function Sidebar({
                           padding: { left: p.left ?? 0, right: p.right ?? 0, top: p.top ?? 0, bottom: p.bottom ?? 0 },
                         });
                       }}
+                      onMove={(event) => {
+                        const p = event.viewState.padding;
+                        setNewLibraryMapView({
+                          longitude: event.viewState.longitude,
+                          latitude: event.viewState.latitude,
+                          zoom: event.viewState.zoom,
+                          bearing: event.viewState.bearing,
+                          pitch: event.viewState.pitch,
+                          padding: { left: p.left ?? 0, right: p.right ?? 0, top: p.top ?? 0, bottom: p.bottom ?? 0 },
+                        });
+                      }}
                       mapStyle={resolvedBasemap.style}
                       onClick={(event) => {
                         const nextLat = event.lngLat.lat;
@@ -3628,23 +3806,24 @@ export function Sidebar({
                         if (elevation !== null) setNewLibraryGroundM(elevation);
                       }}
                     >
-                      <Marker
-                        anchor="bottom"
-                        draggable
-                        latitude={newLibraryLat}
-                        longitude={newLibraryLon}
-                        onDragEnd={(event: MarkerDragEvent) => {
-                          const nextLat = event.lngLat.lat;
-                          const nextLon = event.lngLat.lng;
+                    <Marker
+                      anchor="bottom"
+                      draggable
+                      latitude={newLibraryLat}
+                      longitude={newLibraryLon}
+                      offset={SITE_PIN_MARKER_OFFSET}
+                      onDragEnd={(event: MarkerDragEvent) => {
+                        const nextLat = event.lngLat.lat;
+                        const nextLon = event.lngLat.lng;
                           setNewLibraryLat(nextLat);
                           setNewLibraryLon(nextLon);
                           const elevation = fetchGroundFromLoadedTerrain(nextLat, nextLon);
                           if (elevation !== null) setNewLibraryGroundM(elevation);
                         }}
                       >
-                        <div className="site-pin library-edit-pin">
+                        <Surface variant="pill" className="map-site-surface library-edit-pin" pointerTail>
                           <span>{newLibraryName.trim() || "Site"}</span>
-                        </div>
+                        </Surface>
                       </Marker>
                     </Map>
                   </div>
@@ -3657,9 +3836,13 @@ export function Sidebar({
                   onClick={() => {
                     setShowAddLibraryForm(false);
                     setNewLibraryNameError("");
-                      setNewLibraryDescription("");
-                      setNewLibrarySourceMeta(undefined);
-                      setPendingDraftAutoInsert(false);
+                    setNewLibraryDescription("");
+                    setNewLibraryVisibility("private");
+                    setNewLibraryCollaboratorUserIds([]);
+                    setNewLibraryCollaboratorRoles({});
+                    setNewLibrarySourceMeta(undefined);
+                    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(newLibraryTxGainDbi, newLibraryRxGainDbi));
+                    setPendingDraftAutoInsert(false);
                   }}
                   type="button"
                 >
@@ -3767,6 +3950,12 @@ export function Sidebar({
           </div>
         </ModalOverlay>
       ) : null}
+      <SiteBeamVisualizerPopover
+        onClose={() => setActiveBeamPreviewField(null)}
+        open={Boolean(activeBeamPreviewField && activeBeamPreviewTriggerRef?.current)}
+        triggerRef={activeBeamPreviewTriggerRef}
+        values={activeBeamPreviewValues}
+      />
       {deleteConfirm ? (
         <ModalOverlay aria-label="Confirm Delete" onClose={() => setDeleteConfirm(null)} tier="raised">
           <div className="library-manager-card user-profile-popup">

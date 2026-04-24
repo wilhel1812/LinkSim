@@ -1,20 +1,35 @@
 # Changelog
 
-All notable changes to this project are documented here in a human-readable format.
+## [0.18.0] - 2026-04-24
+
+### Added
+- User location map with live camera follow: tap "Locate me" to centre the map on your GPS position; the camera follows as you move until you pan away. (#765)
+- Site beam visualizer popover: interactive gain/beam-pattern overlay with anchored popover and unified gain fields across antenna types. (#737, #740)
+- Site access editor redesign: cleaner layout, padded collaborator popover, and improved modal structure. (#733)
+- PanelToolbar component unifying toolbar layout and action alignment across all panels (Navigator, Inspector, chart panel, sidebar). (#616, #751)
+- Unified button system: `btn`, `btn-ghost`, and `btn-icon` CSS roles + shared `Button` component consolidation; removes mixed legacy button language. (#616, #748)
+
+### Fixed
+- Notification bell replaced with Lucide Bell icon (removes emoji dependency). (#616, #763)
+- Map pin anchoring and stacking order corrected. (#731)
+- Deploy script syntax error. (#732)
+
+### Internal
+- Removed dead UI patterns: `NotificationBanner`, `OfflineBanner` (#759), `MapInlineNotice`, `MapControls`, `FormActionRow` (#760), `terrain-alert` (#761), stale gallery class refs (#758).
+- `require-milestone-on-close` workflow now honours `no-milestone-close-ok` label. (#764)
+- README landing page simplified. (#747)
 
 ## [0.17.0] - 2026-04-17
 
 Rolls up all merged work since `0.16.0`, including the `0.16.2` shared-site sync hotfix and the release/deploy guardrail fixes.
 
 ### Added
-- Panorama / single-site 360° mode with FOV controls, adaptive zoom sampling, peak labels, global peak tiles, and true shading/LOS-clipped terrain rendering. (#101)
 - A new `/settings` panel with per-field auto-save, plus settings layout, avatar drop-zone, and access-request refinements. (#125, #688, #689, #690, #691)
-- Norsk Polarinstitutt Svalbard basemap provider with topographic, satellite, and orthophoto presets. (#635)
 - The live in-app UI gallery plus continued componentization of badge, popover, state-dot, and ActionButton patterns across the shell. (#540, #616)
 - Mobile tabbed map overlays and expanded accessibility semantics for mobile tabs and markers. (#171, #430, #431, #433)
 
 ### Changed
-- Bumped the app and release line to `0.17.0` so the next milestone train starts from the current staging baseline.
+- Reorganized map layers. 
 - Standardized panel/sidebar headers, ActionButton usage, and iconography across the shell, inspector, sidebar, and settings surfaces.
 - Continued mobile map, panel, and attribution polish, including synchronized animation timing and viewport-fit behavior.
 - Hardened release and deploy automation, CI guardrails, and staging-main workflow rules.
@@ -22,10 +37,7 @@ Rolls up all merged work since `0.16.0`, including the `0.16.2` shared-site sync
 
 ### Fixed
 - Shared simulations now persist private Site references during sync and reload.
-- Deep-link handling is more stable for shared simulations, emoji/Korean names, and guest/public auth flows.
 - Panorama/profile sizing, path override handling, and overlay recompute/performance stability were improved.
-- Terrain loading, geocode throttling, meshmap MQTT/proxy caching, and other sync/network edge cases were hardened.
-- Production deploy verification now checks the correct release checkout and Pages project again, so tagged releases complete cleanly.
 - Rolled unfinished milestone work forward one step to keep the backlog aligned with the new release boundary.
 
 ## [0.16.2] - 2026-04-17

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CircleAlert } from "lucide-react";
+import { Bell as BellIcon, CircleAlert } from "lucide-react";
 import { fetchNotifications, type NotificationFeed, type PendingApprovalUser } from "../lib/cloudNotifications";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
@@ -57,8 +57,8 @@ export function NotificationsPanel() {
         </div>
       ) : null}
 
-      <button className="notification-bell" onClick={() => setOpen((prev) => !prev)} type="button">
-        Notifications
+      <button aria-label="Notifications" className="notification-bell" onClick={() => setOpen((prev) => !prev)} title="Notifications" type="button">
+        <BellIcon aria-hidden="true" size={16} strokeWidth={1.8} />
         {feed.unreadCount > 0 ? <span className="notification-badge">{feed.unreadCount}</span> : null}
       </button>
 

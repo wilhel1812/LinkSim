@@ -1,5 +1,7 @@
 import { scaleLinear } from "d3-scale";
 import { FloatingPopover } from "./ui/FloatingPopover";
+import { MapControlButton } from "./ui/MapControlButton";
+import { PanelToolbar } from "./ui/PanelToolbar";
 import { StateDot } from "./StateDot";
 import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, RadioTower, Settings, Tags } from "lucide-react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
@@ -1410,43 +1412,42 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   return (
     <section className={`chart-panel ${isExpanded ? "is-expanded" : ""} ${panelClassName ?? ""}`.trim()} ref={chartPanelRef}>
-      <div className="chart-top-row">
-        <h3 className="panorama-header-title">Panorama from {selectedSiteEffective.name}</h3>
-        <div className="chart-action-row-controls">
-          <button
-            aria-label="Panorama settings"
-            className={`chart-endpoint-swap chart-endpoint-icon ${settingsPopoverOpen ? "is-active" : ""}`}
-            onClick={() => setSettingsPopoverOpen((v) => !v)}
-            ref={settingsButtonRef}
-            title="Settings"
-            type="button"
-          >
-            <Settings aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          <button
-            aria-label="Legend"
-            className={`chart-endpoint-swap chart-endpoint-icon ${legendPopoverOpen ? "is-active" : ""}`}
-            onClick={() => setLegendPopoverOpen((v) => !v)}
-            ref={legendButtonRef}
-            title="Legend"
-            type="button"
-          >
-            <Info aria-hidden="true" strokeWidth={1.8} />
-          </button>
-          {showExpandToggle ? (
-            <button
-              aria-label={isExpanded ? "Exit full screen" : "Full screen"}
-              className={`chart-endpoint-swap chart-endpoint-icon ${isExpanded ? "is-active" : ""}`}
-              onClick={onToggleExpanded}
-              title={isExpanded ? "Exit full screen" : "Full screen"}
-              type="button"
+      <PanelToolbar
+        title={<h3 className="panorama-header-title">Panorama from {selectedSiteEffective.name}</h3>}
+        actions={
+          <>
+            <MapControlButton
+              aria-label="Panorama settings"
+              isSelected={settingsPopoverOpen}
+              onClick={() => setSettingsPopoverOpen((v) => !v)}
+              ref={settingsButtonRef}
+              title="Settings"
             >
-              {isExpanded ? <PanelBottomClose aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />}
-            </button>
-          ) : null}
-          {rowControls}
-        </div>
-      </div>
+              <Settings aria-hidden="true" strokeWidth={1.8} />
+            </MapControlButton>
+            <MapControlButton
+              aria-label="Legend"
+              isSelected={legendPopoverOpen}
+              onClick={() => setLegendPopoverOpen((v) => !v)}
+              ref={legendButtonRef}
+              title="Legend"
+            >
+              <Info aria-hidden="true" strokeWidth={1.8} />
+            </MapControlButton>
+            {showExpandToggle ? (
+              <MapControlButton
+                aria-label={isExpanded ? "Exit full screen" : "Full screen"}
+                isSelected={isExpanded}
+                onClick={onToggleExpanded}
+                title={isExpanded ? "Exit full screen" : "Full screen"}
+              >
+                {isExpanded ? <PanelBottomClose aria-hidden="true" strokeWidth={1.8} /> : <PanelBottomOpen aria-hidden="true" strokeWidth={1.8} />}
+              </MapControlButton>
+            ) : null}
+            {rowControls}
+          </>
+        }
+      />
 
       {legendPopover}
 

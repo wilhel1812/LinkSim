@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RefObject } from "react";
 import type { MapRef } from "react-map-gl/maplibre";
+import { animateMapToZoom, fitMapToBounds, resolveMapCameraPadding, type MapCameraPadding } from "./mapCamera";
 
 type ViewState = {
   zoom: number;
@@ -13,7 +14,7 @@ type UseMapControlsParams = {
   providerMaxZoom: number;
   sites: Array<{ position: { lat: number; lon: number } }>;
   computeSiteFitBounds: (sites: Array<{ position: { lat: number; lon: number } }>) => [[number, number], [number, number]] | null;
-  fitChromePadding: { left: number; right: number; top: number; bottom: number };
+  fitChromePadding: MapCameraPadding;
   clamp: (value: number, min: number, max: number) => number;
   setInteractionViewState: (value: null) => void;
   updateMapViewport: (patch: { zoom?: number }) => void;
@@ -49,7 +50,11 @@ export function useMapControls({
     setFitControlActive(computeNextAutoFitEnabledAfterInteraction());
     const nextZoom = computeNextZoom(activeViewState.zoom, delta, providerMaxZoom, clamp);
     setInteractionViewState(null);
-    updateMapViewport({ zoom: nextZoom });
+    const didAnimate = animateMapToZoom(mapRef, {
+      zoom: nextZoom,
+      padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
+    });
+    if (!didAnimate) updateMapViewport({ zoom: nextZoom });
   };
 
   const fitToNodes = () => {
@@ -60,9 +65,8 @@ export function useMapControls({
     const bounds = computeSiteFitBounds(sites);
     if (!bounds) return;
     setInteractionViewState(null);
-    mapRef.current.fitBounds(bounds, {
-      padding: { ...fitChromePadding, bottom: fitBottomInset },
-      animate: true,
+    fitMapToBounds(mapRef, bounds, {
+      padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
       maxZoom: 14,
     });
   };

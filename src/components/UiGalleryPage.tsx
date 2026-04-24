@@ -1,53 +1,56 @@
 import { useEffect, useState, useMemo, type ReactNode } from "react";
-import { CircleAlert, CircleCheck, CircleX, Info, Layers, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
+import { Bell as BellIcon, CircleAlert, CircleCheck, CircleX, Info, Maximize2, Minus, PanelRightClose, Plus, RefreshCw, X } from "lucide-react";
 import { ActionButton } from "./ActionButton";
+import { AvatarBadge } from "./AvatarBadge";
 import { StateDot } from "./StateDot";
 import { Surface } from "./ui/Surface";
 import { Badge } from "./ui/Badge";
+import { Button } from "./ui/Button";
+import { MapControlButton } from "./ui/MapControlButton";
+import { PanelToolbar } from "./ui/PanelToolbar";
+import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import { UiSlider } from "./UiSlider";
+import { SiteBeamVisualizer } from "./SiteBeamVisualizer";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { useAppStore } from "../store/appStore";
 import type { UiColorTheme } from "../themes/types";
 
-const GALLERY_TAB_STORAGE_KEY = "linksim-ui-gallery-tab-v1";
+const GALLERY_TAB_STORAGE_KEY = "linksim-ui-gallery-tab-v2";
 
 type GalleryStatus = "standard" | "exception" | "legacy" | "under migration" | "mapped only";
-type GalleryTab = "actions" | "panels" | "forms" | "notifications" | "states" | "meta-map-ui" | "theme";
+type GalleryTab = "actions" | "forms" | "surfaces" | "feedback" | "theme";
 
 const GALLERY_TABS: Array<{ id: GalleryTab; label: string }> = [
   { id: "actions", label: "Actions" },
-  { id: "panels", label: "Panels" },
   { id: "forms", label: "Forms" },
-  { id: "notifications", label: "Notifications" },
-  { id: "states", label: "States" },
-  { id: "meta-map-ui", label: "Meta/Map UI" },
+  { id: "surfaces", label: "Surfaces" },
+  { id: "feedback", label: "Feedback" },
   { id: "theme", label: "Theme" },
 ];
 
 const SOURCE_PATHS: Record<string, string> = {
+  "Button": "src/components/ui/Button.tsx",
   "ActionButton": "src/components/ActionButton.tsx",
-  "MapControlButton": "src/components/MapControlButton.tsx",
+  "MapControlButton": "src/components/ui/MapControlButton.tsx",
   "LinkButton": "src/components/LinkButton.tsx",
-  "PanelShell.LeftSidePanel": "src/components/app-shell/LeftSidePanel.tsx",
-  "PanelShell.RightSidePanel": "src/components/app-shell/RightSidePanel.tsx",
-  "PanelShell.BottomPanel": "src/components/app-shell/BottomPanel.tsx",
-  "FormActionRow": "src/components/FormActionRow.tsx",
+  "chip-group": "src/index.css",
+  "field-help-error": "src/index.css",
   "Input": "src/components/ui/Input.tsx",
   "Select": "src/components/ui/Select.tsx",
   "Badge": "src/components/ui/Badge.tsx",
   "UI Slider": "src/components/UiSlider.tsx",
+  "SiteBeamVisualizer": "src/components/SiteBeamVisualizer.tsx",
+  "Surface": "src/components/ui/Surface.tsx",
+  "PanelToolbar": "src/components/ui/PanelToolbar.tsx",
+  "CompactDetails": "src/components/ui/CompactDetails.tsx",
+  "PanelShell.LeftSidePanel": "src/components/Sidebar.tsx",
+  "PanelShell.RightSidePanel": "src/components/MapView.tsx",
+  "PanelShell.BottomPanel": "src/components/LinkProfileChart.tsx",
+  "SidebarFooter": "src/components/SidebarFooter.tsx",
   "NotificationStack": "src/components/NotificationStack.tsx",
-  "NotificationBanner": "src/components/NotificationBanner.tsx",
-  "MapInlineNotice": "src/components/MapInlineNotice.tsx",
-  "OfflineBanner": "src/components/OfflineBanner.tsx",
   "NotificationBell": "src/components/NotificationBell.tsx",
   "EmptyState": "src/components/ui/EmptyState.tsx",
   "LoadingState": "src/components/ui/LoadingState.tsx",
-  "ErrorHelperStates": "src/components/ErrorHelperStates.tsx",
-  "MapControls": "src/components/MapControls.tsx",
-  "SidebarFooter": "src/components/SidebarFooter.tsx",
-  "Surface.Pill": "src/components/ui/Surface.tsx",
-  "Surface.Card": "src/components/ui/Surface.tsx",
   "StateDot": "src/components/StateDot.tsx",
 };
 
@@ -99,7 +102,6 @@ const THEME_TOKENS = {
 } as const;
 
 const getCssVarKey = (token: string): string => {
-  if (token === "surface-2") return "--surface-2";
   if (token === "surface-2") return "--surface-2";
   if (token === "staging-frame") return "--staging-frame";
   if (token === "local-frame") return "--local-frame";
@@ -182,6 +184,7 @@ const PatternCard = ({
 
 export function UiGalleryPage() {
   const { theme, variant, colorTheme, activeHolidayTheme } = useThemeVariant();
+  const [showCheckerboard, setShowCheckerboard] = useState(false);
   const [activeTab, setActiveTab] = useState<GalleryTab>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(GALLERY_TAB_STORAGE_KEY);
@@ -217,11 +220,10 @@ export function UiGalleryPage() {
   }, [theme, variant]);
 
   return (
-    <main className="ui-gallery-page">
+    <main className={`ui-gallery-page ${showCheckerboard ? "is-checkerboard-enabled" : ""}`}>
       <header className="ui-gallery-topbar panel-section">
         <div className="section-heading">
           <h2>LinkSim UI Gallery</h2>
-          <StatusPill status="under migration" />
         </div>
         <p className="field-help">Live UI inventory grounded in real app classes/components. Route: /ui-gallery</p>
         <div className="chip-group ui-gallery-theme-toggle">
@@ -253,6 +255,15 @@ export function UiGalleryPage() {
             </span>
           ) : null}
         </div>
+        <div className="chip-group ui-gallery-theme-toggle">
+          <ActionButton
+            aria-pressed={showCheckerboard}
+            onClick={() => setShowCheckerboard((value) => !value)}
+            type="button"
+          >
+            Checkerboard
+          </ActionButton>
+        </div>
         <nav className="ui-gallery-tabs" aria-label="UI gallery tabs">
           {GALLERY_TABS.map((tab) => (
             <ActionButton
@@ -272,98 +283,69 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Actions</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="ActionButton" status="under migration">
-              <div className="chip-group">
-                <ActionButton>Save Selected Path</ActionButton>
-                <ActionButton>Details</ActionButton>
-                <ActionButton variant="danger">Remove From Simulation</ActionButton>
-              </div>
-              <VariantList variants={["default", "variant=\"danger\""]} />
-            </PatternCard>
-            <PatternCard name="MapControlButton" status="standard">
-              <div className="chip-group">
-                <button aria-label="Zoom out" className="map-control-btn map-control-btn-icon" title="Zoom out" type="button">
-                  <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
-                <button aria-label="Zoom in" className="map-control-btn map-control-btn-icon" title="Zoom in" type="button">
-                  <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
-                <button aria-label="Fit bounds" className="map-control-btn map-control-btn-icon" title="Fit bounds" type="button">
-                  <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
-                </button>
+            <PatternCard name="Button" status="standard">
+              <div className="ui-specimen-rows">
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">default</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button>Save Selected Path</Button>
+                    <Button>Details</Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"ghost\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button variant="ghost">Smooth</Button>
+                    <Button variant="ghost">Bands</Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"ghost\"\nisSelected"}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button variant="ghost" isSelected>Smooth</Button>
+                    <Button variant="ghost" isSelected>Bands</Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"danger\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button variant="danger">Remove From Simulation</Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"size=\"icon\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button size="icon" aria-label="Zoom out" title="Zoom out">
+                      <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                    <Button size="icon" aria-label="Zoom in" title="Zoom in">
+                      <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                    <Button size="icon" aria-label="Fit bounds" title="Fit bounds">
+                      <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"size=\"icon\"\nisSelected"}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Button size="icon" isSelected aria-label="Zoom out (selected)" title="Zoom out (selected)">
+                      <Minus aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                    <Button size="icon" isSelected aria-label="Fit bounds (selected)" title="Fit bounds (selected)">
+                      <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </Button>
+                  </div>
+                </div>
               </div>
             </PatternCard>
             <PatternCard name="LinkButton" status="exception">
               <button className="inline-link-button" type="button">
-                Open change log
+                <span className="user-list-row">
+                  <AvatarBadge name="Alex Rivera" imageClassName="profile-avatar" />
+                  <span>Alex Rivera</span>
+                </span>
               </button>
-            </PatternCard>
-          </div>
-        </section>
-      ) : null}
-
-      {activeTab === "panels" ? (
-        <section className="ui-gallery-section">
-          <h3>Panels</h3>
-          <div className="ui-pattern-grid ui-pattern-grid-shells">
-            <PatternCard name="PanelShell.LeftSidePanel" status="under migration">
-              <aside className="sidebar-panel">
-                <header>
-                  <div className="section-heading">
-                    <h2>Simulation</h2>
-                    <span className="field-help">left shell</span>
-                  </div>
-                </header>
-                <section className="panel-section">
-                  <div className="section-heading">
-                    <h2>Sites</h2>
-                    <span className="field-help">header rhythm</span>
-                  </div>
-                  <div className="chip-group">
-                    <ActionButton>Library</ActionButton>
-                    <ActionButton>New</ActionButton>
-                  </div>
-                </section>
-              </aside>
-            </PatternCard>
-            <PatternCard name="PanelShell.RightSidePanel" status="under migration">
-              <aside className="map-inspector">
-                <div className="map-inspector-header-row">
-                  <div className="map-inspector-header-actions">
-                    <strong>Inspector</strong>
-                    <div className="map-inspector-header-actions-right">
-                      <button className="map-control-btn map-control-btn-icon" title="Hide panel" type="button">
-                        <PanelRightClose aria-hidden="true" size={16} strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <div className="map-inspector-section">
-                  <p className="map-inspector-line">Section/divider cadence shared with panel shell family.</p>
-                </div>
-              </aside>
-            </PatternCard>
-            <PatternCard name="PanelShell.BottomPanel" status="under migration">
-              <section className="chart-panel">
-                <div className="chart-top-row">
-                  <div className="chart-hover-state">
-                    <span>Path Profile</span>
-                  </div>
-                  <div className="chart-action-row-controls">
-                    <button className="chart-endpoint-swap chart-endpoint-icon" title="Full size" type="button">
-                      <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
-                    </button>
-                  </div>
-                </div>
-                <div className="chart-action-row">
-                  <div className="chart-hover-state">
-                    <span>Action row cadence aligned with shell family.</span>
-                  </div>
-                  <div className="chart-action-row-controls">
-                    <ActionButton>Save</ActionButton>
-                  </div>
-                </div>
-              </section>
             </PatternCard>
           </div>
         </section>
@@ -373,7 +355,7 @@ export function UiGalleryPage() {
         <section className="ui-gallery-section">
           <h3>Forms</h3>
           <div className="ui-pattern-grid">
-            <PatternCard name="FormActionRow" status="under migration">
+            <PatternCard name="chip-group" status="standard">
               <div className="panel-section">
                 <div className="chip-group">
                   <ActionButton>Apply</ActionButton>
@@ -381,6 +363,13 @@ export function UiGalleryPage() {
                   <ActionButton variant="danger">Delete</ActionButton>
                 </div>
               </div>
+            </PatternCard>
+            <PatternCard name="field-help-error" status="standard">
+              <label className="field-grid">
+                <span>Simulation Name</span>
+                <input defaultValue="AB" type="text" aria-describedby="gallery-field-error" />
+              </label>
+              <p id="gallery-field-error" className="field-help field-help-error">Name must be at least 3 characters.</p>
             </PatternCard>
             <PatternCard name="Input" status="standard">
               <label className="field-grid">
@@ -403,10 +392,13 @@ export function UiGalleryPage() {
             </PatternCard>
             <PatternCard name="Badge" status="standard">
               <div className="chip-group ui-gallery-chip-specimen">
+                <Badge variant="private">private</Badge>
+                <Badge variant="public">public</Badge>
                 <Badge variant="shared">shared</Badge>
                 <Badge variant="mqtt">MQTT</Badge>
+                <Badge variant="local">local</Badge>
+                <Badge variant="staging">staging</Badge>
               </div>
-              <VariantList variants={["private", "public", "shared", "mqtt", "local", "staging"]} />
             </PatternCard>
             <PatternCard name="UI Slider" status="standard">
               <div className="chip-group" style={{ alignItems: "flex-start" }}>
@@ -429,13 +421,193 @@ export function UiGalleryPage() {
                 />
               </div>
             </PatternCard>
+            <PatternCard name="SiteBeamVisualizer" status="standard">
+              <SiteBeamVisualizer
+                values={{
+                  antennaHeightM: 8,
+                  txPowerDbm: 22,
+                  txGainDbi: 9,
+                  rxGainDbi: 9,
+                  cableLossDb: 1.8,
+                }}
+              />
+            </PatternCard>
           </div>
         </section>
       ) : null}
 
-      {activeTab === "notifications" ? (
+      {activeTab === "surfaces" ? (
         <section className="ui-gallery-section">
-          <h3>Notifications</h3>
+          <h3>Surfaces</h3>
+          <div className="ui-pattern-grid ui-pattern-grid-shells">
+            <PatternCard name="Surface" status="standard">
+              <div className="ui-specimen-rows">
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Visible + pass
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\"\ntone=\"muted\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" tone="muted" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Inactive
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"pill\"\npointerTail"}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Accent tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"pointerTail\npointerTone=\"selection\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail pointerTone="selection" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Selection tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"pointerTail\npointerTone=\"temporary\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="pill" pointerTail pointerTone="temporary" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Temporary tail
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"variant=\"card\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface variant="card" style={{ padding: "12px 16px", display: "inline-grid", gap: "4px", minWidth: "140px", fontSize: "0.75rem" }}>
+                      <strong>Signal overview</strong>
+                      <span style={{ color: "var(--muted)", fontSize: "0.7rem" }}>Azimuth: 142° · 12.4 km</span>
+                    </Surface>
+                  </div>
+                </div>
+                <div className="ui-specimen-row">
+                  <span className="ui-specimen-row-label">{"as=\"button\""}</span>
+                  <div className="ui-specimen-row-specimens">
+                    <Surface as="button" variant="pill" style={{ padding: "6px 12px", fontSize: "0.75rem" }}>
+                      Clickable pill
+                    </Surface>
+                  </div>
+                </div>
+              </div>
+            </PatternCard>
+            <PatternCard name="PanelToolbar" status="standard">
+              <div className="panel-section">
+                <PanelToolbar
+                  title={<h2>Title + Actions</h2>}
+                  actions={
+                    <MapControlButton title="Settings">
+                      <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </MapControlButton>
+                  }
+                />
+                <PanelToolbar
+                  title={<h2>Title Only</h2>}
+                />
+                <PanelToolbar
+                  actions={
+                    <>
+                      <MapControlButton title="Close">
+                        <X aria-hidden="true" size={16} strokeWidth={1.8} />
+                      </MapControlButton>
+                      <MapControlButton title="Settings">
+                        <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
+                      </MapControlButton>
+                    </>
+                  }
+                />
+              </div>
+            </PatternCard>
+            <PatternCard name="PanelShell.LeftSidePanel" status="standard">
+              <aside className="sidebar-panel">
+                <section className="panel-section">
+                  <PanelToolbar
+                    title={<h2>Sites</h2>}
+                    actions={<span className="field-help">InfoTip slot</span>}
+                  />
+                  <div className="chip-group">
+                    <ActionButton>Library</ActionButton>
+                    <ActionButton>New</ActionButton>
+                  </div>
+                </section>
+              </aside>
+            </PatternCard>
+            <PatternCard name="PanelShell.RightSidePanel" status="standard">
+              <aside className="map-inspector">
+                <PanelToolbar
+                  title={
+                    <MapControlButton title="Hide panel">
+                      <PanelRightClose aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </MapControlButton>
+                  }
+                />
+                <div className="map-inspector-section">
+                  <p className="map-inspector-line">Section/divider cadence shared with panel shell family.</p>
+                </div>
+              </aside>
+            </PatternCard>
+            <PatternCard name="PanelShell.BottomPanel" status="standard">
+              <section className="chart-panel">
+                <PanelToolbar
+                  title={<span className="field-help">Path Profile A → B</span>}
+                  actions={
+                    <MapControlButton title="Full size">
+                      <Maximize2 aria-hidden="true" size={16} strokeWidth={1.8} />
+                    </MapControlButton>
+                  }
+                />
+                <div className="chart-action-row">
+                  <div className="chart-hover-state">
+                    <span>Action row cadence aligned with shell family.</span>
+                  </div>
+                  <ActionButton>Save</ActionButton>
+                </div>
+              </section>
+            </PatternCard>
+            <PatternCard name="CompactDetails" status="standard">
+              <div className="panel-section">
+                <CompactDetails>
+                  <CompactDetailsSummary>Collapsed by default</CompactDetailsSummary>
+                  <p className="map-inspector-line">Content revealed when expanded.</p>
+                </CompactDetails>
+                <CompactDetails open>
+                  <CompactDetailsSummary>Open by default</CompactDetailsSummary>
+                  <p className="map-inspector-line">Content visible on load.</p>
+                </CompactDetails>
+              </div>
+            </PatternCard>
+            <PatternCard name="SidebarFooter" status="standard">
+              <footer className="sidebar-footer">
+                <div className="sidebar-footer-links">
+                  <span>©</span>
+                  <a href="https://maplibre.org" rel="noreferrer" target="_blank">
+                    MapLibre
+                  </a>
+                  <span>©</span>
+                  <a href="https://www.openstreetmap.org" rel="noreferrer" target="_blank">
+                    OpenStreetMap
+                  </a>
+                </div>
+                <div className="sidebar-footer-version">Build: v0.14.0-beta+fc9813a</div>
+              </footer>
+            </PatternCard>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "feedback" ? (
+        <section className="ui-gallery-section">
+          <h3>Feedback</h3>
           <div className="ui-pattern-grid">
             <PatternCard name="NotificationStack" status="under migration">
               <div className="app-notification-stack app-notification-stack-gallery">
@@ -490,47 +662,14 @@ export function UiGalleryPage() {
                 </div>
               </div>
             </PatternCard>
-            <PatternCard name="NotificationBanner" status="legacy">
-              <div className="notification-banner" role="status">
-                <strong>2 moderator notifications</strong> need review.
-              </div>
-              <div className="notification-banner" role="status">
-                <strong>Schema warning:</strong> missing optional index metadata.
-              </div>
-            </PatternCard>
-            <PatternCard name="MapInlineNotice" status="exception">
-              <div className="ui-gallery-map-notice-stage">
-                <div className="map-inline-notice map-inline-notice-warning" role="status">
-                  <span>Offline mode active. Changes will sync later.</span>
-                  <ActionButton>Dismiss</ActionButton>
-                </div>
-              </div>
-            </PatternCard>
-            <PatternCard name="OfflineBanner" status="legacy">
-              <div className="offline-banner" role="status">
-                <span>Offline. Changes are saved locally and will sync when connection returns.</span>
-                <div className="chip-group">
-                  <ActionButton>Open Sync Status</ActionButton>
-                  <ActionButton>Dismiss</ActionButton>
-                </div>
-              </div>
-            </PatternCard>
-            <PatternCard name="NotificationBell" status="exception">
+            <PatternCard name="NotificationBell" status="standard">
               <div className="chip-group">
-                <button className="notification-bell" type="button">
-                  🔔
+                <button aria-label="Notifications" className="notification-bell" title="Notifications" type="button">
+                  <BellIcon aria-hidden="true" size={16} strokeWidth={1.8} />
                   <span className="notification-badge">3</span>
                 </button>
               </div>
             </PatternCard>
-          </div>
-        </section>
-      ) : null}
-
-      {activeTab === "states" ? (
-        <section className="ui-gallery-section">
-          <h3>States</h3>
-          <div className="ui-pattern-grid">
             <PatternCard name="EmptyState" status="standard">
               <div className="chart-empty">No profile available for current selection.</div>
             </PatternCard>
@@ -540,47 +679,6 @@ export function UiGalleryPage() {
               </div>
               <p className="field-help">Loading terrain and profile data…</p>
             </PatternCard>
-            <PatternCard name="ErrorHelperStates" status="under migration">
-              <p className="field-help field-help-error">Name must be at least 3 characters.</p>
-              <div className="terrain-alert">
-                <p>Terrain fetch failed for one tile. Retry when network is stable.</p>
-              </div>
-            </PatternCard>
-          </div>
-        </section>
-      ) : null}
-
-      {activeTab === "meta-map-ui" ? (
-        <section className="ui-gallery-section">
-          <h3>Meta / Map UI</h3>
-          <div className="ui-pattern-grid">
-            <PatternCard name="MapControls" status="standard">
-              <div className="map-controls map-controls-unified">
-                <div className="map-controls-group">
-                  <button className="map-control-btn map-control-btn-icon" title="Layers" type="button">
-                    <Layers aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </button>
-                  <button className="map-control-btn map-control-btn-icon" title="Refresh" type="button">
-                    <RefreshCw aria-hidden="true" size={16} strokeWidth={1.8} />
-                  </button>
-                </div>
-              </div>
-            </PatternCard>
-            <PatternCard name="SidebarFooter" status="standard">
-              <footer className="sidebar-footer">
-                <div className="sidebar-footer-links">
-                  <span>©</span>
-                  <a href="https://maplibre.org" rel="noreferrer" target="_blank">
-                    MapLibre
-                  </a>
-                  <span>©</span>
-                  <a href="https://www.openstreetmap.org" rel="noreferrer" target="_blank">
-                    OpenStreetMap
-                  </a>
-                </div>
-                <div className="sidebar-footer-version">Build: v0.14.0-beta+fc9813a</div>
-              </footer>
-            </PatternCard>
             <PatternCard name="StateDot" status="standard">
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <StateDot state="pass_clear" />
@@ -589,31 +687,6 @@ export function UiGalleryPage() {
                 <StateDot state="fail_blocked" />
               </div>
               <VariantList variants={["pass_clear", "pass_blocked", "fail_clear", "fail_blocked"]} />
-            </PatternCard>
-            <PatternCard name="Surface.Pill" status="standard">
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
-                <Surface variant="pill" style={{ padding: "8px 14px", display: "inline-flex", flexDirection: "column", gap: "6px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem" }}>
-                    <StateDot state="pass_clear" />
-                    <span>Visible + pass</span>
-                  </div>
-                </Surface>
-                <p className="field-help" style={{ marginTop: 0 }}>Strict pill shape (border-radius: 999px) for tall or long content such as label lists and narrow context menus. Uses the base <code>ui-surface-pill</code> class.</p>
-              </div>
-              <VariantList variants={["pill", "card"]} />
-            </PatternCard>
-            <PatternCard name="Surface.Card" status="standard">
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-start" }}>
-                <Surface variant="card" style={{ padding: "12px 16px", display: "inline-grid", gap: "8px", minWidth: "160px" }}>
-                  <strong style={{ fontSize: "0.75rem" }}>Signal overview</strong>
-                  <div style={{ display: "grid", gap: "4px", fontSize: "0.7rem", color: "var(--muted)" }}>
-                    <span>Azimuth: 142°</span>
-                    <span>Distance: 12.4 km</span>
-                    <span>State: Visible + pass</span>
-                  </div>
-                </Surface>
-                <p className="field-help" style={{ marginTop: 0 }}>Card variant (border-radius: 12px) for larger, square-ish popovers with structured content. Add <code>is-card</code> modifier to <code>ui-surface-pill</code>.</p>
-              </div>
             </PatternCard>
           </div>
         </section>

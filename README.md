@@ -1,220 +1,28 @@
 # LinkSim
 
-Link planning web application for terrain-aware radio path analysis.
+LinkSim is a web app for terrain-aware radio path planning and simulation.
 
-Inspired by Radio Mobile by Roger Coude (VE2DBE).
+<p>
+  <img src="./docs/assets/readme/panorama-simulation.png" alt="LinkSim panorama simulation" width="49%">
+  <img src="./docs/assets/readme/path-profile-simulation.png" alt="LinkSim path profile simulation" width="49%">
+</p>
 
-## Repository Status
+## Start Here
 
-- License: GNU GPL v3.0 ([LICENSE](./LICENSE))
-- Security policy: [SECURITY.md](./SECURITY.md)
-- Privacy notice: [docs/legal/PRIVACY.md](./docs/legal/PRIVACY.md)
-- Terms and acceptable use: [docs/legal/TERMS.md](./docs/legal/TERMS.md)
-- Sensitive data warning: do not store secrets in app content; visibility levels are collaboration controls, not a secret vault.
-- Legal credits/notices:
-  - [docs/legal/CREDITS.md](./docs/legal/CREDITS.md)
-  - [docs/legal/THIRD_PARTY_NOTICES.md](./docs/legal/THIRD_PARTY_NOTICES.md)
-  - [docs/legal/SOURCE_COMPLIANCE.md](./docs/legal/SOURCE_COMPLIANCE.md)
+| Need | Document |
+| --- | --- |
+| Use the app | [Getting Started](./docs/onboarding.md) |
+| Understand radio models | [RF models and sampling](./docs/rf-models-and-sampling.md) |
+| Run or maintain the repo | [Repository guide](./docs/repository-guide.md) |
+| Test changes | [Testing plan](./docs/testing-plan.md) |
+| Ship a release | [Release flow](./docs/release-flow.md) |
+| Reuse UI patterns | [UI pattern glossary](./docs/ui-pattern-glossary.md) |
+| Review policies | [Security](./SECURITY.md), [Privacy](./docs/legal/PRIVACY.md), [Terms](./docs/legal/TERMS.md) |
 
-## Environment Model
+## Contribute
 
-The project is operated in three stages:
+Start by opening a [GitHub Issue](https://github.com/wilhel1812/LinkSim/issues) or joining the [Matrix space](https://matrix.to/#/%23linksim:matrix.org).
 
-1. Local dev (primary iteration environment)
-2. Staging (cloud validation)
-3. Production (live)
+## License
 
-Operational rule:
-- Changes are built and tested locally first.
-- Then deployed to staging.
-- Then promoted to production.
-
-## Quick Start (Local)
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Run local edge-parity stack:
-
-```bash
-docker compose up --build edge
-```
-
-Open:
-- `http://localhost:8788`
-
-Other local runtime options (legacy/optional):
-
-```bash
-npm run dev
-npm run dev:edge
-docker compose up --build web
-docker compose up --build dev
-```
-
-Default ports:
-- `edge`: `http://localhost:8788`
-- `web`: `http://localhost:8080`
-- `dev`: `http://localhost:5173`
-
-## Build, Test, Smoke
-
-Core commands:
-
-```bash
-npm run build
-npm test
-npm run test:ci
-```
-
-Additional smoke scripts:
-
-```bash
-npm run smoke:edge
-npm run smoke:scenario
-npm run smoke:profile
-npm run smoke:fit-profile
-npm run smoke:itm
-```
-
-## Calculation API
-
-`/api/v1/calculate` runs directly in LinkSim Pages Functions and uses the same propagation stack as the app (`ITM` with Copernicus terrain sampling).
-
-Behavior notes:
-
-- Public endpoint: `https://linksim.link/api/v1/calculate`
-- Terrain source: Copernicus DEM via `/copernicus/30m/*`
-- If node ground elevation is omitted, the API samples terrain and uses that elevation with `2m` default antenna height
-- Result includes app-style pass/fail text, for example `LOS clear + fail at 83.39 km (-133.6 dBm after env loss)`
-- Edge rate limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
-
-Example request:
-
-```bash
-curl -X POST http://localhost:8788/api/v1/calculate \
-  -H 'content-type: application/json' \
-  -d '{
-    "calculation": "link_budget",
-    "input": {
-      "from_site": "Site A",
-      "to_site": "Site B",
-      "frequency_mhz": 868,
-      "rx_target_dbm": -110,
-      "nodes": [
-        {"name": "Site A", "lat": 59.9139, "lon": 10.7522},
-        {"name": "Site B", "lat": 59.9170, "lon": 10.7600}
-      ]
-    }
-  }'
-```
-
-## Deploy and Release
-
-### Staging deploy
-
-```bash
-npm run deploy:staging:main
-```
-
-### Production deploy (guarded)
-
-```bash
-npm run deploy:prod:main
-```
-
-`deploy:prod:main` is blocked unless release requirements are met:
-- `HEAD` is tagged `v<package.json version>`
-- Version is bumped in `HEAD` compared to `HEAD^`
-
-### Recommended release flow (use this)
-
-```bash
-npm run release:prod
-```
-
-Optional bump level:
-
-```bash
-npm run release:prod -- --bump minor
-npm run release:prod -- --bump major
-```
-
-What `release:prod` does:
-1. Bumps version in `package.json`
-2. Regenerates build metadata
-3. Commits + tags release
-4. Pushes `main` and tags
-5. Deploys staging
-6. Deploys production
-
-Build label rules:
-- Local: `vX.Y.Z-alpha+<commit>`
-- Staging: `vX.Y.Z-beta+<commit>`
-- Production: `vX.Y.Z`
-- Same commit always keeps the same base version (`X.Y.Z`) across all environments.
-
-## Cloudflare Setup Overview
-
-This repo uses:
-- Cloudflare Pages + Functions
-- D1 for application data
-- R2 for avatar images
-- Cloudflare Access for authentication boundary
-
-Primary configs:
-- Production: [wrangler.toml](./wrangler.toml)
-- Staging: [wrangler.staging.toml](./wrangler.staging.toml)
-
-Optional basemap provider environment variables (admin-configured only):
-- `VITE_MAPTILER_KEY`
-- `VITE_STADIA_KEY`
-- `VITE_KARTVERKET_API_KEY`
-- `VITE_KARTVERKET_WMTS_BASE_URL` (optional override)
-- `VITE_KARTVERKET_TILE_TEMPLATE` (optional explicit template; overrides base URL)
-
-Detailed setup docs:
-- [docs/cloudflare-auth-setup.md](./docs/cloudflare-auth-setup.md)
-- [docs/access-policy-templates.md](./docs/access-policy-templates.md)
-
-## Staging Data Refresh
-
-Refresh staging from production snapshots:
-
-```bash
-npm run refresh:staging
-```
-
-Or run separately:
-
-```bash
-npm run refresh:staging:d1
-npm run refresh:staging:r2
-```
-
-## Data/Service Notes
-
-- Terrain data is fetched on demand and cached client-side.
-- API proxies and geocode endpoints include method/rate-limit safeguards.
-- In local runtimes without edge functions, some cloud behaviors are emulated/fallback.
-- Basemap provider failures auto-fallback to CARTO with a non-blocking warning.
-
-## Project Structure
-
-- `src/`: frontend app
-- `functions/`: Cloudflare Pages Functions API
-- `db/`: SQL schema and migration assets
-- `scripts/`: deploy/release/smoke tooling
-- `config/`: TS/Vite/Vitest configs
-- `docs/`: setup, legal, testing, and operations documentation
-- `public/`: static assets
-- `nginx/`: nginx config used by Docker flows
-
-## Contributor Notes
-
-- Keep working tree clean before deploy commands, except expected build metadata updates in `src/lib/buildInfo.ts` and `functions/_lib/buildInfo.ts`.
-- Prefer `npm run release:prod` over manual production deploy.
-- When changing auth/permissions, add or update tests in the same pass.
+LinkSim is licensed under [GNU GPL v3.0](./LICENSE).
