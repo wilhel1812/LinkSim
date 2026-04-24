@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mapMock = vi.hoisted(() => ({
+  easeTo: vi.fn(),
   latestProps: null as null | {
     onMove?: (event: { originalEvent?: unknown; viewState: { longitude: number; latitude: number; zoom: number } }) => void;
   },
@@ -28,17 +29,23 @@ vi.hoisted(() => {
   vi.stubGlobal("localStorage", localStorageMock);
 });
 
-vi.mock("react-map-gl/maplibre", () => {
+vi.mock("react-map-gl/maplibre", async () => {
+  const ReactMock = await vi.importActual<typeof import("react")>("react");
   return {
-    default: (
+    default: ReactMock.forwardRef((
       props: {
         children?: React.ReactNode;
         onMove?: (event: { originalEvent?: unknown; viewState: { longitude: number; latitude: number; zoom: number } }) => void;
       },
+      ref: React.ForwardedRef<{ easeTo: typeof mapMock.easeTo; queryRenderedFeatures: () => unknown[] }>,
     ) => {
       mapMock.latestProps = props;
+      ReactMock.useImperativeHandle(ref, () => ({
+        easeTo: mapMock.easeTo,
+        queryRenderedFeatures: () => [],
+      }));
       return <div data-testid="mock-map">{props.children}</div>;
-    },
+    }),
     Layer: () => null,
     Marker: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
     Source: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
@@ -134,9 +141,12 @@ describe("MapView user location flow", () => {
       success(position(60.12345, 11.23456, 18));
     });
 
-    expect(useAppStore.getState().mapViewport).toMatchObject({
-      center: { lat: 60.12345, lon: 11.23456 },
+    expect(mapMock.easeTo).toHaveBeenCalledWith({
+      center: [11.23456, 60.12345],
       zoom: 12,
+      offset: [-25, 0],
+      duration: 900,
+      essential: true,
     });
 
     act(() => {
@@ -147,11 +157,9 @@ describe("MapView user location flow", () => {
       success(position(62, 13, 24, 2));
     });
 
-    expect(useAppStore.getState().mapViewport).toMatchObject({
-      center: { lat: 60.12345, lon: 11.23456 },
-      zoom: 12,
-    });
-    expect(screen.getByRole("button", { name: /User location/i })).toHaveTextContent("User Location");
+    expect(mapMock.easeTo).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: /User location/i })).toHaveClass("user-location-marker");
+    expect(screen.getByRole("button", { name: /User location/i })).not.toHaveClass("map-site-surface");
   });
 
   it("reuses the existing temporary site draft path when the marker is clicked", () => {

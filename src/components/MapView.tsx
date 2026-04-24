@@ -70,6 +70,7 @@ import { SimulationResultsSection } from "./SimulationResultsSection";
 import { ActionButton } from "./ActionButton";
 import { StateDot } from "./StateDot";
 import { useMapControls } from "./map/useMapControls";
+import { animateMapToCenter, fitMapToBounds, resolveMapCameraPadding } from "./map/mapCamera";
 import { PanelToolbar } from "./ui/PanelToolbar";
 
 const UI_SECTION_KEYS = {
@@ -843,15 +844,18 @@ export function MapView({
           };
           setUserLocationFix(nextFix);
           if (isUserLocationFollowingRef.current) {
-            updateMapViewport({
+            setInteractionViewState(null);
+            const didAnimate = animateMapToCenter(mapRef, {
               center: { lat: nextFix.lat, lon: nextFix.lon },
               zoom: USER_LOCATION_ZOOM,
+              padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
             });
-            setInteractionViewState({
-              longitude: nextFix.lon,
-              latitude: nextFix.lat,
-              zoom: USER_LOCATION_ZOOM,
-            });
+            if (!didAnimate) {
+              updateMapViewport({
+                center: { lat: nextFix.lat, lon: nextFix.lon },
+                zoom: USER_LOCATION_ZOOM,
+              });
+            }
           }
         },
         (error) => {
@@ -866,7 +870,16 @@ export function MapView({
       publishLocationNotice("Could not get your location.");
       stopUserLocation();
     }
-  }, [publishLocationNotice, stopUserLocation, updateMapViewport]);
+  }, [
+    fitBottomInset,
+    fitChromePadding.bottom,
+    fitChromePadding.left,
+    fitChromePadding.right,
+    fitChromePadding.top,
+    publishLocationNotice,
+    stopUserLocation,
+    updateMapViewport,
+  ]);
 
   const toggleUserLocation = useCallback(() => {
     if (isUserLocationActiveRef.current) {
@@ -2462,11 +2475,8 @@ export function MapView({
     if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
     const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
     if (!bounds) return;
-    mapRef.current.fitBounds(bounds, {
-      padding: { ...fitChromePadding, bottom: fitBottomInset },
-      animate: true,
-      linear: false,
-      duration: 900,
+    fitMapToBounds(mapRef, bounds, {
+      padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
       maxZoom: 14,
     });
     setInteractionViewState(null);
@@ -3429,28 +3439,28 @@ export function MapView({
 
         {userLocationFix ? (
           <Marker
-            anchor="bottom"
+            anchor="center"
             latitude={userLocationFix.lat}
             longitude={userLocationFix.lon}
-            offset={SITE_PIN_MARKER_OFFSET}
             style={{ zIndex: pendingNewSiteDraft ? 2 : 5 }}
           >
-            <MarkerActionButton
-              ariaLabel={`User location, ${userLocationFix.lat.toFixed(5)}, ${userLocationFix.lon.toFixed(5)}, ${fmtAccuracy(userLocationFix.accuracyM)}`}
-              className="map-site-surface is-selected"
-              pointerTail
-              pointerTone="selection"
-              tone={canPersist && !pendingNewSiteDraft ? "default" : "muted"}
+            <button
+              type="button"
+              aria-label={`User location, ${userLocationFix.lat.toFixed(5)}, ${userLocationFix.lon.toFixed(5)}, ${fmtAccuracy(userLocationFix.accuracyM)}`}
+              className={`user-location-marker ${canPersist && !pendingNewSiteDraft ? "" : "is-muted"}`}
+              title="User location"
               onMouseEnter={() =>
                 setOverlayHoverInfo({
                   text: `User location · ${userLocationFix.lat.toFixed(5)}, ${userLocationFix.lon.toFixed(5)} · ${fmtAccuracy(userLocationFix.accuracyM)}`,
                 })
               }
               onMouseLeave={() => setOverlayHoverInfo(null)}
-              onActivate={beginUserLocationSiteDraft}
-            >
-              <span>User Location</span>
-            </MarkerActionButton>
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                beginUserLocationSiteDraft();
+              }}
+            />
           </Marker>
         ) : null}
 

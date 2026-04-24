@@ -113,6 +113,12 @@ input {
   font: inherit;
 }
 
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  color: inherit;
+}
+
 .app-shell {
   display: grid;
   --sidebar-overlay-width: clamp(280px, 20vw, 400px);
@@ -1984,6 +1990,51 @@ input {
 .map-site-surface.is-temporary {
   --surface-pill-border: var(--temporary);
   box-shadow: 0 0 0 3px var(--temporary-ring);
+}
+
+.user-location-marker {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--selection);
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.user-location-marker::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  box-shadow:
+    0 0 0 3px var(--selection-soft),
+    0 0 0 1px var(--surface);
+}
+
+.user-location-marker::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+.user-location-marker:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.user-location-marker.is-muted {
+  cursor: default;
+  opacity: 0.72;
 }
 
 .profile-map-cursor {
