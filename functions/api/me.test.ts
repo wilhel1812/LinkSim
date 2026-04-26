@@ -34,6 +34,13 @@ describe("api/me", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
+  it("returns a controlled service unavailable response when auth verification times out", async () => {
+    verifyAuthMock.mockRejectedValue(new Error("Auth verification timed out"));
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/me")));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "Auth verification timed out.", code: "auth_timeout" });
+  });
+
   it("returns no-store on PATCH", async () => {
     const req = new Request("https://example.test/api/me", {
       method: "PATCH",

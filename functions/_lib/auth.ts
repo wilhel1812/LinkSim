@@ -2,6 +2,14 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { AuthContext, Env } from "./types";
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+const DEFAULT_AUTH_VERIFY_TIMEOUT_MS = 3_000;
+
+export class AuthVerificationTimeoutError extends Error {
+  constructor() {
+    super("Auth verification timed out");
+    this.name = "AuthVerificationTimeoutError";
+  }
+}
 
 const remoteJwksFor = (url: string) => {
   const cached = jwksCache.get(url);
@@ -125,6 +133,29 @@ const emitAuthLog = (env: Env, payload: Record<string, unknown>) => {
   console.info(JSON.stringify({ event: "auth", ...payload }));
 };
 
+const authVerifyTimeoutMs = (env: Env): number => {
+  const parsed = Number(env.AUTH_VERIFY_TIMEOUT_MS ?? "");
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  return DEFAULT_AUTH_VERIFY_TIMEOUT_MS;
+};
+
+const withAuthVerifyTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return await new Promise<T>((resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new AuthVerificationTimeoutError()), timeoutMs);
+    promise.then(
+      (value) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+};
+
 const verifyCloudflareAccessJwt = async (
   token: string,
   request: Request,
@@ -233,6 +264,12 @@ const allowInsecureDevAuth = (env: Env): AuthContext | null => {
 export const verifyAuth = async (request: Request, env: Env): Promise<AuthContext | null> => {
   const authSignals = inspectAuthRequest(request);
   try {
+    const byHeader = verifyByHeadersOnly(request);
+    if (byHeader) {
+      emitAuthLog(env, { result: "ok", source: byHeader.source, ...authSignals });
+      return byHeader;
+    }
+
     const token =
       request.headers.get("cf-access-jwt-assertion") ??
       request.headers.get("Cf-Access-Jwt-Assertion") ??
@@ -240,7 +277,10 @@ export const verifyAuth = async (request: Request, env: Env): Promise<AuthContex
       "";
 
     if (token.trim()) {
-      const jwtVerified = await verifyCloudflareAccessJwt(token.trim(), request, env);
+      const jwtVerified = await withAuthVerifyTimeout(
+        verifyCloudflareAccessJwt(token.trim(), request, env),
+        authVerifyTimeoutMs(env),
+      );
       if (jwtVerified) {
         emitAuthLog(env, { result: "ok", source: jwtVerified.source, ...authSignals });
         return jwtVerified;
@@ -248,12 +288,11 @@ export const verifyAuth = async (request: Request, env: Env): Promise<AuthContex
       emitAuthLog(env, { result: "fail", reason: "jwt_verify_failed", ...authSignals });
     }
 
-    const byHeader = verifyByHeadersOnly(request);
-    if (byHeader) {
-      emitAuthLog(env, { result: "ok", source: byHeader.source, ...authSignals });
-      return byHeader;
+  } catch (error) {
+    if (error instanceof AuthVerificationTimeoutError) {
+      emitAuthLog(env, { result: "fail", reason: "jwt_verify_timeout", ...authSignals });
+      throw error;
     }
-  } catch {
     emitAuthLog(env, { result: "fail", reason: "auth_exception", ...authSignals });
     // Fail closed to header/dev fallback instead of surfacing auth internals as 500.
   }

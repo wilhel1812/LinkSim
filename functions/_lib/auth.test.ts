@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inspectAuthRequest, verifyAuth } from "./auth";
+import { AuthVerificationTimeoutError, inspectAuthRequest, verifyAuth } from "./auth";
 import type { Env } from "./types";
 
 const makeEnv = (overrides?: Partial<Env>): Env =>
@@ -39,6 +39,31 @@ describe("verifyAuth", () => {
     const auth = await verifyAuth(request, makeEnv());
     expect(auth?.userId).toBe("user@example.com");
     expect(auth?.source).toBe("headers");
+  });
+
+  it("uses header-based auth before jwt verification when both are present", async () => {
+    const request = new Request("https://example.test/api/me", {
+      headers: {
+        "Cf-Access-Authenticated-User-Email": "user@example.com",
+        cookie: "CF_Authorization=not-a-real-jwt",
+      },
+    });
+    const auth = await verifyAuth(request, makeEnv({ ACCESS_AUD: "aud", ACCESS_TEAM_DOMAIN: "team.example" }));
+    expect(auth?.userId).toBe("user@example.com");
+    expect(auth?.source).toBe("headers");
+  });
+
+  it("throws a controlled timeout when jwt verification does not finish in time", async () => {
+    const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test-key" })).toString("base64url");
+    const payload = Buffer.from(JSON.stringify({ iss: "https://team.example" })).toString("base64url");
+    const request = new Request("https://example.test/api/me", {
+      headers: {
+        cookie: `CF_Authorization=${header}.${payload}.signature`,
+      },
+    });
+    await expect(
+      verifyAuth(request, makeEnv({ ACCESS_AUD: "aud", ACCESS_TEAM_DOMAIN: "team.example", AUTH_VERIFY_TIMEOUT_MS: "0" })),
+    ).rejects.toBeInstanceOf(AuthVerificationTimeoutError);
   });
 
   it("falls back to insecure dev auth when enabled", async () => {

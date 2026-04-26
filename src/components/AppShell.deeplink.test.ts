@@ -76,6 +76,16 @@ const hoisted = vi.hoisted(() => {
 });
 
 vi.mock("../lib/cloudUser", () => ({
+  CloudApiError: class CloudApiError extends Error {
+    status: number | null;
+    code: string;
+
+    constructor(message: string, input?: { status?: number | null; code?: string }) {
+      super(message);
+      this.status = input?.status ?? null;
+      this.code = input?.code ?? "api_error";
+    }
+  },
   fetchCollaboratorDirectory: vi.fn(async () => []),
   fetchDeepLinkStatus: hoisted.fetchDeepLinkStatus,
   fetchMe: hoisted.fetchMe,
@@ -230,6 +240,53 @@ describe("AppShell deeplink cold-load flow", () => {
       window as Window & { linksimNotifications?: { list: () => Array<{ id: string }> } }
     ).linksimNotifications?.list?.() ?? [];
     expect(notifications.some((entry) => entry.id === "shared-simulation-unavailable")).toBe(false);
+
+    root.unmount();
+    host.remove();
+  });
+
+  it("keeps the workspace visible and pins a warning when auth bootstrap times out", async () => {
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchMe.mockRejectedValue(new Error("524 : server timed out"));
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    root.render(React.createElement(AppShell));
+
+    await waitForCondition(() => document.body.textContent?.includes("Cloud save is unavailable") === true);
+    expect(document.querySelector(".access-locked-shell")).toBeNull();
+    expect(document.body.textContent).not.toContain("Signed out");
+    expect(document.body.textContent).toContain("Your changes may not be saved");
+    expect(document.querySelector(".app-notification-item-error button")).toBeNull();
+
+    root.unmount();
+    host.remove();
+  });
+
+  it("keeps the workspace visible for revoked accounts", async () => {
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchMe.mockResolvedValue({
+      id: "user-1",
+      username: "Owner",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: false,
+      accountState: "revoked",
+      avatarUrl: "",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      bio: "",
+    });
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    root.render(React.createElement(AppShell));
+
+    await waitForCondition(() => document.body.textContent?.includes("Account access is unavailable") === true);
+    expect(document.querySelector(".access-locked-shell")).toBeNull();
+    expect(document.body.textContent).toContain("Your changes may not be saved");
 
     root.unmount();
     host.remove();
