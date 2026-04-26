@@ -137,6 +137,11 @@ type UserAdminPanelProps = {
    * AppShell to navigate to `/settings/profile`.
    */
   onOpenSettings?: () => void;
+  /**
+   * When provided, clicking "Sign in" triggers a silent auth check first;
+   * only if that fails does it redirect to the CF Access login page.
+   */
+  onSignInRequested?: () => void;
 };
 
 export function UserAdminPanel({
@@ -145,6 +150,7 @@ export function UserAdminPanel({
   extraActions,
   renderMode = "chip",
   onOpenSettings,
+  onSignInRequested,
 }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
@@ -704,9 +710,13 @@ export function UserAdminPanel({
   }, [isLocalRuntime, setAuthState, setCurrentUser]);
 
   const handleSignUp = useCallback(() => {
+    if (onSignInRequested) {
+      onSignInRequested();
+      return;
+    }
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
-  }, []);
+  }, [onSignInRequested]);
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
 

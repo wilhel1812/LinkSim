@@ -1,3 +1,5 @@
+import type { Env } from "../_lib/types";
+
 const sanitizeReturnTo = (raw: string | null, origin: string): string => {
   if (typeof raw !== "string") return "/";
   const trimmed = raw.trim();
@@ -11,8 +13,16 @@ const sanitizeReturnTo = (raw: string | null, origin: string): string => {
   }
 };
 
-export const onRequestGet = async ({ request }: { request: Request }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const returnTo = sanitizeReturnTo(url.searchParams.get("returnTo"), url.origin);
-  return Response.redirect(`${url.origin}${returnTo}`, 302);
+  const redirectUrl = `${url.origin}${returnTo}`;
+  const teamDomain = env?.ACCESS_TEAM_DOMAIN;
+  if (teamDomain) {
+    return Response.redirect(
+      `https://${teamDomain}/cdn-cgi/access/login?redirect_url=${encodeURIComponent(redirectUrl)}`,
+      302,
+    );
+  }
+  return Response.redirect(redirectUrl, 302);
 };
