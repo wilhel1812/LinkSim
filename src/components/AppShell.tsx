@@ -274,6 +274,7 @@ export function AppShell() {
   const authRetryQuickAttemptRef = useRef(0);
   const authRetryTimerRef = useRef<number | null>(null);
   const authCheckGenerationRef = useRef(0);
+  const userInitiatedSignInRef = useRef(false);
   const runAccessCheckRef = useRef<(reason: "initial" | "retry" | "online") => void>(() => {});
   const setShowWelcomeModalRef = useRef<(show: boolean) => void>(() => {});
   const isInitializingRef = useRef(isInitializing);
@@ -556,6 +557,12 @@ export function AppShell() {
     }
   }, []);
 
+  const handleUserSignInRequested = useCallback(() => {
+    userInitiatedSignInRef.current = true;
+    clearAuthRetryTimer();
+    runAccessCheckRef.current("retry");
+  }, [clearAuthRetryTimer]);
+
   const scheduleAuthRecoveryRetry = useCallback(
     (source: "timeout" | "failure") => {
       if (authRecoveryDisabledRef.current) return;
@@ -603,6 +610,7 @@ export function AppShell() {
       authRecoveryActiveRef.current = false;
       authRecoveryDisabledRef.current = false;
       authRetryQuickAttemptRef.current = 0;
+      userInitiatedSignInRef.current = false;
       setAccessDiagnosticMessage(null);
       setCurrentUser(profile);
       setAuthState("signed_in");
@@ -677,6 +685,12 @@ export function AppShell() {
           online: typeof navigator === "undefined" ? true : navigator.onLine,
           isInitializing: isInitializingRef.current,
         });
+        if (userInitiatedSignInRef.current) {
+          userInitiatedSignInRef.current = false;
+          const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+          window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
+          return;
+        }
         setAuthDegraded(
           "Cloud save is unavailable. Your changes may not be saved. The sign-in check timed out; LinkSim is retrying automatically.",
           "timeout",
@@ -782,6 +796,12 @@ export function AppShell() {
             authRetryQuickAttemptRef.current = 0;
             setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
             setAccessState("readonly");
+            return;
+          }
+          if (userInitiatedSignInRef.current) {
+            userInitiatedSignInRef.current = false;
+            const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+            window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
             return;
           }
           setAuthDegraded(
@@ -1975,6 +1995,7 @@ export function AppShell() {
             hideLibraryBrowsing={isReadOnlyShell}
             onOpenHelp={openOnboardingTutorial}
             onOpenSettings={() => openSettings("profile")}
+            onSignInRequested={handleUserSignInRequested}
             readOnly={!canPersistWorkspace}
             panelToggleControl={
               isMobileViewport ? (
@@ -2191,7 +2212,8 @@ export function AppShell() {
                 authBootstrapPending={accessState === "checking"}
                 hideLibraryBrowsing={isReadOnlyShell}
                 onOpenHelp={openOnboardingTutorial}
-            onOpenSettings={() => openSettings("profile")}
+                onOpenSettings={() => openSettings("profile")}
+                onSignInRequested={handleUserSignInRequested}
                 readOnly={!canPersistWorkspace}
                 panelToggleControl={panelSizeControls("Navigator")}
               />
