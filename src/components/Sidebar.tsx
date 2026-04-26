@@ -243,6 +243,7 @@ const formatMqttSourceMeta = (value: unknown): string[] => {
 type SidebarProps = {
   onOpenHelp?: () => void;
   onOpenSettings?: () => void;
+  onSignInRequested?: () => void;
   hideLibraryBrowsing?: boolean;
   readOnly?: boolean;
   authBootstrapPending?: boolean;
@@ -255,6 +256,7 @@ type SidebarProps = {
 export function Sidebar({
   onOpenHelp,
   onOpenSettings,
+  onSignInRequested,
   hideLibraryBrowsing = false,
   readOnly = false,
   authBootstrapPending = false,
@@ -1896,7 +1898,7 @@ export function Sidebar({
 
   return (
     <aside className={`sidebar-panel ${panelClassName ?? ""}`.trim()}>
-      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} />
+      <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} onSignInRequested={onSignInRequested} />
       <header>
         <div className="sidebar-title-row">
           <h1>{t(locale, "appTitle")}</h1>
