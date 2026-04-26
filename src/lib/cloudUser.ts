@@ -124,28 +124,83 @@ export type CollaboratorDirectoryUser = {
 export type DeepLinkStatus = "ok" | "forbidden" | "missing";
 export type DeepLinkStatusResult = { status: DeepLinkStatus; simulationId?: string; authenticated?: boolean };
 
-const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
+export class CloudApiError extends Error {
+  status: number | null;
+  code: string;
+
+  constructor(message: string, input?: { status?: number | null; code?: string }) {
+    super(message);
+    this.name = "CloudApiError";
+    this.status = input?.status ?? null;
+    this.code = input?.code ?? "api_error";
+  }
+}
+
+type ApiCallInit = RequestInit & {
+  timeoutMs?: number;
+};
+
+const isAbortError = (error: unknown): boolean =>
+  error instanceof DOMException
+    ? error.name === "AbortError" || error.name === "TimeoutError"
+    : error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError" || error.message === "Request timed out");
+
+const apiCall = async <T>(path: string, init?: ApiCallInit): Promise<T> => {
   const headers = new Headers(init?.headers ?? {});
   const hasBody = init?.body !== undefined && init.body !== null;
   if (hasBody && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
   }
-  const response = await fetch(path, {
-    ...init,
-    headers,
-  });
+  const { timeoutMs, signal, ...requestInit } = init ?? {};
+  const timeoutController = timeoutMs !== undefined ? new AbortController() : null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const abortFromParent = () => timeoutController?.abort(signal?.reason);
+  if (timeoutController && signal) {
+    if (signal.aborted) {
+      timeoutController.abort(signal.reason);
+    } else {
+      signal.addEventListener("abort", abortFromParent, { once: true });
+    }
+  }
+  if (timeoutController && timeoutMs !== undefined) {
+    timeoutId = setTimeout(() => timeoutController.abort(new Error("Request timed out")), Math.max(0, timeoutMs));
+  }
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...requestInit,
+      headers,
+      signal: timeoutController?.signal ?? signal,
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new CloudApiError("Request timed out", { code: "timeout" });
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+    if (timeoutController && signal) signal.removeEventListener("abort", abortFromParent);
+  }
   if (!response.ok) {
     const raw = await response.text();
     let message = raw;
+    let code = response.status === 524 ? "server_timeout" : "api_error";
     try {
-      const parsed = JSON.parse(raw) as { error?: unknown };
+      const parsed = JSON.parse(raw) as { error?: unknown; code?: unknown };
       if (typeof parsed.error === "string" && parsed.error.trim()) {
         message = parsed.error.trim();
+      }
+      if (typeof parsed.code === "string" && parsed.code.trim()) {
+        code = parsed.code.trim();
       }
     } catch {
       // Keep raw fallback.
     }
-    throw new Error(`${response.status} ${response.statusText}: ${message}`);
+    throw new CloudApiError(`${response.status} ${response.statusText}: ${message}`, {
+      status: response.status,
+      code,
+    });
   }
   return (await response.json()) as T;
 };
@@ -157,12 +212,12 @@ export const clearMeCache = (): void => {
   meCache = null;
 };
 
-export const fetchMe = async (): Promise<CloudUser> => {
+export const fetchMe = async (input?: { timeoutMs?: number }): Promise<CloudUser> => {
   const now = Date.now();
   if (meCache && now < meCache.expiresAt) {
     return meCache.user;
   }
-  const data = await apiCall<{ user: CloudUser }>("/api/me", { method: "GET" });
+  const data = await apiCall<{ user: CloudUser }>("/api/me", { method: "GET", timeoutMs: input?.timeoutMs });
   meCache = { user: data.user, expiresAt: now + ME_CACHE_TTL_MS };
   return data.user;
 };

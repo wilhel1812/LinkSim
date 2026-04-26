@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, CircleUserRound, CircleX, CloudAlert, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
-import { type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe, setLocalDevRole } from "../lib/cloudUser";
+import { CircleAlert, CircleCheck, CircleX, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
+import { CloudApiError, type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
@@ -37,7 +37,6 @@ import OnboardingTutorialModal from "./OnboardingTutorialModal";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
-import { UserAdminPanel } from "./UserAdminPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
 import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
 import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
@@ -48,7 +47,9 @@ const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
+const ACCESS_FETCH_TIMEOUT_MS = 8_000;
 const ACCESS_CHECKING_NOTICE_ID = "access-checking";
+const AUTH_DEGRADED_NOTICE_ID = "auth-degraded";
 const OFFLINE_SYNC_NOTICE_ID = "offline-sync";
 const BLANK_SIM_NOTICE_ID = "blank-simulation-guidance";
 // Shell vocabulary mapping for cleanup work:
@@ -64,6 +65,7 @@ type AppNotice = {
   message: string;
   tone: "info" | "warning" | "error";
   persistent: boolean;
+  pinned?: boolean;
 };
 
 type NotificationDebugWindow = Window & {
@@ -186,8 +188,6 @@ export function AppShell() {
   const [profileMotionPhase, setProfileMotionPhase] = useState<PanelMotionPhase>("idle");
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
-  // Derived early so effects below can reference them without temporal dead zone.
-  const lockedNeedsSignIn = isAuthSignInRequiredMessage(accessDiagnosticMessage);
   const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
   const [activeUserId, setActiveUserId] = useState("");
   const [settingsRoute, setSettingsRoute] = useState<{ section: SettingsSectionId | null } | null>(() => {
@@ -248,7 +248,6 @@ export function AppShell() {
   const [mobileBottomOccupied, setMobileBottomOccupied] = useState(0);
   const [measuredSidebarWidth, setMeasuredSidebarWidth] = useState(0);
   const [measuredInspectorWidth, setMeasuredInspectorWidth] = useState(0);
-  const [localDevStatus, setLocalDevStatus] = useState<string | null>(null);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
   const [showLibraryFromRequest, setShowLibraryFromRequest] = useState(false);
   const deepLinkAppliedRef = useRef(false);
@@ -336,7 +335,7 @@ export function AppShell() {
     [dismissNotification, dismissingNotificationIds],
   );
   const clearNotifications = useCallback(() => {
-    const next = clearUiNotifications();
+    const next = clearUiNotifications(uiNotificationsRef.current);
     setUiNotifications(next);
     uiNotificationsRef.current = next;
     setPausedNotificationIds([]);
@@ -344,7 +343,7 @@ export function AppShell() {
   }, []);
   const removeNotificationImmediately = useCallback((id: string) => {
     setUiNotifications((current) => {
-      const next = dismissUiNotification(current, id);
+      const next = dismissUiNotification(current, id, { force: true });
       uiNotificationsRef.current = next;
       return next;
     });
@@ -370,6 +369,7 @@ export function AppShell() {
       message: notice.message,
       tone: notice.tone,
       dismissMode: notice.persistent ? "manual" : "auto",
+      pinned: notice.pinned,
     });
   }, [pushNotification]);
   const publishTransientNotice = useCallback(
@@ -543,11 +543,11 @@ export function AppShell() {
         isInitializing,
       });
       setAccessDiagnosticMessage(
-        "Access check timed out. Reload the page. If this continues, open the console and share the startup error.",
+        "Cloud save is unavailable. Your changes may not be saved. The sign-in check timed out; reload or sign in again when the service recovers.",
       );
       setCurrentUser(null);
       setAuthState("signed_out");
-      setAccessState("locked");
+      setAccessState("readonly");
     }, ACCESS_CHECK_TIMEOUT_MS);
 
     console.info("[AppShell] Starting access check", {
@@ -593,7 +593,7 @@ export function AppShell() {
             return;
           }
         }
-        const profile = await fetchMe();
+        const profile = await fetchMe({ timeoutMs: ACCESS_FETCH_TIMEOUT_MS });
         if (cancelled || timedOut) return;
         window.clearTimeout(timeoutId);
         setAccessDiagnosticMessage(null);
@@ -610,7 +610,10 @@ export function AppShell() {
           // ignore storage errors
         }
         if (profile.accountState === "revoked") {
-          setAccessState("locked");
+          setAccessDiagnosticMessage(
+            "Account access is unavailable. Your changes may not be saved. Sign in again or contact an admin if you need access restored.",
+          );
+          setAccessState("readonly");
           return;
         }
         if (profile.isAdmin || profile.isModerator || profile.isApproved) {
@@ -621,11 +624,17 @@ export function AppShell() {
           setAccessState("readonly");
           return;
         }
-        setAccessState("pending");
+        setAccessDiagnosticMessage(
+          "Account approval is pending. Your changes may not be saved until a moderator or admin approves access.",
+        );
+        setAccessState("readonly");
       } catch (error) {
         if (cancelled || timedOut) return;
         window.clearTimeout(timeoutId);
         const message = getUiErrorMessage(error);
+        const isServerTimeout =
+          error instanceof CloudApiError &&
+          (error.code === "timeout" || error.code === "server_timeout" || error.code === "auth_timeout" || error.status === 524);
         const isOnlineNow = typeof navigator === "undefined" ? true : navigator.onLine;
         const fallbackToReadonly = shouldUseReadonlyFallbackForAuthBootstrap({
           message,
@@ -650,14 +659,20 @@ export function AppShell() {
             fallbackToReadonly,
           });
         }
-        setAccessDiagnosticMessage(`Access check failed: ${message}`);
+        setAccessDiagnosticMessage(
+          isServerTimeout
+            ? "Cloud save is unavailable. Your changes may not be saved. The sign-in service timed out; reload or sign in again when it recovers."
+            : `Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving. (${message})`,
+        );
         const hadAuthenticatedSession = hadAuthenticatedSessionRef.current;
         if (hadAuthenticatedSession) {
           setCurrentUser(null);
           setAuthState("signed_out");
         }
         if (message.includes("Session revoked by admin")) {
-          window.location.href = "/cdn-cgi/access/logout";
+          setCurrentUser(null);
+          setAuthState("signed_out");
+          setAccessState("readonly");
           return;
         }
         if (deepLinkParse.ok) {
@@ -666,8 +681,8 @@ export function AppShell() {
         }
         if (fallbackToReadonly) {
           if (hadAuthenticatedSession) {
-            setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
-            setAccessState("locked");
+            setAccessDiagnosticMessage("Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving.");
+            setAccessState("readonly");
           } else {
             setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
             setAccessState("readonly");
@@ -676,14 +691,14 @@ export function AppShell() {
         }
         if (isAuthSignInRequiredMessage(message)) {
           if (hadAuthenticatedSession) {
-            setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
-            setAccessState("locked");
+            setAccessDiagnosticMessage("Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving.");
+            setAccessState("readonly");
           } else {
             setAccessState("readonly");
           }
           return;
         }
-        setAccessState("locked");
+        setAccessState("readonly");
       }
     })();
     return () => {
@@ -696,9 +711,23 @@ export function AppShell() {
     if (authState !== "signed_out") return;
     if (accessState === "checking") return;
     if (!hadAuthenticatedSessionRef.current) return;
-    setAccessDiagnosticMessage("You are signed out. Sign in to continue.");
-    setAccessState("locked");
+    setAccessDiagnosticMessage("Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving.");
+    setAccessState("readonly");
   }, [accessState, authState]);
+
+  useEffect(() => {
+    if (!accessDiagnosticMessage) {
+      removeNotificationImmediately(AUTH_DEGRADED_NOTICE_ID);
+      return;
+    }
+    pushNotification({
+      id: AUTH_DEGRADED_NOTICE_ID,
+      message: accessDiagnosticMessage,
+      tone: "error",
+      dismissMode: "manual",
+      pinned: true,
+    });
+  }, [accessDiagnosticMessage, pushNotification, removeNotificationImmediately]);
 
   useEffect(() => {
     if (accessState === "granted") {
@@ -722,59 +751,10 @@ export function AppShell() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAnonymousGuestReadonly, deepLinkParse.ok]);
 
-  const signOutOrReadonly = useCallback(() => {
-    setCurrentUser(null);
-    setAuthState("signed_out");
-    hadAuthenticatedSessionRef.current = true;
-    if (isLocalRuntime) {
-      try {
-        localStorage.setItem(LOCAL_FORCE_READONLY_KEY, "1");
-      } catch {
-        // ignore storage errors
-      }
-      window.location.reload();
-      return;
-    }
-    if (deepLinkParse.ok) {
-      window.location.reload();
-      return;
-    }
-    window.location.href = "/cdn-cgi/access/logout";
-  }, [deepLinkParse.ok, isLocalRuntime, setAuthState, setCurrentUser]);
-
-  const signIn = useCallback(() => {
-    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
-  }, []);
-
-  const switchLocalRole = useCallback(
-    async (role: "admin" | "moderator" | "user" | "pending") => {
-      try {
-        setLocalDevStatus(`Switching local role to ${role}...`);
-        await setLocalDevRole(role);
-        try {
-          localStorage.removeItem(LOCAL_FORCE_READONLY_KEY);
-        } catch {
-          // ignore storage errors
-        }
-        window.location.reload();
-      } catch (error) {
-        const message = getUiErrorMessage(error);
-        setLocalDevStatus(`Local role switch failed: ${message}`);
-        publishAppNotice({
-          id: "local-role-switch-failed",
-          message: `Local role switch failed: ${message}`,
-          tone: "error",
-          persistent: true,
-        });
-      }
-    },
-    [publishAppNotice],
-  );
-
   useEffect(() => {
     const timers: number[] = [];
     for (const notification of uiNotifications) {
+      if (notification.pinned) continue;
       if (notification.dismissMode !== "auto") continue;
       if (pausedNotificationIds.includes(notification.id)) continue;
       timers.push(window.setTimeout(() => requestDismissNotification(notification.id, "auto"), notification.durationMs));
@@ -1817,109 +1797,6 @@ export function AppShell() {
     [mobileBottomPanelMode, setMobileBottomPanelVisibility],
   );
 
-  if (accessState === "pending") {
-    return (
-      <main className="app-shell access-locked-shell">
-        <section className="panel-section access-locked-panel">
-          <UserAdminPanel onOpenSettings={() => openSettings("profile")} />
-          <h2>Closed Beta: Access Pending Approval</h2>
-          <p className="field-help">
-            You can sign in and edit your profile, but simulation tools stay locked until a moderator or admin approves your access.
-          </p>
-          <p className="field-help">LinkSim is currently invite/approval-only while we run a closed beta.</p>
-          <p className="field-help">To continue:</p>
-          <ul className="field-help access-pending-list">
-            <li>Open User Settings.</li>
-            <li>Add your name and valid email address.</li>
-            <li>Optionally add an access request note to explain why you need access.</li>
-            <li>Wait for moderator/admin approval. You will keep profile access while pending.</li>
-          </ul>
-          {isLocalRuntime ? (
-            <div className="chip-group">
-              <ActionButton onClick={() => void switchLocalRole("admin")} type="button">
-                Use Admin (Local)
-              </ActionButton>
-              <ActionButton onClick={() => void switchLocalRole("moderator")} type="button">
-                Use Moderator (Local)
-              </ActionButton>
-              <ActionButton onClick={() => void switchLocalRole("user")} type="button">
-                Use User (Local)
-              </ActionButton>
-              <ActionButton onClick={() => void switchLocalRole("pending")} type="button">
-                Use Pending (Local)
-              </ActionButton>
-            </div>
-          ) : null}
-           {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
-        </section>
-        <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
-        <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
-      </main>
-    );
-  }
-
-  if (accessState === "locked") {
-    const shouldPromptSignIn = lockedNeedsSignIn || authState === "signed_out";
-    return (
-      <main className="app-shell access-locked-shell">
-        <section className="panel-section access-locked-panel">
-          {shouldPromptSignIn ? (
-            <div className="access-locked-alert-icon sync-error" aria-hidden="true">
-              <CloudAlert strokeWidth={1.8} />
-            </div>
-          ) : null}
-          <h2>{shouldPromptSignIn ? "Signed out" : "Access unavailable"}</h2>
-          {accessDiagnosticMessage ? <p className="field-help">{accessDiagnosticMessage}</p> : null}
-          {shouldPromptSignIn ? (
-            <p className="field-help">Sign in again to continue where you left off.</p>
-          ) : (
-            <>
-              <p className="field-help">
-                Your account session is valid, but this account is not available in LinkSim right now.
-              </p>
-              <p className="field-help">
-                If your user was removed by an admin, ask for re-approval. Then sign out and sign in again.
-              </p>
-            </>
-          )}
-          <div className="chip-group">
-          {shouldPromptSignIn ? (
-              <>
-                <ActionButton onClick={signIn} type="button">
-                  <CircleUserRound aria-hidden="true" strokeWidth={1.8} />
-                  <span>Sign In</span>
-                </ActionButton>
-              </>
-            ) : (
-              <ActionButton onClick={signOutOrReadonly} type="button">
-                Sign Out
-              </ActionButton>
-            )}
-            {isLocalRuntime ? (
-              <>
-                <ActionButton onClick={() => void switchLocalRole("admin")} type="button">
-                  Use Admin (Local)
-                </ActionButton>
-                <ActionButton onClick={() => void switchLocalRole("moderator")} type="button">
-                  Use Moderator (Local)
-                </ActionButton>
-                <ActionButton onClick={() => void switchLocalRole("user")} type="button">
-                  Use User (Local)
-                </ActionButton>
-                <ActionButton onClick={() => void switchLocalRole("pending")} type="button">
-                  Use Pending (Local)
-                </ActionButton>
-              </>
-            ) : null}
-          </div>
-          {localDevStatus ? <p className="field-help">{localDevStatus}</p> : null}
-        </section>
-        <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
-        <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
-      </main>
-    );
-  }
-
   return (
     <main
       ref={appShellRef}
@@ -2233,24 +2110,26 @@ export function AppShell() {
                 <div className="app-notification-copy">
                   <span>{notification.message}</span>
                 </div>
-                <button
-                  aria-label="Dismiss notification"
-                  className="app-notification-dismiss"
-                  onClick={() => {
-                    if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
-                      setOfflineBannerDismissed(true);
-                    }
-                    requestDismissNotification(notification.id, "manual");
-                  }}
-                  title="Dismiss"
-                  type="button"
-                >
-                  <X aria-hidden="true" size={14} strokeWidth={2} />
-                </button>
+                {notification.pinned ? null : (
+                  <button
+                    aria-label="Dismiss notification"
+                    className="app-notification-dismiss"
+                    onClick={() => {
+                      if (notification.id === OFFLINE_SYNC_NOTICE_ID) {
+                        setOfflineBannerDismissed(true);
+                      }
+                      requestDismissNotification(notification.id, "manual");
+                    }}
+                    title="Dismiss"
+                    type="button"
+                  >
+                    <X aria-hidden="true" size={14} strokeWidth={2} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
-          {uiNotifications.length >= DISMISS_ALL_THRESHOLD ? (
+          {uiNotifications.filter((notification) => !notification.pinned).length >= DISMISS_ALL_THRESHOLD ? (
             <div className="app-notification-stack-controls">
               <ActionButton onClick={clearNotifications} type="button">
                 Dismiss all
