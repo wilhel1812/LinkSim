@@ -17,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const returnTo = sanitizeReturnTo(url.searchParams.get("returnTo"), url.origin);
   const redirectUrl = `${url.origin}${returnTo}`;
-  const teamDomain = env.ACCESS_TEAM_DOMAIN;
+  const teamDomain = env?.ACCESS_TEAM_DOMAIN;
   if (teamDomain) {
     return Response.redirect(
       `https://${teamDomain}/cdn-cgi/access/login?redirect_url=${encodeURIComponent(redirectUrl)}`,
