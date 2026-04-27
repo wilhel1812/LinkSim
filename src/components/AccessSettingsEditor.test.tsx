@@ -98,6 +98,9 @@ describe("AccessSettingsEditor", () => {
 
     const remove = within(popover).getByRole("button", { name: "Remove Alice" });
     expect(remove).toHaveAttribute("title", "Remove Alice");
+    expect(remove).toHaveClass("btn-icon");
+    expect(remove).not.toHaveClass("inline-action");
+    expect(remove).not.toHaveClass("inline-action-icon");
     await userEvent.click(remove);
     expect(onRemoveCollaborator).toHaveBeenCalledWith("user-1");
 
