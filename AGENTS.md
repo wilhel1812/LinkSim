@@ -84,7 +84,8 @@
   - If code changes after staging verification, rerun local verification and redeploy staging before production.
   - Normal production promotion PR must be `staging` -> `main`.
   - Hotfix promotion PR may be `hotfix/<slug>` -> `main` only with explicit user approval in-thread.
-- **After any hotfix merges to main**: immediately create a `chore/sync-main-to-staging` branch from `origin/staging`, run `git merge origin/main -X ours --no-edit`, PR into `staging`, merge, and redeploy staging. Do not start new feature work until staging is back in sync. The `detect-staging-drift` workflow will open a GitHub Issue as a reminder if this is missed.
+- Normal squash-merged `staging` -> `main` production releases are not staging drift; the release content already came from `staging`, even though the squash commit is not in staging ancestry.
+- **After any hotfix merges to main**: immediately create a `chore/sync-main-to-staging` branch from `origin/staging`, apply the main-only hotfix/reconcile content in commits that can be squash-merged, PR into `staging`, merge, and let CI redeploy staging. Do not start new feature work until staging is back in sync. The `detect-staging-drift` workflow will open a GitHub Issue as a reminder if this is missed.
 - **Release-reconcile fallback rule**: if production promotion cannot be completed via direct `staging` -> `main` and uses a `hotfix/*` snapshot/reconcile PR instead, the same pass is not complete until `main` is synced back into `staging`, staging is redeployed, and the drift issue is closed.
 - Local run reliability:
   - Restart local server whenever runtime/config/env changes can affect behavior.
@@ -125,7 +126,8 @@
   - Run and report: `git log --oneline origin/staging -5`
   - Run and report: `git log --oneline origin/main -5`
   - Run and report: `git cherry -v origin/staging origin/main`
-  - If drift exists, create a dedicated `chore/reconcile-...` PR before feature work.
+  - If `git cherry` only reports the latest normal squash-merged `staging` -> `main` production release commit, treat it as expected ancestry-only drift and proceed.
+  - If new main-only hotfix/reconcile content appears, create a dedicated `chore/sync-main-to-staging` PR before feature work.
 - Verification gates for deep-link/API-affecting work:
   - `npm run test -- --run src/lib/deepLink.test.ts`
   - `npm run test -- --run functions/api/v1/calculate.test.ts`
