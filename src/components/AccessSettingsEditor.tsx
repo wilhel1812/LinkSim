@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { CollaboratorDirectoryUser } from "../lib/cloudUser";
+import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
 import { FloatingPopover } from "./ui/FloatingPopover";
 
@@ -115,16 +116,15 @@ export function AccessSettingsEditor({
               <span className="field-help access-collaborators-empty">No collaborators</span>
             )}
           </div>
-          <button
+          <ActionButton
             aria-label="Edit collaborators"
-            className="inline-action action-button"
             ref={triggerRef}
             disabled={disabled}
             onClick={() => setPopoverOpen((open) => !open)}
             type="button"
           >
             Edit
-          </button>
+          </ActionButton>
         </div>
       </div>
       <FloatingPopover
