@@ -217,6 +217,37 @@ describe("MapView user location flow", () => {
     expect(screen.queryByText("New Site")).not.toBeInTheDocument();
   });
 
+  it("explains why library sites cannot be added in read-only mode", () => {
+    useAppStore.setState({
+      siteLibrary: [
+        {
+          id: "lib-alpha",
+          name: "Library Alpha",
+          visibility: "shared",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "viewer",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    });
+    renderMapView({ canPersist: false, readOnly: true, showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    fireEvent.change(screen.getByLabelText("Visible Sites"), { target: { value: "library" } });
+    fireEvent.click(screen.getByRole("button", { name: "Library Alpha" }));
+
+    expect(screen.queryByRole("button", { name: "Add to Simulation" })).not.toBeInTheDocument();
+    expect(screen.getByText("Read-only: you need edit permission to add sites to this simulation.")).toBeInTheDocument();
+  });
+
   it("publishes plain location failure notifications", () => {
     const onPublishNotice = vi.fn();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
