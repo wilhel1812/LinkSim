@@ -27,6 +27,9 @@
   --panel-header-row-padding-bottom: 9px;
   --panel-action-row-gap: 8px;
   --panel-action-row-min-height: 34px;
+  --font-ui: "Space Grotesk", "Avenir Next", sans-serif;
+  --font-heading: var(--font-ui);
+  --font-mono: "IBM Plex Mono", monospace;
   --radius-pill: 999px;
   --radius-card: 12px;
   --radius-btn:  8px;
@@ -70,7 +73,7 @@ body {
     ),
     var(--bg);
   color: var(--text);
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-family: var(--font-ui);
 }
 
 body::before {
@@ -325,7 +328,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-family: var(--font-ui);
   max-height: calc(100vh - 36px);
   overflow: auto;
   transition: opacity 350ms ease-out, transform 350ms ease-out, box-shadow 350ms ease-out;
@@ -563,7 +566,7 @@ button {
   border-radius: var(--radius-btn);
   padding: 6px 8px;
   text-align: right;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .gain-mode-toggle input {
@@ -645,7 +648,7 @@ button {
 .site-row-meta {
   color: var(--muted);
   font-size: 0.76rem;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .subtle-note {
@@ -685,7 +688,7 @@ button {
 .link-subtitle {
   color: var(--muted);
   font-size: 0.82rem;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .endpoint-summary {
@@ -695,7 +698,7 @@ button {
   padding: 8px 10px;
   font-size: 0.82rem;
   color: var(--text);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -808,7 +811,7 @@ button {
 }
 
 .metric-value {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   font-weight: 500;
 }
 
@@ -1330,7 +1333,7 @@ button {
   box-shadow: var(--shadow-elev-3);
   font-size: 0.75rem;
   position: relative;
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-family: var(--font-ui);
   color: color-mix(in srgb, var(--text) var(--surface-pill-foreground-opacity), transparent);
 }
 
@@ -1506,7 +1509,7 @@ button {
   padding: 18px;
   gap: 0;
   font-size: 0.76rem;
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-family: var(--font-ui);
 }
 
 .panel-size-controls {
@@ -2120,7 +2123,7 @@ button {
   flex: 1 1 auto;
   color: var(--muted);
   font-size: 0.78rem;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .chart-endpoint {
@@ -2285,7 +2288,7 @@ button {
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 700;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   flex: 0 0 auto;
 }
 
@@ -2294,7 +2297,7 @@ button {
   text-align: right;
   font-size: 0.72rem;
   color: var(--text);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   flex: 0 0 auto;
 }
 
@@ -2520,7 +2523,7 @@ button {
 
 .ui-settings-row-slider-value {
   font-size: 0.72rem;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   color: var(--muted);
   flex: 0 0 auto;
   min-width: 36px;
@@ -2590,7 +2593,7 @@ button {
   font-size: 0.66rem;
   line-height: 1.2;
   color: var(--muted);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   text-align: center;
 }
 
@@ -2611,7 +2614,7 @@ button {
   gap: 2px;
   font-size: 0.62rem;
   line-height: 1;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
   color: var(--text);
 }
@@ -2777,7 +2780,7 @@ html.panorama-gesture-lock body {
   font-size: 12px;
   font-weight: 500;
   text-anchor: middle;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .chart-grid text:first-of-type {
@@ -2914,7 +2917,7 @@ html.panorama-gesture-lock body {
 
 .panorama-label-text {
   font-size: 0.64rem;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
   dominant-baseline: hanging;
   text-anchor: middle;
   fill: color-mix(in srgb, var(--text) 88%, var(--surface) 12%);
@@ -3312,7 +3315,7 @@ html.panorama-gesture-lock body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-family: var(--font-ui);
   font-size: 0.82rem;
   font-weight: 600;
   line-height: 1.1;
@@ -3677,7 +3680,7 @@ html.panorama-gesture-lock body {
 .user-field-grid input,
 .user-field-grid textarea {
   text-align: left;
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-family: var(--font-ui);
 }
 
 .checkbox-field {
@@ -3700,7 +3703,7 @@ html.panorama-gesture-lock body {
   padding: 8px;
   min-height: 88px;
   resize: vertical;
-  font-family: "Space Grotesk", "Avenir Next", sans-serif;
+  font-family: var(--font-ui);
 }
 
 .collaborator-picker-grid {
@@ -4402,7 +4405,7 @@ html.panorama-gesture-lock body {
   border-radius: var(--radius-btn);
   padding: 8px 10px;
   font-size: 0.82rem;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .margin-status.is-pass {
@@ -4427,7 +4430,7 @@ html.panorama-gesture-lock body {
   gap: 8px;
   padding: 7px 10px;
   font-size: 0.76rem;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .whatif-row:nth-child(even) {
@@ -4549,7 +4552,7 @@ html.panorama-gesture-lock body {
 .ui-pattern-source {
   font-size: 0.65rem;
   color: var(--muted);
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .ui-pattern-grid-theme {
@@ -4618,7 +4621,7 @@ html.panorama-gesture-lock body {
   flex: 0 0 180px;
   font-size: 0.65rem;
   color: var(--muted);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   text-align: right;
   padding-right: 4px;
   line-height: 1.3;
