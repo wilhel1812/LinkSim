@@ -2,7 +2,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { AuthContext, Env } from "./types";
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-const DEFAULT_AUTH_VERIFY_TIMEOUT_MS = 8_000;
+const DEFAULT_AUTH_VERIFY_TIMEOUT_MS = 30_000;
 
 export class AuthVerificationTimeoutError extends Error {
   constructor() {
