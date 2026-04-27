@@ -605,6 +605,7 @@ const USER_LOCATION_WATCH_OPTIONS: PositionOptions = {
   timeout: 15_000,
 };
 const USER_LOCATION_NOTICE_ID = "user-location";
+const READ_ONLY_SIMULATION_SITE_HELP = "Read-only: you need edit permission to add sites to this simulation.";
 
 const userLocationErrorMessage = (error: GeolocationPositionError): string => {
   if (error.code === error.PERMISSION_DENIED) return "Location permission was denied.";
@@ -2346,7 +2347,7 @@ export function MapView({
 
   const addDiscoveryLibrarySiteToSimulation = (entryId: string) => {
     if (!canPersist) {
-      setSiteDraftStatus("Read-only mode: cannot add library sites to this simulation.");
+      setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_HELP);
       return;
     }
     if (sites.some((site) => site.libraryEntryId === entryId)) {
@@ -2558,9 +2559,12 @@ export function MapView({
   if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
   if (showDiscoverySites) {
     inspectorLines.push(
-      `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`,
+      canPersist
+        ? `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`
+        : `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect it.`,
     );
   }
+  if (selectedDiscoveryLibraryEntry && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_HELP);
   if (showDiscoveryMqtt && !mqttLoadStatus) {
     inspectorLines.push(
       mqttTooDenseInView

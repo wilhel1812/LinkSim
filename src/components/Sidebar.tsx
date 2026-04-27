@@ -93,6 +93,7 @@ const parseNumber = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+const READ_ONLY_SIMULATION_SITE_HELP = "Read-only: you need edit permission to add sites to this simulation.";
 
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
@@ -1975,7 +1976,7 @@ export function Sidebar({
               <ActionButton onClick={() => setShowSiteLibraryManager(true)} type="button">
                 Library
               </ActionButton>
-              {newestSiteLibraryEntryId ? (
+              {newestSiteLibraryEntryId && !readOnly ? (
                 <ActionButton onClick={() => insertSiteFromLibrary(newestSiteLibraryEntryId)} type="button">
                   Insert newest
                 </ActionButton>
@@ -2003,6 +2004,7 @@ export function Sidebar({
             </ActionButton>
           ) : null}
         </div>
+        {!hideLibraryBrowsing && readOnly ? <p className="field-help">{READ_ONLY_SIMULATION_SITE_HELP}</p> : null}
       </section>
 
       <section className="panel-section section-path">
@@ -3919,9 +3921,13 @@ export function Sidebar({
                     );
                   })()}
                   <div className="library-row-actions">
-                    <ActionButton onClick={() => insertSiteFromLibrary(entry.id)} type="button">
-                      Add to simulation
-                    </ActionButton>
+                    {readOnly ? (
+                      <span className="field-help">{READ_ONLY_SIMULATION_SITE_HELP}</span>
+                    ) : (
+                      <ActionButton onClick={() => insertSiteFromLibrary(entry.id)} type="button">
+                        Add to simulation
+                      </ActionButton>
+                    )}
                     <ActionButton
                       onClick={() =>
                         openResourceDetailsPopup({
