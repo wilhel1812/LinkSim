@@ -126,33 +126,12 @@
 - Issue branches must be created from latest `origin/staging`.
 - PRs into `staging` or `main` must be up-to-date with the base branch before merge.
 - Never promote from `issue/*` or `chore/*` directly into `main`.
+- Normal squash-merged `staging` -> `main` production releases are not staging drift. The release content already came from `staging`, even though the squash commit is not in staging ancestry.
 - After any `hotfix/*` merge into `main` (including release-reconcile fallback), immediately:
   1. create `chore/sync-main-to-staging` from `origin/staging`
-  2. `git merge origin/main -X ours --no-edit`
+  2. apply the main-only hotfix/reconcile content in commits that can be squash-merged
   3. PR and merge into `staging`
-  4. `npm run deploy:staging` and verify deployment
-  5. close the drift issue
-
-## Drift prevention rules
-- Issue branches must be created from latest `origin/staging`.
-- PRs into `staging` or `main` must be up-to-date with the base branch before merge.
-- Never promote from `issue/*` or `chore/*` directly into `main`.
-- After any `hotfix/*` merge into `main` (including release-reconcile fallback), immediately:
-  1. create `chore/sync-main-to-staging` from `origin/staging`
-  2. `git merge origin/main -X ours --no-edit`
-  3. PR and merge into `staging`
-  4. `npm run deploy:staging` and verify deployment
-  5. close the drift issue
-
-## Drift prevention rules
-- Issue branches must be created from latest `origin/staging`.
-- PRs into `staging` or `main` must be up-to-date with the base branch before merge.
-- Never promote from `issue/*` or `chore/*` directly into `main`.
-- After any `hotfix/*` merge into `main` (including release-reconcile fallback), immediately:
-  1. create `chore/sync-main-to-staging` from `origin/staging`
-  2. `git merge origin/main -X ours --no-edit`
-  3. PR and merge into `staging`
-  4. `npm run deploy:staging` and verify deployment
+  4. let CI deploy staging and verify deployment
   5. close the drift issue
 
 ## Deploy Targets Reference
