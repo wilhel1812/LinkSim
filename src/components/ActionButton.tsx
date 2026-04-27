@@ -5,6 +5,7 @@ import { Button } from "./ui/Button";
 type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
   variant?: "default" | "danger";
+  size?: "default" | "icon";
 };
 
 export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(({ variant = "default", ...props }, ref) => (

@@ -190,16 +190,17 @@ export function AccessSettingsEditor({
                       <option value="viewer">Viewer</option>
                       <option value="editor">Editor</option>
                     </select>
-                    <button
+                    <ActionButton
                       aria-label={`Remove ${label}`}
-                      className="inline-action inline-action-icon access-collaborator-remove"
+                      className="access-collaborator-remove"
                       disabled={disabled}
                       onClick={() => onRemoveCollaborator(user.id)}
+                      size="icon"
                       title={`Remove ${label}`}
                       type="button"
                     >
                       <Trash2 aria-hidden="true" size={14} strokeWidth={2} />
-                    </button>
+                    </ActionButton>
                   </div>
                 );
               })
