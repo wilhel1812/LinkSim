@@ -263,15 +263,18 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   }, [selectedSite, siteDragPreview]);
 
   const nodeCandidates = useMemo<PanoramaNodeCandidate[]>(() => {
-    const simulation = sites.map((site) => ({
-      id: `sim:${site.id}`,
-      name: site.name,
-      lat: site.position.lat,
-      lon: site.position.lon,
-      groundElevationM: site.groundElevationM,
-      antennaHeightM: site.antennaHeightM,
-      rxGainDbi: site.rxGainDbi,
-    }));
+    const povSiteId = selectedSiteEffective?.id;
+    const simulation = sites
+      .filter((site) => site.id !== povSiteId)
+      .map((site) => ({
+        id: `sim:${site.id}`,
+        name: site.name,
+        lat: site.position.lat,
+        lon: site.position.lon,
+        groundElevationM: site.groundElevationM,
+        antennaHeightM: site.antennaHeightM,
+        rxGainDbi: site.rxGainDbi,
+      }));
 
     const libraryById = new Set(simulation.map((entry) => entry.id.replace("sim:", "")));
     const sharedLibrary = discoveryLibraryVisible
@@ -301,7 +304,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       : [];
 
     return [...simulation, ...sharedLibrary, ...mqtt];
-  }, [sites, siteLibrary, mqttNodes, discoveryLibraryVisible, discoveryMqttVisible]);
+  }, [sites, siteLibrary, mqttNodes, discoveryLibraryVisible, discoveryMqttVisible, selectedSiteEffective]);
 
   useEffect(() => {
     setPinnedTarget(null);
