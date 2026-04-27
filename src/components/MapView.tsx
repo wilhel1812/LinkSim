@@ -793,6 +793,7 @@ export function MapView({
   const userLocationWatchIdRef = useRef<number | null>(null);
   const isUserLocationActiveRef = useRef(false);
   const isUserLocationFollowingRef = useRef(false);
+  const clearFitControlActiveRef = useRef<() => void>(() => undefined);
   const panoramaLensBaseViewRef = useRef<{
     center: { lat: number; lon: number };
     zoom: number;
@@ -832,6 +833,7 @@ export function MapView({
     }
     isUserLocationActiveRef.current = true;
     isUserLocationFollowingRef.current = true;
+    clearFitControlActiveRef.current();
     setIsUserLocationActive(true);
     setUserLocationFix(null);
     try {
@@ -2471,6 +2473,13 @@ export function MapView({
     setInteractionViewState,
     updateMapViewport,
   });
+  clearFitControlActiveRef.current = clearFitControlActive;
+  const handleFitToNodes = () => {
+    if (isUserLocationActiveRef.current && isUserLocationFollowingRef.current) {
+      isUserLocationFollowingRef.current = false;
+    }
+    fitToNodes();
+  };
   useEffect(() => {
     if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
     const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
@@ -2592,7 +2601,7 @@ export function MapView({
           <MapControlButton
             aria-label="Fit map to sites"
             isSelected={fitControlActive}
-            onClick={fitToNodes}
+            onClick={handleFitToNodes}
             title="Fit"
           >
             <Fullscreen aria-hidden="true" strokeWidth={1.8} />

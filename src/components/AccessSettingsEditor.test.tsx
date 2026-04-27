@@ -58,7 +58,12 @@ describe("AccessSettingsEditor", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Edit collaborators" }));
+    const editCollaborators = screen.getByRole("button", { name: "Edit collaborators" });
+    expect(editCollaborators).toHaveClass("btn");
+    expect(editCollaborators).not.toHaveClass("inline-action");
+    expect(editCollaborators).not.toHaveClass("action-button");
+
+    await userEvent.click(editCollaborators);
     const popover = await screen.findByRole("dialog", { name: "Edit collaborators" });
     const surface = popover.closest(".ui-surface-pill");
     expect(surface).toHaveClass("ui-surface-pill");

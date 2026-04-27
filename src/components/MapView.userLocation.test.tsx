@@ -162,6 +162,31 @@ describe("MapView user location flow", () => {
     expect(screen.getByRole("button", { name: /User location/i })).not.toHaveClass("map-site-surface");
   });
 
+  it("turns off fit when location starts and keeps tracking without following after manual fit", () => {
+    renderMapView();
+    const fitControl = screen.getByRole("button", { name: "Fit map to sites" });
+    expect(fitControl).toHaveClass("is-selected");
+
+    fireEvent.click(screen.getByRole("button", { name: "Use my location" }));
+    expect(fitControl).not.toHaveClass("is-selected");
+    const success = watchPosition.mock.calls[0]?.[0] as PositionCallback;
+
+    act(() => {
+      success(position(60.12345, 11.23456, 18));
+    });
+    expect(mapMock.easeTo).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(fitControl);
+    expect(fitControl).toHaveClass("is-selected");
+
+    act(() => {
+      success(position(62, 13, 24, 2));
+    });
+
+    expect(mapMock.easeTo).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: /User location/i })).toHaveClass("user-location-marker");
+  });
+
   it("reuses the existing temporary site draft path when the marker is clicked", () => {
     renderMapView();
     fireEvent.click(screen.getByRole("button", { name: "Use my location" }));
