@@ -72,7 +72,9 @@ describe("AccessSettingsEditor", () => {
     expect(within(popover).queryByRole("button", { name: /Add Alice/i })).not.toBeInTheDocument();
 
     await userEvent.type(within(popover).getByLabelText("Search users"), "ali");
-    expect(await within(popover).findByRole("button", { name: /Add Alice/i })).toBeInTheDocument();
+    const addAlice = await within(popover).findByRole("button", { name: /Add Alice/i });
+    expect(addAlice).toBeInTheDocument();
+    expect(within(addAlice).getByText("Add")).not.toHaveClass("inline-action");
   });
 
   it("adds, removes, and changes roles with accessible controls", async () => {

@@ -166,7 +166,7 @@ export function AccessSettingsEditor({
                   >
                     <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
                     <span className="field-help">{user.email}</span>
-                    <span className="inline-action">Add</span>
+                    <span className="field-help">Add</span>
                   </button>
                 ))
               ) : (
