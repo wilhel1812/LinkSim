@@ -93,7 +93,8 @@ const parseNumber = (value: string): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
-const READ_ONLY_SIMULATION_SITE_HELP = "Read-only: you need edit permission to add sites to this simulation.";
+const READ_ONLY_SIMULATION_SITE_HELP =
+  "Read-only: you need edit permission to add or edit sites in this simulation.";
 
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
@@ -1981,9 +1982,11 @@ export function Sidebar({
                   Insert newest
                 </ActionButton>
               ) : null}
-              <ActionButton onClick={openLibraryForSelectedSite} type="button">
-                Edit
-              </ActionButton>
+              {!readOnly ? (
+                <ActionButton onClick={openLibraryForSelectedSite} type="button">
+                  Edit
+                </ActionButton>
+              ) : null}
             </>
           ) : null}
           {!readOnly ? (
