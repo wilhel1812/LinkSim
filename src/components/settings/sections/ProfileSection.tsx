@@ -10,11 +10,12 @@ import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicato
 type ProfileSectionProps = {
   me: CloudUser | null;
   onMeUpdated: (user: CloudUser) => void;
+  onSignOut?: () => void;
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function ProfileSection({ me, onMeUpdated }: ProfileSectionProps) {
+export function ProfileSection({ me, onMeUpdated, onSignOut }: ProfileSectionProps) {
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const setAuthState = useAppStore((state) => state.setAuthState);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -200,6 +201,14 @@ export function ProfileSection({ me, onMeUpdated }: ProfileSectionProps) {
           />
         </div>
       </div>
+
+      {onSignOut ? (
+        <div className="settings-section-footer">
+          <button className="btn-ghost btn-danger" onClick={onSignOut} type="button">
+            Sign out
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
