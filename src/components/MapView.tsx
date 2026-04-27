@@ -606,6 +606,8 @@ const USER_LOCATION_WATCH_OPTIONS: PositionOptions = {
 };
 const USER_LOCATION_NOTICE_ID = "user-location";
 const READ_ONLY_SIMULATION_SITE_HELP = "Read-only: you need edit permission to add sites to this simulation.";
+const READ_ONLY_SIMULATION_SITE_EDIT_HELP =
+  "Read-only: you need edit permission to move or edit sites in this simulation.";
 
 const userLocationErrorMessage = (error: GeolocationPositionError): string => {
   if (error.code === error.PERMISSION_DENIED) return "Location permission was denied.";
@@ -2158,6 +2160,10 @@ export function MapView({
 
   const savePendingSiteMove = () => {
     if (!pendingMoveCount) return;
+    if (!canPersist) {
+      setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
+      return;
+    }
     for (const move of pendingMoveEntries) {
       updateSite(move.siteId, {
         position: move.currentPosition,
@@ -2194,6 +2200,10 @@ export function MapView({
   };
 
   const onSiteDrag = (siteId: string, event: MarkerDragEvent) => {
+    if (!canPersist) {
+      setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
+      return;
+    }
     if (pendingNewSiteDraft) {
       setSiteDraftStatus("Dismiss or save the new map site before moving existing sites.");
       return;
@@ -2231,6 +2241,10 @@ export function MapView({
 
   const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
     setIsDraggingSite(false);
+    if (!canPersist) {
+      setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
+      return;
+    }
     const site = sites.find((candidate) => candidate.id === siteId);
     if (!site) return;
     const nextPosition = {
@@ -2565,6 +2579,7 @@ export function MapView({
     );
   }
   if (selectedDiscoveryLibraryEntry && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_HELP);
+  if (selectedSite && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
   if (showDiscoveryMqtt && !mqttLoadStatus) {
     inspectorLines.push(
       mqttTooDenseInView
@@ -3333,7 +3348,7 @@ export function MapView({
           return (
             <Marker
               anchor="bottom"
-              draggable
+              draggable={canPersist}
               key={site.id}
               latitude={markerPosition.lat}
               longitude={markerPosition.lon}

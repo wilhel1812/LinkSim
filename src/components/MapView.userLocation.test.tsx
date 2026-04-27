@@ -248,6 +248,32 @@ describe("MapView user location flow", () => {
     expect(screen.getByText("Read-only: you need edit permission to add sites to this simulation.")).toBeInTheDocument();
   });
 
+  it("explains why selected simulation sites cannot be edited in read-only mode", () => {
+    useAppStore.setState({
+      sites: [
+        {
+          id: "site-alpha",
+          name: "Site Alpha",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapOverlayMode: "none",
+    });
+    renderMapView({ canPersist: false, readOnly: true, showInspector: true });
+
+    expect(
+      screen.getByText("Read-only: you need edit permission to move or edit sites in this simulation."),
+    ).toBeInTheDocument();
+  });
+
   it("publishes plain location failure notifications", () => {
     const onPublishNotice = vi.fn();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
