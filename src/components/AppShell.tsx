@@ -2452,7 +2452,11 @@ export function AppShell() {
         </ModalOverlay>
       ) : null}
       {settingsRoute ? (
-        <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} />
+        <ModalOverlay aria-label="Settings" onClose={closeSettings} tier="raised">
+          <div className="library-manager-card settings-panel-wrapper">
+            <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} />
+          </div>
+        </ModalOverlay>
       ) : null}
     </main>
   );
