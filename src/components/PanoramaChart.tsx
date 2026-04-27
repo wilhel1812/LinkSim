@@ -249,6 +249,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const [basePanorama, setBasePanorama] = useState<PanoramaResult | null>(null);
   const [detailPanoramas, setDetailPanoramas] = useState<PanoramaResult[]>([]);
   const [panoramasReadyEpoch, setPanoramasReadyEpoch] = useState(0);
+  const [panoramaLoading, setPanoramaLoading] = useState(false);
 
   const selectedSiteEffective = useMemo(() => {
     if (!selectedSite) return null;
@@ -353,8 +354,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     if (!selectedSiteEffective || !selectedNetwork) {
       setBasePanorama(null);
       setDetailPanoramas([]);
+      setPanoramaLoading(false);
       return;
     }
+
+    setPanoramaLoading(true);
 
     const effectiveLink = links[0]
       ? {
@@ -483,6 +487,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           }
           setBasePanorama(result);
           setPanoramasReadyEpoch(Date.now());
+          setPanoramaLoading(false);
         },
       } satisfies LatestOnlyTask);
     }
@@ -525,6 +530,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             return next.slice(-12);
           });
           setPanoramasReadyEpoch(Date.now());
+          setPanoramaLoading(false);
         },
       } satisfies LatestOnlyTask);
     }
@@ -1470,7 +1476,18 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         ref={chartHostRef}
       >
         {!geometry || !panorama ? (
-          <div className="chart-empty" aria-hidden="true" />
+          panoramaLoading ? (
+            <div className="chart-empty chart-loading">
+              <div className="panorama-loading-indicator">
+                <div className="map-progress-track panorama-loading-track">
+                  <div className="map-progress-fill-indeterminate" />
+                </div>
+                <span className="panorama-loading-text">Loading panorama...</span>
+              </div>
+            </div>
+          ) : (
+            <div className="chart-empty" aria-hidden="true" />
+          )
         ) : (
           <>
             <canvas aria-hidden className="panorama-terrain-canvas" ref={terrainCanvasRef} />
