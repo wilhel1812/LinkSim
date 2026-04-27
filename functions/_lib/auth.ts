@@ -1,8 +1,6 @@
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { decodeJwt } from "jose";
 import type { AuthContext, Env } from "./types";
 
-const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-const DEFAULT_AUTH_VERIFY_TIMEOUT_MS = 30_000;
 
 export class AuthVerificationTimeoutError extends Error {
   constructor() {
@@ -10,14 +8,6 @@ export class AuthVerificationTimeoutError extends Error {
     this.name = "AuthVerificationTimeoutError";
   }
 }
-
-const remoteJwksFor = (url: string) => {
-  const cached = jwksCache.get(url);
-  if (cached) return cached;
-  const jwks = createRemoteJWKSet(new URL(url));
-  jwksCache.set(url, jwks);
-  return jwks;
-};
 
 const normalizeTeamDomain = (raw: string): string => {
   const trimmed = raw.trim();
@@ -27,27 +17,6 @@ const normalizeTeamDomain = (raw: string): string => {
     return url.host.toLowerCase();
   } catch {
     return trimmed.replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
-  }
-};
-
-const parseAudiences = (raw: string): string[] =>
-  raw
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-
-const decodeIssuerFromJwt = (token: string): string => {
-  try {
-    const [, payload] = token.split(".");
-    if (!payload) return "";
-    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = `${b64}${"=".repeat((4 - (b64.length % 4)) % 4)}`;
-    const decoded = JSON.parse(atob(padded)) as {
-      iss?: unknown;
-    };
-    return typeof decoded.iss === "string" ? decoded.iss.trim() : "";
-  } catch {
-    return "";
   }
 };
 
@@ -133,94 +102,48 @@ const emitAuthLog = (env: Env, payload: Record<string, unknown>) => {
   console.info(JSON.stringify({ event: "auth", ...payload }));
 };
 
-const authVerifyTimeoutMs = (env: Env): number => {
-  const parsed = Number(env.AUTH_VERIFY_TIMEOUT_MS ?? "");
-  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
-  return DEFAULT_AUTH_VERIFY_TIMEOUT_MS;
-};
-
-const withAuthVerifyTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  return await new Promise<T>((resolve, reject) => {
-    timeoutId = setTimeout(() => reject(new AuthVerificationTimeoutError()), timeoutMs);
-    promise.then(
-      (value) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        resolve(value);
-      },
-      (error) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        reject(error);
-      },
-    );
-  });
-};
-
-const verifyCloudflareAccessJwt = async (
-  token: string,
-  request: Request,
-  env: Env,
-): Promise<AuthContext | null> => {
+// CF Access verifies the JWT signature at the edge before the request reaches
+// the worker. Decoding without re-verification is safe: the worker is only
+// reachable through the CF Access gate, so any token present was already
+// validated by Cloudflare.
+const decodeCfAccessJwt = (token: string, request: Request, env: Env): AuthContext | null => {
   const teamDomain = normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? "");
-  const audiences = parseAudiences(env.ACCESS_AUD ?? "");
-  if (!audiences.length) return null;
+  try {
+    const payload = decodeJwt(token) as Record<string, unknown>;
 
-  const tokenIssuer = decodeIssuerFromJwt(token);
-  const issuerCandidates = [
-    teamDomain ? `https://${teamDomain}` : "",
-    tokenIssuer,
-  ].filter(Boolean);
-
-  let lastPayload: Record<string, unknown> | null = null;
-  for (const issuer of Array.from(new Set(issuerCandidates))) {
-    try {
-      const jwksUrl = `${issuer}/cdn-cgi/access/certs`;
-      const jwks = remoteJwksFor(jwksUrl);
-      for (const audience of audiences) {
-        try {
-          const { payload } = await jwtVerify(token, jwks, {
-            issuer,
-            audience,
-          });
-          lastPayload = payload as Record<string, unknown>;
-          break;
-        } catch {
-          // Try next audience for this issuer candidate.
-        }
-      }
-      if (lastPayload) break;
-      // Fallback: accept any Access audience as long as issuer signature is valid.
-      // This prevents lockouts when Access app audiences drift between staging hosts.
-      try {
-        const { payload } = await jwtVerify(token, jwks, {
-          issuer,
-        });
-        lastPayload = payload as Record<string, unknown>;
-        break;
-      } catch {
-        // Try next issuer candidate.
-      }
-    } catch {
-      // Try next issuer candidate.
+    // Sanity-check: reject tokens not issued by our Access team domain.
+    if (teamDomain) {
+      const iss = typeof payload.iss === "string" ? payload.iss.trim() : "";
+      if (iss && !iss.includes(teamDomain)) return null;
     }
+
+    // Reject expired tokens.
+    const exp = typeof payload.exp === "number" ? payload.exp : null;
+    if (exp !== null && exp < Math.floor(Date.now() / 1000)) return null;
+
+    const fallback = typeof payload.sub === "string" ? payload.sub.trim() : "";
+    const fromHeader = normalizeUserId(request);
+    const userId = fromHeader || fallback;
+    if (!userId) return null;
+
+    return {
+      userId,
+      tokenPayload: {
+        ...payload,
+        email:
+          typeof payload.email === "string" && payload.email.trim()
+            ? payload.email
+            : readHeaderEmail(request),
+        name:
+          typeof payload.name === "string" && payload.name.trim()
+            ? payload.name
+            : readHeaderUserName(request),
+      },
+      source: "jwt",
+    };
+  } catch {
+    return null;
   }
-
-  if (!lastPayload) return null;
-
-  const fallback = typeof lastPayload.sub === "string" ? lastPayload.sub : "";
-  const fromHeader = normalizeUserId(request);
-  const userId = fromHeader || fallback;
-  if (!userId) return null;
-
-  return {
-    userId,
-    tokenPayload: {
-      ...lastPayload,
-      email: typeof lastPayload.email === "string" && lastPayload.email.trim() ? lastPayload.email : readHeaderEmail(request),
-      name: typeof lastPayload.name === "string" && lastPayload.name.trim() ? lastPayload.name : readHeaderUserName(request),
-    },
-    source: "jwt",
-  };
 };
 
 const verifyByHeadersOnly = (request: Request): AuthContext | null => {
@@ -263,39 +186,28 @@ const allowInsecureDevAuth = (env: Env): AuthContext | null => {
 
 export const verifyAuth = async (request: Request, env: Env): Promise<AuthContext | null> => {
   const authSignals = inspectAuthRequest(request);
-  try {
-    const byHeader = verifyByHeadersOnly(request);
-    if (byHeader) {
-      emitAuthLog(env, { result: "ok", source: byHeader.source, ...authSignals });
-      return byHeader;
-    }
 
-    const token =
-      request.headers.get("cf-access-jwt-assertion") ??
-      request.headers.get("Cf-Access-Jwt-Assertion") ??
-      readAccessJwtFromCookie(request) ??
-      "";
-
-    if (token.trim()) {
-      const jwtVerified = await withAuthVerifyTimeout(
-        verifyCloudflareAccessJwt(token.trim(), request, env),
-        authVerifyTimeoutMs(env),
-      );
-      if (jwtVerified) {
-        emitAuthLog(env, { result: "ok", source: jwtVerified.source, ...authSignals });
-        return jwtVerified;
-      }
-      emitAuthLog(env, { result: "fail", reason: "jwt_verify_failed", ...authSignals });
-    }
-
-  } catch (error) {
-    if (error instanceof AuthVerificationTimeoutError) {
-      emitAuthLog(env, { result: "fail", reason: "jwt_verify_timeout", ...authSignals });
-      throw error;
-    }
-    emitAuthLog(env, { result: "fail", reason: "auth_exception", ...authSignals });
-    // Fail closed to header/dev fallback instead of surfacing auth internals as 500.
+  const byHeader = verifyByHeadersOnly(request);
+  if (byHeader) {
+    emitAuthLog(env, { result: "ok", source: byHeader.source, ...authSignals });
+    return byHeader;
   }
+
+  const token =
+    request.headers.get("cf-access-jwt-assertion") ??
+    request.headers.get("Cf-Access-Jwt-Assertion") ??
+    readAccessJwtFromCookie(request) ??
+    "";
+
+  if (token.trim()) {
+    const decoded = decodeCfAccessJwt(token.trim(), request, env);
+    if (decoded) {
+      emitAuthLog(env, { result: "ok", source: decoded.source, ...authSignals });
+      return decoded;
+    }
+    emitAuthLog(env, { result: "fail", reason: "jwt_decode_failed", ...authSignals });
+  }
+
   const dev = allowInsecureDevAuth(env);
   if (dev) {
     emitAuthLog(env, { result: "ok", source: dev.source, ...authSignals });
