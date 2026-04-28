@@ -671,15 +671,20 @@ export function Sidebar({
         setShowNewSimulationRequest(false);
         return;
       }
-      setNewSimulationName("");
-      setNewSimulationDescription("");
-      setNewSimulationNameError("");
-      setModalFreqPresetId(getDefaultFrequencyPresetIdForNewSimulation());
-      setModalAutoPropEnv(autoPropagationEnvironment);
-      setShowNewSimulationModal(true);
+      openMapEditor({
+        kind: "simulation",
+        resourceId: null,
+        isNew: true,
+        label: "New Simulation",
+        anchorRect: { top: 96, right: 320, bottom: 96, left: 320, width: 0, height: 0 },
+        simulationSeed: {
+          frequencyPresetId: getDefaultFrequencyPresetIdForNewSimulation(),
+          autoPropagationEnvironment,
+        },
+      });
       setShowNewSimulationRequest(false);
     }
-  }, [hideLibraryBrowsing, showNewSimulationRequest, setShowNewSimulationRequest, getDefaultFrequencyPresetIdForNewSimulation]);
+  }, [autoPropagationEnvironment, hideLibraryBrowsing, openMapEditor, showNewSimulationRequest, setShowNewSimulationRequest, getDefaultFrequencyPresetIdForNewSimulation]);
   useEffect(() => {
     if (showSiteLibraryRequest) {
       if (hideLibraryBrowsing) {
@@ -961,34 +966,22 @@ export function Sidebar({
 
   useEffect(() => {
     if (!pendingSiteLibraryDraft) return;
-    setShowSiteLibraryManager(true);
-    setShowAddLibraryForm(true);
-    setNewLibraryNameError("");
-    setNewLibraryVisibility("private");
-    setNewLibraryCollaboratorUserIds([]);
-    setNewLibraryCollaboratorRoles({});
-    setNewLibrarySourceMeta(pendingSiteLibraryDraft.sourceMeta);
-    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(newLibraryTxGainDbi, newLibraryRxGainDbi));
-    setPendingDraftAutoInsert(true);
-    setNewLibraryName(pendingSiteLibraryDraft.suggestedName ?? "");
-    setNewLibraryDescription("");
-    setNewLibraryLat(pendingSiteLibraryDraft.lat);
-    setNewLibraryLon(pendingSiteLibraryDraft.lon);
-    const terrainElev = Number(
-      sampleSrtmElevation(srtmTiles, pendingSiteLibraryDraft.lat, pendingSiteLibraryDraft.lon),
-    );
-    if (Number.isFinite(terrainElev)) {
-      setNewLibraryGroundM(Math.round(terrainElev));
-      setLibrarySearchStatus(
-        `Draft opened at ${pendingSiteLibraryDraft.lat.toFixed(5)}, ${pendingSiteLibraryDraft.lon.toFixed(5)} (terrain ${Math.round(terrainElev)} m).`,
-      );
-    } else {
-      setLibrarySearchStatus(
-        `Draft opened at ${pendingSiteLibraryDraft.lat.toFixed(5)}, ${pendingSiteLibraryDraft.lon.toFixed(5)}.`,
-      );
-    }
+    openMapEditor({
+      kind: "site",
+      resourceId: null,
+      isNew: true,
+      label: "New Site",
+      anchorRect: { top: 96, right: 320, bottom: 96, left: 320, width: 0, height: 0 },
+      siteSeed: {
+        lat: pendingSiteLibraryDraft.lat,
+        lon: pendingSiteLibraryDraft.lon,
+        name: pendingSiteLibraryDraft.suggestedName,
+        sourceMeta: pendingSiteLibraryDraft.sourceMeta,
+        insertIntoSimulation: true,
+      },
+    });
     clearPendingSiteLibraryDraft();
-  }, [pendingSiteLibraryDraft, srtmTiles, clearPendingSiteLibraryDraft]);
+  }, [pendingSiteLibraryDraft, clearPendingSiteLibraryDraft, openMapEditor]);
   useEffect(() => {
     if (!pendingSiteLibraryOpenEntryId) return;
     const entry = siteLibrary.find((candidate) => candidate.id === pendingSiteLibraryOpenEntryId);
@@ -1204,27 +1197,22 @@ export function Sidebar({
       isNew: true,
       label: "New Site",
       anchorRect,
+      siteSeed: {
+        lat: site.position.lat,
+        lon: site.position.lon,
+        name: site.name,
+        insertIntoSimulation: true,
+      },
     });
   };
-  const openNewSiteForm = () => {
-    setShowSiteLibraryManager(true);
-    setShowAddLibraryForm(true);
-    setNewLibraryName("");
-    setNewLibraryDescription("");
-    setNewLibraryVisibility("private");
-    setNewLibraryCollaboratorUserIds([]);
-    setNewLibraryCollaboratorRoles({});
-    setNewLibrarySourceMeta(undefined);
-    setNewLibraryLat(0);
-    setNewLibraryLon(0);
-    setNewLibraryGroundM(0);
-    setNewLibraryAntennaM(10);
-    setNewLibraryTxPowerDbm(20);
-    setNewLibraryTxGainDbi(0);
-    setNewLibraryRxGainDbi(0);
-    setNewLibrarySeparateGain(false);
-    setNewLibraryCableLossDb(0);
-    setLibrarySearchStatus("");
+  const openNewSiteForm = (triggerEl?: Element | null) => {
+    openMapEditor({
+      kind: "site",
+      resourceId: null,
+      isNew: true,
+      label: "New Site",
+      anchorRect: triggerEl?.getBoundingClientRect() ?? { top: 96, right: 320, bottom: 96, left: 320, width: 0, height: 0 },
+    });
   };
   const addLibraryEntryNow = () => {
     if (!currentUser?.id) {
@@ -1780,13 +1768,18 @@ export function Sidebar({
                 Library
               </ActionButton>
               <ActionButton
-                onClick={() => {
-                  setNewSimulationName("");
-                  setNewSimulationDescription("");
-                  setNewSimulationNameError("");
-                  setModalFreqPresetId(getDefaultFrequencyPresetIdForNewSimulation());
-                  setModalAutoPropEnv(autoPropagationEnvironment);
-                  setShowNewSimulationModal(true);
+                onClick={(event) => {
+                  openMapEditor({
+                    kind: "simulation",
+                    resourceId: null,
+                    isNew: true,
+                    label: "New Simulation",
+                    anchorRect: event.currentTarget.getBoundingClientRect(),
+                    simulationSeed: {
+                      frequencyPresetId: getDefaultFrequencyPresetIdForNewSimulation(),
+                      autoPropagationEnvironment,
+                    },
+                  });
                 }}
                 type="button"
               >
@@ -1859,7 +1852,7 @@ export function Sidebar({
           {!hideLibraryBrowsing ? (
             <>
               {!readOnly ? (
-                <ActionButton onClick={openNewSiteForm} type="button">
+                <ActionButton onClick={(event) => openNewSiteForm(event.currentTarget)} type="button">
                   New
                 </ActionButton>
               ) : null}
@@ -3056,7 +3049,20 @@ export function Sidebar({
                 resourceId: params.resourceId,
                 isNew: false,
                 label: params.label,
-                anchorRect: { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
+                anchorRect: params.anchorRect,
+              })
+            }
+            onCreateSimulation={(triggerEl) =>
+              openMapEditor({
+                kind: "simulation",
+                resourceId: null,
+                isNew: true,
+                label: "New Simulation",
+                anchorRect: triggerEl?.getBoundingClientRect() ?? { top: 96, right: 320, bottom: 96, left: 320, width: 0, height: 0 },
+                simulationSeed: {
+                  frequencyPresetId: getDefaultFrequencyPresetIdForNewSimulation(),
+                  autoPropagationEnvironment,
+                },
               })
             }
           />
@@ -3290,20 +3296,6 @@ export function Sidebar({
               </ActionButton>
             </div>
             <div className="chip-group">
-              <ActionButton
-                onClick={(e) => {
-                  openMapEditor({
-                    kind: "site",
-                    resourceId: null,
-                    isNew: true,
-                    label: "New Site",
-                    anchorRect: e.currentTarget.getBoundingClientRect(),
-                  });
-                }}
-                type="button"
-              >
-                Add Site
-              </ActionButton>
               <ActionButton
                 onClick={() => setSelectedLibraryIds(new Set(filteredSiteLibrary.map((entry) => entry.id)))}
                 type="button"
