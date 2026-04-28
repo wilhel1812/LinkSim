@@ -440,14 +440,17 @@ type AppState = {
       name?: string;
       sourceMeta?: SiteLibraryEntry["sourceMeta"];
       insertIntoSimulation?: boolean;
+      awaitMapClick?: boolean;
     };
     simulationSeed?: {
       frequencyPresetId?: string;
       autoPropagationEnvironment?: boolean;
     };
   } | null;
+  mapEditorSiteDraft: { lat: number; lon: number; groundElevationM: number | null } | null;
   openMapEditor: (payload: NonNullable<AppState["mapEditor"]>) => void;
   closeMapEditor: () => void;
+  setMapEditorSiteDraft: (draft: AppState["mapEditorSiteDraft"]) => void;
   showSimulationLibraryRequest: boolean;
   showNewSimulationRequest: boolean;
   showSiteLibraryRequest: boolean;
@@ -1263,6 +1266,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   siteDragPreview: {},
   endpointPickTarget: null,
   mapEditor: null,
+  mapEditorSiteDraft: null,
   pendingSiteLibraryDraft: null,
   showSimulationLibraryRequest: false,
   showNewSimulationRequest: false,
@@ -1871,6 +1875,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       siteDragPreview: {},
       endpointPickTarget: null,
       mapEditor: null,
+      mapEditorSiteDraft: null,
       mapViewport: scenario.viewport,
       siteLibrary: libraryBacked.siteLibrary,
       fitSitesEpoch: get().fitSitesEpoch + 1,
@@ -1918,6 +1923,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       siteDragPreview: {},
       endpointPickTarget: null,
       mapEditor: null,
+      mapEditorSiteDraft: null,
       // mapViewport: undefined — fitSitesEpoch triggers proper fit via MapView
       fitSitesEpoch: get().fitSitesEpoch + 1,
       siteLibrary: libraryBacked.siteLibrary,
@@ -3169,8 +3175,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   },
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
-  openMapEditor: (payload) => set({ mapEditor: payload }),
-  closeMapEditor: () => set({ mapEditor: null }),
+  openMapEditor: (payload) => set({ mapEditor: payload, mapEditorSiteDraft: null }),
+  closeMapEditor: () => set({ mapEditor: null, mapEditorSiteDraft: null }),
+  setMapEditorSiteDraft: (draft) => set({ mapEditorSiteDraft: draft }),
   requestSiteLibraryDraftAt: (lat, lon, suggestedName, sourceMeta) =>
     set({
       pendingSiteLibraryDraft: {

@@ -5,7 +5,6 @@ import { useAppStore } from "../../store/appStore";
 import { useMapEditorFormState } from "./useMapEditorFormState";
 import { AccessSettingsEditor } from "../AccessSettingsEditor";
 import { ActionButton } from "../ActionButton";
-import { CompactDetails, CompactDetailsSummary } from "../ui/CompactDetails";
 import { Surface } from "../ui/Surface";
 import { InlineCloseIconButton } from "../InlineCloseIconButton";
 import { SiteBeamVisualizer } from "../SiteBeamVisualizer";
@@ -127,10 +126,9 @@ function SiteEditorCard({
           />
         </label>
 
-        <CompactDetails>
-          <CompactDetailsSummary>Map Search</CompactDetailsSummary>
-          <label className="field-grid">
-            <span>Search</span>
+        <label className="field-grid">
+          <span>Map search</span>
+          <div className="field-inline">
             <input
               onChange={(e) => form.setSiteSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -143,28 +141,31 @@ function SiteEditorCard({
               type="text"
               value={form.siteSearchQuery}
             />
-          </label>
-          <div className="chip-group">
-            <ActionButton disabled={form.siteSearchBusy} onClick={() => void form.runSiteSearch()} type="button">
+            <ActionButton
+              className="field-inline-btn"
+              disabled={form.siteSearchBusy}
+              onClick={() => void form.runSiteSearch()}
+              type="button"
+            >
               {form.siteSearchBusy ? "Searching..." : "Search"}
             </ActionButton>
           </div>
-          {form.siteSearchStatus ? <p className="field-help">{form.siteSearchStatus}</p> : null}
-          {form.siteSearchResults.length ? (
-            <div className="site-quick-list">
-              {form.siteSearchResults.map((result) => (
-                <ActionButton
-                  disabled={form.siteSearchPickBusyId !== null}
-                  key={result.id}
-                  onClick={() => void form.selectSiteSearchResult(result)}
-                  type="button"
-                >
-                  {form.siteSearchPickBusyId === result.id ? "Loading..." : `Use: ${result.label}`}
-                </ActionButton>
-              ))}
-            </div>
-          ) : null}
-        </CompactDetails>
+        </label>
+        {form.siteSearchStatus ? <p className="field-help">{form.siteSearchStatus}</p> : null}
+        {form.siteSearchResults.length ? (
+          <div className="site-quick-list">
+            {form.siteSearchResults.map((result) => (
+              <ActionButton
+                disabled={form.siteSearchPickBusyId !== null}
+                key={result.id}
+                onClick={() => void form.selectSiteSearchResult(result)}
+                type="button"
+              >
+                {form.siteSearchPickBusyId === result.id ? "Loading..." : `Use: ${result.label}`}
+              </ActionButton>
+            ))}
+          </div>
+        ) : null}
 
         <label className="field-grid">
           <span>Ground elev (m)</span>
@@ -316,7 +317,6 @@ function LinkEditorCard({
         <span>Link name</span>
         <input
           onChange={(e) => form.setLinkNameDraft(e.target.value)}
-          placeholder="Backhaul A"
           type="text"
           value={form.linkNameDraft}
         />
@@ -361,13 +361,12 @@ function LinkEditorCard({
         </select>
       </label>
 
-      <CompactDetails>
-        <CompactDetailsSummary>Link Radio Overrides</CompactDetailsSummary>
         <label className="field-grid">
-          <span>Use site radio defaults</span>
+          <span>Override site radio settings</span>
           <input
-            checked={!form.overrideRadio}
-            onChange={(e) => form.setOverrideRadio(!e.target.checked)}
+            aria-label="Override site radio settings"
+            checked={form.overrideRadio}
+            onChange={(e) => form.setOverrideRadio(e.target.checked)}
             type="checkbox"
           />
         </label>
@@ -410,7 +409,6 @@ function LinkEditorCard({
             </label>
           </>
         ) : null}
-      </CompactDetails>
 
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
@@ -484,8 +482,7 @@ function SimulationEditorCard({
           visibility={form.accessVisibility}
         />
         {isNew ? (
-          <CompactDetails open>
-            <CompactDetailsSummary>Simulation Defaults</CompactDetailsSummary>
+          <>
             <label className="field-grid">
               <span>Frequency Plan</span>
               <select
@@ -515,7 +512,7 @@ function SimulationEditorCard({
                 <option value="manual">Manual override</option>
               </select>
             </label>
-          </CompactDetails>
+          </>
         ) : null}
       </fieldset>
 

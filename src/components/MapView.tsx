@@ -687,6 +687,9 @@ export function MapView({
   const clearSiteDragPreview = useAppStore((state) => state.clearSiteDragPreview);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
   const openMapEditor = useAppStore((state) => state.openMapEditor);
+  const mapEditor = useAppStore((state) => state.mapEditor);
+  const mapEditorSiteDraft = useAppStore((state) => state.mapEditorSiteDraft);
+  const setMapEditorSiteDraft = useAppStore((state) => state.setMapEditorSiteDraft);
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
   const coverageSamples = useCoverageStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -2302,6 +2305,16 @@ export function MapView({
     setSiteDraftStatus(null);
   };
 
+  const setEditorSiteDraftFromMap = (lat: number, lon: number) => {
+    const terrainElevation = sampleSrtmElevation(srtmTiles, lat, lon);
+    const groundElevationM = Number.isFinite(terrainElevation) ? Math.round(terrainElevation as number) : null;
+    setMapEditorSiteDraft({ lat, lon, groundElevationM });
+  };
+
+  const onEditorSiteDraftDragEnd = (event: MarkerDragEvent) => {
+    setEditorSiteDraftFromMap(event.lngLat.lat, event.lngLat.lng);
+  };
+
   const beginPendingNewSiteDraft = (lat: number, lon: number) => {
     if (endpointPickTarget) return;
     if (pendingMoveCount > 0) {
@@ -2321,6 +2334,12 @@ export function MapView({
     const rawTarget = event.originalEvent?.target;
     if (rawTarget instanceof Element && rawTarget.closest(".map-site-surface")) return;
     if (endpointPickTarget) return;
+    if (mapEditor?.kind === "site" && mapEditor.isNew) {
+      setEditorSiteDraftFromMap(event.lngLat.lat, event.lngLat.lng);
+      setArmAddSiteOnNextEmptyMapClick(false);
+      setSelectedDiscoveryLibraryEntryId(null);
+      return;
+    }
     const interactiveFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
     let id = interactiveFeature?.properties ? String(interactiveFeature.properties.id ?? "") : "";
     if (!id && mapRef.current) {
@@ -3533,6 +3552,22 @@ export function MapView({
           >
             <Surface variant="pill" className="map-site-surface is-temporary" pointerTail pointerTone="temporary">
               <span>New Site</span>
+            </Surface>
+          </Marker>
+        ) : null}
+
+        {mapEditor?.kind === "site" && mapEditorSiteDraft ? (
+          <Marker
+            anchor="bottom"
+            draggable={canPersist}
+            latitude={mapEditorSiteDraft.lat}
+            longitude={mapEditorSiteDraft.lon}
+            offset={SITE_PIN_MARKER_OFFSET}
+            style={{ zIndex: 4 }}
+            onDragEnd={onEditorSiteDraftDragEnd}
+          >
+            <Surface variant="pill" className="map-site-surface is-selected" pointerTail pointerTone="selection">
+              <span>{mapEditor.isNew ? "New Site" : mapEditor.label}</span>
             </Surface>
           </Marker>
         ) : null}
