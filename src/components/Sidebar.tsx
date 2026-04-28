@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { Funnel, Handshake, HatGlasses, RefreshCw } from "lucide-react";
+import { CircleMinus, Funnel, Handshake, HatGlasses, Pencil, RefreshCw } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import Map, {
   Layer,
@@ -69,7 +69,7 @@ import {
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate, formatNumber } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
-import type { RadioClimate } from "../types/radio";
+import type { RadioClimate, Site } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ActionButton } from "./ActionButton";
@@ -337,7 +337,6 @@ export function Sidebar({
   );
   const selectedSite = useMemo(() => getSelectedSite(), [getSelectedSite, sites, selectedSiteId]);
 
-  const selectedLinkRaw = links.find((link) => link.id === selectedLink.id) ?? null;
   const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const toSite = sites.find((site) => site.id === selectedLink.toSiteId);
   const sourceSite = sites.find((site) => site.id === selectedLink.fromSiteId);
@@ -1083,23 +1082,25 @@ export function Sidebar({
     });
   };
 
-  const openEditLinkModal = () => {
-    const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId) ?? null;
-    const toSite = sites.find((site) => site.id === selectedLink.toSiteId) ?? null;
-    const baseRadio = resolveLinkRadio(selectedLink, fromSite, toSite);
+  const openEditLinkModal = (linkId?: string) => {
+    const link = visibleLinks.find((l) => l.id === (linkId ?? selectedLinkId)) ?? selectedLink;
+    const linkRaw = links.find((l) => l.id === link.id) ?? null;
+    const fromSite = sites.find((site) => site.id === link.fromSiteId) ?? null;
+    const toSite = sites.find((site) => site.id === link.toSiteId) ?? null;
+    const baseRadio = resolveLinkRadio(link, fromSite, toSite);
     const hasOverrides = Boolean(
-      selectedLinkRaw &&
-        (typeof selectedLinkRaw.txPowerDbm === "number" ||
-          typeof selectedLinkRaw.txGainDbi === "number" ||
-          typeof selectedLinkRaw.rxGainDbi === "number" ||
-          typeof selectedLinkRaw.cableLossDb === "number"),
+      linkRaw &&
+        (typeof linkRaw.txPowerDbm === "number" ||
+          typeof linkRaw.txGainDbi === "number" ||
+          typeof linkRaw.rxGainDbi === "number" ||
+          typeof linkRaw.cableLossDb === "number"),
     );
     setLinkModal({
       mode: "edit",
-      linkId: selectedLink.id,
-      name: selectedLink.name ?? "",
-      fromSiteId: selectedLink.fromSiteId,
-      toSiteId: selectedLink.toSiteId,
+      linkId: link.id,
+      name: link.name ?? "",
+      fromSiteId: link.fromSiteId,
+      toSiteId: link.toSiteId,
       overrideRadio: hasOverrides,
       txPowerDbm: baseRadio.txPowerDbm,
       txGainDbi: baseRadio.txGainDbi,
@@ -1238,12 +1239,12 @@ export function Sidebar({
     });
   };
   const selectedLibraryCount = selectedLibraryIds.size;
-  const openLibraryForSelectedSite = () => {
+  const openLibraryForSite = (site: Site) => {
     const matchedEntry = siteLibrary.find(
       (entry) =>
-        entry.name === selectedSite.name &&
-        Math.abs(entry.position.lat - selectedSite.position.lat) < 0.000001 &&
-        Math.abs(entry.position.lon - selectedSite.position.lon) < 0.000001,
+        entry.name === site.name &&
+        Math.abs(entry.position.lat - site.position.lat) < 0.000001 &&
+        Math.abs(entry.position.lon - site.position.lon) < 0.000001,
     );
     if (matchedEntry) {
       openResourceDetailsPopup({
@@ -1271,16 +1272,36 @@ export function Sidebar({
     setNewLibraryCollaboratorUserIds([]);
     setNewLibraryCollaboratorRoles({});
     setNewLibrarySourceMeta(undefined);
-    setNewLibraryLat(selectedSite.position.lat);
-    setNewLibraryLon(selectedSite.position.lon);
-    setNewLibraryGroundM(selectedSite.groundElevationM);
-    setNewLibraryAntennaM(selectedSite.antennaHeightM);
-    setNewLibraryTxPowerDbm(selectedSite.txPowerDbm);
-    setNewLibraryTxGainDbi(selectedSite.txGainDbi);
-    setNewLibraryRxGainDbi(selectedSite.rxGainDbi);
-    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(selectedSite.txGainDbi, selectedSite.rxGainDbi));
-    setNewLibraryCableLossDb(selectedSite.cableLossDb);
+    setNewLibraryLat(site.position.lat);
+    setNewLibraryLon(site.position.lon);
+    setNewLibraryGroundM(site.groundElevationM);
+    setNewLibraryAntennaM(site.antennaHeightM);
+    setNewLibraryTxPowerDbm(site.txPowerDbm);
+    setNewLibraryTxGainDbi(site.txGainDbi);
+    setNewLibraryRxGainDbi(site.rxGainDbi);
+    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(site.txGainDbi, site.rxGainDbi));
+    setNewLibraryCableLossDb(site.cableLossDb);
     setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
+  };
+  const openNewSiteForm = () => {
+    setShowSiteLibraryManager(true);
+    setShowAddLibraryForm(true);
+    setNewLibraryName("");
+    setNewLibraryDescription("");
+    setNewLibraryVisibility("private");
+    setNewLibraryCollaboratorUserIds([]);
+    setNewLibraryCollaboratorRoles({});
+    setNewLibrarySourceMeta(undefined);
+    setNewLibraryLat(0);
+    setNewLibraryLon(0);
+    setNewLibraryGroundM(0);
+    setNewLibraryAntennaM(10);
+    setNewLibraryTxPowerDbm(20);
+    setNewLibraryTxGainDbi(0);
+    setNewLibraryRxGainDbi(0);
+    setNewLibrarySeparateGain(false);
+    setNewLibraryCableLossDb(0);
+    setLibrarySearchStatus("");
   };
   const addLibraryEntryNow = () => {
     if (!currentUser?.id) {
@@ -1958,22 +1979,53 @@ export function Sidebar({
         {!siteLibrary.length ? <p className="field-help">No saved library sites yet.</p> : null}
         <div className="site-list">
           {sites.map((site) => (
-            <button
-              className={clsx("site-row", selectedSiteIds.includes(site.id) && "is-selected")}
-              key={site.id}
-              onClick={(event) => selectSiteById(site.id, event.metaKey || event.ctrlKey)}
-              type="button"
-            >
-              <span>{site.name}</span>
-              <span className="site-row-meta">
-                {Math.round(site.groundElevationM)} m ASL
-              </span>
-            </button>
+            <div className={clsx("site-row", selectedSiteIds.includes(site.id) && "is-selected")} key={site.id}>
+              <button
+                className="site-row-select"
+                onClick={(event) => selectSiteById(site.id, event.metaKey || event.ctrlKey)}
+                type="button"
+              >
+                {site.name}
+              </button>
+              {!readOnly && (
+                <div className="row-actions">
+                  <ActionButton
+                    aria-label="Edit site"
+                    size="icon"
+                    title="Edit site"
+                    onClick={() => openLibraryForSite(site)}
+                  >
+                    <Pencil aria-hidden="true" strokeWidth={1.8} />
+                  </ActionButton>
+                  <ActionButton
+                    aria-label="Remove site"
+                    disabled={sites.length <= 1}
+                    size="icon"
+                    title="Remove site"
+                    onClick={() =>
+                      requestDeleteConfirm(
+                        "Remove Site",
+                        `Remove ${site.name} from the current simulation?`,
+                        () => deleteSite(site.id),
+                        "Remove",
+                      )
+                    }
+                  >
+                    <CircleMinus aria-hidden="true" strokeWidth={1.8} />
+                  </ActionButton>
+                </div>
+              )}
+            </div>
           ))}
         </div>
         <div className="chip-group">
           {!hideLibraryBrowsing ? (
             <>
+              {!readOnly ? (
+                <ActionButton onClick={openNewSiteForm} type="button">
+                  New
+                </ActionButton>
+              ) : null}
               <ActionButton onClick={() => setShowSiteLibraryManager(true)} type="button">
                 Library
               </ActionButton>
@@ -1982,29 +2034,7 @@ export function Sidebar({
                   Insert newest
                 </ActionButton>
               ) : null}
-              {!readOnly ? (
-                <ActionButton onClick={openLibraryForSelectedSite} type="button">
-                  Edit
-                </ActionButton>
-              ) : null}
             </>
-          ) : null}
-          {!readOnly ? (
-            <ActionButton
-              disabled={sites.length <= 1}
-              onClick={() =>
-                requestDeleteConfirm(
-                  "Remove Site",
-                  `Remove ${selectedSite.name} from the current simulation?`,
-                  () => deleteSite(selectedSite.id),
-                  "Remove",
-                )
-              }
-              type="button"
-              variant="danger"
-            >
-              Remove
-            </ActionButton>
           ) : null}
         </div>
         {!hideLibraryBrowsing && readOnly ? <p className="field-help">{READ_ONLY_SIMULATION_SITE_HELP}</p> : null}
@@ -2017,40 +2047,48 @@ export function Sidebar({
         />
         <div className="link-list">
           {visibleLinks.map((link) => (
-            <button
-              className={clsx("link-item", selectedLinkId === link.id && "is-selected")}
-              key={link.id}
-              onClick={() => setSelectedLinkId(link.id)}
-              type="button"
-            >
-              <span className="link-title">{displayLinkName(link.id, link.name)}</span>
-            </button>
+            <div className={clsx("link-item", selectedLinkId === link.id && "is-selected")} key={link.id}>
+              <button
+                className="link-item-select"
+                onClick={() => setSelectedLinkId(link.id)}
+                type="button"
+              >
+                <span className="link-title">{displayLinkName(link.id, link.name)}</span>
+              </button>
+              {!readOnly && (
+                <div className="row-actions">
+                  <ActionButton
+                    aria-label="Edit link"
+                    size="icon"
+                    title="Edit link"
+                    onClick={() => openEditLinkModal(link.id)}
+                  >
+                    <Pencil aria-hidden="true" strokeWidth={1.8} />
+                  </ActionButton>
+                  <ActionButton
+                    aria-label="Remove link"
+                    size="icon"
+                    title="Remove link"
+                    onClick={() =>
+                      requestDeleteConfirm(
+                        "Delete Link",
+                        `Delete link "${displayLinkName(link.id, link.name)}"?`,
+                        () => deleteLink(link.id),
+                      )
+                    }
+                  >
+                    <CircleMinus aria-hidden="true" strokeWidth={1.8} />
+                  </ActionButton>
+                </div>
+              )}
+            </div>
           ))}
         </div>
         <div className="chip-group">
           {!readOnly ? (
-            <>
-              <ActionButton disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
-                New
-              </ActionButton>
-              <ActionButton onClick={openEditLinkModal} type="button">
-                Edit
-              </ActionButton>
-              <ActionButton
-                disabled={!links.length}
-                onClick={() =>
-                  requestDeleteConfirm(
-                    "Delete Link",
-                    `Delete selected link "${displayLinkName(selectedLink.id, selectedLink.name)}"?`,
-                    () => deleteLink(selectedLink.id),
-                  )
-                }
-                type="button"
-                variant="danger"
-              >
-                Remove
-              </ActionButton>
-            </>
+            <ActionButton disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+              New
+            </ActionButton>
           ) : null}
         </div>
       </section>
