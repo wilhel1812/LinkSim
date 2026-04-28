@@ -4819,6 +4819,26 @@ html.panorama-gesture-lock body {
   .settings-panel-content {
     padding: 16px 16px 36px;
   }
+  .settings-panel-wrapper {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+  .settings-overlay {
+    padding: 0;
+  }
+  .settings-overlay .library-manager-card {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
 }
 
 /* Settings nav */
