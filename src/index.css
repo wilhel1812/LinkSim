@@ -5194,3 +5194,47 @@ html.panorama-gesture-lock body {
   max-height: none;
   overflow: visible;
 }
+
+/* ─── Map Editor Panel (issue #804) ──────────────────────────────────────── */
+
+/* Desktop floating panel — positioned via JS */
+.map-editor-floating {
+  position: fixed;
+  z-index: 6000;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(85vh, 680px);
+  overflow-y: auto;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+/* Mobile bottom sheet */
+.map-editor-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 6000;
+  border-radius: 18px 18px 0 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  max-height: 80vh;
+  overflow-y: auto;
+  animation: panel-slide-in-bottom 360ms ease-out both;
+}
+
+.map-editor-sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 8px auto 4px;
+}
+
+.map-editor-sheet-content {
+  padding: 4px 14px 24px;
+  display: grid;
+  gap: 10px;
+}

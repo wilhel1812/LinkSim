@@ -37,6 +37,7 @@ import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import WelcomeModal from "./WelcomeModal";
 import { Sidebar } from "./Sidebar";
 import { SettingsPanel } from "./settings/SettingsPanel";
+import { MapEditorPanel } from "./map/MapEditorPanel";
 import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
 import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
 
@@ -2458,6 +2459,7 @@ export function AppShell() {
           </div>
         </ModalOverlay>
       ) : null}
+      <MapEditorPanel isMobile={isMobileViewport} />
     </main>
   );
 }
