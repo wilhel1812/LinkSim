@@ -46,7 +46,7 @@ import {
   type MeshmapNode,
 } from "../lib/meshtasticMqtt";
 import { deriveDynamicPropagationEnvironment } from "../lib/propagationEnvironment";
-import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../lib/linkRadio";
+import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain } from "../lib/siteGainFields";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { toAccessVisibility } from "../lib/uiFormatting";
@@ -277,7 +277,6 @@ export function Sidebar({
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
-  const selectedSiteId = useAppStore((state) => state.selectedSiteId);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
@@ -312,6 +311,7 @@ export function Sidebar({
   const loadTerrainForCoordinate = useAppStore((state) => state.loadTerrainForCoordinate);
   const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
+  const openMapEditor = useAppStore((state) => state.openMapEditor);
   const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const deleteSite = useAppStore((state) => state.deleteSite);
@@ -323,7 +323,6 @@ export function Sidebar({
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const getSelectedLink = useAppStore((state) => state.getSelectedLink);
-  const getSelectedSite = useAppStore((state) => state.getSelectedSite);
   const showNewSimulationRequest = useAppStore((state) => state.showNewSimulationRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
   const getDefaultFrequencyPresetIdForNewSimulation = useAppStore(
@@ -335,7 +334,6 @@ export function Sidebar({
     () => getSelectedLink(),
     [getSelectedLink, links, selectedLinkId, sites, networks, selectedNetworkId],
   );
-  const selectedSite = useMemo(() => getSelectedSite(), [getSelectedSite, sites, selectedSiteId]);
 
   const fromSite = sites.find((site) => site.id === selectedLink.fromSiteId);
   const toSite = sites.find((site) => site.id === selectedLink.toSiteId);
@@ -732,21 +730,17 @@ export function Sidebar({
     const preset = simulationPresets.find((candidate) => candidate.id === presetId);
     return toAccessVisibility(preset?.visibility);
   }, [selectedSimulationRef, simulationPresets]);
-  const openActiveSimulationDetails = () => {
+  const openActiveSimulationDetails = (triggerEl?: Element | null) => {
     if (!selectedSimulationRef.startsWith("saved:")) return;
     const presetId = selectedSimulationRef.replace("saved:", "");
     const preset = simulationPresets.find((p) => p.id === presetId);
     if (!preset) return;
-    openResourceDetailsPopup({
+    openMapEditor({
       kind: "simulation",
       resourceId: preset.id,
+      isNew: false,
       label: preset.name,
-      createdByUserId: (preset as unknown as { createdByUserId?: string }).createdByUserId ?? null,
-      createdByName: (preset as unknown as { createdByName?: string }).createdByName ?? "Unknown",
-      createdByAvatarUrl: (preset as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
-      lastEditedByUserId: (preset as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
-      lastEditedByName: (preset as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
-      lastEditedByAvatarUrl: (preset as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
+      anchorRect: triggerEl?.getBoundingClientRect() ?? { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
     });
   };
   const collaboratorDirectoryById = useMemo(
@@ -999,16 +993,12 @@ export function Sidebar({
     if (!pendingSiteLibraryOpenEntryId) return;
     const entry = siteLibrary.find((candidate) => candidate.id === pendingSiteLibraryOpenEntryId);
     if (entry) {
-      openResourceDetailsPopup({
+      openMapEditor({
         kind: "site",
         resourceId: entry.id,
+        isNew: false,
         label: entry.name,
-        createdByUserId: (entry as unknown as { createdByUserId?: string }).createdByUserId ?? null,
-        createdByName: (entry as unknown as { createdByName?: string }).createdByName ?? "Unknown",
-        createdByAvatarUrl: (entry as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
-        lastEditedByUserId: (entry as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
-        lastEditedByName: (entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
-        lastEditedByAvatarUrl: (entry as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
+        anchorRect: { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
       });
     } else {
       setShowSiteLibraryManager(true);
@@ -1057,58 +1047,7 @@ export function Sidebar({
     setDeleteConfirm({ title, message, confirmLabel, onConfirm });
   };
 
-  const openAddLinkModal = () => {
-    const hasFromInSites = sites.some((site) => site.id === selectedLink.fromSiteId);
-    const hasToInSites = sites.some((site) => site.id === selectedLink.toSiteId);
-    const fallbackFrom = hasFromInSites ? selectedLink.fromSiteId : sites[0]?.id || "";
-    const fallbackTo = hasToInSites
-      ? selectedLink.toSiteId
-      : sites.find((site) => site.id !== fallbackFrom)?.id || "";
-    const fallbackFromSite = sites.find((site) => site.id === fallbackFrom) ?? selectedSite;
-    const fallbackToSite = sites.find((site) => site.id === fallbackTo) ?? fallbackFromSite;
-    const baseRadio = resolveLinkRadio(selectedLink, fallbackFromSite, fallbackToSite);
-    setLinkModal({
-      mode: "add",
-      linkId: null,
-      name: "",
-      fromSiteId: fallbackFrom,
-      toSiteId: fallbackTo,
-      overrideRadio: false,
-      txPowerDbm: baseRadio.txPowerDbm,
-      txGainDbi: baseRadio.txGainDbi,
-      rxGainDbi: baseRadio.rxGainDbi,
-      cableLossDb: baseRadio.cableLossDb,
-      status: "",
-    });
-  };
-
-  const openEditLinkModal = (linkId?: string) => {
-    const link = visibleLinks.find((l) => l.id === (linkId ?? selectedLinkId)) ?? selectedLink;
-    const linkRaw = links.find((l) => l.id === link.id) ?? null;
-    const fromSite = sites.find((site) => site.id === link.fromSiteId) ?? null;
-    const toSite = sites.find((site) => site.id === link.toSiteId) ?? null;
-    const baseRadio = resolveLinkRadio(link, fromSite, toSite);
-    const hasOverrides = Boolean(
-      linkRaw &&
-        (typeof linkRaw.txPowerDbm === "number" ||
-          typeof linkRaw.txGainDbi === "number" ||
-          typeof linkRaw.rxGainDbi === "number" ||
-          typeof linkRaw.cableLossDb === "number"),
-    );
-    setLinkModal({
-      mode: "edit",
-      linkId: link.id,
-      name: link.name ?? "",
-      fromSiteId: link.fromSiteId,
-      toSiteId: link.toSiteId,
-      overrideRadio: hasOverrides,
-      txPowerDbm: baseRadio.txPowerDbm,
-      txGainDbi: baseRadio.txGainDbi,
-      rxGainDbi: baseRadio.rxGainDbi,
-      cableLossDb: baseRadio.cableLossDb,
-      status: "",
-    });
-  };
+  // openAddLinkModal and openEditLinkModal removed — replaced by openMapEditor (issue #804)
 
   const saveLinkModal = () => {
     if (!linkModal) return;
@@ -1239,7 +1178,9 @@ export function Sidebar({
     });
   };
   const selectedLibraryCount = selectedLibraryIds.size;
-  const openLibraryForSite = (site: Site) => {
+  const ZERO_RECT = { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 };
+  const openLibraryForSite = (site: Site, triggerEl?: Element | null) => {
+    const anchorRect = triggerEl?.getBoundingClientRect() ?? ZERO_RECT;
     const matchedEntry = siteLibrary.find(
       (entry) =>
         entry.name === site.name &&
@@ -1247,41 +1188,23 @@ export function Sidebar({
         Math.abs(entry.position.lon - site.position.lon) < 0.000001,
     );
     if (matchedEntry) {
-      openResourceDetailsPopup({
+      openMapEditor({
         kind: "site",
         resourceId: matchedEntry.id,
+        isNew: false,
         label: matchedEntry.name,
-        createdByUserId: (matchedEntry as unknown as { createdByUserId?: string }).createdByUserId ?? null,
-        createdByName: (matchedEntry as unknown as { createdByName?: string }).createdByName ?? "Unknown",
-        createdByAvatarUrl:
-          (matchedEntry as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
-        lastEditedByUserId:
-          (matchedEntry as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
-        lastEditedByName:
-          (matchedEntry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
-        lastEditedByAvatarUrl:
-          (matchedEntry as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
+        anchorRect,
       });
       return;
     }
-    setShowSiteLibraryManager(true);
-    setShowAddLibraryForm(true);
-    setNewLibraryName("");
-    setNewLibraryDescription("");
-    setNewLibraryVisibility("private");
-    setNewLibraryCollaboratorUserIds([]);
-    setNewLibraryCollaboratorRoles({});
-    setNewLibrarySourceMeta(undefined);
-    setNewLibraryLat(site.position.lat);
-    setNewLibraryLon(site.position.lon);
-    setNewLibraryGroundM(site.groundElevationM);
-    setNewLibraryAntennaM(site.antennaHeightM);
-    setNewLibraryTxPowerDbm(site.txPowerDbm);
-    setNewLibraryTxGainDbi(site.txGainDbi);
-    setNewLibraryRxGainDbi(site.rxGainDbi);
-    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(site.txGainDbi, site.rxGainDbi));
-    setNewLibraryCableLossDb(site.cableLossDb);
-    setLibrarySearchStatus("Selected site is not in Site Library yet. Save to create a library entry.");
+    // Site not in library yet — open new site popover pre-filled with this site's values
+    openMapEditor({
+      kind: "site",
+      resourceId: null,
+      isNew: true,
+      label: "New Site",
+      anchorRect,
+    });
   };
   const openNewSiteForm = () => {
     setShowSiteLibraryManager(true);
@@ -1581,93 +1504,7 @@ export function Sidebar({
     }
   };
 
-  const openResourceDetailsPopup = ({
-    kind,
-    resourceId,
-    label,
-    createdByUserId,
-    createdByName,
-    createdByAvatarUrl,
-    lastEditedByUserId,
-    lastEditedByName,
-    lastEditedByAvatarUrl,
-  }: {
-    kind: "site" | "simulation";
-    resourceId: string;
-    label: string;
-    createdByUserId: string | null;
-    createdByName: string;
-    createdByAvatarUrl: string;
-    lastEditedByUserId: string | null;
-    lastEditedByName: string;
-    lastEditedByAvatarUrl: string;
-  }) => {
-    setResourceNameDraft(label);
-    if (kind === "site") {
-      const site = siteLibrary.find((entry) => entry.id === resourceId);
-      setResourceDescriptionDraft(site?.description ?? "");
-      setResourceLatDraft(site?.position.lat ?? 0);
-      setResourceLonDraft(site?.position.lon ?? 0);
-      setResourceGroundDraft(site?.groundElevationM ?? 0);
-      setResourceAntennaDraft(site?.antennaHeightM ?? 2);
-      setResourceTxPowerDraft(site?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm);
-      const nextTxGainDbi = site?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi;
-      const nextRxGainDbi = site?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
-      setResourceTxGainDraft(nextTxGainDbi);
-      setResourceRxGainDraft(nextRxGainDbi);
-      setResourceSeparateGain(shouldUseSeparateSiteGain(nextTxGainDbi, nextRxGainDbi));
-      setResourceCableLossDraft(site?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
-      setResourceAccessVisibility(toAccessVisibility(site?.visibility));
-      const siteGrants = (site?.sharedWith ?? []).filter((grant) => grant.userId !== site?.ownerUserId);
-      setResourceCollaboratorUserIds(siteGrants.map((grant) => grant.userId));
-      setResourceCollaboratorRoles(
-        Object.fromEntries(siteGrants.map((grant) => [grant.userId, grant.role === "editor" || grant.role === "admin" ? "editor" : "viewer"])),
-      );
-    } else {
-      const simulation = simulationPresets.find((entry) => entry.id === resourceId);
-      setResourceDescriptionDraft(simulation?.description ?? "");
-      setResourceLatDraft(0);
-      setResourceLonDraft(0);
-      setResourceGroundDraft(0);
-      setResourceAntennaDraft(2);
-      setResourceTxPowerDraft(STANDARD_SITE_RADIO.txPowerDbm);
-      setResourceTxGainDraft(STANDARD_SITE_RADIO.txGainDbi);
-      setResourceRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
-      setResourceSeparateGain(shouldUseSeparateSiteGain(STANDARD_SITE_RADIO.txGainDbi, STANDARD_SITE_RADIO.rxGainDbi));
-      setResourceCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
-      setResourceAccessVisibility(toAccessVisibility(simulation?.visibility));
-      const simGrants = (simulation?.sharedWith ?? []).filter((grant) => grant.userId !== simulation?.ownerUserId);
-      setResourceCollaboratorUserIds(simGrants.map((grant) => grant.userId));
-      setResourceCollaboratorRoles(
-        Object.fromEntries(simGrants.map((grant) => [grant.userId, grant.role === "editor" || grant.role === "admin" ? "editor" : "viewer"])),
-      );
-    }
-    setResourceAccessStatus("");
-    const resolvedCreatedAvatar =
-      createdByAvatarUrl.trim() || (createdByUserId && createdByUserId === lastEditedByUserId ? lastEditedByAvatarUrl : "");
-    const resolvedLastEditedAvatar =
-      lastEditedByAvatarUrl.trim() ||
-      (lastEditedByUserId && lastEditedByUserId === createdByUserId ? createdByAvatarUrl : "");
-    const resolvedCreatedName =
-      createdByName.trim() && createdByName !== "Unknown"
-        ? createdByName
-        : createdByUserId ?? "Unknown";
-    const resolvedLastEditedName =
-      lastEditedByName.trim() && lastEditedByName !== "Unknown"
-        ? lastEditedByName
-        : lastEditedByUserId ?? resolvedCreatedName;
-    setResourceDetailsPopup({
-      kind,
-      resourceId,
-      label,
-      createdByUserId,
-      createdByName: resolvedCreatedName,
-      createdByAvatarUrl: resolvedCreatedAvatar,
-      lastEditedByUserId,
-      lastEditedByName: resolvedLastEditedName,
-      lastEditedByAvatarUrl: resolvedLastEditedAvatar,
-    });
-  };
+  // openResourceDetailsPopup removed — replaced by openMapEditor (issue #804)
 
   const persistResourceAccessSettings = (
     overrides?: Partial<{
@@ -1959,7 +1796,7 @@ export function Sidebar({
                 Duplicate
               </ActionButton>
               {selectedSimulationRef.startsWith("saved:") ? (
-                <ActionButton onClick={openActiveSimulationDetails} type="button">
+                <ActionButton onClick={(e) => openActiveSimulationDetails(e.currentTarget)} type="button">
                   Edit
                 </ActionButton>
               ) : null}
@@ -1993,7 +1830,7 @@ export function Sidebar({
                     aria-label="Edit site"
                     size="icon"
                     title="Edit site"
-                    onClick={() => openLibraryForSite(site)}
+                    onClick={(e) => openLibraryForSite(site, e.currentTarget)}
                   >
                     <Pencil aria-hidden="true" strokeWidth={1.8} />
                   </ActionButton>
@@ -2061,7 +1898,24 @@ export function Sidebar({
                     aria-label="Edit link"
                     size="icon"
                     title="Edit link"
-                    onClick={() => openEditLinkModal(link.id)}
+                    onClick={(e) => {
+                      const fromSite = sites.find((s) => s.id === link.fromSiteId);
+                      const toSite = sites.find((s) => s.id === link.toSiteId);
+                      const midLat = fromSite && toSite
+                        ? (fromSite.position.lat + toSite.position.lat) / 2
+                        : (fromSite?.position.lat ?? 0);
+                      const midLon = fromSite && toSite
+                        ? (fromSite.position.lon + toSite.position.lon) / 2
+                        : (fromSite?.position.lon ?? 0);
+                      openMapEditor({
+                        kind: "link",
+                        resourceId: link.id,
+                        isNew: false,
+                        label: link.name ?? displayLinkName(link.id),
+                        anchorRect: e.currentTarget.getBoundingClientRect(),
+                      });
+                      void midLat; void midLon;
+                    }}
                   >
                     <Pencil aria-hidden="true" strokeWidth={1.8} />
                   </ActionButton>
@@ -2086,7 +1940,19 @@ export function Sidebar({
         </div>
         <div className="chip-group">
           {!readOnly ? (
-            <ActionButton disabled={sites.length < 2} onClick={openAddLinkModal} type="button">
+            <ActionButton
+              disabled={sites.length < 2}
+              onClick={(e) => {
+                openMapEditor({
+                  kind: "link",
+                  resourceId: null,
+                  isNew: true,
+                  label: "New Link",
+                  anchorRect: e.currentTarget.getBoundingClientRect(),
+                });
+              }}
+              type="button"
+            >
               New
             </ActionButton>
           ) : null}
@@ -3184,7 +3050,15 @@ export function Sidebar({
               loadSimulationPreset(presetId);
               persistSelectedSimulationRef(`saved:${presetId}`);
             }}
-            onOpenDetails={openResourceDetailsPopup}
+            onOpenDetails={(params) =>
+              openMapEditor({
+                kind: params.kind,
+                resourceId: params.resourceId,
+                isNew: false,
+                label: params.label,
+                anchorRect: { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
+              })
+            }
           />
         </ModalOverlay>
       ) : null}
@@ -3417,22 +3291,18 @@ export function Sidebar({
             </div>
             <div className="chip-group">
               <ActionButton
-                onClick={() => {
-                  setShowAddLibraryForm((current) => !current);
-                  if (showAddLibraryForm) {
-                    setActiveBeamPreviewField(null);
-                    setPendingDraftAutoInsert(false);
-                    setNewLibraryDescription("");
-                    setNewLibraryVisibility("private");
-                    setNewLibraryCollaboratorUserIds([]);
-                    setNewLibraryCollaboratorRoles({});
-                  } else {
-                    setNewLibrarySeparateGain(shouldUseSeparateSiteGain(newLibraryTxGainDbi, newLibraryRxGainDbi));
-                  }
+                onClick={(e) => {
+                  openMapEditor({
+                    kind: "site",
+                    resourceId: null,
+                    isNew: true,
+                    label: "New Site",
+                    anchorRect: e.currentTarget.getBoundingClientRect(),
+                  });
                 }}
                 type="button"
               >
-                {showAddLibraryForm ? "Hide Add Form" : "Add Site"}
+                Add Site
               </ActionButton>
               <ActionButton
                 onClick={() => setSelectedLibraryIds(new Set(filteredSiteLibrary.map((entry) => entry.id)))}
@@ -3970,21 +3840,13 @@ export function Sidebar({
                       </ActionButton>
                     )}
                     <ActionButton
-                      onClick={() =>
-                        openResourceDetailsPopup({
+                      onClick={(e) =>
+                        openMapEditor({
                           kind: "site",
                           resourceId: entry.id,
+                          isNew: false,
                           label: entry.name,
-                          createdByUserId: (entry as unknown as { createdByUserId?: string }).createdByUserId ?? null,
-                          createdByName: (entry as unknown as { createdByName?: string }).createdByName ?? "Unknown",
-                          createdByAvatarUrl:
-                            (entry as unknown as { createdByAvatarUrl?: string }).createdByAvatarUrl ?? "",
-                          lastEditedByUserId:
-                            (entry as unknown as { lastEditedByUserId?: string }).lastEditedByUserId ?? null,
-                          lastEditedByName:
-                            (entry as unknown as { lastEditedByName?: string }).lastEditedByName ?? "Unknown",
-                          lastEditedByAvatarUrl:
-                            (entry as unknown as { lastEditedByAvatarUrl?: string }).lastEditedByAvatarUrl ?? "",
+                          anchorRect: e.currentTarget.getBoundingClientRect(),
                         })
                       }
                       type="button"

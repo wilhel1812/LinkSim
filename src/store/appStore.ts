@@ -421,6 +421,22 @@ type AppState = {
   simulationPresets: SimulationPreset[];
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
   endpointPickTarget: "from" | "to" | null;
+  mapEditor: {
+    kind: "site" | "link" | "simulation";
+    resourceId: string | null;
+    isNew: boolean;
+    label: string;
+    anchorRect: {
+      top: number;
+      right: number;
+      bottom: number;
+      left: number;
+      width: number;
+      height: number;
+    };
+  } | null;
+  openMapEditor: (payload: NonNullable<AppState["mapEditor"]>) => void;
+  closeMapEditor: () => void;
   showSimulationLibraryRequest: boolean;
   showNewSimulationRequest: boolean;
   showSiteLibraryRequest: boolean;
@@ -1234,6 +1250,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   simulationPresets: initialSimulationPresets,
   siteDragPreview: {},
   endpointPickTarget: null,
+  mapEditor: null,
   pendingSiteLibraryDraft: null,
   showSimulationLibraryRequest: false,
   showNewSimulationRequest: false,
@@ -1841,6 +1858,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainLoadEpoch: 0,
       siteDragPreview: {},
       endpointPickTarget: null,
+      mapEditor: null,
       mapViewport: scenario.viewport,
       siteLibrary: libraryBacked.siteLibrary,
       fitSitesEpoch: get().fitSitesEpoch + 1,
@@ -1887,6 +1905,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainLoadEpoch: 0,
       siteDragPreview: {},
       endpointPickTarget: null,
+      mapEditor: null,
       // mapViewport: undefined — fitSitesEpoch triggers proper fit via MapView
       fitSitesEpoch: get().fitSitesEpoch + 1,
       siteLibrary: libraryBacked.siteLibrary,
@@ -3138,6 +3157,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   },
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
+  openMapEditor: (payload) => set({ mapEditor: payload }),
+  closeMapEditor: () => set({ mapEditor: null }),
   requestSiteLibraryDraftAt: (lat, lon, suggestedName, sourceMeta) =>
     set({
       pendingSiteLibraryDraft: {
