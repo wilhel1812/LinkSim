@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
+import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../lib/frequencyPlans";
 import { useAppStore } from "../../store/appStore";
 import { useMapEditorFormState } from "./useMapEditorFormState";
 import { AccessSettingsEditor } from "../AccessSettingsEditor";
@@ -7,6 +8,7 @@ import { ActionButton } from "../ActionButton";
 import { CompactDetails, CompactDetailsSummary } from "../ui/CompactDetails";
 import { Surface } from "../ui/Surface";
 import { InlineCloseIconButton } from "../InlineCloseIconButton";
+import { SiteBeamVisualizer } from "../SiteBeamVisualizer";
 
 // ─── Positioning ─────────────────────────────────────────────────────────────
 
@@ -125,6 +127,45 @@ function SiteEditorCard({
           />
         </label>
 
+        <CompactDetails>
+          <CompactDetailsSummary>Map Search</CompactDetailsSummary>
+          <label className="field-grid">
+            <span>Search</span>
+            <input
+              onChange={(e) => form.setSiteSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void form.runSiteSearch();
+                }
+              }}
+              placeholder="Place, address, or coordinates"
+              type="text"
+              value={form.siteSearchQuery}
+            />
+          </label>
+          <div className="chip-group">
+            <ActionButton disabled={form.siteSearchBusy} onClick={() => void form.runSiteSearch()} type="button">
+              {form.siteSearchBusy ? "Searching..." : "Search"}
+            </ActionButton>
+          </div>
+          {form.siteSearchStatus ? <p className="field-help">{form.siteSearchStatus}</p> : null}
+          {form.siteSearchResults.length ? (
+            <div className="site-quick-list">
+              {form.siteSearchResults.map((result) => (
+                <ActionButton
+                  disabled={form.siteSearchPickBusyId !== null}
+                  key={result.id}
+                  onClick={() => void form.selectSiteSearchResult(result)}
+                  type="button"
+                >
+                  {form.siteSearchPickBusyId === result.id ? "Loading..." : `Use: ${result.label}`}
+                </ActionButton>
+              ))}
+            </div>
+          ) : null}
+        </CompactDetails>
+
         <label className="field-grid">
           <span>Ground elev (m)</span>
           <div className="field-inline">
@@ -153,72 +194,84 @@ function SiteEditorCard({
           </div>
         </label>
 
-        <label className="field-grid">
-          <span>Antenna (m)</span>
-          <input
-            onChange={(e) => form.setAntennaDraft(e.target.value)}
-            type="number"
-            value={form.antennaDraft}
-          />
-        </label>
+        <div className="beam-visualizer-field-group">
+          <label className="field-grid">
+            <span>Antenna (m)</span>
+            <input
+              onChange={(e) => form.setAntennaDraft(e.target.value)}
+              type="number"
+              value={form.antennaDraft}
+            />
+          </label>
 
-        <label className="field-grid">
-          <span>Tx power (dBm)</span>
-          <input
-            onChange={(e) => form.setTxPowerDraft(e.target.value)}
-            type="number"
-            value={form.txPowerDraft}
-          />
-        </label>
+          <label className="field-grid">
+            <span>Tx power (dBm)</span>
+            <input
+              onChange={(e) => form.setTxPowerDraft(e.target.value)}
+              type="number"
+              value={form.txPowerDraft}
+            />
+          </label>
 
-        {form.separateGain ? (
-          <>
+          {form.separateGain ? (
+            <>
+              <label className="field-grid">
+                <span>Tx gain (dBi)</span>
+                <input
+                  onChange={(e) => form.setTxGainDraft(e.target.value)}
+                  type="number"
+                  value={form.txGainDraft}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Rx gain (dBi)</span>
+                <input
+                  onChange={(e) => form.setRxGainDraft(e.target.value)}
+                  type="number"
+                  value={form.rxGainDraft}
+                />
+              </label>
+            </>
+          ) : (
             <label className="field-grid">
-              <span>Tx gain (dBi)</span>
+              <span>Gain (dBi)</span>
               <input
-                onChange={(e) => form.setTxGainDraft(e.target.value)}
+                onChange={(e) => form.handleGainChange(Number(e.target.value))}
                 type="number"
                 value={form.txGainDraft}
               />
             </label>
-            <label className="field-grid">
-              <span>Rx gain (dBi)</span>
-              <input
-                onChange={(e) => form.setRxGainDraft(e.target.value)}
-                type="number"
-                value={form.rxGainDraft}
-              />
-            </label>
-          </>
-        ) : (
-          <label className="field-grid">
-            <span>Gain (dBi)</span>
+          )}
+
+          <div className="field-grid gain-mode-toggle">
+            <span>Separate RX/TX gain</span>
             <input
-              onChange={(e) => form.handleGainChange(Number(e.target.value))}
+              aria-label="Separate RX/TX gain"
+              checked={form.separateGain}
+              onChange={(e) => form.handleSeparateGainToggle(e.target.checked)}
+              type="checkbox"
+            />
+          </div>
+
+          <label className="field-grid">
+            <span>Cable loss (dB)</span>
+            <input
+              onChange={(e) => form.setCableLossDraft(e.target.value)}
               type="number"
-              value={form.txGainDraft}
+              value={form.cableLossDraft}
             />
           </label>
-        )}
-
-        <div className="field-grid gain-mode-toggle">
-          <span>Separate RX/TX gain</span>
-          <input
-            aria-label="Separate RX/TX gain"
-            checked={form.separateGain}
-            onChange={(e) => form.handleSeparateGainToggle(e.target.checked)}
-            type="checkbox"
-          />
         </div>
 
-        <label className="field-grid">
-          <span>Cable loss (dB)</span>
-          <input
-            onChange={(e) => form.setCableLossDraft(e.target.value)}
-            type="number"
-            value={form.cableLossDraft}
-          />
-        </label>
+        <SiteBeamVisualizer
+          values={{
+            antennaHeightM: form.antennaDraft,
+            txPowerDbm: form.txPowerDraft,
+            txGainDbi: form.txGainDraft,
+            rxGainDbi: form.rxGainDraft,
+            cableLossDb: form.cableLossDraft,
+          }}
+        />
       </fieldset>
 
       {form.status ? <p className="field-help">{form.status}</p> : null}
@@ -376,9 +429,11 @@ function LinkEditorCard({
 // ─── Simulation Editor Card ──────────────────────────────────────────────────
 
 function SimulationEditorCard({
+  isNew,
   form,
   onClose,
 }: {
+  isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
 }) {
@@ -387,15 +442,15 @@ function SimulationEditorCard({
   return (
     <>
       <div className="library-manager-header">
-        <h2>Edit · {mapEditor?.label ?? "Simulation"}</h2>
+        <h2>{isNew ? "New Simulation" : `Edit · ${mapEditor?.label ?? "Simulation"}`}</h2>
         <InlineCloseIconButton onClick={onClose} />
       </div>
 
-      {!form.canWrite && (
+      {!form.canWrite && !isNew && (
         <p className="field-help warning-text">Read-only: you can view this simulation but cannot edit it.</p>
       )}
 
-      <fieldset className="resource-edit-fieldset" disabled={!form.canWrite}>
+      <fieldset className="resource-edit-fieldset" disabled={!form.canWrite && !isNew}>
         <label className="field-grid">
           <span>Name</span>
           <input
@@ -428,6 +483,40 @@ function SimulationEditorCard({
           ownerUserId={form.ownerUserId}
           visibility={form.accessVisibility}
         />
+        {isNew ? (
+          <CompactDetails open>
+            <CompactDetailsSummary>Simulation Defaults</CompactDetailsSummary>
+            <label className="field-grid">
+              <span>Frequency Plan</span>
+              <select
+                className="locale-select"
+                onChange={(e) => form.setSimulationFrequencyPresetId(e.target.value)}
+                value={form.simulationFrequencyPresetId}
+              >
+                {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
+                  <optgroup key={groupEntry.group} label={groupEntry.group}>
+                    {groupEntry.presets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <label className="field-grid">
+              <span>Auto environment defaults</span>
+              <select
+                className="locale-select"
+                onChange={(e) => form.setSimulationAutoPropagationEnvironment(e.target.value === "auto")}
+                value={form.simulationAutoPropagationEnvironment ? "auto" : "manual"}
+              >
+                <option value="auto">Auto (recommended)</option>
+                <option value="manual">Manual override</option>
+              </select>
+            </label>
+          </CompactDetails>
+        ) : null}
       </fieldset>
 
       {/* Pending visibility confirmation prompt */}
@@ -453,7 +542,7 @@ function SimulationEditorCard({
       {!form.pendingVisibilityConfirm ? (
         <div className="chip-group">
           <ActionButton disabled={!form.canWrite} onClick={form.handleSaveSimulation} type="button">
-            Save
+            {isNew ? "Create Simulation" : "Save"}
           </ActionButton>
           <ActionButton onClick={onClose} type="button">
             Cancel
@@ -498,9 +587,17 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
     // Recompute once panel is rendered with actual dimensions
     const raf = requestAnimationFrame(updatePosition);
     window.addEventListener("resize", updatePosition);
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => updatePosition());
+    if (panelRef.current && resizeObserver) {
+      resizeObserver.observe(panelRef.current);
+    }
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", updatePosition);
+      resizeObserver?.disconnect();
     };
   }, [mapEditor, isMobile]);
 
@@ -514,25 +611,6 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, [mapEditor, closeMapEditor]);
 
-  // Outside click dismiss
-  useEffect(() => {
-    if (!mapEditor) return;
-    const onPointerDown = (e: Event) => {
-      if (panelRef.current?.contains(e.target as Node)) return;
-      closeMapEditor();
-    };
-    // Small delay so the triggering click doesn't immediately close the panel
-    const timer = setTimeout(() => {
-      document.addEventListener("mousedown", onPointerDown);
-      document.addEventListener("touchstart", onPointerDown, { passive: true });
-    }, 50);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("touchstart", onPointerDown);
-    };
-  }, [mapEditor, closeMapEditor]);
-
   if (!mapEditor) return null;
 
   const editorContent = (() => {
@@ -543,7 +621,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       return <LinkEditorCard form={form} isNew={mapEditor.isNew} onClose={closeMapEditor} />;
     }
     if (mapEditor.kind === "simulation") {
-      return <SimulationEditorCard form={form} onClose={closeMapEditor} />;
+      return <SimulationEditorCard form={form} isNew={mapEditor.isNew} onClose={closeMapEditor} />;
     }
     return null;
   })();

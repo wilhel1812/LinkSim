@@ -3,6 +3,8 @@ import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain 
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../../lib/linkRadio";
 import { toAccessVisibility } from "../../lib/uiFormatting";
 import { fetchCollaboratorDirectory } from "../../lib/cloudUser";
+import { fetchElevations } from "../../lib/elevationService";
+import { searchLocations, type GeocodeResult } from "../../lib/geocode";
 import { sampleSrtmElevation } from "../../lib/srtm";
 import { getUiErrorMessage } from "../../lib/uiError";
 import { useAppStore } from "../../store/appStore";
@@ -23,12 +25,18 @@ export function useMapEditorFormState() {
   const links = useAppStore((state) => state.links);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
   const mapViewport = useAppStore((state) => state.mapViewport);
+  const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const currentUser = useAppStore((state) => state.currentUser);
   const isEditorTerrainFetching = useAppStore((state) => state.isEditorTerrainFetching);
   const loadTerrainForCoordinate = useAppStore((state) => state.loadTerrainForCoordinate);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
   const addSiteLibraryEntry = useAppStore((state) => state.addSiteLibraryEntry);
+  const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
+  const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
+  const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
+  const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
+  const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
   const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
 
@@ -56,6 +64,13 @@ export function useMapEditorFormState() {
   const [separateGain, setSeparateGain] = useState(false);
   const [cableLossDraft, setCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
   const [isElevationUserSet, setIsElevationUserSet] = useState(false);
+  const [siteSourceMeta, setSiteSourceMeta] = useState<NonNullable<NonNullable<typeof mapEditor>["siteSeed"]>["sourceMeta"]>();
+  const [insertSiteAfterSave, setInsertSiteAfterSave] = useState(false);
+  const [siteSearchQuery, setSiteSearchQuery] = useState("");
+  const [siteSearchStatus, setSiteSearchStatus] = useState("");
+  const [siteSearchResults, setSiteSearchResults] = useState<GeocodeResult[]>([]);
+  const [siteSearchPickBusyId, setSiteSearchPickBusyId] = useState<string | null>(null);
+  const [siteSearchBusy, setSiteSearchBusy] = useState(false);
 
   // ─── Simulation-specific ─────────────────────────────────────────────────────
   const [pendingVisibilityConfirm, setPendingVisibilityConfirm] = useState<{
@@ -63,6 +78,8 @@ export function useMapEditorFormState() {
     targetVisibility: "shared";
     referencedPrivateSiteIds: string[];
   } | null>(null);
+  const [simulationFrequencyPresetId, setSimulationFrequencyPresetId] = useState("");
+  const [simulationAutoPropagationEnvironment, setSimulationAutoPropagationEnvironment] = useState(true);
 
   // ─── Link drafts ──────────────────────────────────────────────────────────────
   const [linkNameDraft, setLinkNameDraft] = useState("");
@@ -83,11 +100,12 @@ export function useMapEditorFormState() {
 
     if (mapEditor.kind === "site") {
       if (mapEditor.isNew) {
+        const seed = mapEditor.siteSeed;
         // New site: initialise from map center
-        setNameDraft("");
+        setNameDraft(seed?.name ?? "");
         setDescriptionDraft("");
-        setLatDraft(mapViewport?.center.lat ?? 0);
-        setLonDraft(mapViewport?.center.lon ?? 0);
+        setLatDraft(seed?.lat ?? mapViewport?.center.lat ?? 0);
+        setLonDraft(seed?.lon ?? mapViewport?.center.lon ?? 0);
         setGroundDraft(0);
         setAntennaDraft(10);
         setTxPowerDraft(STANDARD_SITE_RADIO.txPowerDbm);
@@ -98,6 +116,11 @@ export function useMapEditorFormState() {
         setAccessVisibility("private");
         setCollaboratorUserIds([]);
         setCollaboratorRoles({});
+        setSiteSourceMeta(seed?.sourceMeta);
+        setInsertSiteAfterSave(Boolean(seed?.insertIntoSimulation));
+        setSiteSearchQuery("");
+        setSiteSearchResults([]);
+        setSiteSearchStatus("");
       } else {
         // Edit site
         const entry = siteLibrary.find((e) => e.id === mapEditor.resourceId);
@@ -122,19 +145,38 @@ export function useMapEditorFormState() {
             grants.map((g) => [g.userId, g.role === "editor" || g.role === "admin" ? "editor" : "viewer"]),
           ),
         );
+        setSiteSourceMeta(undefined);
+        setInsertSiteAfterSave(false);
+        setSiteSearchQuery("");
+        setSiteSearchResults([]);
+        setSiteSearchStatus("");
       }
     } else if (mapEditor.kind === "simulation") {
-      const preset = simulationPresets.find((p) => p.id === mapEditor.resourceId);
-      setNameDraft(preset?.name ?? mapEditor.label);
-      setDescriptionDraft(preset?.description ?? "");
-      setAccessVisibility(toAccessVisibility(preset?.visibility) as AccessVisibility);
-      const grants = (preset?.sharedWith ?? []).filter((g) => g.userId !== preset?.ownerUserId);
-      setCollaboratorUserIds(grants.map((g) => g.userId));
-      setCollaboratorRoles(
-        Object.fromEntries(
-          grants.map((g) => [g.userId, g.role === "editor" || g.role === "admin" ? "editor" : "viewer"]),
-        ),
-      );
+      if (mapEditor.isNew) {
+        setNameDraft("");
+        setDescriptionDraft("");
+        setAccessVisibility("private");
+        setCollaboratorUserIds([]);
+        setCollaboratorRoles({});
+        setSimulationFrequencyPresetId(mapEditor.simulationSeed?.frequencyPresetId ?? selectedFrequencyPresetId);
+        setSimulationAutoPropagationEnvironment(
+          mapEditor.simulationSeed?.autoPropagationEnvironment ?? autoPropagationEnvironment,
+        );
+      } else {
+        const preset = simulationPresets.find((p) => p.id === mapEditor.resourceId);
+        setNameDraft(preset?.name ?? mapEditor.label);
+        setDescriptionDraft(preset?.description ?? "");
+        setAccessVisibility(toAccessVisibility(preset?.visibility) as AccessVisibility);
+        setSimulationFrequencyPresetId(preset?.snapshot.selectedFrequencyPresetId ?? selectedFrequencyPresetId);
+        setSimulationAutoPropagationEnvironment(preset?.snapshot.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        const grants = (preset?.sharedWith ?? []).filter((g) => g.userId !== preset?.ownerUserId);
+        setCollaboratorUserIds(grants.map((g) => g.userId));
+        setCollaboratorRoles(
+          Object.fromEntries(
+            grants.map((g) => [g.userId, g.role === "editor" || g.role === "admin" ? "editor" : "viewer"]),
+          ),
+        );
+      }
     } else if (mapEditor.kind === "link") {
       if (mapEditor.isNew) {
         const fallbackFrom = sites[0]?.id ?? "";
@@ -288,6 +330,50 @@ export function useMapEditorFormState() {
     return Math.round(elevation);
   };
 
+  const runSiteSearch = async () => {
+    if (siteSearchQuery.trim().length < 3) {
+      setSiteSearchResults([]);
+      setSiteSearchStatus("Enter at least 3 characters to search.");
+      return;
+    }
+    setSiteSearchBusy(true);
+    setSiteSearchStatus("Searching...");
+    try {
+      const results = await searchLocations(siteSearchQuery);
+      setSiteSearchResults(results);
+      setSiteSearchStatus(results.length ? `Found ${results.length} result(s)` : "No results");
+    } catch (error) {
+      setSiteSearchStatus(`Search failed: ${getUiErrorMessage(error)}`);
+    } finally {
+      setSiteSearchBusy(false);
+    }
+  };
+
+  const selectSiteSearchResult = async (result: GeocodeResult) => {
+    setSiteSearchPickBusyId(result.id);
+    setSiteSearchStatus("Resolving elevation for selected result...");
+    setLatDraft(result.lat);
+    setLonDraft(result.lon);
+    setIsElevationUserSet(false);
+    updateMapViewport({
+      center: { lat: result.lat, lon: result.lon },
+      zoom: 12,
+    });
+    try {
+      const [elevation] = await fetchElevations([{ lat: result.lat, lon: result.lon }]);
+      if (Number.isFinite(elevation)) {
+        setGroundDraft(Math.round(elevation));
+        setSiteSearchStatus(`Selected: ${result.label} (elevation ${Math.round(elevation)} m)`);
+      } else {
+        setSiteSearchStatus(`Selected: ${result.label} (elevation unavailable)`);
+      }
+    } catch (error) {
+      setSiteSearchStatus(`Selected coordinates, elevation lookup failed: ${getUiErrorMessage(error)}`);
+    } finally {
+      setSiteSearchPickBusyId(null);
+    }
+  };
+
   // ─── Gain toggle ─────────────────────────────────────────────────────────────
   const handleGainChange = (value: number) => {
     const next = getSyncedSiteGainPair(value);
@@ -318,7 +404,7 @@ export function useMapEditorFormState() {
 
     try {
       if (mapEditor?.isNew) {
-        addSiteLibraryEntry(
+        const createdId = addSiteLibraryEntry(
           trimmedName,
           latDraft,
           lonDraft,
@@ -328,10 +414,16 @@ export function useMapEditorFormState() {
           txGainDraft,
           rxGainDraft,
           cableLossDraft,
-          undefined,
+          siteSourceMeta,
           normalizedVisibility,
           descriptionDraft.trim() || undefined,
         );
+        if (sharedWith.length) {
+          updateSiteLibraryEntry(createdId, { sharedWith });
+        }
+        if (insertSiteAfterSave) {
+          insertSiteFromLibrary(createdId);
+        }
       } else if (mapEditor?.resourceId) {
         updateSiteLibraryEntry(mapEditor.resourceId, {
           name: trimmedName,
@@ -356,7 +448,6 @@ export function useMapEditorFormState() {
   };
 
   const handleSaveSimulation = (): boolean => {
-    if (!mapEditor?.resourceId) return false;
     const trimmedName = nameDraft.trim();
     if (!trimmedName) {
       setStatus("Name is required.");
@@ -366,6 +457,43 @@ export function useMapEditorFormState() {
     const sharedWith = collaboratorUserIds
       .filter((id) => id !== ownerUserId)
       .map((id) => ({ userId: id, role: (collaboratorRoles[id] ?? "viewer") as "viewer" | "editor" }));
+
+    if (mapEditor?.isNew) {
+      if (!currentUser?.id) {
+        setStatus("Cannot create simulation until current user profile is loaded.");
+        return false;
+      }
+      try {
+        const createdId = createBlankSimulationPreset(trimmedName, {
+          frequencyPresetId: simulationFrequencyPresetId,
+          description: descriptionDraft.trim() || undefined,
+          visibility: normalizedVisibility,
+          autoPropagationEnvironment: simulationAutoPropagationEnvironment,
+          ownerUserId: currentUser.id,
+          createdByUserId: currentUser.id,
+          createdByName: currentUser.username,
+          createdByAvatarUrl: currentUser.avatarUrl ?? "",
+          lastEditedByUserId: currentUser.id,
+          lastEditedByName: currentUser.username,
+          lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
+        });
+        if (!createdId) {
+          setStatus("Failed creating simulation. Check the name and try again.");
+          return false;
+        }
+        if (sharedWith.length) {
+          updateSimulationPresetEntry(createdId, { sharedWith });
+        }
+        loadSimulationPreset(createdId);
+        closeMapEditor();
+        return true;
+      } catch (error) {
+        setStatus(`Save failed: ${getUiErrorMessage(error)}`);
+        return false;
+      }
+    }
+
+    if (!mapEditor?.resourceId) return false;
 
     // Check for private site refs that would need to be promoted
     if (normalizedVisibility === "shared") {
@@ -494,6 +622,10 @@ export function useMapEditorFormState() {
     pendingVisibilityConfirm,
     setPendingVisibilityConfirm,
     applyPendingVisibilityChange,
+    simulationFrequencyPresetId,
+    setSimulationFrequencyPresetId,
+    simulationAutoPropagationEnvironment,
+    setSimulationAutoPropagationEnvironment,
     handleSaveSimulation,
     // link
     linkNameDraft, setLinkNameDraft,
@@ -505,6 +637,14 @@ export function useMapEditorFormState() {
     linkRxGain, setLinkRxGain: (v: number | string) => setLinkRxGain(parseNumber(String(v))),
     linkCableLoss, setLinkCableLoss: (v: number | string) => setLinkCableLoss(parseNumber(String(v))),
     handleSaveLink,
+    siteSearchQuery,
+    setSiteSearchQuery,
+    siteSearchStatus,
+    siteSearchResults,
+    siteSearchBusy,
+    siteSearchPickBusyId,
+    runSiteSearch,
+    selectSiteSearchResult,
     // raw data for labels
     sites,
   };

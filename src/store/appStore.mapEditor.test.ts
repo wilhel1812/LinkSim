@@ -87,6 +87,29 @@ describe("mapEditor store slice", () => {
     expect(useAppStore.getState().mapEditor).toEqual(payload);
   });
 
+  it("openMapEditor stores seeded new site payloads", () => {
+    const payload = {
+      kind: "site" as const,
+      resourceId: null,
+      isNew: true,
+      label: "New Site",
+      anchorRect: ZERO_RECT,
+      siteSeed: {
+        lat: 60.123,
+        lon: 10.456,
+        name: "MQTT Hill",
+        insertIntoSimulation: true,
+        sourceMeta: {
+          sourceType: "mqtt-feed",
+          sourceUrl: "/meshmap/nodes.json",
+          nodeId: "node-1",
+        },
+      },
+    };
+    useAppStore.getState().openMapEditor(payload);
+    expect(useAppStore.getState().mapEditor).toEqual(payload);
+  });
+
   it("openMapEditor works for kind=link", () => {
     const payload = {
       kind: "link" as const,
@@ -110,6 +133,22 @@ describe("mapEditor store slice", () => {
     };
     useAppStore.getState().openMapEditor(payload);
     expect(useAppStore.getState().mapEditor?.kind).toBe("simulation");
+  });
+
+  it("openMapEditor stores seeded new simulation payloads", () => {
+    const payload = {
+      kind: "simulation" as const,
+      resourceId: null,
+      isNew: true,
+      label: "New Simulation",
+      anchorRect: ZERO_RECT,
+      simulationSeed: {
+        frequencyPresetId: "eu-868",
+        autoPropagationEnvironment: false,
+      },
+    };
+    useAppStore.getState().openMapEditor(payload);
+    expect(useAppStore.getState().mapEditor).toEqual(payload);
   });
 
   it("closeMapEditor clears state to null", () => {

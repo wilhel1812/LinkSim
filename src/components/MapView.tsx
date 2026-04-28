@@ -686,7 +686,7 @@ export function MapView({
   const setSiteDragPreview = useAppStore((state) => state.setSiteDragPreview);
   const clearSiteDragPreview = useAppStore((state) => state.clearSiteDragPreview);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
-  const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
+  const openMapEditor = useAppStore((state) => state.openMapEditor);
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
   const coverageSamples = useCoverageStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -2141,7 +2141,26 @@ export function MapView({
     setSiteDraftStatus("Preparing site draft...");
     try {
       const suggestedName = await guessSiteNameForPosition(pendingNewSiteDraft.lat, pendingNewSiteDraft.lon);
-      requestSiteLibraryDraftAt(pendingNewSiteDraft.lat, pendingNewSiteDraft.lon, suggestedName);
+      openMapEditor({
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect: {
+          top: window.innerHeight / 2,
+          right: window.innerWidth / 2,
+          bottom: window.innerHeight / 2,
+          left: window.innerWidth / 2,
+          width: 0,
+          height: 0,
+        },
+        siteSeed: {
+          lat: pendingNewSiteDraft.lat,
+          lon: pendingNewSiteDraft.lon,
+          name: suggestedName,
+          insertIntoSimulation: true,
+        },
+      });
       setPendingNewSiteDraft(null);
       setSiteDraftStatus(null);
     } catch (error) {
@@ -2395,16 +2414,36 @@ export function MapView({
       setSiteDraftStatus(`Node already exists as "${existing.name}". Choose add existing or create a copy.`);
       return;
     }
-    requestSiteLibraryDraftAt(node.lat, node.lon, node.longName ?? node.shortName ?? node.nodeId, {
-      sourceType: "mqtt-feed",
-      sourceUrl: "/meshmap/nodes.json",
-      nodeId: node.nodeId,
-      longName: node.longName,
-      shortName: node.shortName,
-      hwModel: node.hwModel,
-      role: node.role,
+    openMapEditor({
+      kind: "site",
+      resourceId: null,
+      isNew: true,
+      label: "New Site",
+      anchorRect: {
+        top: window.innerHeight / 2,
+        right: window.innerWidth / 2,
+        bottom: window.innerHeight / 2,
+        left: window.innerWidth / 2,
+        width: 0,
+        height: 0,
+      },
+      siteSeed: {
+        lat: node.lat,
+        lon: node.lon,
+        name: node.longName ?? node.shortName ?? node.nodeId,
+        insertIntoSimulation: true,
+        sourceMeta: {
+          sourceType: "mqtt-feed",
+          sourceUrl: "/meshmap/nodes.json",
+          nodeId: node.nodeId,
+          longName: node.longName,
+          shortName: node.shortName,
+          hwModel: node.hwModel,
+          role: node.role,
+        },
+      },
     });
-    setSiteDraftStatus("Opened MQTT node in Add Site form. Review and save to add it.");
+    setSiteDraftStatus("Opened MQTT node in the site editor. Review and save to add it.");
   };
 
   const addExistingDuplicateMqttNode = () => {
@@ -2417,16 +2456,36 @@ export function MapView({
   const createDuplicateMqttCopy = () => {
     if (!mqttDuplicatePrompt) return;
     const node = mqttDuplicatePrompt.node;
-    requestSiteLibraryDraftAt(node.lat, node.lon, node.longName ?? node.shortName ?? node.nodeId, {
-      sourceType: "mqtt-feed",
-      sourceUrl: "/meshmap/nodes.json",
-      nodeId: node.nodeId,
-      longName: node.longName,
-      shortName: node.shortName,
-      hwModel: node.hwModel,
-      role: node.role,
+    openMapEditor({
+      kind: "site",
+      resourceId: null,
+      isNew: true,
+      label: "New Site",
+      anchorRect: {
+        top: window.innerHeight / 2,
+        right: window.innerWidth / 2,
+        bottom: window.innerHeight / 2,
+        left: window.innerWidth / 2,
+        width: 0,
+        height: 0,
+      },
+      siteSeed: {
+        lat: node.lat,
+        lon: node.lon,
+        name: node.longName ?? node.shortName ?? node.nodeId,
+        insertIntoSimulation: true,
+        sourceMeta: {
+          sourceType: "mqtt-feed",
+          sourceUrl: "/meshmap/nodes.json",
+          nodeId: node.nodeId,
+          longName: node.longName,
+          shortName: node.shortName,
+          hwModel: node.hwModel,
+          role: node.role,
+        },
+      },
     });
-    setSiteDraftStatus(`Opened copy draft for "${mqttDuplicatePrompt.existingName}".`);
+    setSiteDraftStatus(`Opened copy in the site editor for "${mqttDuplicatePrompt.existingName}".`);
     setMqttDuplicatePrompt(null);
   };
 
@@ -2699,7 +2758,20 @@ export function MapView({
                 <div className="chip-group">
                   {inspectorPrimaryLibraryEntryId ? (
                     <ActionButton
-                      onClick={() => requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId)}
+                      onClick={(event) => {
+                        const entry = siteLibrary.find((candidate) => candidate.id === inspectorPrimaryLibraryEntryId);
+                        if (!entry) {
+                          requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId);
+                          return;
+                        }
+                        openMapEditor({
+                          kind: "site",
+                          resourceId: entry.id,
+                          isNew: false,
+                          label: entry.name,
+                          anchorRect: event.currentTarget.getBoundingClientRect(),
+                        });
+                      }}
                     >
                       Details
                     </ActionButton>

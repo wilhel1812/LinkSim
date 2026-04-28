@@ -434,6 +434,17 @@ type AppState = {
       width: number;
       height: number;
     };
+    siteSeed?: {
+      lat?: number;
+      lon?: number;
+      name?: string;
+      sourceMeta?: SiteLibraryEntry["sourceMeta"];
+      insertIntoSimulation?: boolean;
+    };
+    simulationSeed?: {
+      frequencyPresetId?: string;
+      autoPropagationEnvironment?: boolean;
+    };
   } | null;
   openMapEditor: (payload: NonNullable<AppState["mapEditor"]>) => void;
   closeMapEditor: () => void;
@@ -552,6 +563,7 @@ type AppState = {
     options?: {
       description?: string;
       frequencyPresetId?: string;
+      autoPropagationEnvironment?: boolean;
       visibility?: "private" | "public" | "shared";
       ownerUserId?: string;
       createdByUserId?: string;
@@ -2701,7 +2713,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
         environmentLossDb: current.environmentLossDb,
         propagationEnvironment: current.propagationEnvironment,
-        autoPropagationEnvironment: current.autoPropagationEnvironment,
+        autoPropagationEnvironment: options?.autoPropagationEnvironment ?? current.autoPropagationEnvironment,
         terrainDataset: current.terrainDataset,
       };
       const nextPreset: SimulationPreset = {
