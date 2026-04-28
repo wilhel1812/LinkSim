@@ -159,9 +159,16 @@ describe("mapEditor store slice", () => {
       label: "Site",
       anchorRect: ZERO_RECT,
     });
+    useAppStore.getState().setMapEditorSiteDraft({ lat: 1, lon: 2, groundElevationM: 3 });
     expect(useAppStore.getState().mapEditor).not.toBeNull();
     useAppStore.getState().closeMapEditor();
     expect(useAppStore.getState().mapEditor).toBeNull();
+    expect(useAppStore.getState().mapEditorSiteDraft).toBeNull();
+  });
+
+  it("setMapEditorSiteDraft stores active site editor position", () => {
+    useAppStore.getState().setMapEditorSiteDraft({ lat: 60.1, lon: 10.2, groundElevationM: 123 });
+    expect(useAppStore.getState().mapEditorSiteDraft).toEqual({ lat: 60.1, lon: 10.2, groundElevationM: 123 });
   });
 
   it("closeMapEditor is a no-op when already null", () => {

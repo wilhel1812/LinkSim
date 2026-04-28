@@ -5220,7 +5220,7 @@ html.panorama-gesture-lock body {
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
-  max-height: 80vh;
+  max-height: 50vh;
   overflow-y: auto;
   animation: panel-slide-in-bottom 360ms ease-out both;
 }

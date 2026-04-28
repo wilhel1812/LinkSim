@@ -1212,6 +1212,7 @@ export function Sidebar({
       isNew: true,
       label: "New Site",
       anchorRect: triggerEl?.getBoundingClientRect() ?? { top: 96, right: 320, bottom: 96, left: 320, width: 0, height: 0 },
+      siteSeed: { awaitMapClick: true },
     });
   };
   const addLibraryEntryNow = () => {
@@ -1965,7 +1966,6 @@ export function Sidebar({
                 onChange={(event) =>
                   setLinkModal((current) => (current ? { ...current, name: event.target.value, status: "" } : current))
                 }
-                placeholder="Backhaul A"
                 type="text"
                 value={linkModal.name}
               />
@@ -2012,15 +2012,15 @@ export function Sidebar({
                   ))}
               </select>
             </label>
-            <CompactDetails>
-              <CompactDetailsSummary>Link Radio Overrides</CompactDetailsSummary>
+            <div className="beam-visualizer-field-group">
               <label className="field-grid">
-                <span>Use site radio defaults</span>
+                <span>Override site radio settings</span>
                 <input
-                  checked={!linkModal.overrideRadio}
+                  aria-label="Override site radio settings"
+                  checked={linkModal.overrideRadio}
                   onChange={(event) =>
                     setLinkModal((current) =>
-                      current ? { ...current, overrideRadio: !event.target.checked, status: "" } : current,
+                      current ? { ...current, overrideRadio: event.target.checked, status: "" } : current,
                     )
                   }
                   type="checkbox"
@@ -2083,7 +2083,7 @@ export function Sidebar({
               </label>
                 </>
               ) : null}
-            </CompactDetails>
+            </div>
             <div className="chip-group">
               <ActionButton onClick={saveLinkModal} type="button">
                 {linkModal.mode === "add" ? "Create Link" : "Save Link"}
@@ -3043,16 +3043,18 @@ export function Sidebar({
               loadSimulationPreset(presetId);
               persistSelectedSimulationRef(`saved:${presetId}`);
             }}
-            onOpenDetails={(params) =>
+            onOpenDetails={(params) => {
+              setShowSimulationLibraryManager(false);
               openMapEditor({
                 kind: params.kind,
                 resourceId: params.resourceId,
                 isNew: false,
                 label: params.label,
                 anchorRect: params.anchorRect,
-              })
-            }
-            onCreateSimulation={(triggerEl) =>
+              });
+            }}
+            onCreateSimulation={(triggerEl) => {
+              setShowSimulationLibraryManager(false);
               openMapEditor({
                 kind: "simulation",
                 resourceId: null,
@@ -3063,8 +3065,8 @@ export function Sidebar({
                   frequencyPresetId: getDefaultFrequencyPresetIdForNewSimulation(),
                   autoPropagationEnvironment,
                 },
-              })
-            }
+              });
+            }}
           />
         </ModalOverlay>
       ) : null}
@@ -3296,6 +3298,22 @@ export function Sidebar({
               </ActionButton>
             </div>
             <div className="chip-group">
+              <ActionButton
+                onClick={(event) => {
+                  setShowSiteLibraryManager(false);
+                  openMapEditor({
+                    kind: "site",
+                    resourceId: null,
+                    isNew: true,
+                    label: "New Site",
+                    anchorRect: event.currentTarget.getBoundingClientRect(),
+                    siteSeed: { awaitMapClick: true },
+                  });
+                }}
+                type="button"
+              >
+                New
+              </ActionButton>
               <ActionButton
                 onClick={() => setSelectedLibraryIds(new Set(filteredSiteLibrary.map((entry) => entry.id)))}
                 type="button"
@@ -3832,15 +3850,16 @@ export function Sidebar({
                       </ActionButton>
                     )}
                     <ActionButton
-                      onClick={(e) =>
+                      onClick={(e) => {
+                        setShowSiteLibraryManager(false);
                         openMapEditor({
                           kind: "site",
                           resourceId: entry.id,
                           isNew: false,
                           label: entry.name,
                           anchorRect: e.currentTarget.getBoundingClientRect(),
-                        })
-                      }
+                        });
+                      }}
                       type="button"
                     >
                       Open

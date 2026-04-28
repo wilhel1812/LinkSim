@@ -18,7 +18,9 @@ const parseNumber = (value: string | number): number => {
 
 export function useMapEditorFormState() {
   const mapEditor = useAppStore((state) => state.mapEditor);
+  const mapEditorSiteDraft = useAppStore((state) => state.mapEditorSiteDraft);
   const closeMapEditor = useAppStore((state) => state.closeMapEditor);
+  const setMapEditorSiteDraft = useAppStore((state) => state.setMapEditorSiteDraft);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const sites = useAppStore((state) => state.sites);
@@ -91,6 +93,12 @@ export function useMapEditorFormState() {
   const [linkRxGain, setLinkRxGain] = useState(STANDARD_SITE_RADIO.rxGainDbi);
   const [linkCableLoss, setLinkCableLoss] = useState(STANDARD_SITE_RADIO.cableLossDb);
 
+  const getLinkDefaultName = (fromId: string, toId: string): string => {
+    const from = sites.find((site) => site.id === fromId);
+    const to = sites.find((site) => site.id === toId);
+    return from && to ? `${from.name} -> ${to.name}` : "";
+  };
+
   // ─── Initialize drafts when editor opens ─────────────────────────────────────
   useEffect(() => {
     if (!mapEditor) return;
@@ -101,11 +109,13 @@ export function useMapEditorFormState() {
     if (mapEditor.kind === "site") {
       if (mapEditor.isNew) {
         const seed = mapEditor.siteSeed;
-        // New site: initialise from map center
+        const seededLat = seed?.lat ?? mapViewport?.center.lat ?? 0;
+        const seededLon = seed?.lon ?? mapViewport?.center.lon ?? 0;
+        const shouldPlacePin = typeof seed?.lat === "number" && typeof seed?.lon === "number" && !seed.awaitMapClick;
         setNameDraft(seed?.name ?? "");
         setDescriptionDraft("");
-        setLatDraft(seed?.lat ?? mapViewport?.center.lat ?? 0);
-        setLonDraft(seed?.lon ?? mapViewport?.center.lon ?? 0);
+        setLatDraft(seededLat);
+        setLonDraft(seededLon);
         setGroundDraft(0);
         setAntennaDraft(10);
         setTxPowerDraft(STANDARD_SITE_RADIO.txPowerDbm);
@@ -120,15 +130,19 @@ export function useMapEditorFormState() {
         setInsertSiteAfterSave(Boolean(seed?.insertIntoSimulation));
         setSiteSearchQuery("");
         setSiteSearchResults([]);
-        setSiteSearchStatus("");
+        setSiteSearchStatus(shouldPlacePin ? "" : "Click the map to choose this site's coordinates.");
+        setMapEditorSiteDraft(shouldPlacePin ? { lat: seededLat, lon: seededLon, groundElevationM: null } : null);
       } else {
         // Edit site
         const entry = siteLibrary.find((e) => e.id === mapEditor.resourceId);
+        const entryLat = entry?.position.lat ?? 0;
+        const entryLon = entry?.position.lon ?? 0;
+        const entryGround = entry?.groundElevationM ?? 0;
         setNameDraft(entry?.name ?? mapEditor.label);
         setDescriptionDraft(entry?.description ?? "");
-        setLatDraft(entry?.position.lat ?? 0);
-        setLonDraft(entry?.position.lon ?? 0);
-        setGroundDraft(entry?.groundElevationM ?? 0);
+        setLatDraft(entryLat);
+        setLonDraft(entryLon);
+        setGroundDraft(entryGround);
         setAntennaDraft(entry?.antennaHeightM ?? 2);
         setTxPowerDraft(entry?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm);
         const nextTxGain = entry?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi;
@@ -150,6 +164,7 @@ export function useMapEditorFormState() {
         setSiteSearchQuery("");
         setSiteSearchResults([]);
         setSiteSearchStatus("");
+        setMapEditorSiteDraft({ lat: entryLat, lon: entryLon, groundElevationM: entryGround });
       }
     } else if (mapEditor.kind === "simulation") {
       if (mapEditor.isNew) {
@@ -184,9 +199,9 @@ export function useMapEditorFormState() {
         const fromSite = sites.find((s) => s.id === fallbackFrom) ?? null;
         const toSite = sites.find((s) => s.id === fallbackTo) ?? null;
         const baseRadio = resolveLinkRadio({} as any, fromSite, toSite);
-        setLinkNameDraft("");
         setLinkFromSiteId(fallbackFrom);
         setLinkToSiteId(fallbackTo);
+        setLinkNameDraft(getLinkDefaultName(fallbackFrom, fallbackTo));
         setOverrideRadio(false);
         setLinkTxPower(baseRadio.txPowerDbm);
         setLinkTxGain(baseRadio.txGainDbi);
@@ -204,9 +219,9 @@ export function useMapEditorFormState() {
               typeof link.rxGainDbi === "number" ||
               typeof link.cableLossDb === "number"),
         );
-        setLinkNameDraft(link?.name ?? "");
         setLinkFromSiteId(link?.fromSiteId ?? "");
         setLinkToSiteId(link?.toSiteId ?? "");
+        setLinkNameDraft(link?.name ?? getLinkDefaultName(link?.fromSiteId ?? "", link?.toSiteId ?? ""));
         setOverrideRadio(hasOverrides);
         setLinkTxPower(baseRadio.txPowerDbm);
         setLinkTxGain(baseRadio.txGainDbi);
@@ -216,6 +231,17 @@ export function useMapEditorFormState() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapEditor?.kind, mapEditor?.resourceId, mapEditor?.isNew]);
+
+  useEffect(() => {
+    if (mapEditor?.kind !== "site" || !mapEditorSiteDraft) return;
+    setLatDraft((current) => (current === mapEditorSiteDraft.lat ? current : mapEditorSiteDraft.lat));
+    setLonDraft((current) => (current === mapEditorSiteDraft.lon ? current : mapEditorSiteDraft.lon));
+    if (typeof mapEditorSiteDraft.groundElevationM === "number") {
+      const nextGround = mapEditorSiteDraft.groundElevationM;
+      setGroundDraft((current) => (current === nextGround ? current : nextGround));
+    }
+    if (mapEditor.isNew) setSiteSearchStatus("");
+  }, [mapEditor?.kind, mapEditor?.isNew, mapEditorSiteDraft]);
 
   // ─── Terrain prefetch for site coordinates ────────────────────────────────────
   useEffect(() => {
@@ -231,7 +257,13 @@ export function useMapEditorFormState() {
   useEffect(() => {
     if (mapEditor?.kind !== "site" || isElevationUserSet) return;
     const elevation = Number(sampleSrtmElevation(srtmTiles, latDraft, lonDraft));
-    if (Number.isFinite(elevation)) setGroundDraft(Math.round(elevation));
+    if (Number.isFinite(elevation)) {
+      const roundedElevation = Math.round(elevation);
+      setGroundDraft(roundedElevation);
+      if (mapEditorSiteDraft) {
+        setMapEditorSiteDraft({ lat: latDraft, lon: lonDraft, groundElevationM: roundedElevation });
+      }
+    }
   }, [srtmTiles, isElevationUserSet, latDraft, lonDraft, mapEditor?.kind]);
 
   // ─── Collaborator directory ───────────────────────────────────────────────────
@@ -359,12 +391,16 @@ export function useMapEditorFormState() {
       center: { lat: result.lat, lon: result.lon },
       zoom: 12,
     });
+    setMapEditorSiteDraft({ lat: result.lat, lon: result.lon, groundElevationM: null });
     try {
       const [elevation] = await fetchElevations([{ lat: result.lat, lon: result.lon }]);
       if (Number.isFinite(elevation)) {
-        setGroundDraft(Math.round(elevation));
-        setSiteSearchStatus(`Selected: ${result.label} (elevation ${Math.round(elevation)} m)`);
+        const roundedElevation = Math.round(elevation);
+        setGroundDraft(roundedElevation);
+        setMapEditorSiteDraft({ lat: result.lat, lon: result.lon, groundElevationM: roundedElevation });
+        setSiteSearchStatus(`Selected: ${result.label} (elevation ${roundedElevation} m)`);
       } else {
+        setMapEditorSiteDraft({ lat: result.lat, lon: result.lon, groundElevationM: null });
         setSiteSearchStatus(`Selected: ${result.label} (elevation unavailable)`);
       }
     } catch (error) {
@@ -397,18 +433,25 @@ export function useMapEditorFormState() {
       setStatus("Name is required.");
       return false;
     }
+    if (mapEditor?.kind === "site" && !mapEditorSiteDraft) {
+      setStatus("Click the map or use search to choose coordinates before saving.");
+      return false;
+    }
     const normalizedVisibility: "private" | "shared" = accessVisibility;
     const sharedWith = collaboratorUserIds
       .filter((id) => id !== ownerUserId)
       .map((id) => ({ userId: id, role: (collaboratorRoles[id] ?? "viewer") as "viewer" | "editor" }));
 
     try {
+      const saveLat = mapEditorSiteDraft?.lat ?? latDraft;
+      const saveLon = mapEditorSiteDraft?.lon ?? lonDraft;
+      const saveGround = mapEditorSiteDraft?.groundElevationM ?? groundDraft;
       if (mapEditor?.isNew) {
         const createdId = addSiteLibraryEntry(
           trimmedName,
-          latDraft,
-          lonDraft,
-          groundDraft,
+          saveLat,
+          saveLon,
+          saveGround,
           antennaDraft,
           txPowerDraft,
           txGainDraft,
@@ -428,8 +471,8 @@ export function useMapEditorFormState() {
         updateSiteLibraryEntry(mapEditor.resourceId, {
           name: trimmedName,
           description: descriptionDraft.trim() || undefined,
-          position: { lat: latDraft, lon: lonDraft },
-          groundElevationM: groundDraft,
+          position: { lat: saveLat, lon: saveLon },
+          groundElevationM: saveGround,
           antennaHeightM: antennaDraft,
           txPowerDbm: txPowerDraft,
           txGainDbi: txGainDraft,
@@ -587,6 +630,30 @@ export function useMapEditorFormState() {
     }
   };
 
+  const setSitePositionDraft = (nextLat: number | string, nextLon: number | string, nextGround = groundDraft) => {
+    const lat = parseNumber(String(nextLat));
+    const lon = parseNumber(String(nextLon));
+    setLatDraft(lat);
+    setLonDraft(lon);
+    setMapEditorSiteDraft({ lat, lon, groundElevationM: nextGround });
+  };
+
+  const setLinkFromSiteIdWithName = (nextFrom: string) => {
+    const fallbackTo = linkToSiteId === nextFrom ? sites.find((site) => site.id !== nextFrom)?.id ?? "" : linkToSiteId;
+    setLinkFromSiteId(nextFrom);
+    setLinkToSiteId(fallbackTo);
+    if (mapEditor?.isNew) {
+      setLinkNameDraft(getLinkDefaultName(nextFrom, fallbackTo));
+    }
+  };
+
+  const setLinkToSiteIdWithName = (nextTo: string) => {
+    setLinkToSiteId(nextTo);
+    if (mapEditor?.isNew) {
+      setLinkNameDraft(getLinkDefaultName(linkFromSiteId, nextTo));
+    }
+  };
+
   return {
     // shared
     status, setStatus,
@@ -604,9 +671,16 @@ export function useMapEditorFormState() {
     canWrite,
     currentUser,
     // site
-    latDraft, setLatDraft: (v: number | string) => setLatDraft(parseNumber(String(v))),
-    lonDraft, setLonDraft: (v: number | string) => setLonDraft(parseNumber(String(v))),
-    groundDraft, setGroundDraft: (v: number | string) => { setGroundDraft(parseNumber(String(v))); setIsElevationUserSet(true); },
+    latDraft, setLatDraft: (v: number | string) => setSitePositionDraft(v, lonDraft),
+    lonDraft, setLonDraft: (v: number | string) => setSitePositionDraft(latDraft, v),
+    groundDraft, setGroundDraft: (v: number | string) => {
+      const nextGround = parseNumber(String(v));
+      setGroundDraft(nextGround);
+      if (mapEditorSiteDraft) {
+        setMapEditorSiteDraft({ ...mapEditorSiteDraft, groundElevationM: nextGround });
+      }
+      setIsElevationUserSet(true);
+    },
     antennaDraft, setAntennaDraft: (v: number | string) => setAntennaDraft(parseNumber(String(v))),
     txPowerDraft, setTxPowerDraft: (v: number | string) => setTxPowerDraft(parseNumber(String(v))),
     txGainDraft, setTxGainDraft: (v: number | string) => setTxGainDraft(parseNumber(String(v))),
@@ -629,8 +703,8 @@ export function useMapEditorFormState() {
     handleSaveSimulation,
     // link
     linkNameDraft, setLinkNameDraft,
-    linkFromSiteId, setLinkFromSiteId,
-    linkToSiteId, setLinkToSiteId,
+    linkFromSiteId, setLinkFromSiteId: setLinkFromSiteIdWithName,
+    linkToSiteId, setLinkToSiteId: setLinkToSiteIdWithName,
     overrideRadio, setOverrideRadio,
     linkTxPower, setLinkTxPower: (v: number | string) => setLinkTxPower(parseNumber(String(v))),
     linkTxGain, setLinkTxGain: (v: number | string) => setLinkTxGain(parseNumber(String(v))),
