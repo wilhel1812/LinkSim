@@ -38,12 +38,6 @@ import type { Site } from "../types/radio";
 import { siGithub } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ActionButton } from "./ActionButton";
-import {
-  AccessSettingsEditor,
-  type AccessCollaborator,
-  type AccessRole,
-  type AccessVisibility,
-} from "./AccessSettingsEditor";
 import { AvatarBadge } from "./AvatarBadge";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
