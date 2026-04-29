@@ -1,6 +1,15 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../lib/frequencyPlans";
+import {
+  fetchResourceChanges,
+  fetchUserById,
+  revertResourceChangeCopy,
+  type CloudUser,
+  type ResourceChange,
+} from "../../lib/cloudUser";
+import { formatDate } from "../../lib/locale";
+import { getUiErrorMessage } from "../../lib/uiError";
 import { useAppStore } from "../../store/appStore";
 import { useMapEditorFormState } from "./useMapEditorFormState";
 import { AccessSettingsEditor } from "../AccessSettingsEditor";
@@ -8,6 +17,8 @@ import { ActionButton } from "../ActionButton";
 import { Surface } from "../ui/Surface";
 import { InlineCloseIconButton } from "../InlineCloseIconButton";
 import { SiteBeamVisualizer } from "../SiteBeamVisualizer";
+import { AvatarBadge } from "../AvatarBadge";
+import { ModalOverlay } from "../ModalOverlay";
 
 // ─── Positioning ─────────────────────────────────────────────────────────────
 
@@ -47,16 +58,66 @@ function computePosition(
   return { left, top };
 }
 
+const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
+  <span className="user-list-row">
+    <AvatarBadge avatarUrl={avatarUrl} imageClassName="profile-avatar" name={name} />
+    <span>{name}</span>
+  </span>
+);
+
+const formatChangeSummary = (action: string, note: string | null): string => {
+  if (note && note.trim()) return note;
+  if (action === "created") return "Created record.";
+  if (action === "updated") return "Updated record.";
+  return "Change recorded.";
+};
+
+const formatChangeDetailValue = (value: unknown): string => {
+  if (value === null) return "null";
+  if (value === undefined) return "-";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const isMeaningfulChangeField = (field: string): boolean => {
+  const normalized = field.trim();
+  if (!normalized) return false;
+  return !new Set([
+    "content",
+    "updatedAt",
+    "updated_at",
+    "lastEditedAt",
+    "last_edited_at",
+    "lastEditedByUserId",
+    "last_edited_by_user_id",
+    "lastEditedByName",
+    "lastEditedByAvatarUrl",
+    "createdAt",
+    "created_at",
+    "slugAliases",
+    "slug_aliases",
+  ]).has(normalized);
+};
+
 // ─── Site Editor Card ────────────────────────────────────────────────────────
 
 function SiteEditorCard({
   isNew,
   form,
   onClose,
+  onOpenChangeLog,
+  onOpenUserProfile,
 }: {
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
+  onOpenChangeLog: (kind: "site", resourceId: string, label: string) => void;
+  onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
 
@@ -70,6 +131,40 @@ function SiteEditorCard({
       {!form.canWrite && !isNew && (
         <p className="field-help warning-text">Read-only: you can view this site but cannot edit it.</p>
       )}
+
+      {!isNew && form.siteMetadata ? (
+        <div className="site-editor-meta-row">
+          <button
+            className="site-editor-meta-chip"
+            onClick={() => onOpenUserProfile(form.siteMetadata?.owner.id ?? "")}
+            type="button"
+          >
+            <span className="site-editor-meta-label">Owner</span>
+            <UserBadge avatarUrl={form.siteMetadata.owner.avatarUrl} name={form.siteMetadata.owner.name} />
+          </button>
+          <button
+            className="site-editor-meta-chip"
+            onClick={() => onOpenUserProfile(form.siteMetadata?.lastEditedBy.id ?? "")}
+            type="button"
+          >
+            <span className="site-editor-meta-label">Last edited</span>
+            <UserBadge
+              avatarUrl={form.siteMetadata.lastEditedBy.avatarUrl}
+              name={form.siteMetadata.lastEditedBy.name}
+            />
+          </button>
+          <ActionButton
+            onClick={() =>
+              form.siteMetadata
+                ? onOpenChangeLog("site", form.siteMetadata.resourceId, form.siteMetadata.label)
+                : undefined
+            }
+            type="button"
+          >
+            Change log
+          </ActionButton>
+        </div>
+      ) : null}
 
       <fieldset className="resource-edit-fieldset" disabled={!form.canWrite && !isNew}>
         <label className="field-grid">
@@ -98,7 +193,9 @@ function SiteEditorCard({
           directoryBusy={form.collaboratorDirectoryBusy}
           directoryStatus={form.collaboratorDirectoryStatus}
           disabled={!form.currentUser?.id}
+          canRemoveCollaborators={form.currentUserIsOwner}
           onAddCollaborator={form.addCollaborator}
+          onOpenUserProfile={onOpenUserProfile}
           onRemoveCollaborator={form.removeCollaborator}
           onRoleChange={form.setCollaboratorRole}
           onVisibilityChange={form.setAccessVisibility}
@@ -563,6 +660,65 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
+  const [profilePopupBusy, setProfilePopupBusy] = useState(false);
+  const [profilePopupStatus, setProfilePopupStatus] = useState("");
+  const [changeLogPopup, setChangeLogPopup] = useState<{
+    kind: "site";
+    resourceId: string;
+    label: string;
+    changes: ResourceChange[];
+    busy: boolean;
+    status: string;
+  } | null>(null);
+
+  const openUserProfilePopup = async (userId: string) => {
+    if (!userId) return;
+    setProfilePopupBusy(true);
+    setProfilePopupStatus("");
+    try {
+      const user = await fetchUserById(userId);
+      setProfilePopupUser(user);
+    } catch (error) {
+      setProfilePopupStatus(`Failed loading user: ${getUiErrorMessage(error)}`);
+    } finally {
+      setProfilePopupBusy(false);
+    }
+  };
+
+  const openChangeLogPopup = async (kind: "site", resourceId: string, label: string) => {
+    setChangeLogPopup({ kind, resourceId, label, changes: [], busy: true, status: "" });
+    try {
+      const changes = await fetchResourceChanges(kind, resourceId);
+      setChangeLogPopup({ kind, resourceId, label, changes, busy: false, status: "" });
+    } catch (error) {
+      setChangeLogPopup({
+        kind,
+        resourceId,
+        label,
+        changes: [],
+        busy: false,
+        status: `Failed loading changes: ${getUiErrorMessage(error)}`,
+      });
+    }
+  };
+
+  const revertChangeAsCopy = async (kind: "site", resourceId: string, changeId: number) => {
+    try {
+      await revertResourceChangeCopy(kind, resourceId, changeId);
+      const refreshed = await fetchResourceChanges(kind, resourceId);
+      setChangeLogPopup((current) => (current ? { ...current, changes: refreshed, status: "Reverted as copy." } : current));
+    } catch (error) {
+      setChangeLogPopup((current) =>
+        current ? { ...current, status: `Revert failed: ${getUiErrorMessage(error)}` } : current,
+      );
+    }
+  };
+  const closeUserProfilePopup = () => {
+    setProfilePopupUser(null);
+    setProfilePopupBusy(false);
+    setProfilePopupStatus("");
+  };
 
   // Compute position on open and on resize
   useEffect(() => {
@@ -612,7 +768,15 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
 
   const editorContent = (() => {
     if (mapEditor.kind === "site") {
-      return <SiteEditorCard form={form} isNew={mapEditor.isNew} onClose={closeMapEditor} />;
+      return (
+        <SiteEditorCard
+          form={form}
+          isNew={mapEditor.isNew}
+          onClose={closeMapEditor}
+          onOpenChangeLog={openChangeLogPopup}
+          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+        />
+      );
     }
     if (mapEditor.kind === "link") {
       return <LinkEditorCard form={form} isNew={mapEditor.isNew} onClose={closeMapEditor} />;
@@ -625,29 +789,186 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
 
   if (isMobile) {
     return createPortal(
-      <div className="map-editor-sheet" ref={panelRef}>
-        <div className="map-editor-sheet-handle" aria-hidden="true" />
-        <div className="map-editor-sheet-content">
-          {editorContent}
+      <>
+        <div className="map-editor-sheet" ref={panelRef}>
+          <div className="map-editor-sheet-handle" aria-hidden="true" />
+          <div className="map-editor-sheet-content">
+            {editorContent}
+          </div>
         </div>
-      </div>,
+        <MapEditorAuxiliaryModals
+          changeLogPopup={changeLogPopup}
+          onCloseChangeLog={() => setChangeLogPopup(null)}
+          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+          onRevertChange={revertChangeAsCopy}
+          canRevert={form.canWrite}
+          onCloseProfile={closeUserProfilePopup}
+          profilePopupBusy={profilePopupBusy}
+          profilePopupStatus={profilePopupStatus}
+          profilePopupUser={profilePopupUser}
+        />
+      </>,
       document.body,
     );
   }
 
   return createPortal(
-    <Surface
-      ref={panelRef}
-      variant="card"
-      className="map-editor-floating"
-      style={
-        position
-          ? { left: position.left, top: position.top }
-          : { visibility: "hidden", left: 0, top: 0 }
-      }
-    >
-      {editorContent}
-    </Surface>,
+    <>
+      <Surface
+        ref={panelRef}
+        variant="card"
+        className="map-editor-floating"
+        style={
+          position
+            ? { left: position.left, top: position.top }
+            : { visibility: "hidden", left: 0, top: 0 }
+        }
+      >
+        {editorContent}
+      </Surface>
+      <MapEditorAuxiliaryModals
+        changeLogPopup={changeLogPopup}
+        onCloseChangeLog={() => setChangeLogPopup(null)}
+        onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+        onRevertChange={revertChangeAsCopy}
+        canRevert={form.canWrite}
+        onCloseProfile={closeUserProfilePopup}
+        profilePopupBusy={profilePopupBusy}
+        profilePopupStatus={profilePopupStatus}
+        profilePopupUser={profilePopupUser}
+      />
+    </>,
     document.body,
+  );
+}
+
+function MapEditorAuxiliaryModals({
+  changeLogPopup,
+  onCloseChangeLog,
+  onOpenUserProfile,
+  onRevertChange,
+  canRevert,
+  onCloseProfile,
+  profilePopupBusy,
+  profilePopupStatus,
+  profilePopupUser,
+}: {
+  changeLogPopup: {
+    kind: "site";
+    resourceId: string;
+    label: string;
+    changes: ResourceChange[];
+    busy: boolean;
+    status: string;
+  } | null;
+  onCloseChangeLog: () => void;
+  onOpenUserProfile: (userId: string) => void;
+  onRevertChange: (kind: "site", resourceId: string, changeId: number) => void;
+  canRevert: boolean;
+  onCloseProfile: () => void;
+  profilePopupBusy: boolean;
+  profilePopupStatus: string;
+  profilePopupUser: CloudUser | null;
+}) {
+  return (
+    <>
+      {profilePopupUser || profilePopupBusy || profilePopupStatus ? (
+        <ModalOverlay aria-label="User Profile" onClose={onCloseProfile} tier="raised">
+          <div className="library-manager-card user-profile-popup">
+            <div className="library-manager-header">
+              <h2>User Profile</h2>
+              <InlineCloseIconButton onClick={onCloseProfile} />
+            </div>
+            {profilePopupBusy ? <p className="field-help">Loading user...</p> : null}
+            {profilePopupUser ? (
+              <>
+                <p className="field-help">
+                  <strong>
+                    <UserBadge avatarUrl={profilePopupUser.avatarUrl} name={profilePopupUser.username} />
+                  </strong>{" "}
+                  ({profilePopupUser.id})
+                </p>
+                <p className="field-help">Email: {profilePopupUser.email ?? "Hidden by user"}</p>
+                <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
+                <p className="field-help">
+                  Role:{" "}
+                  {profilePopupUser.role ??
+                    (profilePopupUser.isAdmin
+                      ? "admin"
+                      : profilePopupUser.isModerator
+                        ? "moderator"
+                        : profilePopupUser.isApproved
+                          ? "user"
+                          : "pending")}
+                </p>
+                <p className="field-help">Access: {profilePopupUser.accountState ?? "approved"}</p>
+              </>
+            ) : null}
+            {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {changeLogPopup ? (
+        <ModalOverlay aria-label="Change Log" onClose={onCloseChangeLog} tier="raised">
+          <div className="library-manager-card">
+            <div className="library-manager-header">
+              <h2>Change Log · {changeLogPopup.label}</h2>
+              <InlineCloseIconButton onClick={onCloseChangeLog} />
+            </div>
+            {changeLogPopup.busy ? <p className="field-help">Loading changes...</p> : null}
+            {changeLogPopup.status ? <p className="field-help">{changeLogPopup.status}</p> : null}
+            <div className="library-manager-list">
+              {changeLogPopup.changes.map((change) => (
+                <div className="library-row" key={change.id}>
+                  <p className="field-help">
+                    {change.action.toUpperCase()} · {formatDate(change.changedAt)}
+                  </p>
+                  <button
+                    className="inline-link-button"
+                    onClick={() => onOpenUserProfile(change.actorUserId)}
+                    type="button"
+                  >
+                    <UserBadge avatarUrl={change.actorAvatarUrl} name={change.actorName ?? change.actorUserId} />
+                  </button>
+                  <p className="field-help">{formatChangeSummary(change.action, change.note)}</p>
+                  {change.details && typeof change.details === "object" ? (
+                    (() => {
+                      const diffEntries = Object.entries(
+                        ((change.details as { diff?: Record<string, { before: unknown; after: unknown }> }).diff ??
+                          {}) as Record<string, { before: unknown; after: unknown }>,
+                      ).filter(([field]) => isMeaningfulChangeField(field));
+                      if (!diffEntries.length) return null;
+                      return (
+                        <div className="field-help">
+                          {diffEntries.map(([field, values]) => (
+                            <p key={`${change.id}-${field}`}>
+                              {field}: {formatChangeDetailValue(values.before)} {"->"} {formatChangeDetailValue(values.after)}
+                            </p>
+                          ))}
+                        </div>
+                      );
+                    })()
+                  ) : null}
+                  {canRevert ? (
+                    <div className="chip-group">
+                      <ActionButton
+                        onClick={() => onRevertChange(changeLogPopup.kind, changeLogPopup.resourceId, change.id)}
+                        type="button"
+                      >
+                        Revert
+                      </ActionButton>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              {!changeLogPopup.busy && !changeLogPopup.changes.length ? (
+                <p className="field-help">No change entries yet.</p>
+              ) : null}
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+    </>
   );
 }

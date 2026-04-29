@@ -806,6 +806,7 @@ export function MapView({
     bearing: number;
     pitch: number;
   } | null>(null);
+  const editorDraftAnimationKeyRef = useRef("");
 
   const stopUserLocation = useCallback(() => {
     if (userLocationWatchIdRef.current !== null && navigator.geolocation) {
@@ -2094,6 +2095,34 @@ export function MapView({
     latitude: viewport.center.lat,
     zoom: viewport.zoom,
   };
+  useEffect(() => {
+    if (!isMapLoaded || mapEditor?.kind !== "site" || !mapEditorSiteDraft) return;
+    const animationKey = `${mapEditor.resourceId ?? "new"}:${mapEditorSiteDraft.lat.toFixed(6)}:${mapEditorSiteDraft.lon.toFixed(6)}`;
+    if (editorDraftAnimationKeyRef.current === animationKey) return;
+    editorDraftAnimationKeyRef.current = animationKey;
+    setInteractionViewState(null);
+    const didAnimate = animateMapToCenter(mapRef, {
+      center: { lat: mapEditorSiteDraft.lat, lon: mapEditorSiteDraft.lon },
+      zoom: viewport.zoom,
+      padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
+      duration: 420,
+    });
+    if (!didAnimate) {
+      updateMapViewport({
+        center: { lat: mapEditorSiteDraft.lat, lon: mapEditorSiteDraft.lon },
+        zoom: viewport.zoom,
+      });
+    }
+  }, [
+    fitBottomInset,
+    fitChromePadding,
+    isMapLoaded,
+    mapEditor?.kind,
+    mapEditor?.resourceId,
+    mapEditorSiteDraft,
+    updateMapViewport,
+    viewport.zoom,
+  ]);
   const mqttNodesInView = useMemo(() => {
     const lonSpan = Math.max(0.12, 360 / Math.pow(2, activeViewState.zoom) * 2.2);
     const latSpan = Math.max(0.12, 170 / Math.pow(2, activeViewState.zoom) * 1.8);
@@ -3424,9 +3453,17 @@ export function MapView({
         </Source>
 
         {sites.map((site) => {
-          const isSelected = !armAddSiteOnNextEmptyMapClick && selectedSiteSet.has(site.id);
+          const isEditedSiteInSimulation =
+            mapEditor?.kind === "site" &&
+            !mapEditor.isNew &&
+            mapEditor.resourceId !== null &&
+            site.libraryEntryId === mapEditor.resourceId &&
+            mapEditorSiteDraft !== null;
+          const isSelected = isEditedSiteInSimulation || (!armAddSiteOnNextEmptyMapClick && selectedSiteSet.has(site.id));
           const pendingMove = pendingSiteMoves[site.id];
-          const markerPosition = pendingMove?.currentPosition ?? site.position;
+          const markerPosition = isEditedSiteInSimulation
+            ? { lat: mapEditorSiteDraft.lat, lon: mapEditorSiteDraft.lon }
+            : pendingMove?.currentPosition ?? site.position;
           const isTemporarilyMoved = Boolean(pendingMove);
           const isPassFailMode = coverageVizMode === "passfail" && Boolean(selectedFromSite);
           const isRelayMode = coverageVizMode === "relay" && Boolean(selectedFromSite) && Boolean(selectedToSite);
@@ -3445,8 +3482,8 @@ export function MapView({
               longitude={markerPosition.lon}
               offset={SITE_PIN_MARKER_OFFSET}
               style={{ zIndex: markerZIndex }}
-              onDrag={(event) => onSiteDrag(site.id, event)}
-              onDragEnd={(event) => onSiteDragEnd(site.id, event)}
+              onDrag={isEditedSiteInSimulation ? undefined : (event) => onSiteDrag(site.id, event)}
+              onDragEnd={isEditedSiteInSimulation ? onEditorSiteDraftDragEnd : (event) => onSiteDragEnd(site.id, event)}
             >
               <MarkerActionButton
                 ariaLabel={site.name}
@@ -3556,7 +3593,9 @@ export function MapView({
           </Marker>
         ) : null}
 
-        {mapEditor?.kind === "site" && mapEditorSiteDraft ? (
+        {mapEditor?.kind === "site" &&
+        mapEditorSiteDraft &&
+        (mapEditor.isNew || !sites.some((site) => site.libraryEntryId === mapEditor.resourceId)) ? (
           <Marker
             anchor="bottom"
             draggable={canPersist}
