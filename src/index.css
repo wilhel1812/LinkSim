@@ -574,6 +574,11 @@ button {
   width: auto;
 }
 
+.gain-mode-toggle input {
+  justify-self: end;
+  width: auto;
+}
+
 .field-grid textarea {
   border: 1px solid var(--border);
   background: var(--surface);

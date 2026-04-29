@@ -898,6 +898,95 @@ export function MapView({
     startUserLocation();
   }, [startUserLocation, stopUserLocation]);
 
+  const stopUserLocation = useCallback(() => {
+    if (userLocationWatchIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(userLocationWatchIdRef.current);
+    }
+    userLocationWatchIdRef.current = null;
+    isUserLocationActiveRef.current = false;
+    isUserLocationFollowingRef.current = false;
+    setIsUserLocationActive(false);
+    setUserLocationFix(null);
+  }, []);
+
+  useEffect(() => () => stopUserLocation(), [stopUserLocation]);
+
+  const publishLocationNotice = useCallback(
+    (message: string, tone: "info" | "warning" | "error" = "error") => {
+      onPublishNotice?.({
+        id: USER_LOCATION_NOTICE_ID,
+        message,
+        tone,
+        persistent: false,
+      });
+    },
+    [onPublishNotice],
+  );
+
+  const startUserLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      publishLocationNotice("Your browser does not support location services.");
+      return;
+    }
+    isUserLocationActiveRef.current = true;
+    isUserLocationFollowingRef.current = true;
+    setIsUserLocationActive(true);
+    setUserLocationFix(null);
+    try {
+      userLocationWatchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const nextFix: UserLocationFix = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+            accuracyM: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+          };
+          setUserLocationFix(nextFix);
+          if (isUserLocationFollowingRef.current) {
+            setInteractionViewState(null);
+            const didAnimate = animateMapToCenter(mapRef, {
+              center: { lat: nextFix.lat, lon: nextFix.lon },
+              zoom: USER_LOCATION_ZOOM,
+              padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
+            });
+            if (!didAnimate) {
+              updateMapViewport({
+                center: { lat: nextFix.lat, lon: nextFix.lon },
+                zoom: USER_LOCATION_ZOOM,
+              });
+            }
+          }
+        },
+        (error) => {
+          console.error("[user-location] geolocation watch failed", error);
+          publishLocationNotice(userLocationErrorMessage(error));
+          stopUserLocation();
+        },
+        USER_LOCATION_WATCH_OPTIONS,
+      );
+    } catch (error) {
+      console.error("[user-location] geolocation watch failed", error);
+      publishLocationNotice("Could not get your location.");
+      stopUserLocation();
+    }
+  }, [
+    fitBottomInset,
+    fitChromePadding.bottom,
+    fitChromePadding.left,
+    fitChromePadding.right,
+    fitChromePadding.top,
+    publishLocationNotice,
+    stopUserLocation,
+    updateMapViewport,
+  ]);
+
+  const toggleUserLocation = useCallback(() => {
+    if (isUserLocationActiveRef.current) {
+      stopUserLocation();
+      return;
+    }
+    startUserLocation();
+  }, [startUserLocation, stopUserLocation]);
+
   useEffect(() => {
     const handleViewportChange = () => {
       mapRef.current?.resize();
