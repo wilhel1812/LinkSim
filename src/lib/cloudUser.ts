@@ -406,10 +406,12 @@ export const uploadAvatar = async (originalDataUrl: string, thumbDataUrl: string
 
 export const fetchDeepLinkStatus = async (input: {
   simulationId?: string;
+  username?: string;
   simulationSlug?: string;
 }): Promise<DeepLinkStatusResult> => {
   const params = new URLSearchParams();
   if (input.simulationId?.trim()) params.set("sim", input.simulationId.trim());
+  if (input.username?.trim()) params.set("username", input.username.trim());
   if (input.simulationSlug?.trim()) params.set("slug", input.simulationSlug.trim());
   const data = await apiCall<{ status?: unknown; simulationId?: unknown; authenticated?: unknown }>(
     `/api/deep-link-status?${params.toString()}`,

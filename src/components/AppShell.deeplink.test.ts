@@ -18,6 +18,8 @@ const hoisted = vi.hoisted(() => {
         ? payload.simulationPresets.map((preset) => ({
             id: preset.id,
             name: preset.name,
+            ownerUserId: (preset as { ownerUserId?: string }).ownerUserId,
+            createdByName: (preset as { createdByName?: string }).createdByName,
             visibility: "shared",
             snapshot: { sites: Array.isArray(preset.snapshot?.sites) ? preset.snapshot.sites : [] },
           }))
@@ -251,6 +253,8 @@ describe("AppShell deeplink cold-load flow", () => {
         {
           id: "sim-mmtk88wx-2didtk",
           name: "Høgevarde hyttefelt",
+          ownerUserId: "user-1",
+          createdByName: "Owner",
           visibility: "shared",
           snapshot: { sites: [] },
         },
@@ -281,7 +285,7 @@ describe("AppShell deeplink cold-load flow", () => {
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => window.setTimeout(() => cb(0), 0));
     vi.stubGlobal("cancelAnimationFrame", (id: number) => window.clearTimeout(id));
 
-    window.history.replaceState(null, "", "/H%C3%B8gevarde-hyttefelt/Fyrisj%C3%B8vegen");
+    window.history.replaceState(null, "", "/Owner/H%C3%B8gevarde-hyttefelt/Fyrisj%C3%B8vegen");
   });
 
   it("builds direct auth-start navigation for explicit sign-in clicks", () => {

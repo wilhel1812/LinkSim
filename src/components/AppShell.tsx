@@ -433,6 +433,12 @@ export function AppShell() {
 
   const currentShareLink = useMemo(() => {
     if (!activeSimulation) return "";
+    const ownerUserId = (activeSimulation as { ownerUserId?: string }).ownerUserId ?? "";
+    const ownerUsername =
+      ownerUserId && currentUser?.id === ownerUserId
+        ? currentUser.username
+        : shareDirectory.find((user) => user.id === ownerUserId)?.username ||
+          ((activeSimulation as { createdByName?: string }).createdByName ?? currentUser?.username ?? "");
     const simulationSlug = activeSimulation.name;
     const selectedSites = selectedSiteIds
       .map((id) => sites.find((site) => site.id === id))
@@ -460,6 +466,7 @@ export function AppShell() {
     return buildDeepLinkUrl(
       {
         version: 2,
+        username: ownerUsername,
         simulationId: activeSimulation.id,
         simulationSlug,
         ...(selectedLinkSlugs ? { selectedLinkSlugs } : {}),
@@ -468,7 +475,7 @@ export function AppShell() {
       window.location.origin,
       "/",
     );
-  }, [activeSimulation, selectedLink, selectedSiteIds, sites]);
+  }, [activeSimulation, currentUser, selectedLink, selectedSiteIds, shareDirectory, sites]);
 
   useEffect(() => {
     if (
@@ -495,7 +502,13 @@ export function AppShell() {
         return;
       }
     } else if (activeSimulation) {
-      targetPath = buildDeepLinkPathname(activeSimulation.name, {
+      const ownerUserId = (activeSimulation as { ownerUserId?: string }).ownerUserId ?? "";
+      const ownerUsername =
+        ownerUserId && currentUser?.id === ownerUserId
+          ? currentUser.username
+          : shareDirectory.find((user) => user.id === ownerUserId)?.username ||
+            ((activeSimulation as { createdByName?: string }).createdByName ?? currentUser?.username ?? "");
+      targetPath = buildDeepLinkPathname(ownerUsername, activeSimulation.name, {
         selectedSiteSlugs: selectedSiteIds
           .map((id) => sites.find((site) => site.id === id)?.name)
           .filter((name): name is string => Boolean(name)),
@@ -505,7 +518,7 @@ export function AppShell() {
     if (currentPath !== targetPath) {
       window.history.replaceState(null, "", targetPath);
     }
-  }, [currentShareLink, activeSimulation, selectedSiteIds, sites, deepLinkParse.ok]);
+  }, [currentShareLink, activeSimulation, currentUser, selectedSiteIds, shareDirectory, sites, deepLinkParse.ok]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -719,10 +732,11 @@ export function AppShell() {
             return;
           }
           if (deepLinkParse.ok && !isLocalRuntime) {
-            const deepLinkStatus = await fetchDeepLinkStatus({
-              simulationId: deepLinkParse.payload.simulationId,
-              simulationSlug: deepLinkParse.payload.simulationSlug,
-            });
+          const deepLinkStatus = await fetchDeepLinkStatus({
+            simulationId: deepLinkParse.payload.simulationId,
+            username: deepLinkParse.payload.username,
+            simulationSlug: deepLinkParse.payload.simulationSlug,
+          });
             if (!deepLinkStatus.authenticated) {
               if (!isCurrentRun()) return;
               authRecoveryActiveRef.current = false;
@@ -1173,6 +1187,14 @@ export function AppShell() {
           .getState()
           .simulationPresets.find((preset) => {
             const presetSlugRaw = typeof (preset as { slug?: unknown }).slug === "string" ? String((preset as { slug?: unknown }).slug) : "";
+            const targetUsername = payload.username ? canonicalizeDeepLinkKey(payload.username) : "";
+            const ownerUserId = typeof (preset as { ownerUserId?: unknown }).ownerUserId === "string" ? String((preset as { ownerUserId?: unknown }).ownerUserId) : "";
+            const createdByName = typeof (preset as { createdByName?: unknown }).createdByName === "string" ? String((preset as { createdByName?: unknown }).createdByName) : "";
+            if (targetUsername) {
+              const ownerMatchesCurrent = ownerUserId && currentUser?.id === ownerUserId && canonicalizeDeepLinkKey(currentUser.username) === targetUsername;
+              const ownerMatchesCreatedBy = createdByName && canonicalizeDeepLinkKey(createdByName) === targetUsername;
+              if (!ownerMatchesCurrent && !ownerMatchesCreatedBy) return false;
+            }
             const presetSlugValue = presetSlugRaw.trim() ? presetSlugRaw : preset.name;
             const presetPretty = slugifyName(presetSlugValue);
             const presetCanonical = canonicalizeDeepLinkKey(presetSlugValue);
@@ -1221,10 +1243,11 @@ export function AppShell() {
 
       if (!exists && accessState === "readonly") {
         try {
-          const publicBundle = await fetchPublicSimulationLibrary({
-            simulationId: resolvedSimulationId || undefined,
-            simulationSlug: payload.simulationSlug,
-          });
+            const publicBundle = await fetchPublicSimulationLibrary({
+              simulationId: resolvedSimulationId || undefined,
+              username: payload.username,
+              simulationSlug: payload.simulationSlug,
+            });
           importLibraryData(
             {
               siteLibrary: publicBundle.siteLibrary as Parameters<typeof importLibraryData>[0]["siteLibrary"],
@@ -1250,6 +1273,7 @@ export function AppShell() {
         try {
           const status = await fetchDeepLinkStatus({
             simulationId: resolvedSimulationId || undefined,
+            username: payload.username,
             simulationSlug: payload.simulationSlug,
           });
           if (status.status === "forbidden") {
@@ -1391,6 +1415,7 @@ export function AppShell() {
     })();
   }, [
     accessState,
+    currentUser,
     deepLinkParse,
     importLibraryData,
     isInitializing,

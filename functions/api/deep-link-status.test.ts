@@ -5,13 +5,13 @@ const {
   ensureUserMock,
   fetchUserProfileMock,
   resolveSimulationAccessForUserMock,
-  resolveSimulationIdBySlugMock,
+  resolveSimulationIdByOwnerSlugMock,
 } = vi.hoisted(() => ({
   verifyAuthMock: vi.fn(),
   ensureUserMock: vi.fn(),
   fetchUserProfileMock: vi.fn(),
   resolveSimulationAccessForUserMock: vi.fn(),
-  resolveSimulationIdBySlugMock: vi.fn(),
+  resolveSimulationIdByOwnerSlugMock: vi.fn(),
 }));
 
 vi.mock("../_lib/auth", () => ({ verifyAuth: verifyAuthMock }));
@@ -19,7 +19,7 @@ vi.mock("../_lib/db", () => ({
   ensureUser: ensureUserMock,
   fetchUserProfile: fetchUserProfileMock,
   resolveSimulationAccessForUser: resolveSimulationAccessForUserMock,
-  resolveSimulationIdBySlug: resolveSimulationIdBySlugMock,
+  resolveSimulationIdByOwnerSlug: resolveSimulationIdByOwnerSlugMock,
 }));
 
 import { onRequestGet } from "./deep-link-status";
@@ -33,7 +33,7 @@ beforeEach(() => {
   ensureUserMock.mockResolvedValue(undefined);
   fetchUserProfileMock.mockResolvedValue({ id: "u1", isAdmin: false, isModerator: false, accountState: "approved" });
   resolveSimulationAccessForUserMock.mockResolvedValue("ok");
-  resolveSimulationIdBySlugMock.mockResolvedValue(null);
+  resolveSimulationIdByOwnerSlugMock.mockResolvedValue(null);
 });
 
 describe("api/deep-link-status", () => {
@@ -56,10 +56,11 @@ describe("api/deep-link-status", () => {
     await expect(res.json()).resolves.toEqual({ status: "forbidden", simulationId: "sim-2", authenticated: true });
   });
 
-  it("resolves slug to simulation id", async () => {
-    resolveSimulationIdBySlugMock.mockResolvedValueOnce("sim-abc");
-    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status?slug=my-sim")));
+  it("resolves username-scoped slug to simulation id", async () => {
+    resolveSimulationIdByOwnerSlugMock.mockResolvedValueOnce("sim-abc");
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status?username=Owner&slug=my-sim")));
     expect(res.status).toBe(200);
+    expect(resolveSimulationIdByOwnerSlugMock).toHaveBeenCalledWith(expect.anything(), "Owner", "my-sim");
     await expect(res.json()).resolves.toEqual({ status: "ok", simulationId: "sim-abc", authenticated: true });
   });
 });

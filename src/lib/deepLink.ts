@@ -5,6 +5,7 @@ const LEGACY_LINK_DELIMITER = "<>";
 
 export type DeepLinkPayloadV2 = {
   version: 2;
+  username?: string;
   simulationId?: string;
   simulationSlug?: string;
   selectedSiteSlugs?: string[];
@@ -88,8 +89,6 @@ const normalizeSlugSegment = (value: string): string =>
 const isV2Path = (pathname: string): boolean => {
   const segments = (pathname ?? "/").split("/").filter(Boolean);
   if (segments.length >= 2) return true;
-  if (segments[0]?.includes("+") || segments[0]?.includes("<>")) return true;
-  if (segments[0]) return true;
   return false;
 };
 
@@ -123,21 +122,23 @@ const parseV2Path = (pathname: string) => {
     .map((s) => safeDecodeURIComponent(s))
     .filter(Boolean);
 
-  if (!segments.length) return { simulationSlug: undefined, selection: undefined };
+  if (segments.length < 2) return { username: undefined, simulationSlug: undefined, selection: undefined };
 
-  const simulationSlugRaw = segments[0];
-  if (isReservedPathHead(simulationSlugRaw)) {
-    return { simulationSlug: undefined, selection: undefined };
+  const usernameRaw = segments[0];
+  if (isReservedPathHead(usernameRaw)) {
+    return { username: undefined, simulationSlug: undefined, selection: undefined };
+  }
+  const username = normalizeSlugSegment(usernameRaw);
+  if (!username) return { username: undefined, simulationSlug: undefined, selection: undefined };
+
+  const simulationSlug = normalizeSlugSegment(segments[1] ?? "");
+  if (!simulationSlug) return { username: undefined, simulationSlug: undefined, selection: undefined };
+
+  if (segments.length === 2) {
+    return { username, simulationSlug, selection: undefined };
   }
 
-  const simulationSlug = normalizeSlugSegment(simulationSlugRaw);
-  if (!simulationSlug) return { simulationSlug: undefined, selection: undefined };
-
-  if (segments.length === 1) {
-    return { simulationSlug, selection: undefined };
-  }
-
-  const selectionPart = segments.slice(1).join("/");
+  const selectionPart = segments.slice(2).join("/");
 
   const linkDelimiter = selectionPart.includes(PRIMARY_LINK_DELIMITER)
     ? PRIMARY_LINK_DELIMITER
@@ -149,16 +150,17 @@ const parseV2Path = (pathname: string) => {
     const [fromSlug, toSlug] = selectionPart.split(linkDelimiter).map(normalizeSlugSegment);
     return {
       simulationSlug,
+      username,
       selection: { type: "link", fromSlug: fromSlug ?? "", toSlug: toSlug ?? "" },
     };
   }
 
   const siteSlugs = selectionPart.split("+").map(normalizeSlugSegment).filter(Boolean);
   if (siteSlugs.length >= 1) {
-    return { simulationSlug, selection: { type: "sites", siteSlugs } };
+    return { username, simulationSlug, selection: { type: "sites", siteSlugs } };
   }
 
-  return { simulationSlug, selection: undefined };
+  return { username, simulationSlug, selection: undefined };
 };
 
 export const parseDeepLinkFromLocation = (locationLike: DeepLinkLocationLike): DeepLinkParseResult => {
@@ -207,9 +209,10 @@ export const parseDeepLinkFromLocation = (locationLike: DeepLinkLocationLike): D
     };
   }
 
-  const { simulationSlug: pathSimulationSlug, selection } = parseV2Path(locationLike.pathname ?? "/");
+  const { username: pathUsername, simulationSlug: pathSimulationSlug, selection } = parseV2Path(locationLike.pathname ?? "/");
 
   const simulationId = trimToUndefined(params.get("sim"));
+  const username = trimToUndefined(params.get("username")) ?? pathUsername;
   const simulationSlug = trimToUndefined(params.get("sim_slug")) ?? pathSimulationSlug;
 
   if (!simulationId && !simulationSlug) {
@@ -225,6 +228,7 @@ export const parseDeepLinkFromLocation = (locationLike: DeepLinkLocationLike): D
       payload: {
         version: 2,
         simulationId,
+        username,
         simulationSlug,
         selectedLinkSlugs: linkSlugs,
       },
@@ -237,6 +241,7 @@ export const parseDeepLinkFromLocation = (locationLike: DeepLinkLocationLike): D
       payload: {
         version: 2,
         simulationId,
+        username,
         simulationSlug,
         selectedSiteSlugs: selection.siteSlugs,
       },
@@ -248,6 +253,7 @@ export const parseDeepLinkFromLocation = (locationLike: DeepLinkLocationLike): D
     payload: {
       version: 2,
       simulationId,
+      username,
       simulationSlug,
     },
   };
@@ -264,13 +270,15 @@ const cleanSlug = (s: string): string =>
     .replace(/^-+|-+$/g, "");
 
 export const buildDeepLinkPathname = (
+  username: string,
   simulationSlug: string,
   options?: { selectedLinkSlugs?: string[]; selectedSiteSlugs?: string[] },
 ): string => {
+  const pathUsername = slugifyName(username ?? "");
   const pathSlug = slugifyName(simulationSlug ?? "");
-  if (!pathSlug) return "/";
+  if (!pathUsername || !pathSlug) return "/";
 
-  let path = `/${pathSlug}`;
+  let path = `/${cleanSlug(pathUsername)}/${pathSlug}`;
 
   if (options?.selectedLinkSlugs && options.selectedLinkSlugs.length === 2) {
     const [from, to] = options.selectedLinkSlugs;
@@ -288,16 +296,19 @@ export const buildDeepLinkUrl = (
   pathname = "/",
 ): string => {
   const simulationSlug = payload.simulationSlug ?? "";
+  const username = payload.username ?? "";
+  const pathUsername = slugifyName(username);
   const pathSlug = slugifyName(simulationSlug);
 
-  if (!pathSlug) {
+  if (!pathUsername || !pathSlug) {
     const url = new URL(pathname, origin);
     if (payload.simulationId) url.searchParams.set("sim", payload.simulationId);
+    if (payload.username) url.searchParams.set("username", payload.username);
     if (payload.simulationSlug) url.searchParams.set("sim_slug", payload.simulationSlug);
     return url.toString();
   }
 
-  let pathPart = `/${cleanSlug(pathSlug)}`;
+  let pathPart = `/${cleanSlug(pathUsername)}/${cleanSlug(pathSlug)}`;
 
   if (payload.selectedLinkSlugs && payload.selectedLinkSlugs.length === 2) {
     const [from, to] = payload.selectedLinkSlugs;
