@@ -81,8 +81,7 @@ type UserAdminPanelProps = {
    */
   onOpenSettings?: () => void;
   /**
-   * When provided, clicking "Sign in" triggers a silent auth check first;
-   * only if that fails does it redirect to the CF Access login page.
+   * When provided, clicking "Sign in" delegates sign-in handling to the shell.
    */
   onSignInRequested?: () => void;
 };
