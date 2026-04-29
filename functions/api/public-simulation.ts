@@ -11,9 +11,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const url = new URL(request.url);
     const simulationId = (url.searchParams.get("sim") ?? "").trim();
+    const username = (url.searchParams.get("username") ?? "").trim();
     const simulationSlug = (url.searchParams.get("slug") ?? "").trim();
-    if (!simulationId && !simulationSlug) {
-      return withCors(request, json({ error: "Missing simulation id or slug" }, { status: 400, headers: NO_STORE_HEADERS }));
+    if (!simulationId && (!username || !simulationSlug)) {
+      return withCors(request, json({ error: "Missing simulation id or username-scoped slug" }, { status: 400, headers: NO_STORE_HEADERS }));
     }
 
     const auth = await verifyAuth(request, env).catch(() => null);
@@ -21,6 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     const bundle = await fetchPublicSimulationBundle(env, {
       simulationId: simulationId || undefined,
+      username: username || undefined,
       simulationSlug: simulationSlug || undefined,
       actorId,
     });

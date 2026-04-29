@@ -39,13 +39,14 @@ describe("deepLink", () => {
     expect(parsed).toEqual({ ok: false, reason: "missing_sim" });
   });
 
-  it("parses v2 path with just simulation (no query params)", () => {
+  it("parses v2 path with username and just simulation (no query params)", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/Høgevarde",
+      pathname: "/Owner/Høgevarde",
       search: "",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
+    expect(parsed.payload.username).toBe("Owner");
     expect(parsed.payload.simulationSlug).toBe("Høgevarde");
     expect(parsed.payload.selectedSiteSlugs).toBeUndefined();
     expect(parsed.payload.selectedLinkSlugs).toBeUndefined();
@@ -53,18 +54,19 @@ describe("deepLink", () => {
 
   it("parses v2 path with single site", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/Høgevarde/Fyrisjøen",
+      pathname: "/Owner/Høgevarde/Fyrisjøen",
       search: "",
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
+    expect(parsed.payload.username).toBe("Owner");
     expect(parsed.payload.simulationSlug).toBe("Høgevarde");
     expect(parsed.payload.selectedSiteSlugs).toEqual(["Fyrisjøen"]);
   });
 
   it("parses v2 path with multiple sites (multi-site selection)", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/Høgevarde/Fyrisjøen+HOEG-ROUTER",
+      pathname: "/Owner/Høgevarde/Fyrisjøen+HOEG-ROUTER",
       search: "",
     });
     expect(parsed.ok).toBe(true);
@@ -75,7 +77,7 @@ describe("deepLink", () => {
 
   it("parses v2 path with link (two sites in ~)", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/Høgevarde/Fyrisjøen~HOEG-ROUTER",
+      pathname: "/Owner/Høgevarde/Fyrisjøen~HOEG-ROUTER",
       search: "",
     });
     expect(parsed.ok).toBe(true);
@@ -86,7 +88,7 @@ describe("deepLink", () => {
 
   it("parses legacy <> link delimiter", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/Høgevarde/Fyrisjøen<>HOEG-ROUTER",
+      pathname: "/Owner/Høgevarde/Fyrisjøen<>HOEG-ROUTER",
       search: "",
     });
     expect(parsed.ok).toBe(true);
@@ -96,7 +98,7 @@ describe("deepLink", () => {
 
   it("parses encoded unicode path with encoded <> delimiter", () => {
     const parsed = parseDeepLinkFromLocation({
-      pathname: "/%F0%9F%92%A9/%F0%9F%8F%9D%EF%B8%8F%3C%3E%F0%9F%8C%8B",
+      pathname: "/Owner/%F0%9F%92%A9/%F0%9F%8F%9D%EF%B8%8F%3C%3E%F0%9F%8C%8B",
       search: "",
     });
     expect(parsed.ok).toBe(true);
@@ -109,53 +111,57 @@ describe("deepLink", () => {
     const url = buildDeepLinkUrl(
       {
         version: 2,
+        username: "Owner",
         simulationId: "sim-999",
         simulationSlug: "Høgevarde",
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toBe("https://linksim.pages.dev/Høgevarde");
+    expect(url).toBe("https://linksim.pages.dev/Owner/Høgevarde");
   });
 
   it("builds v2 URL with multiple selected sites", () => {
     const url = buildDeepLinkUrl(
       {
         version: 2,
+        username: "Owner",
         simulationId: "sim-999",
         simulationSlug: "Høgevarde",
         selectedSiteSlugs: ["Fyrisjøen", "HOEG-ROUTER", "Fagerlinattan"],
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen+HOEG-ROUTER+Fagerlinattan");
+    expect(url).toBe("https://linksim.pages.dev/Owner/Høgevarde/Fyrisjøen+HOEG-ROUTER+Fagerlinattan");
   });
 
   it("builds v2 URL with link selection", () => {
     const url = buildDeepLinkUrl(
       {
         version: 2,
+        username: "Owner",
         simulationId: "sim-999",
         simulationSlug: "Høgevarde",
         selectedLinkSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toBe("https://linksim.pages.dev/Høgevarde/Fyrisjøen~HOEG-ROUTER");
+    expect(url).toBe("https://linksim.pages.dev/Owner/Høgevarde/Fyrisjøen~HOEG-ROUTER");
   });
 
   it("builds and parses korean simulation/site paths", () => {
     const url = buildDeepLinkUrl(
       {
         version: 2,
+        username: "사용자",
         simulationId: "sim-kor",
         simulationSlug: "한국조선",
         selectedSiteSlugs: ["남산-서울-타워", "평양텔레비죤탑"],
       },
       "https://linksim.pages.dev",
     );
-    expect(url).toBe("https://linksim.pages.dev/한국조선/남산-서울-타워+평양텔레비죤탑");
+    expect(url).toBe("https://linksim.pages.dev/사용자/한국조선/남산-서울-타워+평양텔레비죤탑");
 
-    const parsed = parseDeepLinkFromLocation({ pathname: "/한국조선/남산-서울-타워+평양텔레비죤탑", search: "" });
+    const parsed = parseDeepLinkFromLocation({ pathname: "/사용자/한국조선/남산-서울-타워+평양텔레비죤탑", search: "" });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.payload.simulationSlug).toBe("한국조선");
@@ -191,79 +197,79 @@ describe("deepLink", () => {
   });
 
   it("builds pathname for simulation only", () => {
-    const pathname = buildDeepLinkPathname("Høgevarde");
-    expect(pathname).toBe("/Høgevarde");
+    const pathname = buildDeepLinkPathname("Owner", "Høgevarde");
+    expect(pathname).toBe("/Owner/Høgevarde");
   });
 
   it("builds pathname with selected site slugs", () => {
-    const pathname = buildDeepLinkPathname("Høgevarde", {
+    const pathname = buildDeepLinkPathname("Owner", "Høgevarde", {
       selectedSiteSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
     });
-    expect(pathname).toBe("/Høgevarde/Fyrisjøen+HOEG-ROUTER");
+    expect(pathname).toBe("/Owner/Høgevarde/Fyrisjøen+HOEG-ROUTER");
   });
 
   it("builds pathname with selected link slugs", () => {
-    const pathname = buildDeepLinkPathname("Høgevarde", {
+    const pathname = buildDeepLinkPathname("Owner", "Høgevarde", {
       selectedLinkSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
     });
-    expect(pathname).toBe("/Høgevarde/Fyrisjøen~HOEG-ROUTER");
+    expect(pathname).toBe("/Owner/Høgevarde/Fyrisjøen~HOEG-ROUTER");
   });
 
   it("builds pathname ignoring link slugs when fewer or more than 2", () => {
-    const pathnameOne = buildDeepLinkPathname("Høgevarde", {
+    const pathnameOne = buildDeepLinkPathname("Owner", "Høgevarde", {
       selectedLinkSlugs: ["Fyrisjøen"],
     });
-    expect(pathnameOne).toBe("/Høgevarde");
+    expect(pathnameOne).toBe("/Owner/Høgevarde");
 
-    const pathnameThree = buildDeepLinkPathname("Høgevarde", {
+    const pathnameThree = buildDeepLinkPathname("Owner", "Høgevarde", {
       selectedLinkSlugs: ["A", "B", "C"],
     });
-    expect(pathnameThree).toBe("/Høgevarde");
+    expect(pathnameThree).toBe("/Owner/Høgevarde");
   });
 
   it("prefers link slugs over site slugs when both present with 2 links", () => {
-    const pathname = buildDeepLinkPathname("Høgevarde", {
+    const pathname = buildDeepLinkPathname("Owner", "Høgevarde", {
       selectedLinkSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
       selectedSiteSlugs: ["Fyrisjøen", "HOEG-ROUTER", "Extra"],
     });
-    expect(pathname).toBe("/Høgevarde/Fyrisjøen~HOEG-ROUTER");
+    expect(pathname).toBe("/Owner/Høgevarde/Fyrisjøen~HOEG-ROUTER");
   });
 
   it("falls back to site slugs when link slugs not exactly 2", () => {
-    const pathname = buildDeepLinkPathname("Høgevarde", {
+    const pathname = buildDeepLinkPathname("Owner", "Høgevarde", {
       selectedLinkSlugs: ["Fyrisjøen"],
       selectedSiteSlugs: ["Fyrisjøen", "HOEG-ROUTER"],
     });
-    expect(pathname).toBe("/Høgevarde/Fyrisjøen+HOEG-ROUTER");
+    expect(pathname).toBe("/Owner/Høgevarde/Fyrisjøen+HOEG-ROUTER");
   });
 
   it("returns / for empty simulation slug", () => {
-    const pathname = buildDeepLinkPathname("");
+    const pathname = buildDeepLinkPathname("Owner", "");
     expect(pathname).toBe("/");
 
-    const pathnameNull = buildDeepLinkPathname(undefined as unknown as string);
+    const pathnameNull = buildDeepLinkPathname("", "Høgevarde");
     expect(pathnameNull).toBe("/");
   });
 
   it("strips delimiter characters from slugs", () => {
-    const pathname = buildDeepLinkPathname("Test+Sim", {
+    const pathname = buildDeepLinkPathname("Owner+Name", "Test+Sim", {
       selectedSiteSlugs: ["Site~One", "Site+Two"],
     });
-    expect(pathname).toBe("/TestSim/SiteOne+SiteTwo");
+    expect(pathname).toBe("/OwnerName/TestSim/SiteOne+SiteTwo");
   });
 
   it("builds pathname with single site", () => {
-    const pathname = buildDeepLinkPathname("Høgevarde", {
+    const pathname = buildDeepLinkPathname("Owner", "Høgevarde", {
       selectedSiteSlugs: ["Fyrisjøen"],
     });
-    expect(pathname).toBe("/Høgevarde/Fyrisjøen");
+    expect(pathname).toBe("/Owner/Høgevarde/Fyrisjøen");
   });
 
   it("builds pathname for unicode simulation and sites", () => {
-    const pathname = buildDeepLinkPathname("한국조선", {
+    const pathname = buildDeepLinkPathname("사용자", "한국조선", {
       selectedSiteSlugs: ["남산-서울-타워", "평양텔레비죤탑"],
     });
-    expect(pathname).toBe("/한국조선/남산-서울-타워+평양텔레비죤탑");
+    expect(pathname).toBe("/사용자/한국조선/남산-서울-타워+평양텔레비죤탑");
   });
 
   it("treats /settings as a reserved path head (no simulation parsed)", () => {

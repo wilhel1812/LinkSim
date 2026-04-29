@@ -133,9 +133,10 @@ class FakeDb {
     }
     if (sql.includes("SELECT id FROM simulations WHERE lower(name) = lower(?)")) {
       const name = String(bound[0] ?? "").trim().toLowerCase();
-      const id = String(bound[1] ?? "");
+      const ownerUserId = String(bound[1] ?? "");
+      const id = String(bound[2] ?? "");
       for (const row of this.simulations.values()) {
-        if (String(row.name ?? "").trim().toLowerCase() === name && row.id !== id) {
+        if (String(row.name ?? "").trim().toLowerCase() === name && row.owner_user_id === ownerUserId && row.id !== id) {
           return { id: row.id };
         }
       }

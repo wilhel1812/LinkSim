@@ -803,6 +803,12 @@ export const updateUserProfile = async (
   if (!nextEmail) throw new Error("Email is required and must be valid.");
   if (nextAvatar === null) throw new Error("Profile picture must be a valid http(s) URL.");
 
+  const duplicateUser = await env.DB
+    .prepare("SELECT id FROM users WHERE lower(username) = lower(?) AND id != ? LIMIT 1")
+    .bind(nextName, userId)
+    .first<{ id: string }>();
+  if (duplicateUser?.id) throw new Error("Username is already in use.");
+
   await env.DB.prepare(
     `UPDATE users
      SET username = ?,
@@ -1255,10 +1261,11 @@ const upsertOwnedResource = async (
         `SELECT id
          FROM simulations
          WHERE lower(name) = lower(?)
+           AND owner_user_id = ?
            AND id != ?
          LIMIT 1`,
       )
-      .bind(name, id)
+      .bind(name, ownerId, id)
       .first<{ id: string }>();
     if (duplicate?.id) {
       return { ok: false, reason: "simulation_name_taken" };
@@ -1963,9 +1970,60 @@ export const resolveSimulationIdBySlug = async (
   return null;
 };
 
+export const resolveUserIdByUsernameSegment = async (env: Env, username: string): Promise<string | null> => {
+  await ensureSchema(env);
+  const slug = slugifyName(username);
+  const canonicalKey = canonicalizeSimulationLookupKey(username);
+  if (!slug && !canonicalKey) return null;
+  const rows = await env.DB.prepare("SELECT id, username FROM users LIMIT 8000").all<{ id: string; username: string }>();
+  for (const row of rows.results) {
+    const name = row.username ?? "";
+    if (slug && slugifyName(name) === slug) return row.id;
+    if (canonicalKey && canonicalizeSimulationLookupKey(name) === canonicalKey) return row.id;
+  }
+  return null;
+};
+
+export const resolveSimulationIdByOwnerSlug = async (
+  env: Env,
+  username: string,
+  simulationSlug: string,
+): Promise<string | null> => {
+  await ensureSchema(env);
+  const ownerId = await resolveUserIdByUsernameSegment(env, username);
+  if (!ownerId) return null;
+  const slug = slugifyName(simulationSlug);
+  const canonicalKey = canonicalizeSimulationLookupKey(simulationSlug);
+  if (!slug && !canonicalKey) return null;
+  const rows = await env.DB
+    .prepare("SELECT id, name, payload_json FROM simulations WHERE owner_user_id = ? LIMIT 8000")
+    .bind(ownerId)
+    .all<{ id: string; name: string; payload_json: string }>();
+  for (const row of rows.results) {
+    const nameSlug = slugifyName(row.name);
+    if (slug && nameSlug === slug) return row.id;
+    if (canonicalKey && canonicalizeSimulationLookupKey(row.name) === canonicalKey) return row.id;
+    try {
+      const payload = JSON.parse(row.payload_json) as { slug?: unknown; slugAliases?: unknown };
+      const payloadSlugRaw = typeof payload.slug === "string" ? payload.slug : "";
+      const payloadSlug = slugifyName(payloadSlugRaw);
+      if (slug && payloadSlug && payloadSlug === slug) return row.id;
+      if (canonicalKey && payloadSlugRaw && canonicalizeSimulationLookupKey(payloadSlugRaw) === canonicalKey) return row.id;
+      const aliases = Array.isArray(payload.slugAliases)
+        ? payload.slugAliases.filter((alias): alias is string => typeof alias === "string" && alias.trim().length > 0)
+        : [];
+      if (slug && aliases.some((alias) => slugifyName(alias) === slug)) return row.id;
+      if (canonicalKey && aliases.some((alias) => canonicalizeSimulationLookupKey(alias) === canonicalKey)) return row.id;
+    } catch {
+      // ignore invalid payload rows
+    }
+  }
+  return null;
+};
+
 export const fetchPublicSimulationBundle = async (
   env: Env,
-  options: { simulationId?: string; simulationSlug?: string; actorId?: string | null },
+  options: { simulationId?: string; username?: string; simulationSlug?: string; actorId?: string | null },
 ): Promise<
   | { status: "missing" | "forbidden" }
   | {
@@ -1978,7 +2036,9 @@ export const fetchPublicSimulationBundle = async (
   await ensureSchema(env);
   const resolvedId =
     (options.simulationId && options.simulationId.trim()) ||
-    (options.simulationSlug ? await resolveSimulationIdBySlug(env, options.simulationSlug) : null);
+    (options.username && options.simulationSlug
+      ? await resolveSimulationIdByOwnerSlug(env, options.username, options.simulationSlug)
+      : null);
   if (!resolvedId) return { status: "missing" };
 
   const simulationRow = await env.DB
