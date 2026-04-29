@@ -47,7 +47,6 @@ import {
 import { AvatarBadge } from "./AvatarBadge";
 import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { ModalOverlay } from "./ModalOverlay";
-import { SiteBeamVisualizerPopover } from "./SiteBeamVisualizer";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { Badge } from "./ui/Badge";
 import { PanelToolbar } from "./ui/PanelToolbar";
@@ -89,8 +88,6 @@ const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.
 const ALL_SITE_SOURCE_FILTERS = SITE_SOURCE_FILTER_OPTIONS.map((option) => option.key);
 
 type SiteFilterGroupKey = "role" | "visibility" | "source";
-type BeamPreviewFieldKey = "add" | "edit";
-
 type SidebarProps = {
   onOpenHelp?: () => void;
   onOpenSettings?: () => void;
@@ -1344,12 +1341,6 @@ export function Sidebar({
           </div>
         </ModalOverlay>
       ) : null}
-      <SiteBeamVisualizerPopover
-        onClose={() => setActiveBeamPreviewField(null)}
-        open={Boolean(activeBeamPreviewField && activeBeamPreviewTriggerRef?.current)}
-        triggerRef={activeBeamPreviewTriggerRef}
-        values={activeBeamPreviewValues}
-      />
       {deleteConfirm ? (
         <ModalOverlay aria-label="Confirm Delete" onClose={() => setDeleteConfirm(null)} tier="raised">
           <div className="library-manager-card user-profile-popup">
