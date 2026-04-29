@@ -147,7 +147,7 @@ vi.mock("./app-shell/useOnboardingFlow", () => ({
   }),
 }));
 
-import { AppShell } from "./AppShell";
+import { AppShell, buildAuthStartPath } from "./AppShell";
 
 const waitForCondition = async (check: () => boolean, timeoutMs = 2500): Promise<void> => {
   const started = Date.now();
@@ -282,6 +282,12 @@ describe("AppShell deeplink cold-load flow", () => {
     vi.stubGlobal("cancelAnimationFrame", (id: number) => window.clearTimeout(id));
 
     window.history.replaceState(null, "", "/H%C3%B8gevarde-hyttefelt/Fyrisj%C3%B8vegen");
+  });
+
+  it("builds direct auth-start navigation for explicit sign-in clicks", () => {
+    expect(buildAuthStartPath({ pathname: "/sim/site", search: "?mode=demo", hash: "#panel" })).toBe(
+      "/api/auth-start?returnTo=%2Fsim%2Fsite%3Fmode%3Ddemo%23panel",
+    );
   });
 
   it("loads the resolved simulation id and does not emit unavailable", async () => {
