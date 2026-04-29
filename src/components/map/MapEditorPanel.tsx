@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
+import { History } from "lucide-react";
 import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../lib/frequencyPlans";
 import {
   fetchResourceChanges,
@@ -58,12 +59,88 @@ function computePosition(
   return { left, top };
 }
 
+type ResourceKindWithChanges = "site" | "simulation";
+
+type ResourceMetadata = {
+  kind: ResourceKindWithChanges;
+  resourceId: string;
+  label: string;
+  owner: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+  };
+  lastEditedBy: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+  };
+};
+
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
     <AvatarBadge avatarUrl={avatarUrl} imageClassName="profile-avatar" name={name} />
     <span>{name}</span>
   </span>
 );
+
+function EditorMetadataStrip({
+  metadata,
+  onOpenChangeLog,
+  onOpenUserProfile,
+}: {
+  metadata: ResourceMetadata;
+  onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
+  onOpenUserProfile: (userId: string) => void;
+}) {
+  return (
+    <div className="editor-meta-footer" aria-label="Resource metadata">
+      <span className="editor-meta-item">
+        <span className="editor-meta-label">Owner</span>
+        <ActionButton
+          aria-label={`Open owner profile: ${metadata.owner.name}`}
+          className="editor-meta-avatar-button"
+          onClick={() => onOpenUserProfile(metadata.owner.id)}
+          size="icon"
+          title={`Owner: ${metadata.owner.name}`}
+          type="button"
+        >
+          <AvatarBadge
+            avatarUrl={metadata.owner.avatarUrl}
+            imageClassName="editor-meta-avatar"
+            name={metadata.owner.name}
+          />
+        </ActionButton>
+      </span>
+      <span className="editor-meta-item">
+        <span className="editor-meta-label">Last edited</span>
+        <ActionButton
+          aria-label={`Open last editor profile: ${metadata.lastEditedBy.name}`}
+          className="editor-meta-avatar-button"
+          onClick={() => onOpenUserProfile(metadata.lastEditedBy.id)}
+          size="icon"
+          title={`Last edited by: ${metadata.lastEditedBy.name}`}
+          type="button"
+        >
+          <AvatarBadge
+            avatarUrl={metadata.lastEditedBy.avatarUrl}
+            imageClassName="editor-meta-avatar"
+            name={metadata.lastEditedBy.name}
+          />
+        </ActionButton>
+      </span>
+      <ActionButton
+        aria-label="Open change log"
+        onClick={() => onOpenChangeLog(metadata.kind, metadata.resourceId, metadata.label)}
+        size="icon"
+        title="Change log"
+        type="button"
+      >
+        <History aria-hidden="true" size={17} strokeWidth={1.8} />
+      </ActionButton>
+    </div>
+  );
+}
 
 const formatChangeSummary = (action: string, note: string | null): string => {
   if (note && note.trim()) return note;
@@ -116,7 +193,7 @@ function SiteEditorCard({
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
-  onOpenChangeLog: (kind: "site", resourceId: string, label: string) => void;
+  onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
   onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
@@ -131,40 +208,6 @@ function SiteEditorCard({
       {!form.canWrite && !isNew && (
         <p className="field-help warning-text">Read-only: you can view this site but cannot edit it.</p>
       )}
-
-      {!isNew && form.siteMetadata ? (
-        <div className="site-editor-meta-row">
-          <button
-            className="site-editor-meta-chip"
-            onClick={() => onOpenUserProfile(form.siteMetadata?.owner.id ?? "")}
-            type="button"
-          >
-            <span className="site-editor-meta-label">Owner</span>
-            <UserBadge avatarUrl={form.siteMetadata.owner.avatarUrl} name={form.siteMetadata.owner.name} />
-          </button>
-          <button
-            className="site-editor-meta-chip"
-            onClick={() => onOpenUserProfile(form.siteMetadata?.lastEditedBy.id ?? "")}
-            type="button"
-          >
-            <span className="site-editor-meta-label">Last edited</span>
-            <UserBadge
-              avatarUrl={form.siteMetadata.lastEditedBy.avatarUrl}
-              name={form.siteMetadata.lastEditedBy.name}
-            />
-          </button>
-          <ActionButton
-            onClick={() =>
-              form.siteMetadata
-                ? onOpenChangeLog("site", form.siteMetadata.resourceId, form.siteMetadata.label)
-                : undefined
-            }
-            type="button"
-          >
-            Change log
-          </ActionButton>
-        </div>
-      ) : null}
 
       <fieldset className="resource-edit-fieldset" disabled={!form.canWrite && !isNew}>
         <label className="field-grid">
@@ -386,6 +429,14 @@ function SiteEditorCard({
           Cancel
         </ActionButton>
       </div>
+
+      {!isNew && form.siteMetadata ? (
+        <EditorMetadataStrip
+          metadata={form.siteMetadata}
+          onOpenChangeLog={onOpenChangeLog}
+          onOpenUserProfile={onOpenUserProfile}
+        />
+      ) : null}
     </>
   );
 }
@@ -527,10 +578,14 @@ function SimulationEditorCard({
   isNew,
   form,
   onClose,
+  onOpenChangeLog,
+  onOpenUserProfile,
 }: {
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
+  onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
+  onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
 
@@ -643,6 +698,14 @@ function SimulationEditorCard({
           </ActionButton>
         </div>
       ) : null}
+
+      {!isNew && form.simulationMetadata ? (
+        <EditorMetadataStrip
+          metadata={form.simulationMetadata}
+          onOpenChangeLog={onOpenChangeLog}
+          onOpenUserProfile={onOpenUserProfile}
+        />
+      ) : null}
     </>
   );
 }
@@ -664,7 +727,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
   const [profilePopupBusy, setProfilePopupBusy] = useState(false);
   const [profilePopupStatus, setProfilePopupStatus] = useState("");
   const [changeLogPopup, setChangeLogPopup] = useState<{
-    kind: "site";
+    kind: ResourceKindWithChanges;
     resourceId: string;
     label: string;
     changes: ResourceChange[];
@@ -686,7 +749,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
     }
   };
 
-  const openChangeLogPopup = async (kind: "site", resourceId: string, label: string) => {
+  const openChangeLogPopup = async (kind: ResourceKindWithChanges, resourceId: string, label: string) => {
     setChangeLogPopup({ kind, resourceId, label, changes: [], busy: true, status: "" });
     try {
       const changes = await fetchResourceChanges(kind, resourceId);
@@ -703,7 +766,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
     }
   };
 
-  const revertChangeAsCopy = async (kind: "site", resourceId: string, changeId: number) => {
+  const revertChangeAsCopy = async (kind: ResourceKindWithChanges, resourceId: string, changeId: number) => {
     try {
       await revertResourceChangeCopy(kind, resourceId, changeId);
       const refreshed = await fetchResourceChanges(kind, resourceId);
@@ -782,7 +845,15 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       return <LinkEditorCard form={form} isNew={mapEditor.isNew} onClose={closeMapEditor} />;
     }
     if (mapEditor.kind === "simulation") {
-      return <SimulationEditorCard form={form} isNew={mapEditor.isNew} onClose={closeMapEditor} />;
+      return (
+        <SimulationEditorCard
+          form={form}
+          isNew={mapEditor.isNew}
+          onClose={closeMapEditor}
+          onOpenChangeLog={openChangeLogPopup}
+          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+        />
+      );
     }
     return null;
   })();
@@ -854,7 +925,7 @@ function MapEditorAuxiliaryModals({
   profilePopupUser,
 }: {
   changeLogPopup: {
-    kind: "site";
+    kind: ResourceKindWithChanges;
     resourceId: string;
     label: string;
     changes: ResourceChange[];
@@ -863,7 +934,7 @@ function MapEditorAuxiliaryModals({
   } | null;
   onCloseChangeLog: () => void;
   onOpenUserProfile: (userId: string) => void;
-  onRevertChange: (kind: "site", resourceId: string, changeId: number) => void;
+  onRevertChange: (kind: ResourceKindWithChanges, resourceId: string, changeId: number) => void;
   canRevert: boolean;
   onCloseProfile: () => void;
   profilePopupBusy: boolean;
