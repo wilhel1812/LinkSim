@@ -24,6 +24,7 @@ type AccessSettingsEditorProps = {
   onAddCollaborator: (userId: string) => void;
   onRemoveCollaborator: (userId: string) => void;
   onRoleChange: (userId: string, role: AccessRole) => void;
+  canRemoveCollaborators?: boolean;
   disabled?: boolean;
   ownerUserId?: string;
   directoryBusy?: boolean;
@@ -44,6 +45,7 @@ export function AccessSettingsEditor({
   onAddCollaborator,
   onRemoveCollaborator,
   onRoleChange,
+  canRemoveCollaborators = true,
   disabled = false,
   ownerUserId = "",
   directoryBusy = false,
@@ -193,7 +195,7 @@ export function AccessSettingsEditor({
                     <ActionButton
                       aria-label={`Remove ${label}`}
                       className="access-collaborator-remove"
-                      disabled={disabled}
+                      disabled={disabled || !canRemoveCollaborators}
                       onClick={() => onRemoveCollaborator(user.id)}
                       size="icon"
                       title={`Remove ${label}`}

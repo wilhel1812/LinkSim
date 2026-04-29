@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mapMock = vi.hoisted(() => ({
   easeTo: vi.fn(),
+  markerProps: [] as Array<{ latitude?: number; longitude?: number }>,
   latestProps: null as null | {
     onMove?: (event: { originalEvent?: unknown; viewState: { longitude: number; latitude: number; zoom: number } }) => void;
   },
@@ -47,7 +48,18 @@ vi.mock("react-map-gl/maplibre", async () => {
       return <div data-testid="mock-map">{props.children}</div>;
     }),
     Layer: () => null,
-    Marker: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+    Marker: ({
+      children,
+      latitude,
+      longitude,
+    }: {
+      children?: React.ReactNode;
+      latitude?: number;
+      longitude?: number;
+    }) => {
+      mapMock.markerProps.push({ latitude, longitude });
+      return <div>{children}</div>;
+    },
     Source: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   };
 });
@@ -98,6 +110,7 @@ describe("MapView user location flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mapMock.latestProps = null;
+    mapMock.markerProps = [];
     installGeolocation();
     watchPosition.mockReturnValue(42);
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
@@ -272,6 +285,42 @@ describe("MapView user location flow", () => {
     expect(
       screen.getByText("Read-only: you need edit permission to move or edit sites in this simulation."),
     ).toBeInTheDocument();
+  });
+
+  it("uses the existing simulation marker as the editor marker when editing its library site", () => {
+    useAppStore.setState({
+      sites: [
+        {
+          id: "site-alpha",
+          name: "Alpha Site",
+          libraryEntryId: "lib-alpha",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: {
+        kind: "site",
+        resourceId: "lib-alpha",
+        isNew: false,
+        label: "Alpha Site",
+        anchorRect: { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
+      },
+      mapEditorSiteDraft: { lat: 61.25, lon: 12.75, groundElevationM: 130 },
+    });
+
+    renderMapView();
+
+    expect(screen.getAllByRole("button", { name: "Alpha Site" })).toHaveLength(1);
+    expect(mapMock.markerProps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ latitude: 61.25, longitude: 12.75 })]),
+    );
   });
 
   it("publishes plain location failure notifications", () => {

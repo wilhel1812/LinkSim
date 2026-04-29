@@ -292,10 +292,14 @@ export function useMapEditorFormState() {
 
   // ─── Derived values ───────────────────────────────────────────────────────────
   const currentUser_id = currentUser?.id ?? "";
+  const currentSiteEntry =
+    mapEditor?.kind === "site" && mapEditor.resourceId
+      ? siteLibrary.find((entry) => entry.id === mapEditor.resourceId) ?? null
+      : null;
   const ownerUserId = (() => {
     if (!mapEditor) return "";
     if (mapEditor.kind === "site" && mapEditor.resourceId) {
-      return siteLibrary.find((e) => e.id === mapEditor.resourceId)?.ownerUserId ?? "";
+      return currentSiteEntry?.ownerUserId ?? "";
     }
     if (mapEditor.kind === "simulation" && mapEditor.resourceId) {
       return (simulationPresets.find((p) => p.id === mapEditor.resourceId) as any)?.ownerUserId ?? "";
@@ -330,6 +334,41 @@ export function useMapEditorFormState() {
       role: collaboratorRoles[userId] ?? "viewer" as AccessRole,
     };
   });
+  const currentUserIsOwner = Boolean(currentUser?.id && ownerUserId && currentUser.id === ownerUserId);
+  const resolveUserSummary = (
+    userId: string | null | undefined,
+    fallbackName: string | null | undefined,
+    fallbackAvatarUrl: string | null | undefined,
+  ) => {
+    const directoryUser = userId ? collaboratorDirectory.find((user) => user.id === userId) : undefined;
+    const name =
+      directoryUser?.username ||
+      (fallbackName && fallbackName.trim() && fallbackName.trim() !== "Unknown" ? fallbackName.trim() : "") ||
+      userId ||
+      "Unknown";
+    return {
+      id: userId ?? "",
+      name,
+      avatarUrl: directoryUser?.avatarUrl || fallbackAvatarUrl || "",
+    };
+  };
+  const siteMetadata =
+    mapEditor?.kind === "site" && currentSiteEntry
+      ? {
+          resourceId: currentSiteEntry.id,
+          label: currentSiteEntry.name,
+          owner: resolveUserSummary(
+            currentSiteEntry.ownerUserId,
+            currentSiteEntry.createdByName,
+            currentSiteEntry.createdByAvatarUrl,
+          ),
+          lastEditedBy: resolveUserSummary(
+            currentSiteEntry.lastEditedByUserId,
+            currentSiteEntry.lastEditedByName,
+            currentSiteEntry.lastEditedByAvatarUrl,
+          ),
+        }
+      : null;
 
   // ─── Collaborator callbacks ───────────────────────────────────────────────────
   const addCollaborator = (userId: string) => {
@@ -343,6 +382,14 @@ export function useMapEditorFormState() {
   };
 
   const removeCollaborator = (userId: string) => {
+    if (userId === ownerUserId) {
+      setStatus("Owner permissions cannot be changed.");
+      return;
+    }
+    if (mapEditor?.kind === "site" && !currentUserIsOwner) {
+      setStatus("Only the owner can remove collaborators.");
+      return;
+    }
     setCollaboratorUserIds((prev) => prev.filter((id) => id !== userId));
     setCollaboratorRoles((prev) => {
       const next = { ...prev };
@@ -352,6 +399,10 @@ export function useMapEditorFormState() {
   };
 
   const setCollaboratorRole = (userId: string, role: AccessRole) => {
+    if (userId === ownerUserId) {
+      setStatus("Owner permissions cannot be changed.");
+      return;
+    }
     setCollaboratorRoles((prev) => ({ ...prev, [userId]: role }));
   };
 
@@ -438,6 +489,19 @@ export function useMapEditorFormState() {
       return false;
     }
     const normalizedVisibility: "private" | "shared" = accessVisibility;
+    if (collaboratorUserIds.includes(ownerUserId)) {
+      setStatus("Owner is implicit and cannot be added as collaborator.");
+      return false;
+    }
+    if (mapEditor?.kind === "site" && !mapEditor.isNew && !currentUserIsOwner) {
+      const currentSharedUserIds = new Set((currentSiteEntry?.sharedWith ?? []).map((grant) => grant.userId));
+      const nextSharedUserIds = new Set(collaboratorUserIds);
+      const removedCollaborators = [...currentSharedUserIds].filter((id) => !nextSharedUserIds.has(id));
+      if (removedCollaborators.length) {
+        setStatus("Only the owner can remove collaborators.");
+        return false;
+      }
+    }
     const sharedWith = collaboratorUserIds
       .filter((id) => id !== ownerUserId)
       .map((id) => ({ userId: id, role: (collaboratorRoles[id] ?? "viewer") as "viewer" | "editor" }));
@@ -461,6 +525,10 @@ export function useMapEditorFormState() {
           normalizedVisibility,
           descriptionDraft.trim() || undefined,
         );
+        if (!createdId) {
+          setStatus("Failed creating site. Check the name and try again.");
+          return false;
+        }
         if (sharedWith.length) {
           updateSiteLibraryEntry(createdId, { sharedWith });
         }
@@ -668,6 +736,8 @@ export function useMapEditorFormState() {
     removeCollaborator,
     setCollaboratorRole,
     ownerUserId,
+    currentUserIsOwner,
+    siteMetadata,
     canWrite,
     currentUser,
     // site

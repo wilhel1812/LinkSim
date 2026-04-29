@@ -5238,3 +5238,46 @@ html.panorama-gesture-lock body {
   display: grid;
   gap: 10px;
 }
+
+.site-editor-meta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.site-editor-meta-chip {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  color: var(--text);
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  padding: 5px 7px;
+  cursor: pointer;
+}
+
+.site-editor-meta-chip .user-list-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.site-editor-meta-chip .user-list-row span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-editor-meta-label {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1;
+}
+
+@media (max-width: 520px) {
+  .site-editor-meta-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
