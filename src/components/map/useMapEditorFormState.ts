@@ -296,13 +296,17 @@ export function useMapEditorFormState() {
     mapEditor?.kind === "site" && mapEditor.resourceId
       ? siteLibrary.find((entry) => entry.id === mapEditor.resourceId) ?? null
       : null;
+  const currentSimulationPreset =
+    mapEditor?.kind === "simulation" && mapEditor.resourceId
+      ? simulationPresets.find((preset) => preset.id === mapEditor.resourceId) ?? null
+      : null;
   const ownerUserId = (() => {
     if (!mapEditor) return "";
     if (mapEditor.kind === "site" && mapEditor.resourceId) {
       return currentSiteEntry?.ownerUserId ?? "";
     }
     if (mapEditor.kind === "simulation" && mapEditor.resourceId) {
-      return (simulationPresets.find((p) => p.id === mapEditor.resourceId) as any)?.ownerUserId ?? "";
+      return currentSimulationPreset?.ownerUserId ?? "";
     }
     return currentUser_id;
   })();
@@ -355,6 +359,7 @@ export function useMapEditorFormState() {
   const siteMetadata =
     mapEditor?.kind === "site" && currentSiteEntry
       ? {
+          kind: "site" as const,
           resourceId: currentSiteEntry.id,
           label: currentSiteEntry.name,
           owner: resolveUserSummary(
@@ -366,6 +371,24 @@ export function useMapEditorFormState() {
             currentSiteEntry.lastEditedByUserId,
             currentSiteEntry.lastEditedByName,
             currentSiteEntry.lastEditedByAvatarUrl,
+          ),
+        }
+      : null;
+  const simulationMetadata =
+    mapEditor?.kind === "simulation" && currentSimulationPreset
+      ? {
+          kind: "simulation" as const,
+          resourceId: currentSimulationPreset.id,
+          label: currentSimulationPreset.name,
+          owner: resolveUserSummary(
+            currentSimulationPreset.ownerUserId,
+            currentSimulationPreset.createdByName,
+            currentSimulationPreset.createdByAvatarUrl,
+          ),
+          lastEditedBy: resolveUserSummary(
+            currentSimulationPreset.lastEditedByUserId,
+            currentSimulationPreset.lastEditedByName,
+            currentSimulationPreset.lastEditedByAvatarUrl,
           ),
         }
       : null;
@@ -738,6 +761,7 @@ export function useMapEditorFormState() {
     ownerUserId,
     currentUserIsOwner,
     siteMetadata,
+    simulationMetadata,
     canWrite,
     currentUser,
     // site

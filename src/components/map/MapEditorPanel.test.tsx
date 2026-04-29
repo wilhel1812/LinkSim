@@ -136,19 +136,78 @@ describe("MapEditorPanel", () => {
     });
   });
 
-  it("shows compact site metadata and opens the existing change log flow", async () => {
+  it("shows compact site metadata footer and opens the existing change log flow", async () => {
     render(<MapEditorPanel isMobile={false} />);
 
     await waitFor(() => expect(screen.getByText("Owner")).toBeInTheDocument());
-    expect(screen.getByText("Owner User")).toBeInTheDocument();
+    expect(screen.queryByText("Owner User")).not.toBeInTheDocument();
     expect(screen.getByText("Last edited")).toBeInTheDocument();
-    expect(screen.getByText("Editor User")).toBeInTheDocument();
+    expect(screen.queryByText("Editor User")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Change log" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open change log" }));
 
     expect(fetchResourceChanges).toHaveBeenCalledWith("site", "site-lib-1");
     expect(await screen.findByText("Change Log · Alpha Site")).toBeInTheDocument();
     expect(screen.getByText("Moved site")).toBeInTheDocument();
+  });
+
+  it("shows compact simulation metadata footer and opens the simulation change log flow", async () => {
+    useAppStore.setState({
+      simulationPresets: [
+        {
+          id: "sim-1",
+          name: "Mesh Plan",
+          description: "Shared plan",
+          visibility: "shared",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          createdByUserId: "owner-1",
+          createdByName: "Owner User",
+          createdByAvatarUrl: "",
+          lastEditedByUserId: "editor-1",
+          lastEditedByName: "Editor User",
+          lastEditedByAvatarUrl: "",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [],
+            links: [],
+            systems: [],
+            networks: [],
+            selectedSiteId: "",
+            selectedLinkId: "",
+            selectedNetworkId: "",
+            selectedCoverageResolution: "24",
+            propagationModel: "ITM",
+            selectedFrequencyPresetId: "custom",
+            rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0,
+            propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true,
+            terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: {
+        kind: "simulation",
+        resourceId: "sim-1",
+        isNew: false,
+        label: "Mesh Plan",
+        anchorRect,
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await waitFor(() => expect(screen.getByText("Owner")).toBeInTheDocument());
+    expect(screen.queryByText("Owner User")).not.toBeInTheDocument();
+    expect(screen.getByText("Last edited")).toBeInTheDocument();
+    expect(screen.queryByText("Editor User")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Open change log" }));
+
+    expect(fetchResourceChanges).toHaveBeenCalledWith("simulation", "sim-1");
+    expect(await screen.findByText("Change Log · Mesh Plan")).toBeInTheDocument();
   });
 
   it("keeps the editor open when new site creation fails", async () => {
