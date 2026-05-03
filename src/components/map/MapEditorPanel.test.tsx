@@ -258,7 +258,6 @@ describe("MapEditorPanel", () => {
     const latInput = await screen.findByLabelText("Latitude");
     await userEvent.clear(latInput);
     await userEvent.type(latInput, "956894");
-    await userEvent.click(screen.getByRole("button", { name: "Create Site" }));
 
     expect(screen.getByText(/Latitude must be between -90 and 90/)).toBeInTheDocument();
     expect(useAppStore.getState().mapEditor).not.toBeNull();
@@ -282,7 +281,6 @@ describe("MapEditorPanel", () => {
     const lonInput = await screen.findByLabelText("Longitude");
     await userEvent.clear(lonInput);
     await userEvent.type(lonInput, "956894");
-    await userEvent.click(screen.getByRole("button", { name: "Create Site" }));
 
     expect(screen.getByText(/Longitude must be between -180 and 180/)).toBeInTheDocument();
     expect(useAppStore.getState().mapEditor).not.toBeNull();
@@ -306,7 +304,6 @@ describe("MapEditorPanel", () => {
     const latInput = await screen.findByLabelText("Latitude");
     await userEvent.clear(latInput);
     await userEvent.type(latInput, "    956894");
-    await userEvent.click(screen.getByRole("button", { name: "Create Site" }));
 
     expect(screen.getByText(/Latitude must be between -90 and 90/)).toBeInTheDocument();
     expect(useAppStore.getState().mapEditor).not.toBeNull();
