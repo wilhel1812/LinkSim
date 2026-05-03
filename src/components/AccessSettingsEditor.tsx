@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import type { CollaboratorDirectoryUser } from "../lib/cloudUser";
 import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
@@ -123,9 +123,10 @@ export function AccessSettingsEditor({
             ref={triggerRef}
             disabled={disabled}
             onClick={() => setPopoverOpen((open) => !open)}
+            title="Edit collaborators"
             type="button"
           >
-            Edit
+            <Pencil size={14} />
           </ActionButton>
         </div>
       </div>

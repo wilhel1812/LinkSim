@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import { History } from "lucide-react";
+import { History, Loader2, RefreshCw, Search } from "lucide-react";
 import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../lib/frequencyPlans";
 import {
   fetchResourceChanges,
@@ -282,12 +282,14 @@ function SiteEditorCard({
               value={form.siteSearchQuery}
             />
             <ActionButton
+              aria-label="Search location"
               className="field-inline-btn"
               disabled={form.siteSearchBusy}
               onClick={() => void form.runSiteSearch()}
+              title="Search location"
               type="button"
             >
-              {form.siteSearchBusy ? "Searching..." : "Search"}
+              {form.siteSearchBusy ? <Loader2 className="animate-spin" size={14} /> : <Search size={14} />}
             </ActionButton>
           </div>
         </label>
@@ -316,6 +318,7 @@ function SiteEditorCard({
               value={form.groundDraft}
             />
             <ActionButton
+              aria-label="Fetch elevation"
               className="field-inline-btn"
               disabled={form.isEditorTerrainFetching}
               onClick={() => {
@@ -328,9 +331,10 @@ function SiteEditorCard({
                 }
                 form.setGroundDraft(elevation);
               }}
+              title="Fetch elevation"
               type="button"
             >
-              {form.isEditorTerrainFetching ? "Loading…" : "Fetch"}
+              {form.isEditorTerrainFetching ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
             </ActionButton>
           </div>
         </label>
