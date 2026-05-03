@@ -16,16 +16,6 @@ const parseNumber = (value: string | number): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const validateLatitude = (lat: number): string | null => {
-  if (lat < -90 || lat > 90) return `Latitude must be between -90 and 90, got ${lat}.`;
-  return null;
-};
-
-const validateLongitude = (lon: number): string | null => {
-  if (lon < -180 || lon > 180) return `Longitude must be between -180 and 180, got ${lon}.`;
-  return null;
-};
-
 export function useMapEditorFormState() {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const mapEditorSiteDraft = useAppStore((state) => state.mapEditorSiteDraft);
@@ -521,18 +511,6 @@ export function useMapEditorFormState() {
       setStatus("Click the map or use search to choose coordinates before saving.");
       return false;
     }
-    const saveLat = mapEditorSiteDraft?.lat ?? latDraft;
-    const saveLon = mapEditorSiteDraft?.lon ?? lonDraft;
-    const latError = validateLatitude(saveLat);
-    if (latError) {
-      setStatus(latError);
-      return false;
-    }
-    const lonError = validateLongitude(saveLon);
-    if (lonError) {
-      setStatus(lonError);
-      return false;
-    }
     const normalizedVisibility: "private" | "shared" = accessVisibility;
     if (collaboratorUserIds.includes(ownerUserId)) {
       setStatus("Owner is implicit and cannot be added as collaborator.");
@@ -552,6 +530,8 @@ export function useMapEditorFormState() {
       .map((id) => ({ userId: id, role: (collaboratorRoles[id] ?? "viewer") as "viewer" | "editor" }));
 
     try {
+      const saveLat = mapEditorSiteDraft?.lat ?? latDraft;
+      const saveLon = mapEditorSiteDraft?.lon ?? lonDraft;
       const saveGround = mapEditorSiteDraft?.groundElevationM ?? groundDraft;
       if (mapEditor?.isNew) {
         const createdId = addSiteLibraryEntry(
@@ -741,19 +721,11 @@ export function useMapEditorFormState() {
     }
   };
 
-  const [latError, setLatError] = useState<string | null>(null);
-  const [lonError, setLonError] = useState<string | null>(null);
-
   const setSitePositionDraft = (nextLat: number | string, nextLon: number | string, nextGround = groundDraft) => {
     const lat = parseNumber(String(nextLat));
     const lon = parseNumber(String(nextLon));
     setLatDraft(lat);
     setLonDraft(lon);
-    const latErr = validateLatitude(lat);
-    const lonErr = validateLongitude(lon);
-    setLatError(latErr);
-    setLonError(lonErr);
-    if (latErr || lonErr) return;
     setMapEditorSiteDraft({ lat, lon, groundElevationM: nextGround });
   };
 
@@ -793,12 +765,8 @@ export function useMapEditorFormState() {
     canWrite,
     currentUser,
     // site
-    latDraft,
-    lonDraft,
-    latError,
-    lonError,
-    setLatDraft: (v: number | string) => setSitePositionDraft(v, lonDraft),
-    setLonDraft: (v: number | string) => setSitePositionDraft(latDraft, v),
+    latDraft, setLatDraft: (v: number | string) => setSitePositionDraft(v, lonDraft),
+    lonDraft, setLonDraft: (v: number | string) => setSitePositionDraft(latDraft, v),
     groundDraft, setGroundDraft: (v: number | string) => {
       const nextGround = parseNumber(String(v));
       setGroundDraft(nextGround);
