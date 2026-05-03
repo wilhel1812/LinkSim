@@ -741,19 +741,11 @@ export function useMapEditorFormState() {
     }
   };
 
-  const [latError, setLatError] = useState<string | null>(null);
-  const [lonError, setLonError] = useState<string | null>(null);
-
   const setSitePositionDraft = (nextLat: number | string, nextLon: number | string, nextGround = groundDraft) => {
     const lat = parseNumber(String(nextLat));
     const lon = parseNumber(String(nextLon));
     setLatDraft(lat);
     setLonDraft(lon);
-    const latErr = validateLatitude(lat);
-    const lonErr = validateLongitude(lon);
-    setLatError(latErr);
-    setLonError(lonErr);
-    if (latErr || lonErr) return;
     setMapEditorSiteDraft({ lat, lon, groundElevationM: nextGround });
   };
 
@@ -793,12 +785,8 @@ export function useMapEditorFormState() {
     canWrite,
     currentUser,
     // site
-    latDraft,
-    lonDraft,
-    latError,
-    lonError,
-    setLatDraft: (v: number | string) => setSitePositionDraft(v, lonDraft),
-    setLonDraft: (v: number | string) => setSitePositionDraft(latDraft, v),
+    latDraft, setLatDraft: (v: number | string) => setSitePositionDraft(v, lonDraft),
+    lonDraft, setLonDraft: (v: number | string) => setSitePositionDraft(latDraft, v),
     groundDraft, setGroundDraft: (v: number | string) => {
       const nextGround = parseNumber(String(v));
       setGroundDraft(nextGround);
