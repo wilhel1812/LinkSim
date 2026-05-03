@@ -59,7 +59,8 @@ describe("AccessSettingsEditor", () => {
     );
 
     const editCollaborators = screen.getByRole("button", { name: "Edit collaborators" });
-    expect(editCollaborators).toHaveClass("btn");
+    expect(editCollaborators).toHaveClass("field-inline-btn");
+    expect(editCollaborators).not.toHaveClass("btn");
     expect(editCollaborators).not.toHaveClass("inline-action");
     expect(editCollaborators).not.toHaveClass("action-button");
 

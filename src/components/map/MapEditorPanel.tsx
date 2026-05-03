@@ -281,7 +281,7 @@ function SiteEditorCard({
               type="text"
               value={form.siteSearchQuery}
             />
-            <ActionButton
+            <button
               aria-label="Search location"
               className="field-inline-btn"
               disabled={form.siteSearchBusy}
@@ -290,7 +290,7 @@ function SiteEditorCard({
               type="button"
             >
               {form.siteSearchBusy ? <Loader2 className="animate-spin" size={14} /> : <Search size={14} />}
-            </ActionButton>
+            </button>
           </div>
         </label>
         {form.siteSearchStatus ? <p className="field-help">{form.siteSearchStatus}</p> : null}
@@ -317,7 +317,7 @@ function SiteEditorCard({
               type="number"
               value={form.groundDraft}
             />
-            <ActionButton
+            <button
               aria-label="Fetch elevation"
               className="field-inline-btn"
               disabled={form.isEditorTerrainFetching}
@@ -335,7 +335,7 @@ function SiteEditorCard({
               type="button"
             >
               {form.isEditorTerrainFetching ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-            </ActionButton>
+            </button>
           </div>
         </label>
 
