@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import type { CollaboratorDirectoryUser } from "../lib/cloudUser";
+import { Button } from "./ui/Button";
 import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
 import { FloatingPopover } from "./ui/FloatingPopover";
@@ -118,7 +119,7 @@ export function AccessSettingsEditor({
               <span className="field-help access-collaborators-empty">No collaborators</span>
             )}
           </div>
-           <ActionButton
+           <Button
              aria-label="Edit collaborators"
              ref={triggerRef}
              disabled={disabled}
@@ -128,7 +129,7 @@ export function AccessSettingsEditor({
              type="button"
            >
              <Pencil size={14} />
-           </ActionButton>
+           </Button>
         </div>
       </div>
       <FloatingPopover

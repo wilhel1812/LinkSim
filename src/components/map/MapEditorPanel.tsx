@@ -15,6 +15,7 @@ import { useAppStore } from "../../store/appStore";
 import { useMapEditorFormState } from "./useMapEditorFormState";
 import { AccessSettingsEditor } from "../AccessSettingsEditor";
 import { ActionButton } from "../ActionButton";
+import { Button } from "../ui/Button";
 import { Surface } from "../ui/Surface";
 import { InlineCloseIconButton } from "../InlineCloseIconButton";
 import { SiteBeamVisualizer } from "../SiteBeamVisualizer";
@@ -281,7 +282,7 @@ function SiteEditorCard({
               type="text"
               value={form.siteSearchQuery}
             />
-            <ActionButton
+            <Button
               aria-label="Search location"
               disabled={form.siteSearchBusy}
               onClick={() => void form.runSiteSearch()}
@@ -290,7 +291,7 @@ function SiteEditorCard({
               type="button"
             >
               {form.siteSearchBusy ? <Loader2 className="animate-spin" size={14} /> : <Search size={14} />}
-            </ActionButton>
+            </Button>
           </div>
         </label>
         {form.siteSearchStatus ? <p className="field-help">{form.siteSearchStatus}</p> : null}
@@ -317,7 +318,7 @@ function SiteEditorCard({
               type="number"
               value={form.groundDraft}
             />
-            <ActionButton
+            <Button
               aria-label="Fetch elevation"
               disabled={form.isEditorTerrainFetching}
               onClick={() => {
@@ -335,7 +336,7 @@ function SiteEditorCard({
               type="button"
             >
               {form.isEditorTerrainFetching ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-            </ActionButton>
+            </Button>
           </div>
         </label>
 
