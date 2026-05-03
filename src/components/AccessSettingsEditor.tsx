@@ -118,17 +118,17 @@ export function AccessSettingsEditor({
               <span className="field-help access-collaborators-empty">No collaborators</span>
             )}
           </div>
-           <button
+           <ActionButton
              aria-label="Edit collaborators"
-             className="field-inline-btn"
              ref={triggerRef}
              disabled={disabled}
              onClick={() => setPopoverOpen((open) => !open)}
+             size="icon"
              title="Edit collaborators"
              type="button"
            >
              <Pencil size={14} />
-           </button>
+           </ActionButton>
         </div>
       </div>
       <FloatingPopover

@@ -281,16 +281,16 @@ function SiteEditorCard({
               type="text"
               value={form.siteSearchQuery}
             />
-            <button
+            <ActionButton
               aria-label="Search location"
-              className="field-inline-btn"
               disabled={form.siteSearchBusy}
               onClick={() => void form.runSiteSearch()}
+              size="icon"
               title="Search location"
               type="button"
             >
               {form.siteSearchBusy ? <Loader2 className="animate-spin" size={14} /> : <Search size={14} />}
-            </button>
+            </ActionButton>
           </div>
         </label>
         {form.siteSearchStatus ? <p className="field-help">{form.siteSearchStatus}</p> : null}
@@ -317,9 +317,8 @@ function SiteEditorCard({
               type="number"
               value={form.groundDraft}
             />
-            <button
+            <ActionButton
               aria-label="Fetch elevation"
-              className="field-inline-btn"
               disabled={form.isEditorTerrainFetching}
               onClick={() => {
                 const elevation = form.fetchGroundElevation();
@@ -331,11 +330,12 @@ function SiteEditorCard({
                 }
                 form.setGroundDraft(elevation);
               }}
+              size="icon"
               title="Fetch elevation"
               type="button"
             >
               {form.isEditorTerrainFetching ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-            </button>
+            </ActionButton>
           </div>
         </label>
 
