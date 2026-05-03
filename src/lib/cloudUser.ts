@@ -1,6 +1,7 @@
 export type CloudUser = {
   id: string;
   username: string;
+  needsUsername?: boolean;
   email?: string;
   bio: string;
   accessRequestNote?: string;

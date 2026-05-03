@@ -131,7 +131,7 @@ export function UserAdminPanel({
   const [managedEmailDraft, setManagedEmailDraft] = useState("");
   const [managedNameError, setManagedNameError] = useState("");
   const [managedEmailError, setManagedEmailError] = useState("");
-  const [userFilter, setUserFilter] = useState<"all" | "pending" | "approved" | "revoked">("all");
+  const [userFilter, setUserFilter] = useState<"all" | "approved" | "revoked">("all");
   const [userSearch, setUserSearch] = useState("");
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(() =>
     typeof window === "undefined" ? new Set() : readDismissedNotificationIds(),
@@ -299,10 +299,6 @@ export function UserAdminPanel({
   }, [canModerate, loadAdminAudit]);
 
   const userRows = useMemo(() => users.filter((user) => user.id !== me?.id), [users, me?.id]);
-  const pendingUserCount = useMemo(
-    () => userRows.filter((user) => (user.accountState ?? (user.isApproved ? "approved" : "pending")) === "pending").length,
-    [userRows],
-  );
   const revokedUserCount = useMemo(
     () => userRows.filter((user) => (user.accountState ?? (user.isApproved ? "approved" : "pending")) === "revoked").length,
     [userRows],
@@ -311,7 +307,6 @@ export function UserAdminPanel({
     const q = userSearch.trim().toLowerCase();
     return userRows.filter((user) => {
       const state = user.accountState ?? (user.isApproved ? "approved" : "pending");
-      if (userFilter === "pending" && state !== "pending") return false;
       if (userFilter === "approved" && state !== "approved") return false;
       if (userFilter === "revoked" && state !== "revoked") return false;
       if (!q) return true;
@@ -762,18 +757,17 @@ export function UserAdminPanel({
         {canModerate ? (
           <div className="user-manager-list">
             <div className="section-heading">
-              <p className="field-help">Users: open a profile to review and moderate.</p>
-              <p className="field-help">Pending: {pendingUserCount} | Revoked: {revokedUserCount}</p>
+              <p className="field-help">Users: open a profile to review and manage.</p>
+              <p className="field-help">Revoked: {revokedUserCount}</p>
             </div>
             <label className="field-grid user-field-grid">
               <span>Filter</span>
               <select
                 className="locale-select"
-                onChange={(event) => setUserFilter(event.target.value as "all" | "pending" | "approved" | "revoked")}
+                onChange={(event) => setUserFilter(event.target.value as "all" | "approved" | "revoked")}
                 value={userFilter}
               >
                 <option value="all">All users</option>
-                <option value="pending">Pending only</option>
                 <option value="approved">Approved only</option>
                 <option value="revoked">Revoked only</option>
               </select>
@@ -791,11 +785,7 @@ export function UserAdminPanel({
                       <strong>{user.username}</strong>
                     </p>
                     <p className="field-help">
-                      {user.accountState === "revoked"
-                        ? "Revoked"
-                        : user.isApproved
-                          ? "Approved"
-                          : "Pending"}
+                      {user.accountState === "revoked" ? "Revoked" : "Approved"}
                     </p>
                     <p className="field-help">{user.email ?? "-"}</p>
                   </div>
@@ -843,11 +833,7 @@ export function UserAdminPanel({
                   <p className="field-help">Created: {fmtDate(managedUser.createdAt)}</p>
                   <p className="field-help">
                     Access:{" "}
-                    {managedUser.accountState === "revoked"
-                      ? "Revoked"
-                      : managedUser.isApproved
-                        ? "Approved"
-                        : "Pending"}{" "}
+                    {managedUser.accountState === "revoked" ? "Revoked" : "Approved"}{" "}
                     | Role: {managedUser.role ?? (managedUser.isAdmin ? "admin" : managedUser.isModerator ? "moderator" : managedUser.isApproved ? "user" : "pending")}
                   </p>
                 </div>
@@ -878,22 +864,17 @@ export function UserAdminPanel({
                 />
               </label>
               {managedEmailError ? <p className="field-help field-help-error">{managedEmailError}</p> : null}
-              {managedUser.accessRequestNote ? (
-                <p className="field-help">Access request note: {managedUser.accessRequestNote}</p>
-              ) : (
-                <p className="field-help">No access request note.</p>
-              )}
-              <div className="chip-group">
+                <div className="chip-group">
                 <ActionButton
                   onClick={() => void saveManagedProfile(managedUser, { username: managedNameDraft, email: managedEmailDraft })}
                   type="button"
                 >
                   Save Profile
                 </ActionButton>
-                <label className="field-grid user-field-grid">
+                {managedUser.accountState === "revoked" ? null : <label className="field-grid user-field-grid">
                   <span>
                     Role{" "}
-                    <InfoTip text="Role changes are audited. Admins can assign all roles except their own. Moderators can only approve pending users to User, or move existing users back to Pending." />
+                    <InfoTip text="Role changes are audited. Admins can assign user, moderator, or admin roles except for their own account." />
                   </span>
                   <select
                     className="locale-select"
@@ -904,17 +885,11 @@ export function UserAdminPanel({
                     }}
                     value={resolveRole(managedUser)}
                   >
-                    <option disabled={!canAssignManagedRole(managedUser, "pending")} value="pending">Pending</option>
                     <option disabled={!canAssignManagedRole(managedUser, "user")} value="user">User</option>
                     <option disabled={!canAssignManagedRole(managedUser, "moderator")} value="moderator">Moderator</option>
                     <option disabled={!canAssignManagedRole(managedUser, "admin")} value="admin">Admin</option>
                   </select>
-                </label>
-                {!managedUser.isApproved ? (
-                  <ActionButton onClick={() => void updateRole(managedUser, "user")} type="button">
-                    Approve Access
-                  </ActionButton>
-                ) : null}
+                </label>}
                 {canAdmin ? (
                   <ActionButton
                     disabled={managedUser.id === me?.id || resolveRole(managedUser) === "admin"}
@@ -927,7 +902,7 @@ export function UserAdminPanel({
                 ) : null}
               </div>
               <p className="field-help">
-                Role and approval changes are audited. Moderators can only approve pending users to User, or move existing users back to Pending.
+                Role changes are audited.
               </p>
             </div>
           </ModalOverlay>

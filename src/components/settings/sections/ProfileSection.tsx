@@ -118,14 +118,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut }: ProfileSectionPro
             <div>
               <dt>Role</dt>
               <dd>
-                {me.role ??
-                  (me.isAdmin
-                    ? "admin"
-                    : me.isModerator
-                      ? "moderator"
-                      : me.isApproved
-                        ? "user"
-                        : "pending")}
+                {me.role ?? (me.isAdmin ? "admin" : me.isModerator ? "moderator" : "user")}
               </dd>
             </div>
             <div>
@@ -133,9 +126,7 @@ export function ProfileSection({ me, onMeUpdated, onSignOut }: ProfileSectionPro
               <dd>
                 {me.accountState === "revoked"
                   ? "Revoked"
-                  : me.isApproved
-                    ? "Approved"
-                    : "Pending approval"}
+                  : "Approved"}
               </dd>
             </div>
             {me.createdAt ? (

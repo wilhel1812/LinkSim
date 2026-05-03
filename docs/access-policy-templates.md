@@ -32,16 +32,16 @@ Use this profile when anonymous users must be able to open shared Simulation dee
 - Keep `/api/public-simulation` reachable without Access challenge.
 
 ### App authorization model
-- Keep `REGISTRATION_MODE=approval_required`.
+- Keep `REGISTRATION_MODE=open`.
 - Treat Access as identity proof for signed-in users.
 - Treat LinkSim visibility/role checks as the data authorization source.
 - Anonymous deep-link users must only load the shared/public Simulation bundle resolved by deep link.
 - Guest mode must not expose library browsing/discovery of unrelated objects.
 
-### LinkSim app-level approval
-- Keep `REGISTRATION_MODE=approval_required`.
+### LinkSim app-level authorization
+- Keep `REGISTRATION_MODE=open`.
 - Cloudflare Access answers “who can sign in”.
-- LinkSim approval answers “who can use simulation features”.
+- LinkSim visibility and role checks answer “who can use each simulation feature”.
 
 ## Hardened profile (optional)
 - Restrict to one IdP per environment.
@@ -51,7 +51,7 @@ Use this profile when anonymous users must be able to open shared Simulation dee
 ## Required env variables
 - `ACCESS_TEAM_DOMAIN`
 - `ACCESS_AUD`
-- `REGISTRATION_MODE=approval_required`
+- `REGISTRATION_MODE=open`
 - `ADMIN_USER_IDS=<comma-separated admin ids>`
 - `AUTH_OBSERVABILITY=true` (recommended)
 
@@ -59,7 +59,7 @@ Use this profile when anonymous users must be able to open shared Simulation dee
 1. In baseline mode: unauthenticated user gets Access challenge.
 2. In guest deep-link mode: unauthenticated user can open a shared deep link without challenge.
 3. In guest deep-link mode: unauthenticated user cannot access authenticated APIs (`/api/me`, `/api/library`, admin routes).
-4. Authenticated non-approved user lands in pending flow.
+4. Authenticated new user must choose a username before cloud library/sync onboarding continues.
 5. Admin can open:
    - `/api/auth-diagnostics`
    - `/api/schema-diagnostics`
@@ -68,4 +68,4 @@ Use this profile when anonymous users must be able to open shared Simulation dee
 ## Common misconfigurations
 - Missing `ACCESS_AUD` or `ACCESS_TEAM_DOMAIN`.
 - `ALLOW_INSECURE_DEV_AUTH=true` in production.
-- Expecting Access policy alone to replace LinkSim role/approval controls.
+- Expecting Access policy alone to replace LinkSim resource role controls.

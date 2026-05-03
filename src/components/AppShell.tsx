@@ -35,6 +35,7 @@ import { ModalOverlay } from "./ModalOverlay";
 import OnboardingTutorialModal from "./OnboardingTutorialModal";
 import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import WelcomeModal from "./WelcomeModal";
+import { UsernameSetupModal } from "./UsernameSetupModal";
 import { Sidebar } from "./Sidebar";
 import { SettingsPanel } from "./settings/SettingsPanel";
 import { MapEditorPanel } from "./map/MapEditorPanel";
@@ -196,6 +197,7 @@ export function AppShell() {
   const [accessState, setAccessState] = useState<"checking" | "granted" | "readonly" | "pending" | "locked">("checking");
   const [accessDiagnosticMessage, setAccessDiagnosticMessage] = useState<string | null>(null);
   const isAnonymousGuestReadonly = accessState === "readonly" && !currentUser;
+  const [showUsernameSetup, setShowUsernameSetup] = useState(false);
   const [activeUserId, setActiveUserId] = useState("");
   const [settingsRoute, setSettingsRoute] = useState<{ section: SettingsSectionId | null } | null>(() => {
     if (typeof window === "undefined") return null;
@@ -632,6 +634,11 @@ export function AppShell() {
       setAuthState("signed_in");
       hadAuthenticatedSessionRef.current = true;
       setActiveUserId(profile.id);
+      if (profile.needsUsername) {
+        setAccessState("pending");
+        setShowUsernameSetup(true);
+        return;
+      }
       if (reason === "initial") {
         try {
           const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
@@ -649,21 +656,30 @@ export function AppShell() {
         setAccessState("readonly");
         return;
       }
-      if (profile.isAdmin || profile.isModerator || profile.isApproved) {
-        console.info("[AppShell] Access check recovered", { reason, userId: profile.id });
-        setAccessState("granted");
-        return;
-      }
-      if (deepLinkParse.ok) {
-        setAccessState("readonly");
-        return;
-      }
-      setAccessDiagnosticMessage(
-        "Account approval is pending. Your changes may not be saved until a moderator or admin approves access.",
-      );
-      setAccessState("readonly");
+      console.info("[AppShell] Access check recovered", { reason, userId: profile.id });
+      setAccessState("granted");
     },
     [clearAuthRetryTimer, deepLinkParse.ok, setAuthState, setCurrentUser],
+  );
+
+  const completeUsernameSetup = useCallback(
+    (profile: CloudUser) => {
+      setShowUsernameSetup(false);
+      setCurrentUser(profile);
+      setAuthState("signed_in");
+      setActiveUserId(profile.id);
+      setAccessDiagnosticMessage(null);
+      setAccessState("granted");
+      try {
+        const seen = localStorage.getItem(`${ONBOARDING_SEEN_KEY_PREFIX}${profile.id}`);
+        if (!seen && !deepLinkParse.ok) {
+          setShowWelcomeModalRef.current(true);
+        }
+      } catch {
+        // ignore storage errors
+      }
+    },
+    [deepLinkParse.ok, setAuthState, setCurrentUser],
   );
 
   const runAccessCheck = useCallback(
@@ -2305,6 +2321,7 @@ export function AppShell() {
         </div>
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
+      {showUsernameSetup ? <UsernameSetupModal onComplete={completeUsernameSetup} /> : null}
       <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
       {showLibraryFromRequest && !isReadOnlyShell ? (
         <ModalOverlay
