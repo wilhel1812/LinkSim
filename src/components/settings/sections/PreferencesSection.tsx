@@ -5,7 +5,6 @@ import { getUiErrorMessage } from "../../../lib/uiError";
 import { useAppStore } from "../../../store/appStore";
 import { useThemeVariant } from "../../../hooks/useThemeVariant";
 import type { UiColorTheme } from "../../../themes/types";
-import { AutoSaveField } from "../AutoSaveField";
 import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicator";
 import { InfoTip } from "../../InfoTip";
 
@@ -32,8 +31,6 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
 
   const [presetState, setPresetState] = useState<SelectFieldState>(IDLE_SELECT);
 
-  const showAccessRequestNoteField = Boolean(me && !me.isApproved);
-
   const savePreset = useCallback(
     async (value: string | null) => {
       setPresetState({ state: "saving", error: null });
@@ -49,16 +46,6 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
       } catch (error) {
         setPresetState({ state: "error", error: getUiErrorMessage(error) });
       }
-    },
-    [onMeUpdated, setAuthState, setCurrentUser],
-  );
-
-  const saveNote = useCallback(
-    async (value: string) => {
-      const updated = await updateMyProfile({ accessRequestNote: value });
-      onMeUpdated(updated);
-      setCurrentUser(updated);
-      setAuthState("signed_in");
     },
     [onMeUpdated, setAuthState, setCurrentUser],
   );
@@ -148,22 +135,6 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
             ))}
           </select>
         </div>
-
-        {showAccessRequestNoteField ? (
-          <AutoSaveField
-            as="textarea"
-            id="pref-access-request-note"
-            label="Access request note"
-            value={me?.accessRequestNote ?? ""}
-            onSave={saveNote}
-            textareaProps={{
-              maxLength: 1200,
-              rows: 5,
-              placeholder: "Optional private note to moderators/admins.",
-            }}
-            help="Visible to moderators and admins. Up to 1200 characters."
-          />
-        ) : null}
       </div>
     </section>
   );

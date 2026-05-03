@@ -90,6 +90,7 @@
 - Local run reliability:
   - Restart local server whenever runtime/config/env changes can affect behavior.
   - Re-verify affected flows after restart before marking work as done.
+  - Do not leave local dev/watch servers running after a pass. Before handing back, run `npm run dev:check`; if it reports a LinkSim dev/watch server, run `npm run dev:stop` unless the user explicitly asked to keep it running.
 - Production preflight checklist (required before `deploy:prod:main`):
   - `npm run test`
   - `npm run build:bundle`

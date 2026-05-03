@@ -8,6 +8,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "id",
     "username",
     "email",
+    "username_set_at",
     "bio",
     "access_request_note",
     "idp_email",

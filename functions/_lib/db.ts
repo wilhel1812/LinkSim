@@ -6,7 +6,7 @@ const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
-const SCHEMA_VERSION = "2026-04-07a";
+const SCHEMA_VERSION = "2026-05-03a";
 type AccountState = "pending" | "approved" | "revoked";
 
 const dbVisibilityFromVisibility = (value: Visibility): DbVisibility => {
@@ -69,7 +69,7 @@ const slugifyName = (value: string): string =>
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
 
-const DELIMITER_CHARS = /[+<>~\/]/g;
+const DELIMITER_CHARS = /[+<>~/]/g;
 const VARIATION_SELECTORS = /[\uFE0E\uFE0F]/g;
 
 export const canonicalizeSimulationLookupKey = (value: string): string =>
@@ -172,16 +172,6 @@ const sanitizeDefaultFrequencyPresetId = (value: unknown): string | null | undef
   return trimmed;
 };
 
-const deriveDefaultName = (userId: string, tokenPayload?: Record<string, unknown>): string => {
-  const fromName = sanitizeName(tokenPayload?.name);
-  if (fromName) return fromName;
-  const fromEmail = sanitizeEmail(tokenPayload?.email);
-  if (fromEmail) return fromEmail.split("@")[0];
-  const prefix = userId.includes("@") ? userId.split("@")[0] : userId;
-  const compact = prefix.replace(/[_-]+/g, " ").trim();
-  return sanitizeName(compact) ?? `User ${userId.slice(0, 6)}`;
-};
-
 const deriveDefaultEmail = (userId: string, tokenPayload?: Record<string, unknown>): string => {
   const fromEmail = sanitizeEmail(tokenPayload?.email);
   if (fromEmail) return fromEmail;
@@ -216,16 +206,12 @@ const parseAdminUserIds = (env: Env): Set<string> => {
   );
 };
 
-const registrationMode = (env: Env): "open" | "approval_required" => {
-  const value = (env.REGISTRATION_MODE ?? "approval_required").trim().toLowerCase();
-  return value === "open" ? "open" : "approval_required";
-};
-
 const REQUIRED_COLUMNS: Record<string, string[]> = {
   users: [
     "id",
     "username",
     "email",
+    "username_set_at",
     "bio",
     "access_request_note",
     "idp_email",
@@ -320,6 +306,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
             id TEXT PRIMARY KEY,
             username TEXT,
             email TEXT,
+            username_set_at TEXT,
             bio TEXT,
             access_request_note TEXT,
             idp_email TEXT,
@@ -441,6 +428,32 @@ const ensureSchema = async (env: Env): Promise<void> => {
       if (!userColumns.has("default_frequency_preset_id")) {
         await env.DB.prepare("ALTER TABLE users ADD COLUMN default_frequency_preset_id TEXT").run();
       }
+      if (!userColumns.has("username_set_at")) {
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN username_set_at TEXT").run();
+        await env.DB
+          .prepare(
+            `UPDATE users
+             SET username_set_at = COALESCE(updated_at, created_at)
+             WHERE COALESCE(TRIM(username), '') != ''`,
+          )
+          .run();
+      }
+
+      const now = new Date().toISOString();
+      await env.DB
+        .prepare(
+          `UPDATE users
+           SET is_approved = 1,
+               approved_at = COALESCE(approved_at, ?),
+               approved_by_user_id = COALESCE(approved_by_user_id, 'system:open-registration'),
+               updated_at = ?
+           WHERE is_admin = 0
+             AND is_moderator = 0
+             AND is_approved = 0
+             AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%')`,
+        )
+        .bind(now, now)
+        .run();
 
       const diagnostics = await getSchemaDiagnostics(env);
       if (!diagnostics.ok) {
@@ -462,6 +475,7 @@ type UserRow = {
   id: string;
   username: string | null;
   email: string | null;
+  username_set_at: string | null;
   bio: string | null;
   access_request_note: string | null;
   idp_email: string | null;
@@ -513,7 +527,8 @@ export const chooseIdentityReconcileCandidate = (
 
 const toUserProfile = (row: UserRow) => ({
   id: row.id,
-  username: sanitizeName(row.username) ?? "User",
+  username: sanitizeName(row.username) ?? "",
+  needsUsername: !row.username_set_at,
   email: sanitizeEmail(row.email) ?? "unknown@users.linksim.local",
   bio: row.bio ?? "",
   accessRequestNote: row.access_request_note ?? "",
@@ -554,7 +569,7 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
@@ -570,7 +585,7 @@ const reconcileUserIdentityByIdpEmail = async (
 
   const rows = await env.DB
     .prepare(
-      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
+      `SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
               CASE
                 WHEN lower(idp_email) = lower(?) AND idp_email_verified = 1 THEN 'verified_idp_email'
                 WHEN lower(email) = lower(?) THEN 'legacy_email'
@@ -684,29 +699,27 @@ export const ensureUser = async (
     await env.DB.prepare("DELETE FROM deleted_users WHERE id = ?").bind(userId).run();
   }
   const now = new Date().toISOString();
-  const username = deriveDefaultName(userId, tokenPayload);
   const email = deriveDefaultEmail(userId, tokenPayload);
   const idpEmail = deriveVerifiedIdpEmail(tokenPayload);
   const idpEmailVerified = idpEmail ? 1 : 0;
   const isBootstrapAdmin = parseAdminUserIds(env).has(userId.toLowerCase()) ? 1 : 0;
-  const autoApprove = isBootstrapAdmin === 1 || registrationMode(env) === "open";
+  const autoApprove = 1;
 
   await env.DB.prepare(
     `INSERT OR IGNORE INTO users
-      (id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
-     VALUES (?, ?, ?, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
+     VALUES (?, '', ?, NULL, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       userId,
-      username,
       email,
       idpEmail || null,
       idpEmailVerified,
       isBootstrapAdmin,
       0,
-      autoApprove ? 1 : 0,
-      autoApprove ? now : null,
-      autoApprove ? userId : null,
+      autoApprove,
+      now,
+      "system:open-registration",
       now,
       now,
     )
@@ -714,31 +727,29 @@ export const ensureUser = async (
 
   await env.DB.prepare(
     `UPDATE users
-     SET username = COALESCE(NULLIF(TRIM(username), ''), ?),
-         email = COALESCE(NULLIF(TRIM(email), ''), ?),
+     SET email = COALESCE(NULLIF(TRIM(email), ''), ?),
          idp_email = CASE WHEN ? = 1 THEN COALESCE(NULLIF(TRIM(idp_email), ''), ?) ELSE idp_email END,
          idp_email_verified = CASE WHEN ? = 1 THEN 1 ELSE idp_email_verified END,
          is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
          is_moderator = CASE WHEN ? = 1 THEN 1 ELSE is_moderator END,
-         is_approved = CASE WHEN ? = 1 THEN 1 ELSE is_approved END,
+         is_approved = CASE WHEN ? = 1 AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%') THEN 1 ELSE is_approved END,
          approved_at = CASE WHEN ? = 1 AND approved_at IS NULL THEN ? ELSE approved_at END,
          approved_by_user_id = CASE WHEN ? = 1 AND approved_by_user_id IS NULL THEN ? ELSE approved_by_user_id END,
          updated_at = ?
      WHERE id = ?`,
   )
     .bind(
-      username,
       email,
       idpEmailVerified,
       idpEmail || null,
       idpEmailVerified,
       isBootstrapAdmin,
       0,
-      autoApprove ? 1 : 0,
-      autoApprove ? 1 : 0,
+      autoApprove,
+      autoApprove,
       now,
-      autoApprove ? 1 : 0,
-      userId,
+      autoApprove,
+      "system:open-registration",
       now,
       userId,
     )
@@ -812,6 +823,7 @@ export const updateUserProfile = async (
   await env.DB.prepare(
     `UPDATE users
      SET username = ?,
+         username_set_at = CASE WHEN ? = 1 THEN COALESCE(username_set_at, ?) ELSE username_set_at END,
          email = ?,
          bio = ?,
          access_request_note = ?,
@@ -828,6 +840,8 @@ export const updateUserProfile = async (
   )
     .bind(
       nextName,
+      patch.username === undefined ? 0 : 1,
+      new Date().toISOString(),
       nextEmail,
       nextBio,
       nextAccessRequestNote,
@@ -910,7 +924,7 @@ export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map(toUserProfile);

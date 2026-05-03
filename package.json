@@ -10,6 +10,8 @@
     "peaks:tiles:bootstrap": "node scripts/build-peak-tiles-bootstrap.mjs",
     "peaks:tiles:osm": "node scripts/build-osm-peak-tiles.mjs",
     "build:verify": "node scripts/verify-build-info.mjs",
+    "dev:check": "node scripts/dev-server-guard.mjs",
+    "dev:stop": "node scripts/dev-server-guard.mjs --stop",
     "dev": "npm run build:meta && vite --config config/vite.config.ts",
     "build:client": "npm run build:meta && vite build --config config/vite.config.ts",
     "build:bundle": "npm run build:meta && tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",
