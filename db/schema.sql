@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT,
   email TEXT,
+  username_set_at TEXT,
   bio TEXT,
   access_request_note TEXT,
   idp_email TEXT,

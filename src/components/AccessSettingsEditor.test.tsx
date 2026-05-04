@@ -58,7 +58,12 @@ describe("AccessSettingsEditor", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Edit collaborators" }));
+    const editCollaborators = screen.getByRole("button", { name: "Edit collaborators" });
+    expect(editCollaborators).toHaveClass("btn-icon");
+    expect(editCollaborators).not.toHaveClass("inline-action");
+    expect(editCollaborators).not.toHaveClass("action-button");
+
+    await userEvent.click(editCollaborators);
     const popover = await screen.findByRole("dialog", { name: "Edit collaborators" });
     const surface = popover.closest(".ui-surface-pill");
     expect(surface).toHaveClass("ui-surface-pill");
@@ -67,7 +72,9 @@ describe("AccessSettingsEditor", () => {
     expect(within(popover).queryByRole("button", { name: /Add Alice/i })).not.toBeInTheDocument();
 
     await userEvent.type(within(popover).getByLabelText("Search users"), "ali");
-    expect(await within(popover).findByRole("button", { name: /Add Alice/i })).toBeInTheDocument();
+    const addAlice = await within(popover).findByRole("button", { name: /Add Alice/i });
+    expect(addAlice).toBeInTheDocument();
+    expect(within(addAlice).getByText("Add")).not.toHaveClass("inline-action");
   });
 
   it("adds, removes, and changes roles with accessible controls", async () => {
@@ -93,6 +100,9 @@ describe("AccessSettingsEditor", () => {
 
     const remove = within(popover).getByRole("button", { name: "Remove Alice" });
     expect(remove).toHaveAttribute("title", "Remove Alice");
+    expect(remove).toHaveClass("btn-icon");
+    expect(remove).not.toHaveClass("inline-action");
+    expect(remove).not.toHaveClass("inline-action-icon");
     await userEvent.click(remove);
     expect(onRemoveCollaborator).toHaveBeenCalledWith("user-1");
 
@@ -100,5 +110,33 @@ describe("AccessSettingsEditor", () => {
     await waitFor(() => expect(within(popover).getByRole("button", { name: /Add Bob/i })).toBeInTheDocument());
     await userEvent.click(within(popover).getByRole("button", { name: /Add Bob/i }));
     expect(onAddCollaborator).toHaveBeenCalledWith("user-2");
+  });
+
+  it("can disable collaborator removal without disabling role edits", async () => {
+    const onRemoveCollaborator = vi.fn();
+    const onRoleChange = vi.fn();
+    render(
+      <AccessSettingsEditor
+        canRemoveCollaborators={false}
+        collaborators={collaborators}
+        directory={directory}
+        onAddCollaborator={vi.fn()}
+        onRemoveCollaborator={onRemoveCollaborator}
+        onRoleChange={onRoleChange}
+        onVisibilityChange={vi.fn()}
+        visibility="private"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit collaborators" }));
+    const popover = await screen.findByRole("dialog", { name: "Edit collaborators" });
+
+    await userEvent.selectOptions(within(popover).getByLabelText("Role for Alice"), "editor");
+    expect(onRoleChange).toHaveBeenCalledWith("user-1", "editor");
+
+    const remove = within(popover).getByRole("button", { name: "Remove Alice" });
+    expect(remove).toBeDisabled();
+    await userEvent.click(remove);
+    expect(onRemoveCollaborator).not.toHaveBeenCalled();
   });
 });

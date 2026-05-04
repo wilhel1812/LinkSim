@@ -44,17 +44,17 @@ Notes:
 - Native email+password user database is not provided by Cloudflare Access.
 - Passkeys are handled by your identity provider (GitHub), not by Access itself.
 
-## 4) Registration Mode (Invitation/Approval)
+## 4) Registration Mode
 
 Set in `wrangler.toml`:
 
-- `REGISTRATION_MODE = "approval_required"`
+- `REGISTRATION_MODE = "open"`
 - `ADMIN_USER_IDS = "<comma-separated user ids>"`
 
 In this mode:
 - First login creates a user profile
-- User remains blocked from library/sync APIs until approved by an admin
-- Admins approve/revoke from User Settings UI
+- Users choose a username before library/sync onboarding continues
+- Admin IDs bootstrap admin access for the listed identities
 
 ## 5) Configure Pages Environment Variables
 
@@ -63,7 +63,7 @@ In Pages project env vars (Production + Preview):
 - `ACCESS_TEAM_DOMAIN` = your team domain (without `https://`)
 - `ACCESS_AUD` = Access app AUD tag
 - `ADMIN_USER_IDS` = bootstrap admin user IDs
-- `REGISTRATION_MODE` = `approval_required`
+- `REGISTRATION_MODE` = `open`
 
 Do not enable local dev fallback vars in production.
 

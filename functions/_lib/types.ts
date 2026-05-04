@@ -29,6 +29,7 @@ export type Env = {
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   AUTH_OBSERVABILITY?: string;
+  AUTH_VERIFY_TIMEOUT_MS?: string;
   ALLOW_INSECURE_DEV_AUTH?: string;
   DEV_AUTH_USER_ID?: string;
   ADMIN_USER_IDS?: string;

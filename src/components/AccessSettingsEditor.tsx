@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import type { CollaboratorDirectoryUser } from "../lib/cloudUser";
+import { Button } from "./ui/Button";
+import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
 import { FloatingPopover } from "./ui/FloatingPopover";
 
@@ -23,6 +25,7 @@ type AccessSettingsEditorProps = {
   onAddCollaborator: (userId: string) => void;
   onRemoveCollaborator: (userId: string) => void;
   onRoleChange: (userId: string, role: AccessRole) => void;
+  canRemoveCollaborators?: boolean;
   disabled?: boolean;
   ownerUserId?: string;
   directoryBusy?: boolean;
@@ -43,6 +46,7 @@ export function AccessSettingsEditor({
   onAddCollaborator,
   onRemoveCollaborator,
   onRoleChange,
+  canRemoveCollaborators = true,
   disabled = false,
   ownerUserId = "",
   directoryBusy = false,
@@ -115,16 +119,17 @@ export function AccessSettingsEditor({
               <span className="field-help access-collaborators-empty">No collaborators</span>
             )}
           </div>
-          <button
-            aria-label="Edit collaborators"
-            className="inline-action action-button"
-            ref={triggerRef}
-            disabled={disabled}
-            onClick={() => setPopoverOpen((open) => !open)}
-            type="button"
-          >
-            Edit
-          </button>
+           <Button
+             aria-label="Edit collaborators"
+             ref={triggerRef}
+             disabled={disabled}
+             onClick={() => setPopoverOpen((open) => !open)}
+             size="icon"
+             title="Edit collaborators"
+             type="button"
+           >
+             <Pencil size={14} />
+           </Button>
         </div>
       </div>
       <FloatingPopover
@@ -166,7 +171,7 @@ export function AccessSettingsEditor({
                   >
                     <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
                     <span className="field-help">{user.email}</span>
-                    <span className="inline-action">Add</span>
+                    <span className="field-help">Add</span>
                   </button>
                 ))
               ) : (
@@ -190,16 +195,17 @@ export function AccessSettingsEditor({
                       <option value="viewer">Viewer</option>
                       <option value="editor">Editor</option>
                     </select>
-                    <button
+                    <ActionButton
                       aria-label={`Remove ${label}`}
-                      className="inline-action inline-action-icon access-collaborator-remove"
-                      disabled={disabled}
+                      className="access-collaborator-remove"
+                      disabled={disabled || !canRemoveCollaborators}
                       onClick={() => onRemoveCollaborator(user.id)}
+                      size="icon"
                       title={`Remove ${label}`}
                       type="button"
                     >
                       <Trash2 aria-hidden="true" size={14} strokeWidth={2} />
-                    </button>
+                    </ActionButton>
                   </div>
                 );
               })
