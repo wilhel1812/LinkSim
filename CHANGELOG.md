@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.19.0] - 2026-05-04
+
+### Added
+- Removed closed-beta approval gating; new username setup flow on first sign-in. (#819)
+- Deep links now scoped by username for cleaner shared URLs. (#816)
+- Floating popover editors for sites, links, and simulations replace modal dialogs. (#804, #806)
+- Per-row icon actions in sidebar lists replace inline Edit/Remove buttons. (#803, #805)
+- Mobile full-screen support for Settings panel with ModalOverlay wrapping. (#801, #802)
+- Loading indicator for panorama chart while elevation data loads. (#797)
+- User location map flow with compass-bearing indicator and live camera follow. (#765)
+- Site beam visualizer popover with interactive gain/beam-pattern overlay. (#737, #740)
+- Site access editor redesign with cleaner layout and collaborator management. (#733)
+
+### Changed
+- Compact map editor metadata footer and refined map interactions. (#804, #810)
+- PanelToolbar now standard across all panels; unified button system with `Button` component. (#616, #748, #751)
+- Replaced emoji notification bell with Lucide Bell icon. (#616, #763)
+- Centralized font definitions and removed legacy inline action references. (#790, #794)
+- Auth now decodes CF Access JWT locally instead of JWKS network fetch; increased timeout tolerance. (#776, #785, #786, #787)
+
+### Fixed
+- Panorama no longer shows current POV site as a marker. (#800)
+- Map editor interaction refinements and site editor cleanup. (#804, #810)
+- Firefox staging sign-in redirect behavior. (#780)
+- Lat/lon validation prevents map crash on invalid input; tile precision fixes for GeoTIFF. (#808, #820)
+- Read-only site edit blocking and improved collaborator controls. (#791, #792, #793)
+- UI gallery pattern cleanup: Button direct usage, ActionButton icon-only sizing. (#825, #826, #827)
+- Hidden current POV site from panorama markers and various map interaction fixes.
+
+### Internal
+- Expanded test server scripting for local dev reliability. (#673)
+- Removed dead UI patterns: `NotificationBanner`, `OfflineBanner`, legacy gallery refs. (#759, #760, #761, #758)
+- README landing page simplified. (#747)
+
 ## [0.18.0] - 2026-04-24
 
 ### Added
