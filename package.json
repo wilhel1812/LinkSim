@@ -1,7 +1,7 @@
 {
   "name": "linksim",
   "private": true,
-  "version": "0.18.0",
+  "version": "0.19.0",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -10,6 +10,8 @@
     "peaks:tiles:bootstrap": "node scripts/build-peak-tiles-bootstrap.mjs",
     "peaks:tiles:osm": "node scripts/build-osm-peak-tiles.mjs",
     "build:verify": "node scripts/verify-build-info.mjs",
+    "dev:check": "node scripts/dev-server-guard.mjs",
+    "dev:stop": "node scripts/dev-server-guard.mjs --stop",
     "dev": "npm run build:meta && vite --config config/vite.config.ts",
     "build:client": "npm run build:meta && vite build --config config/vite.config.ts",
     "build:bundle": "npm run build:meta && tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",

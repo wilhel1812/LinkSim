@@ -60,6 +60,14 @@ describe("api/public-simulation", () => {
     );
   });
 
+  it("passes username-scoped slug lookup parameters", async () => {
+    await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?username=Owner&slug=my-sim")));
+    expect(fetchPublicSimulationBundleMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ username: "Owner", simulationSlug: "my-sim" }),
+    );
+  });
+
   it("returns 403 when bundle status is forbidden", async () => {
     fetchPublicSimulationBundleMock.mockResolvedValue({ status: "forbidden" });
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?sim=sim-1")));

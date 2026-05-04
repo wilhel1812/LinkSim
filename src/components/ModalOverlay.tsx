@@ -6,13 +6,14 @@ type ModalOverlayProps = {
   children: ReactNode;
   onClose?: () => void;
   tier?: "base" | "raised";
+  className?: string;
 };
 
 let openModalCount = 0;
 const openModalStack: string[] = [];
 let modalLayerSeed = 0;
 
-export function ModalOverlay({ children, onClose, tier = "base", ...rest }: ModalOverlayProps) {
+export function ModalOverlay({ children, onClose, tier = "base", className, ...rest }: ModalOverlayProps) {
   const modalId = useId();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -54,7 +55,7 @@ export function ModalOverlay({ children, onClose, tier = "base", ...rest }: Moda
   return createPortal(
     <div
       aria-modal="true"
-      className="library-manager-overlay"
+      className={["library-manager-overlay", className].filter(Boolean).join(" ")}
       onMouseDown={(event) => {
         if (!onCloseRef.current) return;
         if (event.target !== event.currentTarget) return;

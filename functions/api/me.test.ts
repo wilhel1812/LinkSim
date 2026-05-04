@@ -34,6 +34,22 @@ describe("api/me", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
+  it("returns username setup state on GET", async () => {
+    fetchUserProfileMock.mockResolvedValueOnce({ id: "u1", username: "", needsUsername: true });
+
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/me")));
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ user: { id: "u1", username: "", needsUsername: true } });
+  });
+
+  it("returns a controlled service unavailable response when auth verification times out", async () => {
+    verifyAuthMock.mockRejectedValue(new Error("Auth verification timed out"));
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/me")));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "Auth verification timed out.", code: "auth_timeout" });
+  });
+
   it("returns no-store on PATCH", async () => {
     const req = new Request("https://example.test/api/me", {
       method: "PATCH",
@@ -57,6 +73,21 @@ describe("api/me", () => {
       env,
       "u1",
       expect.objectContaining({ defaultFrequencyPresetId: "mt-us" }),
+    );
+  });
+
+  it("passes username through PATCH for first username setup", async () => {
+    const req = new Request("https://example.test/api/me", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "Ranger" }),
+    });
+    const res = await onRequestPatch(mkCtx(req));
+    expect(res.status).toBe(200);
+    expect(updateUserProfileMock).toHaveBeenCalledWith(
+      env,
+      "u1",
+      expect.objectContaining({ username: "Ranger" }),
     );
   });
 });

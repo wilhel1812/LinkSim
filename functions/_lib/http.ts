@@ -40,6 +40,7 @@ export const handleOptions = (request: Request): Response =>
 export const normalizeApiErrorMessage = (message: string): string => {
   const lower = message.toLowerCase();
   if (lower.includes("session revoked by admin")) return "Session revoked by admin.";
+  if (lower.includes("auth verification timed out")) return "Auth verification timed out.";
   if (lower.includes("access revoked by admin")) return "Account access revoked by admin.";
   if (lower.includes("pending approval")) return "Account pending approval.";
   if (lower.includes("unauthorized")) return "Unauthorized.";
@@ -54,6 +55,7 @@ export const normalizeApiErrorMessage = (message: string): string => {
 export const statusFromErrorMessage = (message: string, fallback = 500): number => {
   const lower = message.toLowerCase();
   if (lower.includes("schema out of date")) return 503;
+  if (lower.includes("auth verification timed out")) return 503;
   if (lower.includes("session revoked by admin")) return 401;
   if (lower.includes("access revoked by admin")) return 403;
   if (lower.includes("unauthorized")) return 401;
@@ -64,14 +66,27 @@ export const statusFromErrorMessage = (message: string, fallback = 500): number 
   return fallback;
 };
 
+const codeFromErrorMessage = (message: string): string | null => {
+  const lower = message.toLowerCase();
+  if (lower.includes("auth verification timed out")) return "auth_timeout";
+  if (lower.includes("schema out of date")) return "schema_unavailable";
+  return null;
+};
+
 export const errorResponse = (request: Request, error: unknown, fallback = 500): Response => {
   const message = error instanceof Error ? error.message : String(error);
+  const code = codeFromErrorMessage(message);
   return withCors(
     request,
     json(
-      {
-        error: normalizeApiErrorMessage(message),
-      },
+      code
+        ? {
+            error: normalizeApiErrorMessage(message),
+            code,
+          }
+        : {
+            error: normalizeApiErrorMessage(message),
+          },
       { status: statusFromErrorMessage(message, fallback) },
     ),
   );

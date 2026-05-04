@@ -35,6 +35,17 @@ describe("cloudUser client", () => {
     expect(headers.has("content-type")).toBe(false);
   });
 
+  it("preserves username setup state from fetchMe", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ user: { id: "u1", username: "", needsUsername: true, bio: "", avatarUrl: "", isAdmin: false, isApproved: true, createdAt: "x", updatedAt: "x" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(fetchMe()).resolves.toMatchObject({ id: "u1", needsUsername: true, username: "" });
+  });
+
   it("sends JSON content-type when request has body", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ user: { id: "u1", username: "U", bio: "", avatarUrl: "", isAdmin: false, isApproved: true, createdAt: "x", updatedAt: "x" } }), {

@@ -605,6 +605,9 @@ const USER_LOCATION_WATCH_OPTIONS: PositionOptions = {
   timeout: 15_000,
 };
 const USER_LOCATION_NOTICE_ID = "user-location";
+const READ_ONLY_SIMULATION_SITE_HELP = "Read-only: you need edit permission to add sites to this simulation.";
+const READ_ONLY_SIMULATION_SITE_EDIT_HELP =
+  "Read-only: you need edit permission to move or edit sites in this simulation.";
 
 const userLocationErrorMessage = (error: GeolocationPositionError): string => {
   if (error.code === error.PERMISSION_DENIED) return "Location permission was denied.";
@@ -683,7 +686,10 @@ export function MapView({
   const setSiteDragPreview = useAppStore((state) => state.setSiteDragPreview);
   const clearSiteDragPreview = useAppStore((state) => state.clearSiteDragPreview);
   const setEndpointPickTarget = useAppStore((state) => state.setEndpointPickTarget);
-  const requestSiteLibraryDraftAt = useAppStore((state) => state.requestSiteLibraryDraftAt);
+  const openMapEditor = useAppStore((state) => state.openMapEditor);
+  const mapEditor = useAppStore((state) => state.mapEditor);
+  const mapEditorSiteDraft = useAppStore((state) => state.mapEditorSiteDraft);
+  const setMapEditorSiteDraft = useAppStore((state) => state.setMapEditorSiteDraft);
   const requestOpenSiteLibraryEntry = useAppStore((state) => state.requestOpenSiteLibraryEntry);
   const coverageSamples = useCoverageStore((state) => state.coverageSamples);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -793,12 +799,14 @@ export function MapView({
   const userLocationWatchIdRef = useRef<number | null>(null);
   const isUserLocationActiveRef = useRef(false);
   const isUserLocationFollowingRef = useRef(false);
+  const clearFitControlActiveRef = useRef<() => void>(() => undefined);
   const panoramaLensBaseViewRef = useRef<{
     center: { lat: number; lon: number };
     zoom: number;
     bearing: number;
     pitch: number;
   } | null>(null);
+  const editorDraftAnimationKeyRef = useRef("");
 
   const stopUserLocation = useCallback(() => {
     if (userLocationWatchIdRef.current !== null && navigator.geolocation) {
@@ -832,6 +840,7 @@ export function MapView({
     }
     isUserLocationActiveRef.current = true;
     isUserLocationFollowingRef.current = true;
+    clearFitControlActiveRef.current();
     setIsUserLocationActive(true);
     setUserLocationFix(null);
     try {
@@ -2086,6 +2095,34 @@ export function MapView({
     latitude: viewport.center.lat,
     zoom: viewport.zoom,
   };
+  useEffect(() => {
+    if (!isMapLoaded || mapEditor?.kind !== "site" || !mapEditorSiteDraft) return;
+    const animationKey = `${mapEditor.resourceId ?? "new"}:${mapEditorSiteDraft.lat.toFixed(6)}:${mapEditorSiteDraft.lon.toFixed(6)}`;
+    if (editorDraftAnimationKeyRef.current === animationKey) return;
+    editorDraftAnimationKeyRef.current = animationKey;
+    setInteractionViewState(null);
+    const didAnimate = animateMapToCenter(mapRef, {
+      center: { lat: mapEditorSiteDraft.lat, lon: mapEditorSiteDraft.lon },
+      zoom: viewport.zoom,
+      padding: resolveMapCameraPadding(fitChromePadding, fitBottomInset),
+      duration: 420,
+    });
+    if (!didAnimate) {
+      updateMapViewport({
+        center: { lat: mapEditorSiteDraft.lat, lon: mapEditorSiteDraft.lon },
+        zoom: viewport.zoom,
+      });
+    }
+  }, [
+    fitBottomInset,
+    fitChromePadding,
+    isMapLoaded,
+    mapEditor?.kind,
+    mapEditor?.resourceId,
+    mapEditorSiteDraft,
+    updateMapViewport,
+    viewport.zoom,
+  ]);
   const mqttNodesInView = useMemo(() => {
     const lonSpan = Math.max(0.12, 360 / Math.pow(2, activeViewState.zoom) * 2.2);
     const latSpan = Math.max(0.12, 170 / Math.pow(2, activeViewState.zoom) * 1.8);
@@ -2136,7 +2173,26 @@ export function MapView({
     setSiteDraftStatus("Preparing site draft...");
     try {
       const suggestedName = await guessSiteNameForPosition(pendingNewSiteDraft.lat, pendingNewSiteDraft.lon);
-      requestSiteLibraryDraftAt(pendingNewSiteDraft.lat, pendingNewSiteDraft.lon, suggestedName);
+      openMapEditor({
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect: {
+          top: window.innerHeight / 2,
+          right: window.innerWidth / 2,
+          bottom: window.innerHeight / 2,
+          left: window.innerWidth / 2,
+          width: 0,
+          height: 0,
+        },
+        siteSeed: {
+          lat: pendingNewSiteDraft.lat,
+          lon: pendingNewSiteDraft.lon,
+          name: suggestedName,
+          insertIntoSimulation: true,
+        },
+      });
       setPendingNewSiteDraft(null);
       setSiteDraftStatus(null);
     } catch (error) {
@@ -2155,6 +2211,10 @@ export function MapView({
 
   const savePendingSiteMove = () => {
     if (!pendingMoveCount) return;
+    if (!canPersist) {
+      setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
+      return;
+    }
     for (const move of pendingMoveEntries) {
       updateSite(move.siteId, {
         position: move.currentPosition,
@@ -2191,6 +2251,10 @@ export function MapView({
   };
 
   const onSiteDrag = (siteId: string, event: MarkerDragEvent) => {
+    if (!canPersist) {
+      setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
+      return;
+    }
     if (pendingNewSiteDraft) {
       setSiteDraftStatus("Dismiss or save the new map site before moving existing sites.");
       return;
@@ -2228,6 +2292,10 @@ export function MapView({
 
   const onSiteDragEnd = (siteId: string, event: MarkerDragEvent) => {
     setIsDraggingSite(false);
+    if (!canPersist) {
+      setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
+      return;
+    }
     const site = sites.find((candidate) => candidate.id === siteId);
     if (!site) return;
     const nextPosition = {
@@ -2266,6 +2334,16 @@ export function MapView({
     setSiteDraftStatus(null);
   };
 
+  const setEditorSiteDraftFromMap = (lat: number, lon: number) => {
+    const terrainElevation = sampleSrtmElevation(srtmTiles, lat, lon);
+    const groundElevationM = Number.isFinite(terrainElevation) ? Math.round(terrainElevation as number) : null;
+    setMapEditorSiteDraft({ lat, lon, groundElevationM });
+  };
+
+  const onEditorSiteDraftDragEnd = (event: MarkerDragEvent) => {
+    setEditorSiteDraftFromMap(event.lngLat.lat, event.lngLat.lng);
+  };
+
   const beginPendingNewSiteDraft = (lat: number, lon: number) => {
     if (endpointPickTarget) return;
     if (pendingMoveCount > 0) {
@@ -2285,6 +2363,12 @@ export function MapView({
     const rawTarget = event.originalEvent?.target;
     if (rawTarget instanceof Element && rawTarget.closest(".map-site-surface")) return;
     if (endpointPickTarget) return;
+    if (mapEditor?.kind === "site" && mapEditor.isNew) {
+      setEditorSiteDraftFromMap(event.lngLat.lat, event.lngLat.lng);
+      setArmAddSiteOnNextEmptyMapClick(false);
+      setSelectedDiscoveryLibraryEntryId(null);
+      return;
+    }
     const interactiveFeature = event.features?.find((feature) => feature.layer.id === "link-lines");
     let id = interactiveFeature?.properties ? String(interactiveFeature.properties.id ?? "") : "";
     if (!id && mapRef.current) {
@@ -2344,7 +2428,7 @@ export function MapView({
 
   const addDiscoveryLibrarySiteToSimulation = (entryId: string) => {
     if (!canPersist) {
-      setSiteDraftStatus("Read-only mode: cannot add library sites to this simulation.");
+      setSiteDraftStatus(READ_ONLY_SIMULATION_SITE_HELP);
       return;
     }
     if (sites.some((site) => site.libraryEntryId === entryId)) {
@@ -2378,16 +2462,36 @@ export function MapView({
       setSiteDraftStatus(`Node already exists as "${existing.name}". Choose add existing or create a copy.`);
       return;
     }
-    requestSiteLibraryDraftAt(node.lat, node.lon, node.longName ?? node.shortName ?? node.nodeId, {
-      sourceType: "mqtt-feed",
-      sourceUrl: "/meshmap/nodes.json",
-      nodeId: node.nodeId,
-      longName: node.longName,
-      shortName: node.shortName,
-      hwModel: node.hwModel,
-      role: node.role,
+    openMapEditor({
+      kind: "site",
+      resourceId: null,
+      isNew: true,
+      label: "New Site",
+      anchorRect: {
+        top: window.innerHeight / 2,
+        right: window.innerWidth / 2,
+        bottom: window.innerHeight / 2,
+        left: window.innerWidth / 2,
+        width: 0,
+        height: 0,
+      },
+      siteSeed: {
+        lat: node.lat,
+        lon: node.lon,
+        name: node.longName ?? node.shortName ?? node.nodeId,
+        insertIntoSimulation: true,
+        sourceMeta: {
+          sourceType: "mqtt-feed",
+          sourceUrl: "/meshmap/nodes.json",
+          nodeId: node.nodeId,
+          longName: node.longName,
+          shortName: node.shortName,
+          hwModel: node.hwModel,
+          role: node.role,
+        },
+      },
     });
-    setSiteDraftStatus("Opened MQTT node in Add Site form. Review and save to add it.");
+    setSiteDraftStatus("Opened MQTT node in the site editor. Review and save to add it.");
   };
 
   const addExistingDuplicateMqttNode = () => {
@@ -2400,16 +2504,36 @@ export function MapView({
   const createDuplicateMqttCopy = () => {
     if (!mqttDuplicatePrompt) return;
     const node = mqttDuplicatePrompt.node;
-    requestSiteLibraryDraftAt(node.lat, node.lon, node.longName ?? node.shortName ?? node.nodeId, {
-      sourceType: "mqtt-feed",
-      sourceUrl: "/meshmap/nodes.json",
-      nodeId: node.nodeId,
-      longName: node.longName,
-      shortName: node.shortName,
-      hwModel: node.hwModel,
-      role: node.role,
+    openMapEditor({
+      kind: "site",
+      resourceId: null,
+      isNew: true,
+      label: "New Site",
+      anchorRect: {
+        top: window.innerHeight / 2,
+        right: window.innerWidth / 2,
+        bottom: window.innerHeight / 2,
+        left: window.innerWidth / 2,
+        width: 0,
+        height: 0,
+      },
+      siteSeed: {
+        lat: node.lat,
+        lon: node.lon,
+        name: node.longName ?? node.shortName ?? node.nodeId,
+        insertIntoSimulation: true,
+        sourceMeta: {
+          sourceType: "mqtt-feed",
+          sourceUrl: "/meshmap/nodes.json",
+          nodeId: node.nodeId,
+          longName: node.longName,
+          shortName: node.shortName,
+          hwModel: node.hwModel,
+          role: node.role,
+        },
+      },
     });
-    setSiteDraftStatus(`Opened copy draft for "${mqttDuplicatePrompt.existingName}".`);
+    setSiteDraftStatus(`Opened copy in the site editor for "${mqttDuplicatePrompt.existingName}".`);
     setMqttDuplicatePrompt(null);
   };
 
@@ -2471,6 +2595,13 @@ export function MapView({
     setInteractionViewState,
     updateMapViewport,
   });
+  clearFitControlActiveRef.current = clearFitControlActive;
+  const handleFitToNodes = () => {
+    if (isUserLocationActiveRef.current && isUserLocationFollowingRef.current) {
+      isUserLocationFollowingRef.current = false;
+    }
+    fitToNodes();
+  };
   useEffect(() => {
     if (!fitControlActive || !fitSitesEpoch || !isMapLoaded || !mapRef.current) return;
     const bounds = computeSiteFitBounds(sites, overlayRadiusKm);
@@ -2549,9 +2680,13 @@ export function MapView({
   if (mapProviderWarning) inspectorLines.push(mapProviderWarning);
   if (showDiscoverySites) {
     inspectorLines.push(
-      `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`,
+      canPersist
+        ? `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`
+        : `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect it.`,
     );
   }
+  if (selectedDiscoveryLibraryEntry && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_HELP);
+  if (selectedSite && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_EDIT_HELP);
   if (showDiscoveryMqtt && !mqttLoadStatus) {
     inspectorLines.push(
       mqttTooDenseInView
@@ -2592,7 +2727,7 @@ export function MapView({
           <MapControlButton
             aria-label="Fit map to sites"
             isSelected={fitControlActive}
-            onClick={fitToNodes}
+            onClick={handleFitToNodes}
             title="Fit"
           >
             <Fullscreen aria-hidden="true" strokeWidth={1.8} />
@@ -2671,7 +2806,20 @@ export function MapView({
                 <div className="chip-group">
                   {inspectorPrimaryLibraryEntryId ? (
                     <ActionButton
-                      onClick={() => requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId)}
+                      onClick={(event) => {
+                        const entry = siteLibrary.find((candidate) => candidate.id === inspectorPrimaryLibraryEntryId);
+                        if (!entry) {
+                          requestOpenSiteLibraryEntry(inspectorPrimaryLibraryEntryId);
+                          return;
+                        }
+                        openMapEditor({
+                          kind: "site",
+                          resourceId: entry.id,
+                          isNew: false,
+                          label: entry.name,
+                          anchorRect: event.currentTarget.getBoundingClientRect(),
+                        });
+                      }}
                     >
                       Details
                     </ActionButton>
@@ -3305,9 +3453,17 @@ export function MapView({
         </Source>
 
         {sites.map((site) => {
-          const isSelected = !armAddSiteOnNextEmptyMapClick && selectedSiteSet.has(site.id);
+          const isEditedSiteInSimulation =
+            mapEditor?.kind === "site" &&
+            !mapEditor.isNew &&
+            mapEditor.resourceId !== null &&
+            site.libraryEntryId === mapEditor.resourceId &&
+            mapEditorSiteDraft !== null;
+          const isSelected = isEditedSiteInSimulation || (!armAddSiteOnNextEmptyMapClick && selectedSiteSet.has(site.id));
           const pendingMove = pendingSiteMoves[site.id];
-          const markerPosition = pendingMove?.currentPosition ?? site.position;
+          const markerPosition = isEditedSiteInSimulation
+            ? { lat: mapEditorSiteDraft.lat, lon: mapEditorSiteDraft.lon }
+            : pendingMove?.currentPosition ?? site.position;
           const isTemporarilyMoved = Boolean(pendingMove);
           const isPassFailMode = coverageVizMode === "passfail" && Boolean(selectedFromSite);
           const isRelayMode = coverageVizMode === "relay" && Boolean(selectedFromSite) && Boolean(selectedToSite);
@@ -3320,14 +3476,14 @@ export function MapView({
           return (
             <Marker
               anchor="bottom"
-              draggable
+              draggable={canPersist}
               key={site.id}
               latitude={markerPosition.lat}
               longitude={markerPosition.lon}
               offset={SITE_PIN_MARKER_OFFSET}
               style={{ zIndex: markerZIndex }}
-              onDrag={(event) => onSiteDrag(site.id, event)}
-              onDragEnd={(event) => onSiteDragEnd(site.id, event)}
+              onDrag={isEditedSiteInSimulation ? undefined : (event) => onSiteDrag(site.id, event)}
+              onDragEnd={isEditedSiteInSimulation ? onEditorSiteDraftDragEnd : (event) => onSiteDragEnd(site.id, event)}
             >
               <MarkerActionButton
                 ariaLabel={site.name}
@@ -3433,6 +3589,24 @@ export function MapView({
           >
             <Surface variant="pill" className="map-site-surface is-temporary" pointerTail pointerTone="temporary">
               <span>New Site</span>
+            </Surface>
+          </Marker>
+        ) : null}
+
+        {mapEditor?.kind === "site" &&
+        mapEditorSiteDraft &&
+        (mapEditor.isNew || !sites.some((site) => site.libraryEntryId === mapEditor.resourceId)) ? (
+          <Marker
+            anchor="bottom"
+            draggable={canPersist}
+            latitude={mapEditorSiteDraft.lat}
+            longitude={mapEditorSiteDraft.lon}
+            offset={SITE_PIN_MARKER_OFFSET}
+            style={{ zIndex: 4 }}
+            onDragEnd={onEditorSiteDraftDragEnd}
+          >
+            <Surface variant="pill" className="map-site-surface is-selected" pointerTail pointerTone="selection">
+              <span>{mapEditor.isNew ? "New Site" : mapEditor.label}</span>
             </Surface>
           </Marker>
         ) : null}

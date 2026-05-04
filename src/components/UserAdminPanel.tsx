@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { CircleAlert, CircleQuestionMark, CircleUserRound } from "lucide-react";
 import {
   bulkReassignOwnership,
@@ -12,8 +12,6 @@ import {
   runMetadataRepair,
   reassignResourceOwner,
   restoreDeletedCloudUser,
-  uploadAvatar,
-  updateMyProfile,
   updateUserRole,
   updateUserProfile,
   type AdminAuditEvent,
@@ -24,13 +22,10 @@ import {
 } from "../lib/cloudUser";
 import { fetchNotifications, type NotificationFeed } from "../lib/cloudNotifications";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
-import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../lib/frequencyPlans";
 import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
 import { deriveSyncIndicator } from "../lib/syncIndicator";
 import { useAppStore } from "../store/appStore";
-import { useThemeVariant } from "../hooks/useThemeVariant";
-import type { UiColorTheme } from "../themes/types";
 import { AvatarBadge } from "./AvatarBadge";
 import { ActionButton } from "./ActionButton";
 import { InfoTip } from "./InfoTip";
@@ -46,7 +41,6 @@ const fmtDate = (iso: string | null | undefined): string => {
 
 const NOTIFICATION_DISMISS_KEY = "linksim:dismissed-notifications";
 const NOTIFICATION_POLL_MS = 30_000;
-const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const OPEN_SYNC_MODAL_EVENT = "linksim:open-sync-modal";
 
 const readDismissedNotificationIds = (): Set<string> => {
@@ -69,57 +63,6 @@ const writeDismissedNotificationIds = (ids: Set<string>) => {
   }
 };
 
-const loadImageFromFile = async (file: File): Promise<HTMLImageElement> => {
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("Unable to decode image."));
-      img.src = objectUrl;
-    });
-    return image;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-};
-
-const resizeAvatarFileToDataUrl = async (file: File): Promise<{ originalDataUrl: string; thumbDataUrl: string }> => {
-  const image = await loadImageFromFile(file);
-  const maxOriginal = 2048;
-  const maxThumb = 320;
-  const originalScale = Math.min(1, maxOriginal / Math.max(image.width, image.height));
-  const thumbScale = Math.min(1, maxThumb / Math.max(image.width, image.height));
-  const originalWidth = Math.max(1, Math.round(image.width * originalScale));
-  const originalHeight = Math.max(1, Math.round(image.height * originalScale));
-  const thumbWidth = Math.max(1, Math.round(image.width * thumbScale));
-  const thumbHeight = Math.max(1, Math.round(image.height * thumbScale));
-
-  const originalCanvas = document.createElement("canvas");
-  originalCanvas.width = originalWidth;
-  originalCanvas.height = originalHeight;
-  const originalCtx = originalCanvas.getContext("2d");
-  if (!originalCtx) throw new Error("Canvas unavailable for image resize.");
-  originalCtx.drawImage(image, 0, 0, originalWidth, originalHeight);
-
-  const thumbCanvas = document.createElement("canvas");
-  thumbCanvas.width = thumbWidth;
-  thumbCanvas.height = thumbHeight;
-  const thumbCtx = thumbCanvas.getContext("2d");
-  if (!thumbCtx) throw new Error("Canvas unavailable for thumbnail resize.");
-  thumbCtx.drawImage(image, 0, 0, thumbWidth, thumbHeight);
-
-  const originalDataUrl = originalCanvas.toDataURL("image/webp", 0.86);
-  const thumbDataUrl = thumbCanvas.toDataURL("image/webp", 0.8);
-  if (originalDataUrl.length > 7_000_000) {
-    throw new Error("Profile image is still too large after resize.");
-  }
-  if (thumbDataUrl.length > 1_400_000) {
-    throw new Error("Profile thumbnail is still too large after resize.");
-  }
-  return { originalDataUrl, thumbDataUrl };
-};
-
 type UserAdminPanelProps = {
   onOpenHelp?: () => void;
   authBootstrapPending?: boolean;
@@ -137,6 +80,10 @@ type UserAdminPanelProps = {
    * AppShell to navigate to `/settings/profile`.
    */
   onOpenSettings?: () => void;
+  /**
+   * When provided, clicking "Sign in" delegates sign-in handling to the shell.
+   */
+  onSignInRequested?: () => void;
 };
 
 export function UserAdminPanel({
@@ -145,13 +92,10 @@ export function UserAdminPanel({
   extraActions,
   renderMode = "chip",
   onOpenSettings,
+  onSignInRequested,
 }: UserAdminPanelProps) {
   const runtimeEnvironment = getCurrentRuntimeEnvironment();
   const isLocalRuntime = runtimeEnvironment === "local";
-  const uiThemePreference = useAppStore((state) => state.uiThemePreference);
-  const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
-  const uiColorTheme = useAppStore((state) => state.uiColorTheme);
-  const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const syncStatus = useAppStore((state) => state.syncStatus);
   const syncPending = useAppStore((state) => state.syncPending);
   const pendingChangesCount = useAppStore((state) => state.pendingChangesCount);
@@ -163,8 +107,6 @@ export function UserAdminPanel({
   const authState = useAppStore((state) => state.authState);
   const setAuthState = useAppStore((state) => state.setAuthState);
   const currentUser = useAppStore((state) => state.currentUser);
-  const { activeHolidayTheme } = useThemeVariant();
-  const [open, setOpen] = useState(false);
   const [me, setMe] = useState<CloudUser | null>(null);
   const [users, setUsers] = useState<CloudUser[]>([]);
   const [deletedUsers, setDeletedUsers] = useState<DeletedCloudUser[]>([]);
@@ -173,16 +115,6 @@ export function UserAdminPanel({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
 
-  const [nameDraft, setNameDraft] = useState("");
-  const [emailDraft, setEmailDraft] = useState("");
-  const [nameError, setNameError] = useState("");
-  const [emailError, setEmailError] = useState("");
-  const [bioDraft, setBioDraft] = useState("");
-  const [accessRequestNoteDraft, setAccessRequestNoteDraft] = useState("");
-  const [avatarDraft, setAvatarDraft] = useState("");
-  const [avatarStatus, setAvatarStatus] = useState("");
-  const [emailPublicDraft, setEmailPublicDraft] = useState(true);
-  const [defaultFrequencyPresetIdDraft, setDefaultFrequencyPresetIdDraft] = useState<string | null>(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState("");
@@ -199,7 +131,7 @@ export function UserAdminPanel({
   const [managedEmailDraft, setManagedEmailDraft] = useState("");
   const [managedNameError, setManagedNameError] = useState("");
   const [managedEmailError, setManagedEmailError] = useState("");
-  const [userFilter, setUserFilter] = useState<"all" | "pending" | "approved" | "revoked">("all");
+  const [userFilter, setUserFilter] = useState<"all" | "approved" | "revoked">("all");
   const [userSearch, setUserSearch] = useState("");
   const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(() =>
     typeof window === "undefined" ? new Set() : readDismissedNotificationIds(),
@@ -216,8 +148,6 @@ export function UserAdminPanel({
         : me?.isApproved
           ? "user"
           : "pending";
-  const canEditAccessRequestNote = Boolean(canModerate || !me?.isApproved);
-  const showAccessRequestNoteField = Boolean(canModerate || !me?.isApproved);
   const isSignedIn = authState === "signed_in" && Boolean(currentUser);
   const displayUser = me ?? currentUser;
 
@@ -307,15 +237,6 @@ export function UserAdminPanel({
       setMe(current);
       setCurrentUser(current);
       setAuthState("signed_in");
-      setNameDraft(current.username);
-      setEmailDraft(current.email ?? "");
-      setNameError("");
-      setEmailError("");
-      setBioDraft(current.bio ?? "");
-      setAccessRequestNoteDraft(current.accessRequestNote ?? "");
-      setAvatarDraft(current.avatarUrl ?? "");
-      setEmailPublicDraft(current.emailPublic ?? true);
-      setDefaultFrequencyPresetIdDraft(current.defaultFrequencyPresetId ?? null);
       if (current.isAdmin) {
         const [all, deleted, authDiag, schemaDiag, events] = await Promise.all([
           fetchUsers(),
@@ -378,10 +299,6 @@ export function UserAdminPanel({
   }, [canModerate, loadAdminAudit]);
 
   const userRows = useMemo(() => users.filter((user) => user.id !== me?.id), [users, me?.id]);
-  const pendingUserCount = useMemo(
-    () => userRows.filter((user) => (user.accountState ?? (user.isApproved ? "approved" : "pending")) === "pending").length,
-    [userRows],
-  );
   const revokedUserCount = useMemo(
     () => userRows.filter((user) => (user.accountState ?? (user.isApproved ? "approved" : "pending")) === "revoked").length,
     [userRows],
@@ -390,7 +307,6 @@ export function UserAdminPanel({
     const q = userSearch.trim().toLowerCase();
     return userRows.filter((user) => {
       const state = user.accountState ?? (user.isApproved ? "approved" : "pending");
-      if (userFilter === "pending" && state !== "pending") return false;
       if (userFilter === "approved" && state !== "approved") return false;
       if (userFilter === "revoked" && state !== "revoked") return false;
       if (!q) return true;
@@ -406,84 +322,6 @@ export function UserAdminPanel({
     [notificationFeed.items, dismissedNotifications],
   );
 
-  const saveMyProfile = async () => {
-    const trimmedName = nameDraft.trim();
-    const trimmedEmail = emailDraft.trim();
-    let hasError = false;
-    if (!trimmedName) {
-      setNameError("A name is required.");
-      hasError = true;
-    } else {
-      setNameError("");
-    }
-    if (!trimmedEmail) {
-      setEmailError("A valid email is required.");
-      hasError = true;
-    } else {
-      setEmailError("");
-    }
-    if (hasError) {
-      setStatus("Fix highlighted fields.");
-      return;
-    }
-    setBusy(true);
-    setStatus("");
-    try {
-      const updated = await updateMyProfile({
-        username: trimmedName,
-        email: trimmedEmail,
-        bio: bioDraft,
-        accessRequestNote: accessRequestNoteDraft,
-        emailPublic: emailPublicDraft,
-        defaultFrequencyPresetId: defaultFrequencyPresetIdDraft,
-      });
-      setMe(updated);
-      setCurrentUser(updated);
-      setAuthState("signed_in");
-      setNameDraft(updated.username);
-      setEmailDraft(updated.email ?? "");
-      setBioDraft(updated.bio ?? "");
-      setAccessRequestNoteDraft(updated.accessRequestNote ?? "");
-      setAvatarDraft(updated.avatarUrl ?? "");
-      setEmailPublicDraft(updated.emailPublic ?? true);
-      setDefaultFrequencyPresetIdDraft(updated.defaultFrequencyPresetId ?? null);
-      setStatus("Profile updated. Account settings save immediately (separate from simulation sync).");
-      if (canModerate) {
-        await refreshAdminData();
-      }
-    } catch (error) {
-      const message = getUiErrorMessage(error);
-      setStatus(`Profile update failed: ${message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onUploadAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    try {
-      setBusy(true);
-      setStatus("");
-      setAvatarStatus("Processing image…");
-      const resized = await resizeAvatarFileToDataUrl(file);
-      setAvatarStatus("Uploading avatar…");
-      const uploaded = await uploadAvatar(resized.originalDataUrl, resized.thumbDataUrl);
-      setAvatarDraft(uploaded.user.avatarUrl ?? "");
-      setMe(uploaded.user);
-      setCurrentUser(uploaded.user);
-      setAuthState("signed_in");
-      setAvatarStatus("Avatar uploaded and saved.");
-      setStatus("Avatar uploaded and saved.");
-    } catch (error) {
-      const message = getUiErrorMessage(error);
-      setAvatarStatus(`Upload failed: ${message}`);
-      setStatus(`Avatar upload failed: ${message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const updateRole = async (user: CloudUser, role: "admin" | "moderator" | "user" | "pending") => {
     setBusy(true);
@@ -687,26 +525,14 @@ export function UserAdminPanel({
     return false;
   };
 
-  const handleSignOut = useCallback(() => {
-    if (isLocalRuntime) {
-      try {
-        localStorage.setItem(LOCAL_FORCE_READONLY_KEY, "1");
-      } catch {
-        // ignore storage errors
-      }
-      window.location.reload();
+  const handleSignUp = useCallback(() => {
+    if (onSignInRequested) {
+      onSignInRequested();
       return;
     }
-    setMe(null);
-    setCurrentUser(null);
-    setAuthState("signed_out");
-    window.location.href = "/cdn-cgi/access/logout";
-  }, [isLocalRuntime, setAuthState, setCurrentUser]);
-
-  const handleSignUp = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     window.location.href = `/api/auth-start?returnTo=${encodeURIComponent(returnTo || "/")}`;
-  }, []);
+  }, [onSignInRequested]);
 
   const [syncModalOpen, setSyncModalOpen] = useState(false);
 
@@ -931,18 +757,17 @@ export function UserAdminPanel({
         {canModerate ? (
           <div className="user-manager-list">
             <div className="section-heading">
-              <p className="field-help">Users: open a profile to review and moderate.</p>
-              <p className="field-help">Pending: {pendingUserCount} | Revoked: {revokedUserCount}</p>
+              <p className="field-help">Users: open a profile to review and manage.</p>
+              <p className="field-help">Revoked: {revokedUserCount}</p>
             </div>
             <label className="field-grid user-field-grid">
               <span>Filter</span>
               <select
                 className="locale-select"
-                onChange={(event) => setUserFilter(event.target.value as "all" | "pending" | "approved" | "revoked")}
+                onChange={(event) => setUserFilter(event.target.value as "all" | "approved" | "revoked")}
                 value={userFilter}
               >
                 <option value="all">All users</option>
-                <option value="pending">Pending only</option>
                 <option value="approved">Approved only</option>
                 <option value="revoked">Revoked only</option>
               </select>
@@ -960,11 +785,7 @@ export function UserAdminPanel({
                       <strong>{user.username}</strong>
                     </p>
                     <p className="field-help">
-                      {user.accountState === "revoked"
-                        ? "Revoked"
-                        : user.isApproved
-                          ? "Approved"
-                          : "Pending"}
+                      {user.accountState === "revoked" ? "Revoked" : "Approved"}
                     </p>
                     <p className="field-help">{user.email ?? "-"}</p>
                   </div>
@@ -1012,11 +833,7 @@ export function UserAdminPanel({
                   <p className="field-help">Created: {fmtDate(managedUser.createdAt)}</p>
                   <p className="field-help">
                     Access:{" "}
-                    {managedUser.accountState === "revoked"
-                      ? "Revoked"
-                      : managedUser.isApproved
-                        ? "Approved"
-                        : "Pending"}{" "}
+                    {managedUser.accountState === "revoked" ? "Revoked" : "Approved"}{" "}
                     | Role: {managedUser.role ?? (managedUser.isAdmin ? "admin" : managedUser.isModerator ? "moderator" : managedUser.isApproved ? "user" : "pending")}
                   </p>
                 </div>
@@ -1047,22 +864,17 @@ export function UserAdminPanel({
                 />
               </label>
               {managedEmailError ? <p className="field-help field-help-error">{managedEmailError}</p> : null}
-              {managedUser.accessRequestNote ? (
-                <p className="field-help">Access request note: {managedUser.accessRequestNote}</p>
-              ) : (
-                <p className="field-help">No access request note.</p>
-              )}
-              <div className="chip-group">
+                <div className="chip-group">
                 <ActionButton
                   onClick={() => void saveManagedProfile(managedUser, { username: managedNameDraft, email: managedEmailDraft })}
                   type="button"
                 >
                   Save Profile
                 </ActionButton>
-                <label className="field-grid user-field-grid">
+                {managedUser.accountState === "revoked" ? null : <label className="field-grid user-field-grid">
                   <span>
                     Role{" "}
-                    <InfoTip text="Role changes are audited. Admins can assign all roles except their own. Moderators can only approve pending users to User, or move existing users back to Pending." />
+                    <InfoTip text="Role changes are audited. Admins can assign user, moderator, or admin roles except for their own account." />
                   </span>
                   <select
                     className="locale-select"
@@ -1073,17 +885,11 @@ export function UserAdminPanel({
                     }}
                     value={resolveRole(managedUser)}
                   >
-                    <option disabled={!canAssignManagedRole(managedUser, "pending")} value="pending">Pending</option>
                     <option disabled={!canAssignManagedRole(managedUser, "user")} value="user">User</option>
                     <option disabled={!canAssignManagedRole(managedUser, "moderator")} value="moderator">Moderator</option>
                     <option disabled={!canAssignManagedRole(managedUser, "admin")} value="admin">Admin</option>
                   </select>
-                </label>
-                {!managedUser.isApproved ? (
-                  <ActionButton onClick={() => void updateRole(managedUser, "user")} type="button">
-                    Approve Access
-                  </ActionButton>
-                ) : null}
+                </label>}
                 {canAdmin ? (
                   <ActionButton
                     disabled={managedUser.id === me?.id || resolveRole(managedUser) === "admin"}
@@ -1096,7 +902,7 @@ export function UserAdminPanel({
                 ) : null}
               </div>
               <p className="field-help">
-                Role and approval changes are audited. Moderators can only approve pending users to User, or move existing users back to Pending.
+                Role changes are audited.
               </p>
             </div>
           </ModalOverlay>
@@ -1128,7 +934,7 @@ export function UserAdminPanel({
       <PanelToolbar
         title={
           isSignedIn && displayUser ? (
-            <button aria-label="Open user settings" className="user-chip" onClick={() => (onOpenSettings ? onOpenSettings() : setOpen(true))} type="button">
+            <button aria-label="Open user settings" className="user-chip" onClick={() => onOpenSettings?.()} type="button">
               <ProfileAvatar avatarUrl={displayUser.avatarUrl ?? ""} name={displayUser.username ?? "User"} />
               {canModerate && unreadNotifications.length > 0 ? (
                 <span className="notification-badge">{unreadNotifications.length}</span>
@@ -1164,7 +970,7 @@ export function UserAdminPanel({
                     title={syncIndicator.label}
                   />
                 </button>
-                <button aria-label="Open user settings" className="user-icon-button" onClick={() => (onOpenSettings ? onOpenSettings() : setOpen(true))} type="button">
+                <button aria-label="Open user settings" className="user-icon-button" onClick={() => onOpenSettings?.()} type="button">
                   <SettingsIcon title="Settings" />
                 </button>
               </>
@@ -1266,568 +1072,6 @@ export function UserAdminPanel({
                 ) : null}
               </div>
             </div>
-          </div>
-        </ModalOverlay>
-      ) : null}
-
-      {open ? (
-        <ModalOverlay aria-label="User Settings" onClose={() => setOpen(false)}>
-          <div className="library-manager-card user-settings-modal">
-            <div className="library-manager-header">
-              <h2>User Settings</h2>
-              <div className="chip-group">
-                <ActionButton onClick={handleSignOut} type="button">
-                  Sign Out
-                </ActionButton>
-                <InlineCloseIconButton onClick={() => setOpen(false)} />
-              </div>
-            </div>
-
-            <div className="user-settings-layout">
-              <div className="user-settings-avatar-column">
-                <ProfileAvatar avatarUrl={avatarDraft} name={nameDraft || "User"} size="large" />
-                <label className="btn-ghost upload-button">
-                  Upload Picture
-                  <input accept="image/*" onChange={(event) => void onUploadAvatar(event)} type="file" />
-                </label>
-                {avatarStatus ? <p className="field-help">{avatarStatus}</p> : null}
-                <p className="field-help">ID: {me?.id ?? "-"}</p>
-                <p className="field-help">Role: {me?.role ?? (me?.isAdmin ? "admin" : me?.isModerator ? "moderator" : me?.isApproved ? "user" : "pending")}</p>
-                <p className="field-help">
-                  Access:{" "}
-                  {me?.accountState === "revoked"
-                    ? "Revoked"
-                    : me?.isApproved
-                      ? "Approved"
-                      : "Pending approval"}
-                </p>
-                <p className="field-help">Created: {fmtDate(me?.createdAt)}</p>
-              </div>
-
-              <div className="user-settings-form-column">
-                <label className="field-grid user-field-grid">
-                  <span>Name</span>
-                  <input
-                    className={nameError ? "input-error" : ""}
-                    onChange={(event) => {
-                      setNameDraft(event.target.value);
-                      if (nameError) setNameError("");
-                    }}
-                    type="text"
-                    value={nameDraft}
-                  />
-                </label>
-                {nameError ? <p className="field-help field-help-error">{nameError}</p> : null}
-                <label className="field-grid user-field-grid">
-                  <span>Email</span>
-                  <input
-                    className={emailError ? "input-error" : ""}
-                    onChange={(event) => {
-                      setEmailDraft(event.target.value);
-                      if (emailError) setEmailError("");
-                    }}
-                    type="email"
-                    value={emailDraft}
-                  />
-                </label>
-                {emailError ? <p className="field-help field-help-error">{emailError}</p> : null}
-                <div className="field-grid user-field-grid">
-                  <span>
-                    UI theme <InfoTip text="Choose whether LinkSim follows your system theme, or force light/dark mode." />
-                  </span>
-                  <select
-                    className="locale-select"
-                    onChange={(event) => setUiThemePreference(event.target.value as "system" | "light" | "dark")}
-                    value={uiThemePreference}
-                  >
-                    <option value="system">System</option>
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
-                  </select>
-                </div>
-                <div className="field-grid user-field-grid">
-                  <span>
-                    Color theme <InfoTip text="Select the app accent palette. More palettes can be added later." />
-                  </span>
-                  <select
-                    className="locale-select"
-                    onChange={(event) => setUiColorTheme(event.target.value as UiColorTheme)}
-                    value={uiColorTheme}
-                  >
-                    <option value="blue">Blue</option>
-                    <option value="pink">Pink</option>
-                    <option value="red">Red</option>
-                    <option value="green">Green</option>
-                    {activeHolidayTheme ? (
-                      <option value="yellow">{activeHolidayTheme.title.replace(" Theme", "")}</option>
-                    ) : null}
-                  </select>
-                </div>
-                <div className="field-grid user-field-grid">
-                  <span>
-                    Default preset for new simulations{" "}
-                    <InfoTip text="This cloud setting applies when you create a new simulation. Existing simulations keep their own saved channel settings." />
-                  </span>
-                  <select
-                    className="locale-select"
-                    onChange={(event) =>
-                      setDefaultFrequencyPresetIdDraft(event.target.value ? event.target.value : null)
-                    }
-                    value={defaultFrequencyPresetIdDraft ?? ""}
-                  >
-                    <option value="">App default (Oslo Local 869.618)</option>
-                    {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
-                      <optgroup key={groupEntry.group} label={groupEntry.group}>
-                        {groupEntry.presets.map((preset) => (
-                          <option key={preset.id} value={preset.id}>
-                            {preset.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
-                <div className="field-grid user-field-grid">
-                  <span>
-                    Email visibility{" "}
-                    <InfoTip text="If enabled, your email is visible in user profile popovers and collaborator search. Admins always see emails for moderation." />
-                  </span>
-                  <label className="checkbox-field">
-                    <input
-                      checked={emailPublicDraft}
-                      onChange={(event) => setEmailPublicDraft(event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>Visible to all users in profile popover (admins always see it)</span>
-                  </label>
-                </div>
-                <label className="field-grid user-bio-field user-field-grid">
-                  <span>Bio</span>
-                  <textarea maxLength={300} onChange={(event) => setBioDraft(event.target.value)} value={bioDraft} />
-                </label>
-                {showAccessRequestNoteField ? (
-                  <label className="field-grid user-bio-field user-field-grid">
-                    <span>Access request note</span>
-                    <textarea
-                      maxLength={1200}
-                      disabled={!canEditAccessRequestNote}
-                      onChange={(event) => setAccessRequestNoteDraft(event.target.value)}
-                      placeholder={
-                        canEditAccessRequestNote
-                          ? "Optional private note to moderators/admins."
-                          : "Request note is locked after approval."
-                      }
-                      readOnly={!canEditAccessRequestNote}
-                      value={accessRequestNoteDraft}
-                    />
-                  </label>
-                ) : null}
-                <div className="chip-group">
-                  <ActionButton
-                    disabled={busy || !nameDraft.trim() || !emailDraft.trim()}
-                    onClick={() => void saveMyProfile()}
-                    type="button"
-                  >
-                    Save Profile
-                  </ActionButton>
-                  <ActionButton disabled={busy} onClick={() => void load()} type="button">
-                    Refresh
-                  </ActionButton>
-                </div>
-              </div>
-            </div>
-
-            {canAdmin ? (
-              <div className="user-manager-list">
-                <div className="section-heading">
-                  <p className="field-help">System diagnostics</p>
-                  <div className="chip-group">
-                    <ActionButton disabled={busy} onClick={() => void load()} type="button">
-                      Refresh
-                    </ActionButton>
-                    <ActionButton disabled={busy} onClick={() => void repairMetadata()} type="button">
-                      Repair Metadata
-                    </ActionButton>
-                  </div>
-                </div>
-                {authWarnings.length ? (
-                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
-                    <span className="app-notification-glyph" aria-hidden="true">
-                      <CircleAlert size={14} strokeWidth={2} />
-                    </span>
-                    <div className="app-notification-copy">
-                      <span>
-                        <strong>Auth warnings:</strong> {authWarnings.join(" | ")}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="field-help">Auth configuration checks passed.</p>
-                )}
-                {schemaWarnings.length ? (
-                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
-                    <span className="app-notification-glyph" aria-hidden="true">
-                      <CircleAlert size={14} strokeWidth={2} />
-                    </span>
-                    <div className="app-notification-copy">
-                      <span>
-                        <strong>Schema warnings:</strong> {schemaWarnings.join(" | ")}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="field-help">Schema diagnostics passed.</p>
-                )}
-                <p className="field-help">
-                  Schema version: {schemaDiagnostics?.schema.version ?? "-"} |{" "}
-                  Auth source: {authDiagnostics?.auth.source ?? "-"} | JWT:{" "}
-                  {authDiagnostics?.auth.signals.hasJwtAssertion ? "yes" : "no"} | Header email:{" "}
-                  {authDiagnostics?.auth.signals.hasEmailHeader ? "yes" : "no"}
-                </p>
-              </div>
-            ) : null}
-
-            {canAdmin ? (
-              <div className="user-manager-list">
-                <div className="section-heading">
-                  <p className="field-help">Admin ownership tools</p>
-                  <div className="chip-group">
-                    <ActionButton disabled={busy || auditBusy} onClick={() => void loadAdminAudit()} type="button">
-                      Refresh Audit
-                    </ActionButton>
-                  </div>
-                </div>
-                <label className="field-grid user-field-grid">
-                  <span>Resource type</span>
-                  <select
-                    className="locale-select"
-                    onChange={(event) => setOwnershipKind(event.target.value as "site" | "simulation")}
-                    value={ownershipKind}
-                  >
-                    <option value="site">Site</option>
-                    <option value="simulation">Simulation</option>
-                  </select>
-                </label>
-                <label className="field-grid user-field-grid">
-                  <span>Resource ID</span>
-                  <input
-                    onChange={(event) => setOwnershipResourceId(event.target.value)}
-                    placeholder="site-id or simulation-id"
-                    type="text"
-                    value={ownershipResourceId}
-                  />
-                </label>
-                <label className="field-grid user-field-grid">
-                  <span>New owner ID</span>
-                  <input
-                    list="admin-user-ids"
-                    onChange={(event) => setOwnershipNewOwnerId(event.target.value)}
-                    placeholder="target user ID"
-                    type="text"
-                    value={ownershipNewOwnerId}
-                  />
-                </label>
-                <ActionButton disabled={busy} onClick={() => void runOwnerReassign()} type="button">
-                  Reassign Owner
-                </ActionButton>
-
-                <label className="field-grid user-field-grid">
-                  <span>Bulk from owner ID</span>
-                  <input
-                    list="admin-user-ids"
-                    onChange={(event) => setBulkFromOwnerId(event.target.value)}
-                    placeholder="source owner user ID"
-                    type="text"
-                    value={bulkFromOwnerId}
-                  />
-                </label>
-                <label className="field-grid user-field-grid">
-                  <span>Bulk to owner ID</span>
-                  <input
-                    list="admin-user-ids"
-                    onChange={(event) => setBulkToOwnerId(event.target.value)}
-                    placeholder="target owner user ID"
-                    type="text"
-                    value={bulkToOwnerId}
-                  />
-                </label>
-                <ActionButton disabled={busy} onClick={() => void runBulkOwnerReassign()} type="button">
-                  Bulk Reassign Ownership
-                </ActionButton>
-
-                <p className="field-help">Recent admin audit events</p>
-                {auditBusy ? <p className="field-help">Loading audit events…</p> : null}
-                <div className="notifications-list">
-                  {auditEvents.slice(0, 12).map((event) => (
-                    <div className="library-row" key={event.id}>
-                      <strong>{event.eventType}</strong>
-                      <p className="field-help">
-                        actor: {event.actorUserId ?? "-"} | target: {event.targetUserId}
-                      </p>
-                      <p className="field-help">
-                        source: {event.sourceUserId ?? "-"} | at: {fmtDate(event.createdAt)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                {!auditEvents.length ? <p className="field-help">No admin audit events yet.</p> : null}
-                <datalist id="admin-user-ids">
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </datalist>
-              </div>
-            ) : null}
-
-            {canModerate ? (
-              <div className="user-manager-list notifications-center">
-                {unreadNotifications.length > 0 ? (
-                  <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
-                    <span className="app-notification-glyph" aria-hidden="true">
-                      <CircleAlert size={14} strokeWidth={2} />
-                    </span>
-                    <div className="app-notification-copy">
-                      <span>
-                        <strong>{unreadNotifications.length} moderator/admin notification(s)</strong> need your review.
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="section-heading">
-                  <p className="field-help">Notification Center</p>
-                  <div className="chip-group">
-                    <ActionButton onClick={() => setNotificationOpen((prev) => !prev)} type="button">
-                      {notificationOpen ? "Hide" : "Open"}
-                    </ActionButton>
-                    <ActionButton onClick={() => void loadNotifications()} type="button">
-                      Refresh
-                    </ActionButton>
-                  </div>
-                </div>
-                {notificationOpen ? (
-                  <>
-                    {notificationBusy ? <p className="field-help">Loading notifications…</p> : null}
-                    {notificationStatus ? <p className="field-help">{notificationStatus}</p> : null}
-                    {notificationFeed.items.length ? (
-                      <div className="notifications-list">
-                        {notificationFeed.items.map((item) => {
-                          const isDismissed = dismissedNotifications.has(item.id);
-                          return (
-                            <div className="library-row" key={item.id}>
-                              <strong>{item.title}</strong>
-                              <p className="field-help">{item.message}</p>
-                              <p className="field-help">Updated: {fmtDate(item.createdAt)}</p>
-                              <div className="chip-group">
-                                <ActionButton
-                                  disabled={isDismissed}
-                                  onClick={() => dismissNotification(item.id)}
-                                  type="button"
-                                >
-                                  {isDismissed ? "Dismissed" : "Dismiss Badge"}
-                                </ActionButton>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="field-help">No notifications yet.</p>
-                    )}
-                  </>
-                ) : null}
-              </div>
-            ) : null}
-
-            {canModerate ? (
-              <div className="user-manager-list">
-                <div className="section-heading">
-                  <p className="field-help">Users: open a profile to review and moderate.</p>
-                  <p className="field-help">Pending: {pendingUserCount} | Revoked: {revokedUserCount}</p>
-                </div>
-                <label className="field-grid user-field-grid">
-                  <span>Filter</span>
-                  <select
-                    className="locale-select"
-                    onChange={(event) => setUserFilter(event.target.value as "all" | "pending" | "approved" | "revoked")}
-                    value={userFilter}
-                  >
-                    <option value="all">All users</option>
-                    <option value="pending">Pending only</option>
-                    <option value="approved">Approved only</option>
-                    <option value="revoked">Revoked only</option>
-                  </select>
-                </label>
-                <label className="field-grid user-field-grid">
-                  <span>Search</span>
-                  <input onChange={(event) => setUserSearch(event.target.value)} placeholder="Name, email, or user ID" type="text" value={userSearch} />
-                </label>
-                {filteredUserRows.map((user) => (
-                  <button className="library-row user-list-row-btn" key={user.id} onClick={() => openManagedUser(user)} type="button">
-                    <div className="user-list-row">
-                      <ProfileAvatar avatarUrl={user.avatarUrl} name={user.username} />
-                      <div>
-                        <p className="field-help">
-                          <strong>{user.username}</strong>
-                        </p>
-                        <p className="field-help">
-                          {user.accountState === "revoked"
-                            ? "Revoked"
-                            : user.isApproved
-                              ? "Approved"
-                              : "Pending"}
-                        </p>
-                        <p className="field-help">{user.email ?? "-"}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-                {!filteredUserRows.length ? <p className="field-help">No users match this filter.</p> : null}
-              </div>
-            ) : null}
-
-            {canAdmin ? (
-              <div className="user-manager-list">
-                <p className="field-help">Deleted users: remove lock to allow immediate re-creation.</p>
-                {deletedUsers.map((entry) => (
-                  <div className="library-row" key={entry.id}>
-                    <p className="field-help">
-                      <strong>{entry.id}</strong>
-                    </p>
-                    <p className="field-help">Deleted: {fmtDate(entry.deletedAt)}</p>
-                    <p className="field-help">Deleted by: {entry.deletedByUserId ?? "-"}</p>
-                    <div className="chip-group">
-                      <ActionButton onClick={() => void restoreDeletedUser(entry.id)} type="button">
-                        Restore
-                      </ActionButton>
-                    </div>
-                  </div>
-                ))}
-                {!deletedUsers.length ? <p className="field-help">No deleted-user locks.</p> : null}
-              </div>
-            ) : null}
-
-            {managedUser ? (
-              <ModalOverlay aria-label="Managed User Profile" onClose={closeManagedUser} tier="raised">
-                <div className="library-manager-card user-profile-popup">
-                  <div className="library-manager-header">
-                    <h2>User Profile</h2>
-                    <InlineCloseIconButton onClick={closeManagedUser} />
-                  </div>
-                  <div className="user-list-row">
-                    <ProfileAvatar avatarUrl={managedUser.avatarUrl} name={managedUser.username} size="large" />
-                    <div>
-                      <p className="field-help">
-                        <strong>{managedUser.username}</strong> ({managedUser.id})
-                      </p>
-                      <p className="field-help">Created: {fmtDate(managedUser.createdAt)}</p>
-                      <p className="field-help">
-                        Access:{" "}
-                        {managedUser.accountState === "revoked"
-                          ? "Revoked"
-                          : managedUser.isApproved
-                            ? "Approved"
-                            : "Pending"}{" "}
-                        | Role: {managedUser.role ?? (managedUser.isAdmin ? "admin" : managedUser.isModerator ? "moderator" : managedUser.isApproved ? "user" : "pending")}
-                      </p>
-                    </div>
-                  </div>
-                  <label className="field-grid user-field-grid">
-                    <span>Name</span>
-                    <input
-                      className={managedNameError ? "input-error" : ""}
-                      onChange={(event) => {
-                        setManagedNameDraft(event.target.value);
-                        if (managedNameError) setManagedNameError("");
-                      }}
-                      type="text"
-                      value={managedNameDraft}
-                    />
-                  </label>
-                  {managedNameError ? <p className="field-help field-help-error">{managedNameError}</p> : null}
-                  <label className="field-grid user-field-grid">
-                    <span>Email</span>
-                    <input
-                      className={managedEmailError ? "input-error" : ""}
-                      onChange={(event) => {
-                        setManagedEmailDraft(event.target.value);
-                        if (managedEmailError) setManagedEmailError("");
-                      }}
-                      type="email"
-                      value={managedEmailDraft}
-                    />
-                  </label>
-                  {managedEmailError ? <p className="field-help field-help-error">{managedEmailError}</p> : null}
-                  {managedUser.accessRequestNote ? (
-                    <p className="field-help">Access request note: {managedUser.accessRequestNote}</p>
-                  ) : (
-                    <p className="field-help">No access request note.</p>
-                  )}
-                  <div className="chip-group">
-                    <ActionButton
-                      onClick={() => void saveManagedProfile(managedUser, { username: managedNameDraft, email: managedEmailDraft })}
-                      type="button"
-                    >
-                      Save Profile
-                    </ActionButton>
-                    <label className="field-grid user-field-grid">
-                      <span>
-                        Role{" "}
-                        <InfoTip text="Role changes are audited. Admins can assign all roles except their own. Moderators can only approve pending users to User, or move existing users back to Pending." />
-                      </span>
-                      <select
-                        className="locale-select"
-                        onChange={(event) => {
-                          const nextRole = event.target.value as "admin" | "moderator" | "user" | "pending";
-                          if (!canAssignManagedRole(managedUser, nextRole)) return;
-                          void updateRole(managedUser, nextRole);
-                        }}
-                        value={
-                          managedUser.role ??
-                          (managedUser.isAdmin
-                            ? "admin"
-                            : managedUser.isModerator
-                              ? "moderator"
-                              : managedUser.isApproved
-                                ? "user"
-                                : "pending")
-                        }
-                      >
-                        <option disabled={!canAssignManagedRole(managedUser, "pending")} value="pending">Pending</option>
-                        <option disabled={!canAssignManagedRole(managedUser, "user")} value="user">User</option>
-                        <option disabled={!canAssignManagedRole(managedUser, "moderator")} value="moderator">Moderator</option>
-                        <option disabled={!canAssignManagedRole(managedUser, "admin")} value="admin">Admin</option>
-                      </select>
-                    </label>
-                    {!managedUser.isApproved ? (
-                      <ActionButton
-                        onClick={() => void updateRole(managedUser, "user")}
-                        type="button"
-                      >
-                        Approve Access
-                      </ActionButton>
-                    ) : null}
-                    {canAdmin ? (
-                      <ActionButton
-                        disabled={managedUser.id === me?.id || resolveRole(managedUser) === "admin"}
-                        onClick={() => void deleteUserAccount(managedUser)}
-                        type="button"
-                        variant="danger"
-                      >
-                        Delete User
-                      </ActionButton>
-                    ) : null}
-                  </div>
-                  <p className="field-help">
-                    Role and approval changes are audited. Moderators can only approve pending users to User, or
-                    move existing users back to Pending.
-                  </p>
-                </div>
-              </ModalOverlay>
-            ) : null}
-
-            {status ? <p className="field-help">{status}</p> : null}
           </div>
         </ModalOverlay>
       ) : null}
