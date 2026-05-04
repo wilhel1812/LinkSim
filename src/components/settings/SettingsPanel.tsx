@@ -115,6 +115,13 @@ export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
     [setAuthState, setCurrentUser],
   );
 
+  const handleSignOut = useCallback(() => {
+    setMe(null);
+    setCurrentUser(null);
+    setAuthState("signed_out");
+    window.location.href = "/cdn-cgi/access/logout";
+  }, [setAuthState, setCurrentUser]);
+
   const navItems = useMemo<SettingsNavItem[]>(() => {
     const items: SettingsNavItem[] = [
       {
@@ -174,7 +181,7 @@ export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
     }
     switch (activeSection) {
       case "profile":
-        return <ProfileSection me={me} onMeUpdated={handleMeUpdated} />;
+        return <ProfileSection me={me} onMeUpdated={handleMeUpdated} onSignOut={handleSignOut} />;
       case "preferences":
         return <PreferencesSection me={me} onMeUpdated={handleMeUpdated} />;
       case "admin":

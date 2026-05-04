@@ -421,6 +421,36 @@ type AppState = {
   simulationPresets: SimulationPreset[];
   siteDragPreview: Record<string, { position: { lat: number; lon: number }; groundElevationM: number }>;
   endpointPickTarget: "from" | "to" | null;
+  mapEditor: {
+    kind: "site" | "link" | "simulation";
+    resourceId: string | null;
+    isNew: boolean;
+    label: string;
+    anchorRect: {
+      top: number;
+      right: number;
+      bottom: number;
+      left: number;
+      width: number;
+      height: number;
+    };
+    siteSeed?: {
+      lat?: number;
+      lon?: number;
+      name?: string;
+      sourceMeta?: SiteLibraryEntry["sourceMeta"];
+      insertIntoSimulation?: boolean;
+      awaitMapClick?: boolean;
+    };
+    simulationSeed?: {
+      frequencyPresetId?: string;
+      autoPropagationEnvironment?: boolean;
+    };
+  } | null;
+  mapEditorSiteDraft: { lat: number; lon: number; groundElevationM: number | null } | null;
+  openMapEditor: (payload: NonNullable<AppState["mapEditor"]>) => void;
+  closeMapEditor: () => void;
+  setMapEditorSiteDraft: (draft: AppState["mapEditorSiteDraft"]) => void;
   showSimulationLibraryRequest: boolean;
   showNewSimulationRequest: boolean;
   showSiteLibraryRequest: boolean;
@@ -536,6 +566,7 @@ type AppState = {
     options?: {
       description?: string;
       frequencyPresetId?: string;
+      autoPropagationEnvironment?: boolean;
       visibility?: "private" | "public" | "shared";
       ownerUserId?: string;
       createdByUserId?: string;
@@ -1234,6 +1265,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   simulationPresets: initialSimulationPresets,
   siteDragPreview: {},
   endpointPickTarget: null,
+  mapEditor: null,
+  mapEditorSiteDraft: null,
   pendingSiteLibraryDraft: null,
   showSimulationLibraryRequest: false,
   showNewSimulationRequest: false,
@@ -1841,6 +1874,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainLoadEpoch: 0,
       siteDragPreview: {},
       endpointPickTarget: null,
+      mapEditor: null,
+      mapEditorSiteDraft: null,
       mapViewport: scenario.viewport,
       siteLibrary: libraryBacked.siteLibrary,
       fitSitesEpoch: get().fitSitesEpoch + 1,
@@ -1887,6 +1922,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainLoadEpoch: 0,
       siteDragPreview: {},
       endpointPickTarget: null,
+      mapEditor: null,
+      mapEditorSiteDraft: null,
       // mapViewport: undefined — fitSitesEpoch triggers proper fit via MapView
       fitSitesEpoch: get().fitSitesEpoch + 1,
       siteLibrary: libraryBacked.siteLibrary,
@@ -2682,7 +2719,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
         environmentLossDb: current.environmentLossDb,
         propagationEnvironment: current.propagationEnvironment,
-        autoPropagationEnvironment: current.autoPropagationEnvironment,
+        autoPropagationEnvironment: options?.autoPropagationEnvironment ?? current.autoPropagationEnvironment,
         terrainDataset: current.terrainDataset,
       };
       const nextPreset: SimulationPreset = {
@@ -3138,6 +3175,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   },
   setEndpointPickTarget: (target) => set({ endpointPickTarget: target }),
+  openMapEditor: (payload) => set({ mapEditor: payload, mapEditorSiteDraft: null }),
+  closeMapEditor: () => set({ mapEditor: null, mapEditorSiteDraft: null }),
+  setMapEditorSiteDraft: (draft) => set({ mapEditorSiteDraft: draft }),
   requestSiteLibraryDraftAt: (lat, lon, suggestedName, sourceMeta) =>
     set({
       pendingSiteLibraryDraft: {

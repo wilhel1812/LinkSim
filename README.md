@@ -16,7 +16,7 @@ LinkSim is a web app for terrain-aware radio path planning and simulation.
 | Run or maintain the repo | [Repository guide](./docs/repository-guide.md) |
 | Test changes | [Testing plan](./docs/testing-plan.md) |
 | Ship a release | [Release flow](./docs/release-flow.md) |
-| Reuse UI patterns | [UI pattern glossary](./docs/ui-pattern-glossary.md) |
+| Reuse UI patterns | UI Gallery (`/ui-gallery`) |
 | Review policies | [Security](./SECURITY.md), [Privacy](./docs/legal/PRIVACY.md), [Terms](./docs/legal/TERMS.md) |
 
 ## Contribute

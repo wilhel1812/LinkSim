@@ -19,7 +19,6 @@ import {
 import { formatDate } from "../lib/locale";
 import { toAccessVisibility } from "../lib/uiFormatting";
 import { Badge } from "./ui/Badge";
-import { duplicateSimulationNameMessage, hasDuplicateSimulationNameForOwner } from "../lib/simulationNameValidation";
 import { useAppStore } from "../store/appStore";
 import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
@@ -48,6 +47,7 @@ type ResourceOpenParams = {
   kind: "site" | "simulation";
   resourceId: string;
   label: string;
+  anchorRect: { top: number; right: number; bottom: number; left: number; width: number; height: number };
   createdByUserId: string | null;
   createdByName: string;
   createdByAvatarUrl: string;
@@ -60,6 +60,7 @@ type SimulationLibraryPanelProps = {
   onClose: () => void;
   onLoadSimulation: (presetId: string) => void;
   onOpenDetails?: (params: ResourceOpenParams) => void;
+  onCreateSimulation?: (triggerEl: Element | null) => void;
   hideSaveCopy?: boolean;
 };
 
@@ -67,13 +68,12 @@ export default function SimulationLibraryPanel({
   onClose,
   onLoadSimulation,
   onOpenDetails,
+  onCreateSimulation,
   hideSaveCopy = false,
 }: SimulationLibraryPanelProps) {
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const currentUser = useAppStore((state) => state.currentUser);
   const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
-  const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
-  const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const [filters, setFilters] = useState<LibraryFilterState>(() =>
     readLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY),
   );
@@ -85,12 +85,6 @@ export default function SimulationLibraryPanel({
   const [newPresetName, setNewPresetName] = useState("");
   const [newPresetNameError, setNewPresetNameError] = useState("");
   const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
-
-  const [showNewSimulationModal, setShowNewSimulationModal] = useState(false);
-  const [newSimulationName, setNewSimulationName] = useState("");
-  const [newSimulationDescription, setNewSimulationDescription] = useState("");
-  const [newSimulationNameError, setNewSimulationNameError] = useState("");
-  const [newSimulationVisibility, setNewSimulationVisibility] = useState<"private" | "shared">("private");
 
   useEffect(() => {
     persistLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY, filters);
@@ -179,47 +173,6 @@ export default function SimulationLibraryPanel({
     setNewPresetName("");
   };
 
-  const createBlankSimulation = () => {
-    if (!currentUser?.id) {
-      setSimulationSaveStatus("Cannot create simulation until current user profile is loaded.");
-      return;
-    }
-    const trimmed = newSimulationName.trim();
-    if (!trimmed) {
-      setNewSimulationNameError("A name is required.");
-      setSimulationSaveStatus("");
-      return;
-    }
-    if (hasDuplicateSimulationNameForOwner(simulationPresets, trimmed, currentUser.id)) {
-      const duplicateMessage = duplicateSimulationNameMessage(trimmed);
-      setNewSimulationNameError(duplicateMessage);
-      setSimulationSaveStatus(duplicateMessage);
-      return;
-    }
-    setNewSimulationNameError("");
-    const createdId = createBlankSimulationPreset(trimmed, {
-      description: newSimulationDescription.trim() || undefined,
-      visibility: newSimulationVisibility,
-      ownerUserId: currentUser.id,
-      createdByUserId: currentUser.id,
-      createdByName: currentUser.username,
-      createdByAvatarUrl: currentUser.avatarUrl ?? "",
-      lastEditedByUserId: currentUser.id,
-      lastEditedByName: currentUser.username,
-      lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
-    });
-    if (!createdId) {
-      setSimulationSaveStatus(duplicateSimulationNameMessage(trimmed));
-      return;
-    }
-    loadSimulationPreset(createdId);
-    setSimulationSaveStatus(`Created simulation: ${trimmed}`);
-    setNewSimulationName("");
-    setNewSimulationDescription("");
-    setShowNewSimulationModal(false);
-    onClose();
-  };
-
   const openResourceDetails = (preset: {
     id: string;
     name: string;
@@ -229,12 +182,13 @@ export default function SimulationLibraryPanel({
     lastEditedByUserId?: string;
     lastEditedByName?: string;
     lastEditedByAvatarUrl?: string;
-  }) => {
+  }, triggerEl: Element | null) => {
     if (!onOpenDetails) return;
     onOpenDetails({
       kind: "simulation",
       resourceId: preset.id,
       label: preset.name,
+      anchorRect: triggerEl?.getBoundingClientRect() ?? { top: 96, right: 320, bottom: 96, left: 320, width: 0, height: 0 },
       createdByUserId: (preset as Record<string, unknown>).createdByUserId as string | null ?? null,
       createdByName: (preset as Record<string, unknown>).createdByName as string ?? "Unknown",
       createdByAvatarUrl: (preset as Record<string, unknown>).createdByAvatarUrl as string ?? "",
@@ -387,11 +341,8 @@ export default function SimulationLibraryPanel({
               Save Copy
             </ActionButton>
             <ActionButton
-              onClick={() => {
-                setNewSimulationName("");
-                setNewSimulationDescription("");
-                setNewSimulationNameError("");
-                setShowNewSimulationModal(true);
+              onClick={(event) => {
+                onCreateSimulation?.(event.currentTarget);
               }}
             >
               New Simulation
@@ -401,11 +352,8 @@ export default function SimulationLibraryPanel({
       ) : (
         <div className="chip-group">
           <ActionButton
-            onClick={() => {
-              setNewSimulationName("");
-              setNewSimulationDescription("");
-              setNewSimulationNameError("");
-              setShowNewSimulationModal(true);
+            onClick={(event) => {
+              onCreateSimulation?.(event.currentTarget);
             }}
           >
             New Simulation
@@ -448,7 +396,7 @@ export default function SimulationLibraryPanel({
                   </ActionButton>
                   {onOpenDetails ? (
                     <ActionButton
-                      onClick={() => openResourceDetails(preset)}
+                      onClick={(event) => openResourceDetails(preset, event.currentTarget)}
                     >
                       Details
                     </ActionButton>
@@ -460,61 +408,6 @@ export default function SimulationLibraryPanel({
           {!filteredPresets.length ? <p className="field-help">No matching saved simulations.</p> : null}
         </div>
       </div>
-
-      {showNewSimulationModal ? (
-        <div className="welcome-modal-new-simulation-backdrop">
-          <div className="library-manager-card user-profile-popup welcome-modal-new-simulation">
-            <div className="library-manager-header">
-              <h2>New Simulation</h2>
-              <InlineCloseIconButton
-                onClick={() => {
-                  setShowNewSimulationModal(false);
-                  setNewSimulationNameError("");
-                }}
-              />
-            </div>
-            <label className="field-grid">
-              <span>Name</span>
-              <input
-                className={newSimulationNameError ? "input-error" : ""}
-                onChange={(event) => {
-                  setNewSimulationName(event.target.value);
-                  if (newSimulationNameError) setNewSimulationNameError("");
-                }}
-                placeholder="My simulation"
-                type="text"
-                value={newSimulationName}
-              />
-            </label>
-            {newSimulationNameError ? <p className="field-help field-help-error">{newSimulationNameError}</p> : null}
-            <label className="field-grid">
-              <span>Description</span>
-              <textarea
-                onChange={(event) => setNewSimulationDescription(event.target.value)}
-                placeholder="Optional simulation notes"
-                rows={3}
-                value={newSimulationDescription}
-              />
-            </label>
-            <label className="field-grid">
-              <span>Access level</span>
-              <select
-                className="locale-select"
-                onChange={(event) => setNewSimulationVisibility(event.target.value as "private" | "shared")}
-                value={newSimulationVisibility}
-              >
-                <option value="private">Private</option>
-                <option value="shared">Shared</option>
-              </select>
-            </label>
-            <div className="chip-group">
-              <ActionButton onClick={createBlankSimulation}>
-                Create
-              </ActionButton>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

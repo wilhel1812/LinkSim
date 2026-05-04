@@ -248,6 +248,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const detailContextRef = useRef<string>("");
   const [basePanorama, setBasePanorama] = useState<PanoramaResult | null>(null);
   const [detailPanoramas, setDetailPanoramas] = useState<PanoramaResult[]>([]);
+  const [panoramasReadyEpoch, setPanoramasReadyEpoch] = useState(0);
+  const [panoramaLoading, setPanoramaLoading] = useState(false);
 
   const selectedSiteEffective = useMemo(() => {
     if (!selectedSite) return null;
@@ -261,15 +263,18 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   }, [selectedSite, siteDragPreview]);
 
   const nodeCandidates = useMemo<PanoramaNodeCandidate[]>(() => {
-    const simulation = sites.map((site) => ({
-      id: `sim:${site.id}`,
-      name: site.name,
-      lat: site.position.lat,
-      lon: site.position.lon,
-      groundElevationM: site.groundElevationM,
-      antennaHeightM: site.antennaHeightM,
-      rxGainDbi: site.rxGainDbi,
-    }));
+    const povSiteId = selectedSiteEffective?.id;
+    const simulation = sites
+      .filter((site) => site.id !== povSiteId)
+      .map((site) => ({
+        id: `sim:${site.id}`,
+        name: site.name,
+        lat: site.position.lat,
+        lon: site.position.lon,
+        groundElevationM: site.groundElevationM,
+        antennaHeightM: site.antennaHeightM,
+        rxGainDbi: site.rxGainDbi,
+      }));
 
     const libraryById = new Set(simulation.map((entry) => entry.id.replace("sim:", "")));
     const sharedLibrary = discoveryLibraryVisible
@@ -299,7 +304,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       : [];
 
     return [...simulation, ...sharedLibrary, ...mqtt];
-  }, [sites, siteLibrary, mqttNodes, discoveryLibraryVisible, discoveryMqttVisible]);
+  }, [sites, siteLibrary, mqttNodes, discoveryLibraryVisible, discoveryMqttVisible, selectedSiteEffective]);
 
   useEffect(() => {
     setPinnedTarget(null);
@@ -352,8 +357,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     if (!selectedSiteEffective || !selectedNetwork) {
       setBasePanorama(null);
       setDetailPanoramas([]);
+      setPanoramaLoading(false);
       return;
     }
+
+    setPanoramaLoading(true);
 
     const effectiveLink = links[0]
       ? {
@@ -436,7 +444,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     }
 
     const cachedBase = cacheRef.current.get(baseSignature);
-    if (cachedBase) setBasePanorama(cachedBase);
+    if (cachedBase) {
+      setBasePanorama(cachedBase);
+      setPanoramasReadyEpoch(Date.now());
+    }
     const cachedDetail = cacheRef.current.get(detailSignature);
     if (cachedDetail) {
       setDetailPanoramas((current) => {
@@ -445,6 +456,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         next.sort((a, b) => a.coverageCenterDeg - b.coverageCenterDeg);
         return next.slice(-12);
       });
+      setPanoramasReadyEpoch(Date.now());
     }
 
     if (!cachedBase) {
@@ -477,6 +489,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             if (oldest) cacheRef.current.delete(oldest);
           }
           setBasePanorama(result);
+          setPanoramasReadyEpoch(Date.now());
+          setPanoramaLoading(false);
         },
       } satisfies LatestOnlyTask);
     }
@@ -518,6 +532,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             next.sort((a, b) => a.coverageCenterDeg - b.coverageCenterDeg);
             return next.slice(-12);
           });
+          setPanoramasReadyEpoch(Date.now());
+          setPanoramaLoading(false);
         },
       } satisfies LatestOnlyTask);
     }
@@ -535,6 +551,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     normalizedFovScale,
     viewportCenterAzimuthDeg,
     viewportSpanDeg,
+    panoramasReadyEpoch,
   ]);
 
   const panorama = detailPanoramas[detailPanoramas.length - 1] ?? basePanorama;
@@ -766,6 +783,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     peakCandidates,
     propagationEnvironment.atmosphericBendingNUnits,
     showLabels,
+    panoramasReadyEpoch,
   ]);
 
   // useLayoutEffect fires synchronously after DOM mutations, same tick as SVG,
@@ -1461,7 +1479,18 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         ref={chartHostRef}
       >
         {!geometry || !panorama ? (
-          <div className="chart-empty" aria-hidden="true" />
+          panoramaLoading ? (
+            <div className="chart-empty chart-loading">
+              <div className="panorama-loading-indicator">
+                <div className="map-progress-track panorama-loading-track">
+                  <div className="map-progress-fill-indeterminate" />
+                </div>
+                <span className="panorama-loading-text">Loading panorama...</span>
+              </div>
+            </div>
+          ) : (
+            <div className="chart-empty" aria-hidden="true" />
+          )
         ) : (
           <>
             <canvas aria-hidden className="panorama-terrain-canvas" ref={terrainCanvasRef} />

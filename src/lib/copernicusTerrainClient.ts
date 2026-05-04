@@ -307,8 +307,8 @@ const parseCopernicusTileInMain = async (
   }
   return {
     key: tileKey,
-    latStart: Math.floor(minLat),
-    lonStart: Math.floor(minLon),
+    latStart: Math.round(minLat),
+    lonStart: Math.round(minLon),
     size: Math.max(width, height),
     width,
     height,
