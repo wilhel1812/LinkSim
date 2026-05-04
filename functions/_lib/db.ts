@@ -6,7 +6,7 @@ const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
-const SCHEMA_VERSION = "2026-04-07a";
+const SCHEMA_VERSION = "2026-05-03a";
 type AccountState = "pending" | "approved" | "revoked";
 
 const dbVisibilityFromVisibility = (value: Visibility): DbVisibility => {
@@ -69,7 +69,7 @@ const slugifyName = (value: string): string =>
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
 
-const DELIMITER_CHARS = /[+<>~\/]/g;
+const DELIMITER_CHARS = /[+<>~/]/g;
 const VARIATION_SELECTORS = /[\uFE0E\uFE0F]/g;
 
 export const canonicalizeSimulationLookupKey = (value: string): string =>
@@ -172,16 +172,6 @@ const sanitizeDefaultFrequencyPresetId = (value: unknown): string | null | undef
   return trimmed;
 };
 
-const deriveDefaultName = (userId: string, tokenPayload?: Record<string, unknown>): string => {
-  const fromName = sanitizeName(tokenPayload?.name);
-  if (fromName) return fromName;
-  const fromEmail = sanitizeEmail(tokenPayload?.email);
-  if (fromEmail) return fromEmail.split("@")[0];
-  const prefix = userId.includes("@") ? userId.split("@")[0] : userId;
-  const compact = prefix.replace(/[_-]+/g, " ").trim();
-  return sanitizeName(compact) ?? `User ${userId.slice(0, 6)}`;
-};
-
 const deriveDefaultEmail = (userId: string, tokenPayload?: Record<string, unknown>): string => {
   const fromEmail = sanitizeEmail(tokenPayload?.email);
   if (fromEmail) return fromEmail;
@@ -216,16 +206,12 @@ const parseAdminUserIds = (env: Env): Set<string> => {
   );
 };
 
-const registrationMode = (env: Env): "open" | "approval_required" => {
-  const value = (env.REGISTRATION_MODE ?? "approval_required").trim().toLowerCase();
-  return value === "open" ? "open" : "approval_required";
-};
-
 const REQUIRED_COLUMNS: Record<string, string[]> = {
   users: [
     "id",
     "username",
     "email",
+    "username_set_at",
     "bio",
     "access_request_note",
     "idp_email",
@@ -320,6 +306,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
             id TEXT PRIMARY KEY,
             username TEXT,
             email TEXT,
+            username_set_at TEXT,
             bio TEXT,
             access_request_note TEXT,
             idp_email TEXT,
@@ -441,6 +428,32 @@ const ensureSchema = async (env: Env): Promise<void> => {
       if (!userColumns.has("default_frequency_preset_id")) {
         await env.DB.prepare("ALTER TABLE users ADD COLUMN default_frequency_preset_id TEXT").run();
       }
+      if (!userColumns.has("username_set_at")) {
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN username_set_at TEXT").run();
+        await env.DB
+          .prepare(
+            `UPDATE users
+             SET username_set_at = COALESCE(updated_at, created_at)
+             WHERE COALESCE(TRIM(username), '') != ''`,
+          )
+          .run();
+      }
+
+      const now = new Date().toISOString();
+      await env.DB
+        .prepare(
+          `UPDATE users
+           SET is_approved = 1,
+               approved_at = COALESCE(approved_at, ?),
+               approved_by_user_id = COALESCE(approved_by_user_id, 'system:open-registration'),
+               updated_at = ?
+           WHERE is_admin = 0
+             AND is_moderator = 0
+             AND is_approved = 0
+             AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%')`,
+        )
+        .bind(now, now)
+        .run();
 
       const diagnostics = await getSchemaDiagnostics(env);
       if (!diagnostics.ok) {
@@ -462,6 +475,7 @@ type UserRow = {
   id: string;
   username: string | null;
   email: string | null;
+  username_set_at: string | null;
   bio: string | null;
   access_request_note: string | null;
   idp_email: string | null;
@@ -513,7 +527,8 @@ export const chooseIdentityReconcileCandidate = (
 
 const toUserProfile = (row: UserRow) => ({
   id: row.id,
-  username: sanitizeName(row.username) ?? "User",
+  username: sanitizeName(row.username) ?? "",
+  needsUsername: !row.username_set_at,
   email: sanitizeEmail(row.email) ?? "unknown@users.linksim.local",
   bio: row.bio ?? "",
   accessRequestNote: row.access_request_note ?? "",
@@ -554,7 +569,7 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
@@ -570,7 +585,7 @@ const reconcileUserIdentityByIdpEmail = async (
 
   const rows = await env.DB
     .prepare(
-      `SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
+      `SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
               CASE
                 WHEN lower(idp_email) = lower(?) AND idp_email_verified = 1 THEN 'verified_idp_email'
                 WHEN lower(email) = lower(?) THEN 'legacy_email'
@@ -684,29 +699,27 @@ export const ensureUser = async (
     await env.DB.prepare("DELETE FROM deleted_users WHERE id = ?").bind(userId).run();
   }
   const now = new Date().toISOString();
-  const username = deriveDefaultName(userId, tokenPayload);
   const email = deriveDefaultEmail(userId, tokenPayload);
   const idpEmail = deriveVerifiedIdpEmail(tokenPayload);
   const idpEmailVerified = idpEmail ? 1 : 0;
   const isBootstrapAdmin = parseAdminUserIds(env).has(userId.toLowerCase()) ? 1 : 0;
-  const autoApprove = isBootstrapAdmin === 1 || registrationMode(env) === "open";
+  const autoApprove = 1;
 
   await env.DB.prepare(
     `INSERT OR IGNORE INTO users
-      (id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
-     VALUES (?, ?, ?, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
+     VALUES (?, '', ?, NULL, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       userId,
-      username,
       email,
       idpEmail || null,
       idpEmailVerified,
       isBootstrapAdmin,
       0,
-      autoApprove ? 1 : 0,
-      autoApprove ? now : null,
-      autoApprove ? userId : null,
+      autoApprove,
+      now,
+      "system:open-registration",
       now,
       now,
     )
@@ -714,31 +727,29 @@ export const ensureUser = async (
 
   await env.DB.prepare(
     `UPDATE users
-     SET username = COALESCE(NULLIF(TRIM(username), ''), ?),
-         email = COALESCE(NULLIF(TRIM(email), ''), ?),
+     SET email = COALESCE(NULLIF(TRIM(email), ''), ?),
          idp_email = CASE WHEN ? = 1 THEN COALESCE(NULLIF(TRIM(idp_email), ''), ?) ELSE idp_email END,
          idp_email_verified = CASE WHEN ? = 1 THEN 1 ELSE idp_email_verified END,
          is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
          is_moderator = CASE WHEN ? = 1 THEN 1 ELSE is_moderator END,
-         is_approved = CASE WHEN ? = 1 THEN 1 ELSE is_approved END,
+         is_approved = CASE WHEN ? = 1 AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%') THEN 1 ELSE is_approved END,
          approved_at = CASE WHEN ? = 1 AND approved_at IS NULL THEN ? ELSE approved_at END,
          approved_by_user_id = CASE WHEN ? = 1 AND approved_by_user_id IS NULL THEN ? ELSE approved_by_user_id END,
          updated_at = ?
      WHERE id = ?`,
   )
     .bind(
-      username,
       email,
       idpEmailVerified,
       idpEmail || null,
       idpEmailVerified,
       isBootstrapAdmin,
       0,
-      autoApprove ? 1 : 0,
-      autoApprove ? 1 : 0,
+      autoApprove,
+      autoApprove,
       now,
-      autoApprove ? 1 : 0,
-      userId,
+      autoApprove,
+      "system:open-registration",
       now,
       userId,
     )
@@ -803,9 +814,16 @@ export const updateUserProfile = async (
   if (!nextEmail) throw new Error("Email is required and must be valid.");
   if (nextAvatar === null) throw new Error("Profile picture must be a valid http(s) URL.");
 
+  const duplicateUser = await env.DB
+    .prepare("SELECT id FROM users WHERE lower(username) = lower(?) AND id != ? LIMIT 1")
+    .bind(nextName, userId)
+    .first<{ id: string }>();
+  if (duplicateUser?.id) throw new Error("Username is already in use.");
+
   await env.DB.prepare(
     `UPDATE users
      SET username = ?,
+         username_set_at = CASE WHEN ? = 1 THEN COALESCE(username_set_at, ?) ELSE username_set_at END,
          email = ?,
          bio = ?,
          access_request_note = ?,
@@ -822,6 +840,8 @@ export const updateUserProfile = async (
   )
     .bind(
       nextName,
+      patch.username === undefined ? 0 : 1,
+      new Date().toISOString(),
       nextEmail,
       nextBio,
       nextAccessRequestNote,
@@ -904,7 +924,7 @@ export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map(toUserProfile);
@@ -1255,10 +1275,11 @@ const upsertOwnedResource = async (
         `SELECT id
          FROM simulations
          WHERE lower(name) = lower(?)
+           AND owner_user_id = ?
            AND id != ?
          LIMIT 1`,
       )
-      .bind(name, id)
+      .bind(name, ownerId, id)
       .first<{ id: string }>();
     if (duplicate?.id) {
       return { ok: false, reason: "simulation_name_taken" };
@@ -1963,9 +1984,60 @@ export const resolveSimulationIdBySlug = async (
   return null;
 };
 
+export const resolveUserIdByUsernameSegment = async (env: Env, username: string): Promise<string | null> => {
+  await ensureSchema(env);
+  const slug = slugifyName(username);
+  const canonicalKey = canonicalizeSimulationLookupKey(username);
+  if (!slug && !canonicalKey) return null;
+  const rows = await env.DB.prepare("SELECT id, username FROM users LIMIT 8000").all<{ id: string; username: string }>();
+  for (const row of rows.results) {
+    const name = row.username ?? "";
+    if (slug && slugifyName(name) === slug) return row.id;
+    if (canonicalKey && canonicalizeSimulationLookupKey(name) === canonicalKey) return row.id;
+  }
+  return null;
+};
+
+export const resolveSimulationIdByOwnerSlug = async (
+  env: Env,
+  username: string,
+  simulationSlug: string,
+): Promise<string | null> => {
+  await ensureSchema(env);
+  const ownerId = await resolveUserIdByUsernameSegment(env, username);
+  if (!ownerId) return null;
+  const slug = slugifyName(simulationSlug);
+  const canonicalKey = canonicalizeSimulationLookupKey(simulationSlug);
+  if (!slug && !canonicalKey) return null;
+  const rows = await env.DB
+    .prepare("SELECT id, name, payload_json FROM simulations WHERE owner_user_id = ? LIMIT 8000")
+    .bind(ownerId)
+    .all<{ id: string; name: string; payload_json: string }>();
+  for (const row of rows.results) {
+    const nameSlug = slugifyName(row.name);
+    if (slug && nameSlug === slug) return row.id;
+    if (canonicalKey && canonicalizeSimulationLookupKey(row.name) === canonicalKey) return row.id;
+    try {
+      const payload = JSON.parse(row.payload_json) as { slug?: unknown; slugAliases?: unknown };
+      const payloadSlugRaw = typeof payload.slug === "string" ? payload.slug : "";
+      const payloadSlug = slugifyName(payloadSlugRaw);
+      if (slug && payloadSlug && payloadSlug === slug) return row.id;
+      if (canonicalKey && payloadSlugRaw && canonicalizeSimulationLookupKey(payloadSlugRaw) === canonicalKey) return row.id;
+      const aliases = Array.isArray(payload.slugAliases)
+        ? payload.slugAliases.filter((alias): alias is string => typeof alias === "string" && alias.trim().length > 0)
+        : [];
+      if (slug && aliases.some((alias) => slugifyName(alias) === slug)) return row.id;
+      if (canonicalKey && aliases.some((alias) => canonicalizeSimulationLookupKey(alias) === canonicalKey)) return row.id;
+    } catch {
+      // ignore invalid payload rows
+    }
+  }
+  return null;
+};
+
 export const fetchPublicSimulationBundle = async (
   env: Env,
-  options: { simulationId?: string; simulationSlug?: string; actorId?: string | null },
+  options: { simulationId?: string; username?: string; simulationSlug?: string; actorId?: string | null },
 ): Promise<
   | { status: "missing" | "forbidden" }
   | {
@@ -1978,7 +2050,9 @@ export const fetchPublicSimulationBundle = async (
   await ensureSchema(env);
   const resolvedId =
     (options.simulationId && options.simulationId.trim()) ||
-    (options.simulationSlug ? await resolveSimulationIdBySlug(env, options.simulationSlug) : null);
+    (options.username && options.simulationSlug
+      ? await resolveSimulationIdByOwnerSlug(env, options.username, options.simulationSlug)
+      : null);
   if (!resolvedId) return { status: "missing" };
 
   const simulationRow = await env.DB

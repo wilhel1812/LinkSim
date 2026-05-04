@@ -1,5 +1,5 @@
 import { verifyAuth } from "../_lib/auth";
-import { ensureUser, fetchUserProfile, resolveSimulationAccessForUser, resolveSimulationIdBySlug } from "../_lib/db";
+import { ensureUser, fetchUserProfile, resolveSimulationAccessForUser, resolveSimulationIdByOwnerSlug } from "../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
@@ -24,10 +24,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const url = new URL(request.url);
+    const username = (url.searchParams.get("username") ?? "").trim();
     const simulationSlug = (url.searchParams.get("slug") ?? "").trim();
     let simulationId = (url.searchParams.get("sim") ?? "").trim();
-    if (!simulationId && simulationSlug) {
-      simulationId = (await resolveSimulationIdBySlug(env, simulationSlug)) ?? "";
+    if (!simulationId && username && simulationSlug) {
+      simulationId = (await resolveSimulationIdByOwnerSlug(env, username, simulationSlug)) ?? "";
     }
     if (!simulationId) {
       return withCors(request, json({ status: "missing", authenticated }));

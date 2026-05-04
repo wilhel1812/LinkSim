@@ -6,10 +6,10 @@ LinkSim supports shareable deep links that link directly to a specific simulatio
 
 | Scenario | URL Format | Example |
 |----------|------------|---------|
-| **Simulation only** | `/<simulation>` | `/Blefjell` |
-| **Single site** | `/<simulation>/<site>` | `/Blefjell/Fyrisjøen` |
-| **Multi-site** | `/<simulation>/<site1>+<site2>+<site3>` | `/Blefjell/Fyrisjøen+HOEG-ROUTER` |
-| **Link** | `/<simulation>/<site1>~<site2>` | `/Blefjell/Fyrisjøen~HOEG-ROUTER` |
+| **Simulation only** | `/<username>/<simulation>` | `/Alice/Blefjell` |
+| **Single site** | `/<username>/<simulation>/<site>` | `/Alice/Blefjell/Fyrisjøen` |
+| **Multi-site** | `/<username>/<simulation>/<site1>+<site2>+<site3>` | `/Alice/Blefjell/Fyrisjøen+HOEG-ROUTER` |
+| **Link** | `/<username>/<simulation>/<site1>~<site2>` | `/Alice/Blefjell/Fyrisjøen~HOEG-ROUTER` |
 
 ## Features
 
@@ -19,8 +19,9 @@ LinkSim supports shareable deep links that link directly to a specific simulatio
 - No URL encoding required for special characters
 
 ### Case Handling
-- URLs preserve original case (e.g., `/Blefjell` not `/blefjell`)
+- URLs preserve original case (e.g., `/Alice/Blefjell` not `/alice/blefjell`)
 - Matching is case-insensitive using canonical slug comparison
+- Simulation names are resolved inside the owner username namespace, so different users can use the same Simulation name.
 
 ### Delimiters
 - **Multi-site selection**: `+` between site names
@@ -44,6 +45,8 @@ Old-style deep links using query parameters are still supported:
 ```
 
 When accessed, these links will load the simulation but may not preserve site/link selection (legacy limitation).
+
+The previous path-only format `/<simulation>` is no longer a valid deep link because path links now require an owner username segment.
 
 ## Generating Deep Links
 

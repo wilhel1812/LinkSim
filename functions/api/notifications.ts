@@ -1,5 +1,5 @@
 import { verifyAuth } from "../_lib/auth";
-import { assertUserAccess, ensureUser, fetchUserProfile, listPendingApprovalUsers } from "../_lib/db";
+import { assertUserAccess, ensureUser, fetchUserProfile } from "../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
@@ -20,24 +20,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       return withCors(request, json({ unreadCount: 0, items: [] }));
     }
 
-    const pending = await listPendingApprovalUsers(env);
-    const item = pending.length
-      ? {
-          id: "pending-user-approvals",
-          type: "pending_users",
-          severity: "warning",
-          title: `Pending approvals (${pending.length})`,
-          message: `${pending.length} user(s) waiting for moderator/admin review.`,
-          createdAt: new Date().toISOString(),
-          meta: { pendingUsers: pending },
-        }
-      : null;
-
     return withCors(
       request,
       json({
-        unreadCount: pending.length,
-        items: item ? [item] : [],
+        unreadCount: 0,
+        items: [],
       }),
     );
   } catch (error) {

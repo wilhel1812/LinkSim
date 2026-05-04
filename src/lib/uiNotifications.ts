@@ -8,6 +8,7 @@ export type UiNotification = {
   dismissMode: UiNotificationDismissMode;
   durationMs: number;
   createdAt: number;
+  pinned: boolean;
 };
 
 export type UiNotificationInput = {
@@ -16,6 +17,7 @@ export type UiNotificationInput = {
   tone?: UiNotificationTone;
   dismissMode?: UiNotificationDismissMode;
   durationMs?: number;
+  pinned?: boolean;
 };
 
 const DEFAULT_DURATION_MS = 5_000;
@@ -24,9 +26,10 @@ export const createUiNotification = (input: UiNotificationInput, now = Date.now(
   id: input.id,
   message: input.message,
   tone: input.tone ?? "info",
-  dismissMode: input.dismissMode ?? "auto",
+  dismissMode: input.pinned ? "manual" : input.dismissMode ?? "auto",
   durationMs: Math.max(0, input.durationMs ?? DEFAULT_DURATION_MS),
   createdAt: now,
+  pinned: input.pinned === true,
 });
 
 export const upsertUiNotification = (
@@ -40,7 +43,13 @@ export const upsertUiNotification = (
   return notifications.map((item, itemIndex) => (itemIndex === index ? next : item));
 };
 
-export const dismissUiNotification = (notifications: UiNotification[], id: string): UiNotification[] =>
-  notifications.filter((item) => item.id !== id);
+export const dismissUiNotification = (
+  notifications: UiNotification[],
+  id: string,
+  options?: { force?: boolean },
+): UiNotification[] => notifications.filter((item) => item.id !== id || (item.pinned && options?.force !== true));
 
-export const clearUiNotifications = (): UiNotification[] => [];
+export const clearUiNotifications = (
+  notifications: UiNotification[] = [],
+  options?: { force?: boolean },
+): UiNotification[] => (options?.force === true ? [] : notifications.filter((item) => item.pinned));

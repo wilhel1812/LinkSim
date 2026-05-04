@@ -1,6 +1,6 @@
 # ActionButton Candidate Audit (Repo-wide)
 
-Source of truth: `docs/ui-pattern-glossary.md`
+Source of truth: UI Gallery (`/ui-gallery`)
 
 Audit target: remaining `inline-action` / `inline-action danger` usages not already migrated to `ActionButton`.
 

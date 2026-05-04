@@ -11,6 +11,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,13 +28,26 @@ jobs:
             git log --oneline origin/staging..origin/main
           fi
 
-      - name: Open drift issue if needed
+      - name: Classify drift source
+        id: drift_policy
         if: steps.drift.outputs.count != '0'
+        env:
+          DRIFT_COUNT: ${{ steps.drift.outputs.count }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/staging-drift-policy.mjs
+
+      - name: Open drift issue if needed
+        if: steps.drift.outputs.count != '0' && steps.drift_policy.outputs.open_issue == 'true'
         uses: actions/github-script@v7
+        env:
+          DRIFT_REASON: ${{ steps.drift_policy.outputs.reason }}
         with:
           script: |
             const count = '${{ steps.drift.outputs.count }}';
             const sha = context.sha.slice(0, 8);
+            const reason = process.env.DRIFT_REASON || 'main push was not classified as a staging promotion';
 
             // Check for an existing open drift issue to avoid duplicates
             const issues = await github.rest.issues.listForRepo({
@@ -54,12 +68,14 @@ jobs:
               body: [
                 `**${count} commit(s)** in \`main\` are not in \`staging\`'s ancestry after push to main at ${sha}.`,
                 '',
-                'This drift will cause conflicts on the next `staging → main` promotion.',
+                `Policy reason: ${reason}`,
+                '',
+                'This push was not classified as a normal squash-merged `staging → main` release promotion.',
                 '',
                 '## Required action',
                 '1. Create a `chore/sync-main-to-staging` branch from `origin/staging`',
-                '2. `git merge origin/main -X ours --no-edit` (prefer staging for any conflicts)',
-                '3. PR the branch into `staging`, merge, redeploy staging',
+                '2. Apply the main-only hotfix/reconcile content to staging in commits that can be squash-merged',
+                '3. PR the branch into `staging`, merge, and let CI redeploy staging',
                 '4. Close this issue',
                 '',
                 '> Auto-opened by the detect-staging-drift workflow.',

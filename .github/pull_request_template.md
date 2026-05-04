@@ -34,4 +34,4 @@
 
 ## Hotfix follow-up (required when source branch is `hotfix/*`)
 
-- [ ] After merge, open a `chore/sync-main-to-staging` PR to bring `main` back into `staging` and prevent ancestry drift on the next milestone release.
+- [ ] After merge, open a `chore/sync-main-to-staging` PR that applies the main-only hotfix content to `staging`, then let CI redeploy staging.

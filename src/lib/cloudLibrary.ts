@@ -48,10 +48,12 @@ export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<Clou
 
 export const fetchPublicSimulationLibrary = async (params: {
   simulationId?: string;
+  username?: string;
   simulationSlug?: string;
 }): Promise<CloudLibraryPayload & { simulationId?: string }> => {
   const query = new URLSearchParams();
   if (params.simulationId?.trim()) query.set("sim", params.simulationId.trim());
+  if (params.username?.trim()) query.set("username", params.username.trim());
   if (params.simulationSlug?.trim()) query.set("slug", params.simulationSlug.trim());
   const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; simulationId?: unknown }>(
     `/api/public-simulation?${query.toString()}`,
