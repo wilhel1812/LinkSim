@@ -671,6 +671,53 @@ function SimulationEditorCard({
             </label>
           </>
         ) : null}
+        <label className="field-grid">
+          <span>Override inherited simulation defaults</span>
+          <input
+            aria-label="Override inherited simulation defaults"
+            checked={form.simulationDefaultsOverrideEnabled}
+            onChange={(e) => form.setSimulationDefaultsOverrideEnabled(e.target.checked)}
+            type="checkbox"
+          />
+        </label>
+        {!form.simulationDefaultsOverrideEnabled ? (
+          <p className="field-help">This Simulation inherits the owner's account defaults for channel, RX target, and environment.</p>
+        ) : (
+          <>
+            <label className="field-grid">
+              <span>Frequency (MHz)</span>
+              <input type="number" value={form.simulationDefaultsDraft.frequencyMHz} onChange={(e) => form.setSimulationDefaultsDraft({ frequencyMHz: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Bandwidth (kHz)</span>
+              <input type="number" value={form.simulationDefaultsDraft.bandwidthKhz} onChange={(e) => form.setSimulationDefaultsDraft({ bandwidthKhz: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Spread factor</span>
+              <input type="number" value={form.simulationDefaultsDraft.spreadFactor} onChange={(e) => form.setSimulationDefaultsDraft({ spreadFactor: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Coding rate</span>
+              <input type="number" value={form.simulationDefaultsDraft.codingRate} onChange={(e) => form.setSimulationDefaultsDraft({ codingRate: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Region code</span>
+              <input type="text" value={form.simulationDefaultsDraft.regionCode ?? ""} onChange={(e) => form.setSimulationDefaultsDraft({ regionCode: e.target.value || undefined })} />
+            </label>
+            <label className="field-grid">
+              <span>RX target (dBm)</span>
+              <input type="number" value={form.simulationDefaultsDraft.rxSensitivityTargetDbm} onChange={(e) => form.setSimulationDefaultsDraft({ rxSensitivityTargetDbm: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Env loss (dB)</span>
+              <input min={0} type="number" value={form.simulationDefaultsDraft.environmentLossDb} onChange={(e) => form.setSimulationDefaultsDraft({ environmentLossDb: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Auto environment defaults</span>
+              <input aria-label="Auto environment defaults" checked={form.simulationDefaultsDraft.autoPropagationEnvironment} onChange={(e) => form.setSimulationDefaultsDraft({ autoPropagationEnvironment: e.target.checked })} type="checkbox" />
+            </label>
+          </>
+        )}
       </fieldset>
 
       {/* Pending visibility confirmation prompt */}

@@ -2,6 +2,13 @@ import { create } from "zustand";
 import { clearTerrainLossCache } from "../lib/coverage";
 import { setAppStoreBridge, useCoverageStore } from "./coverageStore";
 import { findPresetById } from "../lib/frequencyPlans";
+import {
+  FALLBACK_SIMULATION_PRESET_ID,
+  normalizeSimulationDefaults,
+  resolveUserSimulationDefaults,
+  simulationDefaultsFromPreset,
+  type SimulationDefaults,
+} from "../lib/simulationDefaults";
 import { haversineDistanceKm } from "../lib/geo";
 import { getUiErrorMessage } from "../lib/uiError";
 import { fetchCloudLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
@@ -144,12 +151,20 @@ const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser |
   return currentUser;
 };
 
-const FALLBACK_NEW_SIMULATION_PRESET_ID = "oslo-local-869618";
-
 const resolveDefaultFrequencyPresetIdForNewSimulation = (currentUser: CloudUser | null): string => {
-  const preferred = currentUser?.defaultFrequencyPresetId;
+  const preferred = currentUser?.simulationDefaultsPreference?.presetId ?? currentUser?.defaultFrequencyPresetId;
   if (typeof preferred === "string" && findPresetById(preferred)) return preferred;
-  return FALLBACK_NEW_SIMULATION_PRESET_ID;
+  return FALLBACK_SIMULATION_PRESET_ID;
+};
+
+const resolveEffectiveSimulationDefaultsForSnapshot = (
+  snapshot: Partial<SimulationPreset["snapshot"]> | undefined,
+  currentUser: CloudUser | null,
+): SimulationDefaults => {
+  if (snapshot?.simulationDefaultsOverrideEnabled && snapshot.simulationDefaultsOverride) {
+    return normalizeSimulationDefaults(snapshot.simulationDefaultsOverride);
+  }
+  return resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId);
 };
 
 const isAuthRelatedErrorMessage = (message: string): boolean => {
@@ -316,6 +331,8 @@ type SimulationPreset = {
     autoPropagationEnvironment: boolean;
     terrainDataset: TerrainDataset;
     mapViewport?: MapViewport;
+    simulationDefaultsOverrideEnabled?: boolean;
+    simulationDefaultsOverride?: SimulationDefaults;
   };
 };
 
@@ -401,6 +418,8 @@ type AppState = {
   propagationEnvironment: PropagationEnvironment;
   autoPropagationEnvironment: boolean;
   propagationEnvironmentReason: string;
+  simulationDefaultsOverrideEnabled: boolean;
+  simulationDefaultsOverride: SimulationDefaults | null;
   terrainDataset: TerrainDataset;
   terrainFetchStatus: string;
   terrainRecommendation: string;
@@ -513,6 +532,9 @@ type AppState = {
   setAutoPropagationEnvironment: (value: boolean) => void;
   setPropagationEnvironment: (patch: Partial<PropagationEnvironment>) => void;
   applyClimateDefaults: (climate: PropagationEnvironment["radioClimate"]) => void;
+  setSimulationDefaultsOverrideEnabled: (value: boolean) => void;
+  setSimulationDefaultsOverride: (value: SimulationDefaults) => void;
+  getEffectiveSimulationDefaults: () => SimulationDefaults;
   setTerrainDataset: (dataset: TerrainDataset) => void;
   addSiteByCoordinates: (name: string, lat: number, lon: number) => void;
   deleteSite: (siteId: string) => void;
@@ -583,7 +605,10 @@ type AppState = {
   renameSimulationPreset: (presetId: string, name: string) => void;
   updateSimulationPresetEntry: (
     presetId: string,
-    patch: Partial<Pick<SimulationPreset, "name" | "description" | "visibility" | "sharedWith">>,
+    patch: Partial<Pick<SimulationPreset, "name" | "description" | "visibility" | "sharedWith">> & {
+      simulationDefaultsOverrideEnabled?: boolean;
+      simulationDefaultsOverride?: SimulationDefaults | null;
+    },
   ) => void;
   deleteSimulationPreset: (presetId: string) => void;
   importLibraryData: (
@@ -1245,6 +1270,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   propagationEnvironment: defaultPropagationEnvironment(),
   autoPropagationEnvironment: true,
   propagationEnvironmentReason: "Auto defaults active.",
+  simulationDefaultsOverrideEnabled: false,
+  simulationDefaultsOverride: null,
   terrainDataset: "copernicus30",
   terrainFetchStatus: "",
   terrainRecommendation: "",
@@ -1301,6 +1328,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   getDefaultFrequencyPresetIdForNewSimulation: () => {
     const state = get();
     return resolveDefaultFrequencyPresetIdForNewSimulation(state.currentUser);
+  },
+  getEffectiveSimulationDefaults: () => {
+    const state = get();
+    if (state.simulationDefaultsOverrideEnabled && state.simulationDefaultsOverride) {
+      return normalizeSimulationDefaults(state.simulationDefaultsOverride);
+    }
+    return resolveUserSimulationDefaults(state.currentUser?.simulationDefaultsPreference, state.currentUser?.defaultFrequencyPresetId);
   },
   setAuthState: (value) => set({ authState: value }),
   setIsOnline: (value) => set({ isOnline: value }),
@@ -2113,6 +2147,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
+  setSimulationDefaultsOverrideEnabled: (value) => {
+    const defaults = value ? get().getEffectiveSimulationDefaults() : null;
+    set({ simulationDefaultsOverrideEnabled: value, simulationDefaultsOverride: defaults });
+    get().updateCurrentSimulationSnapshot();
+  },
+  setSimulationDefaultsOverride: (value) => {
+    const defaults = normalizeSimulationDefaults(value);
+    set({
+      simulationDefaultsOverrideEnabled: true,
+      simulationDefaultsOverride: defaults,
+      selectedFrequencyPresetId: defaults.frequencyPresetId,
+      rxSensitivityTargetDbm: defaults.rxSensitivityTargetDbm,
+      environmentLossDb: defaults.environmentLossDb,
+      propagationEnvironment: defaults.propagationEnvironment,
+      autoPropagationEnvironment: defaults.autoPropagationEnvironment,
+    });
+    useCoverageStore.getState().recomputeCoverage();
+    get().updateCurrentSimulationSnapshot();
+  },
   setTerrainDataset: (dataset) => {
     set({ terrainDataset: dataset });
     get().updateCurrentSimulationSnapshot();
@@ -2638,6 +2691,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         propagationEnvironment: state.propagationEnvironment,
         autoPropagationEnvironment: state.autoPropagationEnvironment,
         terrainDataset: state.terrainDataset,
+        simulationDefaultsOverrideEnabled: state.simulationDefaultsOverrideEnabled,
+        simulationDefaultsOverride: state.simulationDefaultsOverride ?? undefined,
       };
 
     set((current) => {
@@ -2698,7 +2753,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const presetName = name.trim();
     if (!presetName) return null;
     if (hasDuplicateSimulationName(get().simulationPresets, presetName)) return null;
-    const defaultPresetId = resolveDefaultFrequencyPresetIdForNewSimulation(user);
+    const inheritedDefaults = resolveUserSimulationDefaults(user.simulationDefaultsPreference, user.defaultFrequencyPresetId);
+    const defaultPresetId = inheritedDefaults.frequencyPresetId;
     const selectedPresetId =
       typeof options?.frequencyPresetId === "string" && findPresetById(options.frequencyPresetId)
         ? options.frequencyPresetId
@@ -2716,11 +2772,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedOverlayRadiusOption: current.selectedOverlayRadiusOption,
         propagationModel: current.propagationModel,
         selectedFrequencyPresetId: selectedPresetId,
-        rxSensitivityTargetDbm: current.rxSensitivityTargetDbm,
-        environmentLossDb: current.environmentLossDb,
-        propagationEnvironment: current.propagationEnvironment,
-        autoPropagationEnvironment: options?.autoPropagationEnvironment ?? current.autoPropagationEnvironment,
+        rxSensitivityTargetDbm: inheritedDefaults.rxSensitivityTargetDbm,
+        environmentLossDb: inheritedDefaults.environmentLossDb,
+        propagationEnvironment: inheritedDefaults.propagationEnvironment,
+        autoPropagationEnvironment: inheritedDefaults.autoPropagationEnvironment,
         terrainDataset: current.terrainDataset,
+        simulationDefaultsOverrideEnabled: false,
       };
       const nextPreset: SimulationPreset = {
         id: makeId("sim"),
@@ -2782,6 +2839,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         propagationEnvironment: state.propagationEnvironment,
         autoPropagationEnvironment: state.autoPropagationEnvironment,
         terrainDataset: state.terrainDataset,
+        simulationDefaultsOverrideEnabled: state.simulationDefaultsOverrideEnabled,
+        simulationDefaultsOverride: state.simulationDefaultsOverride ?? undefined,
       };
     set((current) => {
       const mergedLibrary =
@@ -2867,6 +2926,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         propagationEnvironment: get().propagationEnvironment,
         autoPropagationEnvironment: get().autoPropagationEnvironment,
         terrainDataset: get().terrainDataset,
+        simulationDefaultsOverrideEnabled: get().simulationDefaultsOverrideEnabled,
+        simulationDefaultsOverride: get().simulationDefaultsOverride ?? undefined,
       },
       updatedAt: new Date().toISOString(),
       lastEditedByUserId: user.id,
@@ -2895,6 +2956,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const rawSites = Array.isArray(snap.sites) ? snap.sites : [];
     const rawLinks = Array.isArray(snap.links) ? snap.links : [];
     const migratedSnap = migrateSitesAndLinksToSiteRadioDefaults(rawSites, rawLinks);
+    const effectiveDefaults = resolveEffectiveSimulationDefaultsForSnapshot(snap, get().currentUser);
     const isBlankSnapshot = rawSites.length === 0 && rawLinks.length === 0;
     if (isBlankSnapshot) {
       const snapshotSystems = Array.isArray(snap.systems) && snap.systems.length ? snap.systems : defaultScenario.systems;
@@ -2917,12 +2979,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? snap.selectedOverlayRadiusOption
           : defaultOptionForSelectionCount(0),
         propagationModel: "ITM" as const,
-        selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
-        rxSensitivityTargetDbm: typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
-        environmentLossDb: typeof snap.environmentLossDb === "number" ? snap.environmentLossDb : 0,
-        propagationEnvironment: snap.propagationEnvironment ?? defaultPropagationEnvironment(),
-        autoPropagationEnvironment: snap.autoPropagationEnvironment ?? true,
-        propagationEnvironmentReason: (snap.autoPropagationEnvironment ?? true)
+        selectedFrequencyPresetId: effectiveDefaults.frequencyPresetId,
+        rxSensitivityTargetDbm: effectiveDefaults.rxSensitivityTargetDbm,
+        environmentLossDb: effectiveDefaults.environmentLossDb,
+        propagationEnvironment: effectiveDefaults.propagationEnvironment,
+        autoPropagationEnvironment: effectiveDefaults.autoPropagationEnvironment,
+        simulationDefaultsOverrideEnabled: Boolean(snap.simulationDefaultsOverrideEnabled),
+        simulationDefaultsOverride: snap.simulationDefaultsOverride ?? null,
+        propagationEnvironmentReason: effectiveDefaults.autoPropagationEnvironment
           ? "Auto defaults active."
           : "Manual override active.",
         terrainDataset: normalizeTerrainDataset(snap.terrainDataset),
@@ -2971,13 +3035,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? snap.selectedOverlayRadiusOption
         : defaultOptionForSelectionCount(selectedSiteId ? 1 : 0),
       propagationModel: "ITM" as const,
-      selectedFrequencyPresetId: typeof snap.selectedFrequencyPresetId === "string" ? snap.selectedFrequencyPresetId : "custom",
-      rxSensitivityTargetDbm:
-        typeof snap.rxSensitivityTargetDbm === "number" ? snap.rxSensitivityTargetDbm : -120,
-      environmentLossDb: typeof snap.environmentLossDb === "number" ? snap.environmentLossDb : 0,
-      propagationEnvironment: snap.propagationEnvironment ?? defaultPropagationEnvironment(),
-      autoPropagationEnvironment: snap.autoPropagationEnvironment ?? true,
-      propagationEnvironmentReason: (snap.autoPropagationEnvironment ?? true)
+      selectedFrequencyPresetId: effectiveDefaults.frequencyPresetId,
+      rxSensitivityTargetDbm: effectiveDefaults.rxSensitivityTargetDbm,
+      environmentLossDb: effectiveDefaults.environmentLossDb,
+      propagationEnvironment: effectiveDefaults.propagationEnvironment,
+      autoPropagationEnvironment: effectiveDefaults.autoPropagationEnvironment,
+      simulationDefaultsOverrideEnabled: Boolean(snap.simulationDefaultsOverrideEnabled),
+      simulationDefaultsOverride: snap.simulationDefaultsOverride ?? null,
+      propagationEnvironmentReason: effectiveDefaults.autoPropagationEnvironment
         ? "Auto defaults active."
         : "Manual override active.",
       terrainDataset:
@@ -3066,9 +3131,24 @@ export const useAppStore = create<AppState>((set, get) => ({
           nextVisibilityRaw !== "private" && hasPrivateLibrarySiteReferences(preset.snapshot.sites, state.siteLibrary)
             ? "private"
             : nextVisibilityRaw;
+        const snapshotPatch =
+          patch.simulationDefaultsOverrideEnabled !== undefined || patch.simulationDefaultsOverride !== undefined
+            ? {
+                snapshot: {
+                  ...preset.snapshot,
+                  simulationDefaultsOverrideEnabled:
+                    patch.simulationDefaultsOverrideEnabled ?? preset.snapshot.simulationDefaultsOverrideEnabled,
+                  simulationDefaultsOverride:
+                    patch.simulationDefaultsOverride === null
+                      ? undefined
+                      : patch.simulationDefaultsOverride ?? preset.snapshot.simulationDefaultsOverride,
+                },
+              }
+            : {};
         return {
           ...preset,
           ...patch,
+          ...snapshotPatch,
           name: nextName,
           description: nextDescription,
           slug: nextSlug,
@@ -3244,6 +3324,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { selectedFrequencyPresetId, selectedNetworkId } = get();
     const preset = findPresetById(selectedFrequencyPresetId);
     if (!preset) return;
+    const defaults = simulationDefaultsFromPreset(preset.id);
 
     set((state) => ({
       networks: state.networks.map((network) =>
@@ -3260,6 +3341,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           : network,
       ),
       links: state.links.map((link) => ({ ...link, frequencyMHz: preset.frequencyMHz })),
+      rxSensitivityTargetDbm: defaults.rxSensitivityTargetDbm,
+      environmentLossDb: defaults.environmentLossDb,
+      propagationEnvironment: defaults.propagationEnvironment,
+      autoPropagationEnvironment: defaults.autoPropagationEnvironment,
     }));
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();

@@ -1,3 +1,5 @@
+import type { PropagationEnvironment } from "../types/radio";
+
 export type FrequencyPresetGroup = "Meshtastic Regional" | "MeshCore Community" | "Amateur / Reference" | "Local / Community";
 export type FrequencyPresetSource = "Meshtastic" | "MeshCore" | "Reference" | "Local";
 export type FrequencyPresetSourceFamily = "meshtastic" | "meshcore" | "reference" | "local";
@@ -14,6 +16,10 @@ export type FrequencyPresetData = {
   codingRate: number;
   regionCode?: string;
   notes?: string;
+  rxSensitivityTargetDbm?: number;
+  environmentLossDb?: number;
+  propagationEnvironment?: PropagationEnvironment;
+  autoPropagationEnvironment?: boolean;
 };
 
 export const FREQUENCY_PRESET_GROUP_ORDER: FrequencyPresetGroup[] = [

@@ -47,6 +47,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
       avatarUrl?: unknown;
       emailPublic?: unknown;
       defaultFrequencyPresetId?: unknown;
+      simulationDefaultsPreference?: unknown;
     };
     const user = await updateUserProfile(env, auth.userId, body);
     return withCors(request, json({ user }, { headers: NO_STORE_HEADERS }));

@@ -551,6 +551,42 @@ describe("appStore new simulation default frequency preset", () => {
     expect(created?.snapshot.selectedFrequencyPresetId).toBe("meshcore-us-narrow-910525-sf7-bw625-cr5");
   });
 
+  it("uses cloud simulation defaults when creating blank simulation", () => {
+    useAppStore.setState((state) => ({
+      currentUser: state.currentUser
+        ? {
+            ...state.currentUser,
+            simulationDefaultsPreference: {
+              mode: "custom",
+              presetId: "meshcore-us-narrow-910525-sf7-bw625-cr5",
+              overridePresetDefaults: false,
+              custom: {
+                frequencyPresetId: "meshcore-us-narrow-910525-sf7-bw625-cr5",
+                frequencyMHz: 910.525,
+                bandwidthKhz: 62.5,
+                spreadFactor: 7,
+                codingRate: 5,
+                regionCode: "US",
+                rxSensitivityTargetDbm: -131,
+                environmentLossDb: 4,
+                autoPropagationEnvironment: false,
+              },
+            },
+          }
+        : state.currentUser,
+    }));
+
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Cloud Simulation Defaults", { visibility: "private", ownerUserId: "owner-1" });
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.snapshot.selectedFrequencyPresetId).toBe("meshcore-us-narrow-910525-sf7-bw625-cr5");
+    expect(created?.snapshot.rxSensitivityTargetDbm).toBe(-131);
+    expect(created?.snapshot.environmentLossDb).toBe(4);
+    expect(created?.snapshot.autoPropagationEnvironment).toBe(false);
+    expect(created?.snapshot.simulationDefaultsOverrideEnabled).toBe(false);
+  });
+
   it("falls back to app default when cloud default is invalid", () => {
     useAppStore.setState((state) => ({
       currentUser: state.currentUser
