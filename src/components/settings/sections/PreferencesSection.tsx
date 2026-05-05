@@ -223,22 +223,28 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
               <span>Auto environment defaults</span>
               <input aria-label="Auto environment defaults" checked={activeDefaults.autoPropagationEnvironment} onChange={(event) => patchPreferenceDefaults({ autoPropagationEnvironment: event.target.checked })} type="checkbox" />
             </label>
-            <label className="field-grid">
-              <span>Radio climate</span>
-              <select className="locale-select" value={activeDefaults.propagationEnvironment.radioClimate} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, radioClimate: event.target.value as SimulationDefaults["propagationEnvironment"]["radioClimate"] } })}>
-                <option value="Continental Temperate">Continental Temperate</option>
-                <option value="Maritime Temperate (Land)">Maritime Temperate (Land)</option>
-                <option value="Maritime Temperate (Sea)">Maritime Temperate (Sea)</option>
-                <option value="Desert">Desert</option>
-                <option value="Equatorial">Equatorial</option>
-                <option value="Continental Subtropical">Continental Subtropical</option>
-                <option value="Maritime Subtropical">Maritime Subtropical</option>
-              </select>
-            </label>
-            <label className="field-grid">
-              <span>Clutter height (m)</span>
-              <input type="number" value={activeDefaults.propagationEnvironment.clutterHeightM} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, clutterHeightM: Number(event.target.value) } })} />
-            </label>
+            {activeDefaults.autoPropagationEnvironment ? (
+              <p className="field-help">Auto derives climate and clutter from terrain for each path. Turn it off to use fixed manual environment values.</p>
+            ) : (
+              <>
+                <label className="field-grid">
+                  <span>Radio climate</span>
+                  <select className="locale-select" value={activeDefaults.propagationEnvironment.radioClimate} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, radioClimate: event.target.value as SimulationDefaults["propagationEnvironment"]["radioClimate"] } })}>
+                    <option value="Continental Temperate">Continental Temperate</option>
+                    <option value="Maritime Temperate (Land)">Maritime Temperate (Land)</option>
+                    <option value="Maritime Temperate (Sea)">Maritime Temperate (Sea)</option>
+                    <option value="Desert">Desert</option>
+                    <option value="Equatorial">Equatorial</option>
+                    <option value="Continental Subtropical">Continental Subtropical</option>
+                    <option value="Maritime Subtropical">Maritime Subtropical</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Clutter height (m)</span>
+                  <input type="number" value={activeDefaults.propagationEnvironment.clutterHeightM} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, clutterHeightM: Number(event.target.value) } })} />
+                </label>
+              </>
+            )}
           </div>
         ) : null}
       </div>
