@@ -1,7 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { History, Loader2, RefreshCw, Search } from "lucide-react";
-import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../lib/frequencyPlans";
 import {
   fetchResourceChanges,
   fetchUserById,
@@ -638,39 +637,6 @@ function SimulationEditorCard({
           ownerUserId={form.ownerUserId}
           visibility={form.accessVisibility}
         />
-        {isNew ? (
-          <>
-            <label className="field-grid">
-              <span>Frequency Plan</span>
-              <select
-                className="locale-select"
-                onChange={(e) => form.setSimulationFrequencyPresetId(e.target.value)}
-                value={form.simulationFrequencyPresetId}
-              >
-                {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
-                  <optgroup key={groupEntry.group} label={groupEntry.group}>
-                    {groupEntry.presets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </label>
-            <label className="field-grid">
-              <span>Auto environment defaults</span>
-              <select
-                className="locale-select"
-                onChange={(e) => form.setSimulationAutoPropagationEnvironment(e.target.value === "auto")}
-                value={form.simulationAutoPropagationEnvironment ? "auto" : "manual"}
-              >
-                <option value="auto">Auto (recommended)</option>
-                <option value="manual">Manual override</option>
-              </select>
-            </label>
-          </>
-        ) : null}
         <label className="field-grid">
           <span>Override inherited simulation defaults</span>
           <input
@@ -716,6 +682,9 @@ function SimulationEditorCard({
               <span>Auto environment defaults</span>
               <input aria-label="Auto environment defaults" checked={form.simulationDefaultsDraft.autoPropagationEnvironment} onChange={(e) => form.setSimulationDefaultsDraft({ autoPropagationEnvironment: e.target.checked })} type="checkbox" />
             </label>
+            {form.simulationDefaultsDraft.autoPropagationEnvironment ? (
+              <p className="field-help">Auto derives climate and clutter from terrain for each path. Turn it off to use fixed manual environment values.</p>
+            ) : null}
           </>
         )}
       </fieldset>

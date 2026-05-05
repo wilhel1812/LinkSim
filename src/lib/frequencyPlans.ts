@@ -6,7 +6,6 @@ import {
   type FrequencyPresetSource,
   type FrequencyPresetSourceFamily,
 } from "./frequencyPresets.data";
-import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import type { PropagationEnvironment } from "../types/radio";
 
 export type FrequencyPreset = {
@@ -37,10 +36,10 @@ const buildFrequencyPresets = (): FrequencyPreset[] => {
       presets.push({
         ...preset,
         sortOrder,
-        rxSensitivityTargetDbm: preset.rxSensitivityTargetDbm ?? -120,
-        environmentLossDb: preset.environmentLossDb ?? 0,
-        propagationEnvironment: preset.propagationEnvironment ?? defaultPropagationEnvironment(),
-        autoPropagationEnvironment: preset.autoPropagationEnvironment ?? true,
+        rxSensitivityTargetDbm: preset.defaults.rxSensitivityTargetDbm,
+        environmentLossDb: preset.defaults.environmentLossDb,
+        propagationEnvironment: preset.defaults.propagationEnvironment,
+        autoPropagationEnvironment: preset.defaults.autoPropagationEnvironment,
       });
     }
   }
