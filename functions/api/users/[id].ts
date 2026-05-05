@@ -89,6 +89,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       avatarUrl?: unknown;
       emailPublic?: unknown;
       defaultFrequencyPresetId?: unknown;
+      simulationDefaultsPreference?: unknown;
       role?: unknown;
       isApproved?: unknown;
     };
@@ -106,7 +107,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       body.bio !== undefined ||
       body.accessRequestNote !== undefined ||
       body.avatarUrl !== undefined ||
-      body.defaultFrequencyPresetId !== undefined
+      body.defaultFrequencyPresetId !== undefined ||
+      body.simulationDefaultsPreference !== undefined
     ) {
       if (!me.isAdmin && targetId !== auth.userId) {
         return withCors(request, json({ error: "Only admins can edit another user's profile fields." }, { status: 403 }));
@@ -119,6 +121,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         avatarUrl: body.avatarUrl,
         emailPublic: body.emailPublic,
         defaultFrequencyPresetId: body.defaultFrequencyPresetId,
+        simulationDefaultsPreference: body.simulationDefaultsPreference,
       });
     }
     if (body.role !== undefined) {

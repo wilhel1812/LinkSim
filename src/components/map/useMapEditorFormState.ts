@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain } from "../../lib/siteGainFields";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../../lib/linkRadio";
 import { toAccessVisibility } from "../../lib/uiFormatting";
+import { normalizeSimulationDefaults, resolveUserSimulationDefaults, type SimulationDefaults } from "../../lib/simulationDefaults";
 import { fetchCollaboratorDirectory } from "../../lib/cloudUser";
 import { fetchElevations } from "../../lib/elevationService";
 import { searchLocations, type GeocodeResult } from "../../lib/geocode";
@@ -82,6 +83,10 @@ export function useMapEditorFormState() {
   } | null>(null);
   const [simulationFrequencyPresetId, setSimulationFrequencyPresetId] = useState("");
   const [simulationAutoPropagationEnvironment, setSimulationAutoPropagationEnvironment] = useState(true);
+  const [simulationDefaultsOverrideEnabled, setSimulationDefaultsOverrideEnabled] = useState(false);
+  const [simulationDefaultsDraft, setSimulationDefaultsDraft] = useState<SimulationDefaults>(() =>
+    normalizeSimulationDefaults(null),
+  );
 
   // ─── Link drafts ──────────────────────────────────────────────────────────────
   const [linkNameDraft, setLinkNameDraft] = useState("");
@@ -177,6 +182,9 @@ export function useMapEditorFormState() {
         setSimulationAutoPropagationEnvironment(
           mapEditor.simulationSeed?.autoPropagationEnvironment ?? autoPropagationEnvironment,
         );
+        const inherited = resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId);
+        setSimulationDefaultsOverrideEnabled(false);
+        setSimulationDefaultsDraft(inherited);
       } else {
         const preset = simulationPresets.find((p) => p.id === mapEditor.resourceId);
         setNameDraft(preset?.name ?? mapEditor.label);
@@ -184,6 +192,12 @@ export function useMapEditorFormState() {
         setAccessVisibility(toAccessVisibility(preset?.visibility) as AccessVisibility);
         setSimulationFrequencyPresetId(preset?.snapshot.selectedFrequencyPresetId ?? selectedFrequencyPresetId);
         setSimulationAutoPropagationEnvironment(preset?.snapshot.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        setSimulationDefaultsOverrideEnabled(Boolean(preset?.snapshot.simulationDefaultsOverrideEnabled));
+        setSimulationDefaultsDraft(
+          preset?.snapshot.simulationDefaultsOverride
+            ? normalizeSimulationDefaults(preset.snapshot.simulationDefaultsOverride)
+            : resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId),
+        );
         const grants = (preset?.sharedWith ?? []).filter((g) => g.userId !== preset?.ownerUserId);
         setCollaboratorUserIds(grants.map((g) => g.userId));
         setCollaboratorRoles(
@@ -659,6 +673,8 @@ export function useMapEditorFormState() {
         description: descriptionDraft.trim() || undefined,
         visibility: normalizedVisibility,
         sharedWith,
+        simulationDefaultsOverrideEnabled,
+        simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
       });
       closeMapEditor();
       return true;
@@ -794,6 +810,11 @@ export function useMapEditorFormState() {
     setSimulationFrequencyPresetId,
     simulationAutoPropagationEnvironment,
     setSimulationAutoPropagationEnvironment,
+    simulationDefaultsOverrideEnabled,
+    setSimulationDefaultsOverrideEnabled,
+    simulationDefaultsDraft,
+    setSimulationDefaultsDraft: (patch: Partial<SimulationDefaults>) =>
+      setSimulationDefaultsDraft((current) => normalizeSimulationDefaults({ ...current, ...patch }, current)),
     handleSaveSimulation,
     // link
     linkNameDraft, setLinkNameDraft,
