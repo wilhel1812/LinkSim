@@ -20,7 +20,6 @@ import {
   withSiteRadioDefaults,
 } from "../lib/linkRadio";
 import {
-  defaultPropagationEnvironment,
   deriveDynamicPropagationEnvironment,
   withClimateDefaults,
 } from "../lib/propagationEnvironment";
@@ -1208,6 +1207,24 @@ const defaultOverlayModeForSelectionCount = (selectionCount: number): MapOverlay
   return "heatmap";
 };
 
+const applyDefaultsToScenarioNetworks = (networks: Network[], defaults: SimulationDefaults): Network[] =>
+  networks.map((network, index) =>
+    index === 0
+      ? {
+          ...network,
+          frequencyMHz: defaults.frequencyMHz,
+          frequencyOverrideMHz: defaults.frequencyMHz,
+          bandwidthKhz: defaults.bandwidthKhz,
+          spreadFactor: defaults.spreadFactor,
+          codingRate: defaults.codingRate,
+          regionCode: defaults.regionCode,
+        }
+      : network,
+  );
+
+const applyDefaultsToScenarioLinks = (links: Link[], defaults: SimulationDefaults): Link[] =>
+  links.map((link) => ({ ...link, frequencyMHz: defaults.frequencyMHz }));
+
 type TerrainFetchBounds = { minLat: number; maxLat: number; minLon: number; maxLon: number };
 
 const bufferedBoundsForSites = (sites: Site[], radiusKm: number): TerrainFetchBounds | null => {
@@ -1238,6 +1255,8 @@ const normalizeCoverageResolution = (value: unknown): CoverageResolution => {
   return "24";
 };
 
+const initialScenarioDefaults = simulationDefaultsFromPreset(defaultScenario.defaultFrequencyPresetId);
+
 export const useAppStore = create<AppState>((set, get) => ({
   sites: [],
   links: [],
@@ -1265,11 +1284,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   basemapStyleId: initialBasemapStyleId,
   selectedScenarioId: getInitialScenarioId(),
   selectedFrequencyPresetId: defaultScenario.defaultFrequencyPresetId,
-  rxSensitivityTargetDbm: -120,
-  environmentLossDb: 0,
-  propagationEnvironment: defaultPropagationEnvironment(),
-  autoPropagationEnvironment: true,
-  propagationEnvironmentReason: "Auto defaults active.",
+  rxSensitivityTargetDbm: initialScenarioDefaults.rxSensitivityTargetDbm,
+  environmentLossDb: initialScenarioDefaults.environmentLossDb,
+  propagationEnvironment: initialScenarioDefaults.propagationEnvironment,
+  autoPropagationEnvironment: initialScenarioDefaults.autoPropagationEnvironment,
+  propagationEnvironmentReason: initialScenarioDefaults.autoPropagationEnvironment ? "Auto defaults active." : "Manual override active.",
   simulationDefaultsOverrideEnabled: false,
   simulationDefaultsOverride: null,
   terrainDataset: "copernicus30",
@@ -1877,6 +1896,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectScenario: (id) => {
     const scenario = getScenarioById(id);
     if (!scenario) return;
+    const defaults = simulationDefaultsFromPreset(scenario.defaultFrequencyPresetId);
     const migratedScenario = migrateSitesAndLinksToSiteRadioDefaults(scenario.sites, scenario.links);
     const libraryBacked = ensureSitesBackedByLibrary(migratedScenario.sites, get().siteLibrary);
     if (libraryBacked.addedCount > 0) {
@@ -1885,9 +1905,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       selectedScenarioId: scenario.id,
       sites: libraryBacked.sites,
-      links: migratedScenario.links,
+      links: applyDefaultsToScenarioLinks(migratedScenario.links, defaults),
       systems: scenario.systems,
-      networks: scenario.networks,
+      networks: applyDefaultsToScenarioNetworks(scenario.networks, defaults),
       selectedSiteId: scenario.defaultSiteId,
       selectedSiteIds: scenario.defaultSiteId ? [scenario.defaultSiteId] : [],
       selectedLinkId: scenario.defaultLinkId,
@@ -1896,11 +1916,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedNetworkId: scenario.defaultNetworkId,
       selectedFrequencyPresetId: scenario.defaultFrequencyPresetId,
       propagationModel: "ITM",
-      rxSensitivityTargetDbm: -120,
-      environmentLossDb: 0,
-      propagationEnvironment: defaultPropagationEnvironment(),
-      autoPropagationEnvironment: true,
-      propagationEnvironmentReason: "Auto defaults active.",
+      rxSensitivityTargetDbm: defaults.rxSensitivityTargetDbm,
+      environmentLossDb: defaults.environmentLossDb,
+      propagationEnvironment: defaults.propagationEnvironment,
+      autoPropagationEnvironment: defaults.autoPropagationEnvironment,
+      propagationEnvironmentReason: defaults.autoPropagationEnvironment ? "Auto defaults active." : "Manual override active.",
       terrainFetchStatus: "",
       terrainRecommendation: "",
       isHighResTerrainLoaded: false,
@@ -1919,6 +1939,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   loadDemoScenario: () => {
     const scenario = DEMO_SCENARIO;
+    const defaults = simulationDefaultsFromPreset(scenario.defaultFrequencyPresetId);
     const libraryBacked = ensureSitesBackedByLibrary(scenario.sites, get().siteLibrary);
     if (libraryBacked.addedCount > 0) {
       writeStorage(SITE_LIBRARY_KEY, libraryBacked.siteLibrary);
@@ -1933,9 +1954,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       // selectedScenarioId intentionally not set — demo stays invisible in scenario UI
       sites: libraryBacked.sites,
-      links: scenario.links,
+      links: applyDefaultsToScenarioLinks(scenario.links, defaults),
       systems: scenario.systems,
-      networks: scenario.networks,
+      networks: applyDefaultsToScenarioNetworks(scenario.networks, defaults),
       selectedSiteId: selectedSiteIds[0] ?? scenario.defaultSiteId,
       selectedSiteIds,
       selectedLinkId: scenario.defaultLinkId,
@@ -1944,11 +1965,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedNetworkId: scenario.defaultNetworkId,
       selectedFrequencyPresetId: scenario.defaultFrequencyPresetId,
       propagationModel: "ITM",
-      rxSensitivityTargetDbm: -120,
-      environmentLossDb: 0,
-      propagationEnvironment: defaultPropagationEnvironment(),
-      autoPropagationEnvironment: true,
-      propagationEnvironmentReason: "Auto defaults active.",
+      rxSensitivityTargetDbm: defaults.rxSensitivityTargetDbm,
+      environmentLossDb: defaults.environmentLossDb,
+      propagationEnvironment: defaults.propagationEnvironment,
+      autoPropagationEnvironment: defaults.autoPropagationEnvironment,
+      propagationEnvironmentReason: defaults.autoPropagationEnvironment ? "Auto defaults active." : "Manual override active.",
       terrainFetchStatus: "",
       terrainRecommendation: "",
       isHighResTerrainLoaded: false,

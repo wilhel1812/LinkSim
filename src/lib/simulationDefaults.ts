@@ -35,7 +35,7 @@ export const simulationDefaultsFromPreset = (presetId: string): SimulationDefaul
       spreadFactor: 8,
       codingRate: 5,
       regionCode: "EU_868",
-      rxSensitivityTargetDbm: -120,
+      rxSensitivityTargetDbm: -130,
       environmentLossDb: 0,
       propagationEnvironment: defaultPropagationEnvironment(),
       autoPropagationEnvironment: true,

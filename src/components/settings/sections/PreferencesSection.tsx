@@ -243,6 +243,18 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
                   <span>Clutter height (m)</span>
                   <input type="number" value={activeDefaults.propagationEnvironment.clutterHeightM} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, clutterHeightM: Number(event.target.value) } })} />
                 </label>
+                <label className="field-grid">
+                  <span>Ground dielectric</span>
+                  <input type="number" value={activeDefaults.propagationEnvironment.groundDielectric} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, groundDielectric: Number(event.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Ground conductivity</span>
+                  <input type="number" value={activeDefaults.propagationEnvironment.groundConductivity} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, groundConductivity: Number(event.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Atmospheric bending (N-units)</span>
+                  <input type="number" value={activeDefaults.propagationEnvironment.atmosphericBendingNUnits} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, atmosphericBendingNUnits: Number(event.target.value) } })} />
+                </label>
               </>
             )}
           </div>
