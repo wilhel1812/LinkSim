@@ -601,6 +601,18 @@ describe("appStore new simulation default frequency preset", () => {
   });
 });
 
+describe("appStore built-in scenario defaults", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("uses the preset RX target for the starter workspace", () => {
+    useAppStore.getState().selectScenario("workspace-starter");
+    expect(useAppStore.getState().rxSensitivityTargetDbm).toBe(-130);
+  });
+});
+
 describe("appStore blank simulation loading", () => {
   beforeEach(() => {
     storage.mock.clear();

@@ -684,7 +684,38 @@ function SimulationEditorCard({
             </label>
             {form.simulationDefaultsDraft.autoPropagationEnvironment ? (
               <p className="field-help">Auto derives climate and clutter from terrain for each path. Turn it off to use fixed manual environment values.</p>
-            ) : null}
+            ) : (
+              <>
+                <label className="field-grid">
+                  <span>Radio climate</span>
+                  <select className="locale-select" value={form.simulationDefaultsDraft.propagationEnvironment.radioClimate} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, radioClimate: e.target.value as typeof form.simulationDefaultsDraft.propagationEnvironment.radioClimate } })}>
+                    <option value="Continental Temperate">Continental Temperate</option>
+                    <option value="Maritime Temperate (Land)">Maritime Temperate (Land)</option>
+                    <option value="Maritime Temperate (Sea)">Maritime Temperate (Sea)</option>
+                    <option value="Desert">Desert</option>
+                    <option value="Equatorial">Equatorial</option>
+                    <option value="Continental Subtropical">Continental Subtropical</option>
+                    <option value="Maritime Subtropical">Maritime Subtropical</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Clutter height (m)</span>
+                  <input type="number" value={form.simulationDefaultsDraft.propagationEnvironment.clutterHeightM} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, clutterHeightM: Number(e.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Ground dielectric</span>
+                  <input type="number" value={form.simulationDefaultsDraft.propagationEnvironment.groundDielectric} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, groundDielectric: Number(e.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Ground conductivity</span>
+                  <input type="number" value={form.simulationDefaultsDraft.propagationEnvironment.groundConductivity} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, groundConductivity: Number(e.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Atmospheric bending (N-units)</span>
+                  <input type="number" value={form.simulationDefaultsDraft.propagationEnvironment.atmosphericBendingNUnits} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, atmosphericBendingNUnits: Number(e.target.value) } })} />
+                </label>
+              </>
+            )}
           </>
         )}
       </fieldset>
