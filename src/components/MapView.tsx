@@ -14,6 +14,7 @@ import Map, {
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
 import { computeCoverageGridDimensions } from "../lib/coverage";
+import { buildCoverageTargetContourFeatures } from "../lib/coverageContour";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -175,6 +176,26 @@ const coverageRasterLayer: LayerProps = {
     "raster-saturation": 0.02,
   },
 };
+
+const targetContourHaloLayer = (color: string): LayerProps => ({
+  id: "coverage-target-contour-halo-layer",
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": 5,
+    "line-opacity": 0.82,
+  },
+});
+
+const targetContourLineLayer = (color: string): LayerProps => ({
+  id: "coverage-target-contour-line-layer",
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": 2.4,
+    "line-opacity": 0.96,
+  },
+});
 
 const terrainRasterPaint = {
   "raster-opacity": 0.62,
@@ -1638,7 +1659,7 @@ export function MapView({
             rasterPixels = await buildCoverageOverlayPixelsAsync(
               overlayBounds,
               overlaySamples,
-              mode === "weakest" ? "heatmap" : mode,
+              mode === "contours" || mode === "weakest" ? "heatmap" : mode,
               effectiveBandStepDb,
               overlayDimensions,
               overlayPointMask,
@@ -1801,6 +1822,15 @@ export function MapView({
     return { min, max };
   }, [samplesForOverlay]);
 
+  const targetContourFeatures = useMemo(
+    () =>
+      coverageVizMode === "contours"
+        ? buildCoverageTargetContourFeatures(samplesForOverlay, rxSensitivityTargetDbm, overlayBounds)
+        : { type: "FeatureCollection" as const, features: [] },
+    [coverageVizMode, overlayBounds, rxSensitivityTargetDbm, samplesForOverlay],
+  );
+  const showTargetContourLine = coverageVizMode === "contours" && targetContourFeatures.features.length > 0;
+
   const relayRange = useMemo(() => {
     if (!coverageOverlay || coverageVizMode !== "relay") return null;
     if (typeof coverageOverlay.minDbm !== "number" || typeof coverageOverlay.maxDbm !== "number") return null;
@@ -1812,7 +1842,7 @@ export function MapView({
       : coverageVizMode === "heatmap"
       ? "Heatmap"
       : coverageVizMode === "contours"
-        ? "Target Contour"
+        ? "Heatmap + Target Line"
         : coverageVizMode === "weakest"
           ? "Weakest Site"
         : coverageVizMode === "passfail"
@@ -3008,7 +3038,7 @@ export function MapView({
                   <option value="none">Hidden</option>
                   {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
                   {allowedOverlayModes.includes("weakest") ? <option value="weakest">Weakest Site</option> : null}
-                  {allowedOverlayModes.includes("contours") ? <option value="contours">Target Contour</option> : null}
+                  {allowedOverlayModes.includes("contours") ? <option value="contours">Heatmap + Target Line</option> : null}
                   {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
                   {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
                 </select>
@@ -3129,7 +3159,7 @@ export function MapView({
             ) : null}
             {coverageVizMode === "contours" ? (
               <>
-                <p>Shows the line where best available Site signal crosses the Simulation RX target.</p>
+                <p>Shows the fixed-scale Heatmap with a line where best available Site signal crosses the Simulation RX target.</p>
                 <div className="overlay-inline-controls">
                   <span>Style</span>
                   <div className="chip-group">
@@ -3420,6 +3450,13 @@ export function MapView({
             url={coverageOverlay.url}
           >
             <Layer {...coverageRasterLayer} />
+          </Source>
+        ) : null}
+
+        {showTargetContourLine ? (
+          <Source data={targetContourFeatures} id="coverage-target-contour-source" type="geojson">
+            <Layer {...targetContourHaloLayer(variant.cssVars["--bg"] ?? linkColor)} />
+            <Layer {...targetContourLineLayer(selectedLinkColor)} />
           </Source>
         ) : null}
 
