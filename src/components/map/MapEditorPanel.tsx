@@ -592,6 +592,17 @@ function SimulationEditorCard({
   onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
+  const simulationDefaultsSummary = [
+    `${form.simulationDefaultsDraft.frequencyMHz} MHz`,
+    `${form.simulationDefaultsDraft.bandwidthKhz} kHz`,
+    `SF${form.simulationDefaultsDraft.spreadFactor}`,
+    `CR${form.simulationDefaultsDraft.codingRate}`,
+    form.simulationDefaultsDraft.regionCode ? `Region ${form.simulationDefaultsDraft.regionCode}` : null,
+    `RX ${form.simulationDefaultsDraft.rxSensitivityTargetDbm} dBm`,
+    form.simulationDefaultsDraft.autoPropagationEnvironment
+      ? "Auto environment"
+      : `${form.simulationDefaultsDraft.propagationEnvironment.radioClimate}, ${form.simulationDefaultsDraft.propagationEnvironment.clutterHeightM} m clutter`,
+  ].filter(Boolean).join(" · ");
 
   return (
     <>
@@ -638,17 +649,15 @@ function SimulationEditorCard({
           visibility={form.accessVisibility}
         />
         <label className="field-grid">
-          <span>Override inherited simulation defaults</span>
+          <span>Simulation settings: {simulationDefaultsSummary}</span>
           <input
-            aria-label="Override inherited simulation defaults"
+            aria-label="Override Simulation settings"
             checked={form.simulationDefaultsOverrideEnabled}
             onChange={(e) => form.setSimulationDefaultsOverrideEnabled(e.target.checked)}
             type="checkbox"
           />
         </label>
-        {!form.simulationDefaultsOverrideEnabled ? (
-          <p className="field-help">This Simulation inherits the owner's account defaults for channel, RX target, and environment.</p>
-        ) : (
+        {form.simulationDefaultsOverrideEnabled ? (
           <>
             <label className="field-grid">
               <span>Frequency (MHz)</span>
@@ -717,7 +726,7 @@ function SimulationEditorCard({
               </>
             )}
           </>
-        )}
+        ) : null}
       </fieldset>
 
       {/* Pending visibility confirmation prompt */}
