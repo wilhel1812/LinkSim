@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import { History, Loader2, RefreshCw, Search } from "lucide-react";
+import { History, Loader2, Pencil, RefreshCw, Search } from "lucide-react";
 import {
   fetchResourceChanges,
   fetchUserById,
@@ -648,17 +648,34 @@ function SimulationEditorCard({
           ownerUserId={form.ownerUserId}
           visibility={form.accessVisibility}
         />
-        <label className="field-grid">
-          <span>Simulation settings: {simulationDefaultsSummary}</span>
-          <input
-            aria-label="Override Simulation settings"
-            checked={form.simulationDefaultsOverrideEnabled}
-            onChange={(e) => form.setSimulationDefaultsOverrideEnabled(e.target.checked)}
-            type="checkbox"
-          />
-        </label>
+        <div className="simulation-settings-block">
+          <div className="simulation-settings-header">
+            <span>Simulation settings</span>
+            <Button
+              aria-label={form.simulationDefaultsOverrideEnabled ? "Editing Simulation settings" : "Override Simulation settings"}
+              disabled={form.simulationDefaultsOverrideEnabled}
+              isSelected={form.simulationDefaultsOverrideEnabled}
+              onClick={() => form.setSimulationDefaultsOverrideEnabled(true)}
+              size="icon"
+              title={form.simulationDefaultsOverrideEnabled ? "Editing Simulation settings" : "Override Simulation settings"}
+              type="button"
+            >
+              <Pencil aria-hidden="true" size={14} />
+            </Button>
+          </div>
+          <p className="field-help simulation-settings-summary">{simulationDefaultsSummary}</p>
+        </div>
         {form.simulationDefaultsOverrideEnabled ? (
           <>
+            <div className="simulation-settings-actions">
+              <Button
+                onClick={() => form.setSimulationDefaultsOverrideEnabled(false)}
+                type="button"
+                variant="ghost"
+              >
+                Use inherited defaults
+              </Button>
+            </div>
             <label className="field-grid">
               <span>Frequency (MHz)</span>
               <input type="number" value={form.simulationDefaultsDraft.frequencyMHz} onChange={(e) => form.setSimulationDefaultsDraft({ frequencyMHz: Number(e.target.value) })} />
