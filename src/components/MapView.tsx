@@ -1830,6 +1830,13 @@ export function MapView({
     [coverageVizMode, overlayBounds, overlayPointMask, rxSensitivityTargetDbm, samplesForOverlay],
   );
   const showTargetContourLine = coverageVizMode === "contours" && targetContourFeatures.features.length > 0;
+  const coverageScaleRange = useMemo(() => {
+    if (!coverageOverlay || (coverageVizMode !== "heatmap" && coverageVizMode !== "contours" && coverageVizMode !== "weakest")) {
+      return null;
+    }
+    if (typeof coverageOverlay.minDbm !== "number" || typeof coverageOverlay.maxDbm !== "number") return null;
+    return { min: coverageOverlay.minDbm, max: coverageOverlay.maxDbm };
+  }, [coverageOverlay, coverageVizMode]);
 
   const relayRange = useMemo(() => {
     if (!coverageOverlay || coverageVizMode !== "relay") return null;
@@ -2653,7 +2660,7 @@ export function MapView({
   }, [selectionCount]);
   useEffect(() => {
     if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay")) return;
-    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
+    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "contours");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
@@ -3113,7 +3120,7 @@ export function MapView({
                   Shows overall coverage strength from your current simulation sites. Think of it as "how good signal
                   should feel if you stand here", using the best available Site signal.
                 </p>
-                <label className="map-inspector-map-setting">
+                <label className="map-inspector-map-setting map-inspector-map-setting-inline">
                   <span>Draw RX target threshold line</span>
                   <input
                     checked={false}
@@ -3124,11 +3131,12 @@ export function MapView({
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>{fmtDbm(signalRange.min)}</span>
-                    <span>{fmtDbm(signalRange.max)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.min ?? signalRange.min)}</span>
+                    <span>{fmtDbm(rxSensitivityTargetDbm)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.max ?? signalRange.max)}</span>
                   </div>
                 </div>
-                <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>
+                <p className="overlay-scale-help">Centered on the RX target, widened to use more of the spectrum for this Simulation.</p>
               </>
             ) : null}
             {coverageVizMode === "weakest" ? (
@@ -3140,17 +3148,18 @@ export function MapView({
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>{fmtDbm(weakestSignalRange.min)}</span>
-                    <span>{fmtDbm(weakestSignalRange.max)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.min ?? weakestSignalRange.min)}</span>
+                    <span>{fmtDbm(rxSensitivityTargetDbm)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.max ?? weakestSignalRange.max)}</span>
                   </div>
                 </div>
-                <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>
+                <p className="overlay-scale-help">Centered on the RX target, widened to use more of the spectrum for this Simulation.</p>
               </>
             ) : null}
             {coverageVizMode === "contours" ? (
               <>
                 <p>Shows the fixed-scale Heatmap with a line where best available Site signal crosses the Simulation RX target.</p>
-                <label className="map-inspector-map-setting">
+                <label className="map-inspector-map-setting map-inspector-map-setting-inline">
                   <span>Draw RX target threshold line</span>
                   <input
                     checked
@@ -3161,11 +3170,12 @@ export function MapView({
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>{fmtDbm(rxSensitivityTargetDbm)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.min ?? rxSensitivityTargetDbm - 20)}</span>
                     <span>RX target</span>
+                    <span>{fmtDbm(coverageScaleRange?.max ?? rxSensitivityTargetDbm + 30)}</span>
                   </div>
                 </div>
-                <p className="overlay-scale-help">Areas inside the line meet or exceed the configured RX target.</p>
+                <p className="overlay-scale-help">The line is the pass/fail threshold; the heatmap shows relative signal shape around it.</p>
               </>
             ) : null}
             {coverageVizMode === "passfail" ? (
