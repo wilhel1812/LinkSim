@@ -136,4 +136,5 @@ export type CoverageSample = {
   lat: number;
   lon: number;
   valueDbm: number;
+  weakestDbm?: number;
 };
