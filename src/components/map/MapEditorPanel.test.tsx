@@ -210,6 +210,82 @@ describe("MapEditorPanel", () => {
     expect(await screen.findByText("Change Log · Mesh Plan")).toBeInTheDocument();
   });
 
+  it("shows Simulation settings summary and enables override editing from the edit action", async () => {
+    useAppStore.setState({
+      selectedFrequencyPresetId: "custom",
+      rxSensitivityTargetDbm: -130,
+      autoPropagationEnvironment: true,
+      networks: [
+        {
+          id: "network-1",
+          name: "Primary Network",
+          frequencyMHz: 869.618,
+          frequencyOverrideMHz: 869.618,
+          bandwidthKhz: 62,
+          spreadFactor: 8,
+          codingRate: 5,
+          regionCode: "EU_868",
+          memberships: [],
+        },
+      ],
+      selectedNetworkId: "network-1",
+      simulationPresets: [
+        {
+          id: "sim-1",
+          name: "Mesh Plan",
+          description: "Shared plan",
+          visibility: "shared",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          createdByUserId: "owner-1",
+          createdByName: "Owner User",
+          createdByAvatarUrl: "",
+          lastEditedByUserId: "editor-1",
+          lastEditedByName: "Editor User",
+          lastEditedByAvatarUrl: "",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [],
+            links: [],
+            systems: [],
+            networks: [],
+            selectedSiteId: "",
+            selectedLinkId: "",
+            selectedNetworkId: "",
+            selectedCoverageResolution: "24",
+            propagationModel: "ITM",
+            selectedFrequencyPresetId: "custom",
+            rxSensitivityTargetDbm: -130,
+            environmentLossDb: 0,
+            propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true,
+            terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: {
+        kind: "simulation",
+        resourceId: "sim-1",
+        isNew: false,
+        label: "Mesh Plan",
+        anchorRect,
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByText("Simulation settings")).toBeInTheDocument();
+    expect(screen.getByText("869.618 MHz · 62 kHz · SF8 · CR5 · Region EU_868 · RX -130 dBm · Auto environment")).toBeInTheDocument();
+    expect(screen.queryByText("This Simulation inherits the owner's account defaults for channel, RX target, and environment.")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Frequency (MHz)")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Override Simulation settings" }));
+
+    expect(screen.getByLabelText("Frequency (MHz)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use inherited defaults" })).toBeInTheDocument();
+  });
+
   it("keeps the editor open when new site creation fails", async () => {
     const addSiteLibraryEntry = vi.fn(() => "");
     const insertSiteFromLibrary = vi.fn();

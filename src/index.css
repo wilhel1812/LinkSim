@@ -608,6 +608,29 @@ button {
   flex-shrink: 0;
 }
 
+.simulation-settings-block {
+  display: grid;
+  gap: 6px;
+}
+
+.simulation-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.simulation-settings-summary {
+  margin: 0;
+}
+
+.simulation-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* Upload label piggybacks off btn-ghost; only overrides live here */
 .upload-button {
   border-style: dashed;
