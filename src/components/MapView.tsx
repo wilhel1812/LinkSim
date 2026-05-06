@@ -1825,9 +1825,9 @@ export function MapView({
   const targetContourFeatures = useMemo(
     () =>
       coverageVizMode === "contours"
-        ? buildCoverageTargetContourFeatures(samplesForOverlay, rxSensitivityTargetDbm, overlayBounds)
+        ? buildCoverageTargetContourFeatures(samplesForOverlay, rxSensitivityTargetDbm, overlayBounds, overlayPointMask)
         : { type: "FeatureCollection" as const, features: [] },
-    [coverageVizMode, overlayBounds, rxSensitivityTargetDbm, samplesForOverlay],
+    [coverageVizMode, overlayBounds, overlayPointMask, rxSensitivityTargetDbm, samplesForOverlay],
   );
   const showTargetContourLine = coverageVizMode === "contours" && targetContourFeatures.features.length > 0;
 
@@ -3113,24 +3113,14 @@ export function MapView({
                   Shows overall coverage strength from your current simulation sites. Think of it as "how good signal
                   should feel if you stand here", using the best available Site signal.
                 </p>
-                <div className="overlay-inline-controls">
-                  <span>Style</span>
-                  <div className="chip-group">
-                    <MapControlButton
-                      isSelected
-                      onClick={() => setCoverageVizMode("heatmap")}
-                      variant="labeled"
-                    >
-                      Smooth
-                    </MapControlButton>
-                    <MapControlButton
-                      onClick={() => setCoverageVizMode("contours")}
-                      variant="labeled"
-                    >
-                      Target Line
-                    </MapControlButton>
-                  </div>
-                </div>
+                <label className="map-inspector-map-setting">
+                  <span>Draw RX target threshold line</span>
+                  <input
+                    checked={false}
+                    onChange={(event) => setCoverageVizMode(event.currentTarget.checked ? "contours" : "heatmap")}
+                    type="checkbox"
+                  />
+                </label>
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
@@ -3160,24 +3150,14 @@ export function MapView({
             {coverageVizMode === "contours" ? (
               <>
                 <p>Shows the fixed-scale Heatmap with a line where best available Site signal crosses the Simulation RX target.</p>
-                <div className="overlay-inline-controls">
-                  <span>Style</span>
-                  <div className="chip-group">
-                    <MapControlButton
-                      onClick={() => setCoverageVizMode("heatmap")}
-                      variant="labeled"
-                    >
-                      Smooth
-                    </MapControlButton>
-                    <MapControlButton
-                      isSelected
-                      onClick={() => setCoverageVizMode("contours")}
-                      variant="labeled"
-                    >
-                      Target Line
-                    </MapControlButton>
-                  </div>
-                </div>
+                <label className="map-inspector-map-setting">
+                  <span>Draw RX target threshold line</span>
+                  <input
+                    checked
+                    onChange={(event) => setCoverageVizMode(event.currentTarget.checked ? "contours" : "heatmap")}
+                    type="checkbox"
+                  />
+                </label>
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">

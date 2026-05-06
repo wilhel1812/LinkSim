@@ -29,4 +29,34 @@ describe("buildCoverageTargetContourFeatures", () => {
       [0.5, 1],
     ]);
   });
+
+  it("stitches adjacent contour segments into a continuous line", () => {
+    const samples: CoverageSampleLite[] = [
+      { lat: 0, lon: 0, valueDbm: -130 },
+      { lat: 0, lon: 1, valueDbm: -110 },
+      { lat: 0, lon: 2, valueDbm: -110 },
+      { lat: 1, lon: 0, valueDbm: -130 },
+      { lat: 1, lon: 1, valueDbm: -110 },
+      { lat: 1, lon: 2, valueDbm: -110 },
+      { lat: 2, lon: 0, valueDbm: -130 },
+      { lat: 2, lon: 1, valueDbm: -110 },
+      { lat: 2, lon: 2, valueDbm: -110 },
+    ];
+
+    const contour = buildCoverageTargetContourFeatures(samples, -120);
+
+    expect(contour.features).toHaveLength(1);
+    expect(contour.features[0].geometry.coordinates.length).toBeGreaterThan(3);
+  });
+
+  it("clips segments outside the supplied point mask", () => {
+    const contour = buildCoverageTargetContourFeatures(
+      grid([-130, -110, -130, -110]),
+      -120,
+      null,
+      (lat) => lat <= 0.5,
+    );
+
+    expect(contour.features).toHaveLength(0);
+  });
 });
