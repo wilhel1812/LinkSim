@@ -260,7 +260,6 @@ type TerrainBounds = {
   maxLon: number;
 };
 type CoverageSampleLite = { lat: number; lon: number; valueDbm: number; weakestDbm?: number };
-type BandStepMode = "auto" | 3 | 5 | 8 | 10;
 type OverlayRaster = {
   url: string;
   coordinates: [[number, number], [number, number], [number, number], [number, number]];
@@ -427,29 +426,6 @@ const boundsDiagonalKm = (bounds: TerrainBounds): number => {
     111.32 *
     Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
   return Math.hypot(latSpanKm, lonSpanKm);
-};
-
-const autoBandStepDb = (samples: CoverageSampleLite[], bounds: TerrainBounds): 3 | 5 | 8 | 10 => {
-  if (samples.length < 2) return 5;
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  for (const sample of samples) {
-    min = Math.min(min, sample.valueDbm);
-    max = Math.max(max, sample.valueDbm);
-  }
-  const dynamicRange = Math.max(0, max - min);
-  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-  const latSpanKm = Math.abs(bounds.maxLat - bounds.minLat) * 111.32;
-  const lonSpanKm =
-    Math.abs(bounds.maxLon - bounds.minLon) *
-    111.32 *
-    Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
-  const diagonalKm = Math.hypot(latSpanKm, lonSpanKm);
-
-  if (diagonalKm > 90 || dynamicRange > 45) return 10;
-  if (diagonalKm > 45 || dynamicRange > 30) return 8;
-  if (diagonalKm > 20 || dynamicRange > 18) return 5;
-  return 3;
 };
 
 const computeOverlayDimensions = (
@@ -761,7 +737,6 @@ export function MapView({
   const recommendAndFetchTerrainForCurrentArea = useAppStore((state) => state.recommendAndFetchTerrainForCurrentArea);
   const selectedOverlayRadiusOption = useAppStore((state) => state.selectedOverlayRadiusOption);
   const setSelectedOverlayRadiusOption = useAppStore((state) => state.setSelectedOverlayRadiusOption);
-  const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
   const [showSimulationSummary, setShowSimulationSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewSimSummary, false));
@@ -1417,10 +1392,7 @@ export function MapView({
       };
     });
   }, [overlayBounds]);
-  const effectiveBandStepDb = useMemo(() => {
-    if (!overlayBounds) return 5;
-    return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, overlayBounds) : bandStepMode;
-  }, [overlayBounds, samplesForOverlay, bandStepMode]);
+  const effectiveBandStepDb = 5;
   const overlayLongTaskWarnedRef = useRef<Set<string>>(new Set());
   const showOverlayDiagnostics =
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
@@ -1672,6 +1644,7 @@ export function MapView({
               overlayPointMask,
               terrainSampler,
               context,
+              { rxTargetDbm: rxSensitivityTargetDbm },
             );
           } else if (mode === "passfail") {
             const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite!.antennaHeightM ?? 2;
@@ -1805,8 +1778,6 @@ export function MapView({
     setOverlayPipelineProgress,
     logOverlaySchedulerEvent,
   ]);
-  const currentBandStepDb = effectiveBandStepDb;
-
   const signalRange = useMemo(() => {
     if (!samplesForOverlay.length) return { min: -125, max: -62 };
     let min = Number.POSITIVE_INFINITY;
@@ -1841,7 +1812,7 @@ export function MapView({
       : coverageVizMode === "heatmap"
       ? "Heatmap"
       : coverageVizMode === "contours"
-        ? "Bands"
+        ? "Target Contour"
         : coverageVizMode === "weakest"
           ? "Weakest Site"
         : coverageVizMode === "passfail"
@@ -3037,7 +3008,7 @@ export function MapView({
                   <option value="none">Hidden</option>
                   {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
                   {allowedOverlayModes.includes("weakest") ? <option value="weakest">Weakest Site</option> : null}
-                  {allowedOverlayModes.includes("contours") ? <option value="contours">Contours</option> : null}
+                  {allowedOverlayModes.includes("contours") ? <option value="contours">Target Contour</option> : null}
                   {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
                   {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
                 </select>
@@ -3126,7 +3097,7 @@ export function MapView({
                       onClick={() => setCoverageVizMode("contours")}
                       variant="labeled"
                     >
-                      Bands
+                      Target Line
                     </MapControlButton>
                   </div>
                 </div>
@@ -3158,7 +3129,7 @@ export function MapView({
             ) : null}
             {coverageVizMode === "contours" ? (
               <>
-                <p>Same data as Heatmap, but grouped into steps so boundaries are easier to read.</p>
+                <p>Shows the line where best available Site signal crosses the Simulation RX target.</p>
                 <div className="overlay-inline-controls">
                   <span>Style</span>
                   <div className="chip-group">
@@ -3173,42 +3144,18 @@ export function MapView({
                       onClick={() => setCoverageVizMode("contours")}
                       variant="labeled"
                     >
-                      Bands
+                      Target Line
                     </MapControlButton>
                   </div>
-                </div>
-                <div className="overlay-inline-controls">
-                  <span>Band step</span>
-                  <select
-                    className="locale-select"
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (value === "auto") {
-                        setBandStepMode("auto");
-                        return;
-                      }
-                      const parsed = Number(value);
-                      if (parsed === 3 || parsed === 5 || parsed === 8 || parsed === 10) {
-                        setBandStepMode(parsed);
-                      }
-                    }}
-                    value={String(bandStepMode)}
-                  >
-                    <option value="auto">Auto ({currentBandStepDb} dB)</option>
-                    <option value="3">3 dB</option>
-                    <option value="5">5 dB</option>
-                    <option value="8">8 dB</option>
-                    <option value="10">10 dB</option>
-                  </select>
                 </div>
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>{fmtDbm(signalRange.min)}</span>
-                    <span>{fmtDbm(signalRange.max)}</span>
+                    <span>{fmtDbm(rxSensitivityTargetDbm)}</span>
+                    <span>RX target</span>
                   </div>
                 </div>
-                <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>
+                <p className="overlay-scale-help">Areas inside the line meet or exceed the configured RX target.</p>
               </>
             ) : null}
             {coverageVizMode === "passfail" ? (
