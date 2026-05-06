@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCoverageOverlayPixelsAsync,
+  computeCoverageRxTargetScale,
   normalizeCoverageDbmForRxTarget,
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
@@ -69,9 +70,41 @@ const terrainSampler = () => 135;
 
 describe("overlayRaster async builders", () => {
   it("normalizes coverage colors against the RX target instead of sample min/max", () => {
-    expect(normalizeCoverageDbmForRxTarget(-140, -120)).toBe(0);
-    expect(normalizeCoverageDbmForRxTarget(-120, -120)).toBeCloseTo(0.4, 4);
-    expect(normalizeCoverageDbmForRxTarget(-90, -120)).toBe(1);
+    const scale = { min: -150, max: -90 };
+    expect(normalizeCoverageDbmForRxTarget(-150, -120, scale)).toBe(0);
+    expect(normalizeCoverageDbmForRxTarget(-120, -120, scale)).toBeCloseTo(0.5, 4);
+    expect(normalizeCoverageDbmForRxTarget(-90, -120, scale)).toBe(1);
+  });
+
+  it("centers the RX target scale while widening to observed signal distribution", () => {
+    const scale = computeCoverageRxTargetScale(
+      [
+        { lat: 0, lon: 0, valueDbm: -150 },
+        { lat: 0, lon: 1, valueDbm: -190 },
+        { lat: 1, lon: 0, valueDbm: -125 },
+        { lat: 1, lon: 1, valueDbm: -85 },
+      ],
+      -120,
+    );
+
+    expect(scale).toEqual({ min: -175, max: -65 });
+  });
+
+  it("reports the target-centered heatmap scale for the legend", async () => {
+    const raster = await buildCoverageOverlayPixelsAsync(
+      bounds,
+      samples,
+      "heatmap",
+      5,
+      { width: 16, height: 10 },
+      undefined,
+      terrainSampler,
+      { phase: "coverage", signature: "legend-scale-test" },
+      { rxTargetDbm: -100 },
+    );
+
+    expect(raster?.minDbm).toBeCloseTo(-125, 4);
+    expect(raster?.maxDbm).toBeCloseTo(-75, 4);
   });
 
   it("builds coverage raster pixels with expected metadata shape", async () => {

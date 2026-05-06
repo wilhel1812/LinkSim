@@ -1201,10 +1201,10 @@ const sameSiteSelection = (left: string[], right: string[]): boolean => {
 };
 
 const defaultOverlayModeForSelectionCount = (selectionCount: number): MapOverlayMode => {
-  if (selectionCount <= 0) return "heatmap";
+  if (selectionCount <= 0) return "contours";
   if (selectionCount === 1) return "passfail";
   if (selectionCount === 2) return "relay";
-  return "heatmap";
+  return "contours";
 };
 
 const applyDefaultsToScenarioNetworks = (networks: Network[], defaults: SimulationDefaults): Network[] =>
@@ -1319,7 +1319,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showSiteLibraryRequest: false,
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
-  mapOverlayMode: "heatmap",
+  mapOverlayMode: "contours",
   discoveryLibraryVisible: false,
   discoveryMqttVisible: false,
   mapDiscoveryMqttNodes: [],
