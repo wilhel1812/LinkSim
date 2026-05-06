@@ -259,7 +259,7 @@ type TerrainBounds = {
   minLon: number;
   maxLon: number;
 };
-type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
+type CoverageSampleLite = { lat: number; lon: number; valueDbm: number; weakestDbm?: number };
 type BandStepMode = "auto" | 3 | 5 | 8 | 10;
 type OverlayRaster = {
   url: string;
@@ -1655,11 +1655,18 @@ export function MapView({
             onProgress,
           } as const;
           let rasterPixels: OverlayRasterPixels | null = null;
-          if (mode === "heatmap" || mode === "contours") {
+          if (mode === "heatmap" || mode === "contours" || mode === "weakest") {
+            const overlaySamples =
+              mode === "weakest"
+                ? samplesForOverlay.map((sample) => ({
+                    ...sample,
+                    valueDbm: sample.weakestDbm ?? sample.valueDbm,
+                  }))
+                : samplesForOverlay;
             rasterPixels = await buildCoverageOverlayPixelsAsync(
               overlayBounds,
-              samplesForOverlay,
-              mode,
+              overlaySamples,
+              mode === "weakest" ? "heatmap" : mode,
               effectiveBandStepDb,
               overlayDimensions,
               overlayPointMask,
@@ -1811,6 +1818,18 @@ export function MapView({
     return { min, max };
   }, [samplesForOverlay]);
 
+  const weakestSignalRange = useMemo(() => {
+    if (!samplesForOverlay.length) return { min: -125, max: -62 };
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const sample of samplesForOverlay) {
+      const value = sample.weakestDbm ?? sample.valueDbm;
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    }
+    return { min, max };
+  }, [samplesForOverlay]);
+
   const relayRange = useMemo(() => {
     if (!coverageOverlay || coverageVizMode !== "relay") return null;
     if (typeof coverageOverlay.minDbm !== "number" || typeof coverageOverlay.maxDbm !== "number") return null;
@@ -1823,6 +1842,8 @@ export function MapView({
       ? "Heatmap"
       : coverageVizMode === "contours"
         ? "Bands"
+        : coverageVizMode === "weakest"
+          ? "Weakest Site"
         : coverageVizMode === "passfail"
           ? "Pass/Fail"
           : "Relay";
@@ -2623,21 +2644,17 @@ export function MapView({
     fitChromePadding.top,
     fitChromePadding.bottom,
   ]);
-  const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "passfail" | "relay">>(() => {
-    if (selectionCount <= 0) return ["none", "heatmap", "contours"];
-    if (selectionCount === 1) return ["none", "passfail", "heatmap", "contours"];
-    if (selectionCount === 2) return ["none", "relay", "heatmap", "contours"];
-    return ["none", "heatmap", "contours"];
+  const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay">>(() => {
+    if (selectionCount <= 0) return ["none", "heatmap", "weakest", "contours"];
+    if (selectionCount === 1) return ["none", "passfail", "heatmap", "weakest", "contours"];
+    if (selectionCount === 2) return ["none", "relay", "heatmap", "weakest", "contours"];
+    return ["none", "heatmap", "weakest", "contours"];
   }, [selectionCount]);
   useEffect(() => {
-    if (coverageVizMode === "heatmap") {
-      setCoverageVizMode("contours");
-      return;
-    }
-    if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "passfail" | "relay")) return;
-    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "contours");
+    if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay")) return;
+    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
-  const simulationOverlaySelectValue = coverageVizMode === "contours" ? "heatmap" : coverageVizMode;
+  const simulationOverlaySelectValue = coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
     showDiscoveryMqtt ? "mqtt" : showDiscoverySites ? "library" : "simulation";
   const selectedSite = selectedSites[0] ?? null;
@@ -3004,7 +3021,7 @@ export function MapView({
                 <select
                   className="locale-select"
                   onChange={(event) => {
-                    const mode = event.target.value as "none" | "heatmap" | "contours" | "passfail" | "relay";
+                    const mode = event.target.value as "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay";
                     if (mode === "heatmap") {
                       setCoverageVizMode("heatmap");
                       return;
@@ -3019,6 +3036,7 @@ export function MapView({
                 >
                   <option value="none">Hidden</option>
                   {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
+                  {allowedOverlayModes.includes("weakest") ? <option value="weakest">Weakest Site</option> : null}
                   {allowedOverlayModes.includes("contours") ? <option value="contours">Contours</option> : null}
                   {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
                   {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
@@ -3092,7 +3110,7 @@ export function MapView({
               <>
                 <p>
                   Shows overall coverage strength from your current simulation sites. Think of it as "how good signal
-                  should feel if you stand here".
+                  should feel if you stand here", using the best available Site signal.
                 </p>
                 <div className="overlay-inline-controls">
                   <span>Style</span>
@@ -3117,6 +3135,22 @@ export function MapView({
                   <div className="overlay-scale-labels">
                     <span>{fmtDbm(signalRange.min)}</span>
                     <span>{fmtDbm(signalRange.max)}</span>
+                  </div>
+                </div>
+                <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>
+              </>
+            ) : null}
+            {coverageVizMode === "weakest" ? (
+              <>
+                <p>
+                  Shows the weakest signal from this point to any Site in the Simulation. Use this when the point must
+                  be able to reach every Site, not just the nearest or strongest one.
+                </p>
+                <div className="overlay-scale">
+                  <div className="overlay-scale-bar" />
+                  <div className="overlay-scale-labels">
+                    <span>{fmtDbm(weakestSignalRange.min)}</span>
+                    <span>{fmtDbm(weakestSignalRange.max)}</span>
                   </div>
                 </div>
                 <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>

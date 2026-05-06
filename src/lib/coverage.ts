@@ -242,9 +242,10 @@ export const buildCoverage = (
       })
       .filter((v): v is number => v !== null);
 
-    const valueDbm = rxLevels.length ? Math.min(...rxLevels) : -140;
+    const valueDbm = rxLevels.length ? Math.max(...rxLevels) : -140;
+    const weakestDbm = rxLevels.length ? Math.min(...rxLevels) : -140;
 
-    results.push({ ...sample, valueDbm });
+    results.push({ ...sample, valueDbm, weakestDbm });
     if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
       onProgress?.((i + 1) / total);
     }
@@ -327,9 +328,10 @@ export const buildCoverageAsync = async (
       })
       .filter((v): v is number => v !== null);
 
-    const valueDbm = rxLevels.length ? Math.min(...rxLevels) : -140;
+    const valueDbm = rxLevels.length ? Math.max(...rxLevels) : -140;
+    const weakestDbm = rxLevels.length ? Math.min(...rxLevels) : -140;
 
-    results.push({ ...sample, valueDbm });
+    results.push({ ...sample, valueDbm, weakestDbm });
     if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
       onProgress?.((i + 1) / total);
     }

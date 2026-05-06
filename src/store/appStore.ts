@@ -257,7 +257,7 @@ const adoptOrphanedSimulations = (
   return fixed;
 };
 
-export type MapOverlayMode = "none" | "heatmap" | "contours" | "passfail" | "relay";
+export type MapOverlayMode = "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay";
 export type AuthSessionState = "checking" | "signed_in" | "signed_out";
 
 type SiteLibraryEntry = {
