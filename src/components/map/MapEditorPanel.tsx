@@ -213,7 +213,7 @@ function SiteEditorCard({
   onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
-  const isReadOnly = !form.canWrite && !isNew;
+  const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
   const title = isNew ? "New Site" : (mapEditor?.label ?? form.nameDraft);
 
   return (
@@ -669,7 +669,7 @@ function SimulationEditorCard({
   onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
-  const isReadOnly = !form.canWrite && !isNew;
+  const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
   const title = isNew ? "New Simulation" : (mapEditor?.label ?? form.nameDraft);
   const simulationDefaultsSummary = [
     `${form.simulationDefaultsDraft.frequencyMHz} MHz`,
