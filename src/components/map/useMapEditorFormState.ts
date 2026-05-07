@@ -8,6 +8,7 @@ import { fetchElevations } from "../../lib/elevationService";
 import { searchLocations, type GeocodeResult } from "../../lib/geocode";
 import { sampleSrtmElevation } from "../../lib/srtm";
 import { getUiErrorMessage } from "../../lib/uiError";
+import { hasDuplicateSimulationNameForOwner } from "../../lib/simulationNameValidation";
 import { useAppStore } from "../../store/appStore";
 import type { CollaboratorDirectoryUser } from "../../lib/cloudUser";
 import type { AccessRole, AccessVisibility } from "../AccessSettingsEditor";
@@ -88,6 +89,9 @@ export function useMapEditorFormState() {
   const [simulationDefaultsDraft, setSimulationDefaultsDraft] = useState<SimulationDefaults>(() =>
     normalizeSimulationDefaults(null),
   );
+  const [simulationNameError, setSimulationNameError] = useState("");
+
+  const setDuplicateSimulationNameError = () => setSimulationNameError("Name must be unique.");
 
   // ─── Link drafts ──────────────────────────────────────────────────────────────
   const [linkNameDraft, setLinkNameDraft] = useState("");
@@ -254,6 +258,28 @@ export function useMapEditorFormState() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapEditor?.kind, mapEditor?.resourceId, mapEditor?.isNew]);
+
+  useEffect(() => {
+    if (mapEditor?.kind !== "simulation") {
+      setSimulationNameError("");
+      return;
+    }
+    const trimmedName = nameDraft.trim();
+    if (!trimmedName || !currentUser?.id) {
+      setSimulationNameError("");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const isDuplicate = hasDuplicateSimulationNameForOwner(
+        simulationPresets,
+        trimmedName,
+        currentUser.id,
+        mapEditor.isNew ? undefined : mapEditor.resourceId ?? undefined,
+      );
+      setSimulationNameError(isDuplicate ? "Name must be unique." : "");
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [currentUser?.id, mapEditor?.isNew, mapEditor?.kind, mapEditor?.resourceId, nameDraft, simulationPresets]);
 
   useEffect(() => {
     if (mapEditor?.kind !== "site" || !mapEditorSiteDraft) return;
@@ -620,6 +646,10 @@ export function useMapEditorFormState() {
         setStatus("Cannot create simulation until current user profile is loaded.");
         return false;
       }
+      if (hasDuplicateSimulationNameForOwner(simulationPresets, trimmedName, currentUser.id)) {
+        setDuplicateSimulationNameError();
+        return false;
+      }
       try {
         if (mapEditor.simulationSeed?.copyCurrentSimulation) {
           const createdId = createSimulationCopyFromCurrent(trimmedName, {
@@ -668,6 +698,19 @@ export function useMapEditorFormState() {
     }
 
     if (!mapEditor?.resourceId) return false;
+
+    if (
+      currentSimulationPreset &&
+      hasDuplicateSimulationNameForOwner(
+        simulationPresets,
+        trimmedName,
+        currentSimulationPreset.ownerUserId ?? "",
+        currentSimulationPreset.id,
+      )
+    ) {
+      setDuplicateSimulationNameError();
+      return false;
+    }
 
     // Check for private site refs that would need to be promoted
     if (normalizedVisibility === "shared") {
@@ -839,6 +882,7 @@ export function useMapEditorFormState() {
     simulationDefaultsOverrideEnabled,
     setSimulationDefaultsOverrideEnabled,
     simulationDefaultsDraft,
+    simulationNameError,
     setSimulationDefaultsDraft: (patch: Partial<SimulationDefaults>) =>
       setSimulationDefaultsDraft((current) => normalizeSimulationDefaults({ ...current, ...patch }, current)),
     handleSaveSimulation,

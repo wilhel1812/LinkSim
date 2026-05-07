@@ -571,6 +571,61 @@ describe("MapEditorPanel", () => {
     expect(state.links).toHaveLength(1);
   });
 
+  it("shows a field error when creating a duplicate simulation name", async () => {
+    useAppStore.setState({
+      currentUser,
+      simulationPresets: [
+        {
+          id: "sim-1",
+          name: "Grefsen",
+          visibility: "private",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [],
+            links: [],
+            systems: [],
+            networks: [],
+            selectedSiteId: "",
+            selectedLinkId: "",
+            selectedNetworkId: "",
+            selectedCoverageResolution: "24",
+            propagationModel: "ITM",
+            selectedFrequencyPresetId: "custom",
+            rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0,
+            propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true,
+            terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: {
+        kind: "simulation",
+        resourceId: null,
+        isNew: true,
+        label: "New Simulation",
+        anchorRect,
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    const nameInput = await screen.findByLabelText("Name");
+    await userEvent.type(nameInput, "Grefsen");
+
+    expect(await screen.findByText("Name must be unique.")).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute("aria-invalid", "true");
+    expect(nameInput).toHaveClass("input-error");
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Simulation" }));
+
+    expect(screen.getByText("Name must be unique.")).toBeInTheDocument();
+    expect(useAppStore.getState().simulationPresets).toHaveLength(1);
+  });
+
   it("renders read-only link details as static text", async () => {
     useAppStore.setState({
       currentUser,
