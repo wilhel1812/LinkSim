@@ -379,6 +379,45 @@ describe("MapEditorPanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("honors forced read-only site details even when the user can edit the site", async () => {
+    useAppStore.setState({
+      currentUser,
+      siteLibrary: [
+        {
+          id: "site-lib-1",
+          name: "Alpha Site",
+          description: "Editable source",
+          visibility: "shared",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          position: { lat: 60.1, lon: 10.2 },
+          groundElevationM: 111,
+          antennaHeightM: 10,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      mapEditor: {
+        kind: "site",
+        resourceId: "site-lib-1",
+        isNew: false,
+        label: "Alpha Site",
+        anchorRect,
+        readOnly: true,
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByRole("heading", { name: "Alpha Site" })).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Alpha Site")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save Site" })).not.toBeInTheDocument();
+  });
+
   it("renders read-only simulation details as static text", async () => {
     useAppStore.setState({
       simulationPresets: [

@@ -83,12 +83,87 @@ describe("Sidebar read-only simulation site actions", () => {
       selectedSiteId: "site-alpha",
       selectedSiteIds: ["site-alpha"],
       selectedLinkId: "",
+      selectedScenarioId: "sim-alpha",
       siteLibrary: [],
+      simulationPresets: [
+        {
+          id: "sim-alpha",
+          name: "Alpha Simulation",
+          description: "Shared simulation",
+          visibility: "shared",
+          sharedWith: [],
+          effectiveRole: "viewer",
+          ownerUserId: "owner-1",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [
+              {
+                id: "site-alpha",
+                name: "Site Alpha",
+                position: { lat: 60.5, lon: 11.5 },
+                groundElevationM: 120,
+                antennaHeightM: 2,
+                txPowerDbm: 20,
+                txGainDbi: 2,
+                rxGainDbi: 2,
+                cableLossDb: 1,
+              },
+              {
+                id: "site-beta",
+                name: "Site Beta",
+                position: { lat: 60.6, lon: 11.6 },
+                groundElevationM: 130,
+                antennaHeightM: 4,
+                txPowerDbm: 21,
+                txGainDbi: 3,
+                rxGainDbi: 3,
+                cableLossDb: 1,
+              },
+            ],
+            links: [
+              {
+                id: "link-alpha",
+                name: "Alpha Link",
+                fromSiteId: "site-alpha",
+                toSiteId: "site-beta",
+                frequencyMHz: 868,
+              },
+            ],
+            systems: [],
+            networks: [],
+            selectedSiteId: "",
+            selectedLinkId: "",
+            selectedNetworkId: "",
+            selectedCoverageResolution: "24",
+            propagationModel: "ITM",
+            selectedFrequencyPresetId: "custom",
+            rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0,
+            propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true,
+            terrainDataset: "copernicus30",
+          },
+        },
+      ],
     });
   });
 
   it("replaces read-only row edit buttons with view details actions", async () => {
     render(<Sidebar readOnly />);
+
+    const simulationSection = screen.getByText(/Simulation:/).closest("section");
+    expect(simulationSection).not.toBeNull();
+    expect(within(simulationSection as HTMLElement).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+
+    await userEvent.click(within(simulationSection as HTMLElement).getByRole("button", { name: "View details" }));
+
+    expect(useAppStore.getState().mapEditor).toMatchObject({
+      kind: "simulation",
+      resourceId: "sim-alpha",
+      isNew: false,
+      label: "Alpha Simulation",
+      readOnly: true,
+    });
 
     const sitesSection = screen.getByText("Sites").closest("section");
     expect(sitesSection).not.toBeNull();
@@ -109,6 +184,7 @@ describe("Sidebar read-only simulation site actions", () => {
       resourceId: "site-alpha",
       isNew: false,
       label: "Site Alpha",
+      readOnly: true,
     });
 
     const linksSection = screen.getByText("Links").closest("section");
@@ -130,6 +206,7 @@ describe("Sidebar read-only simulation site actions", () => {
       resourceId: "link-alpha",
       isNew: false,
       label: "Alpha Link",
+      readOnly: true,
     });
   });
 
