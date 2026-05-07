@@ -621,6 +621,23 @@ export function useMapEditorFormState() {
         return false;
       }
       try {
+        if (mapEditor.simulationSeed?.copyCurrentSimulation) {
+          const createdId = createSimulationCopyFromCurrent(trimmedName, {
+            description: descriptionDraft.trim() || undefined,
+            frequencyPresetId: simulationFrequencyPresetId,
+            autoPropagationEnvironment: simulationAutoPropagationEnvironment,
+            simulationDefaultsOverrideEnabled,
+            simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
+          });
+          if (!createdId) {
+            setStatus("Failed creating simulation copy. Check the name and try again.");
+            return false;
+          }
+          loadSimulationPreset(createdId);
+          closeMapEditor();
+          return true;
+        }
+
         const createdId = createBlankSimulationPreset(trimmedName, {
           frequencyPresetId: simulationFrequencyPresetId,
           description: descriptionDraft.trim() || undefined,
@@ -677,23 +694,6 @@ export function useMapEditorFormState() {
     }
 
     try {
-      if (mapEditor.simulationSeed?.copyCurrentSimulation) {
-        const createdId = createSimulationCopyFromCurrent(trimmedName, {
-          description: descriptionDraft.trim() || undefined,
-          frequencyPresetId: simulationFrequencyPresetId,
-          autoPropagationEnvironment: simulationAutoPropagationEnvironment,
-          simulationDefaultsOverrideEnabled,
-          simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
-        });
-        if (!createdId) {
-          setStatus("Failed creating simulation copy. Check the name and try again.");
-          return false;
-        }
-        loadSimulationPreset(createdId);
-        closeMapEditor();
-        return true;
-      }
-
       updateSimulationPresetEntry(mapEditor.resourceId, {
         name: trimmedName,
         description: descriptionDraft.trim() || undefined,

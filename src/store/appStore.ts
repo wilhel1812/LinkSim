@@ -2819,26 +2819,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!presetName) return null;
     const state = get();
     if (hasDuplicateSimulationName(state.simulationPresets, presetName)) return null;
-    const activePreset = state.selectedScenarioId
-      ? state.simulationPresets.find((preset) => preset.id === state.selectedScenarioId) ?? null
-      : null;
-    const sourceState =
-      state.sites.length || state.links.length
-        ? state
-        : activePreset
-          ? {
-              ...state,
-              sites: Array.isArray(activePreset.snapshot.sites) ? activePreset.snapshot.sites : [],
-              links: Array.isArray(activePreset.snapshot.links) ? activePreset.snapshot.links : [],
-              systems: Array.isArray(activePreset.snapshot.systems) ? activePreset.snapshot.systems : [],
-              networks: Array.isArray(activePreset.snapshot.networks) ? activePreset.snapshot.networks : [],
-              selectedSiteId: activePreset.snapshot.selectedSiteId ?? state.selectedSiteId,
-              selectedLinkId: activePreset.snapshot.selectedLinkId ?? state.selectedLinkId,
-              selectedNetworkId: activePreset.snapshot.selectedNetworkId ?? state.selectedNetworkId,
-            }
-          : state;
-    const normalized = ensureSitesBackedByLibrary(sourceState.sites, sourceState.siteLibrary);
-    const normalizedLinks = sourceState.links.map((link) =>
+    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
+    const normalizedLinks = state.links.map((link) =>
       stripRedundantLinkRadioOverrides(
         link,
         normalized.sites.find((site) => site.id === link.fromSiteId),
@@ -2846,15 +2828,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     );
     const snapshot: SimulationPreset["snapshot"] = {
-      ...buildSimulationSnapshotFromState(sourceState),
+      ...buildSimulationSnapshotFromState(state),
       sites: normalized.sites,
       links: normalizedLinks,
-      selectedFrequencyPresetId: options?.frequencyPresetId ?? sourceState.selectedFrequencyPresetId,
-      autoPropagationEnvironment: options?.autoPropagationEnvironment ?? sourceState.autoPropagationEnvironment,
+      selectedFrequencyPresetId: options?.frequencyPresetId ?? state.selectedFrequencyPresetId,
+      autoPropagationEnvironment: options?.autoPropagationEnvironment ?? state.autoPropagationEnvironment,
       simulationDefaultsOverrideEnabled:
-        options?.simulationDefaultsOverrideEnabled ?? sourceState.simulationDefaultsOverrideEnabled,
-      simulationDefaultsOverride:
-        options?.simulationDefaultsOverride ?? sourceState.simulationDefaultsOverride ?? undefined,
+        options?.simulationDefaultsOverrideEnabled ?? state.simulationDefaultsOverrideEnabled,
+      simulationDefaultsOverride: options?.simulationDefaultsOverride ?? state.simulationDefaultsOverride ?? undefined,
     };
     set((current) => {
       const mergedLibrary =

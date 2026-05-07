@@ -473,6 +473,104 @@ describe("MapEditorPanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("saves a copy from the copy editor instead of creating a blank simulation", async () => {
+    useAppStore.setState({
+      currentUser,
+      selectedScenarioId: "sim-source",
+      selectedSiteId: "site-a",
+      selectedSiteIds: ["site-a"],
+      selectedLinkId: "link-1",
+      sites: [
+        {
+          id: "site-a",
+          name: "Site A",
+          position: { lat: 1, lon: 2 },
+          groundElevationM: 3,
+          antennaHeightM: 4,
+          txPowerDbm: 5,
+          txGainDbi: 6,
+          rxGainDbi: 7,
+          cableLossDb: 8,
+        },
+        {
+          id: "site-b",
+          name: "Site B",
+          position: { lat: 9, lon: 10 },
+          groundElevationM: 11,
+          antennaHeightM: 12,
+          txPowerDbm: 13,
+          txGainDbi: 14,
+          rxGainDbi: 15,
+          cableLossDb: 16,
+        },
+      ],
+      links: [
+        {
+          id: "link-1",
+          name: "Path A",
+          fromSiteId: "site-a",
+          toSiteId: "site-b",
+          frequencyMHz: 868,
+        },
+      ],
+      simulationPresets: [
+        {
+          id: "sim-source",
+          name: "Grefsen",
+          description: "Source simulation",
+          visibility: "private",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [],
+            links: [],
+            systems: [],
+            networks: [],
+            selectedSiteId: "",
+            selectedLinkId: "",
+            selectedNetworkId: "",
+            selectedCoverageResolution: "24",
+            propagationModel: "ITM",
+            selectedFrequencyPresetId: "custom",
+            rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0,
+            propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true,
+            terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: {
+        kind: "simulation",
+        resourceId: null,
+        isNew: true,
+        label: "Save a copy",
+        anchorRect,
+        simulationSeed: {
+          copyCurrentSimulation: true,
+          name: "Grefsen Copy",
+          description: "Source simulation",
+        },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByRole("heading", { name: "Save a copy" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save a copy" }));
+
+    const state = useAppStore.getState();
+    const copy = state.simulationPresets.find((preset) => preset.name === "Grefsen Copy");
+    expect(copy).toBeTruthy();
+    expect(copy?.snapshot.sites).toHaveLength(2);
+    expect(copy?.snapshot.links).toHaveLength(1);
+    expect(state.selectedScenarioId).toBe(copy?.id);
+    expect(state.sites).toHaveLength(2);
+    expect(state.links).toHaveLength(1);
+  });
+
   it("renders read-only link details as static text", async () => {
     useAppStore.setState({
       currentUser,
