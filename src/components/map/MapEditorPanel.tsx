@@ -670,7 +670,8 @@ function SimulationEditorCard({
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
-  const title = isNew ? "New Simulation" : (mapEditor?.label ?? form.nameDraft);
+  const isCopySimulation = Boolean(mapEditor?.simulationSeed?.copyCurrentSimulation);
+  const title = isNew ? (isCopySimulation ? "Save a copy" : "New Simulation") : (mapEditor?.label ?? form.nameDraft);
   const simulationDefaultsSummary = [
     `${form.simulationDefaultsDraft.frequencyMHz} MHz`,
     `${form.simulationDefaultsDraft.bandwidthKhz} kHz`,
@@ -863,7 +864,7 @@ function SimulationEditorCard({
         <div className="chip-group">
           {!isReadOnly ? (
             <ActionButton onClick={form.handleSaveSimulation} type="button">
-              {isNew ? "Create Simulation" : "Save"}
+              {isNew ? (isCopySimulation ? "Save a copy" : "Create Simulation") : "Save"}
             </ActionButton>
           ) : null}
           <ActionButton onClick={onClose} type="button">

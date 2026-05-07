@@ -120,7 +120,10 @@ export function Sidebar({
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
+  const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
+  const simulationDefaultsOverrideEnabled = useAppStore((state) => state.simulationDefaultsOverrideEnabled);
+  const simulationDefaultsOverride = useAppStore((state) => state.simulationDefaultsOverride);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const scenarioOptions = useAppStore((state) => state.scenarioOptions);
   const locale = useAppStore((state) => state.locale);
@@ -138,7 +141,6 @@ export function Sidebar({
   const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
   const deleteSite = useAppStore((state) => state.deleteSite);
   const deleteLink = useAppStore((state) => state.deleteLink);
-  const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const showNewSimulationRequest = useAppStore((state) => state.showNewSimulationRequest);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
@@ -162,8 +164,6 @@ export function Sidebar({
         : links,
     [hasNonAutoLinks, links],
   );
-  const [newPresetName, setNewPresetName] = useState("");
-  const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
   const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
   const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
   const [siteLibraryFilters, setSiteLibraryFilters] = useState<LibraryFilterState>(() =>
@@ -357,6 +357,27 @@ export function Sidebar({
       readOnly,
     });
   };
+  const openSimulationCopyEditor = (triggerEl?: Element | null) => {
+    const activeSavedPreset = selectedScenarioId ? simulationPresets.find((preset) => preset.id === selectedScenarioId) : null;
+    const baseName = activeSavedPreset?.name ?? simulationDisplayLabel ?? activeSimulationLabel;
+    const suggestedName = baseName && baseName !== "no simulation selected" ? `${baseName} Copy` : "Copy of current simulation";
+    openMapEditor({
+      kind: "simulation",
+      resourceId: null,
+      isNew: true,
+      label: "Save a copy",
+      anchorRect: triggerEl?.getBoundingClientRect() ?? { top: 96, right: 320, bottom: 96, left: 320, width: 0, height: 0 },
+      simulationSeed: {
+        copyCurrentSimulation: true,
+        name: suggestedName,
+        description: activeSavedPreset?.description,
+        frequencyPresetId: selectedFrequencyPresetId,
+        autoPropagationEnvironment,
+        simulationDefaultsOverrideEnabled,
+        simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsOverride : null,
+      },
+    });
+  };
   const collaboratorDirectoryById = useMemo(
     () => new globalThis.Map(resourceCollaboratorDirectory.map((user) => [user.id, user])),
     [resourceCollaboratorDirectory],
@@ -516,21 +537,6 @@ export function Sidebar({
   ) => {
     setDeleteConfirm({ title, message, confirmLabel, onConfirm });
   };
-
-  const saveSimulationAsNew = () => {
-    const trimmed = newPresetName.trim();
-    if (!trimmed) {
-      setSimulationSaveStatus("");
-      return;
-    }
-    const savedId = saveCurrentSimulationPreset(trimmed);
-    if (savedId) {
-      const ref = `saved:${savedId}`;
-      persistSelectedSimulationRef(ref);
-      setSimulationSaveStatus(`Saved copy: ${trimmed}`);
-    }
-    setNewPresetName("");
-  };
   const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const displayLinkName = (linkId: string, linkName?: string) => {
     const trimmedName = linkName?.trim();
@@ -669,8 +675,8 @@ export function Sidebar({
               >
                 New
               </ActionButton>
-              <ActionButton onClick={saveSimulationAsNew} type="button">
-                Duplicate
+              <ActionButton onClick={(event) => openSimulationCopyEditor(event.currentTarget)} type="button">
+                Save a copy
               </ActionButton>
               {selectedSimulationRef.startsWith("saved:") ? (
                 <ActionButton onClick={(e) => openActiveSimulationDetails(e.currentTarget)} type="button">
@@ -682,7 +688,6 @@ export function Sidebar({
             <span className="field-help">Sign in to browse the simulation library.</span>
           )}
         </div>
-        {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
       </section>
 
       <section className="panel-section section-sites">
@@ -1022,6 +1027,10 @@ export function Sidebar({
                   autoPropagationEnvironment,
                 },
               });
+            }}
+            onCopySimulation={(triggerEl) => {
+              setShowSimulationLibraryManager(false);
+              openSimulationCopyEditor(triggerEl);
             }}
           />
         </ModalOverlay>

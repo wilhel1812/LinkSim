@@ -601,6 +601,97 @@ describe("appStore new simulation default frequency preset", () => {
   });
 });
 
+describe("appStore simulation copy", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+    useAppStore.setState({
+      currentUser: {
+        id: "owner-1",
+        username: "owner",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+      },
+      selectedScenarioId: "sim-alpha",
+      selectedFrequencyPresetId: "custom",
+      autoPropagationEnvironment: false,
+      simulationDefaultsOverrideEnabled: false,
+      simulationDefaultsOverride: null,
+      sites: [
+        {
+          id: "site-alpha",
+          name: "Site Alpha",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+        {
+          id: "site-beta",
+          name: "Site Beta",
+          position: { lat: 60.6, lon: 11.6 },
+          groundElevationM: 130,
+          antennaHeightM: 4,
+          txPowerDbm: 21,
+          txGainDbi: 3,
+          rxGainDbi: 3,
+          cableLossDb: 1,
+        },
+      ],
+      links: [
+        {
+          id: "link-alpha",
+          name: "Alpha Link",
+          fromSiteId: "site-alpha",
+          toSiteId: "site-beta",
+          frequencyMHz: 868,
+        },
+      ],
+      siteLibrary: [],
+      simulationPresets: [],
+    });
+  });
+
+  it("creates a private copy with the current sites and links", () => {
+    const createdId = useAppStore
+      .getState()
+      .createSimulationCopyFromCurrent("Copied Session", { description: "Copied from alpha" });
+
+    expect(createdId).toBeTruthy();
+
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created).toMatchObject({
+      name: "Copied Session",
+      description: "Copied from alpha",
+      visibility: "private",
+      sharedWith: [],
+      ownerUserId: "owner-1",
+    });
+    expect(created?.snapshot.sites).toHaveLength(2);
+    expect(created?.snapshot.sites.map((site) => site.name)).toEqual(["Site Alpha", "Site Beta"]);
+    expect(created?.snapshot.links).toHaveLength(1);
+    expect(created?.snapshot.links[0]).toMatchObject({
+      fromSiteId: "site-alpha",
+      toSiteId: "site-beta",
+      name: "Alpha Link",
+    });
+  });
+});
+
 describe("appStore built-in scenario defaults", () => {
   beforeEach(() => {
     storage.mock.clear();

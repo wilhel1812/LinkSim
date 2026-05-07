@@ -461,8 +461,13 @@ type AppState = {
       awaitMapClick?: boolean;
     };
     simulationSeed?: {
+      name?: string;
+      description?: string;
       frequencyPresetId?: string;
       autoPropagationEnvironment?: boolean;
+      copyCurrentSimulation?: boolean;
+      simulationDefaultsOverrideEnabled?: boolean;
+      simulationDefaultsOverride?: SimulationDefaults | null;
     };
     readOnly?: boolean;
   } | null;
@@ -583,6 +588,16 @@ type AppState = {
   deleteSiteLibraryEntry: (entryId: string) => void;
   deleteSiteLibraryEntries: (entryIds: string[]) => void;
   saveCurrentSimulationPreset: (name: string) => string | null;
+  createSimulationCopyFromCurrent: (
+    name: string,
+    options?: {
+      description?: string;
+      frequencyPresetId?: string;
+      autoPropagationEnvironment?: boolean;
+      simulationDefaultsOverrideEnabled?: boolean;
+      simulationDefaultsOverride?: SimulationDefaults | null;
+    },
+  ) => string | null;
   createBlankSimulationPreset: (
     name: string,
     options?: {
@@ -725,6 +740,49 @@ const hasDuplicateSimulationName = (
   if (!target) return false;
   return presets.some((preset) => preset.id !== ignorePresetId && preset.name.trim().toLowerCase() === target);
 };
+
+const buildSimulationSnapshotFromState = (
+  state: Pick<
+    AppState,
+    | "sites"
+    | "links"
+    | "systems"
+    | "networks"
+    | "selectedSiteId"
+    | "selectedLinkId"
+    | "selectedNetworkId"
+    | "selectedCoverageResolution"
+    | "selectedOverlayRadiusOption"
+    | "propagationModel"
+    | "selectedFrequencyPresetId"
+    | "rxSensitivityTargetDbm"
+    | "environmentLossDb"
+    | "propagationEnvironment"
+    | "autoPropagationEnvironment"
+    | "terrainDataset"
+    | "simulationDefaultsOverrideEnabled"
+    | "simulationDefaultsOverride"
+  >,
+): SimulationPreset["snapshot"] => ({
+  sites: state.sites,
+  links: state.links,
+  systems: state.systems,
+  networks: state.networks,
+  selectedSiteId: state.selectedSiteId,
+  selectedLinkId: state.selectedLinkId,
+  selectedNetworkId: state.selectedNetworkId,
+  selectedCoverageResolution: state.selectedCoverageResolution,
+  selectedOverlayRadiusOption: state.selectedOverlayRadiusOption,
+  propagationModel: state.propagationModel,
+  selectedFrequencyPresetId: state.selectedFrequencyPresetId,
+  rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
+  environmentLossDb: state.environmentLossDb,
+  propagationEnvironment: state.propagationEnvironment,
+  autoPropagationEnvironment: state.autoPropagationEnvironment,
+  terrainDataset: state.terrainDataset,
+  simulationDefaultsOverrideEnabled: state.simulationDefaultsOverrideEnabled,
+  simulationDefaultsOverride: state.simulationDefaultsOverride ?? undefined,
+});
 
 const legacyDemoSiteFingerprint = new Set([
   "bislett|59.925000|10.732000",
@@ -2697,25 +2755,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     );
     const snapshot: SimulationPreset["snapshot"] = {
+      ...buildSimulationSnapshotFromState(state),
       sites: normalized.sites,
       links: normalizedLinks,
-      systems: state.systems,
-      networks: state.networks,
-      selectedSiteId: state.selectedSiteId,
-      selectedLinkId: state.selectedLinkId,
-      selectedNetworkId: state.selectedNetworkId,
-      selectedCoverageResolution: state.selectedCoverageResolution,
-      selectedOverlayRadiusOption: state.selectedOverlayRadiusOption,
-      propagationModel: state.propagationModel,
-      selectedFrequencyPresetId: state.selectedFrequencyPresetId,
-      rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
-        environmentLossDb: state.environmentLossDb,
-        propagationEnvironment: state.propagationEnvironment,
-        autoPropagationEnvironment: state.autoPropagationEnvironment,
-        terrainDataset: state.terrainDataset,
-        simulationDefaultsOverrideEnabled: state.simulationDefaultsOverrideEnabled,
-        simulationDefaultsOverride: state.simulationDefaultsOverride ?? undefined,
-      };
+    };
 
     set((current) => {
       const mergedLibrary =
@@ -2765,6 +2808,59 @@ export const useAppStore = create<AppState>((set, get) => ({
         siteLibrary: mergedLibrary,
         sites: normalized.sites,
       };
+    });
+    return get().simulationPresets[0]?.id ?? null;
+  },
+  createSimulationCopyFromCurrent: (name, options) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "createSimulationCopyFromCurrent");
+    if (!user) return null;
+    const presetName = name.trim();
+    if (!presetName) return null;
+    const state = get();
+    if (hasDuplicateSimulationName(state.simulationPresets, presetName)) return null;
+    const normalized = ensureSitesBackedByLibrary(state.sites, state.siteLibrary);
+    const normalizedLinks = state.links.map((link) =>
+      stripRedundantLinkRadioOverrides(
+        link,
+        normalized.sites.find((site) => site.id === link.fromSiteId),
+        normalized.sites.find((site) => site.id === link.toSiteId),
+      ),
+    );
+    const snapshot: SimulationPreset["snapshot"] = {
+      ...buildSimulationSnapshotFromState(state),
+      sites: normalized.sites,
+      links: normalizedLinks,
+      selectedFrequencyPresetId: options?.frequencyPresetId ?? state.selectedFrequencyPresetId,
+      autoPropagationEnvironment: options?.autoPropagationEnvironment ?? state.autoPropagationEnvironment,
+      simulationDefaultsOverrideEnabled:
+        options?.simulationDefaultsOverrideEnabled ?? state.simulationDefaultsOverrideEnabled,
+      simulationDefaultsOverride: options?.simulationDefaultsOverride ?? state.simulationDefaultsOverride ?? undefined,
+    };
+    set((current) => {
+      const nextPreset: SimulationPreset = {
+        id: makeId("sim"),
+        name: presetName,
+        ...(options?.description?.trim() ? { description: options.description.trim() } : {}),
+        slug: slugifyValue(presetName),
+        slugAliases: [],
+        visibility: "private",
+        sharedWith: [],
+        updatedAt: new Date().toISOString(),
+        snapshot,
+        ownerUserId: user.id,
+        createdByUserId: user.id,
+        createdByName: user.username,
+        createdByAvatarUrl: user.avatarUrl ?? "",
+        lastEditedByUserId: user.id,
+        lastEditedByName: user.username,
+        lastEditedByAvatarUrl: user.avatarUrl ?? "",
+        effectiveRole: "owner",
+      };
+      markDirtySim(nextPreset.id);
+      const next = [nextPreset, ...current.simulationPresets];
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
     });
     return get().simulationPresets[0]?.id ?? null;
   },
