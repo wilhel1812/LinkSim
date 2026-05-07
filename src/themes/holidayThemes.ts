@@ -51,6 +51,11 @@ export const resolveEasterWindow = (year: number): HolidayThemeWindow => {
   };
 };
 
+export const resolvePrideWindow = (year: number): HolidayThemeWindow => ({
+  startUtc: new Date(Date.UTC(year, 5, 17)),
+  endUtc: new Date(Date.UTC(year, 5, 27)),
+});
+
 export const toHolidayWindowId = (holidayKey: HolidayTheme["key"], window: HolidayThemeWindow): string => {
   const year = window.startUtc.getUTCFullYear();
   return `${holidayKey}:${year}`;
@@ -63,6 +68,13 @@ const HOLIDAY_THEME_RULES: HolidayThemeRule[] = [
     message: "Happy Easter",
     colorTheme: "yellow",
     resolveWindow: resolveEasterWindow,
+  },
+  {
+    key: "pride",
+    title: "Pride Theme",
+    message: "Happy Pride",
+    colorTheme: "neutral",
+    resolveWindow: resolvePrideWindow,
   },
 ];
 

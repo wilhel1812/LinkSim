@@ -309,7 +309,7 @@ export function AppShell() {
     isInitializingRef.current = isInitializing;
   }, [isInitializing]);
 
-  const { theme, colorTheme, variant } = useThemeVariant();
+  const { theme, colorTheme, variant, activeHolidayTheme } = useThemeVariant();
   const basemapStyleId = useAppStore((state) => state.basemapStyleId);
 
   const resolvedBasemap = useMemo(
@@ -526,11 +526,13 @@ export function AppShell() {
     const root = document.documentElement;
     root.classList.remove("theme-light", "theme-dark");
     root.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
+    if (activeHolidayTheme?.key === "pride") root.dataset.holidayTheme = "pride";
+    else delete root.dataset.holidayTheme;
     for (const [key, value] of Object.entries(variant.cssVars)) {
       root.style.setProperty(key, value);
     }
     root.style.colorScheme = theme;
-  }, [theme, variant]);
+  }, [activeHolidayTheme, theme, variant]);
 
   useEffect(() => {
     if (srtmTilesCount > 0) return;

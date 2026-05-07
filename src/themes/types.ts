@@ -1,7 +1,7 @@
 export type UiThemeMode = "light" | "dark";
-export type UiColorTheme = "blue" | "pink" | "red" | "green" | "yellow";
+export type UiColorTheme = "blue" | "pink" | "red" | "green" | "yellow" | "neutral";
 
-export type HolidayThemeKey = "easter";
+export type HolidayThemeKey = "easter" | "pride";
 
 export type HolidayTheme = {
   key: HolidayThemeKey;
@@ -69,6 +69,7 @@ export type ThemeCompatibilityTokens = Record<
   | "--shadow-elev-2"
   | "--shadow-elev-3"
   | "--shadow-elev-4"
-  | "--shadow-elev-5",
+  | "--shadow-elev-5"
+  | "--holiday-rainbow-border",
   string
 >;

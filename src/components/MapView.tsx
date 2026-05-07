@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Egg, Fullscreen, Locate, LocateFixed, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Locate, LocateFixed, Maximize2, Minimize2, Rainbow, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import { MapControlButton } from "./ui/MapControlButton";
 import { Surface } from "./ui/Surface";
@@ -2800,15 +2800,24 @@ export function MapView({
             <div className="map-inspector-section map-holiday-note" role="status">
               <p className="map-inspector-primary map-holiday-note-title">
                 <span className="map-holiday-note-icons" aria-hidden="true">
-                  <Rabbit size={15} strokeWidth={1.8} />
-                  <Egg size={14} strokeWidth={1.8} />
+                  {activeHolidayTheme.key === "pride" ? (
+                    <>
+                      <Rainbow size={15} strokeWidth={1.8} />
+                      <Rainbow size={14} strokeWidth={1.8} />
+                    </>
+                  ) : (
+                    <>
+                      <Rabbit size={15} strokeWidth={1.8} />
+                      <Egg size={14} strokeWidth={1.8} />
+                    </>
+                  )}
                 </span>
                 {activeHolidayTheme.message}
               </p>
               <p className="map-inspector-line">
                 {isHolidayThemeForced
-                  ? "Easter theme is active this week."
-                  : "Your preferred theme is active for this Easter week."}
+                  ? `${activeHolidayTheme.title} is active this week.`
+                  : `Your preferred theme is active for this ${activeHolidayTheme.key === "pride" ? "Pride week" : "holiday week"}.`}
               </p>
               <span className="map-inline-actions">
                 {isHolidayThemeForced ? (
