@@ -464,6 +464,7 @@ type AppState = {
       frequencyPresetId?: string;
       autoPropagationEnvironment?: boolean;
     };
+    readOnly?: boolean;
   } | null;
   mapEditorSiteDraft: { lat: number; lon: number; groundElevationM: number | null } | null;
   openMapEditor: (payload: NonNullable<AppState["mapEditor"]>) => void;

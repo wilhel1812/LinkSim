@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CircleMinus, Funnel, Handshake, HatGlasses, Pencil } from "lucide-react";
+import { CircleMinus, Funnel, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { t } from "../i18n/locales";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
@@ -48,6 +48,8 @@ import { UserAdminPanel } from "./UserAdminPanel";
 
 const READ_ONLY_SIMULATION_SITE_HELP =
   "Read-only: you need edit permission to add or edit sites in this simulation.";
+const READ_ONLY_VIEW_DETAILS_HELP =
+  "Read-only: you can view this item, but need edit permission to change it.";
 
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
@@ -698,16 +700,35 @@ export function Sidebar({
               >
                 {site.name}
               </button>
-              {!readOnly && (
-                <div className="row-actions">
+              <div className="row-actions">
+                {readOnly ? (
                   <ActionButton
-                    aria-label="Edit site"
+                    aria-label={`View site details: ${site.name}. ${READ_ONLY_VIEW_DETAILS_HELP}`}
                     size="icon"
-                    title="Edit site"
-                    onClick={(e) => openLibraryForSite(site, e.currentTarget)}
+                    title={READ_ONLY_VIEW_DETAILS_HELP}
+                    onClick={(e) => {
+                      openMapEditor({
+                        kind: "site",
+                        resourceId: site.id,
+                        isNew: false,
+                        label: site.name,
+                        anchorRect: e.currentTarget.getBoundingClientRect(),
+                        readOnly: true,
+                      });
+                    }}
                   >
-                    <Pencil aria-hidden="true" strokeWidth={1.8} />
+                    <Info aria-hidden="true" strokeWidth={1.8} />
                   </ActionButton>
+                ) : (
+                  <>
+                    <ActionButton
+                      aria-label="Edit site"
+                      size="icon"
+                      title="Edit site"
+                      onClick={(e) => openLibraryForSite(site, e.currentTarget)}
+                    >
+                      <Pencil aria-hidden="true" strokeWidth={1.8} />
+                    </ActionButton>
                   <ActionButton
                     aria-label="Remove site"
                     disabled={sites.length <= 1}
@@ -724,8 +745,9 @@ export function Sidebar({
                   >
                     <CircleMinus aria-hidden="true" strokeWidth={1.8} />
                   </ActionButton>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -766,12 +788,12 @@ export function Sidebar({
               >
                 <span className="link-title">{displayLinkName(link.id, link.name)}</span>
               </button>
-              {!readOnly && (
-                <div className="row-actions">
+              <div className="row-actions">
+                {readOnly ? (
                   <ActionButton
-                    aria-label="Edit link"
+                    aria-label={`View link details: ${displayLinkName(link.id, link.name)}. ${READ_ONLY_VIEW_DETAILS_HELP}`}
                     size="icon"
-                    title="Edit link"
+                    title={READ_ONLY_VIEW_DETAILS_HELP}
                     onClick={(e) => {
                       openMapEditor({
                         kind: "link",
@@ -779,11 +801,30 @@ export function Sidebar({
                         isNew: false,
                         label: link.name ?? displayLinkName(link.id),
                         anchorRect: e.currentTarget.getBoundingClientRect(),
+                        readOnly: true,
                       });
                     }}
                   >
-                    <Pencil aria-hidden="true" strokeWidth={1.8} />
+                    <Info aria-hidden="true" strokeWidth={1.8} />
                   </ActionButton>
+                ) : (
+                  <>
+                    <ActionButton
+                      aria-label="Edit link"
+                      size="icon"
+                      title="Edit link"
+                      onClick={(e) => {
+                        openMapEditor({
+                          kind: "link",
+                          resourceId: link.id,
+                          isNew: false,
+                          label: link.name ?? displayLinkName(link.id),
+                          anchorRect: e.currentTarget.getBoundingClientRect(),
+                        });
+                      }}
+                    >
+                      <Pencil aria-hidden="true" strokeWidth={1.8} />
+                    </ActionButton>
                   <ActionButton
                     aria-label="Remove link"
                     size="icon"
@@ -798,8 +839,9 @@ export function Sidebar({
                   >
                     <CircleMinus aria-hidden="true" strokeWidth={1.8} />
                   </ActionButton>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>

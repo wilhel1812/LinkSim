@@ -77,6 +77,22 @@ type ResourceMetadata = {
   };
 };
 
+const formatStaticValue = (value: string | number | null | undefined): string => {
+  if (value === null || value === undefined) return "";
+  return String(value);
+};
+
+function StaticField({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="field-grid">
+      <span>{label}</span>
+      <span aria-label={label} className="field-help static-field-value">
+        {formatStaticValue(value)}
+      </span>
+    </div>
+  );
+}
+
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
     <AvatarBadge avatarUrl={avatarUrl} imageClassName="profile-avatar" name={name} />
@@ -197,19 +213,54 @@ function SiteEditorCard({
   onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
+  const isReadOnly = !form.canWrite && !isNew;
+  const title = isNew ? "New Site" : (mapEditor?.label ?? form.nameDraft);
 
   return (
     <>
       <div className="library-manager-header">
-        <h2>{isNew ? "New Site" : `Edit · ${mapEditor?.label ?? "Site"}`}</h2>
+        <h2>{title}</h2>
         <InlineCloseIconButton onClick={onClose} />
       </div>
 
-      {!form.canWrite && !isNew && (
+      {isReadOnly && (
         <p className="field-help warning-text">Read-only: you can view this site but cannot edit it.</p>
       )}
 
-      <fieldset className="resource-edit-fieldset" disabled={!form.canWrite && !isNew}>
+      {isReadOnly ? (
+        <div className="resource-edit-fieldset">
+          <StaticField label="Name" value={form.nameDraft} />
+          <StaticField label="Description" value={form.descriptionDraft} />
+          <StaticField label="Visibility" value={form.accessVisibility} />
+          <StaticField label="Latitude" value={form.latDraft} />
+          <StaticField label="Longitude" value={form.lonDraft} />
+          <StaticField label="Ground elev (m)" value={form.groundDraft} />
+          <div className="beam-visualizer-field-group">
+            <StaticField label="Antenna (m)" value={form.antennaDraft} />
+            <StaticField label="Tx power (dBm)" value={form.txPowerDraft} />
+            {form.separateGain ? (
+              <>
+                <StaticField label="Tx gain (dBi)" value={form.txGainDraft} />
+                <StaticField label="Rx gain (dBi)" value={form.rxGainDraft} />
+              </>
+            ) : (
+              <StaticField label="Gain (dBi)" value={form.txGainDraft} />
+            )}
+            <StaticField label="Separate RX/TX gain" value={form.separateGain ? "Yes" : "No"} />
+            <StaticField label="Cable loss (dB)" value={form.cableLossDraft} />
+          </div>
+          <SiteBeamVisualizer
+            values={{
+              antennaHeightM: form.antennaDraft,
+              txPowerDbm: form.txPowerDraft,
+              txGainDbi: form.txGainDraft,
+              rxGainDbi: form.rxGainDraft,
+              cableLossDb: form.cableLossDraft,
+            }}
+          />
+        </div>
+      ) : (
+      <fieldset className="resource-edit-fieldset">
         <label className="field-grid">
           <span>Name</span>
           <input
@@ -418,17 +469,16 @@ function SiteEditorCard({
           }}
         />
       </fieldset>
+      )}
 
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       <div className="chip-group">
-        <ActionButton
-          disabled={!form.canWrite && !isNew}
-          onClick={form.handleSaveSite}
-          type="button"
-        >
-          {isNew ? "Create Site" : "Save Site"}
-        </ActionButton>
+        {!isReadOnly ? (
+          <ActionButton onClick={form.handleSaveSite} type="button">
+            {isNew ? "Create Site" : "Save Site"}
+          </ActionButton>
+        ) : null}
         <ActionButton onClick={onClose} type="button">
           Cancel
         </ActionButton>
@@ -457,14 +507,37 @@ function LinkEditorCard({
   onClose: () => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
+  const isReadOnly = Boolean(mapEditor?.readOnly && !isNew);
+  const title = isNew ? "New Link" : (mapEditor?.label ?? form.linkNameDraft) || "Link";
+  const fromSiteName = form.sites.find((site) => site.id === form.linkFromSiteId)?.name ?? "";
+  const toSiteName = form.sites.find((site) => site.id === form.linkToSiteId)?.name ?? "";
 
   return (
     <>
       <div className="library-manager-header">
-        <h2>{isNew ? "New Link" : `Edit · ${mapEditor?.label ?? "Link"}`}</h2>
+        <h2>{title}</h2>
         <InlineCloseIconButton onClick={onClose} />
       </div>
 
+      {isReadOnly ? <p className="field-help warning-text">Read-only: you can view this link but cannot edit it.</p> : null}
+
+      {isReadOnly ? (
+        <div className="resource-edit-fieldset">
+          <StaticField label="Link name" value={form.linkNameDraft} />
+          <StaticField label="From site" value={fromSiteName} />
+          <StaticField label="To site" value={toSiteName} />
+          <StaticField label="Override site radio settings" value={form.overrideRadio ? "Yes" : "No"} />
+          {form.overrideRadio ? (
+            <>
+              <StaticField label="Tx power (dBm)" value={form.linkTxPower} />
+              <StaticField label="Tx gain (dBi)" value={form.linkTxGain} />
+              <StaticField label="Rx gain (dBi)" value={form.linkRxGain} />
+              <StaticField label="Cable loss (dB)" value={form.linkCableLoss} />
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <>
       <label className="field-grid">
         <span>Link name</span>
         <input
@@ -561,13 +634,17 @@ function LinkEditorCard({
             </label>
           </>
         ) : null}
+        </>
+      )}
 
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       <div className="chip-group">
-        <ActionButton onClick={form.handleSaveLink} type="button">
-          {isNew ? "Create Link" : "Save Link"}
-        </ActionButton>
+        {!isReadOnly ? (
+          <ActionButton onClick={form.handleSaveLink} type="button">
+            {isNew ? "Create Link" : "Save Link"}
+          </ActionButton>
+        ) : null}
         <ActionButton onClick={onClose} type="button">
           Cancel
         </ActionButton>
@@ -592,6 +669,8 @@ function SimulationEditorCard({
   onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
+  const isReadOnly = !form.canWrite && !isNew;
+  const title = isNew ? "New Simulation" : (mapEditor?.label ?? form.nameDraft);
   const simulationDefaultsSummary = [
     `${form.simulationDefaultsDraft.frequencyMHz} MHz`,
     `${form.simulationDefaultsDraft.bandwidthKhz} kHz`,
@@ -607,15 +686,28 @@ function SimulationEditorCard({
   return (
     <>
       <div className="library-manager-header">
-        <h2>{isNew ? "New Simulation" : `Edit · ${mapEditor?.label ?? "Simulation"}`}</h2>
+        <h2>{title}</h2>
         <InlineCloseIconButton onClick={onClose} />
       </div>
 
-      {!form.canWrite && !isNew && (
+      {isReadOnly && (
         <p className="field-help warning-text">Read-only: you can view this simulation but cannot edit it.</p>
       )}
 
-      <fieldset className="resource-edit-fieldset" disabled={!form.canWrite && !isNew}>
+      {isReadOnly ? (
+        <div className="resource-edit-fieldset">
+          <StaticField label="Name" value={form.nameDraft} />
+          <StaticField label="Description" value={form.descriptionDraft} />
+          <StaticField label="Visibility" value={form.accessVisibility} />
+          <div className="simulation-settings-block">
+            <div className="simulation-settings-header">
+              <span>Simulation settings</span>
+            </div>
+            <p className="field-help simulation-settings-summary">{simulationDefaultsSummary}</p>
+          </div>
+        </div>
+      ) : (
+      <fieldset className="resource-edit-fieldset">
         <label className="field-grid">
           <span>Name</span>
           <input
@@ -745,6 +837,7 @@ function SimulationEditorCard({
           </>
         ) : null}
       </fieldset>
+      )}
 
       {/* Pending visibility confirmation prompt */}
       {form.pendingVisibilityConfirm ? (
@@ -768,9 +861,11 @@ function SimulationEditorCard({
 
       {!form.pendingVisibilityConfirm ? (
         <div className="chip-group">
-          <ActionButton disabled={!form.canWrite} onClick={form.handleSaveSimulation} type="button">
-            {isNew ? "Create Simulation" : "Save"}
-          </ActionButton>
+          {!isReadOnly ? (
+            <ActionButton onClick={form.handleSaveSimulation} type="button">
+              {isNew ? "Create Simulation" : "Save"}
+            </ActionButton>
+          ) : null}
           <ActionButton onClick={onClose} type="button">
             Cancel
           </ActionButton>
