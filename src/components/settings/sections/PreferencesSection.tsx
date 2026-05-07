@@ -122,8 +122,13 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
             <option value="pink">Pink</option>
             <option value="red">Red</option>
             <option value="green">Green</option>
-            {activeHolidayTheme ? (
-              <option value="yellow">{activeHolidayTheme.title.replace(" Theme", "")}</option>
+            {activeHolidayTheme?.key === "pride" ? (
+              <option value="neutral">{activeHolidayTheme.title.replace(" Theme", "")}</option>
+            ) : (
+              <option value="neutral">Neutral</option>
+            )}
+            {activeHolidayTheme && activeHolidayTheme.key !== "pride" ? (
+              <option value={activeHolidayTheme.colorTheme}>{activeHolidayTheme.title.replace(" Theme", "")}</option>
             ) : null}
           </select>
         </div>

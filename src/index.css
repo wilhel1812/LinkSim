@@ -36,6 +36,30 @@
   --surface-muted-opacity: 0.68;
 }
 
+:root[data-holiday-theme="pride"] {
+  --holiday-rainbow-border: repeating-linear-gradient(
+    90deg,
+    #e40303 0 8px,
+    #ff8c00 8px 16px,
+    #ffed00 16px 24px,
+    #008026 24px 32px,
+    #004dff 32px 40px,
+    #750787 40px 48px
+  );
+}
+
+:root.theme-dark[data-holiday-theme="pride"] {
+  --holiday-rainbow-border: repeating-linear-gradient(
+    90deg,
+    #ff5470 0 8px,
+    #ff9f1a 8px 16px,
+    #ffe45c 16px 24px,
+    #34d17a 24px 32px,
+    #4ea0ff 32px 40px,
+    #b46bff 40px 48px
+  );
+}
+
 * {
   box-sizing: border-box;
 }
@@ -2000,6 +2024,28 @@ button {
 .btn-ghost.is-selected {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+:root[data-holiday-theme="pride"] .btn:hover,
+:root[data-holiday-theme="pride"] .btn[aria-pressed="true"],
+:root[data-holiday-theme="pride"] .btn.is-selected,
+:root[data-holiday-theme="pride"] .btn-ghost:hover,
+:root[data-holiday-theme="pride"] .btn-ghost[aria-pressed="true"],
+:root[data-holiday-theme="pride"] .btn-ghost.is-selected,
+:root[data-holiday-theme="pride"] .btn-icon:hover,
+:root[data-holiday-theme="pride"] .btn-icon.is-selected,
+:root[data-holiday-theme="pride"] .ui-gallery-tab-btn[aria-pressed="true"],
+:root[data-holiday-theme="pride"] .map-site-surface.is-selected,
+:root[data-holiday-theme="pride"] .map-holiday-note {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--holiday-rainbow-border) border-box;
+}
+
+:root[data-holiday-theme="pride"] .map-site-surface.is-selected,
+:root[data-holiday-theme="pride"] .map-holiday-note {
+  --surface-pill-border: color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .map-fallback {
