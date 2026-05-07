@@ -1074,12 +1074,10 @@ export function MapView({
       ),
     [sites],
   );
-  const sharedOrPublicLibrarySites = useMemo(
+  const visibleLibrarySites = useMemo(
     () =>
       siteLibrary.filter(
-        (entry) =>
-          (entry.visibility === "shared" || entry.visibility === "public") &&
-          !simulationLibrarySiteIds.has(entry.id),
+        (entry) => !simulationLibrarySiteIds.has(entry.id),
       ),
     [siteLibrary, simulationLibrarySiteIds],
   );
@@ -2668,7 +2666,7 @@ export function MapView({
   const selectedSite = selectedSites[0] ?? null;
   const selectedDiscoveryLibraryEntry =
     selectedDiscoveryLibraryEntryId
-      ? sharedOrPublicLibrarySites.find((entry) => entry.id === selectedDiscoveryLibraryEntryId) ?? null
+      ? visibleLibrarySites.find((entry) => entry.id === selectedDiscoveryLibraryEntryId) ?? null
       : null;
   const selectedLibraryEntry =
     selectedSite?.libraryEntryId
@@ -2706,8 +2704,8 @@ export function MapView({
   if (showDiscoverySites) {
     inspectorLines.push(
       canPersist
-        ? `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`
-        : `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect it.`,
+        ? `Library Sites visible: ${visibleLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`
+        : `Library Sites visible: ${visibleLibrarySites.length}. Click a marker to inspect it.`,
     );
   }
   if (selectedDiscoveryLibraryEntry && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_HELP);
@@ -3520,7 +3518,7 @@ export function MapView({
         })}
 
         {showDiscoverySites
-          ? sharedOrPublicLibrarySites.map((entry) => (
+          ? visibleLibrarySites.map((entry) => (
               <Marker
                 anchor="bottom"
                 key={`discover-site-${entry.id}`}
