@@ -37,6 +37,7 @@ export function useMapEditorFormState() {
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
+  const createSimulationCopyFromCurrent = useAppStore((state) => state.createSimulationCopyFromCurrent);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
@@ -173,18 +174,26 @@ export function useMapEditorFormState() {
       }
     } else if (mapEditor.kind === "simulation") {
       if (mapEditor.isNew) {
-        setNameDraft("");
-        setDescriptionDraft("");
+        const seed = mapEditor.simulationSeed;
+        setNameDraft(seed?.name ?? "");
+        setDescriptionDraft(seed?.description ?? "");
         setAccessVisibility("private");
         setCollaboratorUserIds([]);
         setCollaboratorRoles({});
-        setSimulationFrequencyPresetId(mapEditor.simulationSeed?.frequencyPresetId ?? selectedFrequencyPresetId);
-        setSimulationAutoPropagationEnvironment(
-          mapEditor.simulationSeed?.autoPropagationEnvironment ?? autoPropagationEnvironment,
-        );
-        const inherited = resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId);
-        setSimulationDefaultsOverrideEnabled(false);
-        setSimulationDefaultsDraft(inherited);
+        setSimulationFrequencyPresetId(seed?.frequencyPresetId ?? selectedFrequencyPresetId);
+        setSimulationAutoPropagationEnvironment(seed?.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        if (seed?.copyCurrentSimulation) {
+          setSimulationDefaultsOverrideEnabled(Boolean(seed.simulationDefaultsOverrideEnabled));
+          setSimulationDefaultsDraft(
+            seed.simulationDefaultsOverride
+              ? normalizeSimulationDefaults(seed.simulationDefaultsOverride)
+              : resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId),
+          );
+        } else {
+          const inherited = resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId);
+          setSimulationDefaultsOverrideEnabled(false);
+          setSimulationDefaultsDraft(inherited);
+        }
       } else {
         const preset = simulationPresets.find((p) => p.id === mapEditor.resourceId);
         setNameDraft(preset?.name ?? mapEditor.label);
@@ -668,6 +677,23 @@ export function useMapEditorFormState() {
     }
 
     try {
+      if (mapEditor.simulationSeed?.copyCurrentSimulation) {
+        const createdId = createSimulationCopyFromCurrent(trimmedName, {
+          description: descriptionDraft.trim() || undefined,
+          frequencyPresetId: simulationFrequencyPresetId,
+          autoPropagationEnvironment: simulationAutoPropagationEnvironment,
+          simulationDefaultsOverrideEnabled,
+          simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
+        });
+        if (!createdId) {
+          setStatus("Failed creating simulation copy. Check the name and try again.");
+          return false;
+        }
+        loadSimulationPreset(createdId);
+        closeMapEditor();
+        return true;
+      }
+
       updateSimulationPresetEntry(mapEditor.resourceId, {
         name: trimmedName,
         description: descriptionDraft.trim() || undefined,

@@ -84,6 +84,8 @@ describe("Sidebar read-only simulation site actions", () => {
       selectedSiteIds: ["site-alpha"],
       selectedLinkId: "",
       selectedScenarioId: "sim-alpha",
+      selectedFrequencyPresetId: "meshcore-us-narrow-910525-sf7-bw625-cr5",
+      autoPropagationEnvironment: true,
       siteLibrary: [],
       simulationPresets: [
         {
@@ -155,14 +157,19 @@ describe("Sidebar read-only simulation site actions", () => {
     expect(simulationSection).not.toBeNull();
     expect(within(simulationSection as HTMLElement).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
 
-    await userEvent.click(within(simulationSection as HTMLElement).getByRole("button", { name: "View details" }));
+    await userEvent.click(within(simulationSection as HTMLElement).getByRole("button", { name: "Save a copy" }));
 
     expect(useAppStore.getState().mapEditor).toMatchObject({
       kind: "simulation",
-      resourceId: "sim-alpha",
-      isNew: false,
-      label: "Alpha Simulation",
-      readOnly: true,
+      resourceId: null,
+      isNew: true,
+      label: "Save a copy",
+      simulationSeed: {
+        copyCurrentSimulation: true,
+        name: "Alpha Simulation Copy",
+        description: "Shared simulation",
+        autoPropagationEnvironment: true,
+      },
     });
 
     const sitesSection = screen.getByText("Sites").closest("section");
@@ -207,6 +214,30 @@ describe("Sidebar read-only simulation site actions", () => {
       isNew: false,
       label: "Alpha Link",
       readOnly: true,
+    });
+  });
+
+  it("opens the same copy flow from the simulation library", async () => {
+    render(<Sidebar readOnly />);
+
+    const simulationSection = screen.getByText(/Simulation:/).closest("section");
+    expect(simulationSection).not.toBeNull();
+    await userEvent.click(within(simulationSection as HTMLElement).getByRole("button", { name: "Library" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Simulation Library" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save a copy" }));
+
+    expect(useAppStore.getState().mapEditor).toMatchObject({
+      kind: "simulation",
+      resourceId: null,
+      isNew: true,
+      label: "Save a copy",
+      simulationSeed: {
+        copyCurrentSimulation: true,
+        name: "Alpha Simulation Copy",
+        description: "Shared simulation",
+        autoPropagationEnvironment: true,
+      },
     });
   });
 
