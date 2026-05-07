@@ -2838,6 +2838,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       simulationDefaultsOverride: options?.simulationDefaultsOverride ?? state.simulationDefaultsOverride ?? undefined,
     };
     set((current) => {
+      const mergedLibrary =
+        normalized.addedCount > 0
+          ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
+          : current.siteLibrary;
       const nextPreset: SimulationPreset = {
         id: makeId("sim"),
         name: presetName,
@@ -2860,7 +2864,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       markDirtySim(nextPreset.id);
       const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);
-      return { simulationPresets: next };
+      if (normalized.addedCount > 0) {
+        writeStorage(SITE_LIBRARY_KEY, mergedLibrary);
+      }
+      return {
+        simulationPresets: next,
+        ...(normalized.addedCount > 0 ? { siteLibrary: mergedLibrary } : {}),
+      };
     });
     return get().simulationPresets[0]?.id ?? null;
   },

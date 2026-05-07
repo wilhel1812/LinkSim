@@ -689,6 +689,8 @@ describe("appStore simulation copy", () => {
       toSiteId: "site-beta",
       name: "Alpha Link",
     });
+    expect(useAppStore.getState().siteLibrary).toHaveLength(2);
+    expect(useAppStore.getState().siteLibrary.map((entry) => entry.name)).toEqual(["Site Beta", "Site Alpha"]);
   });
 });
 
