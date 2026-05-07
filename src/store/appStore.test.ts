@@ -691,6 +691,11 @@ describe("appStore simulation copy", () => {
     });
     expect(useAppStore.getState().siteLibrary).toHaveLength(2);
     expect(useAppStore.getState().siteLibrary.map((entry) => entry.name)).toEqual(["Site Beta", "Site Alpha"]);
+
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+    expect(useAppStore.getState().selectedScenarioId).toBe(createdId);
+    expect(useAppStore.getState().sites).toHaveLength(2);
+    expect(useAppStore.getState().links).toHaveLength(1);
   });
 });
 
