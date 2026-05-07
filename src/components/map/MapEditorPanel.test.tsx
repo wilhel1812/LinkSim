@@ -27,13 +27,30 @@ const storage = vi.hoisted(() => {
 });
 
 vi.mock("../../lib/cloudUser", async () => {
-  const actual = await vi.importActual<typeof import("../../lib/cloudUser")>("../../lib/cloudUser");
+  const actual = await vi.importActual<typeof import("../../lib/cloudUser")>(
+    "../../lib/cloudUser",
+  );
   return {
     ...actual,
     fetchCollaboratorDirectory: vi.fn(async () => [
-      { id: "owner-1", username: "Owner User", email: "owner@example.com", avatarUrl: "" },
-      { id: "editor-1", username: "Editor User", email: "editor@example.com", avatarUrl: "" },
-      { id: "collab-1", username: "Collaborator User", email: "collab@example.com", avatarUrl: "" },
+      {
+        id: "owner-1",
+        username: "Owner User",
+        email: "owner@example.com",
+        avatarUrl: "",
+      },
+      {
+        id: "editor-1",
+        username: "Editor User",
+        email: "editor@example.com",
+        avatarUrl: "",
+      },
+      {
+        id: "collab-1",
+        username: "Collaborator User",
+        email: "collab@example.com",
+        avatarUrl: "",
+      },
     ]),
     fetchResourceChanges: vi.fn(async () => [
       {
@@ -82,15 +99,26 @@ const currentUser = {
   updatedAt: null,
 };
 
-const anchorRect = { top: 100, right: 200, bottom: 120, left: 160, width: 40, height: 20 };
+const anchorRect = {
+  top: 100,
+  right: 200,
+  bottom: 120,
+  left: 160,
+  width: 40,
+  height: 20,
+};
 
 describe("MapEditorPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storage.mock.clear();
     useAppStore.setState(useAppStore.getInitialState(), true);
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => window.setTimeout(callback, 0));
-    vi.stubGlobal("cancelAnimationFrame", (id: number) => window.clearTimeout(id));
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+      window.setTimeout(callback, 0),
+    );
+    vi.stubGlobal("cancelAnimationFrame", (id: number) =>
+      window.clearTimeout(id),
+    );
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -144,10 +172,14 @@ describe("MapEditorPanel", () => {
     expect(screen.getByText("Last edited")).toBeInTheDocument();
     expect(screen.queryByText("Editor User")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Open change log" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open change log" }),
+    );
 
     expect(fetchResourceChanges).toHaveBeenCalledWith("site", "site-lib-1");
-    expect(await screen.findByText("Change Log · Alpha Site")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Change Log · Alpha Site"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Moved site")).toBeInTheDocument();
   });
 
@@ -182,7 +214,8 @@ describe("MapEditorPanel", () => {
             selectedFrequencyPresetId: "custom",
             rxSensitivityTargetDbm: -120,
             environmentLossDb: 0,
-            propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            propagationEnvironment:
+              useAppStore.getState().propagationEnvironment,
             autoPropagationEnvironment: true,
             terrainDataset: "copernicus30",
           },
@@ -204,10 +237,14 @@ describe("MapEditorPanel", () => {
     expect(screen.getByText("Last edited")).toBeInTheDocument();
     expect(screen.queryByText("Editor User")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Open change log" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open change log" }),
+    );
 
     expect(fetchResourceChanges).toHaveBeenCalledWith("simulation", "sim-1");
-    expect(await screen.findByText("Change Log · Mesh Plan")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Change Log · Mesh Plan"),
+    ).toBeInTheDocument();
   });
 
   it("shows Simulation settings summary and enables override editing from the edit action", async () => {
@@ -258,7 +295,8 @@ describe("MapEditorPanel", () => {
             selectedFrequencyPresetId: "custom",
             rxSensitivityTargetDbm: -130,
             environmentLossDb: 0,
-            propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            propagationEnvironment:
+              useAppStore.getState().propagationEnvironment,
             autoPropagationEnvironment: true,
             terrainDataset: "copernicus30",
           },
@@ -276,14 +314,183 @@ describe("MapEditorPanel", () => {
     render(<MapEditorPanel isMobile={false} />);
 
     expect(await screen.findByText("Simulation settings")).toBeInTheDocument();
-    expect(screen.getByText("869.618 MHz · 62 kHz · SF8 · CR5 · Region EU_868 · RX -130 dBm · Auto environment")).toBeInTheDocument();
-    expect(screen.queryByText("This Simulation inherits the owner's account defaults for channel, RX target, and environment.")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "869.618 MHz · 62 kHz · SF8 · CR5 · Region EU_868 · RX -130 dBm · Auto environment",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "This Simulation inherits the owner's account defaults for channel, RX target, and environment.",
+      ),
+    ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Frequency (MHz)")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Override Simulation settings" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Override Simulation settings" }),
+    );
 
     expect(screen.getByLabelText("Frequency (MHz)")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Use inherited defaults" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Use inherited defaults" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders read-only site details as static text", async () => {
+    useAppStore.setState({
+      siteLibrary: [
+        {
+          id: "site-lib-1",
+          name: "Alpha Site",
+          description: "",
+          visibility: "shared",
+          sharedWith: [{ userId: "owner-1", role: "viewer" }],
+          ownerUserId: "editor-1",
+          effectiveRole: "viewer",
+          position: { lat: 60.1, lon: 10.2 },
+          groundElevationM: 111,
+          antennaHeightM: 10,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      mapEditor: {
+        kind: "site",
+        resourceId: "site-lib-1",
+        isNew: false,
+        label: "Alpha Site",
+        anchorRect,
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Alpha Site" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Alpha Site")).not.toBeInTheDocument();
+    expect(screen.getByText("60.1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Description")).toHaveTextContent("");
+    expect(
+      screen.queryByRole("button", { name: "Save Site" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders read-only simulation details as static text", async () => {
+    useAppStore.setState({
+      simulationPresets: [
+        {
+          id: "sim-1",
+          name: "Mesh Plan",
+          description: "Shared plan",
+          visibility: "shared",
+          sharedWith: [{ userId: "owner-1", role: "viewer" }],
+          ownerUserId: "editor-1",
+          effectiveRole: "viewer",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [],
+            links: [],
+            systems: [],
+            networks: [],
+            selectedSiteId: "",
+            selectedLinkId: "",
+            selectedNetworkId: "",
+            selectedCoverageResolution: "24",
+            propagationModel: "ITM",
+            selectedFrequencyPresetId: "custom",
+            rxSensitivityTargetDbm: -130,
+            environmentLossDb: 0,
+            propagationEnvironment:
+              useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true,
+            terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: {
+        kind: "simulation",
+        resourceId: "sim-1",
+        isNew: false,
+        label: "Mesh Plan",
+        anchorRect,
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Mesh Plan" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Mesh Plan")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Description")).toHaveTextContent(
+      "Shared plan",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Save" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders read-only link details as static text", async () => {
+    useAppStore.setState({
+      currentUser,
+      sites: [
+        {
+          id: "site-a",
+          name: "Site A",
+          position: { lat: 1, lon: 2 },
+          groundElevationM: 3,
+          antennaHeightM: 4,
+          txPowerDbm: 5,
+          txGainDbi: 6,
+          rxGainDbi: 7,
+          cableLossDb: 8,
+        },
+        {
+          id: "site-b",
+          name: "Site B",
+          position: { lat: 9, lon: 10 },
+          groundElevationM: 11,
+          antennaHeightM: 12,
+          txPowerDbm: 13,
+          txGainDbi: 14,
+          rxGainDbi: 15,
+          cableLossDb: 16,
+        },
+      ],
+      links: [
+        {
+          id: "link-1",
+          name: "Path A",
+          fromSiteId: "site-a",
+          toSiteId: "site-b",
+          frequencyMHz: 868,
+        },
+      ],
+      mapEditor: {
+        kind: "link",
+        resourceId: "link-1",
+        isNew: false,
+        label: "Path A",
+        anchorRect,
+        readOnly: true,
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Path A" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Path A")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("From site")).toHaveTextContent("Site A");
+    expect(screen.getByLabelText("To site")).toHaveTextContent("Site B");
+    expect(
+      screen.queryByRole("button", { name: "Save Link" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the editor open when new site creation fails", async () => {
@@ -312,7 +519,9 @@ describe("MapEditorPanel", () => {
     expect(addSiteLibraryEntry).toHaveBeenCalled();
     expect(updateSiteLibraryEntry).not.toHaveBeenCalled();
     expect(insertSiteFromLibrary).not.toHaveBeenCalled();
-    expect(screen.getByText("Failed creating site. Check the name and try again.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Failed creating site. Check the name and try again."),
+    ).toBeInTheDocument();
     expect(useAppStore.getState().mapEditor).not.toBeNull();
   });
 });
