@@ -38,7 +38,7 @@
 
 :root[data-holiday-theme="pride"] {
   --holiday-rainbow-border: repeating-linear-gradient(
-    90deg,
+    45deg,
     #e40303 0 8px,
     #ff8c00 8px 16px,
     #ffed00 16px 24px,
@@ -50,7 +50,7 @@
 
 :root.theme-dark[data-holiday-theme="pride"] {
   --holiday-rainbow-border: repeating-linear-gradient(
-    90deg,
+    45deg,
     #ff5470 0 8px,
     #ff9f1a 8px 16px,
     #ffe45c 16px 24px,
@@ -3453,6 +3453,13 @@ html.panorama-gesture-lock body {
 .btn-danger {
   border-color: color-mix(in srgb, var(--danger) 78%, var(--border));
   background: var(--danger);
+  color: var(--danger-on);
+}
+
+.btn-danger:hover,
+.btn-danger:focus-visible {
+  border-color: color-mix(in srgb, var(--danger) 90%, var(--border));
+  background: color-mix(in srgb, var(--danger) 88%, var(--surface-2));
   color: var(--danger-on);
 }
 
