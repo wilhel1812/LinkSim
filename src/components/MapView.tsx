@@ -182,7 +182,7 @@ const targetContourHaloLayer = (color: string): LayerProps => ({
   type: "line",
   paint: {
     "line-color": color,
-    "line-width": 5,
+    "line-width": 2.5,
     "line-opacity": 0.82,
   },
 });
@@ -192,7 +192,7 @@ const targetContourLineLayer = (color: string): LayerProps => ({
   type: "line",
   paint: {
     "line-color": color,
-    "line-width": 2.4,
+    "line-width": 1.2,
     "line-opacity": 0.96,
   },
 });
@@ -2660,7 +2660,7 @@ export function MapView({
   }, [selectionCount]);
   useEffect(() => {
     if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay")) return;
-    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "contours");
+    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
@@ -3446,7 +3446,7 @@ export function MapView({
         {showTargetContourLine ? (
           <Source data={targetContourFeatures} id="coverage-target-contour-source" type="geojson">
             <Layer {...targetContourHaloLayer(variant.cssVars["--bg"] ?? linkColor)} />
-            <Layer {...targetContourLineLayer(selectedLinkColor)} />
+            <Layer {...targetContourLineLayer(variant.cssVars["--muted"] ?? selectedLinkColor)} />
           </Source>
         ) : null}
 
