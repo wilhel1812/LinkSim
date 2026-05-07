@@ -712,6 +712,8 @@ function SimulationEditorCard({
         <label className="field-grid">
           <span>Name</span>
           <input
+            aria-invalid={form.simulationNameError ? true : undefined}
+            className={form.simulationNameError ? "input-error" : undefined}
             onChange={(e) => form.setNameDraft(e.target.value)}
             type="text"
             value={form.nameDraft}
@@ -858,6 +860,7 @@ function SimulationEditorCard({
         </div>
       ) : null}
 
+      {form.simulationNameError ? <p className="field-help field-help-error">{form.simulationNameError}</p> : null}
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       {!form.pendingVisibilityConfirm ? (
