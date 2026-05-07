@@ -697,6 +697,88 @@ describe("appStore simulation copy", () => {
     expect(useAppStore.getState().sites).toHaveLength(2);
     expect(useAppStore.getState().links).toHaveLength(1);
   });
+
+  it("copies the active saved simulation snapshot when the live workspace state is empty", () => {
+    useAppStore.setState((state) => ({
+      ...state,
+      selectedScenarioId: "sim-1",
+      sites: [],
+      links: [],
+      selectedSiteId: "",
+      selectedSiteIds: [],
+      selectedLinkId: "",
+      simulationPresets: [
+        {
+          id: "sim-1",
+          name: "Source Session",
+          description: "Original snapshot",
+          visibility: "private",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          snapshot: {
+            sites: [
+              {
+                id: "site-alpha",
+                name: "Site Alpha",
+                position: { lat: 60.5, lon: 11.5 },
+                groundElevationM: 120,
+                antennaHeightM: 2,
+                txPowerDbm: 20,
+                txGainDbi: 2,
+                rxGainDbi: 2,
+                cableLossDb: 1,
+              },
+              {
+                id: "site-beta",
+                name: "Site Beta",
+                position: { lat: 60.6, lon: 11.6 },
+                groundElevationM: 130,
+                antennaHeightM: 4,
+                txPowerDbm: 21,
+                txGainDbi: 3,
+                rxGainDbi: 3,
+                cableLossDb: 1,
+              },
+            ],
+            links: [
+              {
+                id: "link-alpha",
+                name: "Alpha Link",
+                fromSiteId: "site-alpha",
+                toSiteId: "site-beta",
+                frequencyMHz: 868,
+              },
+            ],
+            systems: [],
+            networks: [],
+            selectedSiteId: "site-alpha",
+            selectedLinkId: "link-alpha",
+            selectedNetworkId: "",
+            selectedCoverageResolution: "24",
+            propagationModel: "ITM",
+            selectedFrequencyPresetId: "custom",
+            rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0,
+            propagationEnvironment: state.propagationEnvironment,
+            autoPropagationEnvironment: true,
+            terrainDataset: "copernicus30",
+          },
+        },
+      ],
+    }));
+
+    const createdId = useAppStore.getState().createSimulationCopyFromCurrent("Workspace Copy", {
+      description: "Copied from active preset",
+    });
+
+    expect(createdId).toBeTruthy();
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.snapshot.sites).toHaveLength(2);
+    expect(created?.snapshot.links).toHaveLength(1);
+    expect(created?.snapshot.sites.map((site) => site.name)).toEqual(["Site Alpha", "Site Beta"]);
+  });
 });
 
 describe("appStore built-in scenario defaults", () => {
