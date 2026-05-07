@@ -10,7 +10,9 @@ import {
 import { getUiErrorMessage } from "../../../lib/uiError";
 import { useAppStore } from "../../../store/appStore";
 import { useThemeVariant } from "../../../hooks/useThemeVariant";
-import type { UiColorTheme } from "../../../themes/types";
+import { getHolidayThemeCatalog } from "../../../themes/holidayThemes";
+import { setHolidayThemePreview } from "../../../themes/holidayThemeDev";
+import type { HolidayThemeKey, UiColorTheme } from "../../../themes/types";
 import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicator";
 import { InfoTip } from "../../InfoTip";
 
@@ -33,7 +35,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const setAuthState = useAppStore((state) => state.setAuthState);
-  const { activeHolidayTheme } = useThemeVariant();
+  const { activeHolidayTheme, holidayThemesVisible } = useThemeVariant();
 
   const [presetState, setPresetState] = useState<SelectFieldState>(IDLE_SELECT);
 
@@ -43,6 +45,8 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
     overridePresetDefaults: false,
   };
   const activeDefaults = resolveUserSimulationDefaults(preference, me?.defaultFrequencyPresetId);
+  const holidayThemes = getHolidayThemeCatalog();
+  const selectedColorThemeValue = activeHolidayTheme?.key ? `holiday:${activeHolidayTheme.key}` : uiColorTheme;
 
   const saveSimulationDefaultsPreference = useCallback(
     async (nextPreference: UserSimulationDefaultsPreference) => {
@@ -75,6 +79,19 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
       ...(preference.mode === "custom" ? { custom: nextDefaults } : { overrides: nextDefaults }),
     });
   };
+
+  const setHolidayThemeSelection = (holidayThemeKey: HolidayThemeKey | null) => {
+    setHolidayThemePreview(holidayThemeKey);
+    if (!holidayThemeKey) return;
+    const holidayTheme = holidayThemes.find((theme) => theme.key === holidayThemeKey);
+    if (holidayTheme) setUiColorTheme(holidayTheme.colorTheme as UiColorTheme);
+  };
+
+  const renderHolidayThemeOption = (holidayThemeKey: HolidayThemeKey, label: string) => (
+    <option key={holidayThemeKey} value={`holiday:${holidayThemeKey}`}>
+      {label}
+    </option>
+  );
 
   return (
     <section className="settings-section" aria-labelledby="settings-preferences-heading">
@@ -115,20 +132,28 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
           <select
             id="pref-color-theme"
             className="locale-select"
-            value={uiColorTheme}
-            onChange={(event) => setUiColorTheme(event.target.value as UiColorTheme)}
+            value={selectedColorThemeValue}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next.startsWith("holiday:")) {
+                setHolidayThemeSelection(next.slice("holiday:".length) as HolidayThemeKey);
+                return;
+              }
+              setHolidayThemePreview(null);
+              setUiColorTheme(next as UiColorTheme);
+            }}
           >
             <option value="blue">Blue</option>
             <option value="pink">Pink</option>
             <option value="red">Red</option>
             <option value="green">Green</option>
-            {activeHolidayTheme?.key === "pride" ? (
-              <option value="neutral">{activeHolidayTheme.title.replace(" Theme", "")}</option>
-            ) : (
-              <option value="neutral">Neutral</option>
-            )}
-            {activeHolidayTheme && activeHolidayTheme.key !== "pride" ? (
-              <option value={activeHolidayTheme.colorTheme}>{activeHolidayTheme.title.replace(" Theme", "")}</option>
+            <option value="neutral">Neutral</option>
+            {holidayThemesVisible ? (
+              <optgroup label="Seasonal">
+                {holidayThemes.map((theme) => renderHolidayThemeOption(theme.key, theme.title.replace(" Theme", "")))}
+              </optgroup>
+            ) : activeHolidayTheme ? (
+              <option value={`holiday:${activeHolidayTheme.key}`}>{activeHolidayTheme.title.replace(" Theme", "")}</option>
             ) : null}
           </select>
         </div>
