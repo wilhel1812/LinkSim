@@ -14,6 +14,7 @@ import Map, {
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
 import { computeCoverageGridDimensions } from "../lib/coverage";
+import { buildCoverageTargetContourFeatures } from "../lib/coverageContour";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -176,6 +177,26 @@ const coverageRasterLayer: LayerProps = {
   },
 };
 
+const targetContourHaloLayer = (color: string): LayerProps => ({
+  id: "coverage-target-contour-halo-layer",
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": 2.5,
+    "line-opacity": 0.82,
+  },
+});
+
+const targetContourLineLayer = (color: string): LayerProps => ({
+  id: "coverage-target-contour-line-layer",
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": 1.2,
+    "line-opacity": 0.96,
+  },
+});
+
 const terrainRasterPaint = {
   "raster-opacity": 0.62,
   "raster-contrast": 0.16,
@@ -259,8 +280,7 @@ type TerrainBounds = {
   minLon: number;
   maxLon: number;
 };
-type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
-type BandStepMode = "auto" | 3 | 5 | 8 | 10;
+type CoverageSampleLite = { lat: number; lon: number; valueDbm: number; weakestDbm?: number };
 type OverlayRaster = {
   url: string;
   coordinates: [[number, number], [number, number], [number, number], [number, number]];
@@ -427,29 +447,6 @@ const boundsDiagonalKm = (bounds: TerrainBounds): number => {
     111.32 *
     Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
   return Math.hypot(latSpanKm, lonSpanKm);
-};
-
-const autoBandStepDb = (samples: CoverageSampleLite[], bounds: TerrainBounds): 3 | 5 | 8 | 10 => {
-  if (samples.length < 2) return 5;
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  for (const sample of samples) {
-    min = Math.min(min, sample.valueDbm);
-    max = Math.max(max, sample.valueDbm);
-  }
-  const dynamicRange = Math.max(0, max - min);
-  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-  const latSpanKm = Math.abs(bounds.maxLat - bounds.minLat) * 111.32;
-  const lonSpanKm =
-    Math.abs(bounds.maxLon - bounds.minLon) *
-    111.32 *
-    Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
-  const diagonalKm = Math.hypot(latSpanKm, lonSpanKm);
-
-  if (diagonalKm > 90 || dynamicRange > 45) return 10;
-  if (diagonalKm > 45 || dynamicRange > 30) return 8;
-  if (diagonalKm > 20 || dynamicRange > 18) return 5;
-  return 3;
 };
 
 const computeOverlayDimensions = (
@@ -761,7 +758,6 @@ export function MapView({
   const recommendAndFetchTerrainForCurrentArea = useAppStore((state) => state.recommendAndFetchTerrainForCurrentArea);
   const selectedOverlayRadiusOption = useAppStore((state) => state.selectedOverlayRadiusOption);
   const setSelectedOverlayRadiusOption = useAppStore((state) => state.setSelectedOverlayRadiusOption);
-  const [bandStepMode, setBandStepMode] = useState<BandStepMode>("auto");
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
   const [showResultsSummary, setShowResultsSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewResults, true));
   const [showSimulationSummary, setShowSimulationSummary] = useState(() => readSectionBool(UI_SECTION_KEYS.mapViewSimSummary, false));
@@ -1078,12 +1074,10 @@ export function MapView({
       ),
     [sites],
   );
-  const sharedOrPublicLibrarySites = useMemo(
+  const visibleLibrarySites = useMemo(
     () =>
       siteLibrary.filter(
-        (entry) =>
-          (entry.visibility === "shared" || entry.visibility === "public") &&
-          !simulationLibrarySiteIds.has(entry.id),
+        (entry) => !simulationLibrarySiteIds.has(entry.id),
       ),
     [siteLibrary, simulationLibrarySiteIds],
   );
@@ -1417,10 +1411,7 @@ export function MapView({
       };
     });
   }, [overlayBounds]);
-  const effectiveBandStepDb = useMemo(() => {
-    if (!overlayBounds) return 5;
-    return bandStepMode === "auto" ? autoBandStepDb(samplesForOverlay, overlayBounds) : bandStepMode;
-  }, [overlayBounds, samplesForOverlay, bandStepMode]);
+  const effectiveBandStepDb = 5;
   const overlayLongTaskWarnedRef = useRef<Set<string>>(new Set());
   const showOverlayDiagnostics =
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
@@ -1655,16 +1646,24 @@ export function MapView({
             onProgress,
           } as const;
           let rasterPixels: OverlayRasterPixels | null = null;
-          if (mode === "heatmap" || mode === "contours") {
+          if (mode === "heatmap" || mode === "contours" || mode === "weakest") {
+            const overlaySamples =
+              mode === "weakest"
+                ? samplesForOverlay.map((sample) => ({
+                    ...sample,
+                    valueDbm: sample.weakestDbm ?? sample.valueDbm,
+                  }))
+                : samplesForOverlay;
             rasterPixels = await buildCoverageOverlayPixelsAsync(
               overlayBounds,
-              samplesForOverlay,
-              mode,
+              overlaySamples,
+              mode === "contours" || mode === "weakest" ? "heatmap" : mode,
               effectiveBandStepDb,
               overlayDimensions,
               overlayPointMask,
               terrainSampler,
               context,
+              { rxTargetDbm: rxSensitivityTargetDbm },
             );
           } else if (mode === "passfail") {
             const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite!.antennaHeightM ?? 2;
@@ -1798,8 +1797,6 @@ export function MapView({
     setOverlayPipelineProgress,
     logOverlaySchedulerEvent,
   ]);
-  const currentBandStepDb = effectiveBandStepDb;
-
   const signalRange = useMemo(() => {
     if (!samplesForOverlay.length) return { min: -125, max: -62 };
     let min = Number.POSITIVE_INFINITY;
@@ -1810,6 +1807,34 @@ export function MapView({
     }
     return { min, max };
   }, [samplesForOverlay]);
+
+  const weakestSignalRange = useMemo(() => {
+    if (!samplesForOverlay.length) return { min: -125, max: -62 };
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const sample of samplesForOverlay) {
+      const value = sample.weakestDbm ?? sample.valueDbm;
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    }
+    return { min, max };
+  }, [samplesForOverlay]);
+
+  const targetContourFeatures = useMemo(
+    () =>
+      coverageVizMode === "contours"
+        ? buildCoverageTargetContourFeatures(samplesForOverlay, rxSensitivityTargetDbm, overlayBounds, overlayPointMask)
+        : { type: "FeatureCollection" as const, features: [] },
+    [coverageVizMode, overlayBounds, overlayPointMask, rxSensitivityTargetDbm, samplesForOverlay],
+  );
+  const showTargetContourLine = coverageVizMode === "contours" && targetContourFeatures.features.length > 0;
+  const coverageScaleRange = useMemo(() => {
+    if (!coverageOverlay || (coverageVizMode !== "heatmap" && coverageVizMode !== "contours" && coverageVizMode !== "weakest")) {
+      return null;
+    }
+    if (typeof coverageOverlay.minDbm !== "number" || typeof coverageOverlay.maxDbm !== "number") return null;
+    return { min: coverageOverlay.minDbm, max: coverageOverlay.maxDbm };
+  }, [coverageOverlay, coverageVizMode]);
 
   const relayRange = useMemo(() => {
     if (!coverageOverlay || coverageVizMode !== "relay") return null;
@@ -1822,7 +1847,9 @@ export function MapView({
       : coverageVizMode === "heatmap"
       ? "Heatmap"
       : coverageVizMode === "contours"
-        ? "Bands"
+        ? "Heatmap + Target Line"
+        : coverageVizMode === "weakest"
+          ? "Weakest Site"
         : coverageVizMode === "passfail"
           ? "Pass/Fail"
           : "Relay";
@@ -2623,27 +2650,23 @@ export function MapView({
     fitChromePadding.top,
     fitChromePadding.bottom,
   ]);
-  const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "passfail" | "relay">>(() => {
-    if (selectionCount <= 0) return ["none", "heatmap", "contours"];
-    if (selectionCount === 1) return ["none", "passfail", "heatmap", "contours"];
-    if (selectionCount === 2) return ["none", "relay", "heatmap", "contours"];
-    return ["none", "heatmap", "contours"];
+  const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay">>(() => {
+    if (selectionCount <= 0) return ["none", "heatmap", "weakest", "contours"];
+    if (selectionCount === 1) return ["none", "passfail", "heatmap", "weakest", "contours"];
+    if (selectionCount === 2) return ["none", "relay", "heatmap", "weakest", "contours"];
+    return ["none", "heatmap", "weakest", "contours"];
   }, [selectionCount]);
   useEffect(() => {
-    if (coverageVizMode === "heatmap") {
-      setCoverageVizMode("contours");
-      return;
-    }
-    if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "passfail" | "relay")) return;
-    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "contours");
+    if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay")) return;
+    setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
-  const simulationOverlaySelectValue = coverageVizMode === "contours" ? "heatmap" : coverageVizMode;
+  const simulationOverlaySelectValue = coverageVizMode;
   const siteVisibilityMode: "simulation" | "library" | "mqtt" =
     showDiscoveryMqtt ? "mqtt" : showDiscoverySites ? "library" : "simulation";
   const selectedSite = selectedSites[0] ?? null;
   const selectedDiscoveryLibraryEntry =
     selectedDiscoveryLibraryEntryId
-      ? sharedOrPublicLibrarySites.find((entry) => entry.id === selectedDiscoveryLibraryEntryId) ?? null
+      ? visibleLibrarySites.find((entry) => entry.id === selectedDiscoveryLibraryEntryId) ?? null
       : null;
   const selectedLibraryEntry =
     selectedSite?.libraryEntryId
@@ -2681,8 +2704,8 @@ export function MapView({
   if (showDiscoverySites) {
     inspectorLines.push(
       canPersist
-        ? `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`
-        : `Shared/Public Library Sites visible: ${sharedOrPublicLibrarySites.length}. Click a marker to inspect it.`,
+        ? `Library Sites visible: ${visibleLibrarySites.length}. Click a marker to inspect, then choose Add to Simulation.`
+        : `Library Sites visible: ${visibleLibrarySites.length}. Click a marker to inspect it.`,
     );
   }
   if (selectedDiscoveryLibraryEntry && !canPersist) inspectorLines.push(READ_ONLY_SIMULATION_SITE_HELP);
@@ -2777,15 +2800,23 @@ export function MapView({
             <div className="map-inspector-section map-holiday-note" role="status">
               <p className="map-inspector-primary map-holiday-note-title">
                 <span className="map-holiday-note-icons" aria-hidden="true">
-                  <Rabbit size={15} strokeWidth={1.8} />
-                  <Egg size={14} strokeWidth={1.8} />
+                  {activeHolidayTheme.key === "pride" ? (
+                    <span className="map-holiday-pride-icon">
+                      <span className="map-holiday-pride-icon-paint" />
+                    </span>
+                  ) : (
+                    <>
+                      <Rabbit size={15} strokeWidth={1.8} />
+                      <Egg size={14} strokeWidth={1.8} />
+                    </>
+                  )}
                 </span>
                 {activeHolidayTheme.message}
               </p>
               <p className="map-inspector-line">
                 {isHolidayThemeForced
-                  ? "Easter theme is active this week."
-                  : "Your preferred theme is active for this Easter week."}
+                  ? `${activeHolidayTheme.title} is active this week.`
+                  : `Your preferred theme is active for this ${activeHolidayTheme.key === "pride" ? "Pride week" : "holiday week"}.`}
               </p>
               <span className="map-inline-actions">
                 {isHolidayThemeForced ? (
@@ -3004,7 +3035,7 @@ export function MapView({
                 <select
                   className="locale-select"
                   onChange={(event) => {
-                    const mode = event.target.value as "none" | "heatmap" | "contours" | "passfail" | "relay";
+                    const mode = event.target.value as "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay";
                     if (mode === "heatmap") {
                       setCoverageVizMode("heatmap");
                       return;
@@ -3019,7 +3050,8 @@ export function MapView({
                 >
                   <option value="none">Hidden</option>
                   {allowedOverlayModes.includes("heatmap") ? <option value="heatmap">Heatmap</option> : null}
-                  {allowedOverlayModes.includes("contours") ? <option value="contours">Contours</option> : null}
+                  {allowedOverlayModes.includes("weakest") ? <option value="weakest">Weakest Site</option> : null}
+                  {allowedOverlayModes.includes("contours") ? <option value="contours">Heatmap + Target Line</option> : null}
                   {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
                   {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
                 </select>
@@ -3092,89 +3124,64 @@ export function MapView({
               <>
                 <p>
                   Shows overall coverage strength from your current simulation sites. Think of it as "how good signal
-                  should feel if you stand here".
+                  should feel if you stand here", using the best available Site signal.
                 </p>
-                <div className="overlay-inline-controls">
-                  <span>Style</span>
-                  <div className="chip-group">
-                    <MapControlButton
-                      isSelected
-                      onClick={() => setCoverageVizMode("heatmap")}
-                      variant="labeled"
-                    >
-                      Smooth
-                    </MapControlButton>
-                    <MapControlButton
-                      onClick={() => setCoverageVizMode("contours")}
-                      variant="labeled"
-                    >
-                      Bands
-                    </MapControlButton>
-                  </div>
-                </div>
+                <label className="map-inspector-map-setting map-inspector-map-setting-inline">
+                  <span>Draw RX target threshold line</span>
+                  <input
+                    checked={false}
+                    onChange={(event) => setCoverageVizMode(event.currentTarget.checked ? "contours" : "heatmap")}
+                    type="checkbox"
+                  />
+                </label>
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>{fmtDbm(signalRange.min)}</span>
-                    <span>{fmtDbm(signalRange.max)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.min ?? signalRange.min)}</span>
+                    <span>{fmtDbm(rxSensitivityTargetDbm)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.max ?? signalRange.max)}</span>
                   </div>
                 </div>
-                <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>
+                <p className="overlay-scale-help">Centered on the RX target, widened to use more of the spectrum for this Simulation.</p>
+              </>
+            ) : null}
+            {coverageVizMode === "weakest" ? (
+              <>
+                <p>
+                  Shows the weakest signal from this point to any Site in the Simulation. Use this when the point must
+                  be able to reach every Site, not just the nearest or strongest one.
+                </p>
+                <div className="overlay-scale">
+                  <div className="overlay-scale-bar" />
+                  <div className="overlay-scale-labels">
+                    <span>{fmtDbm(coverageScaleRange?.min ?? weakestSignalRange.min)}</span>
+                    <span>{fmtDbm(rxSensitivityTargetDbm)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.max ?? weakestSignalRange.max)}</span>
+                  </div>
+                </div>
+                <p className="overlay-scale-help">Centered on the RX target, widened to use more of the spectrum for this Simulation.</p>
               </>
             ) : null}
             {coverageVizMode === "contours" ? (
               <>
-                <p>Same data as Heatmap, but grouped into steps so boundaries are easier to read.</p>
-                <div className="overlay-inline-controls">
-                  <span>Style</span>
-                  <div className="chip-group">
-                    <MapControlButton
-                      onClick={() => setCoverageVizMode("heatmap")}
-                      variant="labeled"
-                    >
-                      Smooth
-                    </MapControlButton>
-                    <MapControlButton
-                      isSelected
-                      onClick={() => setCoverageVizMode("contours")}
-                      variant="labeled"
-                    >
-                      Bands
-                    </MapControlButton>
-                  </div>
-                </div>
-                <div className="overlay-inline-controls">
-                  <span>Band step</span>
-                  <select
-                    className="locale-select"
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (value === "auto") {
-                        setBandStepMode("auto");
-                        return;
-                      }
-                      const parsed = Number(value);
-                      if (parsed === 3 || parsed === 5 || parsed === 8 || parsed === 10) {
-                        setBandStepMode(parsed);
-                      }
-                    }}
-                    value={String(bandStepMode)}
-                  >
-                    <option value="auto">Auto ({currentBandStepDb} dB)</option>
-                    <option value="3">3 dB</option>
-                    <option value="5">5 dB</option>
-                    <option value="8">8 dB</option>
-                    <option value="10">10 dB</option>
-                  </select>
-                </div>
+                <p>Shows the fixed-scale Heatmap with a line where best available Site signal crosses the Simulation RX target.</p>
+                <label className="map-inspector-map-setting map-inspector-map-setting-inline">
+                  <span>Draw RX target threshold line</span>
+                  <input
+                    checked
+                    onChange={(event) => setCoverageVizMode(event.currentTarget.checked ? "contours" : "heatmap")}
+                    type="checkbox"
+                  />
+                </label>
                 <div className="overlay-scale">
                   <div className="overlay-scale-bar" />
                   <div className="overlay-scale-labels">
-                    <span>{fmtDbm(signalRange.min)}</span>
-                    <span>{fmtDbm(signalRange.max)}</span>
+                    <span>{fmtDbm(coverageScaleRange?.min ?? rxSensitivityTargetDbm - 20)}</span>
+                    <span>RX target</span>
+                    <span>{fmtDbm(coverageScaleRange?.max ?? rxSensitivityTargetDbm + 30)}</span>
                   </div>
                 </div>
-                <p className="overlay-scale-help">Left side is weaker signal (worse). Right side is stronger signal (better).</p>
+                <p className="overlay-scale-help">The line is the pass/fail threshold; the heatmap shows relative signal shape around it.</p>
               </>
             ) : null}
             {coverageVizMode === "passfail" ? (
@@ -3442,6 +3449,13 @@ export function MapView({
           </Source>
         ) : null}
 
+        {showTargetContourLine ? (
+          <Source data={targetContourFeatures} id="coverage-target-contour-source" type="geojson">
+            <Layer {...targetContourHaloLayer(variant.cssVars["--bg"] ?? linkColor)} />
+            <Layer {...targetContourLineLayer(variant.cssVars["--muted"] ?? selectedLinkColor)} />
+          </Source>
+        ) : null}
+
         {userLocationFix ? (
           <Source data={userLocationAccuracyGeoJson} id="user-location-accuracy" type="geojson">
             <Layer {...userLocationAccuracyLayer(userLocationSelectionColor)} />
@@ -3512,7 +3526,7 @@ export function MapView({
         })}
 
         {showDiscoverySites
-          ? sharedOrPublicLibrarySites.map((entry) => (
+          ? visibleLibrarySites.map((entry) => (
               <Marker
                 anchor="bottom"
                 key={`discover-site-${entry.id}`}

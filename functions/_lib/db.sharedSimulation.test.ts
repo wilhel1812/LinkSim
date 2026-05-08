@@ -16,6 +16,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "avatar_url",
     "email_public",
     "default_frequency_preset_id",
+    "simulation_defaults_preference_json",
     "avatar_object_key",
     "avatar_thumb_key",
     "avatar_hash",

@@ -1,10 +1,18 @@
 import { useCallback, useState } from "react";
 import { updateMyProfile, type CloudUser } from "../../../lib/cloudUser";
 import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../../lib/frequencyPlans";
+import {
+  resolveUserSimulationDefaults,
+  simulationDefaultsFromPreset,
+  type SimulationDefaults,
+  type UserSimulationDefaultsPreference,
+} from "../../../lib/simulationDefaults";
 import { getUiErrorMessage } from "../../../lib/uiError";
 import { useAppStore } from "../../../store/appStore";
 import { useThemeVariant } from "../../../hooks/useThemeVariant";
-import type { UiColorTheme } from "../../../themes/types";
+import { getHolidayThemeCatalog } from "../../../themes/holidayThemes";
+import { setHolidayThemePreview } from "../../../themes/holidayThemeDev";
+import type { HolidayThemeKey, UiColorTheme } from "../../../themes/types";
 import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicator";
 import { InfoTip } from "../../InfoTip";
 
@@ -27,15 +35,27 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const setAuthState = useAppStore((state) => state.setAuthState);
-  const { activeHolidayTheme } = useThemeVariant();
+  const { activeHolidayTheme, holidayThemesVisible } = useThemeVariant();
 
   const [presetState, setPresetState] = useState<SelectFieldState>(IDLE_SELECT);
 
-  const savePreset = useCallback(
-    async (value: string | null) => {
+  const preference: UserSimulationDefaultsPreference = me?.simulationDefaultsPreference ?? {
+    mode: "preset",
+    presetId: me?.defaultFrequencyPresetId ?? "oslo-local-869618",
+    overridePresetDefaults: false,
+  };
+  const activeDefaults = resolveUserSimulationDefaults(preference, me?.defaultFrequencyPresetId);
+  const holidayThemes = getHolidayThemeCatalog();
+  const selectedColorThemeValue = activeHolidayTheme?.key ? `holiday:${activeHolidayTheme.key}` : uiColorTheme;
+
+  const saveSimulationDefaultsPreference = useCallback(
+    async (nextPreference: UserSimulationDefaultsPreference) => {
       setPresetState({ state: "saving", error: null });
       try {
-        const updated = await updateMyProfile({ defaultFrequencyPresetId: value });
+        const updated = await updateMyProfile({
+          defaultFrequencyPresetId: nextPreference.presetId,
+          simulationDefaultsPreference: nextPreference,
+        });
         onMeUpdated(updated);
         setCurrentUser(updated);
         setAuthState("signed_in");
@@ -48,6 +68,29 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
       }
     },
     [onMeUpdated, setAuthState, setCurrentUser],
+  );
+
+  const patchPreferenceDefaults = (patch: Partial<SimulationDefaults>) => {
+    const base = preference.mode === "custom" ? activeDefaults : simulationDefaultsFromPreset(preference.presetId);
+    const nextDefaults = { ...base, ...activeDefaults, ...patch };
+    void saveSimulationDefaultsPreference({
+      ...preference,
+      overridePresetDefaults: preference.mode === "custom" ? preference.overridePresetDefaults : true,
+      ...(preference.mode === "custom" ? { custom: nextDefaults } : { overrides: nextDefaults }),
+    });
+  };
+
+  const setHolidayThemeSelection = (holidayThemeKey: HolidayThemeKey | null) => {
+    setHolidayThemePreview(holidayThemeKey);
+    if (!holidayThemeKey) return;
+    const holidayTheme = holidayThemes.find((theme) => theme.key === holidayThemeKey);
+    if (holidayTheme) setUiColorTheme(holidayTheme.colorTheme as UiColorTheme);
+  };
+
+  const renderHolidayThemeOption = (holidayThemeKey: HolidayThemeKey, label: string) => (
+    <option key={holidayThemeKey} value={`holiday:${holidayThemeKey}`}>
+      {label}
+    </option>
   );
 
   return (
@@ -89,15 +132,28 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
           <select
             id="pref-color-theme"
             className="locale-select"
-            value={uiColorTheme}
-            onChange={(event) => setUiColorTheme(event.target.value as UiColorTheme)}
+            value={selectedColorThemeValue}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next.startsWith("holiday:")) {
+                setHolidayThemeSelection(next.slice("holiday:".length) as HolidayThemeKey);
+                return;
+              }
+              setHolidayThemePreview(null);
+              setUiColorTheme(next as UiColorTheme);
+            }}
           >
             <option value="blue">Blue</option>
             <option value="pink">Pink</option>
             <option value="red">Red</option>
             <option value="green">Green</option>
-            {activeHolidayTheme ? (
-              <option value="yellow">{activeHolidayTheme.title.replace(" Theme", "")}</option>
+            <option value="neutral">Neutral</option>
+            {holidayThemesVisible ? (
+              <optgroup label="Seasonal">
+                {holidayThemes.map((theme) => renderHolidayThemeOption(theme.key, theme.title.replace(" Theme", "")))}
+              </optgroup>
+            ) : activeHolidayTheme ? (
+              <option value={`holiday:${activeHolidayTheme.key}`}>{activeHolidayTheme.title.replace(" Theme", "")}</option>
             ) : null}
           </select>
         </div>
@@ -105,8 +161,8 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
         <div className="autosave-field">
           <label className="autosave-field-label" htmlFor="pref-default-preset">
             <span>
-              Default preset for new simulations{" "}
-              <InfoTip text="This cloud setting applies when you create a new simulation. Existing simulations keep their own saved channel settings." />
+              Default simulation settings{" "}
+              <InfoTip text="This cloud setting controls simulations that inherit your account defaults. Use override/custom to edit channel, RX target, and environment defaults." />
             </span>
             <AutoSaveIndicator
               state={presetState.state}
@@ -117,13 +173,22 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
           <select
             id="pref-default-preset"
             className="locale-select"
-            value={me?.defaultFrequencyPresetId ?? ""}
+            value={preference.mode === "custom" ? "custom" : preference.presetId}
             onChange={(event) => {
-              const next = event.target.value ? event.target.value : null;
-              void savePreset(next);
+              const next = event.target.value;
+              if (next === "custom") {
+                void saveSimulationDefaultsPreference({
+                  mode: "custom",
+                  presetId: preference.presetId,
+                  overridePresetDefaults: false,
+                  custom: activeDefaults,
+                });
+                return;
+              }
+              void saveSimulationDefaultsPreference({ mode: "preset", presetId: next, overridePresetDefaults: false });
             }}
           >
-            <option value="">App default (Oslo Local 869.618)</option>
+            <option value="custom">Custom preset</option>
             {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
               <optgroup key={groupEntry.group} label={groupEntry.group}>
                 {groupEntry.presets.map((preset) => (
@@ -135,6 +200,95 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
             ))}
           </select>
         </div>
+
+        {preference.mode === "preset" ? (
+          <label className="field-grid">
+            <span>Override preset settings</span>
+            <input
+              aria-label="Override preset settings"
+              checked={preference.overridePresetDefaults}
+              onChange={(event) => {
+                void saveSimulationDefaultsPreference({
+                  ...preference,
+                  overridePresetDefaults: event.target.checked,
+                  overrides: event.target.checked ? activeDefaults : undefined,
+                });
+              }}
+              type="checkbox"
+            />
+          </label>
+        ) : null}
+
+        {preference.mode === "custom" || preference.overridePresetDefaults ? (
+          <div className="autosave-field">
+            <label className="field-grid">
+              <span>Frequency (MHz)</span>
+              <input type="number" value={activeDefaults.frequencyMHz} onChange={(event) => patchPreferenceDefaults({ frequencyMHz: Number(event.target.value), frequencyPresetId: preference.presetId })} />
+            </label>
+            <label className="field-grid">
+              <span>Bandwidth (kHz)</span>
+              <input type="number" value={activeDefaults.bandwidthKhz} onChange={(event) => patchPreferenceDefaults({ bandwidthKhz: Number(event.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Spread factor</span>
+              <input type="number" value={activeDefaults.spreadFactor} onChange={(event) => patchPreferenceDefaults({ spreadFactor: Number(event.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Coding rate</span>
+              <input type="number" value={activeDefaults.codingRate} onChange={(event) => patchPreferenceDefaults({ codingRate: Number(event.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Region code</span>
+              <input type="text" value={activeDefaults.regionCode ?? ""} onChange={(event) => patchPreferenceDefaults({ regionCode: event.target.value || undefined })} />
+            </label>
+            <label className="field-grid">
+              <span>RX target (dBm)</span>
+              <input type="number" value={activeDefaults.rxSensitivityTargetDbm} onChange={(event) => patchPreferenceDefaults({ rxSensitivityTargetDbm: Number(event.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Env loss (dB)</span>
+              <input min={0} type="number" value={activeDefaults.environmentLossDb} onChange={(event) => patchPreferenceDefaults({ environmentLossDb: Number(event.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Auto environment defaults</span>
+              <input aria-label="Auto environment defaults" checked={activeDefaults.autoPropagationEnvironment} onChange={(event) => patchPreferenceDefaults({ autoPropagationEnvironment: event.target.checked })} type="checkbox" />
+            </label>
+            {activeDefaults.autoPropagationEnvironment ? (
+              <p className="field-help">Auto derives climate and clutter from terrain for each path. Turn it off to use fixed manual environment values.</p>
+            ) : (
+              <>
+                <label className="field-grid">
+                  <span>Radio climate</span>
+                  <select className="locale-select" value={activeDefaults.propagationEnvironment.radioClimate} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, radioClimate: event.target.value as SimulationDefaults["propagationEnvironment"]["radioClimate"] } })}>
+                    <option value="Continental Temperate">Continental Temperate</option>
+                    <option value="Maritime Temperate (Land)">Maritime Temperate (Land)</option>
+                    <option value="Maritime Temperate (Sea)">Maritime Temperate (Sea)</option>
+                    <option value="Desert">Desert</option>
+                    <option value="Equatorial">Equatorial</option>
+                    <option value="Continental Subtropical">Continental Subtropical</option>
+                    <option value="Maritime Subtropical">Maritime Subtropical</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Clutter height (m)</span>
+                  <input type="number" value={activeDefaults.propagationEnvironment.clutterHeightM} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, clutterHeightM: Number(event.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Ground dielectric</span>
+                  <input type="number" value={activeDefaults.propagationEnvironment.groundDielectric} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, groundDielectric: Number(event.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Ground conductivity</span>
+                  <input type="number" value={activeDefaults.propagationEnvironment.groundConductivity} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, groundConductivity: Number(event.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Atmospheric bending (N-units)</span>
+                  <input type="number" value={activeDefaults.propagationEnvironment.atmosphericBendingNUnits} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, atmosphericBendingNUnits: Number(event.target.value) } })} />
+                </label>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
     </section>
   );

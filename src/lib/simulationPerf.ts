@@ -9,7 +9,7 @@ type CoveragePerfRecord = {
 
 type OverlayPerfRecord = {
   runId: string;
-  mode: "heatmap" | "contours" | "passfail" | "relay" | "terrain";
+  mode: "heatmap" | "contours" | "weakest" | "passfail" | "relay" | "terrain";
   buildDurationMs: number;
   encodeDurationMs: number;
   width: number;

@@ -12,6 +12,10 @@ export type TerrainBounds = {
 
 export type CoverageSampleLite = { lat: number; lon: number; valueDbm: number };
 
+export type CoverageOverlayOptions = {
+  rxTargetDbm?: number;
+};
+
 export type OverlayRasterPixels = {
   width: number;
   height: number;
@@ -67,6 +71,8 @@ const nextFrame = async (): Promise<void> => {
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 const overlayCoordinates = (bounds: TerrainBounds): OverlayRasterPixels["coordinates"] => [
   [bounds.minLon, bounds.maxLat],
@@ -168,11 +174,52 @@ const precomputeGridAxes = (
   return { latByRow, lonByCol };
 };
 
-const coverageColorForDbm = (valueDbm: number): [number, number, number] => {
-  const normalized = (valueDbm + 125) / 63;
+export type CoverageRxTargetScale = { min: number; max: number };
+
+const percentile = (values: number[], ratio: number): number => {
+  if (!values.length) return 0;
+  const index = clamp((values.length - 1) * ratio, 0, values.length - 1);
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return values[lower];
+  return lerp(values[lower], values[upper], index - lower);
+};
+
+export const computeCoverageRxTargetScale = (
+  samples: CoverageSampleLite[],
+  rxTargetDbm: number,
+): CoverageRxTargetScale => {
+  const values = samples
+    .map((sample) => sample.valueDbm)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  if (!values.length || !Number.isFinite(rxTargetDbm)) {
+    const target = Number.isFinite(rxTargetDbm) ? rxTargetDbm : -120;
+    return { min: target - 30, max: target + 30 };
+  }
+  const low = percentile(values, 0.05);
+  const high = percentile(values, 0.95);
+  const span = clamp(Math.max(rxTargetDbm - low, high - rxTargetDbm, 20), 20, 55);
+  return { min: rxTargetDbm - span, max: rxTargetDbm + span };
+};
+
+export const normalizeCoverageDbmForRxTarget = (
+  valueDbm: number,
+  rxTargetDbm: number,
+  scale: CoverageRxTargetScale = { min: rxTargetDbm - 20, max: rxTargetDbm + 30 },
+): number => {
+  const min = scale.min;
+  const max = scale.max;
+  return clamp((valueDbm - min) / (max - min), 0, 1);
+};
+
+const coverageColorForNormalized = (normalized: number): [number, number, number] => {
   const color = interpolateHeatmapColor(normalized);
   return [color.r, color.g, color.b];
 };
+
+const coverageColorForDbm = (valueDbm: number): [number, number, number] =>
+  coverageColorForNormalized((valueDbm + 125) / 63);
 
 const computeCoverageAdaptiveScale = (
   samples: CoverageSampleLite[],
@@ -198,6 +245,13 @@ const coverageColorAdaptive = (
   const normalized = -125 + ((valueDbm - scale.min) / scale.range) * 63;
   return coverageColorForDbm(clamp(normalized, -125, -62));
 };
+
+const coverageColorFixed = (
+  valueDbm: number,
+  rxTargetDbm: number,
+  scale?: CoverageRxTargetScale,
+): [number, number, number] =>
+  coverageColorForNormalized(normalizeCoverageDbmForRxTarget(valueDbm, rxTargetDbm, scale));
 
 const interpolateCoverageDbm = (samples: CoverageSampleLite[], lat: number, lon: number): number | null => {
   if (!samples.length) return null;
@@ -322,14 +376,19 @@ export const buildCoverageOverlayPixelsAsync = async (
   pointMask?: (lat: number, lon: number) => boolean,
   terrainSampler?: (lat: number, lon: number) => number | null,
   context?: OverlayTaskContext,
+  options?: CoverageOverlayOptions,
 ): Promise<OverlayRasterPixels | null> => {
   if (!samples.length) return null;
   const gridInterpolator = makeGridInterpolator(samples);
   const width = dimensions.width;
   const height = dimensions.height;
   const { latByRow, lonByCol } = precomputeGridAxes(bounds, dimensions);
-  const adaptiveScale = computeCoverageAdaptiveScale(samples);
+  const rxTargetDbm = options?.rxTargetDbm;
+  const adaptiveScale = rxTargetDbm === undefined ? computeCoverageAdaptiveScale(samples) : null;
+  const rxTargetScale = rxTargetDbm === undefined ? null : computeCoverageRxTargetScale(samples, rxTargetDbm);
   const pixels = new Uint8ClampedArray(width * height * 4);
+  const valueAt = (lat: number, lon: number): number | null =>
+    gridInterpolator ? gridInterpolator(lat, lon) : interpolateCoverageDbm(samples, lat, lon);
 
   await runCooperativeLoop(
     width * height,
@@ -340,9 +399,7 @@ export const buildCoverageOverlayPixelsAsync = async (
       const lon = lonByCol[x];
       if (pointMask && !pointMask(lat, lon)) return;
       if (terrainSampler && terrainSampler(lat, lon) === null) return;
-      const valueDbm = gridInterpolator
-        ? gridInterpolator(lat, lon)
-        : interpolateCoverageDbm(samples, lat, lon);
+      const valueDbm = valueAt(lat, lon);
       if (valueDbm === null) return;
 
       let r = 0;
@@ -350,11 +407,27 @@ export const buildCoverageOverlayPixelsAsync = async (
       let b = 0;
       let a = 180;
       if (mode === "heatmap") {
-        [r, g, b] = coverageColorAdaptive(valueDbm, adaptiveScale);
+        [r, g, b] = rxTargetDbm === undefined
+          ? coverageColorAdaptive(valueDbm, adaptiveScale)
+          : coverageColorFixed(valueDbm, rxTargetDbm, rxTargetScale ?? undefined);
       } else {
-        const banded = Math.round(valueDbm / Math.max(1, bandStepDb)) * Math.max(1, bandStepDb);
-        [r, g, b] = coverageColorAdaptive(banded, adaptiveScale);
-        a = 170;
+        const target = rxTargetDbm;
+        if (target === undefined) {
+          const banded = Math.round(valueDbm / Math.max(1, bandStepDb)) * Math.max(1, bandStepDb);
+          [r, g, b] = coverageColorAdaptive(banded, adaptiveScale);
+          a = 170;
+        } else {
+          const toleranceDb = 1.25;
+          const nextLon = lonByCol[Math.min(width - 1, x + 1)];
+          const nextLat = latByRow[Math.min(height - 1, y + 1)];
+          const rightValue = x < width - 1 ? valueAt(lat, nextLon) : null;
+          const downValue = y < height - 1 ? valueAt(nextLat, lon) : null;
+          const crossesRight = rightValue !== null && (valueDbm - target) * (rightValue - target) <= 0;
+          const crossesDown = downValue !== null && (valueDbm - target) * (downValue - target) <= 0;
+          if (Math.abs(valueDbm - target) > toleranceDb && !crossesRight && !crossesDown) return;
+          [r, g, b] = coverageColorFixed(target, target, rxTargetScale ?? undefined);
+          a = 230;
+        }
       }
 
       const px = index * 4;
@@ -371,6 +444,8 @@ export const buildCoverageOverlayPixelsAsync = async (
     height,
     pixels,
     coordinates: overlayCoordinates(bounds),
+    minDbm: rxTargetScale?.min,
+    maxDbm: rxTargetScale?.max,
   };
 };
 

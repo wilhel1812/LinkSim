@@ -27,11 +27,12 @@
 
 3. Production
 - Promote only after explicit user approval.
-- Open PR `staging` -> `main` (direct path — branch policy allows `staging` as head branch).
+- Open PR `staging` -> `main` first (direct path — branch policy allows `staging` as head branch).
+- If GitHub reports conflicts because prior production releases were squash-merged, use the approved fallback: create `release/vX.Y.Z` from `main`, squash-merge `origin/staging`, resolve conflicts by keeping the verified staging release tree, tag `vX.Y.Z`, then PR `release/vX.Y.Z` -> `main`.
 - CI automatically deploys to production on every merge to `main`. Monitor the `Deploy LinkSim Pages / deploy-prod-main` GitHub Actions job and report the commit SHA when complete.
-- Note: the CI deploy job runs `validate-prod-release.mjs` which requires a SemVer version bump and git tag at HEAD — ensure these are in place before merging to `main`.
+- Note: the CI deploy job validates that the release tag exists, the `main` HEAD tree matches the tag tree, and the tagged release commit has the required SemVer bump.
 - After production deploy, continue all new work from updated `origin/staging`.
-- If direct `staging` -> `main` promotion is blocked and a `hotfix/*` reconcile/snapshot PR to `main` is used, treat that as an exception path and immediately run main->staging sync before starting any new work.
+- If a `hotfix/*` reconcile/snapshot PR to `main` is used, treat that as an incident exception path and immediately run main->staging sync before starting any new work.
 
 ## Guardrails
 - No direct production hotfixes unless explicitly requested by the user.
@@ -53,9 +54,9 @@
   - `hotfix/<slug>`
   - `chore/<slug>`
 - PRs into `main` must come from:
-  - `staging` (default and only normal release path — branch policy explicitly allows this)
+  - `staging` (default normal release path — branch policy explicitly allows this)
   - `hotfix/<slug>` (approved production incidents only)
-  - `release/vX.Y.Z` (legacy exception path, not used for normal releases)
+  - `release/vX.Y.Z` (approved normal-release fallback when direct `staging` -> `main` conflicts)
 - Merge strategy: squash merge only.
 - Auto-delete merged branches enabled.
 
@@ -81,7 +82,7 @@
   2. Verify (`npm test`, `npm run build`, manual QA).
   3. Commit and push.
   4. Open PR to `staging` and merge once approved.
-  5. Deploy `staging` using `npm run deploy:staging` and verify at https://staging.linksim.link.
+  5. Merge to `staging`; CI automatically deploys https://staging.linksim.link. Do not run deploy scripts locally.
   6. Promote via `staging` -> `main` PR only with explicit approval.
 - No hidden scope changes during promotion; if code changes after staging verification, restart the loop.
 
@@ -92,7 +93,7 @@
   3. freeze milestone scope at release sign-off (no new feature merges into `staging`)
   4. promote with a single `staging` -> `main` PR
   5. deploy production from the merged `main` commit
-- Promotion must use the same verified staging commit SHA.
+- Promotion must use the same verified release tree. With GitHub squash merges, commit SHAs can differ; the production gate verifies that `main` HEAD matches the `vX.Y.Z` tag tree before deploy.
 - If any code changes after staging sign-off, restart staging verification before production.
 - Before opening the promotion PR, require:
   - all in-scope milestone issues are either closed after staging sign-off or explicitly labeled `released`
@@ -126,7 +127,7 @@
 - Issue branches must be created from latest `origin/staging`.
 - PRs into `staging` or `main` must be up-to-date with the base branch before merge.
 - Never promote from `issue/*` or `chore/*` directly into `main`.
-- Normal squash-merged `staging` -> `main` production releases are not staging drift. The release content already came from `staging`, even though the squash commit is not in staging ancestry.
+- Normal squash-merged `staging` -> `main` and `release/vX.Y.Z` -> `main` production releases are not staging drift. The release content already came from `staging`, even though the squash commit is not in staging ancestry.
 - After any `hotfix/*` merge into `main` (including release-reconcile fallback), immediately:
   1. create `chore/sync-main-to-staging` from `origin/staging`
   2. apply the main-only hotfix/reconcile content in commits that can be squash-merged

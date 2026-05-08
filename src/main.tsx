@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./index.css";
 import App from "./App";
 import { getCurrentRuntimeEnvironment } from "./lib/environment";
+import { installHolidayThemeConsole } from "./lib/holidayThemeConsole";
 
 if (window.location.hostname === "127.0.0.1") {
   const redirectUrl =
@@ -16,6 +17,10 @@ if (window.location.hostname === "127.0.0.1") {
 const runtimeEnvironment = getCurrentRuntimeEnvironment();
 document.documentElement.classList.remove("env-local", "env-staging", "env-production");
 document.documentElement.classList.add(`env-${runtimeEnvironment}`);
+
+if (runtimeEnvironment !== "production") {
+  installHolidayThemeConsole();
+}
 
 const applyEnvironmentBranding = () => {
   document.title =

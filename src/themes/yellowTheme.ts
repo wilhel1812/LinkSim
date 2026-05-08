@@ -44,6 +44,7 @@ export const YELLOW_THEME: ThemeDefinition = {
       "--shadow-elev-3": "0 8px 18px rgba(0, 0, 0, 0.16)",
       "--shadow-elev-4": "0 14px 30px rgba(0, 0, 0, 0.3)",
       "--shadow-elev-5": "0 10px 24px rgba(0, 0, 0, 0.26)",
+      "--holiday-rainbow-border": "repeating-linear-gradient(45deg, #e40303 0 8px, #ff8c00 8px 16px, #ffed00 16px 24px, #008026 24px 32px, #004dff 32px 40px, #750787 40px 48px)",
     },
     map: {
       linkColor: "#f2bb00",
@@ -97,6 +98,7 @@ export const YELLOW_THEME: ThemeDefinition = {
       "--shadow-elev-3": "0 8px 18px rgba(0, 0, 0, 0.16)",
       "--shadow-elev-4": "0 14px 30px rgba(0, 0, 0, 0.3)",
       "--shadow-elev-5": "0 10px 24px rgba(0, 0, 0, 0.26)",
+      "--holiday-rainbow-border": "repeating-linear-gradient(45deg, #ff5470 0 8px, #ff9f1a 8px 16px, #ffe45c 16px 24px, #34d17a 24px 32px, #4ea0ff 32px 40px, #b46bff 40px 48px)",
     },
     map: {
       linkColor: "#ffd84f",

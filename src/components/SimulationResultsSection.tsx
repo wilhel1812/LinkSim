@@ -76,7 +76,6 @@ export function SimulationResultsSection() {
   const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
   const locale = useAppStore((state) => state.locale);
   const networks = useAppStore((state) => state.networks);
-  const setRxSensitivityTargetDbm = useAppStore((state) => state.setRxSensitivityTargetDbm);
   const setEnvironmentLossDb = useAppStore((state) => state.setEnvironmentLossDb);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const terrainFetchStatus = useAppStore((state) => state.terrainFetchStatus);
@@ -328,15 +327,8 @@ export function SimulationResultsSection() {
         )}
         {metric("Worst Fresnel gap", `${analysis.worstFresnelClearanceM.toFixed(2)} m`)}
         {metric("Worst Fresnel point", `${analysis.worstFresnelDistanceKm.toFixed(2)} km`)}
+        {metric("RX target", `${rxSensitivityTargetDbm.toFixed(1)} dBm`)}
       </div>
-      <label className="field-grid">
-        <span>RX target (dBm)</span>
-        <input
-          onChange={(event) => setRxSensitivityTargetDbm(parseNumber(event.target.value))}
-          type="number"
-          value={rxSensitivityTargetDbm}
-        />
-      </label>
       <label className="field-grid">
         <span>Env loss (dB)</span>
         <input
@@ -347,14 +339,10 @@ export function SimulationResultsSection() {
         />
       </label>
       {isLoraEstimateRelevant ? (
-        <div className="section-heading">
-          <ActionButton
-            onClick={() => setRxSensitivityTargetDbm(Math.round(loraSensitivitySuggestionDbm))}
-          >
-            Set RX Target To LoRa Estimate ({loraSensitivitySuggestionDbm.toFixed(1)} dBm)
-          </ActionButton>
-          <InfoTip text="Sets RX target to a LoRa sensitivity estimate from current BW and SF (noise floor + NF + SF SNR limit). This is a helper target, not a measured receiver spec." />
-        </div>
+        <p className="field-help">
+          LoRa sensitivity estimate for this channel: {loraSensitivitySuggestionDbm.toFixed(1)} dBm. Change RX target
+          in simulation settings or account preferences.
+        </p>
       ) : (
         <p className="field-help">
           LoRa RX estimate helper is hidden for reference presets. Switch to a Meshtastic/Local frequency plan to

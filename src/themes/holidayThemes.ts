@@ -51,6 +51,11 @@ export const resolveEasterWindow = (year: number): HolidayThemeWindow => {
   };
 };
 
+export const resolvePrideWindow = (year: number): HolidayThemeWindow => ({
+  startUtc: new Date(Date.UTC(year, 5, 17)),
+  endUtc: new Date(Date.UTC(year, 5, 27)),
+});
+
 export const toHolidayWindowId = (holidayKey: HolidayTheme["key"], window: HolidayThemeWindow): string => {
   const year = window.startUtc.getUTCFullYear();
   return `${holidayKey}:${year}`;
@@ -64,9 +69,34 @@ const HOLIDAY_THEME_RULES: HolidayThemeRule[] = [
     colorTheme: "yellow",
     resolveWindow: resolveEasterWindow,
   },
+  {
+    key: "pride",
+    title: "Pride Theme",
+    message: "Happy Pride",
+    colorTheme: "neutral",
+    resolveWindow: resolvePrideWindow,
+  },
 ];
 
-export const getActiveHolidayTheme = (date: Date): HolidayTheme | null => {
+export const getHolidayThemeCatalog = (): Array<Pick<HolidayTheme, "key" | "title" | "colorTheme">> =>
+  HOLIDAY_THEME_RULES.map(({ key, title, colorTheme }) => ({ key, title, colorTheme }));
+
+const resolveHolidayThemeByKey = (holidayKey: HolidayTheme["key"]): HolidayThemeRule | null =>
+  HOLIDAY_THEME_RULES.find((rule) => rule.key === holidayKey) ?? null;
+
+export const getActiveHolidayTheme = (date: Date, previewHolidayKey: HolidayTheme["key"] | null = null): HolidayTheme | null => {
+  if (previewHolidayKey) {
+    const rule = resolveHolidayThemeByKey(previewHolidayKey);
+    if (!rule) return null;
+    const window = rule.resolveWindow(date.getUTCFullYear());
+    return {
+      key: rule.key,
+      title: rule.title,
+      message: rule.message,
+      colorTheme: rule.colorTheme,
+      windowId: toHolidayWindowId(rule.key, window),
+    };
+  }
   const year = date.getUTCFullYear();
   for (const rule of HOLIDAY_THEME_RULES) {
     for (const candidateYear of [year - 1, year, year + 1]) {
@@ -88,8 +118,9 @@ export const resolveEffectiveColorTheme = (
   preferredColorTheme: UiColorTheme,
   date: Date,
   revertedHolidayWindows: string[] = [],
+  previewHolidayKey: HolidayTheme["key"] | null = null,
 ): { colorTheme: UiColorTheme; activeHolidayTheme: HolidayTheme | null; isHolidayThemeForced: boolean } => {
-  const activeHolidayTheme = getActiveHolidayTheme(date);
+  const activeHolidayTheme = getActiveHolidayTheme(date, previewHolidayKey);
   if (!activeHolidayTheme) {
     return { colorTheme: preferredColorTheme, activeHolidayTheme: null, isHolidayThemeForced: false };
   }

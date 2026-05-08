@@ -197,7 +197,7 @@ export function UiGalleryPage() {
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
   const setUiColorTheme = useAppStore((state) => state.setUiColorTheme);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
-  const colorThemes: UiColorTheme[] = ["blue", "pink", "red", "green", "yellow"];
+  const colorThemes: UiColorTheme[] = ["blue", "pink", "red", "green", "neutral", "yellow"];
 
   const activeTabLabel = useMemo(
     () => GALLERY_TABS.find((t) => t.id === activeTab)?.label ?? "Gallery",
@@ -213,11 +213,13 @@ export function UiGalleryPage() {
     const root = document.documentElement;
     root.classList.remove("theme-light", "theme-dark");
     root.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
+    if (activeHolidayTheme) root.dataset.holidayTheme = activeHolidayTheme.key;
+    else delete root.dataset.holidayTheme;
     for (const [key, value] of Object.entries(variant.cssVars)) {
       root.style.setProperty(key, value);
     }
     root.style.colorScheme = theme;
-  }, [theme, variant]);
+  }, [activeHolidayTheme, theme, variant]);
 
   return (
     <main className={`ui-gallery-page ${showCheckerboard ? "is-checkerboard-enabled" : ""}`}>
