@@ -261,6 +261,35 @@ describe("MapView user location flow", () => {
     expect(screen.getByText("Read-only: you need edit permission to add sites to this simulation.")).toBeInTheDocument();
   });
 
+  it("shows private library sites that are already accessible", () => {
+    useAppStore.setState({
+      siteLibrary: [
+        {
+          id: "lib-private",
+          name: "Private Hill",
+          visibility: "private",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "viewer",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    });
+    renderMapView({ showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    fireEvent.change(screen.getByLabelText("Visible Sites"), { target: { value: "library" } });
+
+    expect(screen.getByRole("button", { name: "Private Hill" })).toBeInTheDocument();
+  });
+
   it("explains why selected simulation sites cannot be edited in read-only mode", () => {
     useAppStore.setState({
       sites: [

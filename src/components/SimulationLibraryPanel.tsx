@@ -61,6 +61,7 @@ type SimulationLibraryPanelProps = {
   onLoadSimulation: (presetId: string) => void;
   onOpenDetails?: (params: ResourceOpenParams) => void;
   onCreateSimulation?: (triggerEl: Element | null) => void;
+  onCopySimulation?: (triggerEl: Element | null) => void;
   hideSaveCopy?: boolean;
 };
 
@@ -69,11 +70,11 @@ export default function SimulationLibraryPanel({
   onLoadSimulation,
   onOpenDetails,
   onCreateSimulation,
+  onCopySimulation,
   hideSaveCopy = false,
 }: SimulationLibraryPanelProps) {
   const simulationPresets = useAppStore((state) => state.simulationPresets);
   const currentUser = useAppStore((state) => state.currentUser);
-  const saveCurrentSimulationPreset = useAppStore((state) => state.saveCurrentSimulationPreset);
   const [filters, setFilters] = useState<LibraryFilterState>(() =>
     readLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY),
   );
@@ -81,10 +82,6 @@ export default function SimulationLibraryPanel({
   const [roleDraft, setRoleDraft] = useState<LibraryFilterRole[] | null>(null);
   const [visibilityDraft, setVisibilityDraft] = useState<LibraryFilterVisibility[] | null>(null);
   const filterToolbarRef = useRef<HTMLDivElement | null>(null);
-
-  const [newPresetName, setNewPresetName] = useState("");
-  const [newPresetNameError, setNewPresetNameError] = useState("");
-  const [simulationSaveStatus, setSimulationSaveStatus] = useState("");
 
   useEffect(() => {
     persistLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY, filters);
@@ -156,21 +153,6 @@ export default function SimulationLibraryPanel({
     setOpenFilterGroup(null);
     setRoleDraft(null);
     setVisibilityDraft(null);
-  };
-
-  const saveSimulationAsNew = () => {
-    const trimmed = newPresetName.trim();
-    if (!trimmed) {
-      setNewPresetNameError("A name is required.");
-      setSimulationSaveStatus("");
-      return;
-    }
-    setNewPresetNameError("");
-    const savedId = saveCurrentSimulationPreset(trimmed);
-    if (savedId) {
-      setSimulationSaveStatus(`Saved copy: ${trimmed}`);
-    }
-    setNewPresetName("");
   };
 
   const openResourceDetails = (preset: {
@@ -321,34 +303,22 @@ export default function SimulationLibraryPanel({
         </ActionButton>
       </div>
       {!hideSaveCopy ? (
-        <>
-          <label className="field-grid">
-            <span>Save a copy</span>
-            <input
-              className={newPresetNameError ? "input-error" : ""}
-              onChange={(event) => {
-                setNewPresetName(event.target.value);
-                if (newPresetNameError) setNewPresetNameError("");
-              }}
-              placeholder="My simulation"
-              type="text"
-              value={newPresetName}
-            />
-          </label>
-          {newPresetNameError ? <p className="field-help field-help-error">{newPresetNameError}</p> : null}
-          <div className="chip-group">
-            <ActionButton onClick={saveSimulationAsNew}>
-              Save Copy
-            </ActionButton>
-            <ActionButton
-              onClick={(event) => {
-                onCreateSimulation?.(event.currentTarget);
-              }}
-            >
-              New Simulation
-            </ActionButton>
-          </div>
-        </>
+        <div className="chip-group">
+          <ActionButton
+            onClick={(event) => {
+              (onCopySimulation ?? onCreateSimulation)?.(event.currentTarget);
+            }}
+          >
+            Save a copy
+          </ActionButton>
+          <ActionButton
+            onClick={(event) => {
+              onCreateSimulation?.(event.currentTarget);
+            }}
+          >
+            New Simulation
+          </ActionButton>
+        </div>
       ) : (
         <div className="chip-group">
           <ActionButton
@@ -360,7 +330,6 @@ export default function SimulationLibraryPanel({
           </ActionButton>
         </div>
       )}
-      {simulationSaveStatus ? <p className="field-help">{simulationSaveStatus}</p> : null}
       <div className="library-editor">
         <h3>Saved simulations</h3>
         <div className="library-manager-list">

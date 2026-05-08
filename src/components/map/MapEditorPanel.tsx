@@ -1,7 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import { History, Loader2, RefreshCw, Search } from "lucide-react";
-import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../lib/frequencyPlans";
+import { History, Loader2, Pencil, RefreshCw, Search } from "lucide-react";
 import {
   fetchResourceChanges,
   fetchUserById,
@@ -77,6 +76,22 @@ type ResourceMetadata = {
     avatarUrl?: string | null;
   };
 };
+
+const formatStaticValue = (value: string | number | null | undefined): string => {
+  if (value === null || value === undefined) return "";
+  return String(value);
+};
+
+function StaticField({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="field-grid">
+      <span>{label}</span>
+      <span aria-label={label} className="field-help static-field-value">
+        {formatStaticValue(value)}
+      </span>
+    </div>
+  );
+}
 
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
@@ -198,19 +213,54 @@ function SiteEditorCard({
   onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
+  const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
+  const title = isNew ? "New Site" : (mapEditor?.label ?? form.nameDraft);
 
   return (
     <>
       <div className="library-manager-header">
-        <h2>{isNew ? "New Site" : `Edit · ${mapEditor?.label ?? "Site"}`}</h2>
+        <h2>{title}</h2>
         <InlineCloseIconButton onClick={onClose} />
       </div>
 
-      {!form.canWrite && !isNew && (
+      {isReadOnly && (
         <p className="field-help warning-text">Read-only: you can view this site but cannot edit it.</p>
       )}
 
-      <fieldset className="resource-edit-fieldset" disabled={!form.canWrite && !isNew}>
+      {isReadOnly ? (
+        <div className="resource-edit-fieldset">
+          <StaticField label="Name" value={form.nameDraft} />
+          <StaticField label="Description" value={form.descriptionDraft} />
+          <StaticField label="Visibility" value={form.accessVisibility} />
+          <StaticField label="Latitude" value={form.latDraft} />
+          <StaticField label="Longitude" value={form.lonDraft} />
+          <StaticField label="Ground elev (m)" value={form.groundDraft} />
+          <div className="beam-visualizer-field-group">
+            <StaticField label="Antenna (m)" value={form.antennaDraft} />
+            <StaticField label="Tx power (dBm)" value={form.txPowerDraft} />
+            {form.separateGain ? (
+              <>
+                <StaticField label="Tx gain (dBi)" value={form.txGainDraft} />
+                <StaticField label="Rx gain (dBi)" value={form.rxGainDraft} />
+              </>
+            ) : (
+              <StaticField label="Gain (dBi)" value={form.txGainDraft} />
+            )}
+            <StaticField label="Separate RX/TX gain" value={form.separateGain ? "Yes" : "No"} />
+            <StaticField label="Cable loss (dB)" value={form.cableLossDraft} />
+          </div>
+          <SiteBeamVisualizer
+            values={{
+              antennaHeightM: form.antennaDraft,
+              txPowerDbm: form.txPowerDraft,
+              txGainDbi: form.txGainDraft,
+              rxGainDbi: form.rxGainDraft,
+              cableLossDb: form.cableLossDraft,
+            }}
+          />
+        </div>
+      ) : (
+      <fieldset className="resource-edit-fieldset">
         <label className="field-grid">
           <span>Name</span>
           <input
@@ -419,17 +469,16 @@ function SiteEditorCard({
           }}
         />
       </fieldset>
+      )}
 
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       <div className="chip-group">
-        <ActionButton
-          disabled={!form.canWrite && !isNew}
-          onClick={form.handleSaveSite}
-          type="button"
-        >
-          {isNew ? "Create Site" : "Save Site"}
-        </ActionButton>
+        {!isReadOnly ? (
+          <ActionButton onClick={form.handleSaveSite} type="button">
+            {isNew ? "Create Site" : "Save Site"}
+          </ActionButton>
+        ) : null}
         <ActionButton onClick={onClose} type="button">
           Cancel
         </ActionButton>
@@ -458,14 +507,37 @@ function LinkEditorCard({
   onClose: () => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
+  const isReadOnly = Boolean(mapEditor?.readOnly && !isNew);
+  const title = isNew ? "New Link" : (mapEditor?.label ?? form.linkNameDraft) || "Link";
+  const fromSiteName = form.sites.find((site) => site.id === form.linkFromSiteId)?.name ?? "";
+  const toSiteName = form.sites.find((site) => site.id === form.linkToSiteId)?.name ?? "";
 
   return (
     <>
       <div className="library-manager-header">
-        <h2>{isNew ? "New Link" : `Edit · ${mapEditor?.label ?? "Link"}`}</h2>
+        <h2>{title}</h2>
         <InlineCloseIconButton onClick={onClose} />
       </div>
 
+      {isReadOnly ? <p className="field-help warning-text">Read-only: you can view this link but cannot edit it.</p> : null}
+
+      {isReadOnly ? (
+        <div className="resource-edit-fieldset">
+          <StaticField label="Link name" value={form.linkNameDraft} />
+          <StaticField label="From site" value={fromSiteName} />
+          <StaticField label="To site" value={toSiteName} />
+          <StaticField label="Override site radio settings" value={form.overrideRadio ? "Yes" : "No"} />
+          {form.overrideRadio ? (
+            <>
+              <StaticField label="Tx power (dBm)" value={form.linkTxPower} />
+              <StaticField label="Tx gain (dBi)" value={form.linkTxGain} />
+              <StaticField label="Rx gain (dBi)" value={form.linkRxGain} />
+              <StaticField label="Cable loss (dB)" value={form.linkCableLoss} />
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <>
       <label className="field-grid">
         <span>Link name</span>
         <input
@@ -562,13 +634,17 @@ function LinkEditorCard({
             </label>
           </>
         ) : null}
+        </>
+      )}
 
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       <div className="chip-group">
-        <ActionButton onClick={form.handleSaveLink} type="button">
-          {isNew ? "Create Link" : "Save Link"}
-        </ActionButton>
+        {!isReadOnly ? (
+          <ActionButton onClick={form.handleSaveLink} type="button">
+            {isNew ? "Create Link" : "Save Link"}
+          </ActionButton>
+        ) : null}
         <ActionButton onClick={onClose} type="button">
           Cancel
         </ActionButton>
@@ -593,22 +669,51 @@ function SimulationEditorCard({
   onOpenUserProfile: (userId: string) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
+  const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
+  const isCopySimulation = Boolean(mapEditor?.simulationSeed?.copyCurrentSimulation);
+  const title = isNew ? (isCopySimulation ? "Save a copy" : "New Simulation") : (mapEditor?.label ?? form.nameDraft);
+  const simulationDefaultsSummary = [
+    `${form.simulationDefaultsDraft.frequencyMHz} MHz`,
+    `${form.simulationDefaultsDraft.bandwidthKhz} kHz`,
+    `SF${form.simulationDefaultsDraft.spreadFactor}`,
+    `CR${form.simulationDefaultsDraft.codingRate}`,
+    form.simulationDefaultsDraft.regionCode ? `Region ${form.simulationDefaultsDraft.regionCode}` : null,
+    `RX ${form.simulationDefaultsDraft.rxSensitivityTargetDbm} dBm`,
+    form.simulationDefaultsDraft.autoPropagationEnvironment
+      ? "Auto environment"
+      : `${form.simulationDefaultsDraft.propagationEnvironment.radioClimate}, ${form.simulationDefaultsDraft.propagationEnvironment.clutterHeightM} m clutter`,
+  ].filter(Boolean).join(" · ");
 
   return (
     <>
       <div className="library-manager-header">
-        <h2>{isNew ? "New Simulation" : `Edit · ${mapEditor?.label ?? "Simulation"}`}</h2>
+        <h2>{title}</h2>
         <InlineCloseIconButton onClick={onClose} />
       </div>
 
-      {!form.canWrite && !isNew && (
+      {isReadOnly && (
         <p className="field-help warning-text">Read-only: you can view this simulation but cannot edit it.</p>
       )}
 
-      <fieldset className="resource-edit-fieldset" disabled={!form.canWrite && !isNew}>
+      {isReadOnly ? (
+        <div className="resource-edit-fieldset">
+          <StaticField label="Name" value={form.nameDraft} />
+          <StaticField label="Description" value={form.descriptionDraft} />
+          <StaticField label="Visibility" value={form.accessVisibility} />
+          <div className="simulation-settings-block">
+            <div className="simulation-settings-header">
+              <span>Simulation settings</span>
+            </div>
+            <p className="field-help simulation-settings-summary">{simulationDefaultsSummary}</p>
+          </div>
+        </div>
+      ) : (
+      <fieldset className="resource-edit-fieldset">
         <label className="field-grid">
           <span>Name</span>
           <input
+            aria-invalid={form.simulationNameError ? true : undefined}
+            className={form.simulationNameError ? "input-error" : undefined}
             onChange={(e) => form.setNameDraft(e.target.value)}
             type="text"
             value={form.nameDraft}
@@ -638,40 +743,104 @@ function SimulationEditorCard({
           ownerUserId={form.ownerUserId}
           visibility={form.accessVisibility}
         />
-        {isNew ? (
+        <div className="simulation-settings-block">
+          <div className="simulation-settings-header">
+            <span>Simulation settings</span>
+            <Button
+              aria-label={form.simulationDefaultsOverrideEnabled ? "Editing Simulation settings" : "Override Simulation settings"}
+              disabled={form.simulationDefaultsOverrideEnabled}
+              isSelected={form.simulationDefaultsOverrideEnabled}
+              onClick={() => form.setSimulationDefaultsOverrideEnabled(true)}
+              size="icon"
+              title={form.simulationDefaultsOverrideEnabled ? "Editing Simulation settings" : "Override Simulation settings"}
+              type="button"
+            >
+              <Pencil aria-hidden="true" size={14} />
+            </Button>
+          </div>
+          <p className="field-help simulation-settings-summary">{simulationDefaultsSummary}</p>
+        </div>
+        {form.simulationDefaultsOverrideEnabled ? (
           <>
-            <label className="field-grid">
-              <span>Frequency Plan</span>
-              <select
-                className="locale-select"
-                onChange={(e) => form.setSimulationFrequencyPresetId(e.target.value)}
-                value={form.simulationFrequencyPresetId}
+            <div className="simulation-settings-actions">
+              <Button
+                onClick={() => form.setSimulationDefaultsOverrideEnabled(false)}
+                type="button"
+                variant="ghost"
               >
-                {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
-                  <optgroup key={groupEntry.group} label={groupEntry.group}>
-                    {groupEntry.presets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                Use inherited defaults
+              </Button>
+            </div>
+            <label className="field-grid">
+              <span>Frequency (MHz)</span>
+              <input type="number" value={form.simulationDefaultsDraft.frequencyMHz} onChange={(e) => form.setSimulationDefaultsDraft({ frequencyMHz: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Bandwidth (kHz)</span>
+              <input type="number" value={form.simulationDefaultsDraft.bandwidthKhz} onChange={(e) => form.setSimulationDefaultsDraft({ bandwidthKhz: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Spread factor</span>
+              <input type="number" value={form.simulationDefaultsDraft.spreadFactor} onChange={(e) => form.setSimulationDefaultsDraft({ spreadFactor: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Coding rate</span>
+              <input type="number" value={form.simulationDefaultsDraft.codingRate} onChange={(e) => form.setSimulationDefaultsDraft({ codingRate: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Region code</span>
+              <input type="text" value={form.simulationDefaultsDraft.regionCode ?? ""} onChange={(e) => form.setSimulationDefaultsDraft({ regionCode: e.target.value || undefined })} />
+            </label>
+            <label className="field-grid">
+              <span>RX target (dBm)</span>
+              <input type="number" value={form.simulationDefaultsDraft.rxSensitivityTargetDbm} onChange={(e) => form.setSimulationDefaultsDraft({ rxSensitivityTargetDbm: Number(e.target.value) })} />
+            </label>
+            <label className="field-grid">
+              <span>Env loss (dB)</span>
+              <input min={0} type="number" value={form.simulationDefaultsDraft.environmentLossDb} onChange={(e) => form.setSimulationDefaultsDraft({ environmentLossDb: Number(e.target.value) })} />
             </label>
             <label className="field-grid">
               <span>Auto environment defaults</span>
-              <select
-                className="locale-select"
-                onChange={(e) => form.setSimulationAutoPropagationEnvironment(e.target.value === "auto")}
-                value={form.simulationAutoPropagationEnvironment ? "auto" : "manual"}
-              >
-                <option value="auto">Auto (recommended)</option>
-                <option value="manual">Manual override</option>
-              </select>
+              <input aria-label="Auto environment defaults" checked={form.simulationDefaultsDraft.autoPropagationEnvironment} onChange={(e) => form.setSimulationDefaultsDraft({ autoPropagationEnvironment: e.target.checked })} type="checkbox" />
             </label>
+            {form.simulationDefaultsDraft.autoPropagationEnvironment ? (
+              <p className="field-help">Auto derives climate and clutter from terrain for each path. Turn it off to use fixed manual environment values.</p>
+            ) : (
+              <>
+                <label className="field-grid">
+                  <span>Radio climate</span>
+                  <select className="locale-select" value={form.simulationDefaultsDraft.propagationEnvironment.radioClimate} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, radioClimate: e.target.value as typeof form.simulationDefaultsDraft.propagationEnvironment.radioClimate } })}>
+                    <option value="Continental Temperate">Continental Temperate</option>
+                    <option value="Maritime Temperate (Land)">Maritime Temperate (Land)</option>
+                    <option value="Maritime Temperate (Sea)">Maritime Temperate (Sea)</option>
+                    <option value="Desert">Desert</option>
+                    <option value="Equatorial">Equatorial</option>
+                    <option value="Continental Subtropical">Continental Subtropical</option>
+                    <option value="Maritime Subtropical">Maritime Subtropical</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Clutter height (m)</span>
+                  <input type="number" value={form.simulationDefaultsDraft.propagationEnvironment.clutterHeightM} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, clutterHeightM: Number(e.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Ground dielectric</span>
+                  <input type="number" value={form.simulationDefaultsDraft.propagationEnvironment.groundDielectric} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, groundDielectric: Number(e.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Ground conductivity</span>
+                  <input type="number" value={form.simulationDefaultsDraft.propagationEnvironment.groundConductivity} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, groundConductivity: Number(e.target.value) } })} />
+                </label>
+                <label className="field-grid">
+                  <span>Atmospheric bending (N-units)</span>
+                  <input type="number" value={form.simulationDefaultsDraft.propagationEnvironment.atmosphericBendingNUnits} onChange={(e) => form.setSimulationDefaultsDraft({ propagationEnvironment: { ...form.simulationDefaultsDraft.propagationEnvironment, atmosphericBendingNUnits: Number(e.target.value) } })} />
+                </label>
+              </>
+            )}
           </>
         ) : null}
       </fieldset>
+      )}
 
       {/* Pending visibility confirmation prompt */}
       {form.pendingVisibilityConfirm ? (
@@ -691,13 +860,16 @@ function SimulationEditorCard({
         </div>
       ) : null}
 
+      {form.simulationNameError ? <p className="field-help field-help-error">{form.simulationNameError}</p> : null}
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       {!form.pendingVisibilityConfirm ? (
         <div className="chip-group">
-          <ActionButton disabled={!form.canWrite} onClick={form.handleSaveSimulation} type="button">
-            {isNew ? "Create Simulation" : "Save"}
-          </ActionButton>
+          {!isReadOnly ? (
+            <ActionButton onClick={form.handleSaveSimulation} type="button">
+              {isNew ? (isCopySimulation ? "Save a copy" : "Create Simulation") : "Save"}
+            </ActionButton>
+          ) : null}
           <ActionButton onClick={onClose} type="button">
             Cancel
           </ActionButton>

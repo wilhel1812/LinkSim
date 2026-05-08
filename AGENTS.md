@@ -19,10 +19,13 @@
   - For every implementation batch by default: do both local verification and staging deployment verification in the same pass.
   - Only promote to production after explicit user approval, using the same verified commit.
 - Branch workflow:
-  - Use per-issue branches: `issue/<id>-<slug>`.
+  - Use per-issue branches: `issue/<id>-<slug>` (requires numeric ID).
   - **Always branch from `origin/staging`**, not `origin/main`. Creating a branch from `main` will cause merge conflicts when opening a PR to `staging`.
   - Merge issue branches into `staging` first.
   - For normal releases, promote to production only via a direct PR from `staging` into `main` (no release branch needed — the branch policy allows `staging` → `main` directly).
+  - **Release branch naming** (when no issue ID exists):
+    - For staging PRs: use `chore/release-X-Y-Z` (no dots, no ID required; e.g., `chore/release-0-19-0`).
+    - For production PRs when `staging` → `main` shows conflicts: use `release/vX.Y.Z` from `main`, squash-merge `staging`, resolve conflicts keeping staging's version, then PR to `main`.
   - Use `hotfix/<slug>` only for explicitly approved incidents.
   - This staging-integration model is the default unless the user explicitly overrides it.
 - Worktree branch vs. issue branch:
@@ -75,26 +78,50 @@
   - `npm run deploy:staging:preview` → Preview URL
   - `npm run deploy:prod:main` → https://linksim.link
 - Staging deploy default:
-  - Use `npm run deploy:staging` from `staging` branch to deploy to https://staging.linksim.link
+  - Merge to `staging` and let CI deploy to https://staging.linksim.link.
+  - Do not run deploy scripts locally for normal verification.
   - Do not use preview deploys for normal verification; default is always the shared staging URL.
 - Never run raw `wrangler pages deploy` for release operations.
 - If a guarded deploy fails, fix the script/preflight issue and re-run the guarded script. Do not bypass with manual Wrangler deploys.
 - Promotion gate:
-  - Promote the exact same verified commit from local -> staging -> production.
+  - Promote the exact same verified release tree from local -> staging -> production. With squash merges, commit SHAs can differ; the production deploy gate must verify that `main` HEAD matches the `vX.Y.Z` tag tree.
   - If code changes after staging verification, rerun local verification and redeploy staging before production.
   - Normal production promotion PR must be `staging` -> `main`.
   - Hotfix promotion PR may be `hotfix/<slug>` -> `main` only with explicit user approval in-thread.
-- Normal squash-merged `staging` -> `main` production releases are not staging drift; the release content already came from `staging`, even though the squash commit is not in staging ancestry.
+- Normal squash-merged `staging` -> `main` and `release/vX.Y.Z` -> `main` production releases are not staging drift; the release content already came from `staging`, even though the squash commit is not in staging ancestry.
 - **After any hotfix merges to main**: immediately create a `chore/sync-main-to-staging` branch from `origin/staging`, apply the main-only hotfix/reconcile content in commits that can be squash-merged, PR into `staging`, merge, and let CI redeploy staging. Do not start new feature work until staging is back in sync. The `detect-staging-drift` workflow will open a GitHub Issue as a reminder if this is missed.
 - **Release-reconcile fallback rule**: if production promotion cannot be completed via direct `staging` -> `main` and uses a `hotfix/*` snapshot/reconcile PR instead, the same pass is not complete until `main` is synced back into `staging`, staging is redeployed, and the drift issue is closed.
+
+## Release Branch Policy (Detailed)
+
+### Branch naming rules (enforced by PR Branch Policy workflow):
+- `issue/<id>-<slug>` — **must have numeric ID** (e.g., `issue/123-fix-button`). Cannot be used without an issue number.
+- `chore/<slug>` — **no dots allowed** (regex: `^[a-z0-9-]+$`). Use hyphens only (e.g., `chore/release-0-19-0`, not `chore/release-0.19.0`).
+- `release/vX.Y.Z` — **must include `v` prefix and dots** (regex: `^release/v[0-9]+\.[0-9]+\.[0-9]+$`). Example: `release/v0.19.0`.
+
+### Staging → main tree divergence (common trap):
+When `staging` → `main` PR shows conflicts despite squash-merge policy:
+1. This happens because previous releases were squash-merged to `main`, creating commits not in `staging`'s history.
+2. GitHub's conflict detection compares the full tree diff, which shows 100s of "conflicts" for files modified in both branches.
+3. **Solution**: Create `release/vX.Y.Z` branch from `main`, run `git merge origin/staging --squash`, resolve conflicts keeping staging's version (`git checkout --theirs <file>`), commit, tag, then PR to `main`.
+4. This is **not a legacy path** — it's the correct workaround when direct `staging` → `main` PR is blocked by tree conflicts.
+
+### Release workflow (correct path):
+1. **Staging prep**: `chore/release-X-Y-Z` from `staging` → bump version, update CHANGELOG, tag `vX.Y.Z`, PR to `staging`
+2. **Staging verification**: wait for CI deploy, verify `https://staging.linksim.link` shows `vX.Y.Z-beta+<commit>`
+3. **Production promotion**: 
+   - Try direct `staging` → `main` PR first (normal path)
+   - If conflicts: use `release/vX.Y.Z` branch method (see above)
+4. **Production verification**: wait for CI deploy, verify `https://linksim.link` shows `vX.Y.Z`
 - Local run reliability:
   - Restart local server whenever runtime/config/env changes can affect behavior.
   - Re-verify affected flows after restart before marking work as done.
   - Do not leave local dev/watch servers running after a pass. Before handing back, run `npm run dev:check`; if it reports a LinkSim dev/watch server, run `npm run dev:stop` unless the user explicitly asked to keep it running.
-- Production preflight checklist (required before `deploy:prod:main`):
+- Production preflight checklist (required before production promotion):
   - `npm run test`
   - `npm run build:bundle`
   - Confirm build label matches intended SemVer channel rules
+  - Confirm the `vX.Y.Z` tag tree matches the production promotion tree
   - Confirm no unresolved issue/project status drift for items in the current pass
   - Confirm `CHANGELOG.md` is updated with user-readable highlights for the target release
 - Token-efficient execution:
@@ -120,14 +147,14 @@
   - Branch name format: `issue/<id>-<slug>`.
   - Keep PR scope to one issue; avoid mixed API/UI/deeplink batches in the same PR.
   - Agent safety rails:
-    - Do not create normal-release `release/*` branches.
+    - Do not create normal-release `release/*` branches (except `release/vX.Y.Z` for blocked `staging` → `main` promotion).
     - Do not open PRs to `main` from `issue/*` or `chore/*` branches.
     - If local branch is behind its PR base branch, rebase/refresh before merging.
 - Drift check before coding (required):
   - Run and report: `git log --oneline origin/staging -5`
   - Run and report: `git log --oneline origin/main -5`
   - Run and report: `git cherry -v origin/staging origin/main`
-  - If `git cherry` only reports the latest normal squash-merged `staging` -> `main` production release commit, treat it as expected ancestry-only drift and proceed.
+  - If `git cherry` only reports the latest normal squash-merged `staging` -> `main` or `release/vX.Y.Z` -> `main` production release commit, treat it as expected ancestry-only drift and proceed.
   - If new main-only hotfix/reconcile content appears, create a dedicated `chore/sync-main-to-staging` PR before feature work.
 - Verification gates for deep-link/API-affecting work:
   - `npm run test -- --run src/lib/deepLink.test.ts`
@@ -145,7 +172,7 @@
 - Milestone promotion model:
   - Complete and verify all milestone issues on `staging` first.
   - Promote to production in one batch with a direct PR from `staging` to `main`.
-  - Use the exact verified staging commit for production; no code changes between staging sign-off and production deploy.
+  - Use the exact verified release tree for production; no code changes between staging sign-off and production deploy.
   - Freeze milestone scope at sign-off: no new feature work lands on `staging` until production deploy completes.
   - After production deploy, continue new issue work from the updated `origin/staging` baseline.
 

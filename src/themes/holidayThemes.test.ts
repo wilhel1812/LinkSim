@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   computeGregorianEasterSunday,
+  getHolidayThemeCatalog,
   getActiveHolidayTheme,
   resolveEffectiveColorTheme,
   resolveEasterWindow,
+  resolvePrideWindow,
   toHolidayWindowId,
 } from "./holidayThemes";
 
@@ -22,6 +24,16 @@ describe("holidayThemes", () => {
     expect(isoDay(easter2025.endUtc)).toBe("2025-04-21");
   });
 
+  it("resolves Pride window from June 17 to June 27", () => {
+    const pride2026 = resolvePrideWindow(2026);
+    expect(isoDay(pride2026.startUtc)).toBe("2026-06-17");
+    expect(isoDay(pride2026.endUtc)).toBe("2026-06-27");
+  });
+
+  it("lists all seasonal themes for dev picker use", () => {
+    expect(getHolidayThemeCatalog().map((theme) => theme.key)).toEqual(["easter", "pride"]);
+  });
+
   it("activates Easter theme during the configured annual window", () => {
     const active = getActiveHolidayTheme(new Date("2026-04-06T12:00:00.000Z"));
     expect(active?.key).toBe("easter");
@@ -32,6 +44,13 @@ describe("holidayThemes", () => {
   it("stays inactive outside the Easter window", () => {
     expect(getActiveHolidayTheme(new Date("2026-04-09T12:00:00.000Z"))).toBeNull();
     expect(getActiveHolidayTheme(new Date("2026-03-26T12:00:00.000Z"))).toBeNull();
+  });
+
+  it("activates Pride theme during the configured annual window", () => {
+    const active = getActiveHolidayTheme(new Date("2026-06-20T12:00:00.000Z"));
+    expect(active?.key).toBe("pride");
+    expect(active?.colorTheme).toBe("neutral");
+    expect(active?.windowId).toBe("pride:2026");
   });
 
   it("includes the full Easter week window boundaries", () => {
@@ -49,6 +68,20 @@ describe("holidayThemes", () => {
     expect(resolved.colorTheme).toBe("yellow");
     expect(resolved.isHolidayThemeForced).toBe(true);
     expect(resolved.activeHolidayTheme?.windowId).toBe("easter:2026");
+  });
+
+  it("forces the neutral theme when Pride is active", () => {
+    const resolved = resolveEffectiveColorTheme("blue", new Date("2026-06-20T12:00:00.000Z"));
+    expect(resolved.colorTheme).toBe("neutral");
+    expect(resolved.isHolidayThemeForced).toBe(true);
+    expect(resolved.activeHolidayTheme?.windowId).toBe("pride:2026");
+  });
+
+  it("supports previewing any seasonal theme", () => {
+    const resolved = resolveEffectiveColorTheme("blue", new Date("2026-01-01T12:00:00.000Z"), [], "pride");
+    expect(resolved.colorTheme).toBe("neutral");
+    expect(resolved.isHolidayThemeForced).toBe(true);
+    expect(resolved.activeHolidayTheme?.key).toBe("pride");
   });
 
   it("uses preferred theme when holiday window was reverted", () => {

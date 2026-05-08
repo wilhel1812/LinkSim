@@ -1,5 +1,6 @@
 import type { CloudResourceRecord, DbVisibility, Env, Grant, ResourceRole, UserRole, Visibility } from "./types";
 import { findPresetById } from "../../src/lib/frequencyPlans";
+import { normalizeSimulationDefaults, type UserSimulationDefaultsPreference } from "../../src/lib/simulationDefaults";
 
 const VISIBILITIES: Visibility[] = ["private", "public", "shared"];
 const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write"];
@@ -172,6 +173,23 @@ const sanitizeDefaultFrequencyPresetId = (value: unknown): string | null | undef
   return trimmed;
 };
 
+const sanitizeSimulationDefaultsPreference = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) throw new Error("Simulation defaults preference must be an object or null.");
+  const raw = value as Partial<UserSimulationDefaultsPreference>;
+  const mode = raw.mode === "custom" ? "custom" : "preset";
+  const presetId = typeof raw.presetId === "string" && findPresetById(raw.presetId) ? raw.presetId : "oslo-local-869618";
+  const normalized: UserSimulationDefaultsPreference = {
+    mode,
+    presetId,
+    overridePresetDefaults: Boolean(raw.overridePresetDefaults),
+    ...(raw.overrides ? { overrides: normalizeSimulationDefaults(raw.overrides) } : {}),
+    ...(raw.custom ? { custom: normalizeSimulationDefaults(raw.custom) } : {}),
+  };
+  return JSON.stringify(normalized);
+};
+
 const deriveDefaultEmail = (userId: string, tokenPayload?: Record<string, unknown>): string => {
   const fromEmail = sanitizeEmail(tokenPayload?.email);
   if (fromEmail) return fromEmail;
@@ -219,6 +237,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     "avatar_url",
     "email_public",
     "default_frequency_preset_id",
+    "simulation_defaults_preference_json",
     "avatar_object_key",
     "avatar_thumb_key",
     "avatar_hash",
@@ -314,6 +333,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
             avatar_url TEXT,
             email_public INTEGER NOT NULL DEFAULT 1,
             default_frequency_preset_id TEXT,
+            simulation_defaults_preference_json TEXT,
             avatar_object_key TEXT,
             avatar_thumb_key TEXT,
             avatar_hash TEXT,
@@ -428,6 +448,9 @@ const ensureSchema = async (env: Env): Promise<void> => {
       if (!userColumns.has("default_frequency_preset_id")) {
         await env.DB.prepare("ALTER TABLE users ADD COLUMN default_frequency_preset_id TEXT").run();
       }
+      if (!userColumns.has("simulation_defaults_preference_json")) {
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN simulation_defaults_preference_json TEXT").run();
+      }
       if (!userColumns.has("username_set_at")) {
         await env.DB.prepare("ALTER TABLE users ADD COLUMN username_set_at TEXT").run();
         await env.DB
@@ -483,6 +506,7 @@ type UserRow = {
   avatar_url: string | null;
   email_public: number;
   default_frequency_preset_id: string | null;
+  simulation_defaults_preference_json: string | null;
   avatar_object_key: string | null;
   avatar_thumb_key: string | null;
   avatar_hash: string | null;
@@ -537,6 +561,14 @@ const toUserProfile = (row: UserRow) => ({
   avatarUrl: row.avatar_url ?? "",
   emailPublic: row.email_public === 1,
   defaultFrequencyPresetId: row.default_frequency_preset_id,
+  simulationDefaultsPreference: (() => {
+    if (!row.simulation_defaults_preference_json) return null;
+    try {
+      return JSON.parse(row.simulation_defaults_preference_json) as UserSimulationDefaultsPreference;
+    } catch {
+      return null;
+    }
+  })(),
   avatarObjectKey: row.avatar_object_key ?? "",
   avatarThumbKey: row.avatar_thumb_key ?? "",
   avatarHash: row.avatar_hash ?? "",
@@ -569,7 +601,7 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
   await ensureSchema(env);
   return env.DB
     .prepare(
-      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
+      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users WHERE id = ?",
     )
     .bind(userId)
     .first<UserRow>();
@@ -585,7 +617,7 @@ const reconcileUserIdentityByIdpEmail = async (
 
   const rows = await env.DB
     .prepare(
-      `SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
+      `SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
               CASE
                 WHEN lower(idp_email) = lower(?) AND idp_email_verified = 1 THEN 'verified_idp_email'
                 WHEN lower(email) = lower(?) THEN 'legacy_email'
@@ -788,6 +820,7 @@ export const updateUserProfile = async (
     avatarUrl?: unknown;
     emailPublic?: unknown;
     defaultFrequencyPresetId?: unknown;
+    simulationDefaultsPreference?: unknown;
   },
 ) => {
   const existing = await readUserRow(env, userId);
@@ -807,6 +840,10 @@ export const updateUserProfile = async (
     patch.defaultFrequencyPresetId === undefined
       ? (existing.default_frequency_preset_id ?? null)
       : sanitizeDefaultFrequencyPresetId(patch.defaultFrequencyPresetId);
+  const nextSimulationDefaultsPreference =
+    patch.simulationDefaultsPreference === undefined
+      ? (existing.simulation_defaults_preference_json ?? null)
+      : sanitizeSimulationDefaultsPreference(patch.simulationDefaultsPreference);
   const shouldClearAvatarMetadata =
     patch.avatarUrl !== undefined && (nextAvatar ?? "") !== (existing.avatar_url ?? "");
 
@@ -828,9 +865,10 @@ export const updateUserProfile = async (
          bio = ?,
          access_request_note = ?,
          avatar_url = ?,
-         email_public = ?,
-         default_frequency_preset_id = ?,
-         avatar_object_key = ?,
+          email_public = ?,
+          default_frequency_preset_id = ?,
+          simulation_defaults_preference_json = ?,
+          avatar_object_key = ?,
          avatar_thumb_key = ?,
          avatar_hash = ?,
          avatar_bytes = ?,
@@ -848,6 +886,7 @@ export const updateUserProfile = async (
       nextAvatar ?? "",
       nextEmailPublic ? 1 : 0,
       nextDefaultFrequencyPresetId ?? null,
+      nextSimulationDefaultsPreference ?? null,
       shouldClearAvatarMetadata ? null : existing.avatar_object_key,
       shouldClearAvatarMetadata ? null : existing.avatar_thumb_key,
       shouldClearAvatarMetadata ? null : existing.avatar_hash,
@@ -924,7 +963,7 @@ export const listUsers = async (env: Env) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
-      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
+      "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
   return rows.results.map(toUserProfile);

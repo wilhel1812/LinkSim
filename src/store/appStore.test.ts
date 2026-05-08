@@ -551,6 +551,42 @@ describe("appStore new simulation default frequency preset", () => {
     expect(created?.snapshot.selectedFrequencyPresetId).toBe("meshcore-us-narrow-910525-sf7-bw625-cr5");
   });
 
+  it("uses cloud simulation defaults when creating blank simulation", () => {
+    useAppStore.setState((state) => ({
+      currentUser: state.currentUser
+        ? {
+            ...state.currentUser,
+            simulationDefaultsPreference: {
+              mode: "custom",
+              presetId: "meshcore-us-narrow-910525-sf7-bw625-cr5",
+              overridePresetDefaults: false,
+              custom: {
+                frequencyPresetId: "meshcore-us-narrow-910525-sf7-bw625-cr5",
+                frequencyMHz: 910.525,
+                bandwidthKhz: 62.5,
+                spreadFactor: 7,
+                codingRate: 5,
+                regionCode: "US",
+                rxSensitivityTargetDbm: -131,
+                environmentLossDb: 4,
+                autoPropagationEnvironment: false,
+              },
+            },
+          }
+        : state.currentUser,
+    }));
+
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Cloud Simulation Defaults", { visibility: "private", ownerUserId: "owner-1" });
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.snapshot.selectedFrequencyPresetId).toBe("meshcore-us-narrow-910525-sf7-bw625-cr5");
+    expect(created?.snapshot.rxSensitivityTargetDbm).toBe(-131);
+    expect(created?.snapshot.environmentLossDb).toBe(4);
+    expect(created?.snapshot.autoPropagationEnvironment).toBe(false);
+    expect(created?.snapshot.simulationDefaultsOverrideEnabled).toBe(false);
+  });
+
   it("falls back to app default when cloud default is invalid", () => {
     useAppStore.setState((state) => ({
       currentUser: state.currentUser
@@ -562,6 +598,116 @@ describe("appStore new simulation default frequency preset", () => {
       .createBlankSimulationPreset("Fallback Session", { visibility: "private", ownerUserId: "owner-1" });
     const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
     expect(created?.snapshot.selectedFrequencyPresetId).toBe("oslo-local-869618");
+  });
+});
+
+describe("appStore simulation copy", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+    useAppStore.setState({
+      currentUser: {
+        id: "owner-1",
+        username: "owner",
+        avatarUrl: "",
+        role: "user",
+        accountState: "approved",
+        isApproved: true,
+        isAdmin: false,
+        isModerator: false,
+        createdAt: "",
+        updatedAt: null,
+        approvedAt: null,
+        approvedByUserId: null,
+        email: undefined,
+        emailPublic: true,
+        bio: "",
+      },
+      selectedScenarioId: "sim-alpha",
+      selectedFrequencyPresetId: "custom",
+      autoPropagationEnvironment: false,
+      simulationDefaultsOverrideEnabled: false,
+      simulationDefaultsOverride: null,
+      sites: [
+        {
+          id: "site-alpha",
+          name: "Site Alpha",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+        {
+          id: "site-beta",
+          name: "Site Beta",
+          position: { lat: 60.6, lon: 11.6 },
+          groundElevationM: 130,
+          antennaHeightM: 4,
+          txPowerDbm: 21,
+          txGainDbi: 3,
+          rxGainDbi: 3,
+          cableLossDb: 1,
+        },
+      ],
+      links: [
+        {
+          id: "link-alpha",
+          name: "Alpha Link",
+          fromSiteId: "site-alpha",
+          toSiteId: "site-beta",
+          frequencyMHz: 868,
+        },
+      ],
+      siteLibrary: [],
+      simulationPresets: [],
+    });
+  });
+
+  it("creates a private copy with the current sites and links", () => {
+    const createdId = useAppStore
+      .getState()
+      .createSimulationCopyFromCurrent("Copied Session", { description: "Copied from alpha" });
+
+    expect(createdId).toBeTruthy();
+
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created).toMatchObject({
+      name: "Copied Session",
+      description: "Copied from alpha",
+      visibility: "private",
+      sharedWith: [],
+      ownerUserId: "owner-1",
+    });
+    expect(created?.snapshot.sites).toHaveLength(2);
+    expect(created?.snapshot.sites.map((site) => site.name)).toEqual(["Site Alpha", "Site Beta"]);
+    expect(created?.snapshot.links).toHaveLength(1);
+    expect(created?.snapshot.links[0]).toMatchObject({
+      fromSiteId: "site-alpha",
+      toSiteId: "site-beta",
+      name: "Alpha Link",
+    });
+    expect(useAppStore.getState().siteLibrary).toHaveLength(2);
+    expect(useAppStore.getState().siteLibrary.map((entry) => entry.name)).toEqual(["Site Beta", "Site Alpha"]);
+
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+    expect(useAppStore.getState().selectedScenarioId).toBe(createdId);
+    expect(useAppStore.getState().sites).toHaveLength(2);
+    expect(useAppStore.getState().links).toHaveLength(1);
+  });
+});
+
+describe("appStore built-in scenario defaults", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("uses the preset RX target for the starter workspace", () => {
+    useAppStore.getState().selectScenario("workspace-starter");
+    expect(useAppStore.getState().rxSensitivityTargetDbm).toBe(-130);
   });
 });
 

@@ -36,6 +36,60 @@
   --surface-muted-opacity: 0.68;
 }
 
+:root[data-holiday-theme="pride"] {
+  --holiday-rainbow-icon-gradient: conic-gradient(
+    from -90deg at 50% 58.333%,
+    #e40303 0%,
+    #e40303 16%,
+    #ff8c00 16%,
+    #ff8c00 32%,
+    #ffed00 32%,
+    #ffed00 48%,
+    #008026 48%,
+    #008026 64%,
+    #004dff 64%,
+    #004dff 80%,
+    #750787 80%,
+    #750787 100%
+  );
+  --holiday-rainbow-border: repeating-linear-gradient(
+    45deg,
+    #e40303 0 8px,
+    #ff8c00 8px 16px,
+    #ffed00 16px 24px,
+    #008026 24px 32px,
+    #004dff 32px 40px,
+    #750787 40px 48px
+  );
+}
+
+:root.theme-dark[data-holiday-theme="pride"] {
+  --holiday-rainbow-icon-gradient: conic-gradient(
+    from -90deg at 50% 58.333%,
+    #ff5470 0%,
+    #ff5470 16%,
+    #ff9f1a 16%,
+    #ff9f1a 32%,
+    #ffe45c 32%,
+    #ffe45c 48%,
+    #34d17a 48%,
+    #34d17a 64%,
+    #4ea0ff 64%,
+    #4ea0ff 80%,
+    #b46bff 80%,
+    #b46bff 100%
+  );
+  --holiday-rainbow-border: repeating-linear-gradient(
+    45deg,
+    #ff5470 0 8px,
+    #ff9f1a 8px 16px,
+    #ffe45c 16px 24px,
+    #34d17a 24px 32px,
+    #4ea0ff 32px 40px,
+    #b46bff 40px 48px
+  );
+}
+
 * {
   box-sizing: border-box;
 }
@@ -606,6 +660,29 @@ button {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.simulation-settings-block {
+  display: grid;
+  gap: 6px;
+}
+
+.simulation-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.simulation-settings-summary {
+  margin: 0;
+}
+
+.simulation-settings-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* Upload label piggybacks off btn-ghost; only overrides live here */
@@ -1643,6 +1720,34 @@ button {
   color: var(--accent);
 }
 
+.map-holiday-pride-icon {
+  position: relative;
+  width: 24px;
+  aspect-ratio: 1;
+  display: inline-block;
+  flex: 0 0 24px;
+  overflow: hidden;
+  -webkit-mask: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 16a8 8 0 0 1 16 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M7 16a5 5 0 0 1 10 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M10 16a2 2 0 0 1 4 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='16' r='1' fill='white'/%3E%3C/svg%3E");
+  mask: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 16a8 8 0 0 1 16 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M7 16a5 5 0 0 1 10 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M10 16a2 2 0 0 1 4 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='16' r='1' fill='white'/%3E%3C/svg%3E");
+}
+
+.map-holiday-pride-icon-paint {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  background: var(--holiday-rainbow-icon-gradient);
+  transform-origin: 50% 58.333%;
+  animation: pride-icon-spin 2.6s linear infinite;
+}
+
+@keyframes pride-icon-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 .map-inspector-details {
   margin-top: 8px;
 }
@@ -1659,6 +1764,12 @@ button {
 .map-inspector-map-setting {
   display: grid;
   gap: 4px;
+}
+
+.map-inspector-map-setting-inline {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
 }
 
 .map-inspector-map-setting > span {
@@ -1971,6 +2082,28 @@ button {
 .btn-ghost.is-selected {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+:root[data-holiday-theme="pride"] .btn:hover,
+:root[data-holiday-theme="pride"] .btn[aria-pressed="true"],
+:root[data-holiday-theme="pride"] .btn.is-selected,
+:root[data-holiday-theme="pride"] .btn-ghost:hover,
+:root[data-holiday-theme="pride"] .btn-ghost[aria-pressed="true"],
+:root[data-holiday-theme="pride"] .btn-ghost.is-selected,
+:root[data-holiday-theme="pride"] .btn-icon:hover,
+:root[data-holiday-theme="pride"] .btn-icon.is-selected,
+:root[data-holiday-theme="pride"] .ui-gallery-tab-btn[aria-pressed="true"],
+:root[data-holiday-theme="pride"] .map-site-surface.is-selected,
+:root[data-holiday-theme="pride"] .map-holiday-note {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--holiday-rainbow-border) border-box;
+}
+
+:root[data-holiday-theme="pride"] .map-site-surface.is-selected,
+:root[data-holiday-theme="pride"] .map-holiday-note {
+  --surface-pill-border: color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .map-fallback {
@@ -3378,6 +3511,13 @@ html.panorama-gesture-lock body {
 .btn-danger {
   border-color: color-mix(in srgb, var(--danger) 78%, var(--border));
   background: var(--danger);
+  color: var(--danger-on);
+}
+
+.btn-danger:hover,
+.btn-danger:focus-visible {
+  border-color: color-mix(in srgb, var(--danger) 90%, var(--border));
+  background: color-mix(in srgb, var(--danger) 88%, var(--surface-2));
   color: var(--danger-on);
 }
 

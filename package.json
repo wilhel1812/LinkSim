@@ -1,7 +1,7 @@
 {
   "name": "linksim",
   "private": true,
-  "version": "0.19.0",
+  "version": "0.20.0",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -36,7 +36,7 @@
     "refresh:staging:d1": "./scripts/refresh-staging-d1.sh",
     "refresh:staging:r2": "./scripts/refresh-staging-r2.sh",
     "refresh:staging": "npm run refresh:staging:d1 && npm run refresh:staging:r2",
-    "refresh-and-deploy:staging": "npm run refresh:staging && npm run deploy:staging",
+    "refresh-and-deploy:staging": "node scripts/deploy-staging.mjs",
     "tf:bootstrap:state": "infra/terraform/scripts/bootstrap-state-backend.sh",
     "tf:fmt": "infra/terraform/scripts/fmt-check.sh",
     "tf:validate": "infra/terraform/scripts/validate.sh",

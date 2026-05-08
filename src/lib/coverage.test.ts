@@ -70,6 +70,19 @@ describe("buildCoverage", () => {
     expect(high.length).toBeGreaterThan(normal.length);
   });
 
+  it("uses strongest site signal as the default value and keeps weakest signal separately", () => {
+    const result = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
+    const samplesWithDifferentBestAndWeakest = result.filter(
+      (sample) => typeof sample.weakestDbm === "number" && sample.valueDbm > sample.weakestDbm,
+    );
+
+    expect(samplesWithDifferentBestAndWeakest.length).toBeGreaterThan(0);
+    for (const sample of result) {
+      expect(sample.weakestDbm).toEqual(expect.any(Number));
+      expect(sample.valueDbm).toBeGreaterThanOrEqual(sample.weakestDbm!);
+    }
+  });
+
   it("buildCoverageAsync matches sync output shape", async () => {
     const sync = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
     const asyncResult = await buildCoverageAsync(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCoverageOverlayPixelsAsync,
+  computeCoverageRxTargetScale,
+  normalizeCoverageDbmForRxTarget,
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
   buildTerrainShadeOverlayPixelsAsync,
@@ -67,6 +69,44 @@ const environment: PropagationEnvironment = {
 const terrainSampler = () => 135;
 
 describe("overlayRaster async builders", () => {
+  it("normalizes coverage colors against the RX target instead of sample min/max", () => {
+    const scale = { min: -150, max: -90 };
+    expect(normalizeCoverageDbmForRxTarget(-150, -120, scale)).toBe(0);
+    expect(normalizeCoverageDbmForRxTarget(-120, -120, scale)).toBeCloseTo(0.5, 4);
+    expect(normalizeCoverageDbmForRxTarget(-90, -120, scale)).toBe(1);
+  });
+
+  it("centers the RX target scale while widening to observed signal distribution", () => {
+    const scale = computeCoverageRxTargetScale(
+      [
+        { lat: 0, lon: 0, valueDbm: -150 },
+        { lat: 0, lon: 1, valueDbm: -190 },
+        { lat: 1, lon: 0, valueDbm: -125 },
+        { lat: 1, lon: 1, valueDbm: -85 },
+      ],
+      -120,
+    );
+
+    expect(scale).toEqual({ min: -175, max: -65 });
+  });
+
+  it("reports the target-centered heatmap scale for the legend", async () => {
+    const raster = await buildCoverageOverlayPixelsAsync(
+      bounds,
+      samples,
+      "heatmap",
+      5,
+      { width: 16, height: 10 },
+      undefined,
+      terrainSampler,
+      { phase: "coverage", signature: "legend-scale-test" },
+      { rxTargetDbm: -100 },
+    );
+
+    expect(raster?.minDbm).toBeCloseTo(-125, 4);
+    expect(raster?.maxDbm).toBeCloseTo(-75, 4);
+  });
+
   it("builds coverage raster pixels with expected metadata shape", async () => {
     const raster = await buildCoverageOverlayPixelsAsync(
       bounds,
@@ -89,6 +129,31 @@ describe("overlayRaster async builders", () => {
       [bounds.maxLon, bounds.minLat],
       [bounds.minLon, bounds.minLat],
     ]);
+  });
+
+  it("draws contour pixels only near the RX target threshold", async () => {
+    const raster = await buildCoverageOverlayPixelsAsync(
+      bounds,
+      [
+        { lat: 59.8, lon: 10.6, valueDbm: -130 },
+        { lat: 59.8, lon: 10.8, valueDbm: -110 },
+        { lat: 60.0, lon: 10.6, valueDbm: -130 },
+        { lat: 60.0, lon: 10.8, valueDbm: -110 },
+      ],
+      "contours",
+      5,
+      { width: 24, height: 8 },
+      undefined,
+      terrainSampler,
+      { phase: "coverage", signature: "target-contour-test" },
+      { rxTargetDbm: -120 },
+    );
+
+    expect(raster).not.toBeNull();
+    const alphas = Array.from(raster!.pixels).filter((_, index) => index % 4 === 3);
+    const visiblePixels = alphas.filter((alpha) => alpha > 0).length;
+    expect(visiblePixels).toBeGreaterThan(0);
+    expect(visiblePixels).toBeLessThan(alphas.length / 2);
   });
 
   it("supports all overlay modes through async chunked builders", async () => {

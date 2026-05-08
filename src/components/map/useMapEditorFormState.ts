@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain } from "../../lib/siteGainFields";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../../lib/linkRadio";
 import { toAccessVisibility } from "../../lib/uiFormatting";
+import { normalizeSimulationDefaults, resolveUserSimulationDefaults, type SimulationDefaults } from "../../lib/simulationDefaults";
 import { fetchCollaboratorDirectory } from "../../lib/cloudUser";
 import { fetchElevations } from "../../lib/elevationService";
 import { searchLocations, type GeocodeResult } from "../../lib/geocode";
 import { sampleSrtmElevation } from "../../lib/srtm";
 import { getUiErrorMessage } from "../../lib/uiError";
+import { hasDuplicateSimulationNameForOwner } from "../../lib/simulationNameValidation";
 import { useAppStore } from "../../store/appStore";
 import type { CollaboratorDirectoryUser } from "../../lib/cloudUser";
 import type { AccessRole, AccessVisibility } from "../AccessSettingsEditor";
@@ -36,6 +38,7 @@ export function useMapEditorFormState() {
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const createBlankSimulationPreset = useAppStore((state) => state.createBlankSimulationPreset);
+  const createSimulationCopyFromCurrent = useAppStore((state) => state.createSimulationCopyFromCurrent);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
@@ -82,6 +85,13 @@ export function useMapEditorFormState() {
   } | null>(null);
   const [simulationFrequencyPresetId, setSimulationFrequencyPresetId] = useState("");
   const [simulationAutoPropagationEnvironment, setSimulationAutoPropagationEnvironment] = useState(true);
+  const [simulationDefaultsOverrideEnabled, setSimulationDefaultsOverrideEnabled] = useState(false);
+  const [simulationDefaultsDraft, setSimulationDefaultsDraft] = useState<SimulationDefaults>(() =>
+    normalizeSimulationDefaults(null),
+  );
+  const [simulationNameError, setSimulationNameError] = useState("");
+
+  const setDuplicateSimulationNameError = () => setSimulationNameError("Name must be unique.");
 
   // ─── Link drafts ──────────────────────────────────────────────────────────────
   const [linkNameDraft, setLinkNameDraft] = useState("");
@@ -168,15 +178,26 @@ export function useMapEditorFormState() {
       }
     } else if (mapEditor.kind === "simulation") {
       if (mapEditor.isNew) {
-        setNameDraft("");
-        setDescriptionDraft("");
+        const seed = mapEditor.simulationSeed;
+        setNameDraft(seed?.name ?? "");
+        setDescriptionDraft(seed?.description ?? "");
         setAccessVisibility("private");
         setCollaboratorUserIds([]);
         setCollaboratorRoles({});
-        setSimulationFrequencyPresetId(mapEditor.simulationSeed?.frequencyPresetId ?? selectedFrequencyPresetId);
-        setSimulationAutoPropagationEnvironment(
-          mapEditor.simulationSeed?.autoPropagationEnvironment ?? autoPropagationEnvironment,
-        );
+        setSimulationFrequencyPresetId(seed?.frequencyPresetId ?? selectedFrequencyPresetId);
+        setSimulationAutoPropagationEnvironment(seed?.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        if (seed?.copyCurrentSimulation) {
+          setSimulationDefaultsOverrideEnabled(Boolean(seed.simulationDefaultsOverrideEnabled));
+          setSimulationDefaultsDraft(
+            seed.simulationDefaultsOverride
+              ? normalizeSimulationDefaults(seed.simulationDefaultsOverride)
+              : resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId),
+          );
+        } else {
+          const inherited = resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId);
+          setSimulationDefaultsOverrideEnabled(false);
+          setSimulationDefaultsDraft(inherited);
+        }
       } else {
         const preset = simulationPresets.find((p) => p.id === mapEditor.resourceId);
         setNameDraft(preset?.name ?? mapEditor.label);
@@ -184,6 +205,12 @@ export function useMapEditorFormState() {
         setAccessVisibility(toAccessVisibility(preset?.visibility) as AccessVisibility);
         setSimulationFrequencyPresetId(preset?.snapshot.selectedFrequencyPresetId ?? selectedFrequencyPresetId);
         setSimulationAutoPropagationEnvironment(preset?.snapshot.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        setSimulationDefaultsOverrideEnabled(Boolean(preset?.snapshot.simulationDefaultsOverrideEnabled));
+        setSimulationDefaultsDraft(
+          preset?.snapshot.simulationDefaultsOverride
+            ? normalizeSimulationDefaults(preset.snapshot.simulationDefaultsOverride)
+            : resolveUserSimulationDefaults(currentUser?.simulationDefaultsPreference, currentUser?.defaultFrequencyPresetId),
+        );
         const grants = (preset?.sharedWith ?? []).filter((g) => g.userId !== preset?.ownerUserId);
         setCollaboratorUserIds(grants.map((g) => g.userId));
         setCollaboratorRoles(
@@ -231,6 +258,28 @@ export function useMapEditorFormState() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapEditor?.kind, mapEditor?.resourceId, mapEditor?.isNew]);
+
+  useEffect(() => {
+    if (mapEditor?.kind !== "simulation") {
+      setSimulationNameError("");
+      return;
+    }
+    const trimmedName = nameDraft.trim();
+    if (!trimmedName || !currentUser?.id) {
+      setSimulationNameError("");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const isDuplicate = hasDuplicateSimulationNameForOwner(
+        simulationPresets,
+        trimmedName,
+        currentUser.id,
+        mapEditor.isNew ? undefined : mapEditor.resourceId ?? undefined,
+      );
+      setSimulationNameError(isDuplicate ? "Name must be unique." : "");
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [currentUser?.id, mapEditor?.isNew, mapEditor?.kind, mapEditor?.resourceId, nameDraft, simulationPresets]);
 
   useEffect(() => {
     if (mapEditor?.kind !== "site" || !mapEditorSiteDraft) return;
@@ -597,7 +646,28 @@ export function useMapEditorFormState() {
         setStatus("Cannot create simulation until current user profile is loaded.");
         return false;
       }
+      if (hasDuplicateSimulationNameForOwner(simulationPresets, trimmedName, currentUser.id)) {
+        setDuplicateSimulationNameError();
+        return false;
+      }
       try {
+        if (mapEditor.simulationSeed?.copyCurrentSimulation) {
+          const createdId = createSimulationCopyFromCurrent(trimmedName, {
+            description: descriptionDraft.trim() || undefined,
+            frequencyPresetId: simulationFrequencyPresetId,
+            autoPropagationEnvironment: simulationAutoPropagationEnvironment,
+            simulationDefaultsOverrideEnabled,
+            simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
+          });
+          if (!createdId) {
+            setStatus("Failed creating simulation copy. Check the name and try again.");
+            return false;
+          }
+          loadSimulationPreset(createdId);
+          closeMapEditor();
+          return true;
+        }
+
         const createdId = createBlankSimulationPreset(trimmedName, {
           frequencyPresetId: simulationFrequencyPresetId,
           description: descriptionDraft.trim() || undefined,
@@ -629,6 +699,19 @@ export function useMapEditorFormState() {
 
     if (!mapEditor?.resourceId) return false;
 
+    if (
+      currentSimulationPreset &&
+      hasDuplicateSimulationNameForOwner(
+        simulationPresets,
+        trimmedName,
+        currentSimulationPreset.ownerUserId ?? "",
+        currentSimulationPreset.id,
+      )
+    ) {
+      setDuplicateSimulationNameError();
+      return false;
+    }
+
     // Check for private site refs that would need to be promoted
     if (normalizedVisibility === "shared") {
       const preset = simulationPresets.find((p) => p.id === mapEditor.resourceId);
@@ -659,6 +742,8 @@ export function useMapEditorFormState() {
         description: descriptionDraft.trim() || undefined,
         visibility: normalizedVisibility,
         sharedWith,
+        simulationDefaultsOverrideEnabled,
+        simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
       });
       closeMapEditor();
       return true;
@@ -794,6 +879,12 @@ export function useMapEditorFormState() {
     setSimulationFrequencyPresetId,
     simulationAutoPropagationEnvironment,
     setSimulationAutoPropagationEnvironment,
+    simulationDefaultsOverrideEnabled,
+    setSimulationDefaultsOverrideEnabled,
+    simulationDefaultsDraft,
+    simulationNameError,
+    setSimulationDefaultsDraft: (patch: Partial<SimulationDefaults>) =>
+      setSimulationDefaultsDraft((current) => normalizeSimulationDefaults({ ...current, ...patch }, current)),
     handleSaveSimulation,
     // link
     linkNameDraft, setLinkNameDraft,
