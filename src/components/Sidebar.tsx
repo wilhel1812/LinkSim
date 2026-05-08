@@ -35,7 +35,7 @@ import { getUiErrorMessage } from "../lib/uiError";
 import { formatDate } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
 import type { Site } from "../types/radio";
-import { siGithub } from "simple-icons";
+import { siGithub, siMatrix } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
@@ -905,6 +905,19 @@ export function Sidebar({
               <path d={siGithub.path} fill="currentColor" />
             </svg>
             GitHub
+          </a>
+          <a href="https://matrix.to/#/#linksim:matrix.org" rel="noreferrer" target="_blank">
+            <svg
+              aria-hidden="true"
+              height="13"
+              role="img"
+              viewBox="0 0 24 24"
+              width="13"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d={siMatrix.path} fill="currentColor" />
+            </svg>
+            Matrix
           </a>
         </div>
         <div className="sidebar-footer-version">
