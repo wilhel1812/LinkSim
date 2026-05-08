@@ -11,12 +11,12 @@ Use this checklist before opening a normal production promotion PR (`staging` ->
 - [ ] `npm test` passes on the release candidate.
 - [ ] `npm run build` passes on the release candidate.
 - [ ] Staging verification was completed on `https://staging.linksim.link`.
-- [ ] Verified production promotion will use the exact same staging commit SHA.
+- [ ] Verified production promotion will use the exact same release tree that was verified on staging.
 
 ## Version and notes
 - [ ] SemVer bump is present and intentional.
 - [ ] `CHANGELOG.md` has a human-readable entry for this release.
-- [ ] Release tag `vX.Y.Z` points to the production commit.
+- [ ] Release tag `vX.Y.Z` points to the verified release tree that production will deploy.
 
 ## PR attestation (required)
 Include this checked line in the PR body for `staging` -> `main`:

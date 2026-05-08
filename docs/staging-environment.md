@@ -16,11 +16,9 @@ This project supports a separate staging stack with production-like data.
 
 ### Deploy to staging (test environment)
 
-```bash
-npm run deploy:staging
-```
+Merge a PR into `staging`. CI automatically runs the guarded staging deploy to https://staging.linksim.link.
 
-This deploys the current branch to `main` branch in Cloudflare Pages, which is served by https://staging.linksim.link
+Do not run `npm run deploy:staging` locally for routine verification; Cloudflare deploy credentials are only expected in CI.
 
 ### Deploy to preview (side-by-side comparison)
 
@@ -56,14 +54,12 @@ npm run refresh:staging:r2
 
 ### Full refresh + deploy
 
-```bash
-npm run refresh-and-deploy:staging
-```
+Run the refresh scripts only when explicitly needed, then merge a staging PR and let CI deploy. Do not run deploy scripts locally for routine staging verification.
 
 ## Recommended cadence
 
-- Every commit/PR: `npm run deploy:staging` → test at https://staging.linksim.link
-- Before acceptance/regression testing: `npm run refresh-and-deploy:staging`
+- Every merged staging PR: CI deploys automatically → test at https://staging.linksim.link
+- Before acceptance/regression testing: refresh staging data only when needed, then rely on CI for deploy
 
 ## Safety notes
 

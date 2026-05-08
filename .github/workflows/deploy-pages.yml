@@ -75,6 +75,9 @@ jobs:
           VERSION="$(node -p "require('./package.json').version")"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate production promotion tree
+        run: node scripts/validate-prod-promotion.mjs
+
       - name: Prepare release worktree
         run: git worktree add --detach "$RUNNER_TEMP/linksim-release" "${{ steps.release_tag.outputs.tag }}"
 
