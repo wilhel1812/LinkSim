@@ -37,6 +37,21 @@
 }
 
 :root[data-holiday-theme="pride"] {
+  --holiday-rainbow-icon-gradient: conic-gradient(
+    from -90deg at 50% 58.333%,
+    #e40303 0%,
+    #e40303 16%,
+    #ff8c00 16%,
+    #ff8c00 32%,
+    #ffed00 32%,
+    #ffed00 48%,
+    #008026 48%,
+    #008026 64%,
+    #004dff 64%,
+    #004dff 80%,
+    #750787 80%,
+    #750787 100%
+  );
   --holiday-rainbow-border: repeating-linear-gradient(
     45deg,
     #e40303 0 8px,
@@ -49,6 +64,21 @@
 }
 
 :root.theme-dark[data-holiday-theme="pride"] {
+  --holiday-rainbow-icon-gradient: conic-gradient(
+    from -90deg at 50% 58.333%,
+    #ff5470 0%,
+    #ff5470 16%,
+    #ff9f1a 16%,
+    #ff9f1a 32%,
+    #ffe45c 32%,
+    #ffe45c 48%,
+    #34d17a 48%,
+    #34d17a 64%,
+    #4ea0ff 64%,
+    #4ea0ff 80%,
+    #b46bff 80%,
+    #b46bff 100%
+  );
   --holiday-rainbow-border: repeating-linear-gradient(
     45deg,
     #ff5470 0 8px,
@@ -1688,6 +1718,37 @@ button {
   align-items: center;
   gap: 5px;
   color: var(--accent);
+}
+
+.map-holiday-pride-icon {
+  position: relative;
+  width: 15px;
+  aspect-ratio: 1;
+  display: inline-block;
+  overflow: hidden;
+  -webkit-mask: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 16a8 8 0 0 1 16 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M7 16a5 5 0 0 1 10 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M10 16a2 2 0 0 1 4 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='16' r='1' fill='white'/%3E%3C/svg%3E");
+  mask: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 16a8 8 0 0 1 16 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M7 16a5 5 0 0 1 10 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M10 16a2 2 0 0 1 4 0' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='16' r='1' fill='white'/%3E%3C/svg%3E");
+}
+
+.map-holiday-pride-icon-paint {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  background: var(--holiday-rainbow-icon-gradient);
+  transform-origin: 50% 58.333%;
+  animation: pride-ripple 2.6s linear infinite;
+}
+
+@keyframes pride-ripple {
+  from {
+    transform: scale(0.35);
+  }
+
+  to {
+    transform: scale(1.35);
+  }
 }
 
 .map-inspector-details {

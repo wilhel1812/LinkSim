@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Egg, Fullscreen, Locate, LocateFixed, Maximize2, Minimize2, Rainbow, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Locate, LocateFixed, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import { MapControlButton } from "./ui/MapControlButton";
 import { Surface } from "./ui/Surface";
@@ -2801,10 +2801,9 @@ export function MapView({
               <p className="map-inspector-primary map-holiday-note-title">
                 <span className="map-holiday-note-icons" aria-hidden="true">
                   {activeHolidayTheme.key === "pride" ? (
-                    <>
-                      <Rainbow size={15} strokeWidth={1.8} />
-                      <Rainbow size={14} strokeWidth={1.8} />
-                    </>
+                    <span className="map-holiday-pride-icon">
+                      <span className="map-holiday-pride-icon-paint" />
+                    </span>
                   ) : (
                     <>
                       <Rabbit size={15} strokeWidth={1.8} />
