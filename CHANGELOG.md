@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.20.0] - 2026-05-08
+
+### Added
+- Added RX target heatmap scale and contour overlays to make target coverage easier to evaluate. (#814, #843)
+- Added read-only editor views and sidebar detail actions for shared/read-only Simulations. (#842)
+- Added Pride seasonal theme support, preview controls, and animated notice treatment. (#852)
+- Added a Matrix community footer link. (#844)
+
+### Changed
+- Clarified Simulation radio/default settings editing and made preset defaults more explicit. (#847)
+- Refined heatmap target scale rendering and muted target contour styling for better readability. (#814)
+- Hardened release promotion guardrails and aligned release documentation around PR/CI-only production deploys. (#837, #881)
+
+### Fixed
+- Fixed simulation copy flows so duplicated Simulations preserve active snapshots and referenced Sites. (#845)
+- Fixed Library Site visibility for accessible shared resources. (#848)
+- Fixed duplicate Simulation name feedback and copy-save ordering around blank Simulation creation. (#840, #845)
+- Fixed seasonal theme hover contrast and Pride notice icon sizing/animation. (#852)
+
 ## [0.19.0] - 2026-05-04
 
 ### Added
