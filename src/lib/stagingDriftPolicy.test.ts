@@ -12,7 +12,7 @@ const evaluatePolicy = (expression: string) => {
     [
       "--input-type=module",
       "--eval",
-      `import { isNormalStagingPromotion, shouldOpenStagingDriftIssue } from ${JSON.stringify(scriptPath)};
+      `import { isNormalReleasePromotion, isNormalStagingPromotion, shouldOpenStagingDriftIssue } from ${JSON.stringify(scriptPath)};
        const result = ${expression};
        console.log(JSON.stringify(result));`,
     ],
@@ -54,6 +54,23 @@ describe("staging drift policy", () => {
     expect(result.openIssue).toBe(true);
   });
 
+  it("does not open a drift issue for a squash-merged release branch promotion", () => {
+    const result = evaluatePolicy(`shouldOpenStagingDriftIssue({
+      driftCount: 1,
+      associatedPullRequests: [
+        {
+          head: { ref: "release/v0.19.0" },
+          base: { ref: "main" },
+          merged_at: "2026-05-04T07:16:21Z",
+          html_url: "https://github.com/wilhel1812/LinkSim/pull/836",
+        },
+      ],
+    })`) as { openIssue: boolean; reason: string };
+
+    expect(result.openIssue).toBe(false);
+    expect(result.reason).toContain("release/vX.Y.Z");
+  });
+
   it("does not open a drift issue when there are no main-only commits", () => {
     const result = evaluatePolicy(`shouldOpenStagingDriftIssue({
       driftCount: 0,
@@ -78,5 +95,22 @@ describe("staging drift policy", () => {
         mergedAt: "2026-04-27T12:00:00Z",
       })`),
     ).toBe(true);
+  });
+
+  it("recognizes release/vX.Y.Z promotions as normal production promotions", () => {
+    expect(
+      evaluatePolicy(`isNormalReleasePromotion({
+        head: { ref: "release/v0.19.0" },
+        base: { ref: "main" },
+        merged_at: "2026-05-04T07:16:21Z",
+      })`),
+    ).toBe(true);
+    expect(
+      evaluatePolicy(`isNormalReleasePromotion({
+        head: { ref: "release/0-19-0" },
+        base: { ref: "main" },
+        merged_at: "2026-05-04T07:16:21Z",
+      })`),
+    ).toBe(false);
   });
 });

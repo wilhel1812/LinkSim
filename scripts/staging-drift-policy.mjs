@@ -15,6 +15,15 @@ export const isNormalStagingPromotion = (pullRequest) => {
   return normalized.baseRefName === "main" && normalized.headRefName === "staging" && Boolean(normalized.mergedAt);
 };
 
+export const isNormalReleasePromotion = (pullRequest) => {
+  const normalized = normalizePullRequest(pullRequest);
+  return (
+    normalized.baseRefName === "main" &&
+    /^release\/v[0-9]+\.[0-9]+\.[0-9]+$/.test(normalized.headRefName) &&
+    Boolean(normalized.mergedAt)
+  );
+};
+
 export const shouldOpenStagingDriftIssue = ({ driftCount, associatedPullRequests }) => {
   const count = asCount(driftCount);
   if (count === 0) {
@@ -26,6 +35,13 @@ export const shouldOpenStagingDriftIssue = ({ driftCount, associatedPullRequests
     return {
       openIssue: false,
       reason: `normal squash-merged staging->main promotion: ${stagingPromotion.htmlUrl || "associated PR"}`,
+    };
+  }
+  const releasePromotion = pullRequests.map(normalizePullRequest).find(isNormalReleasePromotion);
+  if (releasePromotion) {
+    return {
+      openIssue: false,
+      reason: `normal squash-merged release/vX.Y.Z->main promotion: ${releasePromotion.htmlUrl || "associated PR"}`,
     };
   }
   return { openIssue: true, reason: `${count} main commit(s) are not represented by a staging promotion PR` };

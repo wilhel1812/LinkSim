@@ -78,16 +78,17 @@
   - `npm run deploy:staging:preview` → Preview URL
   - `npm run deploy:prod:main` → https://linksim.link
 - Staging deploy default:
-  - Use `npm run deploy:staging` from `staging` branch to deploy to https://staging.linksim.link
+  - Merge to `staging` and let CI deploy to https://staging.linksim.link.
+  - Do not run deploy scripts locally for normal verification.
   - Do not use preview deploys for normal verification; default is always the shared staging URL.
 - Never run raw `wrangler pages deploy` for release operations.
 - If a guarded deploy fails, fix the script/preflight issue and re-run the guarded script. Do not bypass with manual Wrangler deploys.
 - Promotion gate:
-  - Promote the exact same verified commit from local -> staging -> production.
+  - Promote the exact same verified release tree from local -> staging -> production. With squash merges, commit SHAs can differ; the production deploy gate must verify that `main` HEAD matches the `vX.Y.Z` tag tree.
   - If code changes after staging verification, rerun local verification and redeploy staging before production.
   - Normal production promotion PR must be `staging` -> `main`.
   - Hotfix promotion PR may be `hotfix/<slug>` -> `main` only with explicit user approval in-thread.
-- Normal squash-merged `staging` -> `main` production releases are not staging drift; the release content already came from `staging`, even though the squash commit is not in staging ancestry.
+- Normal squash-merged `staging` -> `main` and `release/vX.Y.Z` -> `main` production releases are not staging drift; the release content already came from `staging`, even though the squash commit is not in staging ancestry.
 - **After any hotfix merges to main**: immediately create a `chore/sync-main-to-staging` branch from `origin/staging`, apply the main-only hotfix/reconcile content in commits that can be squash-merged, PR into `staging`, merge, and let CI redeploy staging. Do not start new feature work until staging is back in sync. The `detect-staging-drift` workflow will open a GitHub Issue as a reminder if this is missed.
 - **Release-reconcile fallback rule**: if production promotion cannot be completed via direct `staging` -> `main` and uses a `hotfix/*` snapshot/reconcile PR instead, the same pass is not complete until `main` is synced back into `staging`, staging is redeployed, and the drift issue is closed.
 
@@ -116,10 +117,11 @@ When `staging` → `main` PR shows conflicts despite squash-merge policy:
   - Restart local server whenever runtime/config/env changes can affect behavior.
   - Re-verify affected flows after restart before marking work as done.
   - Do not leave local dev/watch servers running after a pass. Before handing back, run `npm run dev:check`; if it reports a LinkSim dev/watch server, run `npm run dev:stop` unless the user explicitly asked to keep it running.
-- Production preflight checklist (required before `deploy:prod:main`):
+- Production preflight checklist (required before production promotion):
   - `npm run test`
   - `npm run build:bundle`
   - Confirm build label matches intended SemVer channel rules
+  - Confirm the `vX.Y.Z` tag tree matches the production promotion tree
   - Confirm no unresolved issue/project status drift for items in the current pass
   - Confirm `CHANGELOG.md` is updated with user-readable highlights for the target release
 - Token-efficient execution:
@@ -152,7 +154,7 @@ When `staging` → `main` PR shows conflicts despite squash-merge policy:
   - Run and report: `git log --oneline origin/staging -5`
   - Run and report: `git log --oneline origin/main -5`
   - Run and report: `git cherry -v origin/staging origin/main`
-  - If `git cherry` only reports the latest normal squash-merged `staging` -> `main` production release commit, treat it as expected ancestry-only drift and proceed.
+  - If `git cherry` only reports the latest normal squash-merged `staging` -> `main` or `release/vX.Y.Z` -> `main` production release commit, treat it as expected ancestry-only drift and proceed.
   - If new main-only hotfix/reconcile content appears, create a dedicated `chore/sync-main-to-staging` PR before feature work.
 - Verification gates for deep-link/API-affecting work:
   - `npm run test -- --run src/lib/deepLink.test.ts`
@@ -170,7 +172,7 @@ When `staging` → `main` PR shows conflicts despite squash-merge policy:
 - Milestone promotion model:
   - Complete and verify all milestone issues on `staging` first.
   - Promote to production in one batch with a direct PR from `staging` to `main`.
-  - Use the exact verified staging commit for production; no code changes between staging sign-off and production deploy.
+  - Use the exact verified release tree for production; no code changes between staging sign-off and production deploy.
   - Freeze milestone scope at sign-off: no new feature work lands on `staging` until production deploy completes.
   - After production deploy, continue new issue work from the updated `origin/staging` baseline.
 
