@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { upsertLibrarySnapshot } from "./db";
+import { fetchPublicSimulationBundle, upsertLibrarySnapshot } from "./db";
 
 type AnyRow = Record<string, unknown>;
 
@@ -150,14 +150,24 @@ class FakeDb {
       if (!row) return null;
       return { id: row.id, visibility: row.visibility };
     }
+    if (sql.includes("SELECT id, payload_json, visibility FROM simulations WHERE id = ?")) {
+      const id = String(bound[0] ?? "");
+      return this.simulations.get(id) ?? null;
+    }
+    if (sql.includes("SELECT role FROM simulation_roles")) {
+      return null;
+    }
     return null;
   }
 
-  all(sql: string): AnyRow[] {
+  all(sql: string, bound: unknown[] = []): AnyRow[] {
     const pragmaMatch = sql.match(/^PRAGMA table_info\(([^)]+)\)$/i);
     if (pragmaMatch) {
       const table = pragmaMatch[1] ?? "";
       return (TABLE_COLUMNS[table] ?? []).map((name) => ({ name }));
+    }
+    if (sql.includes("SELECT id, payload_json, visibility FROM sites WHERE id IN")) {
+      return bound.map((id) => this.sites.get(String(id))).filter((row): row is AnyRow => Boolean(row));
     }
     return [];
   }
@@ -305,6 +315,33 @@ describe("upsertLibrarySnapshot shared simulations", () => {
     expect(stored?.visibility).toBe("public_write");
     const payload = JSON.parse(String(stored?.payload_json ?? "{}")) as { snapshot?: { sites?: Array<{ libraryEntryId?: string }> } };
     expect(payload.snapshot?.sites?.[0]?.libraryEntryId).toBe("site-private");
+  });
+
+  it("loads unlisted private simulation bundles with referenced private sites", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-private", {
+      id: "site-private",
+      visibility: "private",
+      payload_json: JSON.stringify({ id: "site-private", name: "Private Site" }),
+    });
+    db.simulations.set("sim-private", {
+      id: "sim-private",
+      visibility: "private",
+      payload_json: JSON.stringify({
+        id: "sim-private",
+        visibility: "private",
+        snapshot: { sites: [{ id: "site-a", libraryEntryId: "site-private" }], links: [] },
+      }),
+    });
+
+    const result = await fetchPublicSimulationBundle(
+      { DB: db } as unknown as Parameters<typeof fetchPublicSimulationBundle>[0],
+      { simulationId: "sim-private", actorId: null, allowUnlisted: true },
+    );
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.sites).toEqual([expect.objectContaining({ id: "site-private", visibility: "private" })]);
   });
 
   afterEach(() => {

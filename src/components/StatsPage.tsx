@@ -1,160 +1,139 @@
+import { Activity, ExternalLink, MapPinned, Network, Radio, Ruler, Sparkles, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { ActionButton } from "./ActionButton";
+import { AvatarBadge } from "./AvatarBadge";
+import { StatsDensityMap } from "./StatsDensityMap";
 import { fetchStats, type StatsGrowthBucket, type StatsPayload } from "../lib/stats";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 
 type GrowthMode = "monthly" | "weekly";
-type MetricKey = "users" | "sites" | "simulations" | "links";
 
 const formatNumber = (value: number): string => new Intl.NumberFormat("en").format(value);
+const formatDecimal = (value: number): string => new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(value);
+const chartColors = ["var(--accent)", "var(--success)", "var(--temporary)", "var(--warning)"];
 
-const metricLabel = (value: number, singular: string, plural = `${singular}s`): string =>
-  `${formatNumber(value)} ${value === 1 ? singular : plural}`;
-
-const metricConfig: Record<MetricKey, { label: string; detail: string; cumulativeKey: keyof StatsGrowthBucket }> = {
-  users: {
-    label: "Users",
-    detail: "Registered community members.",
-    cumulativeKey: "cumulativeUsers",
-  },
-  sites: {
-    label: "Sites",
-    detail: "Saved planning locations.",
-    cumulativeKey: "cumulativeSites",
-  },
-  simulations: {
-    label: "Simulations",
-    detail: "Saved Simulations.",
-    cumulativeKey: "cumulativeSimulations",
-  },
-  links: {
-    label: "Links",
-    detail: "Saved Paths inside Simulations.",
-    cumulativeKey: "cumulativeLinks",
-  },
+const growthLabels: Record<GrowthMode, string> = {
+  monthly: "All time",
+  weekly: "Last 30 days",
 };
 
-const EmptyPanel = ({ title, children }: { title: string; children: string }) => (
-  <article className="stats-placeholder panel-section">
-    <div className="section-heading">
-      <h2>{title}</h2>
-      <span className="stats-chip">planned</span>
+const CustomTooltip = ({ active, label, payload }: { active?: boolean; label?: string; payload?: Array<{ name?: string; value?: number; color?: string }> }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="stats-chart-tooltip">
+      <strong>{label}</strong>
+      {payload.map((entry) => (
+        <span key={entry.name} style={{ "--series-color": entry.color } as CSSProperties}>
+          {entry.name}: {formatNumber(Number(entry.value ?? 0))}
+        </span>
+      ))}
     </div>
-    <p className="field-help">{children}</p>
+  );
+};
+
+const Panel = ({ title, children, className = "" }: { title: string; children: ReactNode; className?: string }) => (
+  <article className={`stats-atlas-panel panel-section ${className}`.trim()}>
+    <div className="section-heading stats-atlas-panel-heading">
+      <h2>{title}</h2>
+    </div>
+    {children}
   </article>
 );
 
-const MetricChart = ({ buckets, metric }: { buckets: StatsGrowthBucket[]; metric: MetricKey }) => {
-  const width = 320;
-  const height = 150;
-  const config = metricConfig[metric];
-  const maxValue = Math.max(1, ...buckets.map((bucket) => Number(bucket[config.cumulativeKey])));
-  const points = buckets.map((bucket, index) => {
-    const x = buckets.length <= 1 ? width - 28 : 26 + (index / (buckets.length - 1)) * (width - 54);
-    const value = Number(bucket[config.cumulativeKey]);
-    const y = height - 28 - (value / maxValue) * (height - 54);
-    return { x, y, value, bucket };
-  });
-  const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
-
-  if (!buckets.length) {
-    return <div className="stats-mini-empty">No growth data yet.</div>;
-  }
-
-  return (
-    <div className="stats-mini-chart-wrap">
-      <svg className="stats-growth-chart" role="img" viewBox={`0 0 ${width} ${height}`} aria-label={`${config.label} growth over time`}>
-        <text className="stats-axis-label stats-axis-label-y" x="2" y="18">Total</text>
-        <text className="stats-axis-label stats-axis-label-x" x={width - 60} y={height - 4}>Time</text>
-        <path className="stats-chart-grid" d={`M26 ${height - 28} H${width - 18}`} />
-        <path className="stats-chart-grid stats-chart-axis-y" d={`M26 16 V${height - 28}`} />
-        <path className="stats-chart-area" d={`${path} L${width - 18},${height - 28} L26,${height - 28} Z`} />
-        <path className="stats-chart-line" d={path} />
-        {points.map((point) => (
-          <g key={point.bucket.label}>
-            <circle className="stats-chart-dot" cx={point.x} cy={point.y} r="4" />
-            <title>
-              {point.bucket.label}: {metricLabel(point.value, config.label.slice(0, -1) || config.label)}
-            </title>
-          </g>
-        ))}
-      </svg>
-    </div>
-  );
-};
-
-const StatCard = ({
-  buckets,
-  metric,
+const MetricCard = ({
+  label,
   value,
+  delta,
+  icon: Icon,
 }: {
-  buckets: StatsGrowthBucket[];
-  metric: MetricKey;
+  label: string;
   value: number;
-}) => {
-  const config = metricConfig[metric];
+  delta: number;
+  icon: typeof Users;
+}) => (
+  <article className="stats-atlas-metric">
+    <div className="stats-atlas-metric-icon" aria-hidden="true">
+      <Icon size={18} />
+    </div>
+    <div>
+      <span className="stats-atlas-metric-value">{formatNumber(value)}</span>
+      <span className="stats-atlas-metric-label">{label}</span>
+    </div>
+    <span className="stats-atlas-delta">{delta > 0 ? `+${formatNumber(delta)}` : "No new"}</span>
+  </article>
+);
+
+const GrowthChart = ({ buckets }: { buckets: StatsGrowthBucket[] }) => {
+  if (!buckets.length) {
+    return <div className="stats-empty">Growth appears after dated community activity is available.</div>;
+  }
   return (
-    <article className="stats-counter">
-      <div className="stats-counter-copy">
-        <span className="stats-counter-value">{formatNumber(value)}</span>
-        <span className="stats-counter-label">{config.label}</span>
-        <span className="stats-counter-detail">{config.detail}</span>
-      </div>
-      <MetricChart buckets={buckets} metric={metric} />
-    </article>
+    <div className="stats-chart-shell">
+      <ResponsiveContainer height={280} width="100%">
+        <LineChart data={buckets} margin={{ top: 10, right: 18, bottom: 18, left: 4 }}>
+          <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
+          <XAxis dataKey="label" minTickGap={22} stroke="var(--muted)" tickLine={false} />
+          <YAxis stroke="var(--muted)" tickLine={false} width={42} />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend iconType="circle" />
+          <Line dataKey="cumulativeUsers" dot={false} name="Users" stroke={chartColors[0]} strokeWidth={3} type="monotone" />
+          <Line dataKey="cumulativeSites" dot={false} name="Sites" stroke={chartColors[1]} strokeWidth={3} type="monotone" />
+          <Line dataKey="cumulativeSimulations" dot={false} name="Simulations" stroke={chartColors[2]} strokeWidth={3} type="monotone" />
+          <Line dataKey="cumulativeLinks" dot={false} name="Links" stroke={chartColors[3]} strokeWidth={3} type="monotone" />
+        </LineChart>
+      </ResponsiveContainer>
+      <p className="stats-chart-range">{buckets[0]?.label} to {buckets.at(-1)?.label}</p>
+    </div>
   );
 };
 
-const GeoDensity = ({ stats }: { stats: StatsPayload }) => {
-  const bins = stats.geography.bins.slice(0, 180);
-  const maxCount = Math.max(1, ...bins.map((bin) => bin.count));
-  const minLat = Math.min(...bins.map((bin) => bin.latBand));
-  const maxLat = Math.max(...bins.map((bin) => bin.latBand));
-  const minLon = Math.min(...bins.map((bin) => bin.lonBand));
-  const maxLon = Math.max(...bins.map((bin) => bin.lonBand));
-  const rawLatSpan = maxLat - minLat;
-  const rawLonSpan = maxLon - minLon;
-  const latSpan = Math.max(1, rawLatSpan);
-  const lonSpan = Math.max(1, rawLonSpan);
-
-  if (!bins.length) {
-    return <div className="stats-empty">Site density will appear after Sites with coordinates are created.</div>;
-  }
-
+const SizeBucketsChart = ({ buckets }: { buckets: StatsPayload["complexity"]["sizeBuckets"] }) => {
+  const data = Object.entries(buckets).map(([label, count]) => ({ label, count }));
   return (
-    <div className="stats-geo-wrap" aria-label="Binned Site geography">
-      <svg className="stats-geo-map" role="img" viewBox="0 0 720 360" aria-label="Binned density map of entered Site locations">
-        <rect className="stats-geo-frame" x="1" y="1" width="718" height="358" rx="18" />
-        <text className="stats-axis-label" x="24" y="28">North</text>
-        <text className="stats-axis-label" x="24" y="342">South</text>
-        <text className="stats-axis-label" x="650" y="342">East</text>
-        <path className="stats-geo-equator" d="M24 180 H696" />
-        <path className="stats-geo-meridian" d="M360 24 V336" />
-        {bins.map((bin) => {
-          const x = rawLonSpan === 0 ? 360 : ((bin.lonBand - minLon) / lonSpan) * 592 + 64;
-          const y = rawLatSpan === 0 ? 180 : ((maxLat - bin.latBand) / latSpan) * 252 + 54;
-          const radius = 3 + (bin.count / maxCount) * 18;
-          return (
-            <circle
-              className="stats-geo-bin"
-              cx={x}
-              cy={y}
-              key={`${bin.latBand}:${bin.lonBand}`}
-              r={radius}
-            >
-              <title>
-                {bin.count} Sites near {bin.latBand} degrees latitude, {bin.lonBand} degrees longitude
-              </title>
-            </circle>
-          );
-        })}
-      </svg>
-    </div>
+    <ResponsiveContainer height={180} width="100%">
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 10, left: -18 }}>
+        <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
+        <XAxis dataKey="label" stroke="var(--muted)" tickLine={false} />
+        <YAxis allowDecimals={false} stroke="var(--muted)" tickLine={false} />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="count" fill="var(--temporary)" name="Simulations" radius={[6, 6, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+};
+
+const DistanceChart = ({ buckets }: { buckets: StatsPayload["linkDistanceDistribution"] }) => {
+  if (!buckets.some((bucket) => bucket.count > 0)) {
+    return <div className="stats-empty is-compact">Link distances appear after saved Links have endpoints with coordinates.</div>;
+  }
+  return (
+    <ResponsiveContainer height={180} width="100%">
+      <BarChart data={buckets} margin={{ top: 8, right: 8, bottom: 10, left: -18 }}>
+        <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
+        <XAxis dataKey="label" stroke="var(--muted)" tickLine={false} />
+        <YAxis allowDecimals={false} stroke="var(--muted)" tickLine={false} />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="count" fill="var(--warning)" name="Links" radius={[6, 6, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
   );
 };
 
 export function StatsPage() {
-  const { theme, variant, activeHolidayTheme } = useThemeVariant();
+  const { theme, colorTheme, variant, activeHolidayTheme } = useThemeVariant();
   const [stats, setStats] = useState<StatsPayload | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
@@ -193,74 +172,146 @@ export function StatsPage() {
   }, []);
 
   const activeGrowth = useMemo(() => stats?.growth[growthMode] ?? [], [growthMode, stats]);
+  const latestBucket = activeGrowth.at(-1);
 
   return (
-    <main className="stats-page">
-      <section className="stats-hero">
-        <div className="stats-hero-copy">
-          <span className="stats-kicker">LinkSim community telemetry</span>
-          <h1>Stats</h1>
-          <p>
-            Public aggregate signals from entered Sites, saved Simulations, and community growth.
-          </p>
-        </div>
-      </section>
-
-      {status === "error" ? (
-        <section className="stats-panel panel-section">
-          <div className="section-heading">
-            <h2>Stats unavailable</h2>
-          </div>
-          <p className="field-help field-help-error">{errorMessage}</p>
-        </section>
-      ) : null}
-
-      <section className="stats-growth-header">
+    <main className="stats-page stats-atlas-page">
+      <header className="stats-atlas-header">
         <div>
-          <h2>Growth</h2>
-          <p className="field-help">Each chart shows one cumulative metric over time.</p>
+          <h1>Stats</h1>
+          <p>Public aggregate signals from entered Sites, saved Simulations, and community growth.</p>
         </div>
-        <div className="chip-group">
+        <div className="chip-group" aria-label="Stats time range">
           <ActionButton aria-pressed={growthMode === "monthly"} onClick={() => setGrowthMode("monthly")} type="button">
             All time
           </ActionButton>
           <ActionButton aria-pressed={growthMode === "weekly"} onClick={() => setGrowthMode("weekly")} type="button">
-            Recent
+            Last 30 days
           </ActionButton>
         </div>
+      </header>
+
+      {status === "error" ? (
+        <section className="stats-panel panel-section">
+          <h2>Stats unavailable</h2>
+          <p className="field-help field-help-error">{errorMessage}</p>
+        </section>
+      ) : null}
+
+      <section className="stats-atlas-metrics" aria-label="Community totals">
+        <MetricCard delta={latestBucket?.users ?? 0} icon={Users} label="Users" value={stats?.totals.users ?? 0} />
+        <MetricCard delta={latestBucket?.sites ?? 0} icon={MapPinned} label="Sites" value={stats?.totals.sites ?? 0} />
+        <MetricCard delta={latestBucket?.simulations ?? 0} icon={Network} label="Simulations" value={stats?.totals.simulations ?? 0} />
+        <MetricCard delta={latestBucket?.links ?? 0} icon={Radio} label="Links" value={stats?.totals.links ?? 0} />
       </section>
 
-      <section className="stats-counter-grid" aria-label="Community totals and growth">
-        <StatCard buckets={activeGrowth} metric="users" value={stats?.totals.users ?? 0} />
-        <StatCard buckets={activeGrowth} metric="sites" value={stats?.totals.sites ?? 0} />
-        <StatCard buckets={activeGrowth} metric="simulations" value={stats?.totals.simulations ?? 0} />
-        <StatCard buckets={activeGrowth} metric="links" value={stats?.totals.links ?? 0} />
-      </section>
+      <section className="stats-atlas-grid">
+        <Panel className="stats-atlas-map-panel" title="Site Geography">
+          <p className="field-help">Binned density from user-entered Site coordinates. Exact coordinates stay out of the stats payload.</p>
+          {status === "loading" || !stats ? (
+            <div className="stats-map-skeleton">Loading Site density...</div>
+          ) : (
+            <StatsDensityMap
+              accentColor={variant.cssVars["--accent"] ?? ""}
+              bins={stats.geography.bins}
+              colorTheme={colorTheme}
+              surfaceColor={variant.cssVars["--surface"] ?? ""}
+              theme={theme}
+            />
+          )}
+        </Panel>
 
-      <section className="stats-grid">
-        <article className="stats-panel stats-panel-wide panel-section">
-          <div className="section-heading stats-section-heading">
-            <div>
-              <h2>Site Geography</h2>
-              <p className="field-help">Binned density from user-entered Site coordinates.</p>
-            </div>
-            <span className="stats-chip">{stats ? `${stats.geography.binSizeDegrees} degree bins` : "loading"}</span>
+        <Panel className="stats-atlas-side-panel" title="Contributor Highlights">
+          <div className="stats-person-list">
+            {(stats?.highlights.topContributors ?? []).map((user) => (
+              <button className="stats-person-row" key={user.userId} type="button">
+                <AvatarBadge avatarUrl={user.avatarUrl} imageClassName="profile-avatar" name={user.username} />
+                <span>{user.username}</span>
+                <strong>{formatNumber(user.contributions)}</strong>
+              </button>
+            ))}
+            {!stats?.highlights.topContributors.length ? <p className="field-help">Contributor highlights appear after community resources are saved.</p> : null}
           </div>
-          {status === "loading" || !stats ? <div className="stats-empty">Loading Site geography...</div> : <GeoDensity stats={stats} />}
-        </article>
+        </Panel>
 
-        <EmptyPanel title="Contributor Highlights">
-          Planned: top 5 contributors, newest 5 members, and recent community activity using normal profile-safe fields.
-        </EmptyPanel>
-        <EmptyPanel title="Simulation Complexity">
-          Planned: average and median Sites and Links per non-empty Simulation, plus size distribution buckets.
-        </EmptyPanel>
-        <EmptyPanel title="Radio And Network Flavor">
-          Planned: common frequencies, bands, link distance distribution, and common presets or Channels.
-        </EmptyPanel>
-        <EmptyPanel title="Geography Details">
-          Planned: densest regions, cardinal extent bins, and a future longest passing Path spotlight.
-        </EmptyPanel>
+        <Panel className="stats-atlas-wide-panel" title="Growth over time">
+          <GrowthChart buckets={activeGrowth} />
+          <span className="stats-chip">{growthLabels[growthMode]}</span>
+        </Panel>
+
+        <Panel title="Latest Simulations">
+          <div className="stats-simulation-list">
+            {(stats?.latestSimulations ?? []).map((simulation) => (
+              <a className="stats-simulation-row" href={simulation.href} key={simulation.id}>
+                <span>
+                  <strong>{simulation.name}</strong>
+                  <small>by {simulation.owner.username}</small>
+                </span>
+                <span>{simulation.siteCount} Sites</span>
+                <span>{simulation.linkCount} Links</span>
+                <ExternalLink aria-hidden="true" size={15} />
+              </a>
+            ))}
+            {!stats?.latestSimulations.length ? <p className="field-help">Latest non-empty Simulations will appear here.</p> : null}
+          </div>
+        </Panel>
+
+        <Panel title="Simulation Complexity">
+          <div className="stats-complexity-grid">
+            <span><strong>{formatDecimal(stats?.complexity.averageSitesPerSimulation ?? 0)}</strong>Avg. Sites</span>
+            <span><strong>{formatDecimal(stats?.complexity.medianSitesPerSimulation ?? 0)}</strong>Median Sites</span>
+            <span><strong>{formatDecimal(stats?.complexity.averageLinksPerSimulation ?? 0)}</strong>Avg. Links</span>
+            <span><strong>{formatDecimal(stats?.complexity.medianLinksPerSimulation ?? 0)}</strong>Median Links</span>
+          </div>
+          <p className="field-help">Excludes empty Simulations with no Sites.</p>
+        </Panel>
+
+        <Panel title="Simulations by Size">
+          <SizeBucketsChart buckets={stats?.complexity.sizeBuckets ?? { "1-2": 0, "3-5": 0, "6-10": 0, "11+": 0 }} />
+        </Panel>
+
+        <Panel title="Site Density">
+          <div className="stats-density-list">
+            {(stats?.siteDensitySummary ?? []).map((bin) => (
+              <div className="stats-density-row" key={bin.label}>
+                <span>{bin.label}</span>
+                <strong>{bin.count}</strong>
+              </div>
+            ))}
+            {!stats?.siteDensitySummary.length ? <p className="field-help">Site density appears after Sites with coordinates are created.</p> : null}
+          </div>
+        </Panel>
+
+        <Panel title="Link Distance Distribution">
+          <DistanceChart buckets={stats?.linkDistanceDistribution ?? []} />
+        </Panel>
+
+        <Panel title="Network Flavor">
+          <div className="stats-flavor-lockup">
+            <Activity aria-hidden="true" size={20} />
+            <p className="field-help">Frequency, band, and Channel analysis will use saved Link and Network fields in a later pass.</p>
+          </div>
+        </Panel>
+
+        <Panel title="Newest Members">
+          <div className="stats-person-list">
+            {(stats?.highlights.newestMembers ?? []).map((user) => (
+              <div className="stats-person-row" key={user.userId}>
+                <AvatarBadge avatarUrl={user.avatarUrl} imageClassName="profile-avatar" name={user.username} />
+                <span>{user.username}</span>
+                <Sparkles aria-hidden="true" size={14} />
+              </div>
+            ))}
+            {!stats?.highlights.newestMembers.length ? <p className="field-help">Newest members appear after users join.</p> : null}
+          </div>
+        </Panel>
+
+        <Panel title="Distance Notes">
+          <div className="stats-flavor-lockup">
+            <Ruler aria-hidden="true" size={20} />
+            <p className="field-help">Distances are derived from saved Simulation endpoints and grouped into public aggregate buckets.</p>
+          </div>
+        </Panel>
       </section>
     </main>
   );

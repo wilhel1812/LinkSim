@@ -47,7 +47,7 @@ describe("api/public-simulation", () => {
     await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?sim=sim-1")));
     expect(fetchPublicSimulationBundleMock).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ actorId: null }),
+      expect.objectContaining({ actorId: null, allowUnlisted: true }),
     );
   });
 
@@ -64,7 +64,7 @@ describe("api/public-simulation", () => {
     await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?username=Owner&slug=my-sim")));
     expect(fetchPublicSimulationBundleMock).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ username: "Owner", simulationSlug: "my-sim" }),
+      expect.objectContaining({ username: "Owner", simulationSlug: "my-sim", allowUnlisted: true }),
     );
   });
 
