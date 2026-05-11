@@ -5,7 +5,7 @@ import { onRequestGet } from "./stats";
 type MockTable = {
   users: Array<{ id: string; username: string | null; avatar_url: string | null; created_at: string }>;
   sites: Array<{ id: string; owner_user_id: string; created_at: string | null; payload_json: string }>;
-  simulations: Array<{ id: string; owner_user_id: string; created_at: string | null; payload_json: string }>;
+  simulations: Array<{ id: string; owner_user_id: string; created_at: string | null; name?: string; payload_json: string }>;
 };
 
 const tables: MockTable = {
@@ -64,8 +64,15 @@ beforeEach(() => {
         id: "sim-1",
         name: "Private sim",
         snapshot: {
-          sites: [{ id: "s1" }, { id: "s2" }, { id: "s3" }],
-          links: [{ id: "l1" }, { id: "l2" }],
+          sites: [
+            { id: "s1", name: "North", position: { lat: 60, lon: 10 } },
+            { id: "s2", name: "South", position: { lat: 60.1, lon: 10.1 } },
+            { id: "s3", name: "East", position: { lat: 61, lon: 11 } },
+          ],
+          links: [
+            { id: "l1", fromSiteId: "s1", toSiteId: "s2", frequencyMHz: 868 },
+            { id: "l2", fromSiteId: "s2", toSiteId: "s3", frequencyMHz: 915 },
+          ],
         },
       }),
     },
@@ -82,8 +89,9 @@ beforeEach(() => {
       payload_json: JSON.stringify({
         id: "sim-2",
         name: "Shared sim",
+        slug: "Shared-sim",
         snapshot: {
-          sites: [{ id: "s4" }],
+          sites: [{ id: "s4", name: "Solo", position: { lat: 62, lon: 12 } }],
           links: [{ id: "l3" }],
         },
       }),
@@ -112,6 +120,47 @@ describe("api/stats", () => {
     expect(body.complexity.averageSitesPerSimulation).toBe(2);
     expect(body.complexity.medianSitesPerSimulation).toBe(2);
     expect(body.complexity.averageLinksPerSimulation).toBe(1.5);
+  });
+
+  it("returns latest non-empty simulations and link distance buckets without leaking payloads", async () => {
+    const res = await onRequestGet(mkCtx());
+    const body = await res.json() as {
+      latestSimulations: Array<{
+        id: string;
+        name: string;
+        href: string;
+        owner: { userId: string; username: string; avatarUrl: string };
+        siteCount: number;
+        linkCount: number;
+      }>;
+      linkDistanceDistribution: Array<{ label: string; minKm: number; maxKm: number | null; count: number }>;
+      siteDensitySummary: Array<{ label: string; count: number }>;
+    };
+    const raw = JSON.stringify(body);
+
+    expect(body.latestSimulations).toEqual([
+      expect.objectContaining({
+        id: "sim-2",
+        name: "Shared sim",
+        href: "/Grace/Shared-sim",
+        owner: { userId: "u2", username: "Grace", avatarUrl: "" },
+        siteCount: 1,
+        linkCount: 1,
+      }),
+      expect.objectContaining({
+        id: "sim-1",
+        name: "Private sim",
+        href: "/Ada/Private-sim",
+        siteCount: 3,
+        linkCount: 2,
+      }),
+    ]);
+    expect(body.latestSimulations.some((entry) => entry.id === "sim-empty")).toBe(false);
+    expect(body.linkDistanceDistribution.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(2);
+    expect(body.siteDensitySummary).toEqual([{ label: "60°N, 10°E", count: 2 }]);
+    expect(raw).not.toContain("North");
+    expect(raw).not.toContain("South");
+    expect(raw).not.toContain("payload_json");
   });
 
   it("returns monthly and weekly growth buckets", async () => {

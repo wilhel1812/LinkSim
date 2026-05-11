@@ -2076,7 +2076,7 @@ export const resolveSimulationIdByOwnerSlug = async (
 
 export const fetchPublicSimulationBundle = async (
   env: Env,
-  options: { simulationId?: string; username?: string; simulationSlug?: string; actorId?: string | null },
+  options: { simulationId?: string; username?: string; simulationSlug?: string; actorId?: string | null; allowUnlisted?: boolean },
 ): Promise<
   | { status: "missing" | "forbidden" }
   | {
@@ -2100,16 +2100,19 @@ export const fetchPublicSimulationBundle = async (
     .first<{ id: string; payload_json: string; visibility: DbVisibility }>();
   if (!simulationRow) return { status: "missing" };
   const visibility = visibilityFromDbVisibility(simulationRow.visibility);
+  const allowUnlisted = options.allowUnlisted === true;
 
   let actorSimulationRole: string | null = null;
   if (visibility === "private") {
-    if (!options.actorId) return { status: "forbidden" };
-    const roleRow = await env.DB
-      .prepare("SELECT role FROM simulation_roles WHERE simulation_id = ? AND user_id = ? LIMIT 1")
-      .bind(resolvedId, options.actorId)
-      .first<{ role: string }>();
-    if (!roleRow) return { status: "forbidden" };
-    actorSimulationRole = roleRow.role;
+    if (!options.actorId && !allowUnlisted) return { status: "forbidden" };
+    if (options.actorId) {
+      const roleRow = await env.DB
+        .prepare("SELECT role FROM simulation_roles WHERE simulation_id = ? AND user_id = ? LIMIT 1")
+        .bind(resolvedId, options.actorId)
+        .first<{ role: string }>();
+      if (roleRow) actorSimulationRole = roleRow.role;
+      else if (!allowUnlisted) return { status: "forbidden" };
+    }
   }
 
   let simulation: CloudResourceRecord;
@@ -2139,9 +2142,8 @@ export const fetchPublicSimulationBundle = async (
     .all<{ id: string; payload_json: string; visibility: DbVisibility }>();
   const sites: CloudResourceRecord[] = [];
   for (const row of rows.results) {
-    // When actor has an explicit simulation role (private access), include all referenced
-    // sites regardless of their individual visibility — simulation-level access covers its sites.
-    if (actorSimulationRole === null && visibilityFromDbVisibility(row.visibility) === "private") continue;
+    // Unlisted Simulation access includes the referenced Sites needed to render that Simulation.
+    if (actorSimulationRole === null && !allowUnlisted && visibilityFromDbVisibility(row.visibility) === "private") continue;
     try {
       const site = JSON.parse(row.payload_json) as CloudResourceRecord;
       site.id = row.id;

@@ -12,6 +12,7 @@ type ResourceRow = {
   id: string;
   owner_user_id: string;
   created_at: string | null;
+  name?: string | null;
   payload_json: string;
 };
 
@@ -35,10 +36,28 @@ type SitePayload = {
 };
 
 type SimulationPayload = {
+  id?: unknown;
+  name?: unknown;
+  slug?: unknown;
   snapshot?: {
     sites?: unknown;
     links?: unknown;
   };
+};
+
+type SnapshotSite = {
+  id?: unknown;
+  name?: unknown;
+  position?: {
+    lat?: unknown;
+    lon?: unknown;
+  };
+};
+
+type SnapshotLink = {
+  id?: unknown;
+  fromSiteId?: unknown;
+  toSiteId?: unknown;
 };
 
 const CACHE_CONTROL = "public, max-age=300, s-maxage=900, stale-while-revalidate=3600";
@@ -151,6 +170,61 @@ const bucketSimulationSize = (siteCount: number): "1-2" | "3-5" | "6-10" | "11+"
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
+const slugifySegment = (value: string): string =>
+  value
+    .trim()
+    .normalize("NFKC")
+    .replace(/[\uFE0E\uFE0F]/g, "")
+    .replace(/[+<>~/]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+const hrefForSimulation = (owner: UserRow | undefined, simulation: ResourceRow, payload: SimulationPayload | null): string => {
+  const username = slugifySegment(owner?.username?.trim() || "");
+  const name = typeof payload?.slug === "string" && payload.slug.trim()
+    ? payload.slug
+    : typeof payload?.name === "string" && payload.name.trim()
+      ? payload.name
+      : simulation.name ?? "";
+  const simulationSlug = slugifySegment(name);
+  if (username && simulationSlug) return `/${username}/${simulationSlug}`;
+  return `/?sim=${encodeURIComponent(simulation.id)}`;
+};
+
+const formatGeoLabel = (latBand: number, lonBand: number): string => {
+  const latSuffix = latBand >= 0 ? "N" : "S";
+  const lonSuffix = lonBand >= 0 ? "E" : "W";
+  return `${Math.abs(latBand)}°${latSuffix}, ${Math.abs(lonBand)}°${lonSuffix}`;
+};
+
+const haversineKm = (a: { lat: number; lon: number }, b: { lat: number; lon: number }): number => {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const dLat = lat2 - lat1;
+  const dLon = toRadians(b.lon - a.lon);
+  const value = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 6371 * (2 * Math.asin(Math.sqrt(value)));
+};
+
+const DISTANCE_BUCKETS = [
+  { label: "0-10 km", minKm: 0, maxKm: 10 },
+  { label: "10-25 km", minKm: 10, maxKm: 25 },
+  { label: "25-50 km", minKm: 25, maxKm: 50 },
+  { label: "50-100 km", minKm: 50, maxKm: 100 },
+  { label: "100+ km", minKm: 100, maxKm: null },
+];
+
+const bucketForDistance = (distanceKm: number) =>
+  DISTANCE_BUCKETS.find((bucket) => distanceKm >= bucket.minKm && (bucket.maxKm === null || distanceKm < bucket.maxKm));
+
+const snapshotSites = (payload: SimulationPayload | null): SnapshotSite[] =>
+  Array.isArray(payload?.snapshot?.sites) ? (payload.snapshot.sites as SnapshotSite[]) : [];
+
+const snapshotLinks = (payload: SimulationPayload | null): SnapshotLink[] =>
+  Array.isArray(payload?.snapshot?.links) ? (payload.snapshot.links as SnapshotLink[]) : [];
+
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -158,7 +232,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const [usersResult, sitesResult, simulationsResult] = await Promise.all([
       env.DB.prepare("SELECT id, username, avatar_url, created_at FROM users").all<UserRow>(),
       env.DB.prepare("SELECT id, owner_user_id, created_at, payload_json FROM sites").all<ResourceRow>(),
-      env.DB.prepare("SELECT id, owner_user_id, created_at, payload_json FROM simulations").all<ResourceRow>(),
+      env.DB.prepare("SELECT id, owner_user_id, created_at, name, payload_json FROM simulations").all<ResourceRow>(),
     ]);
 
     const users = usersResult.results ?? [];
@@ -200,16 +274,62 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const nonEmptyLinkCounts: number[] = [];
     const sizeBuckets = { "1-2": 0, "3-5": 0, "6-10": 0, "11+": 0 };
 
+    const latestSimulations: Array<{
+      id: string;
+      name: string;
+      href: string;
+      createdAt: string | null;
+      owner: { userId: string; username: string; avatarUrl: string };
+      siteCount: number;
+      linkCount: number;
+    }> = [];
+    const linkDistanceCounts = DISTANCE_BUCKETS.map((bucket) => ({ ...bucket, count: 0 }));
+
     simulations.forEach((simulation) => {
       addContribution(simulation.owner_user_id);
       const payload = parseJsonObject<SimulationPayload>(simulation.payload_json);
-      const siteCount = Array.isArray(payload?.snapshot?.sites) ? payload.snapshot.sites.length : 0;
-      const linkCount = Array.isArray(payload?.snapshot?.links) ? payload.snapshot.links.length : 0;
+      const sitesInSimulation = snapshotSites(payload);
+      const linksInSimulation = snapshotLinks(payload);
+      const siteCount = sitesInSimulation.length;
+      const linkCount = linksInSimulation.length;
       totalLinks += linkCount;
       if (siteCount <= 0) return;
       nonEmptySiteCounts.push(siteCount);
       nonEmptyLinkCounts.push(linkCount);
       sizeBuckets[bucketSimulationSize(siteCount)] += 1;
+
+      const owner = userById.get(simulation.owner_user_id);
+      latestSimulations.push({
+        id: simulation.id,
+        name: typeof payload?.name === "string" && payload.name.trim() ? payload.name.trim() : simulation.name?.trim() || "Untitled Simulation",
+        href: hrefForSimulation(owner, simulation, payload),
+        createdAt: simulation.created_at,
+        owner: {
+          userId: simulation.owner_user_id,
+          username: owner?.username?.trim() || "Unknown user",
+          avatarUrl: owner?.avatar_url ?? "",
+        },
+        siteCount,
+        linkCount,
+      });
+
+      const sitesById = new Map(
+        sitesInSimulation
+          .filter((site) => typeof site.id === "string")
+          .map((site) => [site.id as string, site]),
+      );
+      linksInSimulation.forEach((link) => {
+        if (typeof link.fromSiteId !== "string" || typeof link.toSiteId !== "string") return;
+        const from = sitesById.get(link.fromSiteId);
+        const to = sitesById.get(link.toSiteId);
+        const fromLat = from?.position?.lat;
+        const fromLon = from?.position?.lon;
+        const toLat = to?.position?.lat;
+        const toLon = to?.position?.lon;
+        if (!isFiniteNumber(fromLat) || !isFiniteNumber(fromLon) || !isFiniteNumber(toLat) || !isFiniteNumber(toLon)) return;
+        const bucket = bucketForDistance(haversineKm({ lat: fromLat, lon: fromLon }, { lat: toLat, lon: toLon }));
+        if (bucket) linkDistanceCounts.find((entry) => entry.label === bucket.label)!.count += 1;
+      });
     });
 
     const newestMembers = [...users]
@@ -239,6 +359,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         binSizeDegrees: 1,
         bins: Array.from(geoBins.values()).sort((a, b) => b.count - a.count || a.latBand - b.latBand || a.lonBand - b.lonBand),
       },
+      siteDensitySummary: Array.from(geoBins.values())
+        .sort((a, b) => b.count - a.count || a.latBand - b.latBand || a.lonBand - b.lonBand)
+        .slice(0, 5)
+        .map((bin) => ({ label: formatGeoLabel(bin.latBand, bin.lonBand), count: bin.count })),
       complexity: {
         averageSitesPerSimulation: round1(average(nonEmptySiteCounts)),
         medianSitesPerSimulation: round1(median(nonEmptySiteCounts)),
@@ -246,6 +370,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         medianLinksPerSimulation: round1(median(nonEmptyLinkCounts)),
         sizeBuckets,
       },
+      latestSimulations: latestSimulations
+        .sort((a, b) => (parseDate(b.createdAt)?.getTime() ?? 0) - (parseDate(a.createdAt)?.getTime() ?? 0))
+        .slice(0, 5),
+      linkDistanceDistribution: linkDistanceCounts,
       highlights: {
         topContributors: Array.from(contributorCounts.values())
           .sort((a, b) => b.contributions - a.contributions || a.username.localeCompare(b.username))

@@ -31,6 +31,10 @@ export type StatsPayload = {
       count: number;
     }>;
   };
+  siteDensitySummary: Array<{
+    label: string;
+    count: number;
+  }>;
   complexity: {
     averageSitesPerSimulation: number;
     medianSitesPerSimulation: number;
@@ -38,6 +42,25 @@ export type StatsPayload = {
     medianLinksPerSimulation: number;
     sizeBuckets: Record<"1-2" | "3-5" | "6-10" | "11+", number>;
   };
+  latestSimulations: Array<{
+    id: string;
+    name: string;
+    href: string;
+    createdAt: string | null;
+    owner: {
+      userId: string;
+      username: string;
+      avatarUrl: string;
+    };
+    siteCount: number;
+    linkCount: number;
+  }>;
+  linkDistanceDistribution: Array<{
+    label: string;
+    minKm: number;
+    maxKm: number | null;
+    count: number;
+  }>;
   highlights: {
     topContributors: Array<{
       userId: string;
