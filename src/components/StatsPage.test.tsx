@@ -19,11 +19,11 @@ const statsPayload = {
   },
   growth: {
     monthly: [
-      { label: "2026-01", users: 2, sites: 4, simulations: 1, cumulativeUsers: 2, cumulativeSites: 4, cumulativeSimulations: 1 },
-      { label: "2026-02", users: 3, sites: 6, simulations: 2, cumulativeUsers: 5, cumulativeSites: 10, cumulativeSimulations: 3 },
+      { label: "2026-01", users: 2, sites: 4, simulations: 1, links: 5, cumulativeUsers: 2, cumulativeSites: 4, cumulativeSimulations: 1, cumulativeLinks: 5 },
+      { label: "2026-02", users: 3, sites: 6, simulations: 2, links: 7, cumulativeUsers: 5, cumulativeSites: 10, cumulativeSimulations: 3, cumulativeLinks: 12 },
     ],
     weekly: [
-      { label: "2026-05-04", users: 1, sites: 2, simulations: 1, cumulativeUsers: 1, cumulativeSites: 2, cumulativeSimulations: 1 },
+      { label: "2026-05-04", users: 1, sites: 2, simulations: 1, links: 3, cumulativeUsers: 1, cumulativeSites: 2, cumulativeSimulations: 1, cumulativeLinks: 3 },
     ],
   },
   geography: {
@@ -61,7 +61,7 @@ describe("StatsPage", () => {
     await screen.findByText("Stats");
     expect(await screen.findByText("12")).toBeInTheDocument();
     expect(screen.getByText("34")).toBeInTheDocument();
-    expect(screen.getByText("6")).toBeInTheDocument();
+    expect(screen.getByText("8")).toBeInTheDocument();
     expect(screen.getByText("21")).toBeInTheDocument();
     expect(screen.getByText("Growth")).toBeInTheDocument();
     expect(screen.getByText("Site Geography")).toBeInTheDocument();
@@ -70,6 +70,8 @@ describe("StatsPage", () => {
     expect(screen.getByText("Radio And Network Flavor")).toBeInTheDocument();
     expect(screen.getByText("Geography Details")).toBeInTheDocument();
     expect(screen.queryByText("Moderator Snapshot")).not.toBeInTheDocument();
+    expect(screen.queryByText(/draft/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("ready")).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/stats", { method: "GET" });
   });
 
@@ -77,11 +79,11 @@ describe("StatsPage", () => {
     render(<StatsPage />);
     await screen.findByText("All time");
 
-    expect(screen.getByText(/2026-01:/)).toBeInTheDocument();
+    expect(screen.getAllByText(/2026-01:/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText("Recent"));
 
     await waitFor(() => {
-      expect(screen.getByText(/2026-05-04:/)).toBeInTheDocument();
+      expect(screen.getAllByText(/2026-05-04:/).length).toBeGreaterThan(0);
     });
   });
 
@@ -100,7 +102,7 @@ describe("StatsPage", () => {
 
     render(<StatsPage />);
 
-    expect(await screen.findByText("Stats will appear here after community data exists.")).toBeInTheDocument();
+    expect(await screen.findAllByText("No growth data yet.")).toHaveLength(4);
     expect(screen.getByText("Site density will appear after Sites with coordinates are created.")).toBeInTheDocument();
   });
 });

@@ -3,9 +3,11 @@ export type StatsGrowthBucket = {
   users: number;
   sites: number;
   simulations: number;
+  links: number;
   cumulativeUsers: number;
   cumulativeSites: number;
   cumulativeSimulations: number;
+  cumulativeLinks: number;
 };
 
 export type StatsPayload = {

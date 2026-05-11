@@ -4,19 +4,35 @@ import { fetchStats, type StatsGrowthBucket, type StatsPayload } from "../lib/st
 import { useThemeVariant } from "../hooks/useThemeVariant";
 
 type GrowthMode = "monthly" | "weekly";
+type MetricKey = "users" | "sites" | "simulations" | "links";
 
 const formatNumber = (value: number): string => new Intl.NumberFormat("en").format(value);
 
 const metricLabel = (value: number, singular: string, plural = `${singular}s`): string =>
   `${formatNumber(value)} ${value === 1 ? singular : plural}`;
 
-const StatCounter = ({ label, value, detail }: { label: string; value: number; detail: string }) => (
-  <div className="stats-counter">
-    <span className="stats-counter-value">{formatNumber(value)}</span>
-    <span className="stats-counter-label">{label}</span>
-    <span className="stats-counter-detail">{detail}</span>
-  </div>
-);
+const metricConfig: Record<MetricKey, { label: string; detail: string; cumulativeKey: keyof StatsGrowthBucket }> = {
+  users: {
+    label: "Users",
+    detail: "Registered community members.",
+    cumulativeKey: "cumulativeUsers",
+  },
+  sites: {
+    label: "Sites",
+    detail: "Saved planning locations.",
+    cumulativeKey: "cumulativeSites",
+  },
+  simulations: {
+    label: "Simulations",
+    detail: "Saved Simulations.",
+    cumulativeKey: "cumulativeSimulations",
+  },
+  links: {
+    label: "Links",
+    detail: "Saved Paths inside Simulations.",
+    cumulativeKey: "cumulativeLinks",
+  },
+};
 
 const EmptyPanel = ({ title, children }: { title: string; children: string }) => (
   <article className="stats-placeholder panel-section">
@@ -28,33 +44,37 @@ const EmptyPanel = ({ title, children }: { title: string; children: string }) =>
   </article>
 );
 
-const GrowthChart = ({ buckets }: { buckets: StatsGrowthBucket[] }) => {
-  const width = 760;
-  const height = 260;
-  const maxValue = Math.max(1, ...buckets.map((bucket) => bucket.cumulativeUsers + bucket.cumulativeSites + bucket.cumulativeSimulations));
+const MetricChart = ({ buckets, metric }: { buckets: StatsGrowthBucket[]; metric: MetricKey }) => {
+  const width = 320;
+  const height = 150;
+  const config = metricConfig[metric];
+  const maxValue = Math.max(1, ...buckets.map((bucket) => Number(bucket[config.cumulativeKey])));
   const points = buckets.map((bucket, index) => {
-    const x = buckets.length <= 1 ? width / 2 : (index / (buckets.length - 1)) * width;
-    const total = bucket.cumulativeUsers + bucket.cumulativeSites + bucket.cumulativeSimulations;
-    const y = height - (total / maxValue) * (height - 34) - 17;
-    return { x, y, total, bucket };
+    const x = buckets.length <= 1 ? width - 28 : 26 + (index / (buckets.length - 1)) * (width - 54);
+    const value = Number(bucket[config.cumulativeKey]);
+    const y = height - 28 - (value / maxValue) * (height - 54);
+    return { x, y, value, bucket };
   });
   const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
 
   if (!buckets.length) {
-    return <div className="stats-empty">Stats will appear here after community data exists.</div>;
+    return <div className="stats-mini-empty">No growth data yet.</div>;
   }
 
   return (
-    <div className="stats-chart-wrap" aria-label="Community growth chart">
-      <svg className="stats-growth-chart" role="img" viewBox={`0 0 ${width} ${height}`} aria-label="Cumulative users, Sites, and Simulations over time">
-        <path className="stats-chart-grid" d={`M0 ${height - 18} H${width}`} />
-        <path className="stats-chart-area" d={`${path} L${width},${height - 18} L0,${height - 18} Z`} />
+    <div className="stats-mini-chart-wrap">
+      <svg className="stats-growth-chart" role="img" viewBox={`0 0 ${width} ${height}`} aria-label={`${config.label} growth over time`}>
+        <text className="stats-axis-label stats-axis-label-y" x="2" y="18">Total</text>
+        <text className="stats-axis-label stats-axis-label-x" x={width - 60} y={height - 4}>Time</text>
+        <path className="stats-chart-grid" d={`M26 ${height - 28} H${width - 18}`} />
+        <path className="stats-chart-grid stats-chart-axis-y" d={`M26 16 V${height - 28}`} />
+        <path className="stats-chart-area" d={`${path} L${width - 18},${height - 28} L26,${height - 28} Z`} />
         <path className="stats-chart-line" d={path} />
         {points.map((point) => (
           <g key={point.bucket.label}>
             <circle className="stats-chart-dot" cx={point.x} cy={point.y} r="4" />
             <title>
-              {point.bucket.label}: {metricLabel(point.bucket.users, "user")}, {metricLabel(point.bucket.sites, "Site")}, {metricLabel(point.bucket.simulations, "Simulation")}
+              {point.bucket.label}: {metricLabel(point.value, config.label.slice(0, -1) || config.label)}
             </title>
           </g>
         ))}
@@ -63,9 +83,39 @@ const GrowthChart = ({ buckets }: { buckets: StatsGrowthBucket[] }) => {
   );
 };
 
+const StatCard = ({
+  buckets,
+  metric,
+  value,
+}: {
+  buckets: StatsGrowthBucket[];
+  metric: MetricKey;
+  value: number;
+}) => {
+  const config = metricConfig[metric];
+  return (
+    <article className="stats-counter">
+      <div className="stats-counter-copy">
+        <span className="stats-counter-value">{formatNumber(value)}</span>
+        <span className="stats-counter-label">{config.label}</span>
+        <span className="stats-counter-detail">{config.detail}</span>
+      </div>
+      <MetricChart buckets={buckets} metric={metric} />
+    </article>
+  );
+};
+
 const GeoDensity = ({ stats }: { stats: StatsPayload }) => {
   const bins = stats.geography.bins.slice(0, 180);
   const maxCount = Math.max(1, ...bins.map((bin) => bin.count));
+  const minLat = Math.min(...bins.map((bin) => bin.latBand));
+  const maxLat = Math.max(...bins.map((bin) => bin.latBand));
+  const minLon = Math.min(...bins.map((bin) => bin.lonBand));
+  const maxLon = Math.max(...bins.map((bin) => bin.lonBand));
+  const rawLatSpan = maxLat - minLat;
+  const rawLonSpan = maxLon - minLon;
+  const latSpan = Math.max(1, rawLatSpan);
+  const lonSpan = Math.max(1, rawLonSpan);
 
   if (!bins.length) {
     return <div className="stats-empty">Site density will appear after Sites with coordinates are created.</div>;
@@ -75,11 +125,14 @@ const GeoDensity = ({ stats }: { stats: StatsPayload }) => {
     <div className="stats-geo-wrap" aria-label="Binned Site geography">
       <svg className="stats-geo-map" role="img" viewBox="0 0 720 360" aria-label="Binned density map of entered Site locations">
         <rect className="stats-geo-frame" x="1" y="1" width="718" height="358" rx="18" />
+        <text className="stats-axis-label" x="24" y="28">North</text>
+        <text className="stats-axis-label" x="24" y="342">South</text>
+        <text className="stats-axis-label" x="650" y="342">East</text>
         <path className="stats-geo-equator" d="M24 180 H696" />
         <path className="stats-geo-meridian" d="M360 24 V336" />
         {bins.map((bin) => {
-          const x = ((bin.lonBand + 180) / 360) * 672 + 24;
-          const y = ((90 - bin.latBand) / 180) * 312 + 24;
+          const x = rawLonSpan === 0 ? 360 : ((bin.lonBand - minLon) / lonSpan) * 592 + 64;
+          const y = rawLatSpan === 0 ? 180 : ((maxLat - bin.latBand) / latSpan) * 252 + 54;
           const radius = 3 + (bin.count / maxCount) * 18;
           return (
             <circle
@@ -151,10 +204,6 @@ export function StatsPage() {
             Public aggregate signals from entered Sites, saved Simulations, and community growth.
           </p>
         </div>
-        <div className="stats-hero-status">
-          <span className={`stats-status-dot is-${status}`} aria-hidden="true" />
-          <span className="stats-chip">{status}</span>
-        </div>
       </section>
 
       {status === "error" ? (
@@ -166,32 +215,29 @@ export function StatsPage() {
         </section>
       ) : null}
 
-      <section className="stats-counter-grid" aria-label="Community totals">
-        <StatCounter label="Users" value={stats?.totals.users ?? 0} detail="registered community members" />
-        <StatCounter label="Sites" value={stats?.totals.sites ?? 0} detail="entered planning locations" />
-        <StatCounter label="Simulations" value={stats?.totals.nonEmptySimulations ?? 0} detail={`${formatNumber(stats?.totals.simulations ?? 0)} total including drafts`} />
-        <StatCounter label="Links" value={stats?.totals.links ?? 0} detail="saved Paths inside Simulations" />
+      <section className="stats-growth-header">
+        <div>
+          <h2>Growth</h2>
+          <p className="field-help">Each chart shows one cumulative metric over time.</p>
+        </div>
+        <div className="chip-group">
+          <ActionButton aria-pressed={growthMode === "monthly"} onClick={() => setGrowthMode("monthly")} type="button">
+            All time
+          </ActionButton>
+          <ActionButton aria-pressed={growthMode === "weekly"} onClick={() => setGrowthMode("weekly")} type="button">
+            Recent
+          </ActionButton>
+        </div>
+      </section>
+
+      <section className="stats-counter-grid" aria-label="Community totals and growth">
+        <StatCard buckets={activeGrowth} metric="users" value={stats?.totals.users ?? 0} />
+        <StatCard buckets={activeGrowth} metric="sites" value={stats?.totals.sites ?? 0} />
+        <StatCard buckets={activeGrowth} metric="simulations" value={stats?.totals.simulations ?? 0} />
+        <StatCard buckets={activeGrowth} metric="links" value={stats?.totals.links ?? 0} />
       </section>
 
       <section className="stats-grid">
-        <article className="stats-panel stats-panel-wide panel-section">
-          <div className="section-heading stats-section-heading">
-            <div>
-              <h2>Growth</h2>
-              <p className="field-help">Cumulative Users, Sites, and Simulations.</p>
-            </div>
-            <div className="chip-group">
-              <ActionButton aria-pressed={growthMode === "monthly"} onClick={() => setGrowthMode("monthly")} type="button">
-                All time
-              </ActionButton>
-              <ActionButton aria-pressed={growthMode === "weekly"} onClick={() => setGrowthMode("weekly")} type="button">
-                Recent
-              </ActionButton>
-            </div>
-          </div>
-          {status === "loading" ? <div className="stats-empty">Loading growth stats...</div> : <GrowthChart buckets={activeGrowth} />}
-        </article>
-
         <article className="stats-panel stats-panel-wide panel-section">
           <div className="section-heading stats-section-heading">
             <div>
