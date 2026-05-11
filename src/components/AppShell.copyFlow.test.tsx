@@ -4,6 +4,25 @@ import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../store/appStore";
 
+vi.hoisted(() => {
+  const values = new Map<string, string>();
+  const localStorageMock = {
+    get length() {
+      return values.size;
+    },
+    clear: vi.fn(() => values.clear()),
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    key: vi.fn((index: number) => Array.from(values.keys())[index] ?? null),
+    removeItem: vi.fn((key: string) => {
+      values.delete(key);
+    }),
+    setItem: vi.fn((key: string, value: string) => {
+      values.set(key, String(value));
+    }),
+  };
+  vi.stubGlobal("localStorage", localStorageMock);
+});
+
 const sidebarCalls: Array<{ readOnly?: boolean; panelToggleControl?: unknown }> = [];
 
 vi.mock("../lib/cloudUser", () => ({
