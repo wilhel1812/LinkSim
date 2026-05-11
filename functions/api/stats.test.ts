@@ -118,15 +118,15 @@ describe("api/stats", () => {
     const res = await onRequestGet(mkCtx());
     const body = await res.json() as {
       growth: {
-        monthly: Array<{ label: string; users: number; sites: number; simulations: number }>;
-        weekly: Array<{ users: number; sites: number; simulations: number }>;
+        monthly: Array<{ label: string; users: number; sites: number; simulations: number; links: number; cumulativeLinks: number }>;
+        weekly: Array<{ users: number; sites: number; simulations: number; links: number }>;
       };
     };
 
     expect(body.growth.monthly).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "2026-01", users: 1, sites: 1, simulations: 1 }),
-        expect.objectContaining({ label: "2026-02", users: 1, sites: 2, simulations: 2 }),
+        expect.objectContaining({ label: "2026-01", users: 1, sites: 1, simulations: 1, links: 2, cumulativeLinks: 2 }),
+        expect.objectContaining({ label: "2026-02", users: 1, sites: 2, simulations: 2, links: 1, cumulativeLinks: 3 }),
       ]),
     );
     expect(body.growth.weekly.length).toBeGreaterThan(0);

@@ -20,9 +20,11 @@ type GrowthBucket = {
   users: number;
   sites: number;
   simulations: number;
+  links: number;
   cumulativeUsers: number;
   cumulativeSites: number;
   cumulativeSimulations: number;
+  cumulativeLinks: number;
 };
 
 type SitePayload = {
@@ -67,10 +69,20 @@ const weekLabel = (date: Date): string => {
   return start.toISOString().slice(0, 10);
 };
 
-const increment = (map: Map<string, { users: number; sites: number; simulations: number }>, label: string, key: "users" | "sites" | "simulations") => {
-  const current = map.get(label) ?? { users: 0, sites: 0, simulations: 0 };
-  current[key] += 1;
+type GrowthCountKey = "users" | "sites" | "simulations" | "links";
+type GrowthCounts = Record<GrowthCountKey, number>;
+
+const emptyGrowthCounts = (): GrowthCounts => ({ users: 0, sites: 0, simulations: 0, links: 0 });
+
+const increment = (map: Map<string, GrowthCounts>, label: string, key: GrowthCountKey, amount = 1) => {
+  const current = map.get(label) ?? emptyGrowthCounts();
+  current[key] += amount;
   map.set(label, current);
+};
+
+const simulationLinkCount = (simulation: ResourceRow): number => {
+  const payload = parseJsonObject<SimulationPayload>(simulation.payload_json);
+  return Array.isArray(payload?.snapshot?.links) ? payload.snapshot.links.length : 0;
 };
 
 const buildGrowth = (
@@ -79,7 +91,7 @@ const buildGrowth = (
   simulations: ResourceRow[],
   labelFor: (date: Date) => string,
 ): GrowthBucket[] => {
-  const buckets = new Map<string, { users: number; sites: number; simulations: number }>();
+  const buckets = new Map<string, GrowthCounts>();
   users.forEach((row) => {
     const date = parseDate(row.created_at);
     if (date) increment(buckets, labelFor(date), "users");
@@ -90,24 +102,30 @@ const buildGrowth = (
   });
   simulations.forEach((row) => {
     const date = parseDate(row.created_at);
-    if (date) increment(buckets, labelFor(date), "simulations");
+    if (!date) return;
+    const label = labelFor(date);
+    increment(buckets, label, "simulations");
+    increment(buckets, label, "links", simulationLinkCount(row));
   });
 
   let cumulativeUsers = 0;
   let cumulativeSites = 0;
   let cumulativeSimulations = 0;
+  let cumulativeLinks = 0;
   return Array.from(buckets.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([label, counts]) => {
       cumulativeUsers += counts.users;
       cumulativeSites += counts.sites;
       cumulativeSimulations += counts.simulations;
+      cumulativeLinks += counts.links;
       return {
         label,
         ...counts,
         cumulativeUsers,
         cumulativeSites,
         cumulativeSimulations,
+        cumulativeLinks,
       };
     });
 };
