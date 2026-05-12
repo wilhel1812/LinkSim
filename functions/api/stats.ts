@@ -28,6 +28,8 @@ type GrowthBucket = {
   cumulativeLinks: number;
 };
 
+type GrowthRangeKey = "today" | "last7Days" | "last30Days" | "lastYear" | "allTime";
+
 type SitePayload = {
   position?: {
     lat?: unknown;
@@ -56,6 +58,7 @@ type SnapshotSite = {
 
 type SnapshotLink = {
   id?: unknown;
+  name?: unknown;
   fromSiteId?: unknown;
   toSiteId?: unknown;
 };
@@ -79,6 +82,10 @@ const parseDate = (value: string | null): Date | null => {
 
 const monthLabel = (date: Date): string =>
   `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+
+const dayLabel = (date: Date): string => date.toISOString().slice(0, 10);
+
+const hourLabel = (date: Date): string => `${String(date.getUTCHours()).padStart(2, "0")}:00`;
 
 const weekLabel = (date: Date): string => {
   const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -149,6 +156,120 @@ const buildGrowth = (
     });
 };
 
+type GrowthEvent = {
+  date: Date;
+  key: GrowthCountKey;
+  amount: number;
+};
+
+const collectGrowthEvents = (users: UserRow[], sites: ResourceRow[], simulations: ResourceRow[]): GrowthEvent[] => {
+  const events: GrowthEvent[] = [];
+  users.forEach((row) => {
+    const date = parseDate(row.created_at);
+    if (date) events.push({ date, key: "users", amount: 1 });
+  });
+  sites.forEach((row) => {
+    const date = parseDate(row.created_at);
+    if (date) events.push({ date, key: "sites", amount: 1 });
+  });
+  simulations.forEach((row) => {
+    const date = parseDate(row.created_at);
+    if (!date) return;
+    events.push({ date, key: "simulations", amount: 1 });
+    events.push({ date, key: "links", amount: simulationLinkCount(row) });
+  });
+  return events;
+};
+
+const startOfUtcDay = (date: Date): Date =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+
+const addUtcDays = (date: Date, days: number): Date => {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+};
+
+const addUtcMonths = (date: Date, months: number): Date => {
+  const next = new Date(date);
+  next.setUTCMonth(next.getUTCMonth() + months);
+  return next;
+};
+
+const buildFixedRangeGrowth = (
+  events: GrowthEvent[],
+  labels: string[],
+  eventLabel: (date: Date) => string | null,
+): GrowthBucket[] => {
+  const buckets = new Map(labels.map((label) => [label, emptyGrowthCounts()] as const));
+  events.forEach((event) => {
+    const label = eventLabel(event.date);
+    if (!label || !buckets.has(label)) return;
+    increment(buckets, label, event.key, event.amount);
+  });
+
+  let cumulativeUsers = 0;
+  let cumulativeSites = 0;
+  let cumulativeSimulations = 0;
+  let cumulativeLinks = 0;
+  return labels.map((label) => {
+    const counts = buckets.get(label) ?? emptyGrowthCounts();
+    cumulativeUsers += counts.users;
+    cumulativeSites += counts.sites;
+    cumulativeSimulations += counts.simulations;
+    cumulativeLinks += counts.links;
+    return {
+      label,
+      ...counts,
+      cumulativeUsers,
+      cumulativeSites,
+      cumulativeSimulations,
+      cumulativeLinks,
+    };
+  });
+};
+
+const buildGrowthRanges = (
+  users: UserRow[],
+  sites: ResourceRow[],
+  simulations: ResourceRow[],
+  now = new Date(),
+): Record<GrowthRangeKey, GrowthBucket[]> => {
+  const events = collectGrowthEvents(users, sites, simulations);
+  const todayStart = startOfUtcDay(now);
+  const todayLabels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, "0")}:00`);
+  const last7Start = addUtcDays(todayStart, -6);
+  const last30Start = addUtcDays(todayStart, -29);
+  const yearStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+  const last7Labels = Array.from({ length: 7 }, (_, index) => dayLabel(addUtcDays(last7Start, index)));
+  const last30Labels = Array.from({ length: 30 }, (_, index) => dayLabel(addUtcDays(last30Start, index)));
+  const lastYearLabels = Array.from({ length: 12 }, (_, index) => monthLabel(addUtcMonths(yearStart, index)));
+
+  return {
+    today: buildFixedRangeGrowth(
+      events,
+      todayLabels,
+      (date) => date >= todayStart && date < addUtcDays(todayStart, 1) ? hourLabel(date) : null,
+    ),
+    last7Days: buildFixedRangeGrowth(
+      events,
+      last7Labels,
+      (date) => date >= last7Start && date < addUtcDays(todayStart, 1) ? dayLabel(date) : null,
+    ),
+    last30Days: buildFixedRangeGrowth(
+      events,
+      last30Labels,
+      (date) => date >= last30Start && date < addUtcDays(todayStart, 1) ? dayLabel(date) : null,
+    ),
+    lastYear: buildFixedRangeGrowth(
+      events,
+      lastYearLabels,
+      (date) => date >= yearStart && date < addUtcMonths(yearStart, 12) ? monthLabel(date) : null,
+    ),
+    allTime: buildGrowth(users, sites, simulations, monthLabel),
+  };
+};
+
 const median = (values: number[]): number => {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -190,6 +311,20 @@ const hrefForSimulation = (owner: UserRow | undefined, simulation: ResourceRow, 
   const simulationSlug = slugifySegment(name);
   if (username && simulationSlug) return `/${username}/${simulationSlug}`;
   return `/?sim=${encodeURIComponent(simulation.id)}`;
+};
+
+const hrefForLink = (
+  owner: UserRow | undefined,
+  simulation: ResourceRow,
+  payload: SimulationPayload | null,
+  fromSite: SnapshotSite,
+  toSite: SnapshotSite,
+): string => {
+  const simulationHref = hrefForSimulation(owner, simulation, payload);
+  const fromName = typeof fromSite.name === "string" ? slugifySegment(fromSite.name) : "";
+  const toName = typeof toSite.name === "string" ? slugifySegment(toSite.name) : "";
+  if (!fromName || !toName || simulationHref.startsWith("/?")) return simulationHref;
+  return `${simulationHref}/${fromName}~${toName}`;
 };
 
 const formatGeoLabel = (latBand: number, lonBand: number): string => {
@@ -283,6 +418,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       siteCount: number;
       linkCount: number;
     }> = [];
+    const longestLinks: Array<{
+      id: string;
+      label: string;
+      href: string;
+      simulationHref: string;
+      simulationName: string;
+      distanceKm: number;
+      owner: { userId: string; username: string; avatarUrl: string };
+    }> = [];
     const linkDistanceCounts = DISTANCE_BUCKETS.map((bucket) => ({ ...bucket, count: 0 }));
 
     simulations.forEach((simulation) => {
@@ -327,8 +471,26 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         const toLat = to?.position?.lat;
         const toLon = to?.position?.lon;
         if (!isFiniteNumber(fromLat) || !isFiniteNumber(fromLon) || !isFiniteNumber(toLat) || !isFiniteNumber(toLon)) return;
-        const bucket = bucketForDistance(haversineKm({ lat: fromLat, lon: fromLon }, { lat: toLat, lon: toLon }));
+        const distanceKm = haversineKm({ lat: fromLat, lon: fromLon }, { lat: toLat, lon: toLon });
+        const bucket = bucketForDistance(distanceKm);
         if (bucket) linkDistanceCounts.find((entry) => entry.label === bucket.label)!.count += 1;
+        const owner = userById.get(simulation.owner_user_id);
+        const fromName = typeof from?.name === "string" && from.name.trim() ? from.name.trim() : "Site A";
+        const toName = typeof to?.name === "string" && to.name.trim() ? to.name.trim() : "Site B";
+        const linkName = typeof link.name === "string" && link.name.trim() ? link.name.trim() : `${fromName} ~ ${toName}`;
+        longestLinks.push({
+          id: `${simulation.id}:${typeof link.id === "string" ? link.id : `${link.fromSiteId}-${link.toSiteId}`}`,
+          label: linkName,
+          href: hrefForLink(owner, simulation, payload, from, to),
+          simulationHref: hrefForSimulation(owner, simulation, payload),
+          simulationName: typeof payload?.name === "string" && payload.name.trim() ? payload.name.trim() : simulation.name?.trim() || "Untitled Simulation",
+          distanceKm: round1(distanceKm),
+          owner: {
+            userId: simulation.owner_user_id,
+            username: owner?.username?.trim() || "Unknown user",
+            avatarUrl: owner?.avatar_url ?? "",
+          },
+        });
       });
     });
 
@@ -342,6 +504,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         createdAt: user.created_at,
       }));
 
+    const growthRanges = buildGrowthRanges(users, sites, simulations);
     const body = {
       generatedAt: new Date().toISOString(),
       totals: {
@@ -352,7 +515,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         links: totalLinks,
       },
       growth: {
-        monthly: buildGrowth(users, sites, simulations, monthLabel),
+        ...growthRanges,
+        monthly: growthRanges.allTime,
         weekly: buildGrowth(users, sites, simulations, weekLabel).slice(-52),
       },
       geography: {
@@ -372,6 +536,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       },
       latestSimulations: latestSimulations
         .sort((a, b) => (parseDate(b.createdAt)?.getTime() ?? 0) - (parseDate(a.createdAt)?.getTime() ?? 0))
+        .slice(0, 5),
+      longestLinks: longestLinks
+        .sort((a, b) => b.distanceKm - a.distanceKm || a.label.localeCompare(b.label))
         .slice(0, 5),
       linkDistanceDistribution: linkDistanceCounts,
       highlights: {

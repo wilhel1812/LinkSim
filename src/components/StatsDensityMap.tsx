@@ -1,9 +1,11 @@
-import { useMemo, useRef, useState, type CSSProperties } from "react";
-import Map, { Layer, NavigationControl, Source, type MapRef } from "react-map-gl/maplibre";
+import { useMemo, useRef, useState } from "react";
+import { Fullscreen, ZoomIn, ZoomOut } from "lucide-react";
+import Map, { Layer, Popup, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { FeatureCollection, Point } from "geojson";
 import { getCartoFallbackStyle } from "../lib/basemaps";
 import type { StatsPayload } from "../lib/stats";
 import type { UiColorTheme } from "../themes/types";
+import { MapControlButton } from "./ui/MapControlButton";
 
 type StatsDensityMapProps = {
   bins: StatsPayload["geography"]["bins"];
@@ -21,8 +23,8 @@ type DensityProperties = {
 type HoveredBin = {
   count: number;
   label: string;
-  xPercent: number;
-  yPercent: number;
+  longitude: number;
+  latitude: number;
 };
 
 const colorVar = (name: string): string =>
@@ -58,28 +60,6 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
   const mapRef = useRef<MapRef | null>(null);
   const [hovered, setHovered] = useState<HoveredBin | null>(null);
   const maxCount = Math.max(1, ...bins.map((bin) => bin.count));
-  const overlayBins = useMemo(() => {
-    if (!bins.length) return [];
-    const points = bins.map((bin) => ({
-      count: bin.count,
-      label: binLabel(bin.latBand, bin.lonBand),
-      longitude: bin.lonBand + 0.5,
-      latitude: bin.latBand + 0.5,
-    }));
-    const lons = points.map((point) => point.longitude);
-    const lats = points.map((point) => point.latitude);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const lonSpan = Math.max(1, maxLon - minLon);
-    const latSpan = Math.max(1, maxLat - minLat);
-    return points.map((point) => ({
-      ...point,
-      xPercent: 8 + ((point.longitude - minLon) / lonSpan) * 76,
-      yPercent: 84 - ((point.latitude - minLat) / latSpan) * 66,
-    }));
-  }, [bins]);
   const featureCollection = useMemo<FeatureCollection<Point, DensityProperties>>(
     () => ({
       type: "FeatureCollection",
@@ -116,88 +96,88 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         initialViewState={{ ...initialCenter, zoom: bins.length === 1 ? 5 : 3 }}
         mapStyle={getCartoFallbackStyle(theme, colorTheme)}
         attributionControl={{ compact: true }}
-        cooperativeGestures
+        dragPan={!window.matchMedia("(pointer: coarse)").matches}
+        scrollZoom={false}
+        touchZoomRotate={false}
         onError={() => setHovered(null)}
         onLoad={(event) => fitBins(event.target as unknown as MapRef, bins)}
         onMouseLeave={() => setHovered(null)}
+        onMouseMove={(event: MapLayerMouseEvent) => {
+          const feature = event.features?.[0];
+          const properties = feature?.properties as Partial<DensityProperties> | undefined;
+          if (!feature || !properties || typeof properties.count !== "number") {
+            setHovered(null);
+            return;
+          }
+          setHovered({
+            longitude: event.lngLat.lng,
+            latitude: event.lngLat.lat,
+            count: properties.count,
+            label: String(properties.label ?? "Site density bin"),
+          });
+        }}
+        onClick={(event: MapLayerMouseEvent) => {
+          const feature = event.features?.[0];
+          const properties = feature?.properties as Partial<DensityProperties> | undefined;
+          if (!feature || !properties || typeof properties.count !== "number") return;
+          setHovered({
+            longitude: event.lngLat.lng,
+            latitude: event.lngLat.lat,
+            count: properties.count,
+            label: String(properties.label ?? "Site density bin"),
+          });
+        }}
         interactiveLayerIds={["stats-density-bins"]}
       >
-        <NavigationControl position="top-left" showCompass={false} />
         <Source data={featureCollection} id="stats-density" type="geojson">
           <Layer
             id="stats-density-bins"
             type="circle"
             paint={{
               "circle-color": accentColor || colorVar("--accent"),
-              "circle-opacity": 0.34,
+              "circle-blur": 0.18,
+              "circle-opacity": 0.64,
               "circle-stroke-color": surfaceColor || colorVar("--surface"),
-              "circle-stroke-opacity": 0.94,
-              "circle-stroke-width": 2,
+              "circle-stroke-opacity": 0.82,
+              "circle-stroke-width": 1.5,
               "circle-radius": [
                 "interpolate",
                 ["linear"],
                 ["get", "count"],
                 1,
-                9,
+                12,
                 maxCount,
-                30,
+                42,
               ],
             }}
           />
         </Source>
-      </Map>
-      <div className="stats-map-marker-layer" aria-label="Binned Site density markers">
-        {overlayBins.map((bin) => {
-          const intensity = Math.max(0.35, bin.count / maxCount);
-          const size = 24 + intensity * 42;
-          return (
-            <button
-              aria-label={`${bin.count} Sites near ${bin.label}`}
-              className="stats-map-marker"
-              key={bin.label}
-              onBlur={() => setHovered(null)}
-              onClick={(event) => {
-                event.stopPropagation();
-                setHovered(bin);
-              }}
-              onFocus={() => setHovered(bin)}
-              onMouseEnter={() => setHovered(bin)}
-              onMouseLeave={() => setHovered(null)}
-              style={
-                {
-                  "--marker-size": `${size}px`,
-                  left: `${bin.xPercent}%`,
-                  top: `${bin.yPercent}%`,
-                } as CSSProperties
-              }
-              title={`${bin.count} Sites near ${bin.label}`}
-              type="button"
-            >
-              <span>{bin.count}</span>
-            </button>
-          );
-        })}
         {hovered ? (
-          <div
-            className="stats-map-popup"
-            style={{ left: `${hovered.xPercent}%`, top: `${hovered.yPercent}%` }}
-          >
-            <strong>{hovered.count} Sites</strong>
-            <span>{hovered.label}</span>
-          </div>
+          <Popup closeButton={false} closeOnClick={false} latitude={hovered.latitude} longitude={hovered.longitude} offset={14}>
+            <div className="stats-map-popup">
+              <strong>{hovered.count} Sites</strong>
+              <span>{hovered.label}</span>
+            </div>
+          </Popup>
         ) : null}
+      </Map>
+      <div className="map-controls map-controls-unified map-controls-icon-only stats-map-controls">
+        <div className="map-controls-group map-controls-group-utility map-controls-utility-pill ui-surface-pill">
+          <MapControlButton aria-label="Zoom out Site density map" onClick={() => mapRef.current?.zoomOut()} title="Zoom out">
+            <ZoomOut aria-hidden="true" strokeWidth={1.8} />
+          </MapControlButton>
+          <MapControlButton aria-label="Zoom in Site density map" onClick={() => mapRef.current?.zoomIn()} title="Zoom in">
+            <ZoomIn aria-hidden="true" strokeWidth={1.8} />
+          </MapControlButton>
+          <MapControlButton aria-label="Reset Site density map fit" onClick={() => fitBins(mapRef.current, bins)} title="Fit">
+            <Fullscreen aria-hidden="true" strokeWidth={1.8} />
+          </MapControlButton>
+        </div>
       </div>
-      <button
-        aria-label="Reset Site density map fit"
-        className="stats-map-reset btn-ghost"
-        onClick={() => fitBins(mapRef.current, bins)}
-        type="button"
-      >
-        Reset fit
-      </button>
-      <div className="stats-map-legend" aria-label="Site density legend">
-        <span>Site density</span>
-        <i />
+      <div className="floating-attribution-pill ui-surface-pill stats-map-attribution">
+        <a href="https://carto.com/attributions" rel="noreferrer" target="_blank">CARTO</a>
+        <span>·</span>
+        <a href="https://github.com/maplibre/maplibre-gl-js" rel="noreferrer" target="_blank">MapLibre</a>
       </div>
     </div>
   );

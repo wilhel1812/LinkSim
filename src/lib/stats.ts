@@ -20,6 +20,11 @@ export type StatsPayload = {
     links: number;
   };
   growth: {
+    today: StatsGrowthBucket[];
+    last7Days: StatsGrowthBucket[];
+    last30Days: StatsGrowthBucket[];
+    lastYear: StatsGrowthBucket[];
+    allTime: StatsGrowthBucket[];
     monthly: StatsGrowthBucket[];
     weekly: StatsGrowthBucket[];
   };
@@ -54,6 +59,19 @@ export type StatsPayload = {
     };
     siteCount: number;
     linkCount: number;
+  }>;
+  longestLinks: Array<{
+    id: string;
+    label: string;
+    href: string;
+    simulationHref: string;
+    simulationName: string;
+    distanceKm: number;
+    owner: {
+      userId: string;
+      username: string;
+      avatarUrl: string;
+    };
   }>;
   linkDistanceDistribution: Array<{
     label: string;

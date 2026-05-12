@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { onRequestGet } from "./stats";
 
@@ -31,6 +31,8 @@ const mkCtx = (request = new Request("https://example.test/api/stats")) =>
   ({ request, env } as unknown as Parameters<typeof onRequestGet>[0]);
 
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-02-10T12:30:00.000Z"));
   tables.users = [
     { id: "u1", username: "Ada", avatar_url: "https://example.test/ada.png", created_at: "2026-01-03T00:00:00.000Z" },
     { id: "u2", username: "Grace", avatar_url: null, created_at: "2026-02-10T00:00:00.000Z" },
@@ -70,8 +72,9 @@ beforeEach(() => {
             { id: "s3", name: "East", position: { lat: 61, lon: 11 } },
           ],
           links: [
-            { id: "l1", fromSiteId: "s1", toSiteId: "s2", frequencyMHz: 868 },
+            { id: "l1", name: "Short ridge", fromSiteId: "s1", toSiteId: "s2", frequencyMHz: 868 },
             { id: "l2", fromSiteId: "s2", toSiteId: "s3", frequencyMHz: 915 },
+            { id: "bad-link", fromSiteId: "s1", toSiteId: "missing" },
           ],
         },
       }),
@@ -92,11 +95,15 @@ beforeEach(() => {
         slug: "Shared-sim",
         snapshot: {
           sites: [{ id: "s4", name: "Solo", position: { lat: 62, lon: 12 } }],
-          links: [{ id: "l3" }],
+          links: [{ id: "l3" }, { id: "malformed", fromSiteId: "s4", toSiteId: "missing" }],
         },
       }),
     },
   ];
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("api/stats", () => {
@@ -107,7 +114,7 @@ describe("api/stats", () => {
 
     const body = await res.json() as {
       totals: { users: number; sites: number; simulations: number; nonEmptySimulations: number; links: number };
-      complexity: { averageSitesPerSimulation: number; medianSitesPerSimulation: number; averageLinksPerSimulation: number };
+      complexity: { averageSitesPerSimulation: number; averageLinksPerSimulation: number };
     };
 
     expect(body.totals).toMatchObject({
@@ -115,11 +122,10 @@ describe("api/stats", () => {
       sites: 3,
       simulations: 3,
       nonEmptySimulations: 2,
-      links: 3,
+      links: 5,
     });
     expect(body.complexity.averageSitesPerSimulation).toBe(2);
-    expect(body.complexity.medianSitesPerSimulation).toBe(2);
-    expect(body.complexity.averageLinksPerSimulation).toBe(1.5);
+    expect(body.complexity.averageLinksPerSimulation).toBe(2.5);
   });
 
   it("returns latest non-empty simulations and link distance buckets without leaking payloads", async () => {
@@ -135,6 +141,7 @@ describe("api/stats", () => {
       }>;
       linkDistanceDistribution: Array<{ label: string; minKm: number; maxKm: number | null; count: number }>;
       siteDensitySummary: Array<{ label: string; count: number }>;
+      longestLinks: Array<{ label: string; href: string; simulationName: string; distanceKm: number; owner: { username: string } }>;
     };
     const raw = JSON.stringify(body);
 
@@ -145,39 +152,58 @@ describe("api/stats", () => {
         href: "/Grace/Shared-sim",
         owner: { userId: "u2", username: "Grace", avatarUrl: "" },
         siteCount: 1,
-        linkCount: 1,
+        linkCount: 2,
       }),
       expect.objectContaining({
         id: "sim-1",
         name: "Private sim",
         href: "/Ada/Private-sim",
         siteCount: 3,
-        linkCount: 2,
+        linkCount: 3,
       }),
     ]);
     expect(body.latestSimulations.some((entry) => entry.id === "sim-empty")).toBe(false);
     expect(body.linkDistanceDistribution.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(2);
+    expect(body.longestLinks).toHaveLength(2);
+    expect(body.longestLinks[0]).toMatchObject({
+      label: "South ~ East",
+      href: "/Ada/Private-sim/South~East",
+      simulationName: "Private sim",
+      owner: { username: "Ada" },
+    });
+    expect(body.longestLinks[0].distanceKm).toBeGreaterThan(body.longestLinks[1].distanceKm);
     expect(body.siteDensitySummary).toEqual([{ label: "60°N, 10°E", count: 2 }]);
-    expect(raw).not.toContain("North");
-    expect(raw).not.toContain("South");
+    expect(raw).not.toContain("60.1");
+    expect(raw).not.toContain("61");
     expect(raw).not.toContain("payload_json");
   });
 
-  it("returns monthly and weekly growth buckets", async () => {
+  it("returns UTC growth ranges including hourly today buckets", async () => {
     const res = await onRequestGet(mkCtx());
     const body = await res.json() as {
       growth: {
+        today: Array<{ label: string; users: number; sites: number; simulations: number; links: number }>;
+        last7Days: Array<{ label: string; users: number; sites: number; simulations: number; links: number }>;
+        last30Days: Array<{ label: string; users: number; sites: number; simulations: number; links: number }>;
+        lastYear: Array<{ label: string; users: number; sites: number; simulations: number; links: number }>;
+        allTime: Array<{ label: string; users: number; sites: number; simulations: number; links: number; cumulativeLinks: number }>;
         monthly: Array<{ label: string; users: number; sites: number; simulations: number; links: number; cumulativeLinks: number }>;
         weekly: Array<{ users: number; sites: number; simulations: number; links: number }>;
       };
     };
 
-    expect(body.growth.monthly).toEqual(
+    expect(body.growth.today).toHaveLength(24);
+    expect(body.growth.today[12]).toMatchObject({ label: "12:00", users: 0, sites: 0, simulations: 0, links: 0 });
+    expect(body.growth.last7Days).toHaveLength(7);
+    expect(body.growth.last30Days).toHaveLength(30);
+    expect(body.growth.lastYear).toHaveLength(12);
+    expect(body.growth.allTime).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "2026-01", users: 1, sites: 1, simulations: 1, links: 2, cumulativeLinks: 2 }),
-        expect.objectContaining({ label: "2026-02", users: 1, sites: 2, simulations: 2, links: 1, cumulativeLinks: 3 }),
+        expect.objectContaining({ label: "2026-01", users: 1, sites: 1, simulations: 1, links: 3, cumulativeLinks: 3 }),
+        expect.objectContaining({ label: "2026-02", users: 1, sites: 2, simulations: 2, links: 2, cumulativeLinks: 5 }),
       ]),
     );
+    expect(body.growth.monthly).toEqual(body.growth.allTime);
     expect(body.growth.weekly.length).toBeGreaterThan(0);
   });
 
