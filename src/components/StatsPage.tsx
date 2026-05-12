@@ -1,4 +1,4 @@
-import { Activity, ExternalLink, MapPinned, Network, Radio, Ruler, Sparkles, Users } from "lucide-react";
+import { Activity, ArrowLeft, ExternalLink, MapPinned, Network, Radio, Ruler, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
@@ -16,18 +16,49 @@ import {
 import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
 import { StatsDensityMap } from "./StatsDensityMap";
+import { UserProfileModal } from "./UserProfileModal";
+import { fetchUserById, type CloudUser } from "../lib/cloudUser";
+import { getUiErrorMessage } from "../lib/uiError";
 import { fetchStats, type StatsGrowthBucket, type StatsPayload } from "../lib/stats";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 
-type GrowthMode = "monthly" | "weekly";
+type GrowthMode = "today" | "last7Days" | "last30Days" | "lastYear" | "allTime";
 
 const formatNumber = (value: number): string => new Intl.NumberFormat("en").format(value);
 const formatDecimal = (value: number): string => new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(value);
-const chartColors = ["var(--accent)", "var(--success)", "var(--temporary)", "var(--warning)"];
+const formatKm = (value: number): string => `${formatDecimal(value)} km`;
+
+const chartColors = {
+  users: "var(--stats-series-users)",
+  sites: "var(--stats-series-sites)",
+  simulations: "var(--stats-series-simulations)",
+  links: "var(--stats-series-links)",
+};
 
 const growthLabels: Record<GrowthMode, string> = {
-  monthly: "All time",
-  weekly: "Last 30 days",
+  today: "Today",
+  last7Days: "Last 7 days",
+  last30Days: "Last 30 days",
+  lastYear: "Last year",
+  allTime: "All time",
+};
+
+const rangeOptions = Object.entries(growthLabels) as Array<[GrowthMode, string]>;
+
+const formatRelativeTime = (value: string): string => {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Unknown signup time";
+  const diffMs = date.getTime() - Date.now();
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 1000 * 60 * 60 * 24 * 365],
+    ["month", 1000 * 60 * 60 * 24 * 30],
+    ["day", 1000 * 60 * 60 * 24],
+    ["hour", 1000 * 60 * 60],
+    ["minute", 1000 * 60],
+  ];
+  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "always" });
+  const [unit, unitMs] = units.find(([, size]) => Math.abs(diffMs) >= size) ?? ["minute", 1000 * 60];
+  return formatter.format(Math.round(diffMs / unitMs), unit);
 };
 
 const CustomTooltip = ({ active, label, payload }: { active?: boolean; label?: string; payload?: Array<{ name?: string; value?: number; color?: string }> }) => {
@@ -76,7 +107,10 @@ const MetricCard = ({
   </article>
 );
 
-const GrowthChart = ({ buckets }: { buckets: StatsGrowthBucket[] }) => {
+const sumGrowth = (buckets: StatsGrowthBucket[], key: "users" | "sites" | "simulations" | "links") =>
+  buckets.reduce((sum, bucket) => sum + bucket[key], 0);
+
+const GrowthChart = ({ buckets, label }: { buckets: StatsGrowthBucket[]; label: string }) => {
   if (!buckets.length) {
     return <div className="stats-empty">Growth appears after dated community activity is available.</div>;
   }
@@ -89,29 +123,39 @@ const GrowthChart = ({ buckets }: { buckets: StatsGrowthBucket[] }) => {
           <YAxis stroke="var(--muted)" tickLine={false} width={42} />
           <Tooltip content={<CustomTooltip />} />
           <Legend iconType="circle" />
-          <Line dataKey="cumulativeUsers" dot={false} name="Users" stroke={chartColors[0]} strokeWidth={3} type="monotone" />
-          <Line dataKey="cumulativeSites" dot={false} name="Sites" stroke={chartColors[1]} strokeWidth={3} type="monotone" />
-          <Line dataKey="cumulativeSimulations" dot={false} name="Simulations" stroke={chartColors[2]} strokeWidth={3} type="monotone" />
-          <Line dataKey="cumulativeLinks" dot={false} name="Links" stroke={chartColors[3]} strokeWidth={3} type="monotone" />
+          <Line dataKey="cumulativeUsers" dot={false} name="Users" stroke={chartColors.users} strokeWidth={3} type="monotone" />
+          <Line dataKey="cumulativeSites" dot={false} name="Sites" stroke={chartColors.sites} strokeWidth={3} type="monotone" />
+          <Line dataKey="cumulativeSimulations" dot={false} name="Simulations" stroke={chartColors.simulations} strokeWidth={3} type="monotone" />
+          <Line dataKey="cumulativeLinks" dot={false} name="Links" stroke={chartColors.links} strokeWidth={3} type="monotone" />
         </LineChart>
       </ResponsiveContainer>
-      <p className="stats-chart-range">{buckets[0]?.label} to {buckets.at(-1)?.label}</p>
+      <p className="stats-chart-range">{label} · UTC · X: time · Y: cumulative count</p>
     </div>
   );
+};
+
+const activeBar = {
+  fillOpacity: 0.92,
+  stroke: "var(--text)",
+  strokeOpacity: 0.72,
+  strokeWidth: 2,
 };
 
 const SizeBucketsChart = ({ buckets }: { buckets: StatsPayload["complexity"]["sizeBuckets"] }) => {
   const data = Object.entries(buckets).map(([label, count]) => ({ label, count }));
   return (
-    <ResponsiveContainer height={180} width="100%">
-      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 10, left: -18 }}>
-        <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
-        <XAxis dataKey="label" stroke="var(--muted)" tickLine={false} />
-        <YAxis allowDecimals={false} stroke="var(--muted)" tickLine={false} />
-        <Tooltip content={<CustomTooltip />} />
-        <Bar dataKey="count" fill="var(--temporary)" name="Simulations" radius={[6, 6, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
+    <>
+      <ResponsiveContainer height={180} width="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 10, left: -18 }}>
+          <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
+          <XAxis dataKey="label" stroke="var(--muted)" tickLine={false} />
+          <YAxis allowDecimals={false} stroke="var(--muted)" tickLine={false} />
+          <Tooltip content={<CustomTooltip />} />
+          <Bar activeBar={activeBar} dataKey="count" fill={chartColors.simulations} name="Simulations" radius={[6, 6, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+      <p className="stats-chart-range">X: Sites per Simulation · Y: Simulations</p>
+    </>
   );
 };
 
@@ -120,15 +164,18 @@ const DistanceChart = ({ buckets }: { buckets: StatsPayload["linkDistanceDistrib
     return <div className="stats-empty is-compact">Link distances appear after saved Links have endpoints with coordinates.</div>;
   }
   return (
-    <ResponsiveContainer height={180} width="100%">
-      <BarChart data={buckets} margin={{ top: 8, right: 8, bottom: 10, left: -18 }}>
-        <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
-        <XAxis dataKey="label" stroke="var(--muted)" tickLine={false} />
-        <YAxis allowDecimals={false} stroke="var(--muted)" tickLine={false} />
-        <Tooltip content={<CustomTooltip />} />
-        <Bar dataKey="count" fill="var(--warning)" name="Links" radius={[6, 6, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
+    <>
+      <ResponsiveContainer height={180} width="100%">
+        <BarChart data={buckets} margin={{ top: 8, right: 8, bottom: 10, left: -18 }}>
+          <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
+          <XAxis dataKey="label" stroke="var(--muted)" tickLine={false} />
+          <YAxis allowDecimals={false} stroke="var(--muted)" tickLine={false} />
+          <Tooltip content={<CustomTooltip />} />
+          <Bar activeBar={activeBar} dataKey="count" fill={chartColors.links} name="Links" radius={[6, 6, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+      <p className="stats-chart-range">X: Link distance · Y: Links</p>
+    </>
   );
 };
 
@@ -137,7 +184,11 @@ export function StatsPage() {
   const [stats, setStats] = useState<StatsPayload | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
-  const [growthMode, setGrowthMode] = useState<GrowthMode>("monthly");
+  const [growthMode, setGrowthMode] = useState<GrowthMode>("last30Days");
+  const [profileUser, setProfileUser] = useState<CloudUser | null>(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileStatus, setProfileStatus] = useState("");
+  const showProfileModal = profileBusy || profileStatus || profileUser;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -171,23 +222,50 @@ export function StatsPage() {
     };
   }, []);
 
+  const openUserProfile = async (userId: string) => {
+    setProfileUser(null);
+    setProfileStatus("");
+    setProfileBusy(true);
+    try {
+      setProfileUser(await fetchUserById(userId));
+    } catch (error) {
+      setProfileStatus(`Failed loading user: ${getUiErrorMessage(error)}`);
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const closeUserProfile = () => {
+    setProfileUser(null);
+    setProfileStatus("");
+    setProfileBusy(false);
+  };
+
   const activeGrowth = useMemo(() => stats?.growth[growthMode] ?? [], [growthMode, stats]);
-  const latestBucket = activeGrowth.at(-1);
 
   return (
     <main className="stats-page stats-atlas-page">
       <header className="stats-atlas-header">
-        <div>
+        <a className="btn-ghost stats-back-link" href="/">
+          <ArrowLeft aria-hidden="true" size={16} />
+          Back to app
+        </a>
+        <div className="stats-atlas-title">
           <h1>Stats</h1>
           <p>Public aggregate signals from entered Sites, saved Simulations, and community growth.</p>
         </div>
-        <div className="chip-group" aria-label="Stats time range">
-          <ActionButton aria-pressed={growthMode === "monthly"} onClick={() => setGrowthMode("monthly")} type="button">
-            All time
-          </ActionButton>
-          <ActionButton aria-pressed={growthMode === "weekly"} onClick={() => setGrowthMode("weekly")} type="button">
-            Last 30 days
-          </ActionButton>
+        <div className="chip-group stats-range-control" aria-label="Stats time range">
+          {rangeOptions.map(([mode, label]) => (
+            <ActionButton
+              aria-pressed={growthMode === mode}
+              className={growthMode === mode ? "is-selected" : ""}
+              key={mode}
+              onClick={() => setGrowthMode(mode)}
+              type="button"
+            >
+              {label}
+            </ActionButton>
+          ))}
         </div>
       </header>
 
@@ -199,15 +277,15 @@ export function StatsPage() {
       ) : null}
 
       <section className="stats-atlas-metrics" aria-label="Community totals">
-        <MetricCard delta={latestBucket?.users ?? 0} icon={Users} label="Users" value={stats?.totals.users ?? 0} />
-        <MetricCard delta={latestBucket?.sites ?? 0} icon={MapPinned} label="Sites" value={stats?.totals.sites ?? 0} />
-        <MetricCard delta={latestBucket?.simulations ?? 0} icon={Network} label="Simulations" value={stats?.totals.simulations ?? 0} />
-        <MetricCard delta={latestBucket?.links ?? 0} icon={Radio} label="Links" value={stats?.totals.links ?? 0} />
+        <MetricCard delta={sumGrowth(activeGrowth, "users")} icon={Users} label="Users" value={stats?.totals.users ?? 0} />
+        <MetricCard delta={sumGrowth(activeGrowth, "sites")} icon={MapPinned} label="Sites" value={stats?.totals.sites ?? 0} />
+        <MetricCard delta={sumGrowth(activeGrowth, "simulations")} icon={Network} label="Simulations" value={stats?.totals.simulations ?? 0} />
+        <MetricCard delta={sumGrowth(activeGrowth, "links")} icon={Radio} label="Links" value={stats?.totals.links ?? 0} />
       </section>
 
       <section className="stats-atlas-grid">
         <Panel className="stats-atlas-map-panel" title="Site Geography">
-          <p className="field-help">Binned density from user-entered Site coordinates. Exact coordinates stay out of the stats payload.</p>
+          <p className="field-help">Binned density from user-entered Site coordinates. Hover or tap a cluster for the coarse area count.</p>
           {status === "loading" || !stats ? (
             <div className="stats-map-skeleton">Loading Site density...</div>
           ) : (
@@ -224,10 +302,13 @@ export function StatsPage() {
         <Panel className="stats-atlas-side-panel" title="Contributor Highlights">
           <div className="stats-person-list">
             {(stats?.highlights.topContributors ?? []).map((user) => (
-              <button className="stats-person-row" key={user.userId} type="button">
+              <button className="stats-person-row" key={user.userId} onClick={() => void openUserProfile(user.userId)} type="button">
                 <AvatarBadge avatarUrl={user.avatarUrl} imageClassName="profile-avatar" name={user.username} />
                 <span>{user.username}</span>
-                <strong>{formatNumber(user.contributions)}</strong>
+                <span className="stats-contribution-count">
+                  <strong>{formatNumber(user.contributions)}</strong>
+                  <small>Sites + Simulations</small>
+                </span>
               </button>
             ))}
             {!stats?.highlights.topContributors.length ? <p className="field-help">Contributor highlights appear after community resources are saved.</p> : null}
@@ -235,8 +316,7 @@ export function StatsPage() {
         </Panel>
 
         <Panel className="stats-atlas-wide-panel" title="Growth over time">
-          <GrowthChart buckets={activeGrowth} />
-          <span className="stats-chip">{growthLabels[growthMode]}</span>
+          <GrowthChart buckets={activeGrowth} label={growthLabels[growthMode]} />
         </Panel>
 
         <Panel title="Latest Simulations">
@@ -259,9 +339,7 @@ export function StatsPage() {
         <Panel title="Simulation Complexity">
           <div className="stats-complexity-grid">
             <span><strong>{formatDecimal(stats?.complexity.averageSitesPerSimulation ?? 0)}</strong>Avg. Sites</span>
-            <span><strong>{formatDecimal(stats?.complexity.medianSitesPerSimulation ?? 0)}</strong>Median Sites</span>
             <span><strong>{formatDecimal(stats?.complexity.averageLinksPerSimulation ?? 0)}</strong>Avg. Links</span>
-            <span><strong>{formatDecimal(stats?.complexity.medianLinksPerSimulation ?? 0)}</strong>Median Links</span>
           </div>
           <p className="field-help">Excludes empty Simulations with no Sites.</p>
         </Panel>
@@ -270,49 +348,57 @@ export function StatsPage() {
           <SizeBucketsChart buckets={stats?.complexity.sizeBuckets ?? { "1-2": 0, "3-5": 0, "6-10": 0, "11+": 0 }} />
         </Panel>
 
-        <Panel title="Site Density">
-          <div className="stats-density-list">
-            {(stats?.siteDensitySummary ?? []).map((bin) => (
-              <div className="stats-density-row" key={bin.label}>
-                <span>{bin.label}</span>
-                <strong>{bin.count}</strong>
-              </div>
-            ))}
-            {!stats?.siteDensitySummary.length ? <p className="field-help">Site density appears after Sites with coordinates are created.</p> : null}
-          </div>
-        </Panel>
-
         <Panel title="Link Distance Distribution">
           <DistanceChart buckets={stats?.linkDistanceDistribution ?? []} />
         </Panel>
 
-        <Panel title="Network Flavor">
-          <div className="stats-flavor-lockup">
-            <Activity aria-hidden="true" size={20} />
-            <p className="field-help">Frequency, band, and Channel analysis will use saved Link and Network fields in a later pass.</p>
+        <Panel title="Top 5 Longest Links">
+          <div className="stats-simulation-list">
+            {(stats?.longestLinks ?? []).map((link) => (
+              <a className="stats-simulation-row" href={link.href || link.simulationHref} key={link.id}>
+                <span>
+                  <strong>{link.label}</strong>
+                  <small>{link.simulationName} · by {link.owner.username}</small>
+                </span>
+                <span>{formatKm(link.distanceKm)}</span>
+                <ExternalLink aria-hidden="true" size={15} />
+              </a>
+            ))}
+            {!stats?.longestLinks.length ? <p className="field-help">Longest Links appear after saved Links have endpoints with coordinates.</p> : null}
           </div>
         </Panel>
 
         <Panel title="Newest Members">
           <div className="stats-person-list">
             {(stats?.highlights.newestMembers ?? []).map((user) => (
-              <div className="stats-person-row" key={user.userId}>
+              <button className="stats-person-row" key={user.userId} onClick={() => void openUserProfile(user.userId)} type="button">
                 <AvatarBadge avatarUrl={user.avatarUrl} imageClassName="profile-avatar" name={user.username} />
                 <span>{user.username}</span>
-                <Sparkles aria-hidden="true" size={14} />
-              </div>
+                <span className="stats-person-meta">{formatRelativeTime(user.createdAt)}</span>
+              </button>
             ))}
             {!stats?.highlights.newestMembers.length ? <p className="field-help">Newest members appear after users join.</p> : null}
           </div>
         </Panel>
 
-        <Panel title="Distance Notes">
+        <Panel className="stats-atlas-placeholder-panel" title="Network Flavor">
+          <div className="stats-flavor-lockup">
+            <Activity aria-hidden="true" size={20} />
+            <p className="field-help">Future analysis from saved Link and Channel fields.</p>
+          </div>
+        </Panel>
+
+        <Panel className="stats-atlas-placeholder-panel" title="Distance Notes">
           <div className="stats-flavor-lockup">
             <Ruler aria-hidden="true" size={20} />
             <p className="field-help">Distances are derived from saved Simulation endpoints and grouped into public aggregate buckets.</p>
           </div>
         </Panel>
       </section>
+
+      {showProfileModal ? (
+        <UserProfileModal busy={profileBusy} onClose={closeUserProfile} status={profileStatus} user={profileUser} />
+      ) : null}
     </main>
   );
 }
