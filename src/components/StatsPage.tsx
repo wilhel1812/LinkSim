@@ -64,7 +64,7 @@ const formatRelativeTime = (value: string): string => {
 const CustomTooltip = ({ active, label, payload }: { active?: boolean; label?: string; payload?: Array<{ name?: string; value?: number; color?: string }> }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="stats-chart-tooltip">
+    <div className="ui-surface-pill has-pointer-tail stats-chart-tooltip">
       <strong>{label}</strong>
       {payload.map((entry) => (
         <span key={entry.name} style={{ "--series-color": entry.color } as CSSProperties}>
@@ -134,13 +134,6 @@ const GrowthChart = ({ buckets, label }: { buckets: StatsGrowthBucket[]; label: 
   );
 };
 
-const activeBar = {
-  fillOpacity: 0.92,
-  stroke: "var(--text)",
-  strokeOpacity: 0.72,
-  strokeWidth: 2,
-};
-
 const SizeBucketsChart = ({ buckets }: { buckets: StatsPayload["complexity"]["sizeBuckets"] }) => {
   const data = Object.entries(buckets).map(([label, count]) => ({ label, count }));
   return (
@@ -150,8 +143,8 @@ const SizeBucketsChart = ({ buckets }: { buckets: StatsPayload["complexity"]["si
           <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
           <XAxis dataKey="label" stroke="var(--muted)" tickLine={false} />
           <YAxis allowDecimals={false} stroke="var(--muted)" tickLine={false} />
-          <Tooltip content={<CustomTooltip />} />
-          <Bar activeBar={activeBar} dataKey="count" fill={chartColors.simulations} name="Simulations" radius={[6, 6, 0, 0]} />
+          <Tooltip content={<CustomTooltip />} cursor={false} />
+          <Bar dataKey="count" fill={chartColors.simulations} name="Simulations" radius={[6, 6, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
       <p className="stats-chart-range">X: Sites per Simulation · Y: Simulations</p>
@@ -170,8 +163,8 @@ const DistanceChart = ({ buckets }: { buckets: StatsPayload["linkDistanceDistrib
           <CartesianGrid stroke="var(--panel-shell-divider)" strokeDasharray="3 7" vertical={false} />
           <XAxis dataKey="label" stroke="var(--muted)" tickLine={false} />
           <YAxis allowDecimals={false} stroke="var(--muted)" tickLine={false} />
-          <Tooltip content={<CustomTooltip />} />
-          <Bar activeBar={activeBar} dataKey="count" fill={chartColors.links} name="Links" radius={[6, 6, 0, 0]} />
+          <Tooltip content={<CustomTooltip />} cursor={false} />
+          <Bar dataKey="count" fill={chartColors.links} name="Links" radius={[6, 6, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
       <p className="stats-chart-range">X: Link distance · Y: Links</p>
@@ -246,26 +239,29 @@ export function StatsPage() {
   return (
     <main className="stats-page stats-atlas-page">
       <header className="stats-atlas-header">
-        <a className="btn-ghost stats-back-link" href="/">
-          <ArrowLeft aria-hidden="true" size={16} />
-          Back to app
-        </a>
         <div className="stats-atlas-title">
+          <a className="btn stats-back-link" href="/">
+            <ArrowLeft aria-hidden="true" size={16} />
+            Back to app
+          </a>
           <h1>Stats</h1>
           <p>Public aggregate signals from entered Sites, saved Simulations, and community growth.</p>
         </div>
-        <div className="chip-group stats-range-control" aria-label="Stats time range">
-          {rangeOptions.map(([mode, label]) => (
-            <ActionButton
-              aria-pressed={growthMode === mode}
-              className={growthMode === mode ? "is-selected" : ""}
-              key={mode}
-              onClick={() => setGrowthMode(mode)}
-              type="button"
-            >
-              {label}
-            </ActionButton>
-          ))}
+        <div className="stats-range-stack">
+          <p className="stats-active-range">Showing: {growthLabels[growthMode]} · UTC</p>
+          <div className="chip-group stats-range-control" aria-label="Stats time range">
+            {rangeOptions.map(([mode, label]) => (
+              <ActionButton
+                aria-pressed={growthMode === mode}
+                className={growthMode === mode ? "is-selected" : ""}
+                key={mode}
+                onClick={() => setGrowthMode(mode)}
+                type="button"
+              >
+                {label}
+              </ActionButton>
+            ))}
+          </div>
         </div>
       </header>
 

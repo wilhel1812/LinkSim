@@ -89,6 +89,35 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
     return <div className="stats-empty">Site density will appear after Sites with coordinates are created.</div>;
   }
 
+  const hoverFromFeature = (event: MapLayerMouseEvent) => {
+    const feature = event.features?.[0];
+    const properties = feature?.properties as Partial<DensityProperties> | undefined;
+    if (!feature || !properties || typeof properties.count !== "number" || feature.geometry.type !== "Point") {
+      setHovered(null);
+      return;
+    }
+    const count = properties.count;
+    const [longitude, latitude] = feature.geometry.coordinates;
+    setHovered((current) => {
+      const next = {
+        longitude,
+        latitude,
+        count,
+        label: String(properties.label ?? "Site density bin"),
+      };
+      if (
+        current &&
+        current.longitude === next.longitude &&
+        current.latitude === next.latitude &&
+        current.count === next.count &&
+        current.label === next.label
+      ) {
+        return current;
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="stats-map-shell">
       <Map
@@ -102,31 +131,8 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         onError={() => setHovered(null)}
         onLoad={(event) => fitBins(event.target as unknown as MapRef, bins)}
         onMouseLeave={() => setHovered(null)}
-        onMouseMove={(event: MapLayerMouseEvent) => {
-          const feature = event.features?.[0];
-          const properties = feature?.properties as Partial<DensityProperties> | undefined;
-          if (!feature || !properties || typeof properties.count !== "number") {
-            setHovered(null);
-            return;
-          }
-          setHovered({
-            longitude: event.lngLat.lng,
-            latitude: event.lngLat.lat,
-            count: properties.count,
-            label: String(properties.label ?? "Site density bin"),
-          });
-        }}
-        onClick={(event: MapLayerMouseEvent) => {
-          const feature = event.features?.[0];
-          const properties = feature?.properties as Partial<DensityProperties> | undefined;
-          if (!feature || !properties || typeof properties.count !== "number") return;
-          setHovered({
-            longitude: event.lngLat.lng,
-            latitude: event.lngLat.lat,
-            count: properties.count,
-            label: String(properties.label ?? "Site density bin"),
-          });
-        }}
+        onMouseMove={hoverFromFeature}
+        onClick={hoverFromFeature}
         interactiveLayerIds={["stats-density-bins"]}
       >
         <Source data={featureCollection} id="stats-density" type="geojson">
@@ -153,8 +159,8 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
           />
         </Source>
         {hovered ? (
-          <Popup closeButton={false} closeOnClick={false} latitude={hovered.latitude} longitude={hovered.longitude} offset={14}>
-            <div className="stats-map-popup">
+          <Popup className="stats-map-popup-shell" closeButton={false} closeOnClick={false} latitude={hovered.latitude} longitude={hovered.longitude} offset={14}>
+            <div className="ui-surface-pill has-pointer-tail stats-map-popup">
               <strong>{hovered.count} Sites</strong>
               <span>{hovered.label}</span>
             </div>

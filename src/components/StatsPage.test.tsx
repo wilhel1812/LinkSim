@@ -152,7 +152,10 @@ describe("StatsPage", () => {
     expect(screen.getByText("Link Distance Distribution")).toBeInTheDocument();
     expect(screen.getByText("Top 5 Longest Links")).toBeInTheDocument();
     expect(screen.getByTestId("stats-density-map")).toHaveTextContent("Map bins: 1");
-    expect(screen.getByRole("link", { name: /Back to app/i })).toHaveAttribute("href", "/");
+    const backLink = screen.getByRole("link", { name: /Back to app/i });
+    expect(backLink).toHaveAttribute("href", "/");
+    expect(backLink).toHaveClass("btn");
+    expect(backLink).not.toHaveClass("btn-ghost");
     expect(screen.getAllByRole("link", { name: /Shared Ridge/i })[0]).toHaveAttribute("href", "/Grace/Shared-Ridge");
     expect(screen.getByRole("link", { name: /Ridge to Valley/i })).toHaveAttribute("href", "/Grace/Shared-Ridge/Ridge~Valley");
     expect(screen.getByText("Sites + Simulations")).toBeInTheDocument();
@@ -172,12 +175,12 @@ describe("StatsPage", () => {
     await screen.findByRole("button", { name: "Last 30 days" });
 
     expect(screen.getByRole("button", { name: "Last 30 days" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText(/Last 30 days · UTC/)).toBeInTheDocument();
+    expect(screen.getByText("Showing: Last 30 days · UTC")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Today"));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Today" })).toHaveAttribute("aria-pressed", "true");
-      expect(screen.getByText(/Today · UTC/)).toBeInTheDocument();
+      expect(screen.getByText("Showing: Today · UTC")).toBeInTheDocument();
     });
   });
 
