@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Fullscreen, ZoomIn, ZoomOut } from "lucide-react";
-import Map, { Layer, Popup, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
+import Map, { Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { FeatureCollection, Point } from "geojson";
 import { getCartoFallbackStyle } from "../lib/basemaps";
 import type { StatsPayload } from "../lib/stats";
@@ -25,6 +25,8 @@ type HoveredBin = {
   label: string;
   longitude: number;
   latitude: number;
+  x: number;
+  y: number;
 };
 
 const colorVar = (name: string): string =>
@@ -98,10 +100,13 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
     }
     const count = properties.count;
     const [longitude, latitude] = feature.geometry.coordinates;
+    const point = mapRef.current?.project([longitude, latitude]);
     setHovered((current) => {
       const next = {
         longitude,
         latitude,
+        x: point?.x ?? event.point.x,
+        y: point?.y ?? event.point.y,
         count,
         label: String(properties.label ?? "Site density bin"),
       };
@@ -109,6 +114,8 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         current &&
         current.longitude === next.longitude &&
         current.latitude === next.latitude &&
+        current.x === next.x &&
+        current.y === next.y &&
         current.count === next.count &&
         current.label === next.label
       ) {
@@ -124,7 +131,7 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
         ref={mapRef}
         initialViewState={{ ...initialCenter, zoom: bins.length === 1 ? 5 : 3 }}
         mapStyle={getCartoFallbackStyle(theme, colorTheme)}
-        attributionControl={{ compact: true }}
+        attributionControl={false}
         dragPan={!window.matchMedia("(pointer: coarse)").matches}
         scrollZoom={false}
         touchZoomRotate={false}
@@ -158,15 +165,18 @@ export function StatsDensityMap({ bins, theme, colorTheme = "blue", accentColor,
             }}
           />
         </Source>
-        {hovered ? (
-          <Popup className="stats-map-popup-shell" closeButton={false} closeOnClick={false} latitude={hovered.latitude} longitude={hovered.longitude} offset={14}>
-            <div className="ui-surface-pill has-pointer-tail stats-map-popup">
-              <strong>{hovered.count} Sites</strong>
-              <span>{hovered.label}</span>
-            </div>
-          </Popup>
-        ) : null}
       </Map>
+      {hovered ? (
+        <div
+          className="stats-map-popup-shell"
+          style={{ left: hovered.x, top: hovered.y }}
+        >
+          <div className="ui-surface-pill stats-map-popup">
+            <strong>{hovered.count} Sites</strong>
+            <span>{hovered.label}</span>
+          </div>
+        </div>
+      ) : null}
       <div className="map-controls map-controls-unified map-controls-icon-only stats-map-controls">
         <div className="map-controls-group map-controls-group-utility map-controls-utility-pill ui-surface-pill">
           <MapControlButton aria-label="Zoom out Site density map" onClick={() => mapRef.current?.zoomOut()} title="Zoom out">

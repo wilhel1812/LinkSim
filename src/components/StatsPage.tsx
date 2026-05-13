@@ -1,4 +1,4 @@
-import { Activity, ArrowLeft, ExternalLink, MapPinned, Network, Radio, Ruler, Users } from "lucide-react";
+import { ArrowLeft, ExternalLink, MapPinned, Network, Radio, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
@@ -64,7 +64,7 @@ const formatRelativeTime = (value: string): string => {
 const CustomTooltip = ({ active, label, payload }: { active?: boolean; label?: string; payload?: Array<{ name?: string; value?: number; color?: string }> }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="ui-surface-pill has-pointer-tail stats-chart-tooltip">
+    <div className="ui-surface-pill stats-chart-tooltip">
       <strong>{label}</strong>
       {payload.map((entry) => (
         <span key={entry.name} style={{ "--series-color": entry.color } as CSSProperties}>
@@ -374,20 +374,6 @@ export function StatsPage() {
               </button>
             ))}
             {!stats?.highlights.newestMembers.length ? <p className="field-help">Newest members appear after users join.</p> : null}
-          </div>
-        </Panel>
-
-        <Panel className="stats-atlas-placeholder-panel" title="Network Flavor">
-          <div className="stats-flavor-lockup">
-            <Activity aria-hidden="true" size={20} />
-            <p className="field-help">Future analysis from saved Link and Channel fields.</p>
-          </div>
-        </Panel>
-
-        <Panel className="stats-atlas-placeholder-panel" title="Distance Notes">
-          <div className="stats-flavor-lockup">
-            <Ruler aria-hidden="true" size={20} />
-            <p className="field-help">Distances are derived from saved Simulation endpoints and grouped into public aggregate buckets.</p>
           </div>
         </Panel>
       </section>

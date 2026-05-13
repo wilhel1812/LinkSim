@@ -281,8 +281,13 @@ const average = (values: number[]): number =>
   values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
 const round1 = (value: number): number => Math.round(value * 10) / 10;
-const isAutoLinkName = (value: unknown): boolean =>
-  typeof value === "string" && value.trim().toLowerCase() === "auto link";
+const normalizeAutoLinkText = (value: unknown): string =>
+  typeof value === "string" ? value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "") : "";
+const isAutoLink = (link: SnapshotLink): boolean => {
+  const normalizedName = normalizeAutoLinkText(link.name);
+  const normalizedId = normalizeAutoLinkText(link.id);
+  return normalizedName === "autolink" || normalizedId === "auto" || normalizedId === "autolink";
+};
 
 const bucketSimulationSize = (siteCount: number): "1-2" | "3-5" | "6-10" | "11+" => {
   if (siteCount <= 2) return "1-2";
@@ -480,7 +485,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         const fromName = typeof from?.name === "string" && from.name.trim() ? from.name.trim() : "Site A";
         const toName = typeof to?.name === "string" && to.name.trim() ? to.name.trim() : "Site B";
         const linkName = typeof link.name === "string" && link.name.trim() ? link.name.trim() : `${fromName} ~ ${toName}`;
-        if (isAutoLinkName(link.name)) return;
+        if (isAutoLink(link)) return;
         longestLinks.push({
           id: `${simulation.id}:${typeof link.id === "string" ? link.id : `${link.fromSiteId}-${link.toSiteId}`}`,
           label: linkName,

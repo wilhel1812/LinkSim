@@ -1149,24 +1149,16 @@ button {
   text-align: center;
 }
 
-.stats-map-popup span {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.stats-map-shell .maplibregl-popup {
+.stats-map-popup-shell {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, calc(-100% - 12px));
   pointer-events: none;
 }
 
-.stats-map-shell .maplibregl-popup-content {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.stats-map-shell .maplibregl-popup-tip {
-  display: none;
+.stats-map-popup span {
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .stats-map-skeleton,

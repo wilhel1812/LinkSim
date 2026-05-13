@@ -151,6 +151,8 @@ describe("StatsPage", () => {
     expect(screen.getByText("Simulations by Size")).toBeInTheDocument();
     expect(screen.getByText("Link Distance Distribution")).toBeInTheDocument();
     expect(screen.getByText("Top 5 Longest Links")).toBeInTheDocument();
+    expect(screen.queryByText("Network Flavor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Distance Notes")).not.toBeInTheDocument();
     expect(screen.getByTestId("stats-density-map")).toHaveTextContent("Map bins: 1");
     const backLink = screen.getByRole("link", { name: /Back to app/i });
     expect(backLink).toHaveAttribute("href", "/");
