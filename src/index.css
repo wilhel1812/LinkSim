@@ -953,7 +953,7 @@ button {
 
 .stats-atlas-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-end;
   gap: 16px;
   padding: 4px 0 8px;
@@ -961,15 +961,19 @@ button {
 
 .stats-atlas-title {
   min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 8px;
 }
 
 .stats-back-link {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  align-self: end;
   text-decoration: none;
   white-space: nowrap;
+  min-height: 30px;
+  padding: 6px 9px;
 }
 
 .stats-atlas-header h1 {
@@ -1001,6 +1005,19 @@ button {
 
 .stats-range-control {
   justify-content: flex-end;
+}
+
+.stats-range-stack {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.stats-active-range {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
 }
 
 .stats-atlas-metrics {
@@ -1108,30 +1125,48 @@ button {
 
 .stats-map-controls.map-controls {
   top: 12px;
-  left: 12px;
+  left: 50%;
   right: auto;
+  transform: translateX(-50%);
   padding: 0;
 }
 
 .stats-map-attribution.floating-attribution-pill {
   position: absolute;
-  right: 12px;
+  right: auto;
   bottom: 12px;
-  left: auto;
-  transform: none;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 2;
 }
 
 .stats-map-popup {
   display: grid;
   gap: 2px;
-  color: var(--text);
   font-family: var(--font-ui);
+  pointer-events: none;
+  padding: 9px 11px;
+  text-align: center;
 }
 
 .stats-map-popup span {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.stats-map-shell .maplibregl-popup {
+  pointer-events: none;
+}
+
+.stats-map-shell .maplibregl-popup-content {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.stats-map-shell .maplibregl-popup-tip {
+  display: none;
 }
 
 .stats-map-skeleton,
@@ -1170,14 +1205,11 @@ button {
 }
 
 .stats-chart-tooltip {
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  box-shadow: var(--shadow-elev-2);
   padding: 9px 10px;
   display: grid;
   gap: 4px;
-  color: var(--text);
+  min-width: 138px;
+  pointer-events: none;
 }
 
 .stats-chart-tooltip span::before {
@@ -1350,6 +1382,10 @@ button {
 
   .stats-range-control {
     justify-content: flex-start;
+  }
+
+  .stats-range-stack {
+    justify-items: start;
   }
 
   .stats-atlas-metrics,
