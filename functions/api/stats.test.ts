@@ -75,6 +75,7 @@ beforeEach(() => {
             { id: "l1", name: "Short ridge", fromSiteId: "s1", toSiteId: "s2", frequencyMHz: 868 },
             { id: "l2", fromSiteId: "s2", toSiteId: "s3", frequencyMHz: 915 },
             { id: "auto-link", name: " Auto link ", fromSiteId: "s1", toSiteId: "s3", frequencyMHz: 868 },
+            { id: "__auto__", name: "Auto-Link", fromSiteId: "s1", toSiteId: "s3", frequencyMHz: 868 },
             { id: "bad-link", fromSiteId: "s1", toSiteId: "missing" },
           ],
         },
@@ -123,10 +124,10 @@ describe("api/stats", () => {
       sites: 3,
       simulations: 3,
       nonEmptySimulations: 2,
-      links: 6,
+      links: 7,
     });
     expect(body.complexity.averageSitesPerSimulation).toBe(2);
-    expect(body.complexity.averageLinksPerSimulation).toBe(3);
+    expect(body.complexity.averageLinksPerSimulation).toBe(3.5);
   });
 
   it("returns latest non-empty simulations and link distance buckets without leaking payloads", async () => {
@@ -160,11 +161,11 @@ describe("api/stats", () => {
         name: "Private sim",
         href: "/Ada/Private-sim",
         siteCount: 3,
-        linkCount: 4,
+        linkCount: 5,
       }),
     ]);
     expect(body.latestSimulations.some((entry) => entry.id === "sim-empty")).toBe(false);
-    expect(body.linkDistanceDistribution.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(3);
+    expect(body.linkDistanceDistribution.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(4);
     expect(body.longestLinks).toHaveLength(2);
     expect(body.longestLinks[0]).toMatchObject({
       label: "South ~ East",
@@ -172,7 +173,7 @@ describe("api/stats", () => {
       simulationName: "Private sim",
       owner: { username: "Ada" },
     });
-    expect(body.longestLinks.some((entry) => entry.label.trim().toLowerCase() === "auto link")).toBe(false);
+    expect(body.longestLinks.some((entry) => entry.label.toLowerCase().includes("auto"))).toBe(false);
     expect(body.longestLinks[0].distanceKm).toBeGreaterThan(body.longestLinks[1].distanceKm);
     expect(body.siteDensitySummary).toEqual([{ label: "60°N, 10°E", count: 2 }]);
     expect(raw).not.toContain("60.1");
@@ -201,8 +202,8 @@ describe("api/stats", () => {
     expect(body.growth.lastYear).toHaveLength(12);
     expect(body.growth.allTime).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "2026-01", users: 1, sites: 1, simulations: 1, links: 4, cumulativeLinks: 4 }),
-        expect.objectContaining({ label: "2026-02", users: 1, sites: 2, simulations: 2, links: 2, cumulativeLinks: 6 }),
+        expect.objectContaining({ label: "2026-01", users: 1, sites: 1, simulations: 1, links: 5, cumulativeLinks: 5 }),
+        expect.objectContaining({ label: "2026-02", users: 1, sites: 2, simulations: 2, links: 2, cumulativeLinks: 7 }),
       ]),
     );
     expect(body.growth.monthly).toEqual(body.growth.allTime);

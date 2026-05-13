@@ -19,6 +19,7 @@ vi.mock("react-map-gl/maplibre", () => ({
     onMouseMove?: (event: unknown) => void;
   }) => {
     const event = {
+      point: { x: 120, y: 80 },
       features: [
         {
           geometry: { type: "Point", coordinates: [10.5, 60.5] },
@@ -28,7 +29,7 @@ vi.mock("react-map-gl/maplibre", () => ({
     };
     return (
       <div data-testid="mock-map">
-        <button onClick={() => onLoad?.({ target: { fitBounds: mockFitBounds } })} type="button">Load map</button>
+        <button onClick={() => onLoad?.({ target: { fitBounds: mockFitBounds, project: () => ({ x: 120, y: 80 }) } })} type="button">Load map</button>
         <button onClick={() => onMouseMove?.(event)} type="button">Hover bin</button>
         <button onClick={() => onClick?.(event)} type="button">Click bin</button>
         {children}
@@ -36,11 +37,6 @@ vi.mock("react-map-gl/maplibre", () => ({
     );
   },
   Layer: () => <div data-testid="mock-layer" />,
-  Popup: ({ children, className, latitude, longitude }: { children: ReactNode; className?: string; latitude: number; longitude: number }) => (
-    <div className={className} data-latitude={latitude} data-longitude={longitude} data-testid="mock-popup">
-      {children}
-    </div>
-  ),
   Source: ({ children }: { children: ReactNode }) => <div data-testid="mock-source">{children}</div>,
 }));
 
@@ -58,14 +54,16 @@ describe("StatsDensityMap", () => {
     );
 
     expect(screen.getByLabelText("Zoom out Site density map").closest(".stats-map-controls")).toHaveClass("map-controls");
-    expect(screen.getByText("CARTO").closest(".stats-map-attribution")).toHaveClass("floating-attribution-pill");
+    const attribution = screen.getByText("CARTO").closest(".stats-map-attribution");
+    expect(attribution).toHaveClass("floating-attribution-pill");
+    expect(attribution).toHaveTextContent("MapLibre");
 
     await userEvent.click(screen.getByRole("button", { name: "Hover bin" }));
 
-    const popup = screen.getByTestId("mock-popup");
+    const popup = screen.getByText("5 Sites").closest(".stats-map-popup-shell");
     expect(popup).toHaveClass("stats-map-popup-shell");
-    expect(popup).toHaveAttribute("data-longitude", "10.5");
-    expect(popup).toHaveAttribute("data-latitude", "60.5");
-    expect(screen.getByText("5 Sites").closest(".stats-map-popup")).toHaveClass("ui-surface-pill", "has-pointer-tail");
+    expect(popup).toHaveStyle({ left: "120px", top: "80px" });
+    expect(screen.getByText("5 Sites").closest(".stats-map-popup")).toHaveClass("ui-surface-pill");
+    expect(screen.getByText("5 Sites").closest(".stats-map-popup")).not.toHaveClass("has-pointer-tail");
   });
 });
