@@ -22,6 +22,8 @@ type FloatingPopoverProps = {
   style?: CSSProperties;
   estimatedHeight?: number;
   estimatedWidth?: number;
+  pointerTail?: boolean;
+  pointerTone?: "accent" | "selection" | "temporary";
 };
 
 export function FloatingPopover({
@@ -35,6 +37,8 @@ export function FloatingPopover({
   style,
   estimatedHeight = 200,
   estimatedWidth = 360,
+  pointerTail = false,
+  pointerTone = "accent",
 }: FloatingPopoverProps) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<FloatingPopoverPosition | null>(null);
@@ -135,6 +139,8 @@ export function FloatingPopover({
       ref={popoverRef}
       variant="card"
       className={`ui-action-popover ${className ?? ""} ${position.direction === "down" ? "is-down" : ""}`}
+      pointerTail={pointerTail}
+      pointerTone={pointerTone}
       style={{
         left: position.left,
         top: position.top,

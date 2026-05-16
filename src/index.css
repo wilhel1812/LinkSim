@@ -2273,6 +2273,50 @@ button {
   padding: 2px 8px;
 }
 
+.visible-site-sources-control {
+  min-width: 0;
+}
+
+.visible-site-sources-trigger {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.visible-site-sources-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visible-site-sources-popover {
+  width: min(240px, calc(100vw - 24px));
+  z-index: 12050;
+}
+
+.visible-site-sources-popover-content {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.visible-site-sources-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.visible-site-sources-options {
+  display: grid;
+  gap: 8px;
+}
+
+.visible-site-source-option {
+  min-width: 0;
+}
+
 .map-progress {
   width: 100%;
   padding: 0;
@@ -3026,6 +3070,13 @@ button {
 .ui-action-popover.is-down {
   transform: translate(-50%, 6px);
   animation: panorama-popover-drop 140ms ease-out;
+}
+
+.ui-action-popover.is-down.has-pointer-tail::after,
+.ui-action-popover.is-down.has-pointer-tail::before {
+  top: auto;
+  bottom: calc(100% + 1px);
+  clip-path: polygon(50% 0, 0 100%, 100% 100%);
 }
 
 .ui-settings-popover-list {
