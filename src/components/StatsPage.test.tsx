@@ -165,6 +165,7 @@ describe("StatsPage", () => {
     expect(screen.getByText("Simulations by Size")).toBeInTheDocument();
     expect(screen.getByText("Link Distance Distribution")).toBeInTheDocument();
     expect(screen.getByText("Top Passing Paths")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /A Path appears here after a logged-in user calculates/i })).toBeInTheDocument();
     expect(screen.getByText("Top 5 Longest Links")).toBeInTheDocument();
     expect(screen.queryByText("Network Flavor")).not.toBeInTheDocument();
     expect(screen.queryByText("Distance Notes")).not.toBeInTheDocument();
@@ -237,6 +238,6 @@ describe("StatsPage", () => {
     expect(await screen.findByText("Growth appears after dated community activity is available.")).toBeInTheDocument();
     expect(screen.getByText("Site density will appear after Sites with coordinates are created.")).toBeInTheDocument();
     expect(screen.getByText("Latest non-empty Simulations will appear here.")).toBeInTheDocument();
-    expect(screen.getByText("Passing Paths appear after terrain-backed saved Paths are calculated.")).toBeInTheDocument();
+    expect(screen.getByText("Passing Paths appear after terrain-backed public/shared Simulation Paths are calculated.")).toBeInTheDocument();
   });
 });

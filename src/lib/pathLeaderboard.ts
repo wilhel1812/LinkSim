@@ -40,6 +40,7 @@ export type BuildPathLeaderboardCandidateResult =
   | { ok: false; reason: string };
 
 const FNV_OFFSET_BASIS = 2166136261;
+const SELECTION_LINK_ID = "__selection__";
 
 const updateFnvHash = (hash: number, input: string): number => {
   let next = hash;
@@ -121,7 +122,7 @@ export const buildPathLeaderboardCandidate = (
     simulationUpdatedAt,
     fromSiteId,
     toSiteId,
-    linkId: link.id,
+    linkId: link.id === SELECTION_LINK_ID ? null : link.id,
     distanceKm: analysis.distanceKm,
     rxAfterEnvLossDbm,
     rxMarginDb,

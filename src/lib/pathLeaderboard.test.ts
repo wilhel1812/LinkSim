@@ -101,6 +101,19 @@ describe("path leaderboard candidate gate", () => {
     expect(result.candidate.terrainTileSignature).toBeTruthy();
   });
 
+  it("allows unsaved selected site pairs by omitting the synthetic link id", () => {
+    const result = buildPathLeaderboardCandidate({
+      ...baseInput(),
+      link: {
+        ...link,
+        id: "__selection__",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.candidate.linkId).toBeNull();
+  });
+
   it("waits while terrain is still loading", () => {
     expect(buildPathLeaderboardCandidate({ ...baseInput(), isTerrainFetching: true })).toEqual({
       ok: false,
