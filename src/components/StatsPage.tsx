@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
+import { InfoTip } from "./InfoTip";
 import { StatsDensityMap } from "./StatsDensityMap";
 import { UserProfileModal } from "./UserProfileModal";
 import { fetchUserById, type CloudUser } from "../lib/cloudUser";
@@ -75,10 +76,24 @@ const CustomTooltip = ({ active, label, payload }: { active?: boolean; label?: s
   );
 };
 
-const Panel = ({ title, children, className = "" }: { title: string; children: ReactNode; className?: string }) => (
+const passingPathLeaderboardInfo =
+  "A Path appears here after a logged-in user calculates a public/shared saved Simulation Path or selected two-site Path with no drag preview, terrain loading complete for the whole Simulation, real terrain for every profile sample, and RX after environment loss meeting the signal target. Only the global top five unique endpoint pairs are shown.";
+
+const Panel = ({
+  title,
+  children,
+  className = "",
+  actions,
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+  actions?: ReactNode;
+}) => (
   <article className={`stats-atlas-panel panel-section ${className}`.trim()}>
     <div className="section-heading stats-atlas-panel-heading">
       <h2>{title}</h2>
+      {actions}
     </div>
     {children}
   </article>
@@ -348,7 +363,7 @@ export function StatsPage() {
           <DistanceChart buckets={stats?.linkDistanceDistribution ?? []} />
         </Panel>
 
-        <Panel title="Top Passing Paths">
+        <Panel title="Top Passing Paths" actions={<InfoTip text={passingPathLeaderboardInfo} />}>
           <div className="stats-simulation-list">
             {(stats?.longestPassingPaths ?? []).map((path) => (
               <a className="stats-simulation-row" href={path.href || path.simulationHref} key={path.id}>
@@ -361,7 +376,7 @@ export function StatsPage() {
                 <ExternalLink aria-hidden="true" size={15} />
               </a>
             ))}
-            {!stats?.longestPassingPaths.length ? <p className="field-help">Passing Paths appear after terrain-backed saved Paths are calculated.</p> : null}
+            {!stats?.longestPassingPaths.length ? <p className="field-help">Passing Paths appear after terrain-backed public/shared Simulation Paths are calculated.</p> : null}
           </div>
         </Panel>
 
