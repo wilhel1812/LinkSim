@@ -380,22 +380,6 @@ export function StatsPage() {
           </div>
         </Panel>
 
-        <Panel title="Top 5 Longest Links">
-          <div className="stats-simulation-list">
-            {(stats?.longestLinks ?? []).map((link) => (
-              <a className="stats-simulation-row" href={link.href || link.simulationHref} key={link.id}>
-                <span>
-                  <strong>{link.label}</strong>
-                  <small>{link.simulationName} · by {link.owner.username}</small>
-                </span>
-                <span>{formatKm(link.distanceKm)}</span>
-                <ExternalLink aria-hidden="true" size={15} />
-              </a>
-            ))}
-            {!stats?.longestLinks.length ? <p className="field-help">Longest Links appear after saved Links have endpoints with coordinates.</p> : null}
-          </div>
-        </Panel>
-
         <Panel title="Newest Members">
           <div className="stats-person-list">
             {(stats?.highlights.newestMembers ?? []).map((user) => (

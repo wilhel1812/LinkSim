@@ -80,17 +80,6 @@ const statsPayload = {
       linkCount: 2,
     },
   ],
-  longestLinks: [
-    {
-      id: "sim-2:l1",
-      label: "Ridge to Valley",
-      href: "/Grace/Shared-Ridge/Ridge~Valley",
-      simulationHref: "/Grace/Shared-Ridge",
-      simulationName: "Shared Ridge",
-      distanceKm: 42.4,
-      owner: { userId: "u2", username: "Grace", avatarUrl: "" },
-    },
-  ],
   longestPassingPaths: [
     {
       id: "sim-2:ridge~valley",
@@ -166,7 +155,7 @@ describe("StatsPage", () => {
     expect(screen.getByText("Link Distance Distribution")).toBeInTheDocument();
     expect(screen.getByText("Top Passing Paths")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /A Path appears here after a logged-in user calculates/i })).toBeInTheDocument();
-    expect(screen.getByText("Top 5 Longest Links")).toBeInTheDocument();
+    expect(screen.queryByText("Top 5 Longest Links")).not.toBeInTheDocument();
     expect(screen.queryByText("Network Flavor")).not.toBeInTheDocument();
     expect(screen.queryByText("Distance Notes")).not.toBeInTheDocument();
     expect(screen.getByTestId("stats-density-map")).toHaveTextContent("Map bins: 1");
@@ -176,7 +165,6 @@ describe("StatsPage", () => {
     expect(backLink).not.toHaveClass("btn-ghost");
     expect(screen.getAllByRole("link", { name: /Shared Ridge/i })[0]).toHaveAttribute("href", "/Grace/Shared-Ridge");
     expect(screen.getByRole("link", { name: /Ridge ~ Valley/i })).toHaveAttribute("href", "/Grace/Shared-Ridge/Ridge~Valley");
-    expect(screen.getByRole("link", { name: /Ridge to Valley/i })).toHaveAttribute("href", "/Grace/Shared-Ridge/Ridge~Valley");
     expect(screen.getByText("+18.8 dB")).toBeInTheDocument();
     expect(screen.getByText("Sites + Simulations")).toBeInTheDocument();
     expect(screen.getByText("11 days ago")).toBeInTheDocument();
@@ -227,7 +215,6 @@ describe("StatsPage", () => {
           latestSimulations: [],
           linkDistanceDistribution: [],
           siteDensitySummary: [],
-          longestLinks: [],
           longestPassingPaths: [],
         }),
       })),

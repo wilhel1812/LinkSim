@@ -282,13 +282,6 @@ const average = (values: number[]): number =>
   values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
 const round1 = (value: number): number => Math.round(value * 10) / 10;
-const normalizeAutoLinkText = (value: unknown): string =>
-  typeof value === "string" ? value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "") : "";
-const isAutoLink = (link: SnapshotLink): boolean => {
-  const normalizedName = normalizeAutoLinkText(link.name);
-  const normalizedId = normalizeAutoLinkText(link.id);
-  return normalizedName === "autolink" || normalizedId === "auto" || normalizedId === "autolink";
-};
 
 const bucketSimulationSize = (siteCount: number): "1-2" | "3-5" | "6-10" | "11+" => {
   if (siteCount <= 2) return "1-2";
@@ -319,20 +312,6 @@ const hrefForSimulation = (owner: UserRow | undefined, simulation: ResourceRow, 
   const simulationSlug = slugifySegment(name);
   if (username && simulationSlug) return `/${username}/${simulationSlug}`;
   return `/?sim=${encodeURIComponent(simulation.id)}`;
-};
-
-const hrefForLink = (
-  owner: UserRow | undefined,
-  simulation: ResourceRow,
-  payload: SimulationPayload | null,
-  fromSite: SnapshotSite,
-  toSite: SnapshotSite,
-): string => {
-  const simulationHref = hrefForSimulation(owner, simulation, payload);
-  const fromName = typeof fromSite.name === "string" ? slugifySegment(fromSite.name) : "";
-  const toName = typeof toSite.name === "string" ? slugifySegment(toSite.name) : "";
-  if (!fromName || !toName || simulationHref.startsWith("/?")) return simulationHref;
-  return `${simulationHref}/${fromName}~${toName}`;
 };
 
 const formatGeoLabel = (latBand: number, lonBand: number): string => {
@@ -427,15 +406,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       siteCount: number;
       linkCount: number;
     }> = [];
-    const longestLinks: Array<{
-      id: string;
-      label: string;
-      href: string;
-      simulationHref: string;
-      simulationName: string;
-      distanceKm: number;
-      owner: { userId: string; username: string; avatarUrl: string };
-    }> = [];
     const linkDistanceCounts = DISTANCE_BUCKETS.map((bucket) => ({ ...bucket, count: 0 }));
 
     simulations.forEach((simulation) => {
@@ -483,24 +453,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         const distanceKm = haversineKm({ lat: fromLat, lon: fromLon }, { lat: toLat, lon: toLon });
         const bucket = bucketForDistance(distanceKm);
         if (bucket) linkDistanceCounts.find((entry) => entry.label === bucket.label)!.count += 1;
-        const owner = userById.get(simulation.owner_user_id);
-        const fromName = typeof from?.name === "string" && from.name.trim() ? from.name.trim() : "Site A";
-        const toName = typeof to?.name === "string" && to.name.trim() ? to.name.trim() : "Site B";
-        const linkName = typeof link.name === "string" && link.name.trim() ? link.name.trim() : `${fromName} ~ ${toName}`;
-        if (isAutoLink(link)) return;
-        longestLinks.push({
-          id: `${simulation.id}:${typeof link.id === "string" ? link.id : `${link.fromSiteId}-${link.toSiteId}`}`,
-          label: linkName,
-          href: hrefForLink(owner, simulation, payload, from, to),
-          simulationHref: hrefForSimulation(owner, simulation, payload),
-          simulationName: typeof payload?.name === "string" && payload.name.trim() ? payload.name.trim() : simulation.name?.trim() || "Untitled Simulation",
-          distanceKm: round1(distanceKm),
-          owner: {
-            userId: simulation.owner_user_id,
-            username: owner?.username?.trim() || "Unknown user",
-            avatarUrl: owner?.avatar_url ?? "",
-          },
-        });
       });
     });
 
@@ -546,9 +498,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       },
       latestSimulations: latestSimulations
         .sort((a, b) => (parseDate(b.createdAt)?.getTime() ?? 0) - (parseDate(a.createdAt)?.getTime() ?? 0))
-        .slice(0, 5),
-      longestLinks: longestLinks
-        .sort((a, b) => b.distanceKm - a.distanceKm || a.label.localeCompare(b.label))
         .slice(0, 5),
       longestPassingPaths,
       linkDistanceDistribution: linkDistanceCounts,

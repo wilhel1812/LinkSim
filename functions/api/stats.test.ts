@@ -165,7 +165,6 @@ describe("api/stats", () => {
       }>;
       linkDistanceDistribution: Array<{ label: string; minKm: number; maxKm: number | null; count: number }>;
       siteDensitySummary: Array<{ label: string; count: number }>;
-      longestLinks: Array<{ label: string; href: string; simulationName: string; distanceKm: number; owner: { username: string } }>;
       longestPassingPaths: Array<{ label: string; href: string; simulationName: string; distanceKm: number; rxMarginDb: number }>;
     };
     const raw = JSON.stringify(body);
@@ -189,15 +188,7 @@ describe("api/stats", () => {
     ]);
     expect(body.latestSimulations.some((entry) => entry.id === "sim-empty")).toBe(false);
     expect(body.linkDistanceDistribution.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(4);
-    expect(body.longestLinks).toHaveLength(2);
-    expect(body.longestLinks[0]).toMatchObject({
-      label: "South ~ East",
-      href: "/Ada/Private-sim/South~East",
-      simulationName: "Private sim",
-      owner: { username: "Ada" },
-    });
-    expect(body.longestLinks.some((entry) => entry.label.toLowerCase().includes("auto"))).toBe(false);
-    expect(body.longestLinks[0].distanceKm).toBeGreaterThan(body.longestLinks[1].distanceKm);
+    expect(raw).not.toContain("longestLinks");
     expect(body.longestPassingPaths).toEqual([
       expect.objectContaining({
         label: "Ridge ~ Valley",
