@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Egg, Fullscreen, Locate, LocateFixed, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Layers, Locate, LocateFixed, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
+import { FloatingPopover } from "./ui/FloatingPopover";
 import { MapControlButton } from "./ui/MapControlButton";
 import { Surface } from "./ui/Surface";
 import Map, {
@@ -772,6 +773,7 @@ export function MapView({
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [showDiscoverySites, setShowDiscoverySites] = useState(false);
   const [showDiscoveryMqtt, setShowDiscoveryMqtt] = useState(false);
+  const [visibleSiteSourcesOpen, setVisibleSiteSourcesOpen] = useState(false);
   const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
   const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
@@ -792,6 +794,7 @@ export function MapView({
     zoom: number;
   } | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+  const visibleSiteSourcesTriggerRef = useRef<HTMLButtonElement | null>(null);
   const userLocationWatchIdRef = useRef<number | null>(null);
   const isUserLocationActiveRef = useRef(false);
   const isUserLocationFollowingRef = useRef(false);
@@ -909,6 +912,11 @@ export function MapView({
   useEffect(() => {
     setDiscoveryVisibility({ libraryVisible: showDiscoverySites, mqttVisible: showDiscoveryMqtt });
   }, [showDiscoverySites, showDiscoveryMqtt, setDiscoveryVisibility]);
+
+  useEffect(() => {
+    if (showDiscoveryMqtt) return;
+    setMqttDuplicatePrompt(null);
+  }, [showDiscoveryMqtt]);
 
   useEffect(() => {
     setMapDiscoveryMqttNodes(mqttNodes);
@@ -2661,8 +2669,21 @@ export function MapView({
     setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode;
-  const siteVisibilityMode: "simulation" | "library" | "mqtt" =
-    showDiscoveryMqtt ? "mqtt" : showDiscoverySites ? "library" : "simulation";
+  const visibleSiteSourceSummary =
+    showDiscoverySites && showDiscoveryMqtt
+      ? "Simulation + Library + MQTT"
+      : showDiscoverySites
+        ? "Simulation + Library"
+        : showDiscoveryMqtt
+          ? "Simulation + MQTT"
+          : "Simulation only";
+  const setVisibleSiteSource = useCallback((source: "library" | "mqtt", visible: boolean) => {
+    if (source === "library") {
+      setShowDiscoverySites(visible);
+      return;
+    }
+    setShowDiscoveryMqtt(visible);
+  }, []);
   const selectedSite = selectedSites[0] ?? null;
   const selectedDiscoveryLibraryEntry =
     selectedDiscoveryLibraryEntryId
@@ -3089,32 +3110,53 @@ export function MapView({
                   </select>
                 </label>
               )}
-              <label className="map-inspector-map-setting">
+              <div className="map-inspector-map-setting">
                 <span>Visible Sites</span>
-                <select
-                  className="locale-select"
-                  onChange={(event) => {
-                    const mode = event.target.value as "simulation" | "library" | "mqtt";
-                    if (mode === "simulation") {
-                      setShowDiscoverySites(false);
-                      setShowDiscoveryMqtt(false);
-                      return;
-                    }
-                    if (mode === "library") {
-                      setShowDiscoverySites(true);
-                      setShowDiscoveryMqtt(false);
-                      return;
-                    }
-                    setShowDiscoverySites(false);
-                    setShowDiscoveryMqtt(true);
-                  }}
-                  value={siteVisibilityMode}
+                <div className="visible-site-sources-control">
+                  <ActionButton
+                    aria-expanded={visibleSiteSourcesOpen}
+                    aria-haspopup="dialog"
+                    className="visible-site-sources-trigger"
+                    onClick={() => setVisibleSiteSourcesOpen((open) => !open)}
+                    ref={visibleSiteSourcesTriggerRef}
+                    type="button"
+                  >
+                    <Layers aria-hidden="true" size={13} strokeWidth={1.8} />
+                    <span>{visibleSiteSourceSummary}</span>
+                  </ActionButton>
+                </div>
+                <FloatingPopover
+                  className="visible-site-sources-popover"
+                  estimatedHeight={120}
+                  estimatedWidth={240}
+                  onClose={() => setVisibleSiteSourcesOpen(false)}
+                  open={visibleSiteSourcesOpen}
+                  pointerTail
+                  triggerRef={visibleSiteSourcesTriggerRef}
                 >
-                  <option value="simulation">Only Simulation</option>
-                  <option value="library">Simulation + Library</option>
-                  <option value="mqtt">Simulation + MQTT</option>
-                </select>
-              </label>
+                  <div aria-label="Visible site sources" className="visible-site-sources-popover-content" role="dialog">
+                    <p className="visible-site-sources-summary">{visibleSiteSourceSummary}</p>
+                    <div className="visible-site-sources-options">
+                      <label className="checkbox-field visible-site-source-option">
+                        <input
+                          checked={showDiscoverySites}
+                          onChange={(event) => setVisibleSiteSource("library", event.currentTarget.checked)}
+                          type="checkbox"
+                        />
+                        <span>Library</span>
+                      </label>
+                      <label className="checkbox-field visible-site-source-option">
+                        <input
+                          checked={showDiscoveryMqtt}
+                          onChange={(event) => setVisibleSiteSource("mqtt", event.currentTarget.checked)}
+                          type="checkbox"
+                        />
+                        <span>MQTT</span>
+                      </label>
+                    </div>
+                  </div>
+                </FloatingPopover>
+              </div>
             </div>
             <p>
               Mode: <strong>{overlayGuideTitle}</strong>
