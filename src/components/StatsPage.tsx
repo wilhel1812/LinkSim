@@ -348,6 +348,23 @@ export function StatsPage() {
           <DistanceChart buckets={stats?.linkDistanceDistribution ?? []} />
         </Panel>
 
+        <Panel title="Top Passing Paths">
+          <div className="stats-simulation-list">
+            {(stats?.longestPassingPaths ?? []).map((path) => (
+              <a className="stats-simulation-row" href={path.href || path.simulationHref} key={path.id}>
+                <span>
+                  <strong>{path.label}</strong>
+                  <small>{path.simulationName} · by {path.owner.username}</small>
+                </span>
+                <span>{formatKm(path.distanceKm)}</span>
+                <span>+{formatDecimal(path.rxMarginDb)} dB</span>
+                <ExternalLink aria-hidden="true" size={15} />
+              </a>
+            ))}
+            {!stats?.longestPassingPaths.length ? <p className="field-help">Passing Paths appear after terrain-backed saved Paths are calculated.</p> : null}
+          </div>
+        </Panel>
+
         <Panel title="Top 5 Longest Links">
           <div className="stats-simulation-list">
             {(stats?.longestLinks ?? []).map((link) => (

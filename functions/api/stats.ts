@@ -1,4 +1,5 @@
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
+import { listStatsPathLeaderboardEntries } from "../_lib/pathLeaderboard";
 import type { Env } from "../_lib/types";
 
 type UserRow = {
@@ -371,10 +372,11 @@ export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handl
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
-    const [usersResult, sitesResult, simulationsResult] = await Promise.all([
+    const [usersResult, sitesResult, simulationsResult, longestPassingPaths] = await Promise.all([
       env.DB.prepare("SELECT id, username, avatar_url, created_at FROM users").all<UserRow>(),
       env.DB.prepare("SELECT id, owner_user_id, created_at, payload_json FROM sites").all<ResourceRow>(),
       env.DB.prepare("SELECT id, owner_user_id, created_at, name, payload_json FROM simulations").all<ResourceRow>(),
+      listStatsPathLeaderboardEntries(env),
     ]);
 
     const users = usersResult.results ?? [];
@@ -548,6 +550,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       longestLinks: longestLinks
         .sort((a, b) => b.distanceKm - a.distanceKm || a.label.localeCompare(b.label))
         .slice(0, 5),
+      longestPassingPaths,
       linkDistanceDistribution: linkDistanceCounts,
       highlights: {
         topContributors: Array.from(contributorCounts.values())

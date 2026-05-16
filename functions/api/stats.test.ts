@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { listStatsPathLeaderboardEntriesMock } = vi.hoisted(() => ({
+  listStatsPathLeaderboardEntriesMock: vi.fn(),
+}));
+
+vi.mock("../_lib/pathLeaderboard", () => ({
+  listStatsPathLeaderboardEntries: listStatsPathLeaderboardEntriesMock,
+}));
+
 import { onRequestGet } from "./stats";
 
 type MockTable = {
@@ -33,6 +41,20 @@ const mkCtx = (request = new Request("https://example.test/api/stats")) =>
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-02-10T12:30:00.000Z"));
+  listStatsPathLeaderboardEntriesMock.mockResolvedValue([
+    {
+      id: "sim-2:site-a~site-b",
+      label: "Ridge ~ Valley",
+      href: "/Grace/Shared-sim/Ridge~Valley",
+      simulationHref: "/Grace/Shared-sim",
+      simulationName: "Shared sim",
+      distanceKm: 88.8,
+      rxAfterEnvLossDbm: -102,
+      rxMarginDb: 18,
+      terrainObstructed: true,
+      owner: { userId: "u2", username: "Grace", avatarUrl: "" },
+    },
+  ]);
   tables.users = [
     { id: "u1", username: "Ada", avatar_url: "https://example.test/ada.png", created_at: "2026-01-03T00:00:00.000Z" },
     { id: "u2", username: "Grace", avatar_url: null, created_at: "2026-02-10T00:00:00.000Z" },
@@ -144,6 +166,7 @@ describe("api/stats", () => {
       linkDistanceDistribution: Array<{ label: string; minKm: number; maxKm: number | null; count: number }>;
       siteDensitySummary: Array<{ label: string; count: number }>;
       longestLinks: Array<{ label: string; href: string; simulationName: string; distanceKm: number; owner: { username: string } }>;
+      longestPassingPaths: Array<{ label: string; href: string; simulationName: string; distanceKm: number; rxMarginDb: number }>;
     };
     const raw = JSON.stringify(body);
 
@@ -175,6 +198,15 @@ describe("api/stats", () => {
     });
     expect(body.longestLinks.some((entry) => entry.label.toLowerCase().includes("auto"))).toBe(false);
     expect(body.longestLinks[0].distanceKm).toBeGreaterThan(body.longestLinks[1].distanceKm);
+    expect(body.longestPassingPaths).toEqual([
+      expect.objectContaining({
+        label: "Ridge ~ Valley",
+        href: "/Grace/Shared-sim/Ridge~Valley",
+        simulationName: "Shared sim",
+        distanceKm: 88.8,
+        rxMarginDb: 18,
+      }),
+    ]);
     expect(body.siteDensitySummary).toEqual([{ label: "60°N, 10°E", count: 2 }]);
     expect(raw).not.toContain("60.1");
     expect(raw).not.toContain("61");

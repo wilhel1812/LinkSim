@@ -73,6 +73,22 @@ export type StatsPayload = {
       avatarUrl: string;
     };
   }>;
+  longestPassingPaths: Array<{
+    id: string;
+    label: string;
+    href: string;
+    simulationHref: string;
+    simulationName: string;
+    distanceKm: number;
+    rxAfterEnvLossDbm: number;
+    rxMarginDb: number;
+    terrainObstructed: boolean;
+    owner: {
+      userId: string;
+      username: string;
+      avatarUrl: string;
+    };
+  }>;
   linkDistanceDistribution: Array<{
     label: string;
     minKm: number;
