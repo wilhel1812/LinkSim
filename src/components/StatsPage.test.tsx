@@ -91,6 +91,20 @@ const statsPayload = {
       owner: { userId: "u2", username: "Grace", avatarUrl: "" },
     },
   ],
+  longestPassingPaths: [
+    {
+      id: "sim-2:ridge~valley",
+      label: "Ridge ~ Valley",
+      href: "/Grace/Shared-Ridge/Ridge~Valley",
+      simulationHref: "/Grace/Shared-Ridge",
+      simulationName: "Shared Ridge",
+      distanceKm: 64.2,
+      rxAfterEnvLossDbm: -101.2,
+      rxMarginDb: 18.8,
+      terrainObstructed: false,
+      owner: { userId: "u2", username: "Grace", avatarUrl: "" },
+    },
+  ],
   linkDistanceDistribution: [
     { label: "0-10 km", minKm: 0, maxKm: 10, count: 1 },
     { label: "10-25 km", minKm: 10, maxKm: 25, count: 2 },
@@ -150,6 +164,7 @@ describe("StatsPage", () => {
     expect(screen.getByText("Simulation Complexity")).toBeInTheDocument();
     expect(screen.getByText("Simulations by Size")).toBeInTheDocument();
     expect(screen.getByText("Link Distance Distribution")).toBeInTheDocument();
+    expect(screen.getByText("Top Passing Paths")).toBeInTheDocument();
     expect(screen.getByText("Top 5 Longest Links")).toBeInTheDocument();
     expect(screen.queryByText("Network Flavor")).not.toBeInTheDocument();
     expect(screen.queryByText("Distance Notes")).not.toBeInTheDocument();
@@ -159,7 +174,9 @@ describe("StatsPage", () => {
     expect(backLink).toHaveClass("btn");
     expect(backLink).not.toHaveClass("btn-ghost");
     expect(screen.getAllByRole("link", { name: /Shared Ridge/i })[0]).toHaveAttribute("href", "/Grace/Shared-Ridge");
+    expect(screen.getByRole("link", { name: /Ridge ~ Valley/i })).toHaveAttribute("href", "/Grace/Shared-Ridge/Ridge~Valley");
     expect(screen.getByRole("link", { name: /Ridge to Valley/i })).toHaveAttribute("href", "/Grace/Shared-Ridge/Ridge~Valley");
+    expect(screen.getByText("+18.8 dB")).toBeInTheDocument();
     expect(screen.getByText("Sites + Simulations")).toBeInTheDocument();
     expect(screen.getByText("11 days ago")).toBeInTheDocument();
     expect(screen.queryByText("Median Sites")).not.toBeInTheDocument();
@@ -210,6 +227,7 @@ describe("StatsPage", () => {
           linkDistanceDistribution: [],
           siteDensitySummary: [],
           longestLinks: [],
+          longestPassingPaths: [],
         }),
       })),
     );
@@ -219,5 +237,6 @@ describe("StatsPage", () => {
     expect(await screen.findByText("Growth appears after dated community activity is available.")).toBeInTheDocument();
     expect(screen.getByText("Site density will appear after Sites with coordinates are created.")).toBeInTheDocument();
     expect(screen.getByText("Latest non-empty Simulations will appear here.")).toBeInTheDocument();
+    expect(screen.getByText("Passing Paths appear after terrain-backed saved Paths are calculated.")).toBeInTheDocument();
   });
 });
