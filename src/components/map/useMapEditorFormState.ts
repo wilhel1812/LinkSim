@@ -18,6 +18,28 @@ const parseNumber = (value: string | number): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+type CoordinateDraft = string | number;
+
+const parseCoordinateDraft = (value: CoordinateDraft): number | null => {
+  if (typeof value === "string" && value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const validateLatitude = (value: CoordinateDraft): { value: number | null; error: string | null } => {
+  const parsed = parseCoordinateDraft(value);
+  if (parsed === null) return { value: null, error: "Latitude must be a number." };
+  if (parsed < -90 || parsed > 90) return { value: parsed, error: "Latitude must be between -90 and 90." };
+  return { value: parsed, error: null };
+};
+
+const validateLongitude = (value: CoordinateDraft): { value: number | null; error: string | null } => {
+  const parsed = parseCoordinateDraft(value);
+  if (parsed === null) return { value: null, error: "Longitude must be a number." };
+  if (parsed < -180 || parsed > 180) return { value: parsed, error: "Longitude must be between -180 and 180." };
+  return { value: parsed, error: null };
+};
+
 export function useMapEditorFormState() {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const mapEditorSiteDraft = useAppStore((state) => state.mapEditorSiteDraft);
@@ -59,8 +81,10 @@ export function useMapEditorFormState() {
   const [collaboratorDirectoryStatus, setCollaboratorDirectoryStatus] = useState("");
 
   // ─── Site-specific drafts ─────────────────────────────────────────────────────
-  const [latDraft, setLatDraft] = useState(0);
-  const [lonDraft, setLonDraft] = useState(0);
+  const [latDraft, setLatDraft] = useState<CoordinateDraft>(0);
+  const [lonDraft, setLonDraft] = useState<CoordinateDraft>(0);
+  const [latError, setLatError] = useState<string | null>(null);
+  const [lonError, setLonError] = useState<string | null>(null);
   const [groundDraft, setGroundDraft] = useState(0);
   const [antennaDraft, setAntennaDraft] = useState(2);
   const [txPowerDraft, setTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
@@ -117,6 +141,8 @@ export function useMapEditorFormState() {
     setIsElevationUserSet(false);
 
     if (mapEditor.kind === "site") {
+      setLatError(null);
+      setLonError(null);
       if (mapEditor.isNew) {
         const seed = mapEditor.siteSeed;
         const seededLat = seed?.lat ?? mapViewport?.center.lat ?? 0;
@@ -295,9 +321,14 @@ export function useMapEditorFormState() {
   // ─── Terrain prefetch for site coordinates ────────────────────────────────────
   useEffect(() => {
     if (mapEditor?.kind !== "site") return;
+    const lat = validateLatitude(latDraft);
+    const lon = validateLongitude(lonDraft);
+    if (lat.error || lon.error || lat.value === null || lon.value === null) return;
+    const nextLat = lat.value;
+    const nextLon = lon.value;
     setIsElevationUserSet(false);
     const timer = setTimeout(() => {
-      void loadTerrainForCoordinate(latDraft, lonDraft);
+      void loadTerrainForCoordinate(nextLat, nextLon);
     }, 500);
     return () => clearTimeout(timer);
   }, [latDraft, lonDraft, mapEditor?.kind, loadTerrainForCoordinate]);
@@ -305,12 +336,15 @@ export function useMapEditorFormState() {
   // Auto-fill elevation from terrain when it loads (only if user hasn't manually set)
   useEffect(() => {
     if (mapEditor?.kind !== "site" || isElevationUserSet) return;
-    const elevation = Number(sampleSrtmElevation(srtmTiles, latDraft, lonDraft));
+    const lat = validateLatitude(latDraft);
+    const lon = validateLongitude(lonDraft);
+    if (lat.error || lon.error || lat.value === null || lon.value === null) return;
+    const elevation = Number(sampleSrtmElevation(srtmTiles, lat.value, lon.value));
     if (Number.isFinite(elevation)) {
       const roundedElevation = Math.round(elevation);
       setGroundDraft(roundedElevation);
       if (mapEditorSiteDraft) {
-        setMapEditorSiteDraft({ lat: latDraft, lon: lonDraft, groundElevationM: roundedElevation });
+        setMapEditorSiteDraft({ lat: lat.value, lon: lon.value, groundElevationM: roundedElevation });
       }
     }
   }, [srtmTiles, isElevationUserSet, latDraft, lonDraft, mapEditor?.kind]);
@@ -480,7 +514,10 @@ export function useMapEditorFormState() {
 
   // ─── Terrain fetch helper ─────────────────────────────────────────────────────
   const fetchGroundElevation = (): number | null => {
-    const elevation = Number(sampleSrtmElevation(srtmTiles, latDraft, lonDraft));
+    const lat = validateLatitude(latDraft);
+    const lon = validateLongitude(lonDraft);
+    if (lat.error || lon.error || lat.value === null || lon.value === null) return null;
+    const elevation = Number(sampleSrtmElevation(srtmTiles, lat.value, lon.value));
     if (!Number.isFinite(elevation)) return null;
     return Math.round(elevation);
   };
@@ -560,6 +597,14 @@ export function useMapEditorFormState() {
       setStatus("Click the map or use search to choose coordinates before saving.");
       return false;
     }
+    const latValidation = validateLatitude(latDraft);
+    const lonValidation = validateLongitude(lonDraft);
+    setLatError(latValidation.error);
+    setLonError(lonValidation.error);
+    if (latValidation.error || lonValidation.error || latValidation.value === null || lonValidation.value === null) {
+      setStatus(latValidation.error ?? lonValidation.error ?? "Coordinates must be valid.");
+      return false;
+    }
     const normalizedVisibility: "private" | "shared" = accessVisibility;
     if (collaboratorUserIds.includes(ownerUserId)) {
       setStatus("Owner is implicit and cannot be added as collaborator.");
@@ -579,8 +624,8 @@ export function useMapEditorFormState() {
       .map((id) => ({ userId: id, role: (collaboratorRoles[id] ?? "viewer") as "viewer" | "editor" }));
 
     try {
-      const saveLat = mapEditorSiteDraft?.lat ?? latDraft;
-      const saveLon = mapEditorSiteDraft?.lon ?? lonDraft;
+      const saveLat = latValidation.value;
+      const saveLon = lonValidation.value;
       const saveGround = mapEditorSiteDraft?.groundElevationM ?? groundDraft;
       if (mapEditor?.isNew) {
         const createdId = addSiteLibraryEntry(
@@ -806,12 +851,23 @@ export function useMapEditorFormState() {
     }
   };
 
-  const setSitePositionDraft = (nextLat: number | string, nextLon: number | string, nextGround = groundDraft) => {
-    const lat = parseNumber(String(nextLat));
-    const lon = parseNumber(String(nextLon));
-    setLatDraft(lat);
-    setLonDraft(lon);
-    setMapEditorSiteDraft({ lat, lon, groundElevationM: nextGround });
+  const setSitePositionDraft = (nextLat: CoordinateDraft, nextLon: CoordinateDraft, nextGround = groundDraft) => {
+    const lat = validateLatitude(nextLat);
+    const lon = validateLongitude(nextLon);
+    setLatDraft(nextLat);
+    setLonDraft(nextLon);
+    setLatError(lat.error);
+    setLonError(lon.error);
+    setStatus((current) =>
+      current === "Latitude must be a number." ||
+      current === "Latitude must be between -90 and 90." ||
+      current === "Longitude must be a number." ||
+      current === "Longitude must be between -180 and 180."
+        ? ""
+        : current,
+    );
+    if (lat.error || lon.error || lat.value === null || lon.value === null) return;
+    setMapEditorSiteDraft({ lat: lat.value, lon: lon.value, groundElevationM: nextGround });
   };
 
   const setLinkFromSiteIdWithName = (nextFrom: string) => {
@@ -850,8 +906,12 @@ export function useMapEditorFormState() {
     canWrite,
     currentUser,
     // site
-    latDraft, setLatDraft: (v: number | string) => setSitePositionDraft(v, lonDraft),
-    lonDraft, setLonDraft: (v: number | string) => setSitePositionDraft(latDraft, v),
+    latDraft,
+    lonDraft,
+    latError,
+    lonError,
+    setLatDraft: (v: number | string) => setSitePositionDraft(v, lonDraft),
+    setLonDraft: (v: number | string) => setSitePositionDraft(latDraft, v),
     groundDraft, setGroundDraft: (v: number | string) => {
       const nextGround = parseNumber(String(v));
       setGroundDraft(nextGround);

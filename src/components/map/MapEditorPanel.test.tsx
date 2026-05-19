@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
@@ -715,5 +715,123 @@ describe("MapEditorPanel", () => {
       screen.getByText("Failed creating site. Check the name and try again."),
     ).toBeInTheDocument();
     expect(useAppStore.getState().mapEditor).not.toBeNull();
+  });
+
+  it("rejects pasted latitude outside the valid range without moving the site draft", async () => {
+    const addSiteLibraryEntry = vi.fn(() => "site-created");
+    const loadTerrainForCoordinate = vi.fn(async () => undefined);
+    useAppStore.setState({
+      addSiteLibraryEntry,
+      loadTerrainForCoordinate,
+      mapEditor: {
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect,
+        siteSeed: { lat: 60.3, lon: 10.4, insertIntoSimulation: false },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Test Site");
+    const latInput = await screen.findByLabelText("Latitude");
+    const initialDraft = useAppStore.getState().mapEditorSiteDraft;
+    expect(initialDraft).toMatchObject({
+      lat: 60.3,
+      lon: 10.4,
+    });
+
+    await userEvent.clear(latInput);
+    fireEvent.paste(latInput, {
+      clipboardData: {
+        getData: () => "    956894",
+      },
+    });
+
+    expect(screen.getByText("Latitude must be between -90 and 90.")).toBeInTheDocument();
+    expect(latInput).toHaveAttribute("aria-invalid", "true");
+    expect(useAppStore.getState().mapEditorSiteDraft).toEqual(initialDraft);
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Site" }));
+
+    expect(addSiteLibraryEntry).not.toHaveBeenCalled();
+    expect(loadTerrainForCoordinate).not.toHaveBeenCalled();
+    expect(useAppStore.getState().mapEditor).not.toBeNull();
+  });
+
+  it("rejects invalid longitude without creating a site", async () => {
+    const addSiteLibraryEntry = vi.fn(() => "site-created");
+    useAppStore.setState({
+      addSiteLibraryEntry,
+      mapEditor: {
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect,
+        siteSeed: { lat: 60.3, lon: 10.4, insertIntoSimulation: false },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Test Site");
+    const lonInput = await screen.findByLabelText("Longitude");
+    await userEvent.clear(lonInput);
+    await userEvent.type(lonInput, "956894");
+
+    expect(screen.getByText("Longitude must be between -180 and 180.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Site" }));
+
+    expect(addSiteLibraryEntry).not.toHaveBeenCalled();
+    expect(useAppStore.getState().mapEditor).not.toBeNull();
+  });
+
+  it("clears coordinate validation once the pasted latitude is corrected", async () => {
+    const addSiteLibraryEntry = vi.fn(() => "site-created");
+    useAppStore.setState({
+      addSiteLibraryEntry,
+      mapEditor: {
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect,
+        siteSeed: { lat: 60.3, lon: 10.4, insertIntoSimulation: false },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Corrected Site");
+    const latInput = await screen.findByLabelText("Latitude");
+    await userEvent.clear(latInput);
+    await userEvent.type(latInput, "956894");
+    expect(screen.getByText("Latitude must be between -90 and 90.")).toBeInTheDocument();
+
+    await userEvent.clear(latInput);
+    await userEvent.type(latInput, "59.956894");
+    expect(screen.queryByText("Latitude must be between -90 and 90.")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Site" }));
+
+    expect(addSiteLibraryEntry).toHaveBeenCalledWith(
+      "Corrected Site",
+      59.956894,
+      10.4,
+      0,
+      10,
+      22,
+      2,
+      2,
+      1,
+      undefined,
+      "private",
+      undefined,
+    );
+    expect(useAppStore.getState().mapEditor).toBeNull();
   });
 });
