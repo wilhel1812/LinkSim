@@ -200,6 +200,7 @@ describe("migrations", () => {
     localStorage.setItem("rmw-storage-health-v1", JSON.stringify({ ok: true }));
     localStorage.setItem("linksim-copernicus-tilelist-v1", JSON.stringify({ copernicus30: {} }));
     localStorage.setItem("linksim-copernicus-tile-index-v1", JSON.stringify({ copernicus30: {} }));
+    localStorage.setItem("linksim-panorama-settings-v1", JSON.stringify({ exaggeration: 8 }));
 
     initializeMigrations();
     const result = await runMigrations();
@@ -209,6 +210,7 @@ describe("migrations", () => {
     expect(localStorage.getItem("rmw-storage-health-v1")).toBe(null);
     expect(localStorage.getItem("linksim-copernicus-tilelist-v1")).not.toBe(null);
     expect(localStorage.getItem("linksim-copernicus-tile-index-v1")).not.toBe(null);
+    expect(localStorage.getItem("linksim-panorama-settings-v1")).not.toBe(null);
   });
 
   it("initializeMigrations is idempotent", async () => {
