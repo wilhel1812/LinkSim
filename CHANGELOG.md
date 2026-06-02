@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.21.0] - 2026-06-03
+
+### Added
+- Added a public statistics page with privacy-safe Atlas views and a terrain-backed longest passing Path leaderboard. (#853, #888)
+- Added persisted panorama settings so view preferences survive reloads. (#857)
+- Added independent visible Site source toggles for Simulation, Library, and MQTT sources. (#850)
+
+### Changed
+- Kept the profile bottom panel controls available when no Path is selected and clarified its empty-state guidance. (#901)
+- Improved panorama/profile performance diagnosis coverage and documented validated interaction boundaries. (#609)
+
+### Fixed
+- Fixed Web Mercator raster alignment so RX target threshold overlays line up correctly in affected terrain regions. (#902)
+- Fixed mobile collaborator and floating popovers so they stay inside the viewport. (#885)
+- Fixed Site coordinate draft validation so invalid pasted latitude/longitude values no longer crash the app. (#808)
+
 ## [0.20.0] - 2026-05-08
 
 ### Added
