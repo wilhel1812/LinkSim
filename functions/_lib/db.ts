@@ -275,6 +275,25 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     "payload_json",
     "updated_at",
   ],
+  simulation_path_leaderboard_entries: [
+    "simulation_id",
+    "canonical_path_key",
+    "owner_user_id",
+    "from_site_id",
+    "to_site_id",
+    "link_id",
+    "path_label",
+    "simulation_name",
+    "distance_km",
+    "rx_after_env_loss_dbm",
+    "rx_margin_db",
+    "terrain_obstructed",
+    "terrain_dataset",
+    "terrain_tile_signature",
+    "simulation_updated_at",
+    "created_at",
+    "updated_at",
+  ],
   deleted_users: ["id", "deleted_at", "deleted_by_user_id"],
   site_roles: ["site_id", "user_id", "role", "created_at"],
   simulation_roles: ["simulation_id", "user_id", "role", "created_at"],
@@ -421,6 +440,30 @@ const ensureSchema = async (env: Env): Promise<void> => {
           )`,
         ),
         env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS simulation_path_leaderboard_entries (
+            simulation_id TEXT NOT NULL,
+            canonical_path_key TEXT NOT NULL,
+            owner_user_id TEXT NOT NULL,
+            from_site_id TEXT NOT NULL,
+            to_site_id TEXT NOT NULL,
+            link_id TEXT,
+            path_label TEXT NOT NULL,
+            simulation_name TEXT NOT NULL,
+            distance_km REAL NOT NULL,
+            rx_after_env_loss_dbm REAL NOT NULL,
+            rx_margin_db REAL NOT NULL,
+            terrain_obstructed INTEGER NOT NULL DEFAULT 0,
+            terrain_dataset TEXT NOT NULL,
+            terrain_tile_signature TEXT NOT NULL,
+            simulation_updated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (simulation_id, canonical_path_key),
+            FOREIGN KEY (simulation_id) REFERENCES simulations(id) ON DELETE CASCADE,
+            FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+          )`,
+        ),
+        env.DB.prepare(
           `CREATE TABLE IF NOT EXISTS user_identity_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_type TEXT NOT NULL,
@@ -439,6 +482,8 @@ const ensureSchema = async (env: Env): Promise<void> => {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulations_visibility ON simulations(visibility)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulation_roles_user ON simulation_roles(user_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_path_leaderboard_distance ON simulation_path_leaderboard_entries(distance_km DESC)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_path_leaderboard_simulation ON simulation_path_leaderboard_entries(simulation_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_identity_audit_target ON user_identity_audit(target_user_id, created_at DESC)"),
       ]);
 
@@ -2076,7 +2121,7 @@ export const resolveSimulationIdByOwnerSlug = async (
 
 export const fetchPublicSimulationBundle = async (
   env: Env,
-  options: { simulationId?: string; username?: string; simulationSlug?: string; actorId?: string | null },
+  options: { simulationId?: string; username?: string; simulationSlug?: string; actorId?: string | null; allowUnlisted?: boolean },
 ): Promise<
   | { status: "missing" | "forbidden" }
   | {
@@ -2100,16 +2145,19 @@ export const fetchPublicSimulationBundle = async (
     .first<{ id: string; payload_json: string; visibility: DbVisibility }>();
   if (!simulationRow) return { status: "missing" };
   const visibility = visibilityFromDbVisibility(simulationRow.visibility);
+  const allowUnlisted = options.allowUnlisted === true;
 
   let actorSimulationRole: string | null = null;
   if (visibility === "private") {
-    if (!options.actorId) return { status: "forbidden" };
-    const roleRow = await env.DB
-      .prepare("SELECT role FROM simulation_roles WHERE simulation_id = ? AND user_id = ? LIMIT 1")
-      .bind(resolvedId, options.actorId)
-      .first<{ role: string }>();
-    if (!roleRow) return { status: "forbidden" };
-    actorSimulationRole = roleRow.role;
+    if (!options.actorId && !allowUnlisted) return { status: "forbidden" };
+    if (options.actorId) {
+      const roleRow = await env.DB
+        .prepare("SELECT role FROM simulation_roles WHERE simulation_id = ? AND user_id = ? LIMIT 1")
+        .bind(resolvedId, options.actorId)
+        .first<{ role: string }>();
+      if (roleRow) actorSimulationRole = roleRow.role;
+      else if (!allowUnlisted) return { status: "forbidden" };
+    }
   }
 
   let simulation: CloudResourceRecord;
@@ -2139,9 +2187,8 @@ export const fetchPublicSimulationBundle = async (
     .all<{ id: string; payload_json: string; visibility: DbVisibility }>();
   const sites: CloudResourceRecord[] = [];
   for (const row of rows.results) {
-    // When actor has an explicit simulation role (private access), include all referenced
-    // sites regardless of their individual visibility — simulation-level access covers its sites.
-    if (actorSimulationRole === null && visibilityFromDbVisibility(row.visibility) === "private") continue;
+    // Unlisted Simulation access includes the referenced Sites needed to render that Simulation.
+    if (actorSimulationRole === null && !allowUnlisted && visibilityFromDbVisibility(row.visibility) === "private") continue;
     try {
       const site = JSON.parse(row.payload_json) as CloudResourceRecord;
       site.id = row.id;

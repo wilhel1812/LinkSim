@@ -16,6 +16,7 @@ import {
 import { buildProfileChartSvgProps } from "../lib/profileChartSvg";
 import { buildHoverProfileSegments } from "../lib/profileHoverSegments";
 import { dispatchProfileDraftSiteRequest } from "../lib/profileDraftEvent";
+import { buildPathLeaderboardCandidate, submitPathLeaderboardCandidate } from "../lib/pathLeaderboard";
 import { buildProfile } from "../lib/propagation";
 import { StateDot } from "./StateDot";
 import { buildSelectionEffectiveLink } from "../lib/selectionEffectiveLink";
@@ -58,6 +59,25 @@ type LinkProfileChartProps = {
   panelClassName?: string;
 };
 
+type LinkProfileEmptyStateProps = {
+  rowControls?: ReactNode;
+  panelClassName?: string;
+};
+
+export function LinkProfileEmptyState({
+  rowControls,
+  panelClassName,
+}: LinkProfileEmptyStateProps) {
+  return (
+    <section className={`chart-panel ${panelClassName ?? ""}`.trim()}>
+      <PanelToolbar actions={rowControls} />
+      <div className="chart-empty chart-panel-empty-message">
+        Select one Site for Panorama, or select exactly two Sites or choose a saved Path for Path Profile and LOS/Fresnel analysis.
+      </div>
+    </section>
+  );
+}
+
 export function LinkProfileChart({
   isExpanded,
   onToggleExpanded,
@@ -92,11 +112,14 @@ export function LinkProfileChart({
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
+  const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
+  const simulationPresets = useAppStore((state) => state.simulationPresets);
   const siteDragPreview = useAppStore((state) => state.siteDragPreview);
   const propagationModel = useAppStore((state) => state.propagationModel);
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
+  const terrainDataset = useAppStore((state) => state.terrainDataset);
   const profileRevision = useAppStore(
     (state) =>
       `${state.selectedScenarioId}|${state.selectedLinkId}|${state.links.length}|${state.sites.length}|${state.srtmTiles.length}|${Object.keys(state.siteDragPreview).length}`,
@@ -160,6 +183,10 @@ export function LinkProfileChart({
     };
   }, [selectedToSite, siteDragPreview]);
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId) ?? networks[0] ?? null;
+  const activeSimulationPreset = useMemo(
+    () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
+    [selectedScenarioId, simulationPresets],
+  );
   const effectiveLink = useMemo(() => {
     if (!selectedNetwork) return null;
     if (selectedLink) {
@@ -200,6 +227,15 @@ export function LinkProfileChart({
   const fromSiteName = selectedFromSite?.name ?? "From";
   const toSiteName = selectedToSite?.name ?? "To";
   const terrainBounds = simulationAreaBoundsForSites(selectedSites.length ? selectedSites : sites);
+  const simulationTerrainBounds = simulationAreaBoundsForSites(sites);
+  const simulationRequiredTerrainTileKeys = simulationTerrainBounds
+    ? tilesForBounds(
+        simulationTerrainBounds.minLat,
+        simulationTerrainBounds.maxLat,
+        simulationTerrainBounds.minLon,
+        simulationTerrainBounds.maxLon,
+      )
+    : [];
   const requiredTerrainTileKeys = terrainBounds
     ? tilesForBounds(terrainBounds.minLat, terrainBounds.maxLat, terrainBounds.minLon, terrainBounds.maxLon)
     : [];
@@ -207,6 +243,7 @@ export function LinkProfileChart({
   const missingTerrainTileKeys = requiredTerrainTileKeys.filter((key) => !loadedTileKeys.has(key));
   const terrainIsStaleForCurrentArea = requiredTerrainTileKeys.length > 0 && missingTerrainTileKeys.length > 0;
   const autoFetchAttemptRef = useRef("");
+  const leaderboardSubmissionSignaturesRef = useRef<Set<string>>(new Set());
   const terrainSignature = `${requiredTerrainTileKeys.join(",")}|missing:${missingTerrainTileKeys.join(",")}`;
   const terrainFillGradientId = useMemo(
     () => `profile-terrain-fill-${Math.random().toString(36).slice(2, 11)}`,
@@ -455,6 +492,59 @@ export function LinkProfileChart({
     terrainSegmentStates,
   ]);
 
+  useEffect(() => {
+    if (!activeSimulationPreset) return;
+    if (terrainSegmentStates.length !== Math.max(0, profile.length - 1)) return;
+
+    const result = buildPathLeaderboardCandidate({
+      simulationId: activeSimulationPreset.id,
+      simulationUpdatedAt: activeSimulationPreset.updatedAt,
+      fromSite: selectedFromSite,
+      toSite: selectedToSite,
+      link: effectiveLink,
+      profile,
+      srtmTiles,
+      requiredTerrainTileKeys: simulationRequiredTerrainTileKeys,
+      isTerrainFetching,
+      isTerrainRecommending,
+      hasDragPreview: Object.keys(siteDragPreview).length > 0,
+      terrainDataset,
+      propagationModel,
+      propagationEnvironment,
+      rxSensitivityTargetDbm,
+      environmentLossDb,
+    });
+    if (!result.ok) return;
+
+    const submitted = leaderboardSubmissionSignaturesRef.current;
+    if (submitted.has(result.signature)) return;
+    submitted.add(result.signature);
+    if (submitted.size > 48) {
+      const oldest = submitted.values().next().value;
+      if (oldest) submitted.delete(oldest);
+    }
+    void submitPathLeaderboardCandidate(result.candidate).catch(() => {
+      // Leaderboard submission is opportunistic; normal profile analysis should not surface failures.
+    });
+  }, [
+    activeSimulationPreset,
+    effectiveLink,
+    environmentLossDb,
+    isTerrainFetching,
+    isTerrainRecommending,
+    profile,
+    propagationEnvironment,
+    propagationModel,
+    rxSensitivityTargetDbm,
+    selectedFromSite,
+    selectedToSite,
+    simulationRequiredTerrainTileKeys,
+    siteDragPreview,
+    srtmTiles,
+    terrainDataset,
+    terrainSegmentStates.length,
+  ]);
+
   const clampedCursorIndex = Math.max(0, Math.min(profile.length - 1, profileCursorIndex));
   const cursorPoint = profile[clampedCursorIndex];
   const activeHoverSegments = useMemo(() => {
@@ -700,21 +790,19 @@ export function LinkProfileChart({
 
   if (!hasMinimumTopology) {
     return (
-      <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
-        <div className="chart-empty">
-          Select exactly two sites, or choose a saved link, to show path profile and LOS/Fresnel analysis.
-        </div>
-      </section>
+      <LinkProfileEmptyState
+        panelClassName={panelClassName}
+        rowControls={rowControls}
+      />
     );
   }
 
   if (tooManySelectedForProfile) {
     return (
-      <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
-        <div className="chart-empty">
-          Select exactly two sites, or choose a saved link, to show path profile analysis.
-        </div>
-      </section>
+      <LinkProfileEmptyState
+        panelClassName={panelClassName}
+        rowControls={rowControls}
+      />
     );
   }
 

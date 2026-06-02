@@ -1,7 +1,7 @@
 {
   "name": "linksim",
   "private": true,
-  "version": "0.20.0",
+  "version": "0.21.0",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -64,6 +64,7 @@
     "react-dom": "^19.2.0",
     "react-map-gl": "^8.1.0",
     "react-markdown": "^9.1.0",
+    "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
     "simple-icons": "^16.14.0",
     "zod": "^4.3.6",

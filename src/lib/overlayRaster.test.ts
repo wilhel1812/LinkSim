@@ -6,6 +6,7 @@ import {
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
   buildTerrainShadeOverlayPixelsAsync,
+  latitudeForRasterRow,
   OverlayTaskCancelledError,
   type CoverageSampleLite,
   type TerrainBounds,
@@ -69,6 +70,16 @@ const environment: PropagationEnvironment = {
 const terrainSampler = () => 135;
 
 describe("overlayRaster async builders", () => {
+  it("samples raster rows in Web Mercator space so image overlays align with GeoJSON", () => {
+    const minLat = 62.97069520171348;
+    const maxLat = 63.869006376704505;
+
+    expect(latitudeForRasterRow(0, 3, minLat, maxLat)).toBeCloseTo(maxLat, 12);
+    expect(latitudeForRasterRow(2, 3, minLat, maxLat)).toBeCloseTo(minLat, 12);
+    expect(latitudeForRasterRow(1, 3, minLat, maxLat)).toBeCloseTo(63.42336981712888, 12);
+    expect(latitudeForRasterRow(1, 3, minLat, maxLat)).not.toBeCloseTo((minLat + maxLat) / 2, 4);
+  });
+
   it("normalizes coverage colors against the RX target instead of sample min/max", () => {
     const scale = { min: -150, max: -90 };
     expect(normalizeCoverageDbmForRxTarget(-150, -120, scale)).toBe(0);

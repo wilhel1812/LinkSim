@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { CircleAlert, CircleQuestionMark, CircleUserRound } from "lucide-react";
+import { BarChart3, CircleAlert, CircleQuestionMark, CircleUserRound } from "lucide-react";
 import {
   bulkReassignOwnership,
   fetchAdminAuditEvents,
@@ -973,6 +973,9 @@ export function UserAdminPanel({
                 <button aria-label="Open user settings" className="user-icon-button" onClick={() => onOpenSettings?.()} type="button">
                   <SettingsIcon title="Settings" />
                 </button>
+                <a aria-label="Open Stats" className="user-icon-button" href="/stats" title="Stats">
+                  <BarChart3 aria-hidden="true" strokeWidth={1.8} />
+                </a>
               </>
             ) : null}
             {onOpenHelp ? (

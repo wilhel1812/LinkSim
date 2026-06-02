@@ -25,6 +25,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       username: username || undefined,
       simulationSlug: simulationSlug || undefined,
       actorId,
+      allowUnlisted: true,
     });
 
     if (bundle.status !== "ok") {

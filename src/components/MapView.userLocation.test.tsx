@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mapMock = vi.hoisted(() => ({
@@ -64,6 +64,24 @@ vi.mock("react-map-gl/maplibre", async () => {
   };
 });
 
+vi.mock("../lib/meshtasticMqtt", () => ({
+  fetchMeshmapNodes: vi.fn(async () => ({
+    fromCache: false,
+    networkError: false,
+    nodes: [
+      {
+        nodeId: "mqtt-alpha",
+        shortName: "MQA",
+        longName: "MQTT Alpha",
+        hwModel: "T-Beam",
+        lat: 60.55,
+        lon: 11.55,
+        updatedAt: 1,
+      },
+    ],
+  })),
+}));
+
 const watchPosition = vi.fn();
 const clearWatch = vi.fn();
 
@@ -105,6 +123,11 @@ const renderMapView = (props: Partial<React.ComponentProps<typeof MapView>> = {}
       {...props}
     />,
   );
+
+const openVisibleSiteSources = async () => {
+  fireEvent.click(screen.getByRole("button", { name: /Simulation/ }));
+  return screen.findByRole("dialog", { name: "Visible site sources" });
+};
 
 describe("MapView user location flow", () => {
   beforeEach(() => {
@@ -230,7 +253,95 @@ describe("MapView user location flow", () => {
     expect(screen.queryByText("New Site")).not.toBeInTheDocument();
   });
 
-  it("explains why library sites cannot be added in read-only mode", () => {
+  it("opens visible site sources in the shared card popover", async () => {
+    renderMapView({ showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    const popover = await openVisibleSiteSources();
+    const surface = popover.closest(".ui-surface-pill");
+
+    expect(surface).toHaveClass("is-card");
+    expect(surface).toHaveClass("has-pointer-tail");
+    expect(surface).toHaveClass("visible-site-sources-popover");
+    expect(within(popover).getByLabelText("Library")).not.toBeChecked();
+    expect(within(popover).getByLabelText("MQTT")).not.toBeChecked();
+  });
+
+  it("keeps Library visible when MQTT is also enabled", async () => {
+    useAppStore.setState({
+      siteLibrary: [
+        {
+          id: "lib-alpha",
+          name: "Library Alpha",
+          visibility: "shared",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "viewer",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    });
+    renderMapView({ showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    const popover = await openVisibleSiteSources();
+    fireEvent.click(within(popover).getByLabelText("Library"));
+    expect(screen.getByRole("button", { name: "Library Alpha" })).toBeInTheDocument();
+
+    fireEvent.click(within(popover).getByLabelText("MQTT"));
+
+    expect(screen.getByRole("button", { name: "Library Alpha" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Simulation + Library + MQTT" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useAppStore.getState().discoveryLibraryVisible).toBe(true);
+      expect(useAppStore.getState().discoveryMqttVisible).toBe(true);
+    });
+  });
+
+  it("clears selected library discovery actions when Library is disabled", async () => {
+    useAppStore.setState({
+      siteLibrary: [
+        {
+          id: "lib-alpha",
+          name: "Library Alpha",
+          visibility: "shared",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "viewer",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    });
+    renderMapView({ showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    const popover = await openVisibleSiteSources();
+    fireEvent.click(within(popover).getByLabelText("Library"));
+    fireEvent.click(screen.getByRole("button", { name: "Library Alpha" }));
+    expect(screen.getByRole("button", { name: "Add to Simulation" })).toBeInTheDocument();
+
+    fireEvent.click(within(popover).getByLabelText("Library"));
+
+    expect(screen.queryByRole("button", { name: "Library Alpha" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add to Simulation" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Simulation only" })).toBeInTheDocument();
+  });
+
+  it("explains why library sites cannot be added in read-only mode", async () => {
     useAppStore.setState({
       siteLibrary: [
         {
@@ -254,14 +365,15 @@ describe("MapView user location flow", () => {
     renderMapView({ canPersist: false, readOnly: true, showInspector: true });
 
     fireEvent.click(screen.getByText("Map"));
-    fireEvent.change(screen.getByLabelText("Visible Sites"), { target: { value: "library" } });
+    const popover = await openVisibleSiteSources();
+    fireEvent.click(within(popover).getByLabelText("Library"));
     fireEvent.click(screen.getByRole("button", { name: "Library Alpha" }));
 
     expect(screen.queryByRole("button", { name: "Add to Simulation" })).not.toBeInTheDocument();
     expect(screen.getByText("Read-only: you need edit permission to add sites to this simulation.")).toBeInTheDocument();
   });
 
-  it("shows private library sites that are already accessible", () => {
+  it("shows private library sites that are already accessible", async () => {
     useAppStore.setState({
       siteLibrary: [
         {
@@ -285,7 +397,8 @@ describe("MapView user location flow", () => {
     renderMapView({ showInspector: true });
 
     fireEvent.click(screen.getByText("Map"));
-    fireEvent.change(screen.getByLabelText("Visible Sites"), { target: { value: "library" } });
+    const popover = await openVisibleSiteSources();
+    fireEvent.click(within(popover).getByLabelText("Library"));
 
     expect(screen.getByRole("button", { name: "Private Hill" })).toBeInTheDocument();
   });
