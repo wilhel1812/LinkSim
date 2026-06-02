@@ -59,6 +59,25 @@ type LinkProfileChartProps = {
   panelClassName?: string;
 };
 
+type LinkProfileEmptyStateProps = {
+  message: string;
+  rowControls?: ReactNode;
+  panelClassName?: string;
+};
+
+export function LinkProfileEmptyState({
+  message,
+  rowControls,
+  panelClassName,
+}: LinkProfileEmptyStateProps) {
+  return (
+    <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
+      <PanelToolbar title="Path Profile" actions={rowControls} />
+      <div className="chart-empty">{message}</div>
+    </section>
+  );
+}
+
 export function LinkProfileChart({
   isExpanded,
   onToggleExpanded,
@@ -771,21 +790,21 @@ export function LinkProfileChart({
 
   if (!hasMinimumTopology) {
     return (
-      <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
-        <div className="chart-empty">
-          Select exactly two sites, or choose a saved link, to show path profile and LOS/Fresnel analysis.
-        </div>
-      </section>
+      <LinkProfileEmptyState
+        message="Select exactly two sites, or choose a saved link, to show path profile and LOS/Fresnel analysis."
+        panelClassName={panelClassName}
+        rowControls={rowControls}
+      />
     );
   }
 
   if (tooManySelectedForProfile) {
     return (
-      <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
-        <div className="chart-empty">
-          Select exactly two sites, or choose a saved link, to show path profile analysis.
-        </div>
-      </section>
+      <LinkProfileEmptyState
+        message="Select exactly two sites, or choose a saved link, to show path profile analysis."
+        panelClassName={panelClassName}
+        rowControls={rowControls}
+      />
     );
   }
 
