@@ -17,27 +17,20 @@ vi.hoisted(() => {
   });
 });
 
-const noPathMessage =
-  "Select exactly two sites, or choose a saved link, to show path profile and LOS/Fresnel analysis.";
-const multiSiteMessage =
-  "Select exactly two sites, or choose a saved link, to show path profile analysis.";
+const guidance =
+  "Select one Site for Panorama, or select exactly two Sites or choose a saved Path for Path Profile and LOS/Fresnel analysis.";
 
 describe("LinkProfileEmptyState", () => {
-  it.each([noPathMessage, multiSiteMessage])(
-    "keeps the toolbar and supplied row controls for guidance text",
-    (message) => {
-      render(
-        <LinkProfileEmptyState
-          message={message}
-          rowControls={<button type="button">Hide Profile</button>}
-        />,
-      );
+  it("keeps a titleless toolbar at the top and supplies guidance for Panorama and Path Profile modes", () => {
+    const { container } = render(
+      <LinkProfileEmptyState rowControls={<button type="button">Hide Profile</button>} />,
+    );
 
-      expect(screen.getByText("Path Profile")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Hide Profile" })).toBeInTheDocument();
-      expect(screen.getByText(message)).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Reverse path direction for this view" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Full screen" })).not.toBeInTheDocument();
-    },
-  );
+    expect(screen.queryByText("Path Profile")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide Profile" })).toBeInTheDocument();
+    expect(screen.getByText(guidance)).toHaveClass("chart-panel-empty-message");
+    expect(container.querySelector(".chart-panel")).not.toHaveClass("chart-panel-empty");
+    expect(screen.queryByRole("button", { name: "Reverse path direction for this view" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Full screen" })).not.toBeInTheDocument();
+  });
 });

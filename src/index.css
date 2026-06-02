@@ -2765,6 +2765,10 @@ button {
   justify-content: center;
 }
 
+.chart-panel-empty-message {
+  flex: 1;
+}
+
 .chart-svg-wrap {
   flex: 1;
   min-height: 90px;
