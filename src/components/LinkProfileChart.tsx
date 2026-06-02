@@ -60,20 +60,20 @@ type LinkProfileChartProps = {
 };
 
 type LinkProfileEmptyStateProps = {
-  message: string;
   rowControls?: ReactNode;
   panelClassName?: string;
 };
 
 export function LinkProfileEmptyState({
-  message,
   rowControls,
   panelClassName,
 }: LinkProfileEmptyStateProps) {
   return (
-    <section className={`chart-panel chart-panel-empty ${panelClassName ?? ""}`.trim()}>
-      <PanelToolbar title="Path Profile" actions={rowControls} />
-      <div className="chart-empty">{message}</div>
+    <section className={`chart-panel ${panelClassName ?? ""}`.trim()}>
+      <PanelToolbar actions={rowControls} />
+      <div className="chart-empty chart-panel-empty-message">
+        Select one Site for Panorama, or select exactly two Sites or choose a saved Path for Path Profile and LOS/Fresnel analysis.
+      </div>
     </section>
   );
 }
@@ -791,7 +791,6 @@ export function LinkProfileChart({
   if (!hasMinimumTopology) {
     return (
       <LinkProfileEmptyState
-        message="Select exactly two sites, or choose a saved link, to show path profile and LOS/Fresnel analysis."
         panelClassName={panelClassName}
         rowControls={rowControls}
       />
@@ -801,7 +800,6 @@ export function LinkProfileChart({
   if (tooManySelectedForProfile) {
     return (
       <LinkProfileEmptyState
-        message="Select exactly two sites, or choose a saved link, to show path profile analysis."
         panelClassName={panelClassName}
         rowControls={rowControls}
       />
