@@ -300,21 +300,35 @@ function SiteEditorCard({
         <label className="field-grid">
           <span>Latitude</span>
           <input
+            aria-invalid={form.latError ? true : undefined}
+            className={form.latError ? "input-error" : undefined}
             onChange={(e) => form.setLatDraft(e.target.value)}
+            onPaste={(e) => {
+              e.preventDefault();
+              form.setLatDraft(e.clipboardData.getData("text"));
+            }}
             step="0.000001"
             type="number"
             value={form.latDraft}
           />
+          {form.latError ? <p className="field-help warning-text">{form.latError}</p> : null}
         </label>
 
         <label className="field-grid">
           <span>Longitude</span>
           <input
+            aria-invalid={form.lonError ? true : undefined}
+            className={form.lonError ? "input-error" : undefined}
             onChange={(e) => form.setLonDraft(e.target.value)}
+            onPaste={(e) => {
+              e.preventDefault();
+              form.setLonDraft(e.clipboardData.getData("text"));
+            }}
             step="0.000001"
             type="number"
             value={form.lonDraft}
           />
+          {form.lonError ? <p className="field-help warning-text">{form.lonError}</p> : null}
         </label>
 
         <label className="field-grid">

@@ -2,7 +2,7 @@
 // Tests for the UserAdminPanel chip's onOpenSettings integration.
 // Only covers the chip-row UI; the full modal and admin-inline mode are
 // better suited to Playwright given their network and canvas dependencies.
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { CloudUser } from "../lib/cloudUser";
@@ -104,6 +104,13 @@ describe("UserAdminPanel chip — onOpenSettings", () => {
     expect(buttons.length).toBeGreaterThanOrEqual(2);
     await userEvent.click(buttons[1]); // settings icon is second
     expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it("exposes a Stats link from the signed-in account actions", async () => {
+    render(<UserAdminPanel onOpenSettings={vi.fn()} />);
+
+    expect(screen.getByRole("link", { name: /open stats/i })).toHaveAttribute("href", "/stats");
+    await waitFor(() => expect(screen.getByRole("link", { name: /open stats/i })).toBeInTheDocument());
   });
 
   it("shows the sign-in button instead of the chip when signed out", () => {

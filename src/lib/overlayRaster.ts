@@ -74,6 +74,25 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
+const MAX_MERCATOR_LAT = 85.05112878;
+const mercatorYForLatitude = (lat: number): number => {
+  const radians = (clamp(lat, -MAX_MERCATOR_LAT, MAX_MERCATOR_LAT) * Math.PI) / 180;
+  return Math.log(Math.tan(Math.PI / 4 + radians / 2));
+};
+const latitudeForMercatorY = (mercatorY: number): number =>
+  ((2 * Math.atan(Math.exp(mercatorY)) - Math.PI / 2) * 180) / Math.PI;
+
+export const latitudeForRasterRow = (
+  row: number,
+  height: number,
+  minLat: number,
+  maxLat: number,
+): number => {
+  const divisor = Math.max(1, height - 1);
+  const fraction = clamp(row / divisor, 0, 1);
+  return latitudeForMercatorY(lerp(mercatorYForLatitude(maxLat), mercatorYForLatitude(minLat), fraction));
+};
+
 const overlayCoordinates = (bounds: TerrainBounds): OverlayRasterPixels["coordinates"] => [
   [bounds.minLon, bounds.maxLat],
   [bounds.maxLon, bounds.maxLat],
@@ -159,13 +178,11 @@ const precomputeGridAxes = (
   const height = dimensions.height;
   const latByRow = new Float64Array(height);
   const lonByCol = new Float64Array(width);
-  const latSpan = bounds.maxLat - bounds.minLat;
   const lonSpan = bounds.maxLon - bounds.minLon;
-  const heightDivisor = Math.max(1, height - 1);
   const widthDivisor = Math.max(1, width - 1);
 
   for (let y = 0; y < height; y += 1) {
-    latByRow[y] = bounds.maxLat - latSpan * (y / heightDivisor);
+    latByRow[y] = latitudeForRasterRow(y, height, bounds.minLat, bounds.maxLat);
   }
   for (let x = 0; x < width; x += 1) {
     lonByCol[x] = bounds.minLon + lonSpan * (x / widthDivisor);

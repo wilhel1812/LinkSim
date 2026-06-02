@@ -25,6 +25,7 @@ import { resolveVisiblePanoramaLabels, type PanoramaLabelCandidate } from "../li
 import { loadPanoramaPeaks, type PanoramaPeakCandidate } from "../lib/panoramaPeaks";
 import { isPeakLosVisible, nearestSampleForDistance } from "../lib/panoramaLos";
 import { buildDepthBands, buildNearBiasedDepthFractions, resolveRenderedEndpoint } from "../lib/panoramaRender";
+import { persistPanoramaSettings, readPanoramaSettings } from "../lib/panoramaSettings";
 import { cardinalLabelForAzimuth, formatAzimuthTick, fovScaleToSpanDeg, FOV_SCALE_DEFAULT, FOV_SCALE_MAX, FOV_SCALE_MIN, mod360, normalizeFovScale, resolvePanoramaWindow, unwrapAzimuthForWindow } from "../lib/panoramaView";
 import { centerForScaledWindow } from "../lib/panoramaViewport";
 import { passFailStateLabel } from "../lib/passFailState";
@@ -138,10 +139,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   const [chartSize, setChartSize] = useState<{ width: number; height: number } | null>(null);
   const [viewportCenterAzimuthDeg, setViewportCenterAzimuthDeg] = useState(180);
-  const [exaggeration, setExaggeration] = useState(4);
+  const [initialPanoramaSettings] = useState(readPanoramaSettings);
+  const [exaggeration, setExaggeration] = useState(initialPanoramaSettings.exaggeration);
   const [mapHoverZoomEnabled, setMapHoverZoomEnabled] = useState(false);
-  const [showLabels, setShowLabels] = useState(true);
-  const [terrainDistanceHeatmap, setTerrainDistanceHeatmap] = useState(false);
+  const [showLabels, setShowLabels] = useState(initialPanoramaSettings.showLabels);
+  const [terrainDistanceHeatmap, setTerrainDistanceHeatmap] = useState(initialPanoramaSettings.terrainDistanceHeatmap);
   const [fovScale, setFovScale] = useState(FOV_SCALE_DEFAULT);
   const [hoverTarget, setHoverTarget] = useState<HoverTarget | null>(null);
   const [pinnedTarget, setPinnedTarget] = useState<HoverTarget | null>(null);
@@ -181,6 +183,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   const quality: PanoramaQuality = previewCount > 0 ? "drag" : "full";
   const normalizedFovScale = normalizeFovScale(fovScale);
   const viewportSpanDeg = fovScaleToSpanDeg(normalizedFovScale);
+
+  useEffect(() => {
+    persistPanoramaSettings({ exaggeration, showLabels, terrainDistanceHeatmap });
+  }, [exaggeration, showLabels, terrainDistanceHeatmap]);
 
   useLayoutEffect(() => {
     const element = chartHostRef.current;
