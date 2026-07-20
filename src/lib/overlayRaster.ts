@@ -1,5 +1,8 @@
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "./passFailState";
 import { STANDARD_SITE_RADIO } from "./linkRadio";
+import { buildCoverageGridPoints, computeCoverageGridDimensions } from "./coverage";
+import { haversineDistanceKm } from "./geo";
+import { getPathLossDb } from "./rfModels";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import { interpolateHeatmapColor } from "../themes/heatmapColors";
 
@@ -23,6 +26,8 @@ export type OverlayRasterPixels = {
   coordinates: [[number, number], [number, number], [number, number], [number, number]];
   minDbm?: number;
   maxDbm?: number;
+  minAreaKm2?: number;
+  maxAreaKm2?: number;
 };
 
 export type OverlayRasterDataUrl = {
@@ -30,6 +35,37 @@ export type OverlayRasterDataUrl = {
   coordinates: [[number, number], [number, number], [number, number], [number, number]];
   minDbm?: number;
   maxDbm?: number;
+  minAreaKm2?: number;
+  maxAreaKm2?: number;
+};
+
+export type MeshExtensionCandidateProfile = {
+  antennaHeightM: number;
+  txPowerDbm: number;
+  txGainDbi: number;
+  rxGainDbi: number;
+  cableLossDb: number;
+};
+
+export type MeshExtensionPeerSignals = {
+  selectedToCandidateDbm: number;
+  candidateToSelectedDbm: number;
+};
+
+export type MeshExtensionOverlayInput = {
+  bounds: TerrainBounds;
+  selectedSites: Site[];
+  frequencyMHz: number;
+  propagationEnvironment: PropagationEnvironment;
+  rxTargetDbm: number;
+  environmentLossDb: number;
+  terrainSampler: (lat: number, lon: number) => number | null;
+  dimensions: { width: number; height: number };
+  candidateGridSize: number;
+  coverageGridSize?: number;
+  terrainSamples: number;
+  pointMask?: (lat: number, lon: number) => boolean;
+  context?: OverlayTaskContext;
 };
 
 export type OverlayTaskContext = {
@@ -201,6 +237,47 @@ const percentile = (values: number[], ratio: number): number => {
   if (lower === upper) return values[lower];
   return lerp(values[lower], values[upper], index - lower);
 };
+
+const median = (values: number[], fallback: number): number => {
+  const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!finite.length) return fallback;
+  const midpoint = Math.floor(finite.length / 2);
+  return finite.length % 2 === 0 ? (finite[midpoint - 1] + finite[midpoint]) / 2 : finite[midpoint];
+};
+
+export const deriveMeshExtensionCandidateProfile = (selectedSites: Site[]): MeshExtensionCandidateProfile => ({
+  antennaHeightM: median(selectedSites.map((site) => site.antennaHeightM), 2),
+  txPowerDbm: median(selectedSites.map((site) => site.txPowerDbm), STANDARD_SITE_RADIO.txPowerDbm),
+  txGainDbi: median(selectedSites.map((site) => site.txGainDbi), STANDARD_SITE_RADIO.txGainDbi),
+  rxGainDbi: median(selectedSites.map((site) => site.rxGainDbi), STANDARD_SITE_RADIO.rxGainDbi),
+  cableLossDb: median(selectedSites.map((site) => site.cableLossDb), STANDARD_SITE_RADIO.cableLossDb),
+});
+
+export const strongestBidirectionalPeerDbm = (signals: MeshExtensionPeerSignals[]): number =>
+  signals.reduce(
+    (strongest, signal) =>
+      Math.max(strongest, Math.min(signal.selectedToCandidateDbm, signal.candidateToSelectedDbm)),
+    Number.NEGATIVE_INFINITY,
+  );
+
+export const meshExtensionAlphaForDbm = (
+  valueDbm: number,
+  rxTargetDbm: number,
+  scale: CoverageRxTargetScale,
+): number => {
+  if (valueDbm <= rxTargetDbm) {
+    const below = clamp((valueDbm - scale.min) / Math.max(1, rxTargetDbm - scale.min), 0, 1);
+    return Math.round(lerp(36, 162, below));
+  }
+  const above = clamp((valueDbm - rxTargetDbm) / Math.max(1, scale.max - rxTargetDbm), 0, 1);
+  return Math.round(lerp(162, 180, above));
+};
+
+export const resolveMeshExtensionCandidateGridSize = (requestedGridSize: number): number =>
+  Math.max(6, Math.min(42, Math.round(requestedGridSize)));
+
+export const meshExtensionColorForArea = (areaKm2: number, maxAreaKm2: number): [number, number, number] =>
+  coverageColorForNormalized(maxAreaKm2 > 0 ? clamp(areaKm2 / maxAreaKm2, 0, 1) : 0);
 
 export const computeCoverageRxTargetScale = (
   samples: CoverageSampleLite[],
@@ -652,6 +729,307 @@ export const buildRelayCandidateOverlayPixelsAsync = async (
   };
 };
 
+const directionalBaseRxDbm = (
+  fromSite: Site,
+  toSite: Site,
+  frequencyMHz: number,
+  environment: PropagationEnvironment,
+): number => {
+  const distanceKm = Math.max(0.001, haversineDistanceKm(fromSite.position, toSite.position));
+  const loss = getPathLossDb(
+    distanceKm,
+    frequencyMHz,
+    fromSite.antennaHeightM,
+    toSite.antennaHeightM,
+    environment,
+  );
+  return fromSite.txPowerDbm + fromSite.txGainDbi - fromSite.cableLossDb + toSite.rxGainDbi - loss;
+};
+
+const directionalTerrainRxDbm = (
+  fromSite: Site,
+  toSite: Site,
+  frequencyMHz: number,
+  environment: PropagationEnvironment,
+  terrainSampler: (lat: number, lon: number) => number | null,
+  terrainSamples: number,
+): number =>
+  computeSourceCentricRxMetrics(
+    toSite.position.lat,
+    toSite.position.lon,
+    fromSite,
+    {
+      id: "__mesh_extension_link__",
+      fromSiteId: fromSite.id,
+      toSiteId: toSite.id,
+      frequencyMHz,
+    },
+    toSite.antennaHeightM,
+    toSite.rxGainDbi,
+    terrainSampler,
+    terrainSamples,
+    environment,
+  ).rxDbm;
+
+const bidirectionalBaseDbm = (
+  left: Site,
+  right: Site,
+  frequencyMHz: number,
+  environment: PropagationEnvironment,
+): number =>
+  Math.min(
+    directionalBaseRxDbm(left, right, frequencyMHz, environment),
+    directionalBaseRxDbm(right, left, frequencyMHz, environment),
+  );
+
+const bidirectionalTerrainDbm = (
+  left: Site,
+  right: Site,
+  frequencyMHz: number,
+  environment: PropagationEnvironment,
+  terrainSampler: (lat: number, lon: number) => number | null,
+  terrainSamples: number,
+): number =>
+  Math.min(
+    directionalTerrainRxDbm(left, right, frequencyMHz, environment, terrainSampler, terrainSamples),
+    directionalTerrainRxDbm(right, left, frequencyMHz, environment, terrainSampler, terrainSamples),
+  );
+
+const siteFromProfile = (
+  id: string,
+  lat: number,
+  lon: number,
+  groundElevationM: number,
+  profile: MeshExtensionCandidateProfile,
+): Site => ({
+  id,
+  name: id,
+  position: { lat, lon },
+  groundElevationM,
+  ...profile,
+});
+
+const cellAreaKm2 = (
+  index: number,
+  dimensions: { rows: number; cols: number },
+  bounds: TerrainBounds,
+  lat: number,
+): number => {
+  const row = Math.floor(index / dimensions.cols);
+  const col = index - row * dimensions.cols;
+  const latStep = (bounds.maxLat - bounds.minLat) / Math.max(1, dimensions.rows - 1);
+  const lonStep = (bounds.maxLon - bounds.minLon) / Math.max(1, dimensions.cols - 1);
+  const latShare = row === 0 || row === dimensions.rows - 1 ? 0.5 : 1;
+  const lonShare = col === 0 || col === dimensions.cols - 1 ? 0.5 : 1;
+  const heightKm = Math.abs(latStep) * 111.32 * latShare;
+  const widthKm = Math.abs(lonStep) * 111.32 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)) * lonShare;
+  return heightKm * widthKm;
+};
+
+export const buildMeshExtensionOverlayPixelsAsync = async (
+  input: MeshExtensionOverlayInput,
+): Promise<OverlayRasterPixels | null> => {
+  if (!input.selectedSites.length) return null;
+  const candidateGridSize = resolveMeshExtensionCandidateGridSize(input.candidateGridSize);
+  const coverageGridSize = Math.max(6, Math.min(24, Math.round(input.coverageGridSize ?? 24)));
+  const candidatePoints = buildCoverageGridPoints(candidateGridSize, input.bounds);
+  const coveragePoints = buildCoverageGridPoints(coverageGridSize, input.bounds);
+  const coverageDimensions = computeCoverageGridDimensions(coverageGridSize, input.bounds);
+  const profile = deriveMeshExtensionCandidateProfile(input.selectedSites);
+  const terrainSamples = Math.max(16, Math.round(input.terrainSamples));
+  const thresholdBeforeEnvironmentDbm = input.rxTargetDbm + input.environmentLossDb;
+  const contextForProgressRange = (startPercent: number, endPercent: number): OverlayTaskContext | undefined => {
+    if (!input.context) return undefined;
+    return {
+      ...input.context,
+      onProgress: input.context.onProgress
+        ? (payload) =>
+            input.context?.onProgress?.({
+              ...payload,
+              percent: Math.round(lerp(startPercent, endPercent, payload.percent / 100)),
+            })
+        : undefined,
+    };
+  };
+
+  const targetSites: Array<Site | null> = coveragePoints.map((point, index) => {
+    if (input.pointMask && !input.pointMask(point.lat, point.lon)) return null;
+    const ground = input.terrainSampler(point.lat, point.lon);
+    return ground === null ? null : siteFromProfile(`__mesh_extension_target_${index}__`, point.lat, point.lon, ground, profile);
+  });
+  const targetAreaKm2 = coveragePoints.map((point, index) =>
+    targetSites[index] ? cellAreaKm2(index, coverageDimensions, input.bounds, point.lat) : 0,
+  );
+  const existingCovered = new Uint8Array(coveragePoints.length);
+
+  await runCooperativeLoop(
+    coveragePoints.length,
+    (targetIndex) => {
+      const target = targetSites[targetIndex];
+      if (!target) return;
+      for (const selectedSite of input.selectedSites) {
+        const optimistic = bidirectionalBaseDbm(
+          selectedSite,
+          target,
+          input.frequencyMHz,
+          input.propagationEnvironment,
+        );
+        if (optimistic < thresholdBeforeEnvironmentDbm) continue;
+        const actual = bidirectionalTerrainDbm(
+          selectedSite,
+          target,
+          input.frequencyMHz,
+          input.propagationEnvironment,
+          input.terrainSampler,
+          terrainSamples,
+        );
+        if (actual - input.environmentLossDb >= input.rxTargetDbm) {
+          existingCovered[targetIndex] = 1;
+          return;
+        }
+      }
+    },
+    contextForProgressRange(0, 15),
+  );
+
+  const candidateSites: Array<Site | null> = candidatePoints.map((point, index) => {
+    const ground = input.terrainSampler(point.lat, point.lon);
+    return ground === null ? null : siteFromProfile(`__mesh_extension_candidate_${index}__`, point.lat, point.lon, ground, profile);
+  });
+  const connectivityDbm = new Float64Array(candidatePoints.length).fill(Number.NEGATIVE_INFINITY);
+  const newlyCoveredAreaKm2 = new Float64Array(candidatePoints.length);
+
+  await runCooperativeLoop(
+    candidatePoints.length,
+    (candidateIndex) => {
+      const candidate = candidateSites[candidateIndex];
+      if (!candidate) return;
+      const peers = input.selectedSites.map((selectedSite) => {
+        const selectedToCandidateBase =
+          directionalBaseRxDbm(selectedSite, candidate, input.frequencyMHz, input.propagationEnvironment) -
+          input.environmentLossDb;
+        const candidateToSelectedBase =
+          directionalBaseRxDbm(candidate, selectedSite, input.frequencyMHz, input.propagationEnvironment) -
+          input.environmentLossDb;
+        if (Math.min(selectedToCandidateBase, candidateToSelectedBase) < input.rxTargetDbm) {
+          return {
+            selectedToCandidateDbm: selectedToCandidateBase,
+            candidateToSelectedDbm: candidateToSelectedBase,
+          };
+        }
+        return {
+          selectedToCandidateDbm:
+            directionalTerrainRxDbm(
+              selectedSite,
+              candidate,
+              input.frequencyMHz,
+              input.propagationEnvironment,
+              input.terrainSampler,
+              terrainSamples,
+            ) - input.environmentLossDb,
+          candidateToSelectedDbm:
+            directionalTerrainRxDbm(
+              candidate,
+              selectedSite,
+              input.frequencyMHz,
+              input.propagationEnvironment,
+              input.terrainSampler,
+              terrainSamples,
+            ) - input.environmentLossDb,
+        };
+      });
+      connectivityDbm[candidateIndex] = strongestBidirectionalPeerDbm(peers);
+    },
+    contextForProgressRange(15, 30),
+  );
+
+  await runCooperativeLoop(
+    candidatePoints.length * coveragePoints.length,
+    (pairIndex) => {
+      const candidateIndex = Math.floor(pairIndex / coveragePoints.length);
+      const targetIndex = pairIndex - candidateIndex * coveragePoints.length;
+      if (existingCovered[targetIndex]) return;
+      const candidate = candidateSites[candidateIndex];
+      const target = targetSites[targetIndex];
+      if (!candidate || !target) return;
+      const optimistic = bidirectionalBaseDbm(
+        candidate,
+        target,
+        input.frequencyMHz,
+        input.propagationEnvironment,
+      );
+      if (optimistic < thresholdBeforeEnvironmentDbm) return;
+      const actual = bidirectionalTerrainDbm(
+        candidate,
+        target,
+        input.frequencyMHz,
+        input.propagationEnvironment,
+        input.terrainSampler,
+        terrainSamples,
+      );
+      if (actual - input.environmentLossDb >= input.rxTargetDbm) {
+        newlyCoveredAreaKm2[candidateIndex] += targetAreaKm2[targetIndex];
+      }
+    },
+    contextForProgressRange(30, 85),
+  );
+
+  const areaSamples: CoverageSampleLite[] = [];
+  const connectivitySamples: CoverageSampleLite[] = [];
+  for (let index = 0; index < candidatePoints.length; index += 1) {
+    if (!candidateSites[index] || !Number.isFinite(connectivityDbm[index])) continue;
+    const point = candidatePoints[index];
+    areaSamples.push({ ...point, valueDbm: newlyCoveredAreaKm2[index] });
+    connectivitySamples.push({ ...point, valueDbm: connectivityDbm[index] });
+  }
+  if (!areaSamples.length) return null;
+
+  const positiveAreas = areaSamples
+    .map((sample) => sample.valueDbm)
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  const maxAreaKm2 = positiveAreas.length ? percentile(positiveAreas, 0.95) : 0;
+  const connectivityScale = computeCoverageRxTargetScale(connectivitySamples, input.rxTargetDbm);
+  const areaAt = makeGridInterpolator(areaSamples) ?? ((lat: number, lon: number) => interpolateCoverageDbm(areaSamples, lat, lon));
+  const connectivityAt = makeGridInterpolator(connectivitySamples) ??
+    ((lat: number, lon: number) => interpolateCoverageDbm(connectivitySamples, lat, lon));
+  const pixels = new Uint8ClampedArray(input.dimensions.width * input.dimensions.height * 4);
+  const { latByRow, lonByCol } = precomputeGridAxes(input.bounds, input.dimensions);
+
+  await runCooperativeLoop(
+    input.dimensions.width * input.dimensions.height,
+    (index) => {
+      const y = Math.floor(index / input.dimensions.width);
+      const x = index - y * input.dimensions.width;
+      const lat = latByRow[y];
+      const lon = lonByCol[x];
+      if (input.pointMask && !input.pointMask(lat, lon)) return;
+      if (input.terrainSampler(lat, lon) === null) return;
+      const area = areaAt(lat, lon);
+      const connectivity = connectivityAt(lat, lon);
+      if (area === null || connectivity === null) return;
+      const [r, g, b] = meshExtensionColorForArea(area, maxAreaKm2);
+      const px = index * 4;
+      pixels[px] = r;
+      pixels[px + 1] = g;
+      pixels[px + 2] = b;
+      pixels[px + 3] = meshExtensionAlphaForDbm(connectivity, input.rxTargetDbm, connectivityScale);
+    },
+    contextForProgressRange(85, 100),
+  );
+
+  return {
+    width: input.dimensions.width,
+    height: input.dimensions.height,
+    pixels,
+    coordinates: overlayCoordinates(input.bounds),
+    minDbm: connectivityScale.min,
+    maxDbm: connectivityScale.max,
+    minAreaKm2: 0,
+    maxAreaKm2,
+  };
+};
+
 export const buildTerrainShadeOverlayPixelsAsync = async (
   bounds: TerrainBounds,
   sampler: (lat: number, lon: number) => number | null,
@@ -795,5 +1173,7 @@ export const overlayPixelsToDataUrl = (raster: OverlayRasterPixels): OverlayRast
     coordinates: raster.coordinates,
     minDbm: raster.minDbm,
     maxDbm: raster.maxDbm,
+    minAreaKm2: raster.minAreaKm2,
+    maxAreaKm2: raster.maxAreaKm2,
   };
 };

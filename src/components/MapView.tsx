@@ -53,6 +53,7 @@ import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
 import {
   buildCoverageOverlayPixelsAsync,
+  buildMeshExtensionOverlayPixelsAsync,
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
   buildTerrainShadeOverlayPixelsAsync,
@@ -61,6 +62,12 @@ import {
   type OverlayRasterPixels,
 } from "../lib/overlayRaster";
 import { overlayTaskBudgetForMode } from "../lib/overlayTaskBudget";
+import {
+  meshExtensionSiteDigest,
+  overlayGuideTitleForMode,
+  overlayModesForSelectionCount,
+  type MapOverlayMode,
+} from "../lib/mapOverlayMode";
 import {
   recordSimulationOverlayPerf,
   recordSimulationRunCancelled,
@@ -285,6 +292,10 @@ type CoverageSampleLite = { lat: number; lon: number; valueDbm: number; weakestD
 type OverlayRaster = {
   url: string;
   coordinates: [[number, number], [number, number], [number, number], [number, number]];
+  minDbm?: number;
+  maxDbm?: number;
+  minAreaKm2?: number;
+  maxAreaKm2?: number;
 };
 
 type OverlayMaskArea = {
@@ -981,6 +992,7 @@ export function MapView({
     () => selectedSiteIds.map((id) => sites.find((site) => site.id === id)).filter((site): site is Site => Boolean(site)),
     [selectedSiteIds, sites],
   );
+  const meshExtensionSites = selectedSites.length > 0 ? selectedSites : sites;
   const selectedSiteSet = useMemo(() => new Set(selectedSites.map((site) => site.id)), [selectedSites]);
   const selectionCount = selectedSites.length;
   const singleSelectedSite = selectionCount === 1 ? selectedSites[0] ?? null : null;
@@ -1542,6 +1554,9 @@ export function MapView({
     [propagationEnvironment],
   );
   const selectedSiteDigest = useMemo(() => selectedSiteIds.join(","), [selectedSiteIds]);
+  const selectedSiteRadioDigest = useMemo(() => meshExtensionSiteDigest(meshExtensionSites), [meshExtensionSites]);
+  const meshExtensionFrequencyMHz =
+    selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? activeSelectionLink?.frequencyMHz ?? 869.618;
 
   useEffect(() => {
     const scheduler = coverageOverlaySchedulerRef.current!;
@@ -1570,6 +1585,10 @@ export function MapView({
       cancelCoveragePipeline(true);
       return;
     }
+    if (mode === "mesh-extension" && !meshExtensionSites.length) {
+      cancelCoveragePipeline(true);
+      return;
+    }
 
     const signature = [
       mode,
@@ -1593,6 +1612,8 @@ export function MapView({
       rxSensitivityTargetDbm,
       environmentLossDb,
       selectedSiteDigest,
+      selectedSiteRadioDigest,
+      meshExtensionFrequencyMHz,
     ].join("|");
     const cached = coverageOverlayCacheRef.current.get(signature);
     if (cached) {
@@ -1706,6 +1727,22 @@ export function MapView({
               overlayPointMask,
               context,
             );
+          } else if (mode === "mesh-extension") {
+            rasterPixels = await buildMeshExtensionOverlayPixelsAsync({
+              bounds: overlayBounds,
+              selectedSites: meshExtensionSites,
+              frequencyMHz: meshExtensionFrequencyMHz,
+              propagationEnvironment,
+              rxTargetDbm: rxSensitivityTargetDbm,
+              environmentLossDb,
+              terrainSampler,
+              dimensions: overlayDimensions,
+              candidateGridSize: Math.min(effectiveGridSize, 42),
+              coverageGridSize: 24,
+              terrainSamples: 20,
+              pointMask: overlayPointMask,
+              context,
+            });
           }
 
           const overlayBuildCompletedAt = performance.now();
@@ -1800,6 +1837,10 @@ export function MapView({
     effectiveGridSize,
     overlayRadiusKm,
     selectedSiteDigest,
+    selectedSiteRadioDigest,
+    meshExtensionFrequencyMHz,
+    meshExtensionSites,
+    selectedNetwork,
     showOverlayDiagnostics,
     beginOverlayJob,
     setOverlayPipelineProgress,
@@ -1849,18 +1890,17 @@ export function MapView({
     if (typeof coverageOverlay.minDbm !== "number" || typeof coverageOverlay.maxDbm !== "number") return null;
     return { min: coverageOverlay.minDbm, max: coverageOverlay.maxDbm };
   }, [coverageOverlay, coverageVizMode]);
-  const overlayGuideTitle =
-    coverageVizMode === "none"
-      ? "Hidden"
-      : coverageVizMode === "heatmap"
-      ? "Heatmap"
-      : coverageVizMode === "contours"
-        ? "Heatmap + Target Line"
-        : coverageVizMode === "weakest"
-          ? "Weakest Site"
-        : coverageVizMode === "passfail"
-          ? "Pass/Fail"
-          : "Relay";
+  const meshExtensionRange = useMemo(() => {
+    if (!coverageOverlay || coverageVizMode !== "mesh-extension") return null;
+    if (typeof coverageOverlay.maxAreaKm2 !== "number") return null;
+    return {
+      minAreaKm2: coverageOverlay.minAreaKm2 ?? 0,
+      maxAreaKm2: coverageOverlay.maxAreaKm2,
+      minDbm: coverageOverlay.minDbm,
+      maxDbm: coverageOverlay.maxDbm,
+    };
+  }, [coverageOverlay, coverageVizMode]);
+  const overlayGuideTitle = overlayGuideTitleForMode(coverageVizMode);
 
   useEffect(() => {
     const scheduler = terrainOverlaySchedulerRef.current!;
@@ -2658,14 +2698,12 @@ export function MapView({
     fitChromePadding.top,
     fitChromePadding.bottom,
   ]);
-  const allowedOverlayModes = useMemo<Array<"none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay">>(() => {
-    if (selectionCount <= 0) return ["none", "heatmap", "weakest", "contours"];
-    if (selectionCount === 1) return ["none", "passfail", "heatmap", "weakest", "contours"];
-    if (selectionCount === 2) return ["none", "relay", "heatmap", "weakest", "contours"];
-    return ["none", "heatmap", "weakest", "contours"];
-  }, [selectionCount]);
+  const allowedOverlayModes = useMemo(
+    () => overlayModesForSelectionCount(selectionCount, sites.length),
+    [selectionCount, sites.length],
+  );
   useEffect(() => {
-    if (allowedOverlayModes.includes(coverageVizMode as "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay")) return;
+    if (allowedOverlayModes.includes(coverageVizMode)) return;
     setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode;
@@ -3056,7 +3094,7 @@ export function MapView({
                 <select
                   className="locale-select"
                   onChange={(event) => {
-                    const mode = event.target.value as "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay";
+                    const mode = event.target.value as MapOverlayMode;
                     if (mode === "heatmap") {
                       setCoverageVizMode("heatmap");
                       return;
@@ -3075,6 +3113,7 @@ export function MapView({
                   {allowedOverlayModes.includes("contours") ? <option value="contours">Heatmap + Target Line</option> : null}
                   {allowedOverlayModes.includes("passfail") ? <option value="passfail">Pass/Fail</option> : null}
                   {allowedOverlayModes.includes("relay") ? <option value="relay">Relay</option> : null}
+                  {allowedOverlayModes.includes("mesh-extension") ? <option value="mesh-extension">Mesh Extension</option> : null}
                 </select>
               </label>
               {coverageVizMode !== "none" && (
@@ -3263,6 +3302,29 @@ export function MapView({
                   </div>
                 </div>
                 <p className="overlay-scale-help">Left side is worse relay quality. Right side is better relay quality.</p>
+              </>
+            ) : null}
+            {coverageVizMode === "mesh-extension" ? (
+              <>
+                <p>
+                  Shows where a representative new node can reach any selected Site, or any Simulation Site when none
+                  are selected, in both directions while adding terrain that those Sites do not currently cover.
+                </p>
+                <div className="overlay-scale">
+                  <div className="overlay-scale-bar" />
+                  <div className="overlay-scale-labels">
+                    <span>{(meshExtensionRange?.minAreaKm2 ?? 0).toFixed(1)} km² new</span>
+                    <span>{meshExtensionRange ? `${meshExtensionRange.maxAreaKm2.toFixed(1)} km² new` : "More new area"}</span>
+                  </div>
+                </div>
+                <p className="overlay-scale-help">
+                  Color shows newly covered area. Opacity shows bidirectional signal to the strongest applicable peer;
+                  faint locations are below the RX target.
+                </p>
+                <p className="overlay-scale-help">
+                  Candidate scoring is terrain-aware and capped at the 2x grid; the Simulation Resolution still controls
+                  rendered smoothness above that cap.
+                </p>
               </>
             ) : null}
           </CompactDetails>

@@ -7,7 +7,6 @@ import {
   isTerrainLineObstructed,
 } from "./terrainLoss";
 import type {
-  BestSiteCandidate,
   Coordinates,
   Link,
   LinkAnalysis,
@@ -207,55 +206,4 @@ export const analyzeLink = (
     worstFresnelClearancePercent,
     worstFresnelDistanceKm,
   };
-};
-
-export const computeBestSiteGrid = (
-  targetSites: Site[],
-  frequencyMHz: number,
-  txPowerDbm: number,
-  txGainDbi: number,
-  rxGainDbi: number,
-  cableLossDb: number,
-  center: Coordinates,
-  spanKm: number,
-  gridSize: number,
-  environment?: PropagationEnvironment,
-): BestSiteCandidate[] => {
-  const halfSpanDegLat = spanKm / 111.32;
-  const halfSpanDegLon = spanKm / (111.32 * Math.cos((center.lat * Math.PI) / 180));
-
-  const candidates: BestSiteCandidate[] = [];
-
-  for (let y = 0; y < gridSize; y += 1) {
-    const ty = y / (gridSize - 1);
-    const lat = center.lat - halfSpanDegLat + ty * halfSpanDegLat * 2;
-
-    for (let x = 0; x < gridSize; x += 1) {
-      const tx = x / (gridSize - 1);
-      const lon = center.lon - halfSpanDegLon + tx * halfSpanDegLon * 2;
-
-      const rxLevels = targetSites.map((site) => {
-        const distanceKm = Math.max(
-          0.001,
-          haversineDistanceKm({ lat, lon }, { lat: site.position.lat, lon: site.position.lon }),
-        );
-        const pathLoss = getPathLossDb(
-          distanceKm,
-          frequencyMHz,
-          2,
-          site.antennaHeightM,
-          environment,
-        );
-        const eirp = txPowerDbm + txGainDbi - cableLossDb;
-        return eirp + rxGainDbi - pathLoss;
-      });
-
-      const worstRxDbm = Math.min(...rxLevels);
-      const avgRxDbm = rxLevels.reduce((sum, value) => sum + value, 0) / rxLevels.length;
-
-      candidates.push({ lat, lon, worstRxDbm, avgRxDbm });
-    }
-  }
-
-  return candidates;
 };
