@@ -237,4 +237,27 @@ describe("AppShell copy flow", () => {
       view.unmount();
     }
   });
+
+  it("keeps the workspace writable after creating and loading a blank simulation", async () => {
+    const view = render(<AppShell />);
+
+    try {
+      await waitFor(() => expect(sidebarCalls.length).toBeGreaterThan(0));
+
+      const createdId = useAppStore.getState().createBlankSimulationPreset("Blank Simulation", {
+        visibility: "private",
+        ownerUserId: "user-1",
+      });
+      expect(createdId).toBeTruthy();
+
+      await act(async () => {
+        useAppStore.getState().loadSimulationPreset(createdId as string);
+      });
+
+      await waitFor(() => expect(sidebarCalls[sidebarCalls.length - 1]?.readOnly).toBe(false));
+      expect(useAppStore.getState().selectedScenarioId).toBe(createdId);
+    } finally {
+      view.unmount();
+    }
+  });
 });

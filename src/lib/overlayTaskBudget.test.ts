@@ -8,16 +8,18 @@ describe("overlayTaskBudgetForMode", () => {
     const terrain = overlayTaskBudgetForMode("terrain");
     const passFail = overlayTaskBudgetForMode("passfail");
     const relay = overlayTaskBudgetForMode("relay");
+    const meshExtension = overlayTaskBudgetForMode("mesh-extension");
 
     expect(passFail.frameBudgetMs).toBeGreaterThan(heatmap.frameBudgetMs);
     expect(passFail.frameBudgetMs).toBeGreaterThan(contours.frameBudgetMs);
     expect(passFail.frameBudgetMs).toBeGreaterThan(terrain.frameBudgetMs);
     expect(relay.frameBudgetMs).toBeGreaterThan(heatmap.frameBudgetMs);
     expect(relay.frameBudgetMs).toBeGreaterThan(terrain.frameBudgetMs);
+    expect(meshExtension.frameBudgetMs).toBeGreaterThanOrEqual(relay.frameBudgetMs);
   });
 
   it("always sets a long-task threshold not lower than frame budget", () => {
-    const modes = ["heatmap", "contours", "passfail", "relay", "terrain"] as const;
+    const modes = ["heatmap", "contours", "passfail", "relay", "mesh-extension", "terrain"] as const;
     for (const mode of modes) {
       const budget = overlayTaskBudgetForMode(mode);
       expect(budget.longTaskMs).toBeGreaterThanOrEqual(budget.frameBudgetMs);
