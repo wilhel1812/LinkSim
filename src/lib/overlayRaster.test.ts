@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCoverageOverlayPixelsAsync,
+  buildMeshExtensionOverlayPixelsAsync,
   computeCoverageRxTargetScale,
+  deriveMeshExtensionCandidateProfile,
+  meshExtensionAlphaForDbm,
+  meshExtensionColorForArea,
+  resolveMeshExtensionCandidateGridSize,
+  strongestBidirectionalPeerDbm,
   normalizeCoverageDbmForRxTarget,
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
@@ -70,6 +76,50 @@ const environment: PropagationEnvironment = {
 const terrainSampler = () => 135;
 
 describe("overlayRaster async builders", () => {
+  it("derives a representative mesh-extension profile from selected-site medians", () => {
+    const profile = deriveMeshExtensionCandidateProfile([
+      { ...fromSite, antennaHeightM: 4, txPowerDbm: 18, txGainDbi: 1, rxGainDbi: 2, cableLossDb: 0.5 },
+      { ...toSite, antennaHeightM: 12, txPowerDbm: 24, txGainDbi: 5, rxGainDbi: 6, cableLossDb: 1.5 },
+      { ...toSite, id: "c", antennaHeightM: 8, txPowerDbm: 22, txGainDbi: 3, rxGainDbi: 4, cableLossDb: 1 },
+    ]);
+
+    expect(profile).toEqual({
+      antennaHeightM: 8,
+      txPowerDbm: 22,
+      txGainDbi: 3,
+      rxGainDbi: 4,
+      cableLossDb: 1,
+    });
+  });
+
+  it("uses the strongest peer after taking each bidirectional bottleneck", () => {
+    expect(
+      strongestBidirectionalPeerDbm([
+        { selectedToCandidateDbm: -95, candidateToSelectedDbm: -130 },
+        { selectedToCandidateDbm: -108, candidateToSelectedDbm: -104 },
+      ]),
+    ).toBe(-108);
+  });
+
+  it("anchors mesh-extension opacity to established pass/fail and heatmap alpha levels", () => {
+    expect(meshExtensionAlphaForDbm(-120, -120, { min: -150, max: -90 })).toBe(162);
+    expect(meshExtensionAlphaForDbm(-90, -120, { min: -150, max: -90 })).toBe(180);
+    expect(meshExtensionAlphaForDbm(-150, -120, { min: -150, max: -90 })).toBe(36);
+  });
+
+  it("caps mesh-extension candidate scoring at the 2x grid", () => {
+    expect(resolveMeshExtensionCandidateGridSize(24)).toBe(24);
+    expect(resolveMeshExtensionCandidateGridSize(42)).toBe(42);
+    expect(resolveMeshExtensionCandidateGridSize(168)).toBe(42);
+  });
+
+  it("changes extension hue with new area independently of signal alpha", () => {
+    expect(meshExtensionColorForArea(0, 20)).not.toEqual(meshExtensionColorForArea(20, 20));
+    expect(meshExtensionAlphaForDbm(-140, -120, { min: -150, max: -90 })).not.toBe(
+      meshExtensionAlphaForDbm(-100, -120, { min: -150, max: -90 }),
+    );
+  });
+
   it("samples raster rows in Web Mercator space so image overlays align with GeoJSON", () => {
     const minLat = 62.97069520171348;
     const maxLat = 63.869006376704505;
@@ -211,6 +261,122 @@ describe("overlayRaster async builders", () => {
     expect(terrain?.pixels.length).toBe(10 * 10 * 4);
     expect(relay?.minDbm).toEqual(expect.any(Number));
     expect(relay?.maxDbm).toEqual(expect.any(Number));
+  });
+
+  it("builds mesh-extension metadata and finds positive newly covered area", async () => {
+    const raster = await buildMeshExtensionOverlayPixelsAsync({
+      bounds: {
+        minLat: 59.89,
+        maxLat: 59.91,
+        minLon: 10.64,
+        maxLon: 10.68,
+      },
+      selectedSites: [fromSite],
+      frequencyMHz: 868,
+      propagationEnvironment: environment,
+      rxTargetDbm: -70,
+      environmentLossDb: 0,
+      terrainSampler: () => 100,
+      dimensions: { width: 8, height: 6 },
+      candidateGridSize: 6,
+      coverageGridSize: 6,
+      terrainSamples: 16,
+      context: { phase: "mesh-extension", signature: "mesh-extension-positive", frameBudgetMs: 2 },
+    });
+
+    expect(raster).not.toBeNull();
+    expect(raster?.pixels.length).toBe(8 * 6 * 4);
+    expect(raster?.minAreaKm2).toBe(0);
+    expect(raster?.maxAreaKm2).toBeGreaterThan(0);
+    expect(raster?.minDbm).toEqual(expect.any(Number));
+    expect(raster?.maxDbm).toEqual(expect.any(Number));
+  });
+
+  it("reports zero new area when the selected mesh already covers the comparison grid", async () => {
+    const raster = await buildMeshExtensionOverlayPixelsAsync({
+      bounds: { minLat: 59.899, maxLat: 59.901, minLon: 10.649, maxLon: 10.651 },
+      selectedSites: [fromSite],
+      frequencyMHz: 868,
+      propagationEnvironment: environment,
+      rxTargetDbm: -140,
+      environmentLossDb: 0,
+      terrainSampler: () => 100,
+      dimensions: { width: 6, height: 6 },
+      candidateGridSize: 6,
+      coverageGridSize: 6,
+      terrainSamples: 16,
+      context: { phase: "mesh-extension", signature: "mesh-extension-covered", frameBudgetMs: 2 },
+    });
+
+    expect(raster?.minAreaKm2).toBe(0);
+    expect(raster?.maxAreaKm2).toBe(0);
+  });
+
+  it("returns no mesh-extension raster when terrain is unavailable", async () => {
+    const raster = await buildMeshExtensionOverlayPixelsAsync({
+      bounds,
+      selectedSites: [fromSite],
+      frequencyMHz: 868,
+      propagationEnvironment: environment,
+      rxTargetDbm: -118,
+      environmentLossDb: 0,
+      terrainSampler: () => null,
+      dimensions: { width: 6, height: 6 },
+      candidateGridSize: 6,
+      coverageGridSize: 6,
+      terrainSamples: 16,
+      context: { phase: "mesh-extension", signature: "mesh-extension-no-terrain", frameBudgetMs: 2 },
+    });
+
+    expect(raster).toBeNull();
+  });
+
+  it("cancels mesh-extension scoring before returning stale pixels", async () => {
+    await expect(
+      buildMeshExtensionOverlayPixelsAsync({
+        bounds,
+        selectedSites: [fromSite],
+        frequencyMHz: 868,
+        propagationEnvironment: environment,
+        rxTargetDbm: -118,
+        environmentLossDb: 0,
+        terrainSampler,
+        dimensions: { width: 12, height: 12 },
+        candidateGridSize: 12,
+        coverageGridSize: 12,
+        terrainSamples: 16,
+        context: {
+          phase: "mesh-extension",
+          signature: "mesh-extension-cancelled",
+          shouldCancel: () => true,
+        },
+      }),
+    ).rejects.toBeInstanceOf(OverlayTaskCancelledError);
+  });
+
+  it("reports monotonic aggregate progress across mesh-extension stages", async () => {
+    const progress: number[] = [];
+    await buildMeshExtensionOverlayPixelsAsync({
+      bounds: { minLat: 59.899, maxLat: 59.901, minLon: 10.649, maxLon: 10.651 },
+      selectedSites: [fromSite],
+      frequencyMHz: 868,
+      propagationEnvironment: environment,
+      rxTargetDbm: -120,
+      environmentLossDb: 0,
+      terrainSampler,
+      dimensions: { width: 6, height: 6 },
+      candidateGridSize: 6,
+      coverageGridSize: 6,
+      terrainSamples: 16,
+      context: {
+        phase: "mesh-extension",
+        signature: "mesh-extension-progress",
+        onProgress: ({ percent }) => progress.push(percent),
+      },
+    });
+
+    expect(progress.at(-1)).toBe(100);
+    expect(progress.every((value, index) => index === 0 || value >= progress[index - 1])).toBe(true);
   });
 
   it("cancels an in-flight overlay task without returning stale data", async () => {
