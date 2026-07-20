@@ -7,6 +7,7 @@ import {
   meshExtensionAlphaForDbm,
   meshExtensionColorForArea,
   resolveMeshExtensionCandidateGridSize,
+  resolveMeshExtensionCoverageGridSize,
   strongestBidirectionalPeerDbm,
   normalizeCoverageDbmForRxTarget,
   buildRelayCandidateOverlayPixelsAsync,
@@ -102,15 +103,18 @@ describe("overlayRaster async builders", () => {
   });
 
   it("anchors mesh-extension opacity to established pass/fail and heatmap alpha levels", () => {
+    expect(meshExtensionAlphaForDbm(-121, -120, { min: -150, max: -90 })).toBe(0);
     expect(meshExtensionAlphaForDbm(-120, -120, { min: -150, max: -90 })).toBe(162);
     expect(meshExtensionAlphaForDbm(-90, -120, { min: -150, max: -90 })).toBe(180);
-    expect(meshExtensionAlphaForDbm(-150, -120, { min: -150, max: -90 })).toBe(36);
   });
 
-  it("caps mesh-extension candidate scoring at the 2x grid", () => {
+  it("uses the selected resolution for both candidate and coverage scoring", () => {
     expect(resolveMeshExtensionCandidateGridSize(24)).toBe(24);
     expect(resolveMeshExtensionCandidateGridSize(42)).toBe(42);
-    expect(resolveMeshExtensionCandidateGridSize(168)).toBe(42);
+    expect(resolveMeshExtensionCandidateGridSize(168)).toBe(168);
+    expect(resolveMeshExtensionCoverageGridSize(24)).toBe(24);
+    expect(resolveMeshExtensionCoverageGridSize(84)).toBe(84);
+    expect(resolveMeshExtensionCoverageGridSize(168)).toBe(168);
   });
 
   it("changes extension hue with new area independently of signal alpha", () => {
@@ -310,6 +314,51 @@ describe("overlayRaster async builders", () => {
 
     expect(raster?.minAreaKm2).toBe(0);
     expect(raster?.maxAreaKm2).toBe(0);
+  });
+
+  it("renders candidates below the bidirectional mesh target fully transparent", async () => {
+    const raster = await buildMeshExtensionOverlayPixelsAsync({
+      bounds,
+      selectedSites: [fromSite],
+      frequencyMHz: 868,
+      propagationEnvironment: environment,
+      rxTargetDbm: -20,
+      environmentLossDb: 0,
+      terrainSampler,
+      dimensions: { width: 8, height: 8 },
+      candidateGridSize: 8,
+      coverageGridSize: 8,
+      terrainSamples: 16,
+      context: { phase: "mesh-extension", signature: "mesh-extension-transparent-fail" },
+    });
+
+    expect(raster).not.toBeNull();
+    expect(Array.from(raster!.pixels).filter((_, index) => index % 4 === 3).every((alpha) => alpha === 0)).toBe(true);
+  });
+
+  it("skips quadratic high-resolution area work for candidates that cannot join the mesh", async () => {
+    let terrainReads = 0;
+    const raster = await buildMeshExtensionOverlayPixelsAsync({
+      bounds,
+      selectedSites: [fromSite],
+      frequencyMHz: 868,
+      propagationEnvironment: environment,
+      rxTargetDbm: -20,
+      environmentLossDb: 0,
+      terrainSampler: () => {
+        terrainReads += 1;
+        return 135;
+      },
+      dimensions: { width: 8, height: 8 },
+      candidateGridSize: 168,
+      coverageGridSize: 168,
+      terrainSamples: 16,
+      context: { phase: "mesh-extension", signature: "mesh-extension-high-resolution-pruning" },
+    });
+
+    expect(raster).not.toBeNull();
+    expect(terrainReads).toBeLessThan(70_000);
+    expect(Array.from(raster!.pixels).filter((_, index) => index % 4 === 3).every((alpha) => alpha === 0)).toBe(true);
   });
 
   it("returns no mesh-extension raster when terrain is unavailable", async () => {

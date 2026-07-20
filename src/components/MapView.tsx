@@ -1737,8 +1737,8 @@ export function MapView({
               environmentLossDb,
               terrainSampler,
               dimensions: overlayDimensions,
-              candidateGridSize: Math.min(effectiveGridSize, 42),
-              coverageGridSize: 24,
+              candidateGridSize: effectiveGridSize,
+              coverageGridSize: effectiveGridSize,
               terrainSamples: 20,
               pointMask: overlayPointMask,
               context,
@@ -3319,11 +3319,11 @@ export function MapView({
                 </div>
                 <p className="overlay-scale-help">
                   Color shows newly covered area. Opacity shows bidirectional signal to the strongest applicable peer;
-                  faint locations are below the RX target.
+                  locations below the RX target are hidden.
                 </p>
                 <p className="overlay-scale-help">
-                  Candidate scoring is terrain-aware and capped at the 2x grid; the Simulation Resolution still controls
-                  rendered smoothness above that cap.
+                  Simulation Resolution controls both candidate placement and added-area precision. Higher resolutions
+                  refine coverage boundaries adaptively and can take longer.
                 </p>
               </>
             ) : null}

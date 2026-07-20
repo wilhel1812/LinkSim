@@ -265,16 +265,16 @@ export const meshExtensionAlphaForDbm = (
   rxTargetDbm: number,
   scale: CoverageRxTargetScale,
 ): number => {
-  if (valueDbm <= rxTargetDbm) {
-    const below = clamp((valueDbm - scale.min) / Math.max(1, rxTargetDbm - scale.min), 0, 1);
-    return Math.round(lerp(36, 162, below));
-  }
+  if (!Number.isFinite(valueDbm) || valueDbm < rxTargetDbm) return 0;
   const above = clamp((valueDbm - rxTargetDbm) / Math.max(1, scale.max - rxTargetDbm), 0, 1);
   return Math.round(lerp(162, 180, above));
 };
 
 export const resolveMeshExtensionCandidateGridSize = (requestedGridSize: number): number =>
-  Math.max(6, Math.min(42, Math.round(requestedGridSize)));
+  Math.max(6, Math.min(168, Math.round(requestedGridSize)));
+
+export const resolveMeshExtensionCoverageGridSize = (requestedGridSize: number): number =>
+  Math.max(6, Math.min(168, Math.round(requestedGridSize)));
 
 export const meshExtensionColorForArea = (areaKm2: number, maxAreaKm2: number): [number, number, number] =>
   coverageColorForNormalized(maxAreaKm2 > 0 ? clamp(areaKm2 / maxAreaKm2, 0, 1) : 0);
@@ -826,12 +826,105 @@ const cellAreaKm2 = (
   return heightKm * widthKm;
 };
 
+type MeshExtensionGridBlock = {
+  rowStart: number;
+  rowEnd: number;
+  colStart: number;
+  colEnd: number;
+};
+
+// Seed a small set of blocks, then recursively split only mixed pass/fail terrain boundaries.
+// This keeps 8x scoring responsive without reverting its finest cells to the 1x grid.
+const MESH_EXTENSION_ADAPTIVE_BASE_GRID_SIZE = 8;
+
+const partitionGridAxis = (length: number, targetPartitions: number): Array<[number, number]> => {
+  const partitions = Math.max(1, Math.min(length, targetPartitions));
+  return Array.from({ length: partitions }, (_, index) => [
+    Math.floor((index * length) / partitions),
+    Math.floor(((index + 1) * length) / partitions),
+  ]);
+};
+
+const buildAdaptiveGridBlocks = (
+  dimensions: { rows: number; cols: number },
+  baseGridSize = MESH_EXTENSION_ADAPTIVE_BASE_GRID_SIZE,
+): MeshExtensionGridBlock[] => {
+  const rowRanges = partitionGridAxis(dimensions.rows, baseGridSize);
+  const colRanges = partitionGridAxis(dimensions.cols, baseGridSize);
+  return rowRanges.flatMap(([rowStart, rowEnd]) =>
+    colRanges.map(([colStart, colEnd]) => ({ rowStart, rowEnd, colStart, colEnd })),
+  );
+};
+
+const splitAdaptiveGridBlock = (block: MeshExtensionGridBlock): MeshExtensionGridBlock[] => {
+  const rowMid = block.rowStart + Math.ceil((block.rowEnd - block.rowStart) / 2);
+  const colMid = block.colStart + Math.ceil((block.colEnd - block.colStart) / 2);
+  const rowRanges: Array<[number, number]> =
+    rowMid < block.rowEnd
+      ? [[block.rowStart, rowMid], [rowMid, block.rowEnd]]
+      : [[block.rowStart, block.rowEnd]];
+  const colRanges: Array<[number, number]> =
+    colMid < block.colEnd
+      ? [[block.colStart, colMid], [colMid, block.colEnd]]
+      : [[block.colStart, block.colEnd]];
+  return rowRanges.flatMap(([rowStart, rowEnd]) =>
+    colRanges.map(([colStart, colEnd]) => ({ rowStart, rowEnd, colStart, colEnd })),
+  );
+};
+
+const uniqueBlockSampleIndices = (
+  block: MeshExtensionGridBlock,
+  cols: number,
+): number[] => {
+  const rows = [
+    block.rowStart,
+    Math.floor((block.rowStart + block.rowEnd - 1) / 2),
+    block.rowEnd - 1,
+  ].filter((value, index, values) => values.indexOf(value) === index);
+  const columns = [
+    block.colStart,
+    Math.floor((block.colStart + block.colEnd - 1) / 2),
+    block.colEnd - 1,
+  ].filter((value, index, values) => values.indexOf(value) === index);
+  return rows.flatMap((row) => columns.map((col) => row * cols + col));
+};
+
+const buildAreaPrefixSum = (
+  values: Float64Array,
+  dimensions: { rows: number; cols: number },
+): Float64Array => {
+  const stride = dimensions.cols + 1;
+  const prefix = new Float64Array((dimensions.rows + 1) * stride);
+  for (let row = 0; row < dimensions.rows; row += 1) {
+    let rowSum = 0;
+    for (let col = 0; col < dimensions.cols; col += 1) {
+      rowSum += values[row * dimensions.cols + col];
+      prefix[(row + 1) * stride + col + 1] = prefix[row * stride + col + 1] + rowSum;
+    }
+  }
+  return prefix;
+};
+
+const areaForGridBlock = (
+  prefix: Float64Array,
+  dimensions: { rows: number; cols: number },
+  block: MeshExtensionGridBlock,
+): number => {
+  const stride = dimensions.cols + 1;
+  return (
+    prefix[block.rowEnd * stride + block.colEnd] -
+    prefix[block.rowStart * stride + block.colEnd] -
+    prefix[block.rowEnd * stride + block.colStart] +
+    prefix[block.rowStart * stride + block.colStart]
+  );
+};
+
 export const buildMeshExtensionOverlayPixelsAsync = async (
   input: MeshExtensionOverlayInput,
 ): Promise<OverlayRasterPixels | null> => {
   if (!input.selectedSites.length) return null;
   const candidateGridSize = resolveMeshExtensionCandidateGridSize(input.candidateGridSize);
-  const coverageGridSize = Math.max(6, Math.min(24, Math.round(input.coverageGridSize ?? 24)));
+  const coverageGridSize = resolveMeshExtensionCoverageGridSize(input.coverageGridSize ?? candidateGridSize);
   const candidatePoints = buildCoverageGridPoints(candidateGridSize, input.bounds);
   const coveragePoints = buildCoverageGridPoints(coverageGridSize, input.bounds);
   const coverageDimensions = computeCoverageGridDimensions(coverageGridSize, input.bounds);
@@ -892,6 +985,13 @@ export const buildMeshExtensionOverlayPixelsAsync = async (
     contextForProgressRange(0, 15),
   );
 
+  const uncoveredAreaByTarget = new Float64Array(coveragePoints.length);
+  for (let index = 0; index < coveragePoints.length; index += 1) {
+    if (!existingCovered[index] && targetSites[index]) uncoveredAreaByTarget[index] = targetAreaKm2[index];
+  }
+  const uncoveredAreaPrefix = buildAreaPrefixSum(uncoveredAreaByTarget, coverageDimensions);
+  const adaptiveBlocks = buildAdaptiveGridBlocks(coverageDimensions);
+
   const candidateSites: Array<Site | null> = candidatePoints.map((point, index) => {
     const ground = input.terrainSampler(point.lat, point.lon);
     return ground === null ? null : siteFromProfile(`__mesh_extension_candidate_${index}__`, point.lat, point.lon, ground, profile);
@@ -943,36 +1043,91 @@ export const buildMeshExtensionOverlayPixelsAsync = async (
     contextForProgressRange(15, 30),
   );
 
-  await runCooperativeLoop(
-    candidatePoints.length * coveragePoints.length,
-    (pairIndex) => {
-      const candidateIndex = Math.floor(pairIndex / coveragePoints.length);
-      const targetIndex = pairIndex - candidateIndex * coveragePoints.length;
-      if (existingCovered[targetIndex]) return;
-      const candidate = candidateSites[candidateIndex];
-      const target = targetSites[targetIndex];
-      if (!candidate || !target) return;
-      const optimistic = bidirectionalBaseDbm(
-        candidate,
-        target,
-        input.frequencyMHz,
-        input.propagationEnvironment,
-      );
-      if (optimistic < thresholdBeforeEnvironmentDbm) return;
-      const actual = bidirectionalTerrainDbm(
-        candidate,
-        target,
-        input.frequencyMHz,
-        input.propagationEnvironment,
-        input.terrainSampler,
-        terrainSamples,
-      );
-      if (actual - input.environmentLossDb >= input.rxTargetDbm) {
-        newlyCoveredAreaKm2[candidateIndex] += targetAreaKm2[targetIndex];
+  const evaluationStamp = new Uint32Array(coveragePoints.length);
+  const evaluationPass = new Uint8Array(coveragePoints.length);
+  const areaContext = contextForProgressRange(30, 85);
+  const areaFrameBudgetMs = Math.max(1, input.context?.frameBudgetMs ?? DEFAULT_FRAME_BUDGET_MS);
+  const areaLongTaskMs = Math.max(areaFrameBudgetMs, input.context?.longTaskMs ?? DEFAULT_LONG_TASK_MS);
+  let areaLoopChunkStartedAt = nowMs();
+
+  for (let candidateIndex = 0; candidateIndex < candidatePoints.length; candidateIndex += 1) {
+    throwIfCancelled(input.context);
+    const candidate = candidateSites[candidateIndex];
+    if (candidate && connectivityDbm[candidateIndex] >= input.rxTargetDbm) {
+      const stamp = candidateIndex + 1;
+      const stack = adaptiveBlocks.slice();
+      let chunkStartedAt = nowMs();
+      const evaluateTarget = (targetIndex: number): number => {
+        if (existingCovered[targetIndex] || !targetSites[targetIndex]) return -1;
+        if (evaluationStamp[targetIndex] === stamp) return evaluationPass[targetIndex];
+        const target = targetSites[targetIndex]!;
+        const optimistic = directionalBaseRxDbm(
+          candidate,
+          target,
+          input.frequencyMHz,
+          input.propagationEnvironment,
+        );
+        let pass = false;
+        if (optimistic >= thresholdBeforeEnvironmentDbm) {
+          const actual = directionalTerrainRxDbm(
+            candidate,
+            target,
+            input.frequencyMHz,
+            input.propagationEnvironment,
+            input.terrainSampler,
+            terrainSamples,
+          );
+          pass = actual - input.environmentLossDb >= input.rxTargetDbm;
+        }
+        evaluationStamp[targetIndex] = stamp;
+        evaluationPass[targetIndex] = pass ? 1 : 0;
+        return evaluationPass[targetIndex];
+      };
+
+      while (stack.length) {
+        throwIfCancelled(input.context);
+        const block = stack.pop()!;
+        const blockArea = areaForGridBlock(uncoveredAreaPrefix, coverageDimensions, block);
+        if (blockArea <= 0) continue;
+        const states = uniqueBlockSampleIndices(block, coverageDimensions.cols)
+          .map(evaluateTarget)
+          .filter((state) => state >= 0);
+        const isLeaf = block.rowEnd - block.rowStart === 1 && block.colEnd - block.colStart === 1;
+        if (states.length && states.every((state) => state === states[0])) {
+          if (states[0] === 1) newlyCoveredAreaKm2[candidateIndex] += blockArea;
+        } else if (!isLeaf) {
+          stack.push(...splitAdaptiveGridBlock(block));
+        }
+
+        const chunkDuration = nowMs() - chunkStartedAt;
+        if (chunkDuration >= areaFrameBudgetMs && stack.length) {
+          if (chunkDuration >= areaLongTaskMs) {
+            input.context?.onLongTask?.({
+              phase: input.context.phase,
+              signature: input.context.signature,
+              durationMs: chunkDuration,
+              processed: candidateIndex,
+              total: candidatePoints.length,
+            });
+          }
+          await nextFrame();
+          chunkStartedAt = nowMs();
+        }
       }
-    },
-    contextForProgressRange(30, 85),
-  );
+    }
+
+    areaContext?.onProgress?.({
+      phase: areaContext.phase,
+      signature: areaContext.signature,
+      processed: candidateIndex + 1,
+      total: candidatePoints.length,
+      percent: Math.round(((candidateIndex + 1) / candidatePoints.length) * 100),
+    });
+    if (candidateIndex + 1 < candidatePoints.length && nowMs() - areaLoopChunkStartedAt >= areaFrameBudgetMs) {
+      await nextFrame();
+      areaLoopChunkStartedAt = nowMs();
+    }
+  }
 
   const areaSamples: CoverageSampleLite[] = [];
   const connectivitySamples: CoverageSampleLite[] = [];
