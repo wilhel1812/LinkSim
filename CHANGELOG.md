@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.22.0] - 2026-07-21
+
+### Added
+- Added the Mesh Extension candidate overlay to show where a new node can add the most terrain coverage while remaining bidirectionally connected to the existing mesh. Candidate scoring follows the selected Simulation Resolution and uses adaptive terrain-boundary refinement for responsive high-resolution analysis. (#910)
+
+### Fixed
+- Fixed newly created Simulations sometimes remaining read-only after account bootstrap, restoring the expected create-Site actions without requiring a page reload. (#909)
+
+### Internal
+- Streamlined the repository agent guidance and aligned its release-flow baseline with the shipped version. (#911)
+
 ## [0.21.0] - 2026-06-03
 
 ### Added

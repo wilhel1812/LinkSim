@@ -60,6 +60,7 @@ import type { UiColorTheme } from "../themes/types";
 import { getActiveHolidayTheme } from "../themes/holidayThemes";
 import type { CloudUser } from "../lib/cloudUser";
 import type { MeshmapNode } from "../lib/meshtasticMqtt";
+import type { MapOverlayMode as MapOverlayModeValue } from "../lib/mapOverlayMode";
 import type {
   CoverageResolution,
   Link,
@@ -257,7 +258,7 @@ const adoptOrphanedSimulations = (
   return fixed;
 };
 
-export type MapOverlayMode = "none" | "heatmap" | "contours" | "weakest" | "passfail" | "relay";
+export type MapOverlayMode = MapOverlayModeValue;
 export type AuthSessionState = "checking" | "signed_in" | "signed_out";
 
 type SiteLibraryEntry = {
@@ -2924,6 +2925,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByUserId: user.id,
         lastEditedByName: user.username,
         lastEditedByAvatarUrl: user.avatarUrl ?? "",
+        effectiveRole: "owner",
       };
       const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);

@@ -125,13 +125,6 @@ export type ProfilePoint = {
   fresnelBottomM: number;
 };
 
-export type BestSiteCandidate = {
-  lat: number;
-  lon: number;
-  worstRxDbm: number;
-  avgRxDbm: number;
-};
-
 export type CoverageSample = {
   lat: number;
   lon: number;

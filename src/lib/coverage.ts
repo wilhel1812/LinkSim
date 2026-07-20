@@ -34,6 +34,11 @@ export type CoverageGridDimensions = {
   targetSamples: number;
 };
 
+export type CoverageGridPoint = {
+  lat: number;
+  lon: number;
+};
+
 const COVERAGE_COMPUTE_CHUNK_SIZE = 48;
 const COVERAGE_COMPUTE_FRAME_BUDGET_MS = 12;
 
@@ -56,6 +61,25 @@ export const computeCoverageGridDimensions = (
     totalSamples: rows * cols,
     targetSamples,
   };
+};
+
+export const buildCoverageGridPoints = (
+  gridSize: number,
+  bounds: CoverageGridBounds,
+  sampleMultiplier = 1,
+): CoverageGridPoint[] => {
+  const { rows, cols } = computeCoverageGridDimensions(gridSize, bounds, sampleMultiplier);
+  const points: CoverageGridPoint[] = [];
+  for (let y = 0; y < rows; y += 1) {
+    const ty = rows <= 1 ? 0 : y / (rows - 1);
+    const lat = bounds.minLat + (bounds.maxLat - bounds.minLat) * ty;
+    for (let x = 0; x < cols; x += 1) {
+      const tx = cols <= 1 ? 0 : x / (cols - 1);
+      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tx;
+      points.push({ lat, lon });
+    }
+  }
+  return points;
 };
 
 const nUnitsToKFactor = (nUnits: number): number => {
@@ -198,24 +222,12 @@ export const buildCoverage = (
       ? effectiveMemberships
       : sites.map((site) => ({ siteId: site.id, systemId: fallbackSystemId }));
 
-  const samples: { lat: number; lon: number }[] = [];
   const bounds = simulationAreaBoundsForSites(sites, {
     overlayRadiusKm: options?.overlayRadiusKm,
     singleSiteRadiusKm: options?.singleSiteRadiusKm,
   });
   if (!bounds) return [];
-
-  const { rows, cols } = computeCoverageGridDimensions(gridSize, bounds, sampleMultiplier);
-
-  for (let y = 0; y < rows; y += 1) {
-    const ty = rows <= 1 ? 0 : y / (rows - 1);
-    const lat = bounds.minLat + (bounds.maxLat - bounds.minLat) * ty;
-    for (let x = 0; x < cols; x += 1) {
-      const tx = cols <= 1 ? 0 : x / (cols - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tx;
-      samples.push({ lat, lon });
-    }
-  }
+  const samples = buildCoverageGridPoints(gridSize, bounds, sampleMultiplier);
 
   onProgress?.(0);
   const total = Math.max(1, samples.length);
@@ -281,24 +293,12 @@ export const buildCoverageAsync = async (
       ? effectiveMemberships
       : sites.map((site) => ({ siteId: site.id, systemId: fallbackSystemId }));
 
-  const samples: { lat: number; lon: number }[] = [];
   const bounds = simulationAreaBoundsForSites(sites, {
     overlayRadiusKm: options?.overlayRadiusKm,
     singleSiteRadiusKm: options?.singleSiteRadiusKm,
   });
   if (!bounds) return [];
-
-  const { rows, cols } = computeCoverageGridDimensions(gridSize, bounds, sampleMultiplier);
-
-  for (let y = 0; y < rows; y += 1) {
-    const ty = rows <= 1 ? 0 : y / (rows - 1);
-    const lat = bounds.minLat + (bounds.maxLat - bounds.minLat) * ty;
-    for (let x = 0; x < cols; x += 1) {
-      const tx = cols <= 1 ? 0 : x / (cols - 1);
-      const lon = bounds.minLon + (bounds.maxLon - bounds.minLon) * tx;
-      samples.push({ lat, lon });
-    }
-  }
+  const samples = buildCoverageGridPoints(gridSize, bounds, sampleMultiplier);
 
   onProgress?.(0);
   const total = Math.max(1, samples.length);
