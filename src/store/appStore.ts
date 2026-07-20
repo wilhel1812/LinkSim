@@ -2924,6 +2924,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastEditedByUserId: user.id,
         lastEditedByName: user.username,
         lastEditedByAvatarUrl: user.avatarUrl ?? "",
+        effectiveRole: "owner",
       };
       const next = [nextPreset, ...current.simulationPresets];
       writeStorage(SIM_PRESETS_KEY, next);
