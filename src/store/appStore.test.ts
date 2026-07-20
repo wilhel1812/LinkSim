@@ -510,6 +510,15 @@ describe("appStore blank simulation loading", () => {
     expect(raw).toBeTruthy();
     expect(raw).toContain(createdId as string);
   });
+
+  it("grants the owner edit access immediately when creating a blank simulation", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Writable Blank Session", { visibility: "private", ownerUserId: "owner-1" });
+
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.effectiveRole).toBe("owner");
+  });
 });
 
 describe("appStore new simulation default frequency preset", () => {
