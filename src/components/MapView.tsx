@@ -19,6 +19,7 @@ import { buildCoverageTargetContourFeatures } from "../lib/coverageContour";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
+import { getSiteIconOption, resolveSiteIconKey } from "../lib/siteIcons";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import {
   BASEMAP_CATEGORIES,
@@ -569,6 +570,11 @@ function MarkerActionButton({
       {children}
     </Surface>
   );
+}
+
+function SiteMarkerIcon({ site }: { site: Pick<Site, "name" | "antennaHeightM" | "iconKey"> }) {
+  const { Icon } = getSiteIconOption(resolveSiteIconKey(site));
+  return <Icon aria-hidden="true" className="map-site-icon" size={15} strokeWidth={1.8} />;
 }
 
 type PendingNewSiteDraft = {
@@ -3623,6 +3629,7 @@ export function MapView({
                   onSiteClick(site.id, isMultiSelectMode || Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
                 }}
               >
+                <SiteMarkerIcon site={site} />
                 <span>{site.name}</span>
               </MarkerActionButton>
             </Marker>
@@ -3656,6 +3663,7 @@ export function MapView({
                     setSelectedDiscoveryLibraryEntryId(entry.id);
                   }}
                 >
+                  <SiteMarkerIcon site={entry} />
                   <span>{entry.name}</span>
                 </MarkerActionButton>
               </Marker>

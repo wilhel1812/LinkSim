@@ -2664,6 +2664,10 @@ button {
   isolation: isolate;
 }
 
+.map-site-icon {
+  flex: 0 0 auto;
+}
+
 .map-site-surface:not(.is-muted) {
   z-index: 1;
 }
@@ -3093,6 +3097,41 @@ button {
 
 .ui-settings-popover-row + .ui-settings-popover-row {
   border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.site-icon-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.site-icon-picker-trigger span {
+  flex: 1;
+  text-align: left;
+}
+
+.site-icon-picker-popover {
+  width: min(280px, calc(100vw - 24px));
+  z-index: 12050;
+}
+
+.site-icon-picker-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.site-icon-picker-options .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.site-icon-picker-options .btn[aria-pressed="true"] {
+  border-color: var(--selection);
+  box-shadow: 0 0 0 2px var(--selection-soft);
 }
 
 .beam-visualizer-popover {

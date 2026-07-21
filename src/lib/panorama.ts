@@ -2,6 +2,7 @@ import { computeSourceCentricRxMetrics, classifyPassFailState, type PassFailStat
 import { haversineDistanceKm } from "./geo";
 import { normalizeFovScale, FOV_SCALE_DEFAULT } from "./panoramaView";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
+import type { SiteIconKey } from "./siteIcons";
 
 const EARTH_RADIUS_M = 6_371_000;
 
@@ -15,6 +16,7 @@ export type PanoramaNodeCandidate = {
   groundElevationM: number;
   antennaHeightM: number;
   rxGainDbi: number;
+  iconKey?: SiteIconKey;
 };
 
 export type PanoramaNodeProjection = {
@@ -33,6 +35,7 @@ export type PanoramaNodeProjection = {
   clearanceMarginM: number;
   visible: boolean;
   state: PassFailState;
+  iconKey?: SiteIconKey;
 };
 
 export type PanoramaRaySample = {
@@ -346,6 +349,7 @@ export const buildPanorama = (params: {
         clearanceMarginM,
         visible,
         state,
+        iconKey: candidate.iconKey,
       };
     });
 

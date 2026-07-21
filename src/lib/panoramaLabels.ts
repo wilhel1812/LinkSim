@@ -10,6 +10,7 @@ export type PanoramaLabelCandidate = {
   priorityBucket: 0 | 1;
   elevationM?: number | null;
   state?: string | null;
+  iconKey?: import("./siteIcons").SiteIconKey;
 };
 
 export type PanoramaLabelLayout = PanoramaLabelCandidate & {
