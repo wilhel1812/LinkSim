@@ -3102,35 +3102,32 @@ button {
 .site-icon-picker-trigger {
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
+  justify-self: start;
 }
 
-.site-icon-picker-trigger span {
-  flex: 1;
-  text-align: left;
+.site-icon-static-value {
+  display: inline-flex;
+  align-items: center;
 }
 
 .site-icon-picker-popover {
-  width: min(280px, calc(100vw - 24px));
+  width: min(236px, calc(100vw - 24px));
+  padding: 12px;
   z-index: 12050;
 }
 
 .site-icon-picker-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(5, 34px);
+  justify-content: center;
   gap: 6px;
 }
 
-.site-icon-picker-options .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 7px;
-}
-
-.site-icon-picker-options .btn[aria-pressed="true"] {
-  border-color: var(--selection);
+.site-icon-picker-options .btn-icon.is-selected {
+  background: var(--selection-soft);
+  color: var(--text);
   box-shadow: 0 0 0 2px var(--selection-soft);
 }
 
