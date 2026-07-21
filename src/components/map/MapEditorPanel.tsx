@@ -252,10 +252,12 @@ function SiteEditorCard({
           <StaticField label="Latitude" value={form.latDraft} />
           <StaticField label="Longitude" value={form.lonDraft} />
           <StaticField label="Ground elev (m)" value={form.groundDraft} />
-          <StaticField
-            label="Icon"
-            value={`${resolvedIconOption.label}${form.iconDraft === "auto" ? " (Auto)" : ""}`}
-          />
+          <div className="field-grid">
+            <span>Icon</span>
+            <span className="field-help static-field-value site-icon-static-value">
+              <ResolvedIcon aria-label={resolvedIconOption.label} role="img" size={16} strokeWidth={1.8} />
+            </span>
+          </div>
           <div className="beam-visualizer-field-group">
             <StaticField label="Antenna (m)" value={form.antennaDraft} />
             <StaticField label="Tx power (dBm)" value={form.txPowerDraft} />
@@ -295,6 +297,7 @@ function SiteEditorCard({
         <div className="field-grid">
           <span>Icon</span>
           <ActionButton
+            aria-label={resolvedIconOption.label}
             aria-expanded={iconPickerOpen}
             aria-haspopup="true"
             className="site-icon-picker-trigger"
@@ -303,7 +306,6 @@ function SiteEditorCard({
             type="button"
           >
             <ResolvedIcon aria-hidden="true" size={16} strokeWidth={1.8} />
-            <span>{form.iconDraft === "auto" ? `Auto · ${resolvedIconOption.label}` : resolvedIconOption.label}</span>
             <ChevronDown aria-hidden="true" size={14} />
           </ActionButton>
           <FloatingPopover
@@ -316,22 +318,25 @@ function SiteEditorCard({
           >
             <div aria-label="Site icon options" className="site-icon-picker-options" role="group">
               {[
-                { key: "auto" as const, label: `Auto · ${getSiteIconOption(suggestedIconKey).label}`, Icon: getSiteIconOption(suggestedIconKey).Icon },
+                { ...getSiteIconOption(suggestedIconKey), key: "auto" as const },
                 ...SITE_ICON_OPTIONS,
               ].map((option) => {
                 const OptionIcon = option.Icon;
                 return (
                   <ActionButton
+                    aria-label={option.label}
                     aria-pressed={form.iconDraft === option.key}
+                    className={form.iconDraft === option.key ? "is-selected" : undefined}
                     key={option.key}
                     onClick={() => {
                       form.setIconDraft(option.key);
                       setIconPickerOpen(false);
                     }}
+                    size="icon"
+                    title={option.label}
                     type="button"
                   >
                     <OptionIcon aria-hidden="true" size={16} strokeWidth={1.8} />
-                    <span>{option.label}</span>
                   </ActionButton>
                 );
               })}

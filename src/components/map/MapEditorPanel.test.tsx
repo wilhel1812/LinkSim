@@ -374,7 +374,8 @@ describe("MapEditorPanel", () => {
     expect(screen.queryByDisplayValue("Alpha Site")).not.toBeInTheDocument();
     expect(screen.getByText("60.1")).toBeInTheDocument();
     expect(screen.getByLabelText("Description")).toHaveTextContent("");
-    expect(screen.getByLabelText("Icon")).toHaveTextContent("Radio tower (Auto)");
+    expect(screen.getByRole("img", { name: "Radio Tower" })).toBeInTheDocument();
+    expect(screen.queryByText(/Radio tower|Auto/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Save Site" }),
     ).not.toBeInTheDocument();
@@ -735,8 +736,15 @@ describe("MapEditorPanel", () => {
     render(<MapEditorPanel isMobile={false} />);
 
     await userEvent.type(await screen.findByLabelText("Name"), "Harbour node");
-    await userEvent.click(screen.getByRole("button", { name: /Auto · Radio tower/i }));
-    await userEvent.click(await screen.findByRole("button", { name: "Ship" }));
+    const trigger = screen.getByRole("button", { name: "Radio Tower" });
+    expect(trigger).toHaveTextContent("");
+    await userEvent.click(trigger);
+
+    const shipOption = await screen.findByRole("button", { name: "Ship" });
+    expect(shipOption).toHaveAttribute("title", "Ship");
+    expect(shipOption).toHaveClass("btn-icon");
+    expect(screen.queryByText("Ship")).not.toBeInTheDocument();
+    await userEvent.click(shipOption);
     await userEvent.click(screen.getByRole("button", { name: "Create Site" }));
 
     expect(addSiteLibraryEntry).toHaveBeenCalledWith(
