@@ -168,6 +168,32 @@ describe("MapView user location flow", () => {
     expect(screen.queryByRole("button", { name: /User location/i })).not.toBeInTheDocument();
   });
 
+  it("renders the resolved Site icon inside the accessible map marker", () => {
+    useAppStore.setState({
+      mapOverlayMode: "none",
+      sites: [
+        {
+          id: "site-ship",
+          name: "Harbour node",
+          position: { lat: 59.9, lon: 10.75 },
+          groundElevationM: 2,
+          antennaHeightM: 2,
+          txPowerDbm: 22,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          iconKey: "ship",
+        },
+      ],
+    });
+
+    renderMapView();
+
+    const marker = screen.getByRole("button", { name: "Harbour node" });
+    expect(marker.querySelector(".lucide-ship")).toBeInTheDocument();
+    expect(marker.querySelector(".lucide-ship")).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("centers on the first location update and stops following after user pan", () => {
     renderMapView();
     fireEvent.click(screen.getByRole("button", { name: "Use my location" }));

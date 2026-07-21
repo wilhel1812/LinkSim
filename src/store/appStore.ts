@@ -61,6 +61,7 @@ import { getActiveHolidayTheme } from "../themes/holidayThemes";
 import type { CloudUser } from "../lib/cloudUser";
 import type { MeshmapNode } from "../lib/meshtasticMqtt";
 import type { MapOverlayMode as MapOverlayModeValue } from "../lib/mapOverlayMode";
+import { isSiteIconKey, type SiteIconKey } from "../lib/siteIcons";
 import type {
   CoverageResolution,
   Link,
@@ -282,6 +283,7 @@ type SiteLibraryEntry = {
   txGainDbi: number;
   rxGainDbi: number;
   cableLossDb: number;
+  iconKey?: SiteIconKey;
   createdAt: string;
   sourceMeta?: {
     sourceType: string;
@@ -559,6 +561,7 @@ type AppState = {
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
     visibility?: "private" | "public" | "shared",
     description?: string,
+    iconKey?: SiteIconKey,
     createdBy?: {
       userId: string;
       name: string;
@@ -581,6 +584,7 @@ type AppState = {
         | "txGainDbi"
         | "rxGainDbi"
         | "cableLossDb"
+        | "iconKey"
         | "visibility"
         | "sharedWith"
       >
@@ -833,6 +837,7 @@ const normalizeSiteLibrary = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =
           typeof entry.cableLossDb === "number" && Number.isFinite(entry.cableLossDb)
             ? entry.cableLossDb
             : STANDARD_SITE_RADIO.cableLossDb,
+        iconKey: isSiteIconKey(entry.iconKey) ? entry.iconKey : undefined,
       })),
   );
 
@@ -959,6 +964,7 @@ const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[])
       txGainDbi: entry.txGainDbi,
       rxGainDbi: entry.rxGainDbi,
       cableLossDb: entry.cableLossDb,
+      iconKey: entry.iconKey,
       libraryEntryId: entry.id,
     };
   });
@@ -1001,6 +1007,7 @@ const ensureSitesBackedByLibrary = (
         txGainDbi: normalizedSite.txGainDbi,
         rxGainDbi: normalizedSite.rxGainDbi,
         cableLossDb: normalizedSite.cableLossDb,
+        iconKey: normalizedSite.iconKey,
         createdAt: new Date().toISOString(),
       };
       nextLibrary.unshift(entry);
@@ -1021,6 +1028,7 @@ const ensureSitesBackedByLibrary = (
       txGainDbi: entry.txGainDbi,
       rxGainDbi: entry.rxGainDbi,
       cableLossDb: entry.cableLossDb,
+      iconKey: entry.iconKey,
       libraryEntryId: entry.id,
     };
   });
@@ -2434,6 +2442,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     sourceMeta,
     visibility = "private",
     description,
+    iconKey,
   ) => {
     const { currentUser } = get();
     if (!currentUser?.id) {
@@ -2466,6 +2475,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       txGainDbi,
       rxGainDbi,
       cableLossDb,
+      iconKey,
       createdAt: nowIso,
       sourceMeta: normalizedMeta,
       ownerUserId: currentUser.id,
@@ -2581,6 +2591,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         txGainDbi: entry.txGainDbi,
         rxGainDbi: entry.rxGainDbi,
         cableLossDb: entry.cableLossDb,
+        iconKey: entry.iconKey,
         libraryEntryId: entry.id,
       };
     });
@@ -3515,6 +3526,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               txGainDbi: updatedSite.txGainDbi,
               rxGainDbi: updatedSite.rxGainDbi,
               cableLossDb: updatedSite.cableLossDb,
+              iconKey: updatedSite.iconKey,
             }
           : entry,
       );
