@@ -85,8 +85,10 @@ export type CoverageState = {
   simulationRunToken: string;
   completedCoverageRunToken: string;
   autoCalculateEnabled: boolean;
+  automaticLockNoticeShown: boolean;
   calculationCycleSource: "auto" | "manual" | null;
   recomputeCoverage: () => void;
+  markAutomaticLockNoticeShown: () => void;
   setAutoCalculateEnabled: (enabled: boolean) => void;
   startManualCalculation: () => void;
   stopCalculation: () => void;
@@ -558,6 +560,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
   simulationRunToken: "",
   completedCoverageRunToken: "",
   autoCalculateEnabled: true,
+  automaticLockNoticeShown: false,
   calculationCycleSource: null,
   recomputeCoverage: () => {
     if (!appStoreBridge) return;
@@ -586,6 +589,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
       simulationSamplesTotal: 0,
     });
   },
+  markAutomaticLockNoticeShown: () => set({ automaticLockNoticeShown: true }),
   setAutoCalculateEnabled: (enabled) => {
     if (!enabled) {
       const hadPendingRun = coverageRecomputeTimer !== null;

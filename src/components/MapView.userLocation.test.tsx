@@ -158,6 +158,7 @@ describe("MapView user location flow", () => {
       simulationRunToken: "",
       completedCoverageRunToken: "",
       autoCalculateEnabled: true,
+      automaticLockNoticeShown: false,
       calculationCycleSource: null,
     });
   });
@@ -191,8 +192,10 @@ describe("MapView user location flow", () => {
   });
 
   it("locks automatic calculation at 4x while preserving manual Start", async () => {
-    useAppStore.setState({ selectedCoverageResolution: "84" });
-    renderMapView({ showInspector: true });
+    const onPublishNotice = vi.fn();
+    renderMapView({ showInspector: true, onPublishNotice });
+
+    act(() => useAppStore.setState({ selectedCoverageResolution: "84" }));
 
     const lockedToggle = await screen.findByRole("button", {
       name: "Automatic calculation unavailable at 100 km or 4x and above",
@@ -200,6 +203,17 @@ describe("MapView user location flow", () => {
     expect(lockedToggle).toBeDisabled();
     expect(lockedToggle).toHaveClass("is-off");
     expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument();
+    expect(onPublishNotice).toHaveBeenCalledWith({
+      id: "automatic-calculation-locked",
+      message: "Auto calculate was turned off for 100 km or 4x and above. Press Start to calculate.",
+      tone: "info",
+      persistent: false,
+    });
+
+    act(() => useAppStore.setState({ selectedCoverageResolution: "24" }));
+    act(() => useAppStore.setState({ selectedOverlayRadiusOption: "100" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument());
+    expect(onPublishNotice).toHaveBeenCalledTimes(1);
   });
 
   it("starts and stops live geolocation from the map control", () => {
