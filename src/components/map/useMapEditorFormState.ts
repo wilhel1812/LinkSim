@@ -9,6 +9,7 @@ import { searchLocations, type GeocodeResult } from "../../lib/geocode";
 import { sampleSrtmElevation } from "../../lib/srtm";
 import { getUiErrorMessage } from "../../lib/uiError";
 import { hasDuplicateSimulationNameForOwner } from "../../lib/simulationNameValidation";
+import { isSiteIconKey, type SiteIconKey } from "../../lib/siteIcons";
 import { useAppStore } from "../../store/appStore";
 import type { CollaboratorDirectoryUser } from "../../lib/cloudUser";
 import type { AccessRole, AccessVisibility } from "../AccessSettingsEditor";
@@ -87,6 +88,7 @@ export function useMapEditorFormState() {
   const [lonError, setLonError] = useState<string | null>(null);
   const [groundDraft, setGroundDraft] = useState(0);
   const [antennaDraft, setAntennaDraft] = useState(2);
+  const [iconDraft, setIconDraft] = useState<"auto" | SiteIconKey>("auto");
   const [txPowerDraft, setTxPowerDraft] = useState(STANDARD_SITE_RADIO.txPowerDbm);
   const [txGainDraft, setTxGainDraft] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [rxGainDraft, setRxGainDraft] = useState(STANDARD_SITE_RADIO.rxGainDbi);
@@ -154,6 +156,7 @@ export function useMapEditorFormState() {
         setLonDraft(seededLon);
         setGroundDraft(0);
         setAntennaDraft(10);
+        setIconDraft("auto");
         setTxPowerDraft(STANDARD_SITE_RADIO.txPowerDbm);
         setTxGainDraft(STANDARD_SITE_RADIO.txGainDbi);
         setRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
@@ -180,6 +183,7 @@ export function useMapEditorFormState() {
         setLonDraft(entryLon);
         setGroundDraft(entryGround);
         setAntennaDraft(entry?.antennaHeightM ?? 2);
+        setIconDraft(isSiteIconKey(entry?.iconKey) ? entry.iconKey : "auto");
         setTxPowerDraft(entry?.txPowerDbm ?? STANDARD_SITE_RADIO.txPowerDbm);
         const nextTxGain = entry?.txGainDbi ?? STANDARD_SITE_RADIO.txGainDbi;
         const nextRxGain = entry?.rxGainDbi ?? STANDARD_SITE_RADIO.rxGainDbi;
@@ -641,6 +645,7 @@ export function useMapEditorFormState() {
           siteSourceMeta,
           normalizedVisibility,
           descriptionDraft.trim() || undefined,
+          iconDraft === "auto" ? undefined : iconDraft,
         );
         if (!createdId) {
           setStatus("Failed creating site. Check the name and try again.");
@@ -663,6 +668,7 @@ export function useMapEditorFormState() {
           txGainDbi: txGainDraft,
           rxGainDbi: rxGainDraft,
           cableLossDb: cableLossDraft,
+          iconKey: iconDraft === "auto" ? undefined : iconDraft,
           visibility: normalizedVisibility,
           sharedWith,
         });
@@ -921,6 +927,7 @@ export function useMapEditorFormState() {
       setIsElevationUserSet(true);
     },
     antennaDraft, setAntennaDraft: (v: number | string) => setAntennaDraft(parseNumber(String(v))),
+    iconDraft, setIconDraft,
     txPowerDraft, setTxPowerDraft: (v: number | string) => setTxPowerDraft(parseNumber(String(v))),
     txGainDraft, setTxGainDraft: (v: number | string) => setTxGainDraft(parseNumber(String(v))),
     rxGainDraft, setRxGainDraft: (v: number | string) => setRxGainDraft(parseNumber(String(v))),

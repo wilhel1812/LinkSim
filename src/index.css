@@ -2350,6 +2350,41 @@ button {
   animation: map-progress-indeterminate 1.2s ease-in-out infinite;
 }
 
+.map-calculation-status {
+  display: grid;
+  gap: 7px;
+}
+
+.map-calculation-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+}
+
+.map-calculation-control.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 7px;
+  font-size: 0.72rem;
+  box-shadow: none;
+}
+
+.map-calculation-toggle.is-on,
+.map-calculation-action.is-start {
+  color: var(--success);
+}
+
+.map-calculation-toggle.is-off {
+  color: var(--muted);
+}
+
+.map-calculation-action.is-stop {
+  color: var(--danger);
+}
+
 @keyframes map-progress-indeterminate {
   0% {
     transform: translateX(-110%);
@@ -2662,6 +2697,10 @@ button {
   user-select: none;
   transition: opacity 0.12s ease, filter 0.12s ease, transform 0.12s ease;
   isolation: isolate;
+}
+
+.map-site-icon {
+  flex: 0 0 auto;
 }
 
 .map-site-surface:not(.is-muted) {
@@ -3093,6 +3132,38 @@ button {
 
 .ui-settings-popover-row + .ui-settings-popover-row {
   border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.site-icon-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  justify-self: start;
+}
+
+.site-icon-static-value {
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-icon-picker-popover {
+  width: min(236px, calc(100vw - 24px));
+  padding: 12px;
+  z-index: 12050;
+}
+
+.site-icon-picker-options {
+  display: grid;
+  grid-template-columns: repeat(5, 34px);
+  justify-content: center;
+  gap: 6px;
+}
+
+.site-icon-picker-options .btn-icon.is-selected {
+  background: var(--selection-soft);
+  color: var(--text);
+  box-shadow: 0 0 0 2px var(--selection-soft);
 }
 
 .beam-visualizer-popover {

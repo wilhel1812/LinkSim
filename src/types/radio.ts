@@ -13,6 +13,7 @@ export type Site = {
   txGainDbi: number;
   rxGainDbi: number;
   cableLossDb: number;
+  iconKey?: import("../lib/siteIcons").SiteIconKey;
   libraryEntryId?: string;
 };
 

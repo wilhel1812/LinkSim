@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import { History, Loader2, Pencil, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, History, Loader2, Pencil, RefreshCw, Search } from "lucide-react";
 import {
   fetchResourceChanges,
   fetchUserById,
@@ -20,6 +20,13 @@ import { InlineCloseIconButton } from "../InlineCloseIconButton";
 import { SiteBeamVisualizer } from "../SiteBeamVisualizer";
 import { AvatarBadge } from "../AvatarBadge";
 import { ModalOverlay } from "../ModalOverlay";
+import { FloatingPopover } from "../ui/FloatingPopover";
+import {
+  getSiteIconOption,
+  resolveSiteIconKey,
+  SITE_ICON_OPTIONS,
+  suggestSiteIconKey,
+} from "../../lib/siteIcons";
 
 // ─── Positioning ─────────────────────────────────────────────────────────────
 
@@ -215,6 +222,16 @@ function SiteEditorCard({
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
   const title = isNew ? "New Site" : (mapEditor?.label ?? form.nameDraft);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const iconPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const suggestedIconKey = suggestSiteIconKey({ name: form.nameDraft, antennaHeightM: form.antennaDraft });
+  const resolvedIconKey = resolveSiteIconKey({
+    name: form.nameDraft,
+    antennaHeightM: form.antennaDraft,
+    iconKey: form.iconDraft === "auto" ? undefined : form.iconDraft,
+  });
+  const resolvedIconOption = getSiteIconOption(resolvedIconKey);
+  const ResolvedIcon = resolvedIconOption.Icon;
 
   return (
     <>
@@ -235,6 +252,12 @@ function SiteEditorCard({
           <StaticField label="Latitude" value={form.latDraft} />
           <StaticField label="Longitude" value={form.lonDraft} />
           <StaticField label="Ground elev (m)" value={form.groundDraft} />
+          <div className="field-grid">
+            <span>Icon</span>
+            <span className="field-help static-field-value site-icon-static-value">
+              <ResolvedIcon aria-label={resolvedIconOption.label} role="img" size={16} strokeWidth={1.8} />
+            </span>
+          </div>
           <div className="beam-visualizer-field-group">
             <StaticField label="Antenna (m)" value={form.antennaDraft} />
             <StaticField label="Tx power (dBm)" value={form.txPowerDraft} />
@@ -270,6 +293,56 @@ function SiteEditorCard({
             value={form.nameDraft}
           />
         </label>
+
+        <div className="field-grid">
+          <span>Icon</span>
+          <ActionButton
+            aria-label={resolvedIconOption.label}
+            aria-expanded={iconPickerOpen}
+            aria-haspopup="true"
+            className="site-icon-picker-trigger"
+            onClick={() => setIconPickerOpen((open) => !open)}
+            ref={iconPickerTriggerRef}
+            type="button"
+          >
+            <ResolvedIcon aria-hidden="true" size={16} strokeWidth={1.8} />
+            <ChevronDown aria-hidden="true" size={14} />
+          </ActionButton>
+          <FloatingPopover
+            className="site-icon-picker-popover"
+            estimatedHeight={250}
+            estimatedWidth={280}
+            onClose={() => setIconPickerOpen(false)}
+            open={iconPickerOpen}
+            triggerRef={iconPickerTriggerRef}
+          >
+            <div aria-label="Site icon options" className="site-icon-picker-options" role="group">
+              {[
+                { ...getSiteIconOption(suggestedIconKey), key: "auto" as const },
+                ...SITE_ICON_OPTIONS,
+              ].map((option) => {
+                const OptionIcon = option.Icon;
+                return (
+                  <ActionButton
+                    aria-label={option.label}
+                    aria-pressed={form.iconDraft === option.key}
+                    className={form.iconDraft === option.key ? "is-selected" : undefined}
+                    key={option.key}
+                    onClick={() => {
+                      form.setIconDraft(option.key);
+                      setIconPickerOpen(false);
+                    }}
+                    size="icon"
+                    title={option.label}
+                    type="button"
+                  >
+                    <OptionIcon aria-hidden="true" size={16} strokeWidth={1.8} />
+                  </ActionButton>
+                );
+              })}
+            </div>
+          </FloatingPopover>
+        </div>
 
         <label className="field-grid">
           <span>Description</span>

@@ -111,6 +111,7 @@ const position = (latitude: number, longitude: number, accuracy: number, timesta
 });
 
 import { useAppStore } from "../store/appStore";
+import { useCoverageStore } from "../store/coverageStore";
 import { MapView } from "./MapView";
 
 const renderMapView = (props: Partial<React.ComponentProps<typeof MapView>> = {}) =>
@@ -146,8 +147,73 @@ describe("MapView user location flow", () => {
       selectedSiteId: "",
       selectedSiteIds: [],
       selectedLinkId: "",
+      selectedCoverageResolution: "24",
+      selectedOverlayRadiusOption: "20",
       mapViewport: { center: { lat: 59.9, lon: 10.75 }, zoom: 8 },
     });
+    useCoverageStore.setState({
+      coverageSamples: [],
+      isSimulationRecomputing: false,
+      simulationProgress: 0,
+      simulationRunToken: "",
+      completedCoverageRunToken: "",
+      autoCalculateEnabled: true,
+      automaticLockNoticeShown: false,
+      calculationCycleSource: null,
+    });
+  });
+
+  it("switches between automatic, manual start, and manual stop controls", () => {
+    renderMapView({ showInspector: true });
+
+    const autoToggle = screen.getByRole("button", { name: "Turn off automatic calculation" });
+    expect(autoToggle).toHaveClass("is-on");
+    expect(within(autoToggle).getByText("Auto calculate")).toBeInTheDocument();
+    expect(autoToggle.querySelector(".lucide-toggle-right")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start calculation" })).not.toBeInTheDocument();
+
+    fireEvent.click(autoToggle);
+
+    const startButton = screen.getByRole("button", { name: "Start calculation" });
+    expect(startButton).toHaveClass("is-start");
+    expect(within(startButton).getByText("Start")).toBeInTheDocument();
+    expect(startButton.querySelector(".lucide-play")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Turn on automatic calculation" }).querySelector(".lucide-toggle-left")).toBeInTheDocument();
+
+    fireEvent.click(startButton);
+    const stopButton = screen.getByRole("button", { name: "Stop calculation" });
+    expect(stopButton).toHaveClass("is-stop");
+    expect(within(stopButton).getByText("Stop")).toBeInTheDocument();
+    expect(stopButton.querySelector(".lucide-square")).toBeInTheDocument();
+
+    fireEvent.click(stopButton);
+    expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument();
+    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
+  });
+
+  it("locks automatic calculation at 4x while preserving manual Start", async () => {
+    const onPublishNotice = vi.fn();
+    renderMapView({ showInspector: true, onPublishNotice });
+
+    act(() => useAppStore.setState({ selectedCoverageResolution: "84" }));
+
+    const lockedToggle = await screen.findByRole("button", {
+      name: "Automatic calculation unavailable at 100 km or 4x and above",
+    });
+    expect(lockedToggle).toBeDisabled();
+    expect(lockedToggle).toHaveClass("is-off");
+    expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument();
+    expect(onPublishNotice).toHaveBeenCalledWith({
+      id: "automatic-calculation-locked",
+      message: "Auto calculate was turned off for 100 km or 4x and above. Press Start to calculate.",
+      tone: "info",
+      persistent: false,
+    });
+
+    act(() => useAppStore.setState({ selectedCoverageResolution: "24" }));
+    act(() => useAppStore.setState({ selectedOverlayRadiusOption: "100" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument());
+    expect(onPublishNotice).toHaveBeenCalledTimes(1);
   });
 
   it("starts and stops live geolocation from the map control", () => {
@@ -166,6 +232,32 @@ describe("MapView user location flow", () => {
 
     expect(clearWatch).toHaveBeenCalledWith(42);
     expect(screen.queryByRole("button", { name: /User location/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the resolved Site icon inside the accessible map marker", () => {
+    useAppStore.setState({
+      mapOverlayMode: "none",
+      sites: [
+        {
+          id: "site-ship",
+          name: "Harbour node",
+          position: { lat: 59.9, lon: 10.75 },
+          groundElevationM: 2,
+          antennaHeightM: 2,
+          txPowerDbm: 22,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          iconKey: "ship",
+        },
+      ],
+    });
+
+    renderMapView();
+
+    const marker = screen.getByRole("button", { name: "Harbour node" });
+    expect(marker.querySelector(".lucide-ship")).toBeInTheDocument();
+    expect(marker.querySelector(".lucide-ship")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("centers on the first location update and stops following after user pan", () => {
