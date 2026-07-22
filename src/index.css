@@ -2369,6 +2369,7 @@ button {
   height: 28px;
   padding: 0 7px;
   font-size: 0.72rem;
+  box-shadow: none;
 }
 
 .map-calculation-toggle.is-on,
