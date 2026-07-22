@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Egg, Fullscreen, Layers, Locate, LocateFixed, Maximize2, Minimize2, Rabbit, RefreshCw, SquareStack, ZoomIn, ZoomOut } from "lucide-react";
+import { Egg, Fullscreen, Layers, Locate, LocateFixed, Maximize2, Minimize2, Play, Rabbit, RefreshCw, Square, SquareStack, ToggleLeft, ToggleRight, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import { FloatingPopover } from "./ui/FloatingPopover";
 import { MapControlButton } from "./ui/MapControlButton";
@@ -37,7 +37,7 @@ import {
 } from "../lib/profileDraftEvent";
 import { subscribePanoramaInteraction, type PanoramaFocusPoint, type PanoramaInteractionEvent } from "../lib/panoramaEvents";
 import { useAppStore } from "../store/appStore";
-import { useCoverageStore } from "../store/coverageStore";
+import { isAutomaticCalculationLocked, useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
 import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
@@ -735,6 +735,13 @@ export function MapView({
   const simulationProgressMode = useCoverageStore((state) => state.simulationProgressMode);
   const simulationStepLabel = useCoverageStore((state) => state.simulationStepLabel);
   const simulationRunToken = useCoverageStore((state) => state.simulationRunToken);
+  const completedCoverageRunToken = useCoverageStore((state) => state.completedCoverageRunToken);
+  const autoCalculateEnabled = useCoverageStore((state) => state.autoCalculateEnabled);
+  const calculationCycleSource = useCoverageStore((state) => state.calculationCycleSource);
+  const setAutoCalculateEnabled = useCoverageStore((state) => state.setAutoCalculateEnabled);
+  const startManualCalculation = useCoverageStore((state) => state.startManualCalculation);
+  const stopCalculation = useCoverageStore((state) => state.stopCalculation);
+  const finishCalculationCycle = useCoverageStore((state) => state.finishCalculationCycle);
   const isTerrainFetching = useAppStore((state) => state.isTerrainFetching);
   const isTerrainRecommending = useAppStore((state) => state.isTerrainRecommending);
   const basemapStyleId = useAppStore((state) => state.basemapStyleId);
@@ -1154,6 +1161,17 @@ export function MapView({
     selectionCount,
     option: selectedOverlayRadiusOption,
   });
+  const automaticCalculationLocked = isAutomaticCalculationLocked(
+    selectedCoverageResolution,
+    normalizedOverlayRadiusOption,
+  );
+  const calculationWorkAllowed =
+    (autoCalculateEnabled && !automaticCalculationLocked) || calculationCycleSource === "manual";
+  useEffect(() => {
+    if (automaticCalculationLocked && autoCalculateEnabled) {
+      setAutoCalculateEnabled(false);
+    }
+  }, [automaticCalculationLocked, autoCalculateEnabled, setAutoCalculateEnabled]);
   const targetRadiusKm = useMemo(
     () => resolveTargetOverlayRadiusKm(selectionCount, normalizedOverlayRadiusOption),
     [selectionCount, normalizedOverlayRadiusOption],
@@ -1215,6 +1233,10 @@ export function MapView({
   const targetRadiusTerrainSignature = `${targetRadiusKm}|${requiredTargetRadiusTileKeys.join(",")}`;
   const targetRadiusFetchAttemptRef = useRef("");
   useEffect(() => {
+    if (!calculationWorkAllowed) {
+      targetRadiusFetchAttemptRef.current = "";
+      return;
+    }
     if (coverageVizMode === "none") {
       targetRadiusFetchAttemptRef.current = "";
       return;
@@ -1237,6 +1259,7 @@ export function MapView({
     targetRadiusTerrainSignature,
     recommendAndFetchTerrainForCurrentArea,
     targetRadiusKm,
+    calculationWorkAllowed,
   ]);
   const overlayMaskArea = useMemo(
     () => buildBufferedSelectionArea(analysisTargetSites, overlayRadiusKm),
@@ -1452,6 +1475,8 @@ export function MapView({
   const coverageOverlayRunCounterRef = useRef(0);
   const terrainOverlayRunCounterRef = useRef(0);
   const latestCoverageRunTokenRef = useRef("");
+  const lastCoverageOverlayCompletionRef = useRef("");
+  const lastTerrainOverlayCompletionRef = useRef("");
   const coverageOverlayCacheRef = useRef(
     createLruCache<OverlayRaster & { minDbm?: number; maxDbm?: number }>(4),
   );
@@ -1621,6 +1646,22 @@ export function MapView({
       selectedSiteRadioDigest,
       meshExtensionFrequencyMHz,
     ].join("|");
+    const hasFreshCoverageCompletion =
+      calculationCycleSource !== null &&
+      completedCoverageRunToken !== "" &&
+      lastCoverageOverlayCompletionRef.current !== completedCoverageRunToken;
+    if (!calculationWorkAllowed && !hasFreshCoverageCompletion) {
+      const snapshot = scheduler.snapshot();
+      scheduler.clearQueue();
+      if (snapshot.activeSignature && snapshot.activeSignature !== signature) {
+        scheduler.cancelActive();
+        setOverlayPipelineProgress("coverage", null);
+      }
+      return;
+    }
+    if (hasFreshCoverageCompletion) {
+      lastCoverageOverlayCompletionRef.current = completedCoverageRunToken;
+    }
     const cached = coverageOverlayCacheRef.current.get(signature);
     if (cached) {
       scheduler.clearQueue();
@@ -1851,6 +1892,9 @@ export function MapView({
     beginOverlayJob,
     setOverlayPipelineProgress,
     logOverlaySchedulerEvent,
+    calculationWorkAllowed,
+    calculationCycleSource,
+    completedCoverageRunToken,
   ]);
   const signalRange = useMemo(() => {
     if (!samplesForOverlay.length) return { min: -125, max: -62 };
@@ -1935,6 +1979,22 @@ export function MapView({
       selectedSiteDigest,
       overlayRadiusKm,
     ].join("|");
+    const hasFreshCoverageCompletion =
+      calculationCycleSource !== null &&
+      completedCoverageRunToken !== "" &&
+      lastTerrainOverlayCompletionRef.current !== completedCoverageRunToken;
+    if (!calculationWorkAllowed && !hasFreshCoverageCompletion) {
+      const snapshot = scheduler.snapshot();
+      scheduler.clearQueue();
+      if (snapshot.activeSignature && snapshot.activeSignature !== signature) {
+        scheduler.cancelActive();
+        setOverlayPipelineProgress("terrain", null);
+      }
+      return;
+    }
+    if (hasFreshCoverageCompletion) {
+      lastTerrainOverlayCompletionRef.current = completedCoverageRunToken;
+    }
     const cached = terrainOverlayCacheRef.current.get(signature);
     if (cached) {
       scheduler.clearQueue();
@@ -2079,6 +2139,9 @@ export function MapView({
     beginOverlayJob,
     setOverlayPipelineProgress,
     logOverlaySchedulerEvent,
+    calculationWorkAllowed,
+    calculationCycleSource,
+    completedCoverageRunToken,
   ]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);
@@ -2157,6 +2220,45 @@ export function MapView({
       terrainProgressTilesTotal,
     ],
   );
+  const calculationControlRunning = calculationCycleSource !== null || isSimulationRecomputing;
+  const handleStopCalculation = useCallback(() => {
+    stopCalculation();
+    coverageOverlaySchedulerRef.current?.clearQueue();
+    coverageOverlaySchedulerRef.current?.cancelActive();
+    terrainOverlaySchedulerRef.current?.clearQueue();
+    terrainOverlaySchedulerRef.current?.cancelActive();
+    setOverlayPipelineProgress("coverage", null);
+    setOverlayPipelineProgress("terrain", null);
+  }, [setOverlayPipelineProgress, stopCalculation]);
+  useEffect(() => {
+    if (!calculationCycleSource || isSimulationRecomputing || overlayJobsInFlight > 0 || isTerrainFetching || isTerrainRecommending) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      const coverageState = useCoverageStore.getState();
+      const appState = useAppStore.getState();
+      const coverageScheduler = coverageOverlaySchedulerRef.current?.snapshot();
+      const terrainScheduler = terrainOverlaySchedulerRef.current?.snapshot();
+      if (
+        coverageState.isSimulationRecomputing ||
+        appState.isTerrainFetching ||
+        appState.isTerrainRecommending ||
+        coverageScheduler?.running ||
+        coverageScheduler?.queuedSignature ||
+        terrainScheduler?.running ||
+        terrainScheduler?.queuedSignature
+      ) return;
+      finishCalculationCycle();
+    }, 240);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    calculationCycleSource,
+    finishCalculationCycle,
+    isSimulationRecomputing,
+    isTerrainFetching,
+    isTerrainRecommending,
+    overlayJobsInFlight,
+  ]);
   const showLocalTerrainDiagnostics =
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
   useEffect(() => {
@@ -2847,20 +2949,66 @@ export function MapView({
           {(inspectorPanelToggle != null || inspectorActions != null) ? (
             <PanelToolbar title={inspectorPanelToggle} actions={inspectorActions} />
           ) : null}
-          {simulationBusyIndicator ? (
-            <div className="map-inspector-section">
-              <p className="map-inspector-line">
-                {simulationBusyIndicator.label || "Working in background..."}
-              </p>
-              <div className="map-progress-track">
-                {simulationBusyIndicator.progressMode === "determinate" ? (
-                  <div className="map-progress-fill" style={{ width: `${simulationBusyIndicator.progressPercent ?? 0}%` }} />
+          <div className="map-inspector-section map-calculation-status">
+            {simulationBusyIndicator ? (
+              <>
+                <p className="map-inspector-line">
+                  {simulationBusyIndicator.label || "Working in background..."}
+                </p>
+                <div className="map-progress-track">
+                  {simulationBusyIndicator.progressMode === "determinate" ? (
+                    <div className="map-progress-fill" style={{ width: `${simulationBusyIndicator.progressPercent ?? 0}%` }} />
+                  ) : (
+                    <div className="map-progress-fill map-progress-fill-indeterminate" />
+                  )}
+                </div>
+              </>
+            ) : null}
+            <div className="map-calculation-controls">
+              <ActionButton
+                aria-label={
+                  automaticCalculationLocked
+                    ? "Automatic calculation unavailable at 100 km or 4x and above"
+                    : autoCalculateEnabled
+                      ? "Turn off automatic calculation"
+                      : "Turn on automatic calculation"
+                }
+                aria-pressed={autoCalculateEnabled}
+                className={`map-calculation-control map-calculation-toggle ${autoCalculateEnabled ? "is-on" : "is-off"}`}
+                disabled={automaticCalculationLocked}
+                onClick={() => setAutoCalculateEnabled(!autoCalculateEnabled)}
+                size="icon"
+                title={
+                  automaticCalculationLocked
+                    ? "Automatic calculation unavailable at 100 km or 4x and above"
+                    : autoCalculateEnabled
+                      ? "Turn off automatic calculation"
+                      : "Turn on automatic calculation"
+                }
+              >
+                {autoCalculateEnabled ? (
+                  <ToggleRight aria-hidden="true" size={20} strokeWidth={1.8} />
                 ) : (
-                  <div className="map-progress-fill map-progress-fill-indeterminate" />
+                  <ToggleLeft aria-hidden="true" size={20} strokeWidth={1.8} />
                 )}
-              </div>
+              </ActionButton>
+              {!autoCalculateEnabled ? (
+                <ActionButton
+                  aria-label={calculationControlRunning ? "Stop calculation" : "Start calculation"}
+                  className={`map-calculation-control map-calculation-action ${calculationControlRunning ? "is-stop" : "is-start"}`}
+                  onClick={calculationControlRunning ? handleStopCalculation : startManualCalculation}
+                  size="icon"
+                  title={calculationControlRunning ? "Stop calculation" : "Start calculation"}
+                >
+                  {calculationControlRunning ? (
+                    <Square aria-hidden="true" size={15} strokeWidth={2} />
+                  ) : (
+                    <Play aria-hidden="true" size={17} strokeWidth={2} />
+                  )}
+                </ActionButton>
+              ) : null}
             </div>
-          ) : null}
+          </div>
           {showHolidayThemeNotice && activeHolidayTheme ? (
             <div className="map-inspector-section map-holiday-note" role="status">
               <p className="map-inspector-primary map-holiday-note-title">
