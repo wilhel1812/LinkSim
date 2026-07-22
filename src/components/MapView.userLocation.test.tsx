@@ -167,6 +167,7 @@ describe("MapView user location flow", () => {
 
     const autoToggle = screen.getByRole("button", { name: "Turn off automatic calculation" });
     expect(autoToggle).toHaveClass("is-on");
+    expect(within(autoToggle).getByText("Auto calculate")).toBeInTheDocument();
     expect(autoToggle.querySelector(".lucide-toggle-right")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start calculation" })).not.toBeInTheDocument();
 
@@ -174,12 +175,14 @@ describe("MapView user location flow", () => {
 
     const startButton = screen.getByRole("button", { name: "Start calculation" });
     expect(startButton).toHaveClass("is-start");
+    expect(within(startButton).getByText("Start")).toBeInTheDocument();
     expect(startButton.querySelector(".lucide-play")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Turn on automatic calculation" }).querySelector(".lucide-toggle-left")).toBeInTheDocument();
 
     fireEvent.click(startButton);
     const stopButton = screen.getByRole("button", { name: "Stop calculation" });
     expect(stopButton).toHaveClass("is-stop");
+    expect(within(stopButton).getByText("Stop")).toBeInTheDocument();
     expect(stopButton.querySelector(".lucide-square")).toBeInTheDocument();
 
     fireEvent.click(stopButton);
