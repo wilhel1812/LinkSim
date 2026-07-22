@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import { buildCoverageAsync, computeCoverageGridDimensions } from "../lib/coverage";
+import {
+  buildCoverageAsync,
+  computeCoverageGridDimensions,
+  CoverageBuildCancelledError,
+} from "../lib/coverage";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import {
   deriveDynamicPropagationEnvironment,
@@ -79,7 +83,25 @@ export type CoverageState = {
   simulationSamplesDone: number;
   simulationSamplesTotal: number;
   simulationRunToken: string;
+  completedCoverageRunToken: string;
+  autoCalculateEnabled: boolean;
+  automaticLockNoticeShown: boolean;
+  calculationCycleSource: "auto" | "manual" | null;
   recomputeCoverage: () => void;
+  markAutomaticLockNoticeShown: () => void;
+  setAutoCalculateEnabled: (enabled: boolean) => void;
+  startManualCalculation: () => void;
+  stopCalculation: () => void;
+  finishCalculationCycle: () => void;
+};
+
+export const isAutomaticCalculationLocked = (
+  resolution: unknown,
+  radiusOption: unknown,
+): boolean => {
+  const gridSize = Number(resolution);
+  const radiusKm = Number(radiusOption);
+  return (Number.isFinite(gridSize) && gridSize >= 84) || (Number.isFinite(radiusKm) && radiusKm >= 100);
 };
 
 type NetworkLike = {
@@ -249,7 +271,7 @@ const queueCoverageRunFlush = (delay = COVERAGE_RECOMPUTE_DEBOUNCE_MS): void => 
 };
 
 const shouldSkipStaleCommit = (runSignature: string): boolean => {
-  if (!coverageRerunQueued || !appStoreBridge) return false;
+  if (!appStoreBridge) return false;
   const latestState = appStoreBridge.getState();
   const latestInputs = readCoverageInputs(latestState);
   const latestSignature = coverageInputSignature(latestInputs);
@@ -275,6 +297,7 @@ const finalizeRunComplete = (
     simulationStepLabel: "",
     simulationSamplesDone: 0,
     simulationSamplesTotal: 0,
+    completedCoverageRunToken: runId,
   });
   window.setTimeout(() => {
     if (get().simulationRunToken === runId) {
@@ -419,6 +442,7 @@ const runCoverageComputation = async (
             set({ simulationProgress: next });
           }
         },
+        shouldCancel: () => get().simulationRunToken !== runId,
         terrainCacheKey: `${inputs.effectiveCoverageResolution}|${inputs.selectedNetworkId}|${inputs.propagationModel}|${inputs.terrainLoadEpoch}`,
       },
     );
@@ -431,12 +455,15 @@ const runCoverageComputation = async (
     }
 
     if (shouldSkipStaleCommit(runSignature)) {
+      const hasQueuedRerun = coverageRerunQueued;
       set({
+        isSimulationRecomputing: hasQueuedRerun,
         simulationProgress: 0,
         simulationProgressMode: "indeterminate",
-        simulationStepLabel: "Preparing simulation bounds...",
+        simulationStepLabel: hasQueuedRerun ? "Preparing simulation bounds..." : "",
         simulationSamplesDone: 0,
         simulationSamplesTotal: 0,
+        simulationRunToken: hasQueuedRerun ? runId : "",
       });
       markCancelled("stale-signature-superseded");
       return;
@@ -467,6 +494,10 @@ const runCoverageComputation = async (
     lastAppliedCoverageSignature = runSignature;
     warnLongTask("coverage-total-run", runSignature, nowMs() - startedAt);
   } catch (error) {
+    if (error instanceof CoverageBuildCancelledError) {
+      markCancelled("coverage-build-cancelled");
+      return;
+    }
     console.error("Coverage recompute failed", error);
     if (get().simulationRunToken === runId) {
       set({
@@ -497,6 +528,15 @@ const flushCoverageRunQueue = async (): Promise<void> => {
 
   if (runSignature === lastAppliedCoverageSignature) {
     coverageRerunQueued = false;
+    useCoverageStore.setState({
+      isSimulationRecomputing: false,
+      simulationProgress: 0,
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "",
+      simulationSamplesDone: 0,
+      simulationSamplesTotal: 0,
+      simulationRunToken: "",
+    });
     return;
   }
 
@@ -518,12 +558,73 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
   simulationSamplesDone: 0,
   simulationSamplesTotal: 0,
   simulationRunToken: "",
+  completedCoverageRunToken: "",
+  autoCalculateEnabled: true,
+  automaticLockNoticeShown: false,
+  calculationCycleSource: null,
   recomputeCoverage: () => {
     if (!appStoreBridge) return;
+    const appState = appStoreBridge.getState();
+    const locked = isAutomaticCalculationLocked(
+      appState.selectedCoverageResolution,
+      appState.selectedOverlayRadiusOption,
+    );
+    const state = get();
+    if (locked && state.autoCalculateEnabled) {
+      set({ autoCalculateEnabled: false });
+    }
+    const manualRun = state.calculationCycleSource === "manual";
+    if (!manualRun && (!state.autoCalculateEnabled || locked)) return;
     coverageRerunQueued = true;
     queueCoverageRunFlush(COVERAGE_RECOMPUTE_DEBOUNCE_MS);
     if (coverageRunInFlight) return;
     if (get().isSimulationRecomputing) return;
+    set({
+      calculationCycleSource: manualRun ? "manual" : "auto",
+      isSimulationRecomputing: true,
+      simulationProgress: 0,
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "Preparing simulation bounds...",
+      simulationSamplesDone: 0,
+      simulationSamplesTotal: 0,
+    });
+  },
+  markAutomaticLockNoticeShown: () => set({ automaticLockNoticeShown: true }),
+  setAutoCalculateEnabled: (enabled) => {
+    if (!enabled) {
+      const hadPendingRun = coverageRecomputeTimer !== null;
+      if (coverageRecomputeTimer !== null) {
+        window.clearTimeout(coverageRecomputeTimer);
+        coverageRecomputeTimer = null;
+      }
+      coverageRerunQueued = false;
+      set({
+        autoCalculateEnabled: false,
+        ...(hadPendingRun && !coverageRunInFlight
+          ? {
+              calculationCycleSource: null,
+              isSimulationRecomputing: false,
+              simulationProgress: 0,
+              simulationStepLabel: "",
+            }
+          : {}),
+      });
+      return;
+    }
+    if (!appStoreBridge) return;
+    const appState = appStoreBridge.getState();
+    if (isAutomaticCalculationLocked(appState.selectedCoverageResolution, appState.selectedOverlayRadiusOption)) {
+      set({ autoCalculateEnabled: false });
+      return;
+    }
+    set({ autoCalculateEnabled: true, calculationCycleSource: "auto" });
+    get().recomputeCoverage();
+  },
+  startManualCalculation: () => {
+    set({ calculationCycleSource: "manual" });
+    coverageRerunQueued = true;
+    queueCoverageRunFlush(COVERAGE_RECOMPUTE_DEBOUNCE_MS);
+    if (coverageRunInFlight || get().isSimulationRecomputing) return;
     set({
       isSimulationRecomputing: true,
       simulationProgress: 0,
@@ -533,4 +634,22 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
       simulationSamplesTotal: 0,
     });
   },
+  stopCalculation: () => {
+    if (coverageRecomputeTimer !== null) {
+      window.clearTimeout(coverageRecomputeTimer);
+      coverageRecomputeTimer = null;
+    }
+    coverageRerunQueued = false;
+    set({
+      calculationCycleSource: null,
+      isSimulationRecomputing: false,
+      simulationProgress: 0,
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "",
+      simulationSamplesDone: 0,
+      simulationSamplesTotal: 0,
+      simulationRunToken: "",
+    });
+  },
+  finishCalculationCycle: () => set({ calculationCycleSource: null }),
 }));

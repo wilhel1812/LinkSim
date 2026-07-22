@@ -3,7 +3,7 @@ import { FloatingPopover } from "./ui/FloatingPopover";
 import { MapControlButton } from "./ui/MapControlButton";
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { StateDot } from "./StateDot";
-import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, RadioTower, Settings, Tags } from "lucide-react";
+import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountain, MountainSnow, Settings, Tags } from "lucide-react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
@@ -34,6 +34,7 @@ import { useAppStore } from "../store/appStore";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { UiSlider } from "./UiSlider";
 import { interpolateHeatmapColor } from "../themes/heatmapColors";
+import { getSiteIconOption, resolveSiteIconKey } from "../lib/siteIcons";
 
 const M = { t: 22, r: 20, b: 32, l: 46 };
 const LABEL_RAIL_HEIGHT = 34;
@@ -280,6 +281,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         groundElevationM: site.groundElevationM,
         antennaHeightM: site.antennaHeightM,
         rxGainDbi: site.rxGainDbi,
+        iconKey: resolveSiteIconKey(site),
       }));
 
     const libraryById = new Set(simulation.map((entry) => entry.id.replace("sim:", "")));
@@ -294,6 +296,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             groundElevationM: entry.groundElevationM,
             antennaHeightM: entry.antennaHeightM,
             rxGainDbi: entry.rxGainDbi,
+            iconKey: resolveSiteIconKey(entry),
           }))
       : [];
 
@@ -306,6 +309,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
           groundElevationM: node.altitudeM ?? 0,
           antennaHeightM: 2,
           rxGainDbi: STANDARD_SITE_RADIO.rxGainDbi,
+          iconKey: "antenna" as const,
         }))
       : [];
 
@@ -746,6 +750,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       distanceKm: entry.node.distanceKm,
       priorityBucket: 0,
       state: entry.node.state,
+      iconKey: entry.node.iconKey,
     }));
     const visibleLabels = showLabels
       ? resolveVisiblePanoramaLabels({
@@ -1530,7 +1535,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
                 const isPoi = label.source === "poi";
                 const elevM = label.elevationM ?? null;
                 const IconEl = isPoi
-                  ? RadioTower
+                  ? getSiteIconOption(label.iconKey ?? "antenna").Icon
                   : elevM !== null && elevM >= 1000
                     ? MountainSnow
                     : Mountain;

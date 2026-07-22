@@ -374,6 +374,8 @@ describe("MapEditorPanel", () => {
     expect(screen.queryByDisplayValue("Alpha Site")).not.toBeInTheDocument();
     expect(screen.getByText("60.1")).toBeInTheDocument();
     expect(screen.getByLabelText("Description")).toHaveTextContent("");
+    expect(screen.getByRole("img", { name: "Radio Tower" })).toBeInTheDocument();
+    expect(screen.queryByText(/Radio tower|Auto/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Save Site" }),
     ).not.toBeInTheDocument();
@@ -717,6 +719,51 @@ describe("MapEditorPanel", () => {
     expect(useAppStore.getState().mapEditor).not.toBeNull();
   });
 
+  it("persists a manually selected Site icon", async () => {
+    const addSiteLibraryEntry = vi.fn(() => "site-created");
+    useAppStore.setState({
+      addSiteLibraryEntry,
+      mapEditor: {
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect,
+        siteSeed: { lat: 60.3, lon: 10.4, insertIntoSimulation: false },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Harbour node");
+    const trigger = screen.getByRole("button", { name: "Radio Tower" });
+    expect(trigger).toHaveTextContent("");
+    await userEvent.click(trigger);
+
+    const shipOption = await screen.findByRole("button", { name: "Ship" });
+    expect(shipOption).toHaveAttribute("title", "Ship");
+    expect(shipOption).toHaveClass("btn-icon");
+    expect(screen.queryByText("Ship")).not.toBeInTheDocument();
+    await userEvent.click(shipOption);
+    await userEvent.click(screen.getByRole("button", { name: "Create Site" }));
+
+    expect(addSiteLibraryEntry).toHaveBeenCalledWith(
+      "Harbour node",
+      60.3,
+      10.4,
+      0,
+      10,
+      22,
+      2,
+      2,
+      1,
+      undefined,
+      "private",
+      undefined,
+      "ship",
+    );
+  });
+
   it("rejects pasted latitude outside the valid range without moving the site draft", async () => {
     const addSiteLibraryEntry = vi.fn(() => "site-created");
     const loadTerrainForCoordinate = vi.fn(async () => undefined);
@@ -830,6 +877,7 @@ describe("MapEditorPanel", () => {
       1,
       undefined,
       "private",
+      undefined,
       undefined,
     );
     expect(useAppStore.getState().mapEditor).toBeNull();

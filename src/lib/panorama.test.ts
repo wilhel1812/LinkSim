@@ -67,6 +67,7 @@ describe("panorama", () => {
         {
           id: "n1",
           name: "N1",
+          iconKey: "mountain",
           lat: 59.95,
           lon: 10.8,
           groundElevationM: 140,
@@ -80,6 +81,7 @@ describe("panorama", () => {
     expect(result.rays.length).toBe(72);
     expect(result.radiusPolicyKm).toBe(50);
     expect(result.nodes.length).toBe(1);
+    expect(result.nodes[0].iconKey).toBe("mountain");
     expect(result.nodes[0].state).toMatch(/pass_|fail_/);
     expect(result.maxAngleDeg).toBeGreaterThan(result.minAngleDeg);
   });

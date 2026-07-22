@@ -659,6 +659,7 @@ describe("appStore simulation copy", () => {
           txGainDbi: 3,
           rxGainDbi: 3,
           cableLossDb: 1,
+          iconKey: "ship",
         },
       ],
       links: [
@@ -692,6 +693,7 @@ describe("appStore simulation copy", () => {
     });
     expect(created?.snapshot.sites).toHaveLength(2);
     expect(created?.snapshot.sites.map((site) => site.name)).toEqual(["Site Alpha", "Site Beta"]);
+    expect(created?.snapshot.sites[1]?.iconKey).toBe("ship");
     expect(created?.snapshot.links).toHaveLength(1);
     expect(created?.snapshot.links[0]).toMatchObject({
       fromSiteId: "site-alpha",
@@ -700,6 +702,7 @@ describe("appStore simulation copy", () => {
     });
     expect(useAppStore.getState().siteLibrary).toHaveLength(2);
     expect(useAppStore.getState().siteLibrary.map((entry) => entry.name)).toEqual(["Site Beta", "Site Alpha"]);
+    expect(useAppStore.getState().siteLibrary.find((entry) => entry.name === "Site Beta")?.iconKey).toBe("ship");
 
     useAppStore.getState().loadSimulationPreset(createdId as string);
     expect(useAppStore.getState().selectedScenarioId).toBe(createdId);

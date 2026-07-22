@@ -4,7 +4,7 @@ import { Button } from "./ui/Button";
 
 type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
-  variant?: "default" | "danger";
+  variant?: "default" | "ghost" | "danger";
   size?: "default" | "icon";
 };
 
