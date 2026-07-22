@@ -737,7 +737,9 @@ export function MapView({
   const simulationRunToken = useCoverageStore((state) => state.simulationRunToken);
   const completedCoverageRunToken = useCoverageStore((state) => state.completedCoverageRunToken);
   const autoCalculateEnabled = useCoverageStore((state) => state.autoCalculateEnabled);
+  const automaticLockNoticeShown = useCoverageStore((state) => state.automaticLockNoticeShown);
   const calculationCycleSource = useCoverageStore((state) => state.calculationCycleSource);
+  const markAutomaticLockNoticeShown = useCoverageStore((state) => state.markAutomaticLockNoticeShown);
   const setAutoCalculateEnabled = useCoverageStore((state) => state.setAutoCalculateEnabled);
   const startManualCalculation = useCoverageStore((state) => state.startManualCalculation);
   const stopCalculation = useCoverageStore((state) => state.stopCalculation);
@@ -1165,13 +1167,30 @@ export function MapView({
     selectedCoverageResolution,
     normalizedOverlayRadiusOption,
   );
+  const previousAutomaticCalculationLockedRef = useRef(automaticCalculationLocked);
   const calculationWorkAllowed =
     (autoCalculateEnabled && !automaticCalculationLocked) || calculationCycleSource === "manual";
   useEffect(() => {
-    if (automaticCalculationLocked && autoCalculateEnabled) {
-      setAutoCalculateEnabled(false);
-    }
-  }, [automaticCalculationLocked, autoCalculateEnabled, setAutoCalculateEnabled]);
+    const becameLocked = automaticCalculationLocked && !previousAutomaticCalculationLockedRef.current;
+    previousAutomaticCalculationLockedRef.current = automaticCalculationLocked;
+    if (!automaticCalculationLocked) return;
+    if (autoCalculateEnabled) setAutoCalculateEnabled(false);
+    if (!becameLocked || automaticLockNoticeShown) return;
+    markAutomaticLockNoticeShown();
+    onPublishNotice?.({
+      id: "automatic-calculation-locked",
+      message: "Auto calculate was turned off for 100 km or 4x and above. Press Start to calculate.",
+      tone: "info",
+      persistent: false,
+    });
+  }, [
+    automaticCalculationLocked,
+    automaticLockNoticeShown,
+    autoCalculateEnabled,
+    markAutomaticLockNoticeShown,
+    onPublishNotice,
+    setAutoCalculateEnabled,
+  ]);
   const targetRadiusKm = useMemo(
     () => resolveTargetOverlayRadiusKm(selectionCount, normalizedOverlayRadiusOption),
     [selectionCount, normalizedOverlayRadiusOption],
