@@ -2350,6 +2350,36 @@ button {
   animation: map-progress-indeterminate 1.2s ease-in-out infinite;
 }
 
+.map-calculation-status {
+  display: grid;
+  gap: 7px;
+}
+
+.map-calculation-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+}
+
+.map-calculation-control.btn-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.map-calculation-toggle.is-on,
+.map-calculation-action.is-start {
+  color: var(--success);
+}
+
+.map-calculation-toggle.is-off {
+  color: var(--muted);
+}
+
+.map-calculation-action.is-stop {
+  color: var(--danger);
+}
+
 @keyframes map-progress-indeterminate {
   0% {
     transform: translateX(-110%);

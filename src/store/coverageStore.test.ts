@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetCoverageSchedulerForTests, setAppStoreBridge, useCoverageStore } from "./coverageStore";
+import {
+  isAutomaticCalculationLocked,
+  resetCoverageSchedulerForTests,
+  setAppStoreBridge,
+  useCoverageStore,
+} from "./coverageStore";
 import * as coverageLib from "../lib/coverage";
 import type { CoverageSample, Site } from "../types/radio";
 
@@ -71,6 +76,9 @@ describe("coverageStore simulation progress phases", () => {
       simulationSamplesDone: 0,
       simulationSamplesTotal: 0,
       simulationRunToken: "",
+      completedCoverageRunToken: "",
+      autoCalculateEnabled: true,
+      calculationCycleSource: null,
     });
     resetCoverageSchedulerForTests();
     setAppStoreBridge({
@@ -117,6 +125,67 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().coverageSamples).toHaveLength(1);
   });
 
+  it("suppresses automatic recomputes while Auto calculate is off", () => {
+    useCoverageStore.getState().setAutoCalculateEnabled(false);
+    useCoverageStore.getState().recomputeCoverage();
+    vi.advanceTimersByTime(220);
+
+    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+  });
+
+  it("runs once manually without enabling Auto calculate", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    useCoverageStore.getState().setAutoCalculateEnabled(false);
+    useCoverageStore.getState().startManualCalculation();
+
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+    vi.advanceTimersByTime(700);
+    await flushAsyncTicks();
+
+    expect(buildSpy).toHaveBeenCalledTimes(1);
+    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
+    expect(useCoverageStore.getState().calculationCycleSource).toBe("manual");
+  });
+
+  it("locks automatic calculation for 100 km+ or 4x+ settings", () => {
+    expect(isAutomaticCalculationLocked("24", "50")).toBe(false);
+    expect(isAutomaticCalculationLocked("24", "100")).toBe(true);
+    expect(isAutomaticCalculationLocked("84", "20")).toBe(true);
+
+    bridgeState.selectedCoverageResolution = "84";
+    useCoverageStore.getState().recomputeCoverage();
+    vi.advanceTimersByTime(220);
+
+    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+  });
+
+  it("stops active coverage work and clears queued reruns", async () => {
+    let observedCancellation = false;
+    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation((...args) => {
+      const options = args[6];
+      return new Promise<CoverageSample[]>((resolve) => {
+        window.setTimeout(() => {
+          observedCancellation = options?.shouldCancel?.() ?? false;
+          resolve([]);
+        }, 20);
+      });
+    });
+
+    useCoverageStore.getState().recomputeCoverage();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+    useCoverageStore.getState().stopCalculation();
+    vi.advanceTimersByTime(30);
+    await flushAsyncTicks();
+
+    expect(observedCancellation).toBe(true);
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+    expect(useCoverageStore.getState().calculationCycleSource).toBe(null);
+  });
+
   it("forces 1x simulation resolution while terrain is fetching", async () => {
     let capturedGridSize = 0;
     setAppStoreBridge({
@@ -133,7 +202,7 @@ describe("coverageStore simulation progress phases", () => {
       return Promise.resolve([]);
     });
 
-    useCoverageStore.getState().recomputeCoverage();
+    useCoverageStore.getState().startManualCalculation();
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
     vi.advanceTimersByTime(700);
@@ -232,5 +301,24 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(760);
     await flushAsyncTicks();
     expect(useCoverageStore.getState().coverageSamples[0]?.valueDbm).toBe(-70);
+  });
+
+  it("discards a stale result without scheduling a rerun while automatic calculation is off", async () => {
+    let resolveBuild!: (value: CoverageSample[]) => void;
+    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation(
+      () => new Promise<CoverageSample[]>((resolve) => { resolveBuild = resolve; }),
+    );
+
+    useCoverageStore.getState().recomputeCoverage();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+    useCoverageStore.getState().setAutoCalculateEnabled(false);
+    bridgeState.selectedCoverageResolution = "42";
+    useCoverageStore.getState().recomputeCoverage();
+    resolveBuild([{ lat: site.position.lat, lon: site.position.lon, valueDbm: -60 }]);
+    await flushAsyncTicks();
+
+    expect(useCoverageStore.getState().coverageSamples).toEqual([]);
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
   });
 });

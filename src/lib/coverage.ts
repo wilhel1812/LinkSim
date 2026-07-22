@@ -18,7 +18,15 @@ export type BuildCoverageOptions = {
   terrainCacheKey?: string;
   overlayRadiusKm?: number;
   singleSiteRadiusKm?: number;
+  shouldCancel?: () => boolean;
 };
+
+export class CoverageBuildCancelledError extends Error {
+  constructor() {
+    super("Coverage build cancelled");
+    this.name = "CoverageBuildCancelledError";
+  }
+}
 
 export type CoverageGridBounds = {
   minLat: number;
@@ -208,6 +216,7 @@ export const buildCoverage = (
   const sampleMultiplier = Math.max(1, options?.sampleMultiplier ?? 1);
   const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
   const onProgress = options?.onProgress;
+  const shouldCancel = options?.shouldCancel;
   const fallbackSystemId = systems[0]?.id ?? "";
   const effectiveMemberships =
     network.memberships
@@ -234,6 +243,7 @@ export const buildCoverage = (
   const notifyEvery = Math.max(1, Math.floor(total / 40));
   const results: CoverageSample[] = [];
   for (let i = 0; i < samples.length; i += 1) {
+    if (shouldCancel?.()) throw new CoverageBuildCancelledError();
     const sample = samples[i];
     const rxLevels = membershipsToUse
       .map((m) => {
@@ -279,6 +289,7 @@ export const buildCoverageAsync = async (
   const sampleMultiplier = Math.max(1, options?.sampleMultiplier ?? 1);
   const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
   const onProgress = options?.onProgress;
+  const shouldCancel = options?.shouldCancel;
   const fallbackSystemId = systems[0]?.id ?? "";
   const effectiveMemberships =
     network.memberships
@@ -308,6 +319,7 @@ export const buildCoverageAsync = async (
   let chunkStartedAt = performance.now();
 
   for (let i = 0; i < samples.length; i += 1) {
+    if (shouldCancel?.()) throw new CoverageBuildCancelledError();
     const sample = samples[i];
     const rxLevels = membershipsToUse
       .map((m) => {
@@ -343,6 +355,7 @@ export const buildCoverageAsync = async (
         }
         setTimeout(resolve, 0);
       });
+      if (shouldCancel?.()) throw new CoverageBuildCancelledError();
       chunkStartedAt = performance.now();
     }
   }

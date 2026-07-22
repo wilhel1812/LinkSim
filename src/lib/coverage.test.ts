@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildCoverage, buildCoverageAsync, computeCoverageGridDimensions } from "./coverage";
+import {
+  buildCoverage,
+  buildCoverageAsync,
+  computeCoverageGridDimensions,
+  CoverageBuildCancelledError,
+} from "./coverage";
 import { haversineDistanceKm } from "./geo";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import type { Network, RadioSystem, Site } from "../types/radio";
@@ -88,6 +93,18 @@ describe("buildCoverage", () => {
     const asyncResult = await buildCoverageAsync(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
     expect(asyncResult).toHaveLength(sync.length);
     expect(Math.abs(asyncResult[0].valueDbm - sync[0].valueDbm)).toBeLessThan(0.0001);
+  });
+
+  it("cooperatively cancels asynchronous coverage work", async () => {
+    let checks = 0;
+    await expect(
+      buildCoverageAsync(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment(), undefined, {
+        shouldCancel: () => {
+          checks += 1;
+          return checks > 8;
+        },
+      }),
+    ).rejects.toBeInstanceOf(CoverageBuildCancelledError);
   });
 
   it("uses single-site radius override for sampling bounds", () => {

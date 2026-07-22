@@ -111,6 +111,7 @@ const position = (latitude: number, longitude: number, accuracy: number, timesta
 });
 
 import { useAppStore } from "../store/appStore";
+import { useCoverageStore } from "../store/coverageStore";
 import { MapView } from "./MapView";
 
 const renderMapView = (props: Partial<React.ComponentProps<typeof MapView>> = {}) =>
@@ -146,8 +147,56 @@ describe("MapView user location flow", () => {
       selectedSiteId: "",
       selectedSiteIds: [],
       selectedLinkId: "",
+      selectedCoverageResolution: "24",
+      selectedOverlayRadiusOption: "20",
       mapViewport: { center: { lat: 59.9, lon: 10.75 }, zoom: 8 },
     });
+    useCoverageStore.setState({
+      coverageSamples: [],
+      isSimulationRecomputing: false,
+      simulationProgress: 0,
+      simulationRunToken: "",
+      completedCoverageRunToken: "",
+      autoCalculateEnabled: true,
+      calculationCycleSource: null,
+    });
+  });
+
+  it("switches between automatic, manual start, and manual stop controls", () => {
+    renderMapView({ showInspector: true });
+
+    const autoToggle = screen.getByRole("button", { name: "Turn off automatic calculation" });
+    expect(autoToggle).toHaveClass("is-on");
+    expect(autoToggle.querySelector(".lucide-toggle-right")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start calculation" })).not.toBeInTheDocument();
+
+    fireEvent.click(autoToggle);
+
+    const startButton = screen.getByRole("button", { name: "Start calculation" });
+    expect(startButton).toHaveClass("is-start");
+    expect(startButton.querySelector(".lucide-play")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Turn on automatic calculation" }).querySelector(".lucide-toggle-left")).toBeInTheDocument();
+
+    fireEvent.click(startButton);
+    const stopButton = screen.getByRole("button", { name: "Stop calculation" });
+    expect(stopButton).toHaveClass("is-stop");
+    expect(stopButton.querySelector(".lucide-square")).toBeInTheDocument();
+
+    fireEvent.click(stopButton);
+    expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument();
+    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
+  });
+
+  it("locks automatic calculation at 4x while preserving manual Start", async () => {
+    useAppStore.setState({ selectedCoverageResolution: "84" });
+    renderMapView({ showInspector: true });
+
+    const lockedToggle = await screen.findByRole("button", {
+      name: "Automatic calculation unavailable at 100 km or 4x and above",
+    });
+    expect(lockedToggle).toBeDisabled();
+    expect(lockedToggle).toHaveClass("is-off");
+    expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument();
   });
 
   it("starts and stops live geolocation from the map control", () => {
