@@ -2362,9 +2362,13 @@ button {
   min-height: 28px;
 }
 
-.map-calculation-control.btn-icon {
-  width: 28px;
+.map-calculation-control.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   height: 28px;
+  padding: 0 7px;
+  font-size: 0.72rem;
 }
 
 .map-calculation-toggle.is-on,

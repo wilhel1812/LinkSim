@@ -2977,7 +2977,6 @@ export function MapView({
                 className={`map-calculation-control map-calculation-toggle ${autoCalculateEnabled ? "is-on" : "is-off"}`}
                 disabled={automaticCalculationLocked}
                 onClick={() => setAutoCalculateEnabled(!autoCalculateEnabled)}
-                size="icon"
                 title={
                   automaticCalculationLocked
                     ? "Automatic calculation unavailable at 100 km or 4x and above"
@@ -2985,26 +2984,29 @@ export function MapView({
                       ? "Turn off automatic calculation"
                       : "Turn on automatic calculation"
                 }
+                variant="ghost"
               >
                 {autoCalculateEnabled ? (
                   <ToggleRight aria-hidden="true" size={20} strokeWidth={1.8} />
                 ) : (
                   <ToggleLeft aria-hidden="true" size={20} strokeWidth={1.8} />
                 )}
+                <span>Auto calculate</span>
               </ActionButton>
               {!autoCalculateEnabled ? (
                 <ActionButton
                   aria-label={calculationControlRunning ? "Stop calculation" : "Start calculation"}
                   className={`map-calculation-control map-calculation-action ${calculationControlRunning ? "is-stop" : "is-start"}`}
                   onClick={calculationControlRunning ? handleStopCalculation : startManualCalculation}
-                  size="icon"
                   title={calculationControlRunning ? "Stop calculation" : "Start calculation"}
+                  variant="ghost"
                 >
                   {calculationControlRunning ? (
                     <Square aria-hidden="true" size={15} strokeWidth={2} />
                   ) : (
                     <Play aria-hidden="true" size={17} strokeWidth={2} />
                   )}
+                  <span>{calculationControlRunning ? "Stop" : "Start"}</span>
                 </ActionButton>
               ) : null}
             </div>
