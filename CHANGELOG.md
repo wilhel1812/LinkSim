@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.0] - 2026-07-22
+
+### Added
+- Added curated Lucide icons for Sites, including automatic suggestions based on Site names and antenna height, with consistent map and panorama rendering. (#775)
+- Added session-based automatic calculation controls with manual Start and Stop actions for deliberate simulation runs. (#923)
+
+### Changed
+- Automatically disables continuous calculation for expensive 100 km+ radius or 4x+ resolution settings, while preserving one-shot manual calculation and completed overlays. (#923)
+
 ## [0.22.0] - 2026-07-21
 
 ### Added
