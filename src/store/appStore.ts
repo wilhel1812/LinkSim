@@ -1039,20 +1039,6 @@ const ensureSitesBackedByLibrary = (
   };
 };
 
-const hasPrivateLibrarySiteReferences = (
-  sites: Site[],
-  siteLibrary: SiteLibraryEntry[],
-): boolean => {
-  if (!sites.length || !siteLibrary.length) return false;
-  const privateIds = new Set(
-    siteLibrary
-      .filter((entry) => (entry.visibility ?? "private") === "private")
-      .map((entry) => entry.id),
-  );
-  if (!privateIds.size) return false;
-  return sites.some((site) => typeof site.libraryEntryId === "string" && privateIds.has(site.libraryEntryId));
-};
-
 const ensureMinimumTopology = (
   inputSites: Site[],
   inputLinks: Link[],
@@ -2780,11 +2766,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       const currentSelectionDescription = current.simulationPresets.find(
         (preset) => preset.id === current.selectedScenarioId,
       )?.description;
-      const visibilityBase = existing?.visibility ?? "private";
-      const visibilitySafe =
-        visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
-          ? "private"
-          : visibilityBase;
       const nextPreset: SimulationPreset = {
         id: existing?.id ?? makeId("sim"),
         name: presetName,
@@ -2796,7 +2777,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             ...(existing?.slug ? [slugifyValue(existing.slug)] : []),
           ]),
         ).filter((entry) => Boolean(entry) && entry !== slugifyValue(presetName)),
-        visibility: visibilitySafe,
+        visibility: existing?.visibility ?? "private",
         sharedWith: existing?.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
@@ -2988,18 +2969,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         normalized.addedCount > 0
           ? normalizeSiteLibrary([...normalized.siteLibrary, ...current.siteLibrary])
           : current.siteLibrary;
-      const visibilityBase = existing.visibility ?? "private";
-      const visibilitySafe =
-        visibilityBase !== "private" && hasPrivateLibrarySiteReferences(snapshot.sites, mergedLibrary)
-          ? "private"
-          : visibilityBase;
       const nextPreset: SimulationPreset = {
         id: existing.id,
         name: existing.name,
         description: existing.description,
         slug: existing.slug ?? slugifyValue(existing.name),
         slugAliases: existing.slugAliases ?? [],
-        visibility: visibilitySafe,
+        visibility: existing.visibility ?? "private",
         sharedWith: existing.sharedWith ?? [],
         updatedAt: new Date().toISOString(),
         snapshot,
@@ -3267,11 +3243,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...((preset.slugAliases ?? []).map((entry) => slugifyValue(entry))),
         ]);
         aliasSet.delete(nextSlug);
-        const nextVisibilityRaw = patch.visibility ?? preset.visibility ?? "private";
-        const nextVisibility =
-          nextVisibilityRaw !== "private" && hasPrivateLibrarySiteReferences(preset.snapshot.sites, state.siteLibrary)
-            ? "private"
-            : nextVisibilityRaw;
+        const nextVisibility = patch.visibility ?? preset.visibility ?? "private";
         const snapshotPatch =
           patch.simulationDefaultsOverrideEnabled !== undefined || patch.simulationDefaultsOverride !== undefined
             ? {

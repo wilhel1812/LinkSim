@@ -5,7 +5,6 @@ import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } fro
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
-  formatPrivateSiteReferenceBlockMessage,
   type DeepLinkApplyOutcome,
   shouldRewritePathAfterDeepLinkApply,
   shouldUseReadonlyFallbackForAuthBootstrap,
@@ -163,7 +162,6 @@ export function AppShell() {
   const setMapOverlayMode = useAppStore((state) => state.setMapOverlayMode);
   const updateMapViewport = useAppStore((state) => state.updateMapViewport);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
-  const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
   const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const links = useAppStore((state) => state.links);
@@ -1511,17 +1509,6 @@ export function AppShell() {
       });
       return;
     }
-    const blockedSites = referencedPrivateSites.filter((site) => !canEditResource(site));
-    if (blockedSites.length) {
-      publishAppNotice({
-        id: "share-no-edit-access-sites",
-        message: `Cannot upgrade ${blockedSites.length} private site(s) because you do not have edit access to them.`,
-        tone: "warning",
-        persistent: true,
-      });
-      return;
-    }
-
     setShareBusy(true);
 
     // Start clipboard write within gesture context; content resolves after save.
@@ -1531,26 +1518,20 @@ export function AppShell() {
     const upgradeClipboardDone = copyToClipboard(upgradeLinkPromise);
 
     try {
-      for (const site of referencedPrivateSites) {
-        updateSiteLibraryEntry(site.id, { visibility: "shared" });
-      }
       updateSimulationPresetEntry(activeSimulation.id, { visibility: "shared" });
 
       const latest = useAppStore.getState();
       const latestSimulation = latest.simulationPresets.find((preset) => preset.id === activeSimulation.id);
-      const latestSites = latest.siteLibrary.filter((site) =>
-        referencedPrivateSites.some((candidate) => candidate.id === site.id),
-      );
       if (!latestSimulation) throw new Error("Simulation missing after local update.");
 
       await pushCloudLibrary({
         simulationPresets: [latestSimulation],
-        siteLibrary: latestSites,
+        siteLibrary: [],
       });
 
       resolveUpgradeLink(currentShareLink);
       await upgradeClipboardDone;
-      publishTransientNotice("share-upgrade-complete", "Simulation and referenced sites are now Shared. Link copied.");
+      publishTransientNotice("share-upgrade-complete", "Simulation is now Shared. Link copied.");
     } catch (error) {
       rejectUpgradeLink(error);
       publishAppNotice({
@@ -1568,19 +1549,11 @@ export function AppShell() {
     currentUser,
     publishAppNotice,
     publishTransientNotice,
-    referencedPrivateSites,
     updateSimulationPresetEntry,
-    updateSiteLibraryEntry,
   ]);
 
   const runShareWithSpecificUsers = useCallback(async () => {
     if (!activeSimulation || !currentUser) return;
-    if (toVisibility(activeSimulation.visibility) !== "private" && referencedPrivateSites.length) {
-      setShareSpecificStatus(
-        formatPrivateSiteReferenceBlockMessage(referencedPrivateSites.map((site) => site.name)),
-      );
-      return;
-    }
     if (!shareSpecificUsers.length) {
       setShareSpecificStatus("Add at least one user first.");
       return;
@@ -1622,7 +1595,6 @@ export function AppShell() {
     activeSimulation,
     currentShareLink,
     currentUser,
-    referencedPrivateSites,
     shareSpecificRoles,
     shareSpecificUsers,
     updateSimulationPresetEntry,
@@ -2381,12 +2353,13 @@ export function AppShell() {
                         <Globe aria-hidden="true" size={22} strokeWidth={1.6} />
                         <strong>Make Broadly Accessible</strong>
                         <p className="field-help" style={{ flex: 1 }}>
-                          Anyone with the link can view. The simulation
-                          {referencedPrivateSites.length ? ` and ${referencedPrivateSites.length} referenced site(s)` : ""} will be set to Shared.
-                          {referencedPrivateSites.some((site) => !canEditResource(site)) ? " Some sites require owner access." : ""}
+                          Anyone with the link can view. The Simulation will be set to Shared.
+                          {referencedPrivateSites.length
+                            ? ` Its ${referencedPrivateSites.length} referenced Private Site(s) remain Private in the Library but are visible through this Simulation.`
+                            : ""}
                         </p>
                         <ActionButton disabled={shareBusy} onClick={() => void runUpgradeAndShare()} type="button">
-                          Upgrade &amp; Copy Link
+                          Make Shared &amp; Copy Link
                         </ActionButton>
                       </div>
                       {/* Option B: Specific users */}

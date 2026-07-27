@@ -1,5 +1,5 @@
 import { verifyAuth } from "../_lib/auth";
-import { fetchPublicSimulationBundle } from "../_lib/db";
+import { ensureUser, fetchPublicSimulationBundle, fetchUserProfile } from "../_lib/db";
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
 
@@ -18,14 +18,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const auth = await verifyAuth(request, env).catch(() => null);
-    const actorId = auth?.userId ?? null;
+    let actor: { id: string; isAdmin: boolean; isModerator: boolean } | null = null;
+    if (auth) {
+      await ensureUser(env, auth.userId, auth.tokenPayload);
+      const profile = await fetchUserProfile(env, auth.userId);
+      if (profile?.accountState !== "revoked") {
+        actor = {
+          id: profile?.id ?? auth.userId,
+          isAdmin: Boolean(profile?.isAdmin),
+          isModerator: Boolean(profile?.isModerator),
+        };
+      }
+    }
 
     const bundle = await fetchPublicSimulationBundle(env, {
       simulationId: simulationId || undefined,
       username: username || undefined,
       simulationSlug: simulationSlug || undefined,
-      actorId,
-      allowUnlisted: true,
+      actor,
     });
 
     if (bundle.status !== "ok") {
