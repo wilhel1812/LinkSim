@@ -2121,7 +2121,12 @@ export const resolveSimulationIdByOwnerSlug = async (
 
 export const fetchPublicSimulationBundle = async (
   env: Env,
-  options: { simulationId?: string; username?: string; simulationSlug?: string; actorId?: string | null; allowUnlisted?: boolean },
+  options: {
+    simulationId?: string;
+    username?: string;
+    simulationSlug?: string;
+    actor: ActorPolicy | null;
+  },
 ): Promise<
   | { status: "missing" | "forbidden" }
   | {
@@ -2140,24 +2145,23 @@ export const fetchPublicSimulationBundle = async (
   if (!resolvedId) return { status: "missing" };
 
   const simulationRow = await env.DB
-    .prepare("SELECT id, payload_json, visibility FROM simulations WHERE id = ? LIMIT 1")
+    .prepare("SELECT id, owner_user_id, payload_json, visibility FROM simulations WHERE id = ? LIMIT 1")
     .bind(resolvedId)
-    .first<{ id: string; payload_json: string; visibility: DbVisibility }>();
+    .first<{ id: string; owner_user_id: string; payload_json: string; visibility: DbVisibility }>();
   if (!simulationRow) return { status: "missing" };
   const visibility = visibilityFromDbVisibility(simulationRow.visibility);
-  const allowUnlisted = options.allowUnlisted === true;
 
   let actorSimulationRole: string | null = null;
-  if (visibility === "private") {
-    if (!options.actorId && !allowUnlisted) return { status: "forbidden" };
-    if (options.actorId) {
-      const roleRow = await env.DB
-        .prepare("SELECT role FROM simulation_roles WHERE simulation_id = ? AND user_id = ? LIMIT 1")
-        .bind(resolvedId, options.actorId)
-        .first<{ role: string }>();
-      if (roleRow) actorSimulationRole = roleRow.role;
-      else if (!allowUnlisted) return { status: "forbidden" };
-    }
+  if (options.actor) {
+    const roleRow = await env.DB
+      .prepare("SELECT role FROM simulation_roles WHERE simulation_id = ? AND user_id = ? LIMIT 1")
+      .bind(resolvedId, options.actor.id)
+      .first<{ role: string }>();
+    if (roleRow) actorSimulationRole = roleRow.role;
+  }
+  const actor = options.actor ?? { id: "", isAdmin: false, isModerator: false };
+  if (!canReadResource(actor, simulationRow.owner_user_id, visibility, actorSimulationRole)) {
+    return { status: "forbidden" };
   }
 
   let simulation: CloudResourceRecord;
@@ -2168,7 +2172,12 @@ export const fetchPublicSimulationBundle = async (
   }
   simulation.id = simulationRow.id;
   simulation.visibility = visibility;
-  simulation.effectiveRole = actorSimulationRole ?? "viewer";
+  simulation.effectiveRole =
+    options.actor?.isAdmin
+      ? "admin"
+      : options.actor?.id === simulationRow.owner_user_id
+        ? "owner"
+        : actorSimulationRole ?? "viewer";
 
   const referencedSiteIds = referencedLibrarySiteIdsFromSimulation(simulation);
   if (!referencedSiteIds.length) {
@@ -2187,8 +2196,7 @@ export const fetchPublicSimulationBundle = async (
     .all<{ id: string; payload_json: string; visibility: DbVisibility }>();
   const sites: CloudResourceRecord[] = [];
   for (const row of rows.results) {
-    // Unlisted Simulation access includes the referenced Sites needed to render that Simulation.
-    if (actorSimulationRole === null && !allowUnlisted && visibilityFromDbVisibility(row.visibility) === "private") continue;
+    // Authorization to the parent Simulation includes the referenced Sites needed to render it.
     try {
       const site = JSON.parse(row.payload_json) as CloudResourceRecord;
       site.id = row.id;

@@ -1,6 +1,6 @@
 import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
 import { listStatsPathLeaderboardEntries } from "../_lib/pathLeaderboard";
-import type { Env } from "../_lib/types";
+import type { DbVisibility, Env } from "../_lib/types";
 
 type UserRow = {
   id: string;
@@ -14,6 +14,7 @@ type ResourceRow = {
   owner_user_id: string;
   created_at: string | null;
   name?: string | null;
+  visibility: DbVisibility;
   payload_json: string;
 };
 
@@ -353,8 +354,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const [usersResult, sitesResult, simulationsResult, longestPassingPaths] = await Promise.all([
       env.DB.prepare("SELECT id, username, avatar_url, created_at FROM users").all<UserRow>(),
-      env.DB.prepare("SELECT id, owner_user_id, created_at, payload_json FROM sites").all<ResourceRow>(),
-      env.DB.prepare("SELECT id, owner_user_id, created_at, name, payload_json FROM simulations").all<ResourceRow>(),
+      env.DB.prepare("SELECT id, owner_user_id, created_at, visibility, payload_json FROM sites").all<ResourceRow>(),
+      env.DB.prepare("SELECT id, owner_user_id, created_at, name, visibility, payload_json FROM simulations").all<ResourceRow>(),
       listStatsPathLeaderboardEntries(env),
     ]);
 
@@ -398,6 +399,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const sizeBuckets = { "1-2": 0, "3-5": 0, "6-10": 0, "11+": 0 };
 
     const latestSimulations: Array<{
+      visibility: DbVisibility;
       id: string;
       name: string;
       href: string;
@@ -423,6 +425,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
       const owner = userById.get(simulation.owner_user_id);
       latestSimulations.push({
+        visibility: simulation.visibility,
         id: simulation.id,
         name: typeof payload?.name === "string" && payload.name.trim() ? payload.name.trim() : simulation.name?.trim() || "Untitled Simulation",
         href: hrefForSimulation(owner, simulation, payload),
@@ -498,7 +501,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       },
       latestSimulations: latestSimulations
         .sort((a, b) => (parseDate(b.createdAt)?.getTime() ?? 0) - (parseDate(a.createdAt)?.getTime() ?? 0))
-        .slice(0, 5),
+        .slice(0, 5)
+        .map((simulation) =>
+          simulation.visibility === "private"
+            ? {
+                visibility: "private" as const,
+                siteCount: simulation.siteCount,
+                linkCount: simulation.linkCount,
+              }
+            : {
+                visibility: "shared" as const,
+                id: simulation.id,
+                name: simulation.name,
+                href: simulation.href,
+                createdAt: simulation.createdAt,
+                owner: simulation.owner,
+                siteCount: simulation.siteCount,
+                linkCount: simulation.linkCount,
+              },
+        ),
       longestPassingPaths,
       linkDistanceDistribution: linkDistanceCounts,
       highlights: {

@@ -929,39 +929,19 @@ function SimulationEditorCard({
       </fieldset>
       )}
 
-      {/* Pending visibility confirmation prompt */}
-      {form.pendingVisibilityConfirm ? (
-        <div className="field-help warning-text">
-          <p>
-            This simulation references {form.pendingVisibilityConfirm.referencedPrivateSiteIds.length} private site(s).
-            Making this simulation shared will also make those sites shared. Continue?
-          </p>
-          <div className="chip-group">
-            <ActionButton onClick={form.applyPendingVisibilityChange} type="button">
-              Make Shared
-            </ActionButton>
-            <ActionButton onClick={() => form.setPendingVisibilityConfirm(null)} type="button">
-              Cancel
-            </ActionButton>
-          </div>
-        </div>
-      ) : null}
-
       {form.simulationNameError ? <p className="field-help field-help-error">{form.simulationNameError}</p> : null}
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
-      {!form.pendingVisibilityConfirm ? (
-        <div className="chip-group">
-          {!isReadOnly ? (
-            <ActionButton onClick={form.handleSaveSimulation} type="button">
-              {isNew ? (isCopySimulation ? "Save a copy" : "Create Simulation") : "Save"}
-            </ActionButton>
-          ) : null}
-          <ActionButton onClick={onClose} type="button">
-            Cancel
+      <div className="chip-group">
+        {!isReadOnly ? (
+          <ActionButton onClick={form.handleSaveSimulation} type="button">
+            {isNew ? (isCopySimulation ? "Save a copy" : "Create Simulation") : "Save"}
           </ActionButton>
-        </div>
-      ) : null}
+        ) : null}
+        <ActionButton onClick={onClose} type="button">
+          Cancel
+        </ActionButton>
+      </div>
 
       {!isNew && form.simulationMetadata ? (
         <EditorMetadataStrip

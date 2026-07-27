@@ -71,6 +71,7 @@ const statsPayload = {
   },
   latestSimulations: [
     {
+      visibility: "shared",
       id: "sim-2",
       name: "Shared Ridge",
       href: "/Grace/Shared-Ridge",
@@ -78,6 +79,11 @@ const statsPayload = {
       owner: { userId: "u2", username: "Grace", avatarUrl: "" },
       siteCount: 3,
       linkCount: 2,
+    },
+    {
+      visibility: "private",
+      siteCount: 4,
+      linkCount: 1,
     },
   ],
   longestPassingPaths: [
@@ -164,6 +170,8 @@ describe("StatsPage", () => {
     expect(backLink).toHaveClass("btn");
     expect(backLink).not.toHaveClass("btn-ghost");
     expect(screen.getAllByRole("link", { name: /Shared Ridge/i })[0]).toHaveAttribute("href", "/Grace/Shared-Ridge");
+    expect(screen.getByText("Private Simulation")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Private Simulation/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Ridge ~ Valley/i })).toHaveAttribute("href", "/Grace/Shared-Ridge/Ridge~Valley");
     expect(screen.getByText("+18.8 dB")).toBeInTheDocument();
     expect(screen.getByText("Sites + Simulations")).toBeInTheDocument();

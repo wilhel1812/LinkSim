@@ -55,24 +55,6 @@ describe("cloudLibrary client", () => {
     expect(result).toEqual({ siteLibrary: [{ id: "s1" }], simulationPresets: [] });
   });
 
-  it("throws conflict-specific error for private site reference conflicts", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ ok: false, conflicts: ["simulation_private_site_reference"] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-
-    await expect(
-      pushCloudLibrary({
-        siteLibrary: [],
-        simulationPresets: [{ id: "sim-1", name: "North Link" }],
-      }),
-    ).rejects.toThrow(
-      "Cannot publish/shared simulation(s) with private Library Site references: North Link.",
-    );
-  });
-
   it("includes simulation names for simulation_name_taken conflicts", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: false, conflicts: ["simulation_name_taken"] }), {

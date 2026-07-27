@@ -12,8 +12,8 @@ import { onRequestGet } from "./stats";
 
 type MockTable = {
   users: Array<{ id: string; username: string | null; avatar_url: string | null; created_at: string }>;
-  sites: Array<{ id: string; owner_user_id: string; created_at: string | null; payload_json: string }>;
-  simulations: Array<{ id: string; owner_user_id: string; created_at: string | null; name?: string; payload_json: string }>;
+  sites: Array<{ id: string; owner_user_id: string; created_at: string | null; visibility: string; payload_json: string }>;
+  simulations: Array<{ id: string; owner_user_id: string; created_at: string | null; name?: string; visibility: string; payload_json: string }>;
 };
 
 const tables: MockTable = {
@@ -64,18 +64,21 @@ beforeEach(() => {
       id: "site-1",
       owner_user_id: "u1",
       created_at: "2026-01-05T00:00:00.000Z",
+      visibility: "private",
       payload_json: JSON.stringify({ id: "site-1", name: "Private peak", position: { lat: 60.123456, lon: 10.123456 } }),
     },
     {
       id: "site-2",
       owner_user_id: "u2",
       created_at: "2026-02-05T00:00:00.000Z",
+      visibility: "public_write",
       payload_json: JSON.stringify({ id: "site-2", name: "Valley", position: { lat: 60.987654, lon: 10.987654 } }),
     },
     {
       id: "bad-site",
       owner_user_id: "u2",
       created_at: "2026-02-06T00:00:00.000Z",
+      visibility: "private",
       payload_json: "{not json",
     },
   ];
@@ -84,6 +87,7 @@ beforeEach(() => {
       id: "sim-1",
       owner_user_id: "u1",
       created_at: "2026-01-07T00:00:00.000Z",
+      visibility: "private",
       payload_json: JSON.stringify({
         id: "sim-1",
         name: "Private sim",
@@ -107,12 +111,14 @@ beforeEach(() => {
       id: "sim-empty",
       owner_user_id: "u2",
       created_at: "2026-02-07T00:00:00.000Z",
+      visibility: "private",
       payload_json: JSON.stringify({ id: "sim-empty", name: "Draft", snapshot: { sites: [], links: [] } }),
     },
     {
       id: "sim-2",
       owner_user_id: "u2",
       created_at: "2026-02-08T00:00:00.000Z",
+      visibility: "public_write",
       payload_json: JSON.stringify({
         id: "sim-2",
         name: "Shared sim",
@@ -156,10 +162,11 @@ describe("api/stats", () => {
     const res = await onRequestGet(mkCtx());
     const body = await res.json() as {
       latestSimulations: Array<{
-        id: string;
-        name: string;
-        href: string;
-        owner: { userId: string; username: string; avatarUrl: string };
+        visibility: "private" | "shared";
+        id?: string;
+        name?: string;
+        href?: string;
+        owner?: { userId: string; username: string; avatarUrl: string };
         siteCount: number;
         linkCount: number;
       }>;
@@ -171,6 +178,7 @@ describe("api/stats", () => {
 
     expect(body.latestSimulations).toEqual([
       expect.objectContaining({
+        visibility: "shared",
         id: "sim-2",
         name: "Shared sim",
         href: "/Grace/Shared-sim",
@@ -179,13 +187,15 @@ describe("api/stats", () => {
         linkCount: 2,
       }),
       expect.objectContaining({
-        id: "sim-1",
-        name: "Private sim",
-        href: "/Ada/Private-sim",
+        visibility: "private",
         siteCount: 3,
         linkCount: 5,
       }),
     ]);
+    expect(body.latestSimulations[1]).not.toHaveProperty("id");
+    expect(body.latestSimulations[1]).not.toHaveProperty("name");
+    expect(body.latestSimulations[1]).not.toHaveProperty("href");
+    expect(body.latestSimulations[1]).not.toHaveProperty("owner");
     expect(body.latestSimulations.some((entry) => entry.id === "sim-empty")).toBe(false);
     expect(body.linkDistanceDistribution.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(4);
     expect(raw).not.toContain("longestLinks");
