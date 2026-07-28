@@ -783,6 +783,7 @@ export function MapView({
   const setDiscoveryVisibility = useAppStore((state) => state.setDiscoveryVisibility);
   const setMapDiscoveryMqttNodes = useAppStore((state) => state.setMapDiscoveryMqttNodes);
   const recommendAndFetchTerrainForCurrentArea = useAppStore((state) => state.recommendAndFetchTerrainForCurrentArea);
+  const cancelTerrainLoad = useAppStore((state) => state.cancelTerrainLoad);
   const selectedOverlayRadiusOption = useAppStore((state) => state.selectedOverlayRadiusOption);
   const setSelectedOverlayRadiusOption = useAppStore((state) => state.setSelectedOverlayRadiusOption);
   const [showTerrainOverlay, setShowTerrainOverlay] = useState(false);
@@ -2242,13 +2243,14 @@ export function MapView({
   const calculationControlRunning = calculationCycleSource !== null || isSimulationRecomputing;
   const handleStopCalculation = useCallback(() => {
     stopCalculation();
+    cancelTerrainLoad();
     coverageOverlaySchedulerRef.current?.clearQueue();
     coverageOverlaySchedulerRef.current?.cancelActive();
     terrainOverlaySchedulerRef.current?.clearQueue();
     terrainOverlaySchedulerRef.current?.cancelActive();
     setOverlayPipelineProgress("coverage", null);
     setOverlayPipelineProgress("terrain", null);
-  }, [setOverlayPipelineProgress, stopCalculation]);
+  }, [cancelTerrainLoad, setOverlayPipelineProgress, stopCalculation]);
   useEffect(() => {
     if (!calculationCycleSource || isSimulationRecomputing || overlayJobsInFlight > 0 || isTerrainFetching || isTerrainRecommending) {
       return;
@@ -3589,13 +3591,13 @@ export function MapView({
                     <div className="map-sim-row">
                       <div className="map-sim-row-label">Memory (Decoded)</div>
                       <div className="map-sim-row-value">
-                        {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, 90m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus90)}, manual {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
+                        {formatMb(terrainMemoryDiagnostics.retainedBytesTotal)} [30m {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.copernicus30)}, manual {formatMb(terrainMemoryDiagnostics.retainedBytesByDataset.manual)}]
                       </div>
                     </div>
                     <div className="map-sim-row">
                       <div className="map-sim-row-label">Tile Counts</div>
                       <div className="map-sim-row-value">
-                        30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, 90m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus90}, manual {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other {terrainMemoryDiagnostics.tileCountsByDataset.other}
+                        30m {terrainMemoryDiagnostics.tileCountsByDataset.copernicus30}, manual {terrainMemoryDiagnostics.tileCountsByDataset.manual}, other {terrainMemoryDiagnostics.tileCountsByDataset.other}
                       </div>
                     </div>
                     <div className="map-sim-row">

@@ -3,7 +3,6 @@ import type { SrtmTile } from "../types/radio";
 export const terrainTileRank = (tile: SrtmTile): number => {
   if (tile.sourceKind === "manual-upload") return 4;
   if (tile.sourceId === "copernicus30") return 3;
-  if (tile.sourceId === "copernicus90") return 2;
   return 1;
 };
 

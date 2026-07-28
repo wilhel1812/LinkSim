@@ -1,45 +1,23 @@
 import { fromArrayBuffer } from "geotiff";
 import type { SrtmTile } from "../types/radio";
-import { tilesForBounds } from "./terrainTiles";
-import type { TerrainDataset } from "./terrainDataset";
+import { copernicus30PathForTileKey } from "./copernicusTilePath";
 
-export type CopernicusDataset = Extract<TerrainDataset, "copernicus30" | "copernicus90">;
-
-export type CopernicusLoadResult = {
-  tiles: SrtmTile[];
-  failedTiles: string[];
-  fetchedTiles: string[];
-  cacheHits: string[];
-  fallbackTiles: string[];
-};
+export { copernicus30PathForTileKey } from "./copernicusTilePath";
 
 export type CopernicusTileProgress = {
-  dataset: CopernicusDataset;
+  dataset: "copernicus30";
   tileKey: string;
   bytes: number;
   completedTiles: number;
   totalTiles: number;
 };
 
-type CopernicusRecommendation = {
-  dataset: CopernicusDataset;
-  completeness: number;
-  expectedTiles: number;
-  availableTiles: number;
-  byDataset: Record<CopernicusDataset, { availableTiles: number; completeness: number }>;
+export type CopernicusLoadResult = {
+  tiles: SrtmTile[];
+  failedTiles: string[];
+  fetchedTiles: string[];
+  cacheHits: string[];
 };
-
-const DATASET_PATH: Record<CopernicusDataset, "30m" | "90m"> = {
-  copernicus30: "30m",
-  copernicus90: "90m",
-};
-
-const CACHE_NAME = "linksim-copernicus-cog-v1";
-const TILELIST_CACHE_KEY = "linksim-copernicus-tilelist-v1";
-const TILE_INDEX_CACHE_KEY = "linksim-copernicus-tile-index-v1";
-const TILELIST_TTL_MS = 6 * 60 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 20000;
-const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 export type RetryPolicy = {
   maxRetries: number;
@@ -47,21 +25,8 @@ export type RetryPolicy = {
   maxDelayMs: number;
 };
 
-const TILELIST_RETRY_POLICY: RetryPolicy = {
-  maxRetries: 5,
-  baseDelayMs: 800,
-  maxDelayMs: 15_000,
-};
-
-const TILE_RETRY_POLICY: RetryPolicy = {
-  maxRetries: 2,
-  baseDelayMs: 500,
-  maxDelayMs: 3_000,
-};
-
 type ParsedCopernicusTilePayload = {
   key: string;
-  dataset: CopernicusDataset;
   path: string;
   latStart: number;
   lonStart: number;
@@ -73,22 +38,23 @@ type ParsedCopernicusTilePayload = {
 type TileParserRequestMessage = {
   id: number;
   key: string;
-  dataset: CopernicusDataset;
+  dataset: "copernicus30";
   path: string;
   buffer: ArrayBuffer;
 };
 
 type TileParserResponseMessage =
-  | {
-      id: number;
-      ok: true;
-      payload: ParsedCopernicusTilePayload;
-    }
-  | {
-      id: number;
-      ok: false;
-      error: string;
-    };
+  | { id: number; ok: true; payload: ParsedCopernicusTilePayload }
+  | { id: number; ok: false; error: string };
+
+const CACHE_NAME = "linksim-copernicus-cog-v1";
+const RESPONSE_START_TIMEOUT_MS = 15_000;
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const TILE_RETRY_POLICY: RetryPolicy = {
+  maxRetries: 1,
+  baseDelayMs: 500,
+  maxDelayMs: 3_000,
+};
 
 let parserWorkerInstance: Worker | null = null;
 let parserRequestId = 0;
@@ -100,6 +66,28 @@ const parserPending = new Map<
   }
 >();
 
+const abortError = (signal: AbortSignal): Error =>
+  signal.reason instanceof Error ? signal.reason : new DOMException("Terrain loading stopped", "AbortError");
+
+const throwIfAborted = (signal?: AbortSignal): void => {
+  if (signal?.aborted) throw abortError(signal);
+};
+
+const isAbortError = (error: unknown): boolean =>
+  error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+
+const raceWithAbort = async <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (!signal) return promise;
+  throwIfAborted(signal);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortError(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+};
+
 const getParserWorker = (): Worker | null => {
   if (typeof Worker === "undefined") return null;
   if (parserWorkerInstance) return parserWorkerInstance;
@@ -109,14 +97,11 @@ const getParserWorker = (): Worker | null => {
     const pending = parserPending.get(data.id);
     if (!pending) return;
     parserPending.delete(data.id);
-    if (data.ok) {
-      pending.resolve(data.payload);
-      return;
-    }
-    pending.reject(new Error(data.error));
+    if (data.ok) pending.resolve(data.payload);
+    else pending.reject(new Error(data.error));
   };
   worker.onerror = () => {
-    for (const [, pending] of parserPending.entries()) {
+    for (const pending of parserPending.values()) {
       pending.reject(new Error("Copernicus tile parser worker failed"));
     }
     parserPending.clear();
@@ -127,38 +112,17 @@ const getParserWorker = (): Worker | null => {
 
 const parseCopernicusTileOnWorker = (
   key: string,
-  dataset: CopernicusDataset,
   path: string,
   buffer: ArrayBuffer,
 ): Promise<ParsedCopernicusTilePayload> => {
   const worker = getParserWorker();
-  if (!worker) {
-    return Promise.reject(new Error("Worker unavailable"));
-  }
+  if (!worker) return Promise.reject(new Error("Worker unavailable"));
   const id = ++parserRequestId;
-  return new Promise<ParsedCopernicusTilePayload>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     parserPending.set(id, { resolve, reject });
-    const message: TileParserRequestMessage = { id, key, dataset, path, buffer };
+    const message: TileParserRequestMessage = { id, key, dataset: "copernicus30", path, buffer };
     worker.postMessage(message, [buffer]);
   });
-};
-
-const parseCopernicusKey = (entry: string): string | null => {
-  const match = entry.match(/Copernicus_DSM_COG_\d+_([NS])(\d{2})_00_([EW])(\d{3})_00_DEM/i);
-  if (!match) return null;
-  return `${match[1].toUpperCase()}${match[2]}${match[3].toUpperCase()}${match[4]}`;
-};
-
-const tilePathForEntry = (entry: string): string => `${entry}/${entry}.tif`;
-
-const requestWithTimeout = async (url: string): Promise<Response> => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
 };
 
 const parseRetryAfterMs = (value: string | null): number | null => {
@@ -178,113 +142,72 @@ export const resolveRetryDelayMs = (
 ): number => {
   const retryAfterMs = parseRetryAfterMs(response?.headers.get("retry-after") ?? null);
   const exponentialMs = policy.baseDelayMs * 2 ** Math.max(0, attempt - 1);
-  const preferred = retryAfterMs ?? exponentialMs;
-  return Math.min(policy.maxDelayMs, Math.max(policy.baseDelayMs, preferred));
+  return Math.min(policy.maxDelayMs, Math.max(policy.baseDelayMs, retryAfterMs ?? exponentialMs));
 };
 
-const fetchWithRetry = async (url: string, policy: RetryPolicy): Promise<Response> => {
+const waitForRetry = (delayMs: number, signal?: AbortSignal): Promise<void> =>
+  raceWithAbort(new Promise((resolve) => setTimeout(resolve, delayMs)), signal);
+
+type TileResponse = {
+  response: Response;
+  buffer: ArrayBuffer | null;
+};
+
+class PermanentTileError extends Error {}
+
+const requestTile = async (url: string, signal?: AbortSignal): Promise<TileResponse> => {
+  throwIfAborted(signal);
+  const controller = new AbortController();
+  const relayAbort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", relayAbort, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort(new DOMException("Terrain request timed out", "TimeoutError")),
+    RESPONSE_START_TIMEOUT_MS,
+  );
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) return { response, buffer: null };
+    const buffer = await response.arrayBuffer();
+    throwIfAborted(signal);
+    return { response, buffer };
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", relayAbort);
+  }
+};
+
+const fetchTileBuffer = async (
+  url: string,
+  signal?: AbortSignal,
+): Promise<{ buffer: ArrayBuffer; response: Response }> => {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= policy.maxRetries; attempt += 1) {
+  for (let attempt = 0; attempt <= TILE_RETRY_POLICY.maxRetries; attempt += 1) {
+    throwIfAborted(signal);
+    let response: Response | null = null;
     try {
-      const response = await requestWithTimeout(url);
-      if (!response.ok) {
-        if (!RETRYABLE_STATUSES.has(response.status) || attempt >= policy.maxRetries) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const delayMs = resolveRetryDelayMs(policy, attempt, response);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
+      const requested = await requestTile(url, signal);
+      response = requested.response;
+      if (response.ok && requested.buffer) return { buffer: requested.buffer, response };
+      if (!RETRYABLE_STATUSES.has(response.status)) {
+        throw new PermanentTileError(`HTTP ${response.status}`);
       }
-      return response;
+      if (attempt >= TILE_RETRY_POLICY.maxRetries) {
+        throw new Error(`HTTP ${response.status}`);
+      }
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) throw error;
+      if (error instanceof PermanentTileError) throw error;
       lastError = error;
-      if (attempt < policy.maxRetries) {
-        const delayMs = resolveRetryDelayMs(policy, attempt, null);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+      if (attempt >= TILE_RETRY_POLICY.maxRetries) throw error;
     }
+    await waitForRetry(resolveRetryDelayMs(TILE_RETRY_POLICY, attempt + 1, response), signal);
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 };
 
-const loadTileList = async (
-  dataset: CopernicusDataset,
-): Promise<Record<string, { entry: string; path: string }>> => {
-  const cacheKey = dataset;
-  try {
-    const raw = localStorage.getItem(TILELIST_CACHE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Record<
-        string,
-        { fetchedAtMs: number; entries: Record<string, { entry: string; path: string }> }
-      >;
-      const cached = parsed[cacheKey];
-      if (cached && Date.now() - cached.fetchedAtMs < TILELIST_TTL_MS) {
-        return cached.entries;
-      }
-    }
-  } catch {
-    // Ignore corrupt cache and refetch.
-  }
-
-  const pathPrefix = DATASET_PATH[dataset];
-  const response = await fetchWithRetry(`/copernicus/${pathPrefix}/tileList.txt`, TILELIST_RETRY_POLICY);
-  const text = await response.text();
-  const entries: Record<string, { entry: string; path: string }> = {};
-  for (const line of text.split(/\r?\n/)) {
-    const entry = line.trim();
-    if (!entry) continue;
-    const key = parseCopernicusKey(entry);
-    if (!key) continue;
-    entries[key] = { entry, path: tilePathForEntry(entry) };
-  }
-
-  try {
-    const raw = localStorage.getItem(TILELIST_CACHE_KEY);
-    const parsed = raw
-      ? (JSON.parse(raw) as Record<
-          string,
-          { fetchedAtMs: number; entries: Record<string, { entry: string; path: string }> }
-        >)
-      : {};
-    parsed[cacheKey] = { fetchedAtMs: Date.now(), entries };
-    localStorage.setItem(TILELIST_CACHE_KEY, JSON.stringify(parsed));
-  } catch {
-    // Best effort only.
-  }
-
-  return entries;
-};
-
-const readTileIndex = (dataset: CopernicusDataset): Set<string> => {
-  try {
-    const raw = localStorage.getItem(TILE_INDEX_CACHE_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw) as Record<string, { fetchedAtMs: number; keys: string[] }>;
-    const entry = parsed[dataset];
-    if (!entry) return new Set();
-    return new Set(entry.keys);
-  } catch {
-    return new Set();
-  }
-};
-
-const writeTileIndex = (dataset: CopernicusDataset, keys: string[]): void => {
-  try {
-    const raw = localStorage.getItem(TILE_INDEX_CACHE_KEY);
-    const parsed = raw
-      ? (JSON.parse(raw) as Record<string, { fetchedAtMs: number; keys: string[] }>)
-      : {};
-    parsed[dataset] = { fetchedAtMs: Date.now(), keys };
-    localStorage.setItem(TILE_INDEX_CACHE_KEY, JSON.stringify(parsed));
-  } catch {
-    // Best effort.
-  }
-};
-
 const parseCopernicusTileInMain = async (
   tileKey: string,
-  dataset: CopernicusDataset,
   path: string,
   buffer: ArrayBuffer,
 ): Promise<SrtmTile> => {
@@ -297,13 +220,12 @@ const parseCopernicusTileInMain = async (
   const raster = await image.readRasters({ interleave: true, samples: [0] });
   const out = new Int16Array(width * height);
   const nodataNumeric = nodata === null ? NaN : Number(nodata);
-  for (let i = 0; i < out.length; i += 1) {
-    const value = Number((raster as ArrayLike<number>)[i]);
-    if (!Number.isFinite(value) || (Number.isFinite(nodataNumeric) && Math.abs(value - nodataNumeric) <= 0.01)) {
-      out[i] = -32768;
-      continue;
-    }
-    out[i] = Math.max(-32767, Math.min(32767, Math.round(value)));
+  for (let index = 0; index < out.length; index += 1) {
+    const value = Number((raster as ArrayLike<number>)[index]);
+    out[index] =
+      !Number.isFinite(value) || (Number.isFinite(nodataNumeric) && Math.abs(value - nodataNumeric) <= 0.01)
+        ? -32768
+        : Math.max(-32767, Math.min(32767, Math.round(value)));
   }
   return {
     key: tileKey,
@@ -312,11 +234,11 @@ const parseCopernicusTileInMain = async (
     size: Math.max(width, height),
     width,
     height,
-    arcSecondSpacing: dataset === "copernicus30" ? 1 : 3,
+    arcSecondSpacing: 1,
     elevations: out,
     sourceKind: "auto-fetch",
-    sourceId: dataset,
-    sourceLabel: `Copernicus ${dataset === "copernicus30" ? "GLO-30" : "GLO-90"}`,
+    sourceId: "copernicus30",
+    sourceLabel: "Copernicus GLO-30",
     sourceDetail: path,
   };
 };
@@ -328,305 +250,111 @@ const toSrtmTile = (payload: ParsedCopernicusTilePayload): SrtmTile => ({
   size: Math.max(payload.width, payload.height),
   width: payload.width,
   height: payload.height,
-  arcSecondSpacing: payload.dataset === "copernicus30" ? 1 : 3,
+  arcSecondSpacing: 1,
   elevations: payload.elevations,
   sourceKind: "auto-fetch",
-  sourceId: payload.dataset,
-  sourceLabel: `Copernicus ${payload.dataset === "copernicus30" ? "GLO-30" : "GLO-90"}`,
+  sourceId: "copernicus30",
+  sourceLabel: "Copernicus GLO-30",
   sourceDetail: payload.path,
 });
 
 const parseCopernicusTile = async (
   tileKey: string,
-  dataset: CopernicusDataset,
   path: string,
   buffer: ArrayBuffer,
+  signal?: AbortSignal,
 ): Promise<SrtmTile> => {
+  throwIfAborted(signal);
   try {
-    const payload = await parseCopernicusTileOnWorker(tileKey, dataset, path, buffer);
+    const payload = await raceWithAbort(parseCopernicusTileOnWorker(tileKey, path, buffer), signal);
     return toSrtmTile(payload);
-  } catch {
-    return parseCopernicusTileInMain(tileKey, dataset, path, buffer);
+  } catch (error) {
+    if (isAbortError(error) || signal?.aborted) throw error;
+    return raceWithAbort(parseCopernicusTileInMain(tileKey, path, buffer), signal);
   }
 };
 
-const getCachedOrFetchTile = async (
-  pathPrefix: "30m" | "90m",
-  path: string,
+const loadTile = async (
   tileKey: string,
-): Promise<{ buffer: ArrayBuffer; fromCache: boolean; byteLength: number }> => {
-  const dataset: CopernicusDataset = pathPrefix === "30m" ? "copernicus30" : "copernicus90";
+  signal?: AbortSignal,
+): Promise<{ tile: SrtmTile; fromCache: boolean; bytes: number }> => {
+  const path = copernicus30PathForTileKey(tileKey);
   const cache = await caches.open(CACHE_NAME);
-  const proxiedUrl = `/copernicus/${pathPrefix}/${path}`;
-  const localIndex = readTileIndex(dataset);
-  if (localIndex.has(tileKey)) {
-    const cached = await cache.match(proxiedUrl);
-    if (cached) {
-      const buffer = await cached.arrayBuffer();
-      return { buffer, fromCache: true, byteLength: buffer.byteLength };
-    }
+  throwIfAborted(signal);
+  const cached = await cache.match(path);
+  if (cached) {
+    const buffer = await cached.arrayBuffer();
+    return {
+      tile: await parseCopernicusTile(tileKey, path, buffer, signal),
+      fromCache: true,
+      bytes: buffer.byteLength,
+    };
   }
-  const response = await fetchWithRetry(proxiedUrl, TILE_RETRY_POLICY);
-  const contentLength = Number(response.headers.get("content-length") ?? "");
-  await cache.put(proxiedUrl, response.clone());
-  const buffer = await response.arrayBuffer();
+
+  const { buffer, response } = await fetchTileBuffer(path, signal);
+  throwIfAborted(signal);
+  await cache.put(path, new Response(buffer.slice(0), { status: 200, headers: response.headers }));
   return {
-    buffer,
+    tile: await parseCopernicusTile(tileKey, path, buffer, signal),
     fromCache: false,
-    byteLength: Number.isFinite(contentLength) && contentLength > 0 ? contentLength : buffer.byteLength,
+    bytes: buffer.byteLength,
   };
 };
 
-const loadTileBatch = async (
-  keys: string[],
-  dataset: CopernicusDataset,
-  pathPrefix: "30m" | "90m",
-  fallbackDataset?: "copernicus90",
-  onTileProgress?: (progress: CopernicusTileProgress) => void,
-): Promise<{
-  tiles: SrtmTile[];
-  failedTiles: string[];
-  fetchedTiles: string[];
-  cacheHits: string[];
-  fallbackTiles: string[];
-}> => {
-  const tileList = await loadTileList(dataset);
-  const fetchedTiles: string[] = [];
-  const cacheHits: string[] = [];
-  const failedTiles = new Set<string>();
-  const fallbackTiles: string[] = [];
-  const parsedTiles: SrtmTile[] = [];
-  let completedTiles = 0;
-  const totalTiles = keys.length;
-
-  const reportProgress = (tileKey: string, bytes: number, progressDataset: CopernicusDataset) => {
-    completedTiles += 1;
-    onTileProgress?.({
-      dataset: progressDataset,
-      tileKey,
-      bytes,
-      completedTiles,
-      totalTiles,
-    });
-  };
-
-  for (const key of keys) {
-    const item = tileList[key];
-    if (!item) {
-      failedTiles.add(key);
-      reportProgress(key, 0, dataset);
-      continue;
-    }
-    try {
-      const { buffer, fromCache, byteLength } = await getCachedOrFetchTile(pathPrefix, item.path, key);
-      if (fromCache) cacheHits.push(key);
-      else fetchedTiles.push(key);
-      parsedTiles.push(await parseCopernicusTile(key, dataset, item.path, buffer));
-      reportProgress(key, byteLength, dataset);
-    } catch {
-      failedTiles.add(key);
-      reportProgress(key, 0, dataset);
-    }
-  }
-
-  if (fallbackDataset && failedTiles.size > 0) {
-    const fallbackList = await loadTileList(fallbackDataset);
-    for (const key of Array.from(failedTiles)) {
-      const item = fallbackList[key];
-      if (!item) continue;
-      try {
-        const { buffer, fromCache, byteLength } = await getCachedOrFetchTile(DATASET_PATH[fallbackDataset], item.path, key);
-        if (fromCache) cacheHits.push(key);
-        else fetchedTiles.push(key);
-        parsedTiles.push(await parseCopernicusTile(key, fallbackDataset, item.path, buffer));
-        fallbackTiles.push(key);
-        failedTiles.delete(key);
-        reportProgress(key, byteLength, fallbackDataset);
-      } catch {
-        // keep failed
-        reportProgress(key, 0, fallbackDataset);
-      }
-    }
-  }
-
-  const allLoadedKeys = [...cacheHits, ...fetchedTiles];
-  if (allLoadedKeys.length > 0) {
-    const existingIndex = readTileIndex(dataset);
-    const merged = new Set([...existingIndex, ...allLoadedKeys]);
-    writeTileIndex(dataset, Array.from(merged));
-  }
-
-  return { tiles: parsedTiles, failedTiles: Array.from(failedTiles), fetchedTiles, cacheHits, fallbackTiles };
-};
-
-export type CopernicusPhasedLoadResult = {
-  priority: CopernicusLoadResult;
-  remaining: CopernicusLoadResult;
-};
-
-export const loadCopernicusTilesForArea = async (
-  minLat: number,
-  maxLat: number,
-  minLon: number,
-  maxLon: number,
-  dataset: CopernicusDataset,
+export const loadCopernicus30TilesByKeys = async (
+  tileKeys: readonly string[],
+  options: {
+    signal?: AbortSignal;
+    concurrency?: number;
+    onTileProgress?: (progress: CopernicusTileProgress) => void;
+  } = {},
 ): Promise<CopernicusLoadResult> => {
-  const tileList = await loadTileList(dataset);
-  const candidateKeys = tilesForBounds(minLat, maxLat, minLon, maxLon);
-  const pathPrefix = DATASET_PATH[dataset];
+  const keys = Array.from(new Set(tileKeys));
+  const concurrency = Math.max(1, Math.min(2, Math.floor(options.concurrency ?? 2)));
+  const tiles: SrtmTile[] = [];
+  const failedTiles: string[] = [];
   const fetchedTiles: string[] = [];
   const cacheHits: string[] = [];
-  const failedTiles = new Set<string>();
-  const fallbackTiles: string[] = [];
-  const parsedTiles: SrtmTile[] = [];
+  let nextIndex = 0;
+  let completedTiles = 0;
 
-  for (const key of candidateKeys) {
-    const item = tileList[key];
-    if (!item) {
-      failedTiles.add(key);
-      continue;
-    }
-    try {
-      const { buffer, fromCache } = await getCachedOrFetchTile(pathPrefix, item.path, key);
-      if (fromCache) cacheHits.push(key);
-      else fetchedTiles.push(key);
-      parsedTiles.push(await parseCopernicusTile(key, dataset, item.path, buffer));
-    } catch {
-      failedTiles.add(key);
-    }
-  }
-
-  // Automatic fallback: if 30m fetch fails for some tiles, try 90m for those same tile keys.
-  if (dataset === "copernicus30" && failedTiles.size > 0) {
-    const fallbackList = await loadTileList("copernicus90");
-    for (const key of Array.from(failedTiles)) {
-      const item = fallbackList[key];
-      if (!item) continue;
+  const worker = async () => {
+    while (nextIndex < keys.length) {
+      throwIfAborted(options.signal);
+      const tileKey = keys[nextIndex];
+      nextIndex += 1;
+      let bytes = 0;
       try {
-        const { buffer, fromCache } = await getCachedOrFetchTile(DATASET_PATH.copernicus90, item.path, key);
-        if (fromCache) cacheHits.push(key);
-        else fetchedTiles.push(key);
-        parsedTiles.push(await parseCopernicusTile(key, "copernicus90", item.path, buffer));
-        fallbackTiles.push(key);
-        failedTiles.delete(key);
-      } catch {
-        // keep failed
+        const loaded = await loadTile(tileKey, options.signal);
+        throwIfAborted(options.signal);
+        tiles.push(loaded.tile);
+        bytes = loaded.bytes;
+        if (loaded.fromCache) cacheHits.push(tileKey);
+        else fetchedTiles.push(tileKey);
+      } catch (error) {
+        if (isAbortError(error) || options.signal?.aborted) throw error;
+        failedTiles.push(tileKey);
+      }
+      completedTiles += 1;
+      if (!options.signal?.aborted) {
+        options.onTileProgress?.({
+          dataset: "copernicus30",
+          tileKey,
+          bytes,
+          completedTiles,
+          totalTiles: keys.length,
+        });
       }
     }
-  }
+  };
 
-  const allLoadedKeys = [...cacheHits, ...fetchedTiles];
-  if (allLoadedKeys.length > 0) {
-    const existingIndex = readTileIndex(dataset);
-    const merged = new Set([...existingIndex, ...allLoadedKeys]);
-    writeTileIndex(dataset, Array.from(merged));
-  }
-
-  return { tiles: parsedTiles, failedTiles: Array.from(failedTiles), fetchedTiles, cacheHits, fallbackTiles };
-};
-
-export const loadCopernicusTilesForAreaPhased = async (
-  minLat: number,
-  maxLat: number,
-  minLon: number,
-  maxLon: number,
-  dataset: CopernicusDataset,
-  priorityKeys?: Set<string>,
-  options?: { skipRemaining?: boolean; onTileProgress?: (progress: CopernicusTileProgress) => void },
-): Promise<CopernicusPhasedLoadResult> => {
-  const candidateKeys = tilesForBounds(minLat, maxLat, minLon, maxLon);
-  const pathPrefix = DATASET_PATH[dataset];
-  const is30m = dataset === "copernicus30";
-
-  let priority: CopernicusLoadResult;
-  let remaining: CopernicusLoadResult;
-
-  if (priorityKeys && priorityKeys.size > 0) {
-    const priorityKeysList = candidateKeys.filter((k) => priorityKeys.has(k));
-    const remainingKeys = candidateKeys.filter((k) => !priorityKeys.has(k));
-
-    priority = await loadTileBatch(
-      priorityKeysList,
-      dataset,
-      pathPrefix,
-      is30m ? "copernicus90" : undefined,
-      options?.onTileProgress,
-    );
-    if (options?.skipRemaining) {
-      remaining = { tiles: [], failedTiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [] };
-    } else {
-      remaining = await loadTileBatch(
-        remainingKeys,
-        dataset,
-        pathPrefix,
-        is30m ? "copernicus90" : undefined,
-        options?.onTileProgress,
-      );
-    }
-  } else {
-    priority = await loadTileBatch(
-      candidateKeys,
-      dataset,
-      pathPrefix,
-      is30m ? "copernicus90" : undefined,
-      options?.onTileProgress,
-    );
-    remaining = { tiles: [], failedTiles: [], fetchedTiles: [], cacheHits: [], fallbackTiles: [] };
-  }
-
-  return { priority, remaining };
+  await Promise.all(Array.from({ length: Math.min(concurrency, keys.length) }, () => worker()));
+  throwIfAborted(options.signal);
+  return { tiles, failedTiles, fetchedTiles, cacheHits };
 };
 
 export const clearCopernicusCache = async (): Promise<void> => {
   await caches.delete(CACHE_NAME);
-  localStorage.removeItem(TILELIST_CACHE_KEY);
-  localStorage.removeItem(TILE_INDEX_CACHE_KEY);
-};
-
-export const recommendCopernicusDatasetForArea = async (
-  minLat: number,
-  maxLat: number,
-  minLon: number,
-  maxLon: number,
-  datasets?: readonly CopernicusDataset[],
-): Promise<CopernicusRecommendation> => {
-  const expected = Math.max(1, tilesForBounds(minLat, maxLat, minLon, maxLon).length);
-  const keys = new Set(tilesForBounds(minLat, maxLat, minLon, maxLon));
-  const toCheck = datasets ?? (["copernicus30", "copernicus90"] as CopernicusDataset[]);
-  const stats: Array<{ dataset: CopernicusDataset; availableTiles: number; completeness: number }> = [];
-  for (const dataset of toCheck) {
-    try {
-      const list = await loadTileList(dataset);
-      let available = 0;
-      for (const key of keys) if (list[key]) available += 1;
-      stats.push({
-        dataset,
-        availableTiles: available,
-        completeness: available / expected,
-      });
-    } catch {
-      stats.push({ dataset, availableTiles: 0, completeness: 0 });
-    }
-  }
-  const sorted = [...stats].sort((a, b) => {
-    if (b.completeness !== a.completeness) return b.completeness - a.completeness;
-    return a.dataset === "copernicus30" ? -1 : 1;
-  });
-  const best = sorted[0];
-  return {
-    dataset: best.dataset,
-    completeness: best.completeness,
-    expectedTiles: expected,
-    availableTiles: best.availableTiles,
-    byDataset: {
-      copernicus30: {
-        availableTiles: stats.find((entry) => entry.dataset === "copernicus30")?.availableTiles ?? 0,
-        completeness: stats.find((entry) => entry.dataset === "copernicus30")?.completeness ?? 0,
-      },
-      copernicus90: {
-        availableTiles: stats.find((entry) => entry.dataset === "copernicus90")?.availableTiles ?? 0,
-        completeness: stats.find((entry) => entry.dataset === "copernicus90")?.completeness ?? 0,
-      },
-    },
-  };
+  localStorage.removeItem("linksim-copernicus-tilelist-v1");
+  localStorage.removeItem("linksim-copernicus-tile-index-v1");
 };

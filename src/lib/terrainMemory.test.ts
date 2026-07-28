@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { SrtmTile } from "../types/radio";
 import {
   COPERNICUS_30_TILE_DECODED_BYTES,
-  COPERNICUS_90_TILE_DECODED_BYTES,
   estimateTerrainMemoryDiagnostics,
   estimateTransientDecodeBytes,
 } from "./terrainMemory";
@@ -27,7 +26,7 @@ const makeTile = (
 });
 
 describe("terrainMemory", () => {
-  it("estimates retained decoded bytes by dataset", () => {
+  it("estimates retained decoded bytes for GLO-30, manual, and other tiles", () => {
     const tiles: SrtmTile[] = [
       makeTile("N60E010", "copernicus30", "auto-fetch", 3601),
       makeTile("N60E011", "copernicus90", "auto-fetch", 1201),
@@ -39,22 +38,19 @@ describe("terrainMemory", () => {
 
     expect(diagnostics.tileCountsByDataset).toEqual({
       copernicus30: 1,
-      copernicus90: 1,
       manual: 1,
-      other: 1,
+      other: 2,
     });
+    const legacyTileBytes = 1201 * 1201 * 2;
     expect(diagnostics.retainedBytesByDataset.copernicus30).toBe(COPERNICUS_30_TILE_DECODED_BYTES);
-    expect(diagnostics.retainedBytesByDataset.copernicus90).toBe(COPERNICUS_90_TILE_DECODED_BYTES);
-    expect(diagnostics.retainedBytesByDataset.manual).toBe(COPERNICUS_90_TILE_DECODED_BYTES);
-    expect(diagnostics.retainedBytesByDataset.other).toBe(COPERNICUS_90_TILE_DECODED_BYTES);
+    expect(diagnostics.retainedBytesByDataset.manual).toBe(legacyTileBytes);
+    expect(diagnostics.retainedBytesByDataset.other).toBe(legacyTileBytes * 2);
     expect(diagnostics.retainedBytesTotal).toBe(
-      COPERNICUS_30_TILE_DECODED_BYTES + COPERNICUS_90_TILE_DECODED_BYTES * 3,
+      COPERNICUS_30_TILE_DECODED_BYTES + legacyTileBytes * 3,
     );
   });
 
   it("estimates transient decode bytes from in-flight tile counts", () => {
-    expect(estimateTransientDecodeBytes({ copernicus30: 2, copernicus90: 3 })).toBe(
-      COPERNICUS_30_TILE_DECODED_BYTES * 2 + COPERNICUS_90_TILE_DECODED_BYTES * 3,
-    );
+    expect(estimateTransientDecodeBytes(2)).toBe(COPERNICUS_30_TILE_DECODED_BYTES * 2);
   });
 });

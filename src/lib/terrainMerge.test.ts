@@ -13,7 +13,7 @@ const makeTile = (key: string, lat: number, lon: number, sourceId = "copernicus3
   elevations: new Int16Array(3601 * 3601),
   sourceKind: "auto-fetch",
   sourceId,
-  sourceLabel: sourceId === "copernicus90" ? "Copernicus GLO-90" : "Copernicus GLO-30",
+  sourceLabel: sourceId === "copernicus30" ? "Copernicus GLO-30" : "Legacy terrain",
   sourceDetail: "test",
 });
 
@@ -54,7 +54,7 @@ describe("mergeSrtmTiles", () => {
     expect(result.map((t) => t.key)).toEqual(["N60E009", "N61E009", "N60E010"]);
   });
 
-  it("keeps existing 30m tile when incoming tile is 90m for same key", () => {
+  it("keeps existing GLO-30 tile when an incoming legacy tile has the same key", () => {
     const existing = [makeTile("N60E009", 60, 9, "copernicus30")];
     const incoming = [makeTile("N60E009", 99, 99, "copernicus90")];
     const result = mergeSrtmTiles(existing, incoming);
@@ -63,7 +63,7 @@ describe("mergeSrtmTiles", () => {
     expect(result[0].sourceId).toBe("copernicus30");
   });
 
-  it("promotes 90m tile to 30m tile when incoming 30m arrives", () => {
+  it("promotes a legacy tile to GLO-30 when GLO-30 arrives", () => {
     const existing = [makeTile("N60E009", 60, 9, "copernicus90")];
     const incoming = [makeTile("N60E009", 99, 99, "copernicus30")];
     const result = mergeSrtmTiles(existing, incoming);
