@@ -1,14 +1,8 @@
 import { fromArrayBuffer } from "geotiff";
 import { analyzeLink } from "../../src/lib/propagation";
 import { defaultPropagationEnvironment } from "../../src/lib/propagationEnvironment";
+import { copernicus30PathForTileKey } from "../../src/lib/copernicusTilePath";
 import type { Env } from "./types";
-
-type TileListEntry = {
-  key: string;
-  pathPrefix: "30m" | "90m";
-  path: string;
-  dataset: "copernicus30" | "copernicus90";
-};
 
 export type TerrainAnalysisResult = {
   distanceKm: number;
@@ -33,7 +27,7 @@ type TerrainBounds = {
 
 type CompactTerrainTile = {
   key: string;
-  dataset: "copernicus30" | "copernicus90";
+  dataset: "copernicus30";
   minLat: number;
   maxLat: number;
   minLon: number;
@@ -62,52 +56,6 @@ const tilesForBounds = (minLat: number, maxLat: number, minLon: number, maxLon: 
   return Array.from(keys).sort();
 };
 
-const parseCopernicusKey = (entry: string): string | null => {
-  const match = entry.match(/Copernicus_DSM_COG_\d+_([NS])(\d{2})_00_([EW])(\d{3})_00_DEM/i);
-  if (!match) return null;
-  const [, ns, lat, ew, lon] = match;
-  return `${ns.toUpperCase()}${lat}${ew.toUpperCase()}${lon}`;
-};
-
-const parseTileList = (raw: string, pathPrefix: "30m" | "90m"): Map<string, TileListEntry[]> => {
-  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const map = new Map<string, TileListEntry[]>();
-  for (const line of lines) {
-    const key = parseCopernicusKey(line);
-    if (!key) continue;
-    const directory = line.replace(/\/+$/, "");
-    const path = directory.includes(".tif") ? directory : `${directory}/${directory}.tif`;
-    const dataset: TileListEntry["dataset"] = /_COG_30_/i.test(line) ? "copernicus30" : "copernicus90";
-    const entry: TileListEntry = { key, pathPrefix, path, dataset };
-    const existing = map.get(key) ?? [];
-    existing.push(entry);
-    map.set(key, existing);
-  }
-  return map;
-};
-
-const fetchTileList = async (origin: string, pathPrefix: "30m" | "90m"): Promise<Map<string, TileListEntry[]>> => {
-  const response = await fetch(`${origin}/copernicus/${pathPrefix}/tileList.txt`);
-  if (!response.ok) return new Map();
-  const text = await response.text();
-  return parseTileList(text, pathPrefix);
-};
-
-const mergeTileIndexes = (left: Map<string, TileListEntry[]>, right: Map<string, TileListEntry[]>): Map<string, TileListEntry[]> => {
-  const out = new Map(left);
-  for (const [key, entries] of right.entries()) {
-    const existing = out.get(key) ?? [];
-    out.set(key, [...existing, ...entries]);
-  }
-  return out;
-};
-
-const chooseTileEntry = (entries: TileListEntry[]): TileListEntry | null => {
-  if (!entries.length) return null;
-  const preferred30 = entries.find((entry) => entry.dataset === "copernicus30");
-  return preferred30 ?? entries[0] ?? null;
-};
-
 const toTerrainBounds = (
   from: { lat: number; lon: number },
   to: { lat: number; lon: number },
@@ -119,7 +67,7 @@ const toTerrainBounds = (
 });
 
 const parseCopernicusTile = async (
-  entry: TileListEntry,
+  key: string,
   buffer: ArrayBuffer,
   bounds: TerrainBounds,
 ): Promise<CompactTerrainTile | null> => {
@@ -155,7 +103,7 @@ const parseCopernicusTile = async (
 
   const sourceW = Math.max(1, x1 - x0);
   const sourceH = Math.max(1, y1 - y0);
-  const preferredDim = entry.dataset === "copernicus30" ? 300 : 220;
+  const preferredDim = 300;
   let targetW = Math.min(sourceW, preferredDim);
   let targetH = Math.min(sourceH, preferredDim);
   const cellCount = targetW * targetH;
@@ -186,8 +134,8 @@ const parseCopernicusTile = async (
   }
 
   return {
-    key: entry.key,
-    dataset: entry.dataset,
+    key,
+    dataset: "copernicus30",
     minLat: overlapMinLat,
     maxLat: overlapMaxLat,
     minLon: overlapMinLon,
@@ -198,11 +146,11 @@ const parseCopernicusTile = async (
   };
 };
 
-const fetchTile = async (origin: string, entry: TileListEntry, bounds: TerrainBounds): Promise<CompactTerrainTile | null> => {
-  const response = await fetch(`${origin}/copernicus/${entry.pathPrefix}/${entry.path}`);
+const fetchTile = async (origin: string, key: string, bounds: TerrainBounds): Promise<CompactTerrainTile | null> => {
+  const response = await fetch(`${origin}${copernicus30PathForTileKey(key)}`);
   if (!response.ok) return null;
   const buffer = await response.arrayBuffer();
-  return parseCopernicusTile(entry, buffer, bounds);
+  return parseCopernicusTile(key, buffer, bounds);
 };
 
 const sampleTerrainElevation = (
@@ -238,19 +186,13 @@ export const loadCopernicusTilesForPath = async (
   const { minLat, maxLat, minLon, maxLon } = bounds;
   const neededKeys = tilesForBounds(minLat, maxLat, minLon, maxLon);
 
-  const [index30, index90] = await Promise.all([fetchTileList(origin, "30m"), fetchTileList(origin, "90m")]);
-  const tileIndex = mergeTileIndexes(index30, index90);
-
   const tiles: CompactTerrainTile[] = [];
   const fetchedKeys: string[] = [];
   for (const key of neededKeys) {
-    const entries = tileIndex.get(key) ?? [];
-    const selected = chooseTileEntry(entries);
-    if (!selected) continue;
-    const tile = await fetchTile(origin, selected, bounds);
+    const tile = await fetchTile(origin, key, bounds);
     if (!tile) continue;
     tiles.push(tile);
-    fetchedKeys.push(`${key}:${selected.dataset}`);
+    fetchedKeys.push(`${key}:copernicus30`);
   }
 
   return { tiles, tileKeys: fetchedKeys };
