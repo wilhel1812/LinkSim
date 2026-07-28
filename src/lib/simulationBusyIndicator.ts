@@ -20,6 +20,22 @@ export type SimulationBusyIndicatorState = {
   progressPercent: number | null;
 };
 
+export const resolveMonotonicOverlayProgress = (
+  previous: number | null,
+  pipelineProgress: Array<number | null>,
+): number | null => {
+  const numeric = pipelineProgress.filter((value): value is number => typeof value === "number");
+  if (!numeric.length) return null;
+  return Math.max(previous ?? 0, ...numeric);
+};
+
+export const shouldDeferOverlayRasterization = (input: {
+  isTerrainFetching: boolean;
+  isTerrainRecommending: boolean;
+  isSimulationRecomputing: boolean;
+}): boolean =>
+  input.isTerrainFetching || input.isTerrainRecommending || input.isSimulationRecomputing;
+
 export const resolveSimulationBusyIndicatorState = (
   input: SimulationBusyIndicatorInput,
 ): SimulationBusyIndicatorState | null => {

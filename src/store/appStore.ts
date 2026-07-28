@@ -3687,17 +3687,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       if (controller.signal.aborted || get().terrainLoadEpoch !== epoch) return;
 
-      if (result.tiles.length > 0) {
-        set((state) => {
-          const nextTiles = mergeSrtmTiles(state.srtmTiles, result.tiles);
-          return {
-            srtmTiles: nextTiles,
-            terrainMemoryDiagnostics: estimateTerrainMemoryDiagnostics(nextTiles),
-          };
-        });
-        useCoverageStore.getState().recomputeCoverage();
-      }
-
       const parts = [
         `Loaded ${result.tiles.length} tile(s)`,
         result.fetchedTiles.length ? `${result.fetchedTiles.length} fetched` : "",
@@ -3707,18 +3696,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       const missing = result.failedTiles.length
         ? ` Missing: ${result.failedTiles.slice(0, 4).join(", ")}${result.failedTiles.length > 4 ? "..." : ""}`
         : "";
-      set({
-        terrainFetchStatus: `${parts.join(", ")} from Copernicus GLO-30.${missing}`,
-        isTerrainFetching: false,
-        isTerrainRecommending: false,
-        isHighResTerrainLoaded: result.failedTiles.length === 0,
-        terrainLoadingStartedAtMs: 0,
-        terrainProgressPercent: 100,
-        terrainProgressTransientDecodeBytesEstimated: 0,
-        terrainProgressPhaseLabel: "",
-        terrainProgressPhaseIndex: 0,
-        terrainProgressPhaseTotal: 0,
+      set((state) => {
+        const nextTiles =
+          result.tiles.length > 0 ? mergeSrtmTiles(state.srtmTiles, result.tiles) : state.srtmTiles;
+        return {
+          srtmTiles: nextTiles,
+          terrainMemoryDiagnostics: estimateTerrainMemoryDiagnostics(nextTiles),
+          terrainFetchStatus: `${parts.join(", ")} from Copernicus GLO-30.${missing}`,
+          isTerrainFetching: false,
+          isTerrainRecommending: false,
+          isHighResTerrainLoaded: result.failedTiles.length === 0,
+          terrainLoadingStartedAtMs: 0,
+          terrainProgressPercent: 100,
+          terrainProgressTransientDecodeBytesEstimated: 0,
+          terrainProgressPhaseLabel: "",
+          terrainProgressPhaseIndex: 0,
+          terrainProgressPhaseTotal: 0,
+        };
       });
+      useCoverageStore.getState().recomputeCoverage();
     } catch (error) {
       if (controller.signal.aborted || get().terrainLoadEpoch !== epoch) return;
       set({
@@ -3732,6 +3728,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         terrainProgressPhaseIndex: 0,
         terrainProgressPhaseTotal: 0,
       });
+      useCoverageStore.getState().recomputeCoverage();
     } finally {
       if (terrainLoadAbortController === controller) terrainLoadAbortController = null;
     }

@@ -73,7 +73,11 @@ import {
   recordSimulationOverlayPerf,
   recordSimulationRunCancelled,
 } from "../lib/simulationPerf";
-import { resolveSimulationBusyIndicatorState } from "../lib/simulationBusyIndicator";
+import {
+  resolveMonotonicOverlayProgress,
+  resolveSimulationBusyIndicatorState,
+  shouldDeferOverlayRasterization,
+} from "../lib/simulationBusyIndicator";
 import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/latestOnlyTaskScheduler";
 import { createLruCache } from "../lib/lruCache";
 import { SimulationResultsSection } from "./SimulationResultsSection";
@@ -1508,17 +1512,23 @@ export function MapView({
     coverage: null,
     terrain: null,
   });
+  const overlayProgressFloorRef = useRef<number | null>(null);
+  const overlayJobsInFlightRef = useRef(0);
   const syncOverlayProgressState = useCallback(() => {
     const coverageProgress = overlayProgressByPipelineRef.current.coverage;
     const terrainProgress = overlayProgressByPipelineRef.current.terrain;
-    const numeric = [coverageProgress, terrainProgress].filter((value): value is number => typeof value === "number");
-    if (!numeric.length) {
+    const nextProgress = resolveMonotonicOverlayProgress(
+      overlayProgressFloorRef.current,
+      [coverageProgress, terrainProgress],
+    );
+    if (nextProgress === null) {
       setOverlayProgressMode("indeterminate");
       setOverlayProgressPercent(null);
       return;
     }
+    overlayProgressFloorRef.current = nextProgress;
     setOverlayProgressMode("determinate");
-    setOverlayProgressPercent(Math.max(...numeric));
+    setOverlayProgressPercent(nextProgress);
   }, []);
   const setOverlayPipelineProgress = useCallback(
     (pipeline: "coverage" | "terrain", percent: number | null) => {
@@ -1534,13 +1544,27 @@ export function MapView({
   );
   const beginOverlayJob = useCallback((pipeline: "coverage" | "terrain") => {
     let finished = false;
-    setOverlayJobsInFlight((count) => count + 1);
+    if (overlayJobsInFlightRef.current === 0) {
+      overlayProgressFloorRef.current = null;
+      overlayProgressByPipelineRef.current = { coverage: null, terrain: null };
+      setOverlayProgressMode("indeterminate");
+      setOverlayProgressPercent(null);
+    }
+    overlayJobsInFlightRef.current += 1;
+    setOverlayJobsInFlight(overlayJobsInFlightRef.current);
     setOverlayPipelineProgress(pipeline, null);
     return () => {
       if (finished) return;
       finished = true;
-      setOverlayJobsInFlight((count) => Math.max(0, count - 1));
+      overlayJobsInFlightRef.current = Math.max(0, overlayJobsInFlightRef.current - 1);
+      setOverlayJobsInFlight(overlayJobsInFlightRef.current);
       setOverlayPipelineProgress(pipeline, null);
+      if (overlayJobsInFlightRef.current === 0) {
+        overlayProgressFloorRef.current = null;
+        overlayProgressByPipelineRef.current = { coverage: null, terrain: null };
+        setOverlayProgressMode("indeterminate");
+        setOverlayProgressPercent(null);
+      }
     };
   }, [setOverlayPipelineProgress]);
   const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
@@ -1624,6 +1648,16 @@ export function MapView({
     }
     if (!overlayBounds) {
       cancelCoveragePipeline(true);
+      return;
+    }
+    if (
+      shouldDeferOverlayRasterization({
+        isTerrainFetching,
+        isTerrainRecommending,
+        isSimulationRecomputing,
+      })
+    ) {
+      cancelCoveragePipeline(false);
       return;
     }
 
@@ -1915,6 +1949,9 @@ export function MapView({
     calculationWorkAllowed,
     calculationCycleSource,
     completedCoverageRunToken,
+    isTerrainFetching,
+    isTerrainRecommending,
+    isSimulationRecomputing,
   ]);
   const signalRange = useMemo(() => {
     if (!samplesForOverlay.length) return { min: -125, max: -62 };
@@ -1983,6 +2020,16 @@ export function MapView({
 
     if (!showTerrainOverlay || !hasSimulationTerrain || !analysisBounds) {
       cancelTerrainPipeline(true);
+      return;
+    }
+    if (
+      shouldDeferOverlayRasterization({
+        isTerrainFetching,
+        isTerrainRecommending,
+        isSimulationRecomputing,
+      })
+    ) {
+      cancelTerrainPipeline(false);
       return;
     }
 
@@ -2162,6 +2209,9 @@ export function MapView({
     calculationWorkAllowed,
     calculationCycleSource,
     completedCoverageRunToken,
+    isTerrainFetching,
+    isTerrainRecommending,
+    isSimulationRecomputing,
   ]);
 
   const webglAvailable = useMemo(() => supportsWebgl(), []);

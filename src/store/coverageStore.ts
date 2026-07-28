@@ -524,6 +524,19 @@ const flushCoverageRunQueue = async (): Promise<void> => {
 
   const appState = appStoreBridge.getState();
   const inputs = readCoverageInputs(appState);
+  if (inputs.isTerrainFetching) {
+    coverageRerunQueued = false;
+    useCoverageStore.setState({
+      isSimulationRecomputing: false,
+      simulationProgress: 0,
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "",
+      simulationSamplesDone: 0,
+      simulationSamplesTotal: 0,
+      simulationRunToken: "",
+    });
+    return;
+  }
   const runSignature = coverageInputSignature(inputs);
 
   if (runSignature === lastAppliedCoverageSignature) {
