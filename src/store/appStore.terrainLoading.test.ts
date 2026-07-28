@@ -80,7 +80,10 @@ describe("appStore GLO-30 terrain lifecycle", () => {
       fetchedTiles: ["N59E009"],
       cacheHits: [],
     });
-    const recompute = vi.spyOn(useCoverageStore.getState(), "recomputeCoverage");
+    const recompute = vi.spyOn(useCoverageStore.getState(), "recomputeCoverage").mockImplementation(() => {
+      expect(useAppStore.getState().isTerrainFetching).toBe(false);
+      expect(useAppStore.getState().srtmTiles.some((entry) => entry.key === "N59E009")).toBe(true);
+    });
 
     await useAppStore.getState().recommendAndFetchTerrainForCurrentArea(20);
 
@@ -90,6 +93,23 @@ describe("appStore GLO-30 terrain lifecycle", () => {
     );
     expect(recompute).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().terrainProgressPercent).toBe(100);
+  });
+
+  it("recomputes once after an all-unavailable load has settled", async () => {
+    terrainClient.loadCopernicus30TilesByKeys.mockResolvedValue({
+      tiles: [],
+      failedTiles: ["N59E009"],
+      fetchedTiles: [],
+      cacheHits: [],
+    });
+    const recompute = vi.spyOn(useCoverageStore.getState(), "recomputeCoverage").mockImplementation(() => {
+      expect(useAppStore.getState().isTerrainFetching).toBe(false);
+    });
+
+    await useAppStore.getState().recommendAndFetchTerrainForCurrentArea(20);
+
+    expect(recompute).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().terrainFetchStatus).toContain("1 unavailable");
   });
 
   it("cancels the active load and ignores its late result", async () => {

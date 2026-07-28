@@ -186,29 +186,26 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().calculationCycleSource).toBe(null);
   });
 
-  it("forces 1x simulation resolution while terrain is fetching", async () => {
-    let capturedGridSize = 0;
-    setAppStoreBridge({
-      getState: () =>
-        ({
-          ...bridgeState,
-          selectedCoverageResolution: "168",
-          isTerrainFetching: true,
-        }) as unknown as Record<string, unknown>,
-      setState: vi.fn(),
-    });
-    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation((gridSize) => {
-      capturedGridSize = Number(gridSize);
-      return Promise.resolve([]);
-    });
+  it("defers coverage work until terrain loading has settled", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    bridgeState.isTerrainFetching = true;
 
-    useCoverageStore.getState().startManualCalculation();
+    useCoverageStore.getState().recomputeCoverage();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+
+    expect(buildSpy).not.toHaveBeenCalled();
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+
+    bridgeState.isTerrainFetching = false;
+    bridgeState.terrainLoadEpoch += 1;
+    useCoverageStore.getState().recomputeCoverage();
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
     vi.advanceTimersByTime(700);
     await flushAsyncTicks();
 
-    expect(capturedGridSize).toBe(24);
+    expect(buildSpy).toHaveBeenCalledTimes(1);
   });
 
   it("runs as single-flight with one queued rerun under rapid triggers", async () => {
