@@ -65,6 +65,7 @@ export function SimulationLoadingOverlay({
   const ready = Boolean(bounds && pointMask);
   const addingToMapRef = useRef(false);
   const entryKeyRef = useRef<string | null>(null);
+  const readyKeyRef = useRef<string | null>(null);
   const entryTimeoutRef = useRef<number | null>(null);
   const exitKeyRef = useRef<string | null>(null);
   const removalTimeoutRef = useRef<number | null>(null);
@@ -122,6 +123,8 @@ export function SimulationLoadingOverlay({
     const removeFromMap = () => {
       if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID);
       if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
+      entryKeyRef.current = null;
+      readyKeyRef.current = null;
     };
     const clearPendingRemoval = () => {
       if (removalTimeoutRef.current !== null) {
@@ -164,11 +167,34 @@ export function SimulationLoadingOverlay({
         if (exitedKey) onCloudExited?.(exitedKey);
       }, LOADING_OVERLAY_EXIT_MS);
     };
+    const scheduleEntry = (key: string, continuing: boolean) => {
+      if (
+        readyKeyRef.current === key ||
+        fadeInFrameRef.current !== null ||
+        entryTimeoutRef.current !== null
+      ) {
+        return;
+      }
+      fadeInFrameRef.current = window.requestAnimationFrame(() => {
+        fadeInFrameRef.current = null;
+        readyKeyRef.current = key;
+        onCloudReady?.(key);
+        applyTransition(true);
+        if (continuing) {
+          onCloudEntered?.(key);
+          return;
+        }
+        entryTimeoutRef.current = window.setTimeout(() => {
+          entryTimeoutRef.current = null;
+          onCloudEntered?.(key);
+          if (!loadingRef.current) startExit(key);
+        }, resolveSimulationOverlayTransition(true).durationMs);
+      });
+    };
 
-    const addToMap = () => {
+    const addToMap = (key: string, continuing: boolean) => {
       if (addingToMapRef.current) return;
       if (!coordinates || !map.isStyleLoaded()) return;
-      if (map.getSource(SOURCE_ID) && map.getLayer(LAYER_ID)) return;
       addingToMapRef.current = true;
       try {
         if (!map.getSource(SOURCE_ID)) {
@@ -193,10 +219,14 @@ export function SimulationLoadingOverlay({
             type: "raster",
           });
         }
-        applyTransition(true);
       } finally {
         addingToMapRef.current = false;
       }
+      if (readyKeyRef.current === key) {
+        applyTransition(true);
+        return;
+      }
+      scheduleEntry(key, continuing);
     };
 
     const wasExiting = removalTimeoutRef.current !== null;
@@ -227,52 +257,10 @@ export function SimulationLoadingOverlay({
       entryKeyRef.current = handoffKey;
     }
 
-    const addAfterStyleChange = () => addToMap();
+    const addAfterStyleChange = () =>
+      addToMap(handoffKey, continuingEnteredCloud);
     map.on("styledata", addAfterStyleChange);
-
-    if (map.isStyleLoaded()) {
-      addingToMapRef.current = true;
-      try {
-        if (!map.getSource(SOURCE_ID)) {
-          map.addSource(SOURCE_ID, {
-            animate: true,
-            canvas,
-            coordinates,
-            type: "canvas",
-          });
-        }
-        if (!map.getLayer(LAYER_ID)) {
-          const transition = resolveSimulationOverlayTransition(false);
-          map.addLayer({
-            id: LAYER_ID,
-            paint: {
-              "raster-opacity": transition.loadingOpacity,
-              "raster-opacity-transition": {
-                duration: transition.durationMs,
-              },
-            },
-            source: SOURCE_ID,
-            type: "raster",
-          });
-        }
-      } finally {
-        addingToMapRef.current = false;
-      }
-      fadeInFrameRef.current = window.requestAnimationFrame(() => {
-        fadeInFrameRef.current = null;
-        onCloudReady?.(handoffKey);
-        applyTransition(true);
-        if (continuingEnteredCloud) {
-          onCloudEntered?.(handoffKey);
-          return;
-        }
-        entryTimeoutRef.current = window.setTimeout(() => {
-          entryTimeoutRef.current = null;
-          onCloudEntered?.(handoffKey);
-          if (!loadingRef.current) startExit(handoffKey);
-        }, resolveSimulationOverlayTransition(true).durationMs);
-      });
-    }
+    addToMap(handoffKey, continuingEnteredCloud);
 
     return () => {
       map.off("styledata", addAfterStyleChange);

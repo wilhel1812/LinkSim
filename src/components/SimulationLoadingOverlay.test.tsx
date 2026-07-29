@@ -6,6 +6,8 @@ const mapMock = vi.hoisted(() => {
   const state = {
     layerPresent: false,
     sourcePresent: false,
+    styleLoaded: true,
+    styleDataListener: null as null | (() => void),
   };
   const source = {
     setCoordinates: vi.fn(),
@@ -19,9 +21,11 @@ const mapMock = vi.hoisted(() => {
     }),
     getLayer: vi.fn(() => (state.layerPresent ? {} : undefined)),
     getSource: vi.fn(() => (state.sourcePresent ? source : undefined)),
-    isStyleLoaded: vi.fn(() => true),
+    isStyleLoaded: vi.fn(() => state.styleLoaded),
     off: vi.fn(),
-    on: vi.fn(),
+    on: vi.fn((event: string, listener: () => void) => {
+      if (event === "styledata") state.styleDataListener = listener;
+    }),
     removeLayer: vi.fn(() => {
       state.layerPresent = false;
     }),
@@ -57,6 +61,8 @@ describe("SimulationLoadingOverlay", () => {
     vi.useFakeTimers();
     mapMock.state.layerPresent = false;
     mapMock.state.sourcePresent = false;
+    mapMock.state.styleLoaded = true;
+    mapMock.state.styleDataListener = null;
     Object.values(mapMock.map).forEach((value) => {
       if (typeof value === "function" && "mockClear" in value) {
         value.mockClear();
@@ -239,5 +245,43 @@ describe("SimulationLoadingOverlay", () => {
     act(() => vi.advanceTimersByTime(16));
 
     expect(onCloudEntered).toHaveBeenCalledWith("heatmap");
+  });
+
+  it("emits readiness after a delayed MapLibre style load", () => {
+    mapMock.state.styleLoaded = false;
+    vi.mocked(window.matchMedia).mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList);
+    const onCloudReady = vi.fn();
+    const onCloudEntered = vi.fn();
+
+    render(
+      <SimulationLoadingOverlay
+        bounds={bounds}
+        handoffKey="initial-load"
+        loading
+        onCloudEntered={onCloudEntered}
+        onCloudReady={onCloudReady}
+        pointMask={() => true}
+      />,
+    );
+
+    expect(mapMock.map.addSource).not.toHaveBeenCalled();
+    expect(mapMock.state.styleDataListener).toBeTypeOf("function");
+
+    mapMock.state.styleLoaded = true;
+    act(() => {
+      mapMock.state.styleDataListener?.();
+      mapMock.state.styleDataListener?.();
+    });
+    act(() => vi.advanceTimersByTime(16));
+
+    expect(onCloudReady).toHaveBeenCalledTimes(1);
+    expect(onCloudReady).toHaveBeenCalledWith("initial-load");
+    act(() => vi.advanceTimersByTime(350));
+    expect(onCloudEntered).toHaveBeenCalledTimes(1);
+    expect(onCloudEntered).toHaveBeenCalledWith("initial-load");
   });
 });
