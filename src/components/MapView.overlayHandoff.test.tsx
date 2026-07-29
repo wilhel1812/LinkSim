@@ -30,6 +30,10 @@ const loadingOverlayMock = vi.hoisted(() => ({
   },
 }));
 
+const layerMock = vi.hoisted(() => ({
+  coveragePaint: null as null | Record<string, unknown>,
+}));
+
 vi.hoisted(() => {
   const data = new Map<string, string>();
   vi.stubGlobal("localStorage", {
@@ -86,7 +90,12 @@ vi.mock("react-map-gl/maplibre", async () => {
         return <div>{props.children}</div>;
       },
     ),
-    Layer: () => null,
+    Layer: (props: { id?: string; paint?: Record<string, unknown> }) => {
+      if (props.id === "coverage-overlay-layer") {
+        layerMock.coveragePaint = props.paint ?? null;
+      }
+      return null;
+    },
     Marker: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
     Source: ({
       children,
@@ -116,6 +125,8 @@ vi.mock("../lib/meshtasticMqtt", () => ({
 import { useAppStore } from "../store/appStore";
 import { useCoverageStore } from "../store/coverageStore";
 import { MapView } from "./MapView";
+
+const recomputeCoverageAction = useCoverageStore.getState().recomputeCoverage;
 
 const site: Site = {
   id: "site-a",
@@ -148,6 +159,7 @@ describe("MapView overlay handoff", () => {
     overlayMock.requests.length = 0;
     overlayMock.encodedRasterCount = 0;
     loadingOverlayMock.props = null;
+    layerMock.coveragePaint = null;
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
       configurable: true,
       value: vi.fn(() => ({})),
@@ -177,6 +189,7 @@ describe("MapView overlay handoff", () => {
       isSimulationRecomputing: false,
       autoCalculateEnabled: true,
       calculationCycleSource: null,
+      recomputeCoverage: recomputeCoverageAction,
     });
   });
 
@@ -214,12 +227,57 @@ describe("MapView overlay handoff", () => {
     const replacementKey = loadingOverlayMock.props?.handoffKey;
     expect(replacementKey).toBeTruthy();
     expect(replacementKey).not.toBe(firstKey);
+    expect(layerMock.coveragePaint?.["raster-opacity"]).toBe(0);
 
     act(() => loadingOverlayMock.props?.onCloudReady?.(replacementKey!));
     expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
       "data-url",
       "data:image/mock-1",
     );
+  });
+
+  it("starts the initial automatic calculation without waiting for interaction", async () => {
+    const recomputeCoverage = vi.fn();
+    useCoverageStore.setState({
+      coverageSamples: [],
+      completedCoverageRunToken: "",
+      isSimulationRecomputing: false,
+      recomputeCoverage,
+    });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(recomputeCoverage).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not auto-start a manually locked initial calculation", async () => {
+    const recomputeCoverage = vi.fn();
+    useAppStore.setState({ selectedCoverageResolution: "84" });
+    useCoverageStore.setState({
+      coverageSamples: [],
+      completedCoverageRunToken: "",
+      isSimulationRecomputing: false,
+      recomputeCoverage,
+    });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await act(async () => undefined);
+    expect(recomputeCoverage).not.toHaveBeenCalled();
   });
 
   it("does not replay clouds when a completed signature is observed again", async () => {

@@ -33,6 +33,7 @@ const mapMock = vi.hoisted(() => {
       state.sourcePresent = false;
     }),
     setPaintProperty: vi.fn(),
+    triggerRepaint: vi.fn(),
   };
   return { map, source, state };
 });
@@ -129,9 +130,13 @@ describe("SimulationLoadingOverlay", () => {
       }),
     );
 
-    act(() => vi.advanceTimersByTime(16));
-
     expect(onCloudReady).toHaveBeenCalledWith("heatmap");
+    expect(mapMock.map.triggerRepaint).toHaveBeenCalled();
+    const repaintCountAtReady = mapMock.map.triggerRepaint.mock.calls.length;
+    act(() => vi.advanceTimersByTime(100));
+    expect(mapMock.map.triggerRepaint.mock.calls.length).toBeGreaterThan(
+      repaintCountAtReady,
+    );
     expect(mapMock.map.setPaintProperty).toHaveBeenCalledWith(
       "simulation-loading-overlay-layer",
       "raster-opacity-transition",
@@ -162,7 +167,7 @@ describe("SimulationLoadingOverlay", () => {
       { duration: 500 },
     );
 
-    act(() => vi.advanceTimersByTime(349));
+    act(() => vi.advanceTimersByTime(249));
     expect(onCloudEntered).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(onCloudEntered).toHaveBeenCalledWith("heatmap");
@@ -276,8 +281,6 @@ describe("SimulationLoadingOverlay", () => {
       mapMock.state.styleDataListener?.();
       mapMock.state.styleDataListener?.();
     });
-    act(() => vi.advanceTimersByTime(16));
-
     expect(onCloudReady).toHaveBeenCalledTimes(1);
     expect(onCloudReady).toHaveBeenCalledWith("initial-load");
     act(() => vi.advanceTimersByTime(350));
