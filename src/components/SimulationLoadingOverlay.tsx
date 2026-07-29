@@ -22,7 +22,11 @@ const LAYER_ID = "simulation-loading-overlay-layer";
 
 type SimulationLoadingOverlayProps = {
   bounds: TerrainBounds | null;
+  handoffKey?: string | null;
   loading: boolean;
+  onCloudEntered?: (handoffKey: string) => void;
+  onCloudExited?: (handoffKey: string) => void;
+  onCloudReady?: (handoffKey: string) => void;
   pointMask?: (lat: number, lon: number) => boolean;
 };
 
@@ -47,7 +51,11 @@ const usePrefersReducedMotion = (): boolean => {
 
 export function SimulationLoadingOverlay({
   bounds,
+  handoffKey = null,
   loading,
+  onCloudEntered,
+  onCloudExited,
+  onCloudReady,
   pointMask,
 }: SimulationLoadingOverlayProps) {
   const canvas = useMemo(() => document.createElement("canvas"), []);
@@ -56,8 +64,13 @@ export function SimulationLoadingOverlay({
   const reducedMotion = usePrefersReducedMotion();
   const ready = Boolean(bounds && pointMask);
   const addingToMapRef = useRef(false);
+  const entryKeyRef = useRef<string | null>(null);
+  const entryTimeoutRef = useRef<number | null>(null);
+  const exitKeyRef = useRef<string | null>(null);
   const removalTimeoutRef = useRef<number | null>(null);
   const fadeInFrameRef = useRef<number | null>(null);
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
   const coordinates = useMemo(
     () => (bounds ? loadingOverlayCoordinates(bounds) : null),
     [bounds],
@@ -99,7 +112,7 @@ export function SimulationLoadingOverlay({
       }
     };
 
-    frameId = window.requestAnimationFrame(paint);
+    paint(startedAt);
     return () => window.cancelAnimationFrame(frameId);
   }, [bounds, canvas, loading, pointMask, reducedMotion]);
 
@@ -122,6 +135,12 @@ export function SimulationLoadingOverlay({
         fadeInFrameRef.current = null;
       }
     };
+    const clearPendingEntry = () => {
+      if (entryTimeoutRef.current !== null) {
+        window.clearTimeout(entryTimeoutRef.current);
+        entryTimeoutRef.current = null;
+      }
+    };
     const applyTransition = (entering: boolean) => {
       if (!map.getLayer(LAYER_ID)) return;
       const transition = resolveSimulationOverlayTransition(entering);
@@ -133,6 +152,17 @@ export function SimulationLoadingOverlay({
         "raster-opacity",
         transition.loadingOpacity,
       );
+    };
+    const startExit = (key: string) => {
+      applyTransition(false);
+      exitKeyRef.current = key;
+      removalTimeoutRef.current = window.setTimeout(() => {
+        removeFromMap();
+        removalTimeoutRef.current = null;
+        const exitedKey = exitKeyRef.current;
+        exitKeyRef.current = null;
+        if (exitedKey) onCloudExited?.(exitedKey);
+      }, LOADING_OVERLAY_EXIT_MS);
     };
 
     const addToMap = () => {
@@ -169,21 +199,32 @@ export function SimulationLoadingOverlay({
       }
     };
 
+    const wasExiting = removalTimeoutRef.current !== null;
+    const continuingEnteredCloud =
+      loading &&
+      entryKeyRef.current !== null &&
+      entryKeyRef.current !== handoffKey &&
+      entryTimeoutRef.current === null &&
+      !wasExiting &&
+      Boolean(map.getLayer(LAYER_ID));
     clearPendingRemoval();
     clearPendingFadeIn();
 
-    if (!ready || !coordinates) {
+    if (!ready || !coordinates || !handoffKey) {
+      clearPendingEntry();
       removeFromMap();
       return;
     }
 
     if (!loading) {
-      applyTransition(false);
-      removalTimeoutRef.current = window.setTimeout(() => {
-        removeFromMap();
-        removalTimeoutRef.current = null;
-      }, LOADING_OVERLAY_EXIT_MS);
+      if (entryTimeoutRef.current !== null) return;
+      startExit(handoffKey);
       return clearPendingRemoval;
+    }
+
+    if (entryKeyRef.current !== handoffKey) {
+      clearPendingEntry();
+      entryKeyRef.current = handoffKey;
     }
 
     const addAfterStyleChange = () => addToMap();
@@ -219,7 +260,17 @@ export function SimulationLoadingOverlay({
       }
       fadeInFrameRef.current = window.requestAnimationFrame(() => {
         fadeInFrameRef.current = null;
+        onCloudReady?.(handoffKey);
         applyTransition(true);
+        if (continuingEnteredCloud) {
+          onCloudEntered?.(handoffKey);
+          return;
+        }
+        entryTimeoutRef.current = window.setTimeout(() => {
+          entryTimeoutRef.current = null;
+          onCloudEntered?.(handoffKey);
+          if (!loadingRef.current) startExit(handoffKey);
+        }, resolveSimulationOverlayTransition(true).durationMs);
       });
     }
 
@@ -227,7 +278,17 @@ export function SimulationLoadingOverlay({
       map.off("styledata", addAfterStyleChange);
       clearPendingFadeIn();
     };
-  }, [canvas, coordinates, loading, map, ready]);
+  }, [
+    canvas,
+    coordinates,
+    handoffKey,
+    loading,
+    map,
+    onCloudEntered,
+    onCloudExited,
+    onCloudReady,
+    ready,
+  ]);
 
   useEffect(() => {
     if (!map || !loading || !coordinates) return;
@@ -243,6 +304,9 @@ export function SimulationLoadingOverlay({
       }
       if (fadeInFrameRef.current !== null) {
         window.cancelAnimationFrame(fadeInFrameRef.current);
+      }
+      if (entryTimeoutRef.current !== null) {
+        window.clearTimeout(entryTimeoutRef.current);
       }
       if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID);
       if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
