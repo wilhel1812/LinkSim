@@ -5,7 +5,7 @@ import { act, render } from "@testing-library/react";
 
 const hoisted = vi.hoisted(() => {
   const fetchMe = vi.fn();
-  const fetchDeepLinkStatus = vi.fn();
+  const fetchAuthStatus = vi.fn();
   const fetchCloudLibrary = vi.fn();
   const fetchPublicSimulationLibrary = vi.fn();
   const loadSimulationPreset = vi.fn();
@@ -68,7 +68,7 @@ const hoisted = vi.hoisted(() => {
 
   return {
     fetchMe,
-    fetchDeepLinkStatus,
+    fetchAuthStatus,
     fetchCloudLibrary,
     fetchPublicSimulationLibrary,
     loadSimulationPreset,
@@ -90,7 +90,7 @@ vi.mock("../lib/cloudUser", () => ({
     }
   },
   fetchCollaboratorDirectory: vi.fn(async () => []),
-  fetchDeepLinkStatus: hoisted.fetchDeepLinkStatus,
+  fetchAuthStatus: hoisted.fetchAuthStatus,
   fetchMe: hoisted.fetchMe,
   setLocalDevRole: vi.fn(async () => ({})),
 }));
@@ -242,9 +242,7 @@ describe("AppShell deeplink cold-load flow", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
       bio: "",
     });
-    hoisted.fetchDeepLinkStatus.mockResolvedValue({
-      status: "ok",
-      simulationId: "sim-mmtk88wx-2didtk",
+    hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: true,
       authState: "authenticated",
     });
@@ -462,9 +460,7 @@ describe("AppShell deeplink cold-load flow", () => {
 
   it("does not start auth recovery for unauthenticated deep-link guests", async () => {
     vi.useFakeTimers();
-    hoisted.fetchDeepLinkStatus.mockResolvedValue({
-      status: "ok",
-      simulationId: "sim-mmtk88wx-2didtk",
+    hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: false,
       authState: "guest",
     });
@@ -472,7 +468,7 @@ describe("AppShell deeplink cold-load flow", () => {
     const view = await renderAppShell();
 
     try {
-      expect(hoisted.fetchDeepLinkStatus).toHaveBeenCalledTimes(1);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
       expect(hoisted.fetchMe).not.toHaveBeenCalled();
 
       await advanceTimers(120_000);
@@ -486,8 +482,7 @@ describe("AppShell deeplink cold-load flow", () => {
   it("enters quiet demo mode for an expected root guest", async () => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/");
-    hoisted.fetchDeepLinkStatus.mockResolvedValue({
-      status: "missing",
+    hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: false,
       authState: "guest",
     });
@@ -495,12 +490,12 @@ describe("AppShell deeplink cold-load flow", () => {
     const view = await renderAppShell();
 
     try {
-      expect(hoisted.fetchDeepLinkStatus).toHaveBeenCalledTimes(1);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
       expect(hoisted.fetchMe).not.toHaveBeenCalled();
       expect(document.body.textContent).not.toContain("Cloud save is unavailable");
 
       await advanceTimers(120_000);
-      expect(hoisted.fetchDeepLinkStatus).toHaveBeenCalledTimes(1);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
       expect(hoisted.fetchMe).not.toHaveBeenCalled();
     } finally {
       unmountAppShell(view);
@@ -512,8 +507,7 @@ describe("AppShell deeplink cold-load flow", () => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/");
     localStorage.setItem("linksim:had-authenticated-session:v1", "1");
-    hoisted.fetchDeepLinkStatus.mockResolvedValue({
-      status: "missing",
+    hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: false,
       authState: "guest",
     });
@@ -526,7 +520,7 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(hoisted.fetchMe).not.toHaveBeenCalled();
 
       await advanceTimers(120_000);
-      expect(hoisted.fetchDeepLinkStatus).toHaveBeenCalledTimes(1);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
     } finally {
       unmountAppShell(view);
       vi.useRealTimers();
@@ -536,8 +530,7 @@ describe("AppShell deeplink cold-load flow", () => {
   it("shows an actionable revoked-session warning without retrying", async () => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/");
-    hoisted.fetchDeepLinkStatus.mockResolvedValue({
-      status: "missing",
+    hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: false,
       authState: "revoked",
     });
@@ -550,7 +543,7 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(hoisted.fetchMe).not.toHaveBeenCalled();
 
       await advanceTimers(120_000);
-      expect(hoisted.fetchDeepLinkStatus).toHaveBeenCalledTimes(1);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
     } finally {
       unmountAppShell(view);
       vi.useRealTimers();
@@ -560,7 +553,7 @@ describe("AppShell deeplink cold-load flow", () => {
   it("uses a bounded neutral recovery path when the public auth probe fails", async () => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/");
-    hoisted.fetchDeepLinkStatus.mockRejectedValue(new Error("Failed to fetch"));
+    hoisted.fetchAuthStatus.mockRejectedValue(new Error("Failed to fetch"));
 
     const view = await renderAppShell();
 
@@ -571,10 +564,10 @@ describe("AppShell deeplink cold-load flow", () => {
       await advanceTimers(2_000);
       await advanceTimers(5_000);
       await advanceTimers(10_000);
-      expect(hoisted.fetchDeepLinkStatus).toHaveBeenCalledTimes(4);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(4);
 
       await advanceTimers(120_000);
-      expect(hoisted.fetchDeepLinkStatus).toHaveBeenCalledTimes(4);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(4);
       expect(document.body.textContent).toContain("Try signing in again");
       expect(document.body.textContent).not.toContain("retrying automatically");
     } finally {
