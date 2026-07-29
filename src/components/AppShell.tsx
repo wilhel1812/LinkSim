@@ -5,9 +5,11 @@ import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } fro
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
 import {
+  hasAuthenticatedSessionMarker,
+  markAuthenticatedSession,
+  resolveAuthBootstrapState,
   type DeepLinkApplyOutcome,
   shouldRewritePathAfterDeepLinkApply,
-  shouldUseReadonlyFallbackForAuthBootstrap,
 } from "../lib/appShellGuards";
 import { handleSimulationLibraryLoad } from "../lib/simulationLibraryLoad";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
@@ -49,7 +51,6 @@ const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
 const ACCESS_FETCH_TIMEOUT_MS = 8_000;
 const AUTH_RECOVERY_QUICK_RETRY_DELAYS_MS = [2_000, 5_000, 10_000] as const;
-const AUTH_RECOVERY_STEADY_RETRY_MS = 60_000;
 const ACCESS_CHECKING_NOTICE_ID = "access-checking";
 const AUTH_DEGRADED_NOTICE_ID = "auth-degraded";
 const OFFLINE_SYNC_NOTICE_ID = "offline-sync";
@@ -273,7 +274,7 @@ export function AppShell() {
   const mapExpandedInspectorWasHiddenRef = useRef(false);
   const mapExpandedProfileWasHiddenRef = useRef(false);
   const mapExpandToggleTimerRef = useRef<number | null>(null);
-  const hadAuthenticatedSessionRef = useRef(false);
+  const hadAuthenticatedSessionRef = useRef(hasAuthenticatedSessionMarker());
   const authCheckInFlightRef = useRef(false);
   const authRecoveryActiveRef = useRef(false);
   const authRecoveryDisabledRef = useRef(false);
@@ -583,44 +584,61 @@ export function AppShell() {
   }, [clearAuthRetryTimer]);
 
   const scheduleAuthRecoveryRetry = useCallback(
-    (source: "timeout" | "failure") => {
-      if (authRecoveryDisabledRef.current) return;
+    (source: "timeout" | "failure"): boolean => {
+      if (authRecoveryDisabledRef.current) return false;
       const online = typeof navigator === "undefined" ? true : navigator.onLine;
-      if (!online) return;
-      if (authRetryTimerRef.current !== null) return;
+      if (!online) return false;
+      if (authRetryTimerRef.current !== null) return true;
 
       const quickAttempt = authRetryQuickAttemptRef.current;
-      const delayMs =
-        quickAttempt < AUTH_RECOVERY_QUICK_RETRY_DELAYS_MS.length
-          ? AUTH_RECOVERY_QUICK_RETRY_DELAYS_MS[quickAttempt]
-          : AUTH_RECOVERY_STEADY_RETRY_MS;
-      if (quickAttempt < AUTH_RECOVERY_QUICK_RETRY_DELAYS_MS.length) {
-        authRetryQuickAttemptRef.current = quickAttempt + 1;
-      }
+      if (quickAttempt >= AUTH_RECOVERY_QUICK_RETRY_DELAYS_MS.length) return false;
+      const delayMs = AUTH_RECOVERY_QUICK_RETRY_DELAYS_MS[quickAttempt];
+      authRetryQuickAttemptRef.current = quickAttempt + 1;
 
       console.info("[AppShell] Scheduling auth recovery retry", {
         source,
         delayMs,
-        quickAttempt: Math.min(quickAttempt + 1, AUTH_RECOVERY_QUICK_RETRY_DELAYS_MS.length),
+        quickAttempt: quickAttempt + 1,
       });
       authRetryTimerRef.current = window.setTimeout(() => {
         authRetryTimerRef.current = null;
         runAccessCheckRef.current("retry");
       }, delayMs);
+      return true;
     },
     [],
   );
 
   const setAuthDegraded = useCallback(
-    (message: string, source: "timeout" | "failure") => {
-      authRecoveryActiveRef.current = true;
+    (
+      messages: { retrying: string; exhausted: string },
+      source: "timeout" | "failure",
+    ) => {
+      setCurrentUser(null);
+      setAuthState("signed_out");
+      setAccessState("readonly");
+      const retryScheduled = scheduleAuthRecoveryRetry(source);
+      authRecoveryActiveRef.current = retryScheduled;
+      if (!retryScheduled) {
+        authRecoveryDisabledRef.current = true;
+      }
+      setAccessDiagnosticMessage(retryScheduled ? messages.retrying : messages.exhausted);
+    },
+    [scheduleAuthRecoveryRetry, setAuthState, setCurrentUser],
+  );
+
+  const settleReadonlySession = useCallback(
+    (message: string | null) => {
+      clearAuthRetryTimer();
+      authRecoveryActiveRef.current = false;
+      authRecoveryDisabledRef.current = true;
+      authRetryQuickAttemptRef.current = 0;
       setAccessDiagnosticMessage(message);
       setCurrentUser(null);
       setAuthState("signed_out");
       setAccessState("readonly");
-      scheduleAuthRecoveryRetry(source);
     },
-    [scheduleAuthRecoveryRetry, setAuthState, setCurrentUser],
+    [clearAuthRetryTimer, setAuthState, setCurrentUser],
   );
 
   const applyRecoveredProfile = useCallback(
@@ -633,6 +651,7 @@ export function AppShell() {
       setCurrentUser(profile);
       setAuthState("signed_in");
       hadAuthenticatedSessionRef.current = true;
+      markAuthenticatedSession();
       setActiveUserId(profile.id);
       if (profile.needsUsername) {
         setAccessState("pending");
@@ -668,6 +687,8 @@ export function AppShell() {
       setCurrentUser(profile);
       setAuthState("signed_in");
       setActiveUserId(profile.id);
+      hadAuthenticatedSessionRef.current = true;
+      markAuthenticatedSession();
       setAccessDiagnosticMessage(null);
       setAccessState("granted");
       try {
@@ -704,6 +725,38 @@ export function AppShell() {
         isInitializing: isInitializingRef.current,
       });
 
+      let failureStage: "probe" | "profile" = isLocalRuntime ? "profile" : "probe";
+      const applyRecoverableFailure = (
+        source: "timeout" | "failure",
+        serverTimeout: boolean,
+        detail?: string,
+      ) => {
+        const knownAuthenticatedSession =
+          failureStage === "profile" || hadAuthenticatedSessionRef.current;
+        if (knownAuthenticatedSession) {
+          setAuthDegraded(
+            {
+              retrying: serverTimeout
+                ? "Cloud save is unavailable. Your changes may not be saved. The sign-in service timed out; LinkSim is retrying automatically."
+                : `Cloud save is unavailable. Your changes may not be saved. LinkSim is retrying sign-in automatically.${detail ? ` (${detail})` : ""}`,
+              exhausted:
+                "Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving.",
+            },
+            source,
+          );
+          return;
+        }
+        setAuthDegraded(
+          {
+            retrying:
+              "Sign-in status could not be checked. Continuing in read-only demo mode. LinkSim is retrying automatically.",
+            exhausted:
+              "Sign-in status could not be checked. Continuing in read-only demo mode. Try signing in again.",
+          },
+          source,
+        );
+      };
+
       let timedOut = false;
       const timeoutId = window.setTimeout(() => {
         if (authCheckGenerationRef.current !== runId) return;
@@ -717,10 +770,7 @@ export function AppShell() {
           online: typeof navigator === "undefined" ? true : navigator.onLine,
           isInitializing: isInitializingRef.current,
         });
-        setAuthDegraded(
-          "Cloud save is unavailable. Your changes may not be saved. The sign-in check timed out; LinkSim is retrying automatically.",
-          "timeout",
-        );
+        applyRecoverableFailure("timeout", true);
       }, ACCESS_CHECK_TIMEOUT_MS);
 
       void (async () => {
@@ -737,34 +787,48 @@ export function AppShell() {
             })();
           if (localForceReadonly) {
             if (!isCurrentRun()) return;
-            authRecoveryActiveRef.current = false;
-            authRecoveryDisabledRef.current = true;
-            authRetryQuickAttemptRef.current = 0;
             window.clearTimeout(timeoutId);
-            setAccessDiagnosticMessage(null);
-            setCurrentUser(null);
-            setAuthState("signed_out");
-            setAccessState("readonly");
+            settleReadonlySession(null);
             return;
           }
-          if (deepLinkParse.ok && !isLocalRuntime) {
-          const deepLinkStatus = await fetchDeepLinkStatus({
-            simulationId: deepLinkParse.payload.simulationId,
-            username: deepLinkParse.payload.username,
-            simulationSlug: deepLinkParse.payload.simulationSlug,
-          });
-            if (!deepLinkStatus.authenticated) {
-              if (!isCurrentRun()) return;
-              authRecoveryActiveRef.current = false;
-              authRecoveryDisabledRef.current = true;
-              authRetryQuickAttemptRef.current = 0;
+          if (!isLocalRuntime) {
+            const deepLinkStatus = await fetchDeepLinkStatus(
+              deepLinkParse.ok
+                ? {
+                    simulationId: deepLinkParse.payload.simulationId,
+                    username: deepLinkParse.payload.username,
+                    simulationSlug: deepLinkParse.payload.simulationSlug,
+                  }
+                : {},
+            );
+            if (!isCurrentRun()) return;
+            const bootstrapState = resolveAuthBootstrapState({
+              authState: deepLinkStatus.authState,
+              hadAuthenticatedSession: hadAuthenticatedSessionRef.current,
+            });
+            if (bootstrapState === "revoked") {
               window.clearTimeout(timeoutId);
-              setAccessDiagnosticMessage(null);
-              setCurrentUser(null);
-              setAuthState("signed_out");
-              setAccessState("readonly");
+              settleReadonlySession(
+                "Account access is unavailable. Your changes may not be saved. Sign in again or contact an admin if you need access restored.",
+              );
               return;
             }
+            if (bootstrapState === "guest" || bootstrapState === "expired") {
+              if (!isCurrentRun()) return;
+              window.clearTimeout(timeoutId);
+              const expiredSessionMessage = bootstrapState === "expired"
+                ? "Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving."
+                : null;
+              console.info("[AppShell] Access check resolved to guest", {
+                reason,
+                deepLinkMode: deepLinkParse.ok,
+                priorAuthenticatedSession: hadAuthenticatedSessionRef.current,
+              });
+              settleReadonlySession(expiredSessionMessage);
+              return;
+            }
+            hadAuthenticatedSessionRef.current = true;
+            failureStage = "profile";
           }
           const profile = await fetchMe({ timeoutMs: ACCESS_FETCH_TIMEOUT_MS });
           if (!isCurrentRun()) return;
@@ -778,59 +842,21 @@ export function AppShell() {
             error instanceof CloudApiError &&
             (error.code === "timeout" || error.code === "server_timeout" || error.code === "auth_timeout" || error.status === 524);
           const isOnlineNow = typeof navigator === "undefined" ? true : navigator.onLine;
-          const fallbackToReadonly = shouldUseReadonlyFallbackForAuthBootstrap({
+          console.error("[AppShell] Access check failed", {
+            reason,
             message,
-            deepLinkMode: deepLinkParse.ok,
+            failureStage,
             isLocalRuntime,
-            isOnline: isOnlineNow,
-            userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,
+            deepLinkMode: deepLinkParse.ok,
+            online: isOnlineNow,
           });
-          if (deepLinkParse.ok) {
-            console.info("[AppShell] Guest deep-link bootstrap using read-only fallback", {
-              reason,
-              message,
-              isLocalRuntime,
-              deepLinkMode: deepLinkParse.ok,
-              online: isOnlineNow,
-            });
-          } else {
-            console.error("[AppShell] Access check failed", {
-              reason,
-              message,
-              isLocalRuntime,
-              deepLinkMode: deepLinkParse.ok,
-              online: isOnlineNow,
-              fallbackToReadonly,
-            });
-          }
           if (message.includes("Session revoked by admin")) {
-            setAuthDegraded(
-              "Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving; LinkSim is retrying automatically.",
-              "failure",
+            settleReadonlySession(
+              "Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving.",
             );
             return;
           }
-          if (deepLinkParse.ok) {
-            authRecoveryActiveRef.current = false;
-            authRecoveryDisabledRef.current = true;
-            authRetryQuickAttemptRef.current = 0;
-            setAccessState("readonly");
-            return;
-          }
-          if (fallbackToReadonly && !hadAuthenticatedSessionRef.current) {
-            authRecoveryActiveRef.current = false;
-            authRecoveryDisabledRef.current = true;
-            authRetryQuickAttemptRef.current = 0;
-            setAccessDiagnosticMessage("Sign-in check was blocked by browser auth redirects. Continuing in read-only demo mode.");
-            setAccessState("readonly");
-            return;
-          }
-          setAuthDegraded(
-            isServerTimeout
-              ? "Cloud save is unavailable. Your changes may not be saved. The sign-in service timed out; LinkSim is retrying automatically."
-              : `Cloud save is unavailable. Your changes may not be saved. LinkSim is retrying sign-in automatically. (${message})`,
-            "failure",
-          );
+          applyRecoverableFailure("failure", isServerTimeout, message);
         } finally {
           if (authCheckGenerationRef.current === runId && !timedOut) {
             authCheckInFlightRef.current = false;
@@ -844,6 +870,7 @@ export function AppShell() {
       deepLinkParse,
       isLocalRuntime,
       setAuthDegraded,
+      settleReadonlySession,
       setAuthState,
       setCurrentUser,
     ],
@@ -865,12 +892,12 @@ export function AppShell() {
   useEffect(() => {
     if (authState !== "signed_out") return;
     if (accessState === "checking") return;
+    if (accessState === "readonly") return;
     if (!hadAuthenticatedSessionRef.current) return;
-    setAuthDegraded(
-      "Cloud save is unavailable. Your changes may not be saved. LinkSim is retrying sign-in automatically.",
-      "failure",
+    settleReadonlySession(
+      "Cloud save is unavailable. Your changes may not be saved. Sign in again to resume cloud saving.",
     );
-  }, [accessState, authState, setAuthDegraded]);
+  }, [accessState, authState, settleReadonlySession]);
 
   useEffect(() => {
     if (!accessDiagnosticMessage) {

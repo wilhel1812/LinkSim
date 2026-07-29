@@ -4,6 +4,7 @@ import { buildSettingsPath, matchSettingsPath, type SettingsSectionId } from "..
 import { useAppStore } from "../../store/appStore";
 import { fetchMe, type CloudUser } from "../../lib/cloudUser";
 import { getUiErrorMessage } from "../../lib/uiError";
+import { clearAuthenticatedSessionMarker } from "../../lib/appShellGuards";
 import { ProfileSection } from "./sections/ProfileSection";
 import { PreferencesSection } from "./sections/PreferencesSection";
 import { SettingsNav, settingsNavIcons, type SettingsNavItem } from "./SettingsNav";
@@ -116,6 +117,7 @@ export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
   );
 
   const handleSignOut = useCallback(() => {
+    clearAuthenticatedSessionMarker();
     setMe(null);
     setCurrentUser(null);
     setAuthState("signed_out");

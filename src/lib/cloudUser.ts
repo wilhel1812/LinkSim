@@ -126,7 +126,13 @@ export type CollaboratorDirectoryUser = {
 };
 
 export type DeepLinkStatus = "ok" | "forbidden" | "missing";
-export type DeepLinkStatusResult = { status: DeepLinkStatus; simulationId?: string; authenticated?: boolean };
+export type DeepLinkAuthState = "guest" | "authenticated" | "revoked";
+export type DeepLinkStatusResult = {
+  status: DeepLinkStatus;
+  simulationId?: string;
+  authenticated?: boolean;
+  authState: DeepLinkAuthState;
+};
 
 export class CloudApiError extends Error {
   status: number | null;
@@ -413,22 +419,34 @@ export const fetchDeepLinkStatus = async (input: {
   simulationId?: string;
   username?: string;
   simulationSlug?: string;
-}): Promise<DeepLinkStatusResult> => {
+} = {}): Promise<DeepLinkStatusResult> => {
   const params = new URLSearchParams();
   if (input.simulationId?.trim()) params.set("sim", input.simulationId.trim());
   if (input.username?.trim()) params.set("username", input.username.trim());
   if (input.simulationSlug?.trim()) params.set("slug", input.simulationSlug.trim());
-  const data = await apiCall<{ status?: unknown; simulationId?: unknown; authenticated?: unknown }>(
+  const data = await apiCall<{
+    status?: unknown;
+    simulationId?: unknown;
+    authenticated?: unknown;
+    authState?: unknown;
+  }>(
     `/api/deep-link-status?${params.toString()}`,
     { method: "GET" },
   );
   const status = data.status;
   const normalized: DeepLinkStatus =
     status === "ok" || status === "forbidden" || status === "missing" ? status : "missing";
+  const authState: DeepLinkAuthState =
+    data.authState === "authenticated" || data.authState === "revoked" || data.authState === "guest"
+      ? data.authState
+      : data.authenticated === true
+        ? "authenticated"
+        : "guest";
   return {
     status: normalized,
     simulationId: typeof data.simulationId === "string" && data.simulationId.trim() ? data.simulationId : undefined,
     authenticated: data.authenticated === true,
+    authState,
   };
 };
 
