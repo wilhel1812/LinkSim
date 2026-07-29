@@ -762,6 +762,7 @@ export function MapView({
   const automaticLockNoticeShown = useCoverageStore((state) => state.automaticLockNoticeShown);
   const calculationCycleSource = useCoverageStore((state) => state.calculationCycleSource);
   const markAutomaticLockNoticeShown = useCoverageStore((state) => state.markAutomaticLockNoticeShown);
+  const recomputeCoverage = useCoverageStore((state) => state.recomputeCoverage);
   const setAutoCalculateEnabled = useCoverageStore((state) => state.setAutoCalculateEnabled);
   const startManualCalculation = useCoverageStore((state) => state.startManualCalculation);
   const stopCalculation = useCoverageStore((state) => state.stopCalculation);
@@ -1193,6 +1194,37 @@ export function MapView({
   const previousAutomaticCalculationLockedRef = useRef(automaticCalculationLocked);
   const calculationWorkAllowed =
     (autoCalculateEnabled && !automaticCalculationLocked) || calculationCycleSource === "manual";
+  const initialAutomaticCalculationRequestedRef = useRef(false);
+  useEffect(() => {
+    if (initialAutomaticCalculationRequestedRef.current) return;
+    if (
+      !autoCalculateEnabled ||
+      automaticCalculationLocked ||
+      coverageVizMode === "none" ||
+      analysisTargetSites.length === 0
+    ) {
+      return;
+    }
+    if (
+      coverageSamples.length > 0 ||
+      isSimulationRecomputing ||
+      completedCoverageRunToken !== ""
+    ) {
+      initialAutomaticCalculationRequestedRef.current = true;
+      return;
+    }
+    initialAutomaticCalculationRequestedRef.current = true;
+    recomputeCoverage();
+  }, [
+    analysisTargetSites.length,
+    autoCalculateEnabled,
+    automaticCalculationLocked,
+    completedCoverageRunToken,
+    coverageSamples.length,
+    coverageVizMode,
+    isSimulationRecomputing,
+    recomputeCoverage,
+  ]);
   useEffect(() => {
     const becameLocked = automaticCalculationLocked && !previousAutomaticCalculationLockedRef.current;
     previousAutomaticCalculationLockedRef.current = automaticCalculationLocked;
@@ -2456,8 +2488,7 @@ export function MapView({
   const simulationLoadingOverlayActive =
     Boolean(analysisBounds && overlayPointMask && overlayHandoff.requestKey) &&
     (overlayHandoff.phase === "entering" || overlayHandoff.phase === "entered");
-  const simulationOverlayFadedForCloud =
-    simulationLoadingOverlayActive && overlayHandoff.cloudReady;
+  const simulationOverlayFadedForCloud = simulationLoadingOverlayActive;
   const simulationOverlayHidden = overlayHandoff.phase === "hiding";
   const simulationOverlayTransition = resolveSimulationOverlayTransition(
     simulationOverlayFadedForCloud,

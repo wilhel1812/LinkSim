@@ -69,7 +69,6 @@ export function SimulationLoadingOverlay({
   const entryTimeoutRef = useRef<number | null>(null);
   const exitKeyRef = useRef<string | null>(null);
   const removalTimeoutRef = useRef<number | null>(null);
-  const fadeInFrameRef = useRef<number | null>(null);
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
   const coordinates = useMemo(
@@ -106,6 +105,7 @@ export function SimulationLoadingOverlay({
         const image = context.createImageData(frame.width, frame.height);
         image.data.set(frame.pixels);
         context.putImageData(image, 0, 0);
+        map?.triggerRepaint();
         lastPaintAt = timestamp;
       }
       if (!reducedMotion) {
@@ -115,7 +115,7 @@ export function SimulationLoadingOverlay({
 
     paint(startedAt);
     return () => window.cancelAnimationFrame(frameId);
-  }, [bounds, canvas, loading, pointMask, reducedMotion]);
+  }, [bounds, canvas, loading, map, pointMask, reducedMotion]);
 
   useEffect(() => {
     if (!map) return;
@@ -130,12 +130,6 @@ export function SimulationLoadingOverlay({
       if (removalTimeoutRef.current !== null) {
         window.clearTimeout(removalTimeoutRef.current);
         removalTimeoutRef.current = null;
-      }
-    };
-    const clearPendingFadeIn = () => {
-      if (fadeInFrameRef.current !== null) {
-        window.cancelAnimationFrame(fadeInFrameRef.current);
-        fadeInFrameRef.current = null;
       }
     };
     const clearPendingEntry = () => {
@@ -170,26 +164,23 @@ export function SimulationLoadingOverlay({
     const scheduleEntry = (key: string, continuing: boolean) => {
       if (
         readyKeyRef.current === key ||
-        fadeInFrameRef.current !== null ||
         entryTimeoutRef.current !== null
       ) {
         return;
       }
-      fadeInFrameRef.current = window.requestAnimationFrame(() => {
-        fadeInFrameRef.current = null;
-        readyKeyRef.current = key;
-        onCloudReady?.(key);
-        applyTransition(true);
-        if (continuing) {
-          onCloudEntered?.(key);
-          return;
-        }
-        entryTimeoutRef.current = window.setTimeout(() => {
-          entryTimeoutRef.current = null;
-          onCloudEntered?.(key);
-          if (!loadingRef.current) startExit(key);
-        }, resolveSimulationOverlayTransition(true).durationMs);
-      });
+      readyKeyRef.current = key;
+      onCloudReady?.(key);
+      applyTransition(true);
+      map.triggerRepaint();
+      if (continuing) {
+        onCloudEntered?.(key);
+        return;
+      }
+      entryTimeoutRef.current = window.setTimeout(() => {
+        entryTimeoutRef.current = null;
+        onCloudEntered?.(key);
+        if (!loadingRef.current) startExit(key);
+      }, resolveSimulationOverlayTransition(true).durationMs);
     };
 
     const addToMap = (key: string, continuing: boolean) => {
@@ -238,7 +229,6 @@ export function SimulationLoadingOverlay({
       !wasExiting &&
       Boolean(map.getLayer(LAYER_ID));
     clearPendingRemoval();
-    clearPendingFadeIn();
 
     if (!ready || !coordinates || !handoffKey) {
       clearPendingEntry();
@@ -264,7 +254,6 @@ export function SimulationLoadingOverlay({
 
     return () => {
       map.off("styledata", addAfterStyleChange);
-      clearPendingFadeIn();
     };
   }, [
     canvas,
@@ -289,9 +278,6 @@ export function SimulationLoadingOverlay({
     return () => {
       if (removalTimeoutRef.current !== null) {
         window.clearTimeout(removalTimeoutRef.current);
-      }
-      if (fadeInFrameRef.current !== null) {
-        window.cancelAnimationFrame(fadeInFrameRef.current);
       }
       if (entryTimeoutRef.current !== null) {
         window.clearTimeout(entryTimeoutRef.current);
