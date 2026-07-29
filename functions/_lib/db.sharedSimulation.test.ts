@@ -129,6 +129,7 @@ class FakeStatement {
 class FakeDb {
   readonly sites = new Map<string, AnyRow>();
   readonly simulations = new Map<string, AnyRow>();
+  readonly simulationRoles = new Map<string, string>();
   readonly resourceChanges: AnyRow[] = [];
 
   prepare(sql: string): FakeStatement {
@@ -169,12 +170,15 @@ class FakeDb {
       if (!row) return null;
       return { id: row.id, visibility: row.visibility };
     }
-    if (sql.includes("SELECT id, payload_json, visibility FROM simulations WHERE id = ?")) {
+    if (sql.includes("FROM simulations WHERE id = ?") && sql.includes("payload_json")) {
       const id = String(bound[0] ?? "");
       return this.simulations.get(id) ?? null;
     }
     if (sql.includes("SELECT role FROM simulation_roles")) {
-      return null;
+      const simulationId = String(bound[0] ?? "");
+      const userId = String(bound[1] ?? "");
+      const role = this.simulationRoles.get(`${simulationId}:${userId}`);
+      return role ? { role } : null;
     }
     return null;
   }
@@ -336,15 +340,17 @@ describe("upsertLibrarySnapshot shared simulations", () => {
     expect(payload.snapshot?.sites?.[0]?.libraryEntryId).toBe("site-private");
   });
 
-  it("loads unlisted private simulation bundles with referenced private sites", async () => {
+  const createPrivateBundleDb = () => {
     const db = new FakeDb();
     db.sites.set("site-private", {
       id: "site-private",
+      owner_user_id: "owner-1",
       visibility: "private",
       payload_json: JSON.stringify({ id: "site-private", name: "Private Site" }),
     });
     db.simulations.set("sim-private", {
       id: "sim-private",
+      owner_user_id: "owner-1",
       visibility: "private",
       payload_json: JSON.stringify({
         id: "sim-private",
@@ -352,10 +358,55 @@ describe("upsertLibrarySnapshot shared simulations", () => {
         snapshot: { sites: [{ id: "site-a", libraryEntryId: "site-private" }], links: [] },
       }),
     });
+    return db;
+  };
+
+  it("rejects anonymous and unrelated access to private simulation bundles", async () => {
+    const db = createPrivateBundleDb();
+    const env = { DB: db } as unknown as Parameters<typeof fetchPublicSimulationBundle>[0];
+
+    await expect(fetchPublicSimulationBundle(env, { simulationId: "sim-private", actor: null }))
+      .resolves.toEqual({ status: "forbidden" });
+    await expect(fetchPublicSimulationBundle(env, {
+      simulationId: "sim-private",
+      actor: { id: "other-1", isAdmin: false, isModerator: false },
+    })).resolves.toEqual({ status: "forbidden" });
+  });
+
+  it("loads private simulation bundles for owners, collaborators, and admins", async () => {
+    const db = createPrivateBundleDb();
+    db.simulationRoles.set("sim-private:collab-1", "viewer");
+    const env = { DB: db } as unknown as Parameters<typeof fetchPublicSimulationBundle>[0];
+
+    for (const actor of [
+      { id: "owner-1", isAdmin: false, isModerator: false },
+      { id: "collab-1", isAdmin: false, isModerator: false },
+      { id: "admin-1", isAdmin: true, isModerator: false },
+    ]) {
+      const result = await fetchPublicSimulationBundle(env, { simulationId: "sim-private", actor });
+      expect(result.status).toBe("ok");
+      if (result.status !== "ok") continue;
+      expect(result.sites).toEqual([expect.objectContaining({ id: "site-private", visibility: "private" })]);
+    }
+  });
+
+  it("loads referenced private sites through an anonymous shared simulation bundle", async () => {
+    const db = createPrivateBundleDb();
+    const simulation = db.simulations.get("sim-private");
+    db.simulations.set("sim-shared", {
+      ...simulation,
+      id: "sim-shared",
+      visibility: "public_write",
+      payload_json: JSON.stringify({
+        id: "sim-shared",
+        visibility: "shared",
+        snapshot: { sites: [{ id: "site-a", libraryEntryId: "site-private" }], links: [] },
+      }),
+    });
 
     const result = await fetchPublicSimulationBundle(
       { DB: db } as unknown as Parameters<typeof fetchPublicSimulationBundle>[0],
-      { simulationId: "sim-private", actorId: null, allowUnlisted: true },
+      { simulationId: "sim-shared", actor: null },
     );
 
     expect(result.status).toBe("ok");

@@ -519,6 +519,49 @@ describe("appStore blank simulation loading", () => {
     const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
     expect(created?.effectiveRole).toBe("owner");
   });
+
+  it("keeps a simulation shared when it references a private Library Site", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Shared With Private Site", { visibility: "private", ownerUserId: "owner-1" });
+    expect(createdId).toBeTruthy();
+
+    const privateSite = {
+      id: "private-site",
+      name: "Private Site",
+      visibility: "private" as const,
+      ownerUserId: "owner-1",
+      effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      position: { lat: 60, lon: 10 },
+      groundElevationM: 100,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState((state) => ({
+      siteLibrary: [privateSite],
+      simulationPresets: state.simulationPresets.map((simulation) =>
+        simulation.id === createdId
+          ? {
+              ...simulation,
+              snapshot: {
+                ...simulation.snapshot,
+                sites: [{ ...privateSite, libraryEntryId: privateSite.id }],
+              },
+            }
+          : simulation,
+      ),
+    }));
+
+    useAppStore.getState().updateSimulationPresetEntry(createdId as string, { visibility: "shared" });
+
+    expect(useAppStore.getState().simulationPresets.find((simulation) => simulation.id === createdId)?.visibility)
+      .toBe("shared");
+    expect(useAppStore.getState().siteLibrary[0]?.visibility).toBe("private");
+  });
 });
 
 describe("appStore new simulation default frequency preset", () => {

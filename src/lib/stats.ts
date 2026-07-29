@@ -47,19 +47,27 @@ export type StatsPayload = {
     medianLinksPerSimulation: number;
     sizeBuckets: Record<"1-2" | "3-5" | "6-10" | "11+", number>;
   };
-  latestSimulations: Array<{
-    id: string;
-    name: string;
-    href: string;
-    createdAt: string | null;
-    owner: {
-      userId: string;
-      username: string;
-      avatarUrl: string;
-    };
-    siteCount: number;
-    linkCount: number;
-  }>;
+  latestSimulations: Array<
+    | {
+        visibility: "private";
+        siteCount: number;
+        linkCount: number;
+      }
+    | {
+        visibility: "shared";
+        id: string;
+        name: string;
+        href: string;
+        createdAt: string | null;
+        owner: {
+          userId: string;
+          username: string;
+          avatarUrl: string;
+        };
+        siteCount: number;
+        linkCount: number;
+      }
+  >;
   longestPassingPaths: Array<{
     id: string;
     label: string;

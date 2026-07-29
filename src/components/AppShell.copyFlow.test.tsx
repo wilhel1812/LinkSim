@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../store/appStore";
 
@@ -22,6 +23,9 @@ vi.hoisted(() => {
   };
   vi.stubGlobal("localStorage", localStorageMock);
 });
+const { pushCloudLibraryMock } = vi.hoisted(() => ({
+  pushCloudLibraryMock: vi.fn(async () => {}),
+}));
 
 const sidebarCalls: Array<{ readOnly?: boolean; panelToggleControl?: unknown }> = [];
 
@@ -46,20 +50,24 @@ vi.mock("../lib/cloudUser", () => ({
 vi.mock("../lib/cloudLibrary", () => ({
   fetchCloudLibrary: vi.fn(async () => ({ siteLibrary: [], simulationPresets: [] })),
   fetchPublicSimulationLibrary: vi.fn(async () => ({ simulationId: null, siteLibrary: [], simulationPresets: [] })),
-  pushCloudLibrary: vi.fn(async () => {}),
+  pushCloudLibrary: pushCloudLibraryMock,
 }));
 
 vi.mock("../lib/environment", () => ({ getCurrentRuntimeEnvironment: () => "production" }));
 vi.mock("../hooks/useThemeVariant", () => ({ useThemeVariant: () => ({ theme: "light", colorTheme: "green", variant: { cssVars: {} } }) }));
 vi.mock("../lib/migrations", () => ({ initializeMigrations: vi.fn(), runMigrations: vi.fn(async () => {}) }));
-vi.mock("./MapView", () => ({ MapView: () => null }));
+vi.mock("./MapView", () => ({
+  MapView: ({ inspectorActions }: { inspectorActions?: React.ReactNode }) => <div>{inspectorActions}</div>,
+}));
 vi.mock("./UserAdminPanel", () => ({ UserAdminPanel: () => null }));
 vi.mock("./SimulationLibraryPanel", () => ({ default: () => null }));
 vi.mock("./WelcomeModal", () => ({ default: () => null }));
 vi.mock("./OnboardingTutorialModal", () => ({ default: () => null }));
 vi.mock("./LinkProfileChart", () => ({ LinkProfileChart: () => null }));
 vi.mock("./PanoramaChart", () => ({ PanoramaChart: () => null }));
-vi.mock("./ActionButton", () => ({ ActionButton: ({ children }: { children?: React.ReactNode }) => <>{children}</> }));
+vi.mock("./ActionButton", () => ({
+  ActionButton: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
+}));
 vi.mock("./InlineCloseIconButton", () => ({ InlineCloseIconButton: () => null }));
 vi.mock("./ModalOverlay", () => ({ ModalOverlay: ({ children }: { children?: React.ReactNode }) => <>{children}</> }));
 vi.mock("./app-shell/MobileWorkspaceTabs", () => ({ MobileWorkspaceTabs: () => null }));
@@ -91,6 +99,11 @@ describe("AppShell copy flow", () => {
     sidebarCalls.length = 0;
     window.history.replaceState(null, "", "/");
     localStorage.clear();
+    pushCloudLibraryMock.mockClear();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn(async () => {}) },
+    });
     vi.stubGlobal("ResizeObserver", class {
       observe() {}
       disconnect() {}
@@ -256,6 +269,59 @@ describe("AppShell copy flow", () => {
 
       await waitFor(() => expect(sidebarCalls[sidebarCalls.length - 1]?.readOnly).toBe(false));
       expect(useAppStore.getState().selectedScenarioId).toBe(createdId);
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("shares a Simulation without changing referenced Private Site visibility", async () => {
+    const state = useAppStore.getState();
+    const privateSite = {
+      id: "private-site",
+      name: "Private Site",
+      visibility: "private" as const,
+      ownerUserId: "user-1",
+      effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      position: { lat: 60.5, lon: 11.5 },
+      groundElevationM: 120,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      siteLibrary: [privateSite],
+      sites: state.sites.map((site, index) =>
+        index === 0 ? { ...site, libraryEntryId: privateSite.id } : site,
+      ),
+      simulationPresets: state.simulationPresets.map((simulation) => ({
+        ...simulation,
+        ownerUserId: "user-1",
+        effectiveRole: "owner",
+        visibility: "private",
+        snapshot: {
+          ...simulation.snapshot,
+          sites: simulation.snapshot.sites.map((site, index) =>
+            index === 0 ? { ...site, libraryEntryId: privateSite.id } : site,
+          ),
+        },
+      })),
+    });
+
+    const view = render(<AppShell />);
+    try {
+      await userEvent.click(await screen.findByRole("button", { name: "Share" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Make Shared & Copy Link" }));
+
+      await waitFor(() => expect(pushCloudLibraryMock).toHaveBeenCalledTimes(1));
+      expect(useAppStore.getState().simulationPresets[0]?.visibility).toBe("shared");
+      expect(useAppStore.getState().siteLibrary[0]?.visibility).toBe("private");
+      expect(pushCloudLibraryMock).toHaveBeenCalledWith(expect.objectContaining({
+        siteLibrary: [],
+        simulationPresets: [expect.objectContaining({ visibility: "shared" })],
+      }));
     } finally {
       view.unmount();
     }

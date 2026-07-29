@@ -1,5 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { resolveSimulationBusyIndicatorState } from "./simulationBusyIndicator";
+import {
+  resolveMonotonicOverlayProgress,
+  resolveSimulationBusyIndicatorState,
+  shouldDeferOverlayRasterization,
+} from "./simulationBusyIndicator";
+
+describe("overlay progress coordination", () => {
+  it("never moves combined overlay progress backward", () => {
+    expect(resolveMonotonicOverlayProgress(null, [88, 24])).toBe(88);
+    expect(resolveMonotonicOverlayProgress(88, [null, 42])).toBe(88);
+    expect(resolveMonotonicOverlayProgress(88, [null, 96])).toBe(96);
+  });
+
+  it("defers rasterization until terrain and coverage inputs are final", () => {
+    expect(
+      shouldDeferOverlayRasterization({
+        isTerrainFetching: true,
+        isTerrainRecommending: false,
+        isSimulationRecomputing: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldDeferOverlayRasterization({
+        isTerrainFetching: false,
+        isTerrainRecommending: true,
+        isSimulationRecomputing: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldDeferOverlayRasterization({
+        isTerrainFetching: false,
+        isTerrainRecommending: false,
+        isSimulationRecomputing: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldDeferOverlayRasterization({
+        isTerrainFetching: false,
+        isTerrainRecommending: false,
+        isSimulationRecomputing: false,
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("resolveSimulationBusyIndicatorState", () => {
   it("prioritizes active simulation recompute over overlay/background work", () => {

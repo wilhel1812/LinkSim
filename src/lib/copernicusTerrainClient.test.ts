@@ -1,74 +1,114 @@
-import { describe, expect, it } from "vitest";
-import { resolveRetryDelayMs, type RetryPolicy } from "./copernicusTerrainClient";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const policy: RetryPolicy = {
-  maxRetries: 3,
-  baseDelayMs: 500,
-  maxDelayMs: 3000,
+vi.mock("geotiff", () => ({
+  fromArrayBuffer: vi.fn(async () => ({
+    getImage: async () => ({
+      getWidth: () => 2,
+      getHeight: () => 2,
+      getBoundingBox: () => [9, 60, 10, 61],
+      getGDALNoData: () => null,
+      readRasters: async () => new Int16Array([1, 2, 3, 4]),
+    }),
+  })),
+}));
+
+import {
+  copernicus30PathForTileKey,
+  loadCopernicus30TilesByKeys,
+} from "./copernicusTerrainClient";
+
+const installEmptyCache = () => {
+  Object.defineProperty(globalThis, "caches", {
+    configurable: true,
+    value: {
+      open: vi.fn(async () => ({
+        match: vi.fn(async () => undefined),
+        put: vi.fn(async () => undefined),
+      })),
+      delete: vi.fn(async () => true),
+    },
+  });
 };
 
-describe("copernicus retry delay", () => {
-  it("uses exponential backoff when retry-after is absent", () => {
-    expect(resolveRetryDelayMs(policy, 1, null)).toBe(500);
-    expect(resolveRetryDelayMs(policy, 2, null)).toBe(1000);
-    expect(resolveRetryDelayMs(policy, 3, null)).toBe(2000);
+describe("Copernicus GLO-30 tile loading", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    installEmptyCache();
+    vi.stubGlobal("Worker", undefined);
   });
 
-  it("caps retry delay to configured max", () => {
-    const response = new Response("", {
-      status: 429,
-      headers: { "retry-after": "120" },
+  it.each([
+    ["N60E009", "Copernicus_DSM_COG_10_N60_00_E009_00_DEM"],
+    ["S05W123", "Copernicus_DSM_COG_10_S05_00_W123_00_DEM"],
+  ])("builds deterministic paths for %s", (key, objectName) => {
+    expect(copernicus30PathForTileKey(key)).toBe(
+      `/copernicus/30m/${objectName}/${objectName}.tif`,
+    );
+  });
+
+  it("never runs more than two tile requests concurrently", async () => {
+    let active = 0;
+    let maxActive = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+
+    const result = await loadCopernicus30TilesByKeys(
+      ["N60E009", "N60E010", "N61E009", "N61E010"],
+      { concurrency: 2 },
+    );
+
+    expect(result.tiles).toHaveLength(4);
+    expect(result.failedTiles).toEqual([]);
+    expect(maxActive).toBe(2);
+  });
+
+  it("retries one transient response but not a permanent 404", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }))
+      .mockResolvedValueOnce(new Response("", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await loadCopernicus30TilesByKeys(["N60E009", "N60E010"], {
+      concurrency: 1,
     });
-    expect(resolveRetryDelayMs(policy, 1, response)).toBe(3000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.tiles).toHaveLength(1);
+    expect(result.failedTiles).toEqual(["N60E010"]);
   });
 
-  it("respects retry-after when lower than cap", () => {
-    const response = new Response("", {
-      status: 429,
-      headers: { "retry-after": "2" },
+  it("aborts active work without reporting cancellation as a failed tile", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Stopped", "AbortError")),
+              { once: true },
+            );
+          }),
+      ),
+    );
+
+    const loading = loadCopernicus30TilesByKeys(["N60E009"], {
+      concurrency: 1,
+      signal: controller.signal,
     });
-    expect(resolveRetryDelayMs(policy, 2, response)).toBe(2000);
-  });
-});
+    controller.abort(new DOMException("Stopped", "AbortError"));
 
-describe("endpoint tile key partition", () => {
-  it("correctly partitions tiles into priority and remaining", () => {
-    const candidateKeys = ["N60E009", "N60E010", "N61E009", "N61E010", "N62E009", "N62E010"];
-    const priorityKeys = new Set(["N60E009", "N60E010", "N61E009"]);
-    const priorityKeysList = candidateKeys.filter((k) => priorityKeys.has(k));
-    const remainingKeys = candidateKeys.filter((k) => !priorityKeys.has(k));
-    expect(priorityKeysList.sort()).toEqual(["N60E009", "N60E010", "N61E009"]);
-    expect(remainingKeys.sort()).toEqual(["N61E010", "N62E009", "N62E010"]);
-  });
-
-  it("treats empty priority set as no priority", () => {
-    const candidateKeys = ["N60E009", "N60E010"];
-    const priorityKeys = new Set<string>();
-    const priorityKeysList = candidateKeys.filter((k) => priorityKeys.has(k));
-    const remainingKeys = candidateKeys.filter((k) => !priorityKeys.has(k));
-    expect(priorityKeysList).toEqual([]);
-    expect(remainingKeys.sort()).toEqual(["N60E009", "N60E010"]);
-  });
-
-  it("endpoint keys cover 3x3 neighborhood around a site", () => {
-    const siteLat = 60.5;
-    const siteLon = 9.7;
-    const endpointKeys = new Set<string>();
-    for (const dLat of [-1, 0, 1]) {
-      for (const dLon of [-1, 0, 1]) {
-        const lat = siteLat + dLat;
-        const lon = siteLon + dLon;
-        const ns = lat >= 0 ? "N" : "S";
-        const ew = lon >= 0 ? "E" : "W";
-        endpointKeys.add(`${ns}${String(Math.floor(Math.abs(lat))).padStart(2, "0")}${ew}${String(Math.floor(Math.abs(lon))).padStart(3, "0")}`);
-      }
-    }
-    expect(endpointKeys).toContain("N59E009");
-    expect(endpointKeys).toContain("N60E009");
-    expect(endpointKeys).toContain("N61E009");
-    expect(endpointKeys).toContain("N59E010");
-    expect(endpointKeys).toContain("N60E010");
-    expect(endpointKeys).toContain("N61E010");
-    expect(endpointKeys.size).toBe(9);
+    await expect(loading).rejects.toMatchObject({ name: "AbortError" });
   });
 });

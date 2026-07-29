@@ -7,7 +7,11 @@ import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountai
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
-import { createLatestOnlyTaskScheduler, type LatestOnlyTask } from "../lib/latestOnlyTaskScheduler";
+import {
+  createLatestOnlyTaskScheduler,
+  type LatestOnlyTask,
+  type LatestOnlyTaskScheduler,
+} from "../lib/latestOnlyTaskScheduler";
 import { dispatchPanoramaInteraction } from "../lib/panoramaEvents";
 import {
   buildPanorama,
@@ -71,6 +75,25 @@ const parseRgb = (value: string): Rgb | null => {
 
 const toCanvasColor = (color: Rgb, alpha: number): string =>
   `rgba(${clamp(Math.round(color.r), 0, 255)}, ${clamp(Math.round(color.g), 0, 255)}, ${clamp(Math.round(color.b), 0, 255)}, ${clamp(alpha, 0, 1).toFixed(3)})`;
+
+const upsertDetailPanorama = (
+  current: PanoramaResult[],
+  panorama: PanoramaResult,
+): PanoramaResult[] => {
+  const bucketKey = panorama.coverageCenterDeg.toFixed(3);
+  const existing = current.find(
+    (entry) => entry.coverageCenterDeg.toFixed(3) === bucketKey,
+  );
+  if (existing === panorama) return current;
+  const next = [
+    ...current.filter(
+      (entry) => entry.coverageCenterDeg.toFixed(3) !== bucketKey,
+    ),
+    panorama,
+  ];
+  next.sort((a, b) => a.coverageCenterDeg - b.coverageCenterDeg);
+  return next.slice(-12);
+};
 
 const blendRgb = (a: Rgb, b: Rgb, t: number): Rgb => {
   const ratio = clamp(t, 0, 1);
@@ -249,14 +272,31 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     [],
   );
 
-  const baseSchedulerRef = useRef(createLatestOnlyTaskScheduler());
-  const detailSchedulerRef = useRef(createLatestOnlyTaskScheduler());
+  const baseSchedulerRef = useRef<LatestOnlyTaskScheduler | null>(null);
+  const detailSchedulerRef = useRef<LatestOnlyTaskScheduler | null>(null);
   const cacheRef = useRef<Map<string, PanoramaResult>>(new Map());
   const detailContextRef = useRef<string>("");
   const [basePanorama, setBasePanorama] = useState<PanoramaResult | null>(null);
   const [detailPanoramas, setDetailPanoramas] = useState<PanoramaResult[]>([]);
   const [panoramasReadyEpoch, setPanoramasReadyEpoch] = useState(0);
   const [panoramaLoading, setPanoramaLoading] = useState(false);
+
+  useEffect(() => {
+    const baseScheduler = createLatestOnlyTaskScheduler();
+    const detailScheduler = createLatestOnlyTaskScheduler();
+    baseSchedulerRef.current = baseScheduler;
+    detailSchedulerRef.current = detailScheduler;
+    return () => {
+      baseScheduler.dispose();
+      detailScheduler.dispose();
+      if (baseSchedulerRef.current === baseScheduler) {
+        baseSchedulerRef.current = null;
+      }
+      if (detailSchedulerRef.current === detailScheduler) {
+        detailSchedulerRef.current = null;
+      }
+    };
+  }, []);
 
   const selectedSiteEffective = useMemo(() => {
     if (!selectedSite) return null;
@@ -365,13 +405,15 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
   useEffect(() => {
     if (!selectedSiteEffective || !selectedNetwork) {
+      baseSchedulerRef.current?.clearQueue();
+      baseSchedulerRef.current?.cancelActive();
+      detailSchedulerRef.current?.clearQueue();
+      detailSchedulerRef.current?.cancelActive();
       setBasePanorama(null);
       setDetailPanoramas([]);
       setPanoramaLoading(false);
       return;
     }
-
-    setPanoramaLoading(true);
 
     const effectiveLink = links[0]
       ? {
@@ -455,27 +497,26 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
 
     const cachedBase = cacheRef.current.get(baseSignature);
     if (cachedBase) {
-      setBasePanorama(cachedBase);
-      setPanoramasReadyEpoch(Date.now());
+      setBasePanorama((current) => current === cachedBase ? current : cachedBase);
     }
     const cachedDetail = cacheRef.current.get(detailSignature);
     if (cachedDetail) {
-      setDetailPanoramas((current) => {
-        const bucketKey = cachedDetail.coverageCenterDeg.toFixed(3);
-        const next = [...current.filter((entry) => entry.coverageCenterDeg.toFixed(3) !== bucketKey), cachedDetail];
-        next.sort((a, b) => a.coverageCenterDeg - b.coverageCenterDeg);
-        return next.slice(-12);
-      });
-      setPanoramasReadyEpoch(Date.now());
+      setDetailPanoramas((current) => upsertDetailPanorama(current, cachedDetail));
     }
+    if (cachedBase || cachedDetail) {
+      setPanoramasReadyEpoch((epoch) => epoch + 1);
+    }
+    setPanoramaLoading(!(cachedBase && cachedDetail));
 
     if (!cachedBase) {
       const scheduler = baseSchedulerRef.current;
+      if (!scheduler) return;
       scheduler.clearQueue();
       scheduler.cancelActive();
       scheduler.enqueue({
         signature: baseSignature,
         run: async (context) => {
+          if (context.isCancelled()) return;
           const result = buildPanorama({
             selectedSite: selectedSiteEffective,
             effectiveLink,
@@ -499,19 +540,23 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             if (oldest) cacheRef.current.delete(oldest);
           }
           setBasePanorama(result);
-          setPanoramasReadyEpoch(Date.now());
-          setPanoramaLoading(false);
+          setPanoramasReadyEpoch((epoch) => epoch + 1);
+          if (cacheRef.current.has(detailSignature)) {
+            setPanoramaLoading(false);
+          }
         },
       } satisfies LatestOnlyTask);
     }
 
     if (!cachedDetail) {
       const scheduler = detailSchedulerRef.current;
+      if (!scheduler) return;
       scheduler.clearQueue();
       scheduler.cancelActive();
       scheduler.enqueue({
         signature: detailSignature,
         run: async (context) => {
+          if (context.isCancelled()) return;
           const result = buildPanorama({
             selectedSite: selectedSiteEffective,
             effectiveLink,
@@ -536,14 +581,11 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             const oldest = cacheRef.current.keys().next().value;
             if (oldest) cacheRef.current.delete(oldest);
           }
-          setDetailPanoramas((current) => {
-            const bucketKey = result.coverageCenterDeg.toFixed(3);
-            const next = [...current.filter((entry) => entry.coverageCenterDeg.toFixed(3) !== bucketKey), result];
-            next.sort((a, b) => a.coverageCenterDeg - b.coverageCenterDeg);
-            return next.slice(-12);
-          });
-          setPanoramasReadyEpoch(Date.now());
-          setPanoramaLoading(false);
+          setDetailPanoramas((current) => upsertDetailPanorama(current, result));
+          setPanoramasReadyEpoch((epoch) => epoch + 1);
+          if (cacheRef.current.has(baseSignature)) {
+            setPanoramaLoading(false);
+          }
         },
       } satisfies LatestOnlyTask);
     }
@@ -561,7 +603,6 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     normalizedFovScale,
     viewportCenterAzimuthDeg,
     viewportSpanDeg,
-    panoramasReadyEpoch,
   ]);
 
   const panorama = detailPanoramas[detailPanoramas.length - 1] ?? basePanorama;
@@ -587,6 +628,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
   );
 
   const geometry = useMemo(() => {
+    // The epoch is a one-way signal that cached results are ready to paint.
+    void panoramasReadyEpoch;
     if (!panorama || !chartSize || !panorama.rays.length) return null;
     const anchorPanorama = basePanorama && basePanorama.rays.length ? basePanorama : panorama;
 

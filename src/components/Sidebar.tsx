@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CircleMinus, Funnel, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
+import { CircleAlert, CircleMinus, Funnel, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { t } from "../i18n/locales";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
@@ -50,6 +50,10 @@ const READ_ONLY_SIMULATION_SITE_HELP =
   "Read-only: you need edit permission to add or edit sites in this simulation.";
 const READ_ONLY_VIEW_DETAILS_HELP =
   "Read-only: you can view this item, but need edit permission to change it.";
+const PRIVATE_SITE_DISCLOSURE_NOTICE =
+  "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+const PRIVATE_SITE_DISCLOSURE_TOOLTIP =
+  "This Site is Private in the Library, but is visible to anyone who can access this Shared Simulation.";
 
 const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
   <span className="user-list-row">
@@ -343,6 +347,21 @@ export function Sidebar({
     const simulation = scenarioOptions.find((candidate) => candidate.id === simulationId);
     return simulation ? `${simulation.name}` : "no simulation selected";
   }, [selectedSimulationRef, simulationPresets, scenarioOptions]);
+  const privateReferencedLibrarySiteIds = useMemo(() => {
+    if (readOnly || !selectedScenarioId) return new Set<string>();
+    const activeSimulation = simulationPresets.find((simulation) => simulation.id === selectedScenarioId);
+    if (!activeSimulation || toAccessVisibility(activeSimulation.visibility) !== "shared") return new Set<string>();
+    const privateLibraryIds = new Set(
+      siteLibrary
+        .filter((entry) => toAccessVisibility(entry.visibility) === "private")
+        .map((entry) => entry.id),
+    );
+    return new Set(
+      activeSimulation.snapshot.sites
+        .map((site) => site.libraryEntryId)
+        .filter((id): id is string => Boolean(id && privateLibraryIds.has(id))),
+    );
+  }, [readOnly, selectedScenarioId, simulationPresets, siteLibrary]);
   const openActiveSimulationDetails = (triggerEl?: Element | null) => {
     if (!selectedSimulationRef.startsWith("saved:")) return;
     const presetId = selectedSimulationRef.replace("saved:", "");
@@ -688,6 +707,16 @@ export function Sidebar({
             <span className="field-help">Sign in to browse the simulation library.</span>
           )}
         </div>
+        {privateReferencedLibrarySiteIds.size ? (
+          <div className="app-notification-item app-notification-item-warning app-notification-item-static" role="status">
+            <span className="app-notification-glyph" aria-hidden="true">
+              <CircleAlert size={14} strokeWidth={2} />
+            </span>
+            <div className="app-notification-copy">
+              <span>{PRIVATE_SITE_DISCLOSURE_NOTICE}</span>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="panel-section section-sites">
@@ -706,6 +735,9 @@ export function Sidebar({
               >
                 {site.name}
               </button>
+              {site.libraryEntryId && privateReferencedLibrarySiteIds.has(site.libraryEntryId) ? (
+                <InfoTip text={PRIVATE_SITE_DISCLOSURE_TOOLTIP} />
+              ) : null}
               <div className="row-actions">
                 {readOnly ? (
                   <ActionButton

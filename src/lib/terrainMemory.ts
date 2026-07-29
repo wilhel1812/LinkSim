@@ -1,19 +1,16 @@
 import type { SrtmTile } from "../types/radio";
 
 export const COPERNICUS_30_TILE_DECODED_BYTES = 3601 * 3601 * 2;
-export const COPERNICUS_90_TILE_DECODED_BYTES = 1201 * 1201 * 2;
 
 export type TerrainMemoryDiagnostics = {
   retainedBytesTotal: number;
   retainedBytesByDataset: {
     copernicus30: number;
-    copernicus90: number;
     manual: number;
     other: number;
   };
   tileCountsByDataset: {
     copernicus30: number;
-    copernicus90: number;
     manual: number;
     other: number;
   };
@@ -22,7 +19,6 @@ export type TerrainMemoryDiagnostics = {
 const datasetBucketForTile = (tile: SrtmTile): keyof TerrainMemoryDiagnostics["retainedBytesByDataset"] => {
   if (tile.sourceKind === "manual-upload") return "manual";
   if (tile.sourceId === "copernicus30") return "copernicus30";
-  if (tile.sourceId === "copernicus90") return "copernicus90";
   return "other";
 };
 
@@ -37,13 +33,11 @@ export const estimateTerrainMemoryDiagnostics = (tiles: ReadonlyArray<SrtmTile>)
     retainedBytesTotal: 0,
     retainedBytesByDataset: {
       copernicus30: 0,
-      copernicus90: 0,
       manual: 0,
       other: 0,
     },
     tileCountsByDataset: {
       copernicus30: 0,
-      copernicus90: 0,
       manual: 0,
       other: 0,
     },
@@ -60,9 +54,5 @@ export const estimateTerrainMemoryDiagnostics = (tiles: ReadonlyArray<SrtmTile>)
   return diagnostics;
 };
 
-export const estimateTransientDecodeBytes = (datasetTileCounts: {
-  copernicus30: number;
-  copernicus90: number;
-}): number =>
-  datasetTileCounts.copernicus30 * COPERNICUS_30_TILE_DECODED_BYTES +
-  datasetTileCounts.copernicus90 * COPERNICUS_90_TILE_DECODED_BYTES;
+export const estimateTransientDecodeBytes = (tileCount: number): number =>
+  tileCount * COPERNICUS_30_TILE_DECODED_BYTES;
