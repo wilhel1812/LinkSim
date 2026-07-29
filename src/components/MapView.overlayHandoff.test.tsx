@@ -257,6 +257,26 @@ describe("MapView overlay handoff", () => {
     await waitFor(() => expect(recomputeCoverage).toHaveBeenCalledTimes(1));
   });
 
+  it("starts clouds while cold-start terrain loads before Pass/Fail is raster-ready", async () => {
+    useAppStore.setState({
+      mapOverlayMode: "passfail",
+      isTerrainFetching: true,
+    });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
+    expect(loadingOverlayMock.props?.handoffKey).toBeTruthy();
+    expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+  });
+
   it("does not auto-start a manually locked initial calculation", async () => {
     const recomputeCoverage = vi.fn();
     useAppStore.setState({ selectedCoverageResolution: "84" });
