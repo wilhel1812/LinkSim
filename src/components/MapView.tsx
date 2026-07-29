@@ -1305,23 +1305,44 @@ export function MapView({
     [requiredTargetRadiusTileKeys, loaded30mTileKeys],
   );
   const targetRadiusTerrainSignature = `${targetRadiusKm}|${requiredTargetRadiusTileKeys.join(",")}`;
-  const targetRadiusFetchAttemptRef = useRef("");
+  const targetRadiusFetchAttemptRef = useRef<{
+    signature: string;
+    terrainLoadEpoch: number;
+  }>({ signature: "", terrainLoadEpoch: -1 });
   useEffect(() => {
     if (!calculationWorkAllowed) {
-      targetRadiusFetchAttemptRef.current = "";
+      targetRadiusFetchAttemptRef.current = {
+        signature: "",
+        terrainLoadEpoch: -1,
+      };
       return;
     }
     if (coverageVizMode === "none") {
-      targetRadiusFetchAttemptRef.current = "";
+      targetRadiusFetchAttemptRef.current = {
+        signature: "",
+        terrainLoadEpoch: -1,
+      };
       return;
     }
     if (!analysisTargetSites.length || missingTargetRadiusTileCount <= 0) {
-      targetRadiusFetchAttemptRef.current = "";
+      targetRadiusFetchAttemptRef.current = {
+        signature: "",
+        terrainLoadEpoch: -1,
+      };
       return;
     }
     if (isTerrainFetching || isTerrainRecommending) return;
-    if (targetRadiusFetchAttemptRef.current === targetRadiusTerrainSignature) return;
-    targetRadiusFetchAttemptRef.current = targetRadiusTerrainSignature;
+    if (
+      targetRadiusFetchAttemptRef.current.signature ===
+        targetRadiusTerrainSignature &&
+      targetRadiusFetchAttemptRef.current.terrainLoadEpoch === terrainLoadEpoch
+    ) {
+      return;
+    }
+    targetRadiusFetchAttemptRef.current = {
+      signature: targetRadiusTerrainSignature,
+      terrainLoadEpoch: terrainLoadEpoch + 1,
+    };
     void recommendAndFetchTerrainForCurrentArea(targetRadiusKm);
   }, [
     coverageVizMode,
@@ -1330,6 +1351,7 @@ export function MapView({
     isTerrainFetching,
     isTerrainRecommending,
     normalizedOverlayRadiusOption,
+    terrainLoadEpoch,
     targetRadiusTerrainSignature,
     recommendAndFetchTerrainForCurrentArea,
     targetRadiusKm,

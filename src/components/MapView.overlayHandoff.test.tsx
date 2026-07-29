@@ -174,6 +174,7 @@ describe("MapView overlay handoff", () => {
       selectedCoverageResolution: "24",
       selectedOverlayRadiusOption: "20",
       srtmTiles: [],
+      terrainLoadEpoch: 0,
       isTerrainFetching: false,
       isTerrainRecommending: false,
       recommendAndFetchTerrainForCurrentArea: vi.fn(async () => undefined),
@@ -275,6 +276,44 @@ describe("MapView overlay handoff", () => {
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
     expect(loadingOverlayMock.props?.handoffKey).toBeTruthy();
     expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+  });
+
+  it("retries unchanged cold-start terrain geometry after startup cancels its epoch", async () => {
+    const recommendAndFetchTerrainForCurrentArea = vi.fn(async () => {
+      const currentEpoch = useAppStore.getState().terrainLoadEpoch;
+      useAppStore.setState({
+        isTerrainFetching: true,
+        terrainLoadEpoch: currentEpoch + 1,
+      });
+    });
+    useAppStore.setState({
+      isTerrainFetching: false,
+      terrainLoadEpoch: 0,
+      recommendAndFetchTerrainForCurrentArea,
+    });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(recommendAndFetchTerrainForCurrentArea).toHaveBeenCalledTimes(1),
+    );
+    act(() => {
+      useAppStore.setState({
+        isTerrainFetching: false,
+        terrainLoadEpoch: 2,
+      });
+    });
+
+    await waitFor(() =>
+      expect(recommendAndFetchTerrainForCurrentArea).toHaveBeenCalledTimes(2),
+    );
   });
 
   it("does not auto-start a manually locked initial calculation", async () => {
