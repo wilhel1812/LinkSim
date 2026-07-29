@@ -185,7 +185,7 @@ export function SimulationLoadingOverlay({
 
     const addToMap = (key: string, continuing: boolean) => {
       if (addingToMapRef.current) return;
-      if (!coordinates || !map.isStyleLoaded()) return;
+      if (!coordinates) return;
       addingToMapRef.current = true;
       try {
         if (!map.getSource(SOURCE_ID)) {
@@ -210,9 +210,14 @@ export function SimulationLoadingOverlay({
             type: "raster",
           });
         }
+      } catch {
+        // MapLibre can emit styledata before the style accepts custom sources.
+        // Keep the listener active and retry on the next style update.
+        return;
       } finally {
         addingToMapRef.current = false;
       }
+      if (!map.getSource(SOURCE_ID) || !map.getLayer(LAYER_ID)) return;
       if (readyKeyRef.current === key) {
         applyTransition(true);
         return;

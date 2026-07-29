@@ -7,6 +7,7 @@ const mapMock = vi.hoisted(() => {
     layerPresent: false,
     sourcePresent: false,
     styleLoaded: true,
+    rejectSourceUntilStyleLoaded: false,
     styleDataListener: null as null | (() => void),
   };
   const source = {
@@ -17,6 +18,12 @@ const mapMock = vi.hoisted(() => {
       state.layerPresent = true;
     }),
     addSource: vi.fn(() => {
+      if (
+        state.rejectSourceUntilStyleLoaded &&
+        !state.styleLoaded
+      ) {
+        throw new Error("Style is not done loading");
+      }
       state.sourcePresent = true;
     }),
     getLayer: vi.fn(() => (state.layerPresent ? {} : undefined)),
@@ -63,6 +70,7 @@ describe("SimulationLoadingOverlay", () => {
     mapMock.state.layerPresent = false;
     mapMock.state.sourcePresent = false;
     mapMock.state.styleLoaded = true;
+    mapMock.state.rejectSourceUntilStyleLoaded = false;
     mapMock.state.styleDataListener = null;
     Object.values(mapMock.map).forEach((value) => {
       if (typeof value === "function" && "mockClear" in value) {
@@ -252,8 +260,33 @@ describe("SimulationLoadingOverlay", () => {
     expect(onCloudEntered).toHaveBeenCalledWith("heatmap");
   });
 
+  it("attaches clouds while basemap sources are still loading", () => {
+    mapMock.state.styleLoaded = false;
+    vi.mocked(window.matchMedia).mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList);
+    const onCloudReady = vi.fn();
+
+    render(
+      <SimulationLoadingOverlay
+        bounds={bounds}
+        handoffKey="cold-start"
+        loading
+        onCloudReady={onCloudReady}
+        pointMask={() => true}
+      />,
+    );
+
+    expect(mapMock.map.addSource).toHaveBeenCalledTimes(1);
+    expect(mapMock.map.addLayer).toHaveBeenCalledTimes(1);
+    expect(onCloudReady).toHaveBeenCalledWith("cold-start");
+  });
+
   it("emits readiness after a delayed MapLibre style load", () => {
     mapMock.state.styleLoaded = false;
+    mapMock.state.rejectSourceUntilStyleLoaded = true;
     vi.mocked(window.matchMedia).mockReturnValue({
       matches: true,
       addEventListener: vi.fn(),
@@ -273,7 +306,9 @@ describe("SimulationLoadingOverlay", () => {
       />,
     );
 
-    expect(mapMock.map.addSource).not.toHaveBeenCalled();
+    expect(mapMock.map.addSource).toHaveBeenCalledTimes(1);
+    expect(mapMock.state.sourcePresent).toBe(false);
+    expect(onCloudReady).not.toHaveBeenCalled();
     expect(mapMock.state.styleDataListener).toBeTypeOf("function");
 
     mapMock.state.styleLoaded = true;
@@ -283,6 +318,7 @@ describe("SimulationLoadingOverlay", () => {
     });
     expect(onCloudReady).toHaveBeenCalledTimes(1);
     expect(onCloudReady).toHaveBeenCalledWith("initial-load");
+    expect(mapMock.map.addSource).toHaveBeenCalledTimes(2);
     act(() => vi.advanceTimersByTime(350));
     expect(onCloudEntered).toHaveBeenCalledTimes(1);
     expect(onCloudEntered).toHaveBeenCalledWith("initial-load");
