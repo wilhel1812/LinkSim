@@ -5,16 +5,22 @@ import type { Env } from "../_lib/types";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
+const NO_STORE_HEADERS = { "cache-control": "no-store" };
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const auth = await verifyAuth(request, env);
     let actor = { id: "", isAdmin: false, isModerator: false };
     let authenticated = false;
+    let authState: "guest" | "authenticated" | "revoked" = "guest";
     if (auth) {
       await ensureUser(env, auth.userId, auth.tokenPayload);
       const me = await fetchUserProfile(env, auth.userId);
-      if (me?.accountState !== "revoked") {
+      if (me?.accountState === "revoked") {
+        authState = "revoked";
+      } else {
         authenticated = true;
+        authState = "authenticated";
         actor = {
           id: me?.id ?? "",
           isAdmin: Boolean(me?.isAdmin),
@@ -31,7 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       simulationId = (await resolveSimulationIdByOwnerSlug(env, username, simulationSlug)) ?? "";
     }
     if (!simulationId) {
-      return withCors(request, json({ status: "missing", authenticated }));
+      return withCors(request, json({ status: "missing", authenticated, authState }, { headers: NO_STORE_HEADERS }));
     }
 
     const status = await resolveSimulationAccessForUser(
@@ -44,7 +50,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       simulationId,
     );
 
-    return withCors(request, json({ status, simulationId, authenticated }));
+    return withCors(
+      request,
+      json({ status, simulationId, authenticated, authState }, { headers: NO_STORE_HEADERS }),
+    );
   } catch (error) {
     return errorResponse(request, error, 500);
   }
