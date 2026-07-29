@@ -99,10 +99,17 @@ describe("SimulationLoadingOverlay", () => {
   });
 
   it("crossfades into clouds and keeps them mounted through the exit transition", () => {
+    const onCloudReady = vi.fn();
+    const onCloudEntered = vi.fn();
+    const onCloudExited = vi.fn();
     const { rerender } = render(
       <SimulationLoadingOverlay
         bounds={bounds}
+        handoffKey="heatmap"
         loading
+        onCloudEntered={onCloudEntered}
+        onCloudExited={onCloudExited}
+        onCloudReady={onCloudReady}
         pointMask={() => true}
       />,
     );
@@ -118,6 +125,7 @@ describe("SimulationLoadingOverlay", () => {
 
     act(() => vi.advanceTimersByTime(16));
 
+    expect(onCloudReady).toHaveBeenCalledWith("heatmap");
     expect(mapMock.map.setPaintProperty).toHaveBeenCalledWith(
       "simulation-loading-overlay-layer",
       "raster-opacity-transition",
@@ -132,11 +140,26 @@ describe("SimulationLoadingOverlay", () => {
     rerender(
       <SimulationLoadingOverlay
         bounds={bounds}
+        handoffKey="heatmap"
         loading={false}
+        onCloudEntered={onCloudEntered}
+        onCloudExited={onCloudExited}
+        onCloudReady={onCloudReady}
         pointMask={() => true}
       />,
     );
 
+    expect(onCloudEntered).not.toHaveBeenCalled();
+    expect(mapMock.map.setPaintProperty).not.toHaveBeenCalledWith(
+      "simulation-loading-overlay-layer",
+      "raster-opacity-transition",
+      { duration: 500 },
+    );
+
+    act(() => vi.advanceTimersByTime(349));
+    expect(onCloudEntered).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onCloudEntered).toHaveBeenCalledWith("heatmap");
     expect(mapMock.map.setPaintProperty).toHaveBeenCalledWith(
       "simulation-loading-overlay-layer",
       "raster-opacity-transition",
@@ -157,6 +180,7 @@ describe("SimulationLoadingOverlay", () => {
     expect(mapMock.map.removeSource).toHaveBeenCalledWith(
       "simulation-loading-overlay-source",
     );
+    expect(onCloudExited).toHaveBeenCalledWith("heatmap");
   });
 
   it("renders one static cloud frame for reduced motion", () => {
@@ -169,6 +193,7 @@ describe("SimulationLoadingOverlay", () => {
     render(
       <SimulationLoadingOverlay
         bounds={bounds}
+        handoffKey="heatmap"
         loading
         pointMask={() => true}
       />,
@@ -178,5 +203,41 @@ describe("SimulationLoadingOverlay", () => {
     expect(putImageData).toHaveBeenCalledTimes(1);
     act(() => vi.advanceTimersByTime(500));
     expect(putImageData).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses an entered cloud without replaying its 350 ms entrance", () => {
+    vi.mocked(window.matchMedia).mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList);
+    const onCloudEntered = vi.fn();
+    const pointMask = () => true;
+    const { rerender } = render(
+      <SimulationLoadingOverlay
+        bounds={bounds}
+        handoffKey="relay"
+        loading
+        onCloudEntered={onCloudEntered}
+        pointMask={pointMask}
+      />,
+    );
+
+    act(() => vi.advanceTimersByTime(16));
+    act(() => vi.advanceTimersByTime(350));
+    expect(onCloudEntered).toHaveBeenCalledWith("relay");
+
+    rerender(
+      <SimulationLoadingOverlay
+        bounds={bounds}
+        handoffKey="heatmap"
+        loading
+        onCloudEntered={onCloudEntered}
+        pointMask={pointMask}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(16));
+
+    expect(onCloudEntered).toHaveBeenCalledWith("heatmap");
   });
 });
