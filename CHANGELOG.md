@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.24.0] - 2026-07-29
+
+### Changed
+- Clarified how Private Sites behave inside Shared Simulations with owner/editor disclosure while preserving the Site's Library visibility. (#920)
+- Consolidated browser and calculation-API terrain acquisition around one deterministic GLO-30 pipeline with bounded requests, explicit cancellation, and preserved unavailable-terrain behavior. (#937)
+
+### Fixed
+- Prevented anonymous or unauthorized access to Private Simulations and anonymized their public Stats entries while retaining privacy-safe aggregate contributions. (#931)
+- Removed a self-sustaining Panorama render loop that could make otherwise identical overlay calculations roughly 100 times slower. (#933)
+- Deferred overlay calculation until terrain settles, eliminating duplicate provisional passes and keeping combined terrain/coverage progress monotonic. (#937)
+
 ## [0.23.0] - 2026-07-22
 
 ### Added
