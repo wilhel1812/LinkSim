@@ -19,8 +19,14 @@ type Input = {
 };
 
 export const deriveSyncIndicator = (input: Input): SyncIndicator => {
-  const timeLabel = input.lastSyncedAt
-    ? `Up to date (synced ${new Date(input.lastSyncedAt).toLocaleTimeString()})`
+  const lastSyncedTime = input.lastSyncedAt
+    ? new Date(input.lastSyncedAt).toLocaleTimeString()
+    : null;
+  const lastSyncLabel = lastSyncedTime
+    ? `Last synced: ${lastSyncedTime}`
+    : "Last synced: Never";
+  const upToDateLabel = lastSyncedTime
+    ? `Up to date (synced ${lastSyncedTime})`
     : "Up to date";
 
   if (input.isLocalRuntime) {
@@ -50,7 +56,7 @@ export const deriveSyncIndicator = (input: Input): SyncIndicator => {
       state: "error",
       className: "sync-error",
       label: "Sync failed",
-      title: `${timeLabel}. ${input.syncErrorMessage ?? "Open Sync Status for details."}`,
+      title: `Sync failed. ${lastSyncLabel}. ${input.syncErrorMessage ?? "Open Sync Status for details."}`,
     };
   }
 
@@ -59,16 +65,16 @@ export const deriveSyncIndicator = (input: Input): SyncIndicator => {
       state: "pending",
       className: "sync-pending",
       label: "Sync pending",
-      title: `${timeLabel}. ${input.pendingChangesCount} pending change${input.pendingChangesCount === 1 ? "" : "s"}.`,
+      title: `Sync pending. ${lastSyncLabel}. ${input.pendingChangesCount} pending change${input.pendingChangesCount === 1 ? "" : "s"}.`,
     };
   }
 
   switch (input.syncStatus) {
     case "syncing":
-      return { state: "syncing", className: "sync-syncing", label: "Syncing...", title: timeLabel };
+      return { state: "syncing", className: "sync-syncing", label: "Syncing...", title: `Syncing... ${lastSyncLabel}.` };
     case "synced":
-      return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
+      return { state: "synced", className: "sync-synced", label: "Up to date", title: `${upToDateLabel}. Click for details.` };
     default:
-      return { state: "synced", className: "sync-synced", label: "Up to date", title: `${timeLabel}. Click for details.` };
+      return { state: "synced", className: "sync-synced", label: "Up to date", title: `${upToDateLabel}. Click for details.` };
   }
 };
