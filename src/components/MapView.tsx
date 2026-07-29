@@ -86,6 +86,8 @@ import { StateDot } from "./StateDot";
 import { useMapControls } from "./map/useMapControls";
 import { animateMapToCenter, fitMapToBounds, resolveMapCameraPadding } from "./map/mapCamera";
 import { PanelToolbar } from "./ui/PanelToolbar";
+import { SimulationLoadingOverlay } from "./SimulationLoadingOverlay";
+import { resolveSimulationOverlayTransition } from "../lib/simulationLoadingOverlay";
 
 const UI_SECTION_KEYS = {
   mapViewResults: "linksim-ui-mapview-results-v1",
@@ -180,33 +182,45 @@ const panoramaRayLayer = (color: string): LayerProps => ({
   },
 });
 
-const coverageRasterLayer: LayerProps = {
-  id: "coverage-overlay-layer",
-  type: "raster",
-  paint: {
-    "raster-opacity": 0.68,
-    "raster-contrast": 0.08,
-    "raster-saturation": 0.02,
-  },
+const coverageRasterLayer = (loading: boolean): LayerProps => {
+  const transition = resolveSimulationOverlayTransition(loading);
+  return {
+    id: "coverage-overlay-layer",
+    type: "raster",
+    paint: {
+      "raster-opacity": transition.coverageOpacity,
+      "raster-opacity-transition": {
+        duration: transition.durationMs,
+      },
+      "raster-contrast": 0.08,
+      "raster-saturation": 0.02,
+    },
+  };
 };
 
-const targetContourHaloLayer = (color: string): LayerProps => ({
+const targetContourHaloLayer = (color: string, loading: boolean): LayerProps => ({
   id: "coverage-target-contour-halo-layer",
   type: "line",
   paint: {
     "line-color": color,
     "line-width": 2.5,
-    "line-opacity": 0.82,
+    "line-opacity": loading ? 0 : 0.82,
+    "line-opacity-transition": {
+      duration: resolveSimulationOverlayTransition(loading).durationMs,
+    },
   },
 });
 
-const targetContourLineLayer = (color: string): LayerProps => ({
+const targetContourLineLayer = (color: string, loading: boolean): LayerProps => ({
   id: "coverage-target-contour-line-layer",
   type: "line",
   paint: {
     "line-color": color,
     "line-width": 1.2,
-    "line-opacity": 0.96,
+    "line-opacity": loading ? 0 : 0.96,
+    "line-opacity-transition": {
+      duration: resolveSimulationOverlayTransition(loading).durationMs,
+    },
   },
 });
 
@@ -2290,6 +2304,12 @@ export function MapView({
       terrainProgressTilesTotal,
     ],
   );
+  const simulationLoadingOverlayActive =
+    Boolean(analysisBounds && overlayPointMask) &&
+    (isTerrainFetching || isSimulationRecomputing || overlayJobsInFlight > 0);
+  const simulationOverlayTransition = resolveSimulationOverlayTransition(
+    simulationLoadingOverlayActive,
+  );
   const calculationControlRunning = calculationCycleSource !== null || isSimulationRecomputing;
   const handleStopCalculation = useCallback(() => {
     stopCalculation();
@@ -3756,7 +3776,14 @@ export function MapView({
               type="raster"
               paint={{
                 ...terrainRasterPaint,
-                "raster-opacity": coverageOverlay ? 0.34 : 0.62,
+                "raster-opacity": simulationLoadingOverlayActive
+                  ? 0
+                  : coverageOverlay
+                    ? 0.34
+                    : 0.62,
+                "raster-opacity-transition": {
+                  duration: simulationOverlayTransition.durationMs,
+                },
               }}
             />
           </Source>
@@ -3776,14 +3803,30 @@ export function MapView({
             type="image"
             url={coverageOverlay.url}
           >
-            <Layer {...coverageRasterLayer} />
+            <Layer {...coverageRasterLayer(simulationLoadingOverlayActive)} />
           </Source>
         ) : null}
 
+        <SimulationLoadingOverlay
+          bounds={analysisBounds}
+          loading={simulationLoadingOverlayActive}
+          pointMask={overlayPointMask}
+        />
+
         {showTargetContourLine ? (
           <Source data={targetContourFeatures} id="coverage-target-contour-source" type="geojson">
-            <Layer {...targetContourHaloLayer(variant.cssVars["--bg"] ?? linkColor)} />
-            <Layer {...targetContourLineLayer(variant.cssVars["--muted"] ?? selectedLinkColor)} />
+            <Layer
+              {...targetContourHaloLayer(
+                variant.cssVars["--bg"] ?? linkColor,
+                simulationLoadingOverlayActive,
+              )}
+            />
+            <Layer
+              {...targetContourLineLayer(
+                variant.cssVars["--muted"] ?? selectedLinkColor,
+                simulationLoadingOverlayActive,
+              )}
+            />
           </Source>
         ) : null}
 
