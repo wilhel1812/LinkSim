@@ -61,6 +61,7 @@ vi.mock("react-map-gl/maplibre", async () => {
       return <div>{children}</div>;
     },
     Source: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    useMap: () => ({ current: undefined }),
   };
 });
 
