@@ -1,6 +1,6 @@
 import { fromArrayBuffer } from "geotiff";
 
-type CopernicusDataset = "copernicus30" | "copernicus90";
+type CopernicusDataset = "copernicus30";
 
 type TileParserRequestMessage = {
   id: number;

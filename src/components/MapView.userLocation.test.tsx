@@ -114,6 +114,8 @@ import { useAppStore } from "../store/appStore";
 import { useCoverageStore } from "../store/coverageStore";
 import { MapView } from "./MapView";
 
+const originalCancelTerrainLoad = useAppStore.getState().cancelTerrainLoad;
+
 const renderMapView = (props: Partial<React.ComponentProps<typeof MapView>> = {}) =>
   render(
     <MapView
@@ -142,6 +144,7 @@ describe("MapView user location flow", () => {
       value: vi.fn(() => ({})),
     });
     useAppStore.setState({
+      cancelTerrainLoad: originalCancelTerrainLoad,
       sites: [],
       links: [],
       selectedSiteId: "",
@@ -164,6 +167,8 @@ describe("MapView user location flow", () => {
   });
 
   it("switches between automatic, manual start, and manual stop controls", () => {
+    const cancelTerrainLoad = vi.fn();
+    useAppStore.setState({ cancelTerrainLoad });
     renderMapView({ showInspector: true });
 
     const autoToggle = screen.getByRole("button", { name: "Turn off automatic calculation" });
@@ -189,6 +194,7 @@ describe("MapView user location flow", () => {
     fireEvent.click(stopButton);
     expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument();
     expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
+    expect(cancelTerrainLoad).toHaveBeenCalledTimes(1);
   });
 
   it("locks automatic calculation at 4x while preserving manual Start", async () => {

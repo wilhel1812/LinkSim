@@ -332,17 +332,29 @@ export function StatsPage() {
 
         <Panel title="Latest Simulations">
           <div className="stats-simulation-list">
-            {(stats?.latestSimulations ?? []).map((simulation) => (
-              <a className="stats-simulation-row" href={simulation.href} key={simulation.id}>
-                <span>
-                  <strong>{simulation.name}</strong>
-                  <small>by {simulation.owner.username}</small>
-                </span>
-                <span>{simulation.siteCount} Sites</span>
-                <span>{simulation.linkCount} Links</span>
-                <ExternalLink aria-hidden="true" size={15} />
-              </a>
-            ))}
+            {(stats?.latestSimulations ?? []).map((simulation, index) =>
+              simulation.visibility === "private" ? (
+                <div className="stats-simulation-row" key={`private-${index}`}>
+                  <span>
+                    <strong>Private Simulation</strong>
+                    <small>Details anonymized</small>
+                  </span>
+                  <span>{simulation.siteCount} Sites</span>
+                  <span>{simulation.linkCount} Paths</span>
+                  <span aria-hidden="true" />
+                </div>
+              ) : (
+                <a className="stats-simulation-row" href={simulation.href} key={simulation.id}>
+                  <span>
+                    <strong>{simulation.name}</strong>
+                    <small>by {simulation.owner.username}</small>
+                  </span>
+                  <span>{simulation.siteCount} Sites</span>
+                  <span>{simulation.linkCount} Paths</span>
+                  <ExternalLink aria-hidden="true" size={15} />
+                </a>
+              ),
+            )}
             {!stats?.latestSimulations.length ? <p className="field-help">Latest non-empty Simulations will appear here.</p> : null}
           </div>
         </Panel>

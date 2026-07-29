@@ -104,11 +104,6 @@ export function useMapEditorFormState() {
   const [siteSearchBusy, setSiteSearchBusy] = useState(false);
 
   // ─── Simulation-specific ─────────────────────────────────────────────────────
-  const [pendingVisibilityConfirm, setPendingVisibilityConfirm] = useState<{
-    simulationId: string;
-    targetVisibility: "shared";
-    referencedPrivateSiteIds: string[];
-  } | null>(null);
   const [simulationFrequencyPresetId, setSimulationFrequencyPresetId] = useState("");
   const [simulationAutoPropagationEnvironment, setSimulationAutoPropagationEnvironment] = useState(true);
   const [simulationDefaultsOverrideEnabled, setSimulationDefaultsOverrideEnabled] = useState(false);
@@ -139,7 +134,6 @@ export function useMapEditorFormState() {
   useEffect(() => {
     if (!mapEditor) return;
     setStatus("");
-    setPendingVisibilityConfirm(null);
     setIsElevationUserSet(false);
 
     if (mapEditor.kind === "site") {
@@ -763,30 +757,6 @@ export function useMapEditorFormState() {
       return false;
     }
 
-    // Check for private site refs that would need to be promoted
-    if (normalizedVisibility === "shared") {
-      const preset = simulationPresets.find((p) => p.id === mapEditor.resourceId);
-      const referencedPrivateSiteIds = siteLibrary
-        .filter((entry) => {
-          if ((entry.visibility ?? "private") !== "private") return false;
-          const refIds = new Set(
-            (preset?.snapshot.sites ?? [])
-              .map((s) => s.libraryEntryId)
-              .filter((v): v is string => typeof v === "string" && v.length > 0),
-          );
-          return refIds.has(entry.id);
-        })
-        .map((e) => e.id);
-      if (referencedPrivateSiteIds.length > 0) {
-        setPendingVisibilityConfirm({
-          simulationId: mapEditor.resourceId,
-          targetVisibility: "shared",
-          referencedPrivateSiteIds,
-        });
-        return false;
-      }
-    }
-
     try {
       updateSimulationPresetEntry(mapEditor.resourceId, {
         name: trimmedName,
@@ -802,22 +772,6 @@ export function useMapEditorFormState() {
       setStatus(`Save failed: ${getUiErrorMessage(error)}`);
       return false;
     }
-  };
-
-  const applyPendingVisibilityChange = () => {
-    if (!pendingVisibilityConfirm || !mapEditor?.resourceId) return;
-    for (const siteId of pendingVisibilityConfirm.referencedPrivateSiteIds) {
-      updateSiteLibraryEntry(siteId, { visibility: pendingVisibilityConfirm.targetVisibility });
-    }
-    const sharedWith = collaboratorUserIds
-      .filter((id) => id !== ownerUserId)
-      .map((id) => ({ userId: id, role: (collaboratorRoles[id] ?? "viewer") as "viewer" | "editor" }));
-    updateSimulationPresetEntry(pendingVisibilityConfirm.simulationId, {
-      visibility: pendingVisibilityConfirm.targetVisibility,
-      sharedWith,
-    });
-    setPendingVisibilityConfirm(null);
-    closeMapEditor();
   };
 
   const handleSaveLink = (): boolean => {
@@ -939,9 +893,6 @@ export function useMapEditorFormState() {
     handleSeparateGainToggle,
     handleSaveSite,
     // simulation
-    pendingVisibilityConfirm,
-    setPendingVisibilityConfirm,
-    applyPendingVisibilityChange,
     simulationFrequencyPresetId,
     setSimulationFrequencyPresetId,
     simulationAutoPropagationEnvironment,

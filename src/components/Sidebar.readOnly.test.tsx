@@ -46,6 +46,7 @@ import { Sidebar } from "./Sidebar";
 describe("Sidebar read-only simulation site actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     useAppStore.setState({
       sites: [
         {
@@ -256,5 +257,71 @@ describe("Sidebar read-only simulation site actions", () => {
         "Read-only: you need edit permission to add or edit sites in this simulation.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("warns writable shared-simulation editors about every referenced private site", () => {
+    const state = useAppStore.getState();
+    const privateTooltip =
+      "This Site is Private in the Library, but is visible to anyone who can access this Shared Simulation.";
+    const warning =
+      "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
+    useAppStore.setState({
+      sites: state.sites.map((site, index) => ({
+        ...site,
+        libraryEntryId: index === 0 ? "private-owned-elsewhere" : "shared-site",
+      })),
+      siteLibrary: [
+        {
+          id: "private-owned-elsewhere",
+          name: "Private Elsewhere",
+          visibility: "private",
+          ownerUserId: "another-owner",
+          effectiveRole: "viewer",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "shared-site",
+          name: "Shared Site",
+          visibility: "shared",
+          ownerUserId: "another-owner",
+          effectiveRole: "viewer",
+          position: { lat: 60.6, lon: 11.6 },
+          groundElevationM: 130,
+          antennaHeightM: 4,
+          txPowerDbm: 21,
+          txGainDbi: 3,
+          rxGainDbi: 3,
+          cableLossDb: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      simulationPresets: state.simulationPresets.map((simulation) => ({
+        ...simulation,
+        effectiveRole: "editor",
+        snapshot: {
+          ...simulation.snapshot,
+          sites: state.sites.map((site, index) => ({
+            ...site,
+            libraryEntryId: index === 0 ? "private-owned-elsewhere" : "shared-site",
+          })),
+        },
+      })),
+    });
+
+    const view = render(<Sidebar />);
+    expect(screen.getByText(warning)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: privateTooltip })).toBeInTheDocument();
+
+    view.unmount();
+    render(<Sidebar readOnly />);
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: privateTooltip })).not.toBeInTheDocument();
   });
 });

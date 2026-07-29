@@ -75,13 +75,6 @@ export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<vo
   });
   const allConflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
   if (!allConflicts.length) return;
-  if (allConflicts.includes("simulation_private_site_reference")) {
-    const simulationNames = listSimulationNames(payload);
-    const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
-    throw new Error(
-      `Cannot publish/shared simulation(s) with private Library Site references${suffix}. Set Simulation visibility to Private or use non-private Site entries.`,
-    );
-  }
   if (allConflicts.includes("simulation_name_taken")) {
     const simulationNames = listSimulationNames(payload);
     const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
