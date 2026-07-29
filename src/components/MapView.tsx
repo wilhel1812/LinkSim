@@ -1594,6 +1594,7 @@ export function MapView({
   const overlayHandoffRef = useRef(overlayHandoff);
   overlayHandoffRef.current = overlayHandoff;
   const latestCoverageRequestKeyRef = useRef<string | null>(null);
+  const displayedCoverageSignatureRef = useRef<string | null>(null);
   const pendingCoverageOverlayRef = useRef<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
   const pendingTerrainOverlayRef = useRef<OverlayRaster | null>(null);
   const hiddenOverlayTimeoutRef = useRef<number | null>(null);
@@ -1637,7 +1638,10 @@ export function MapView({
     if (overlayHandoff.phase !== "exiting") return;
     if (overlayHandoff.revealReplacement) {
       const replacement = pendingCoverageOverlayRef.current;
-      if (replacement) setCoverageOverlay(replacement);
+      if (replacement) {
+        setCoverageOverlay(replacement);
+        displayedCoverageSignatureRef.current = overlayHandoff.requestKey;
+      }
       if (pendingTerrainOverlayRef.current) {
         setSimulationTerrainOverlay(pendingTerrainOverlayRef.current);
       }
@@ -1652,6 +1656,7 @@ export function MapView({
       setCoverageOverlay(null);
       pendingCoverageOverlayRef.current = null;
       latestCoverageRequestKeyRef.current = null;
+      displayedCoverageSignatureRef.current = null;
       dispatchOverlayHandoff({ type: "hidden" });
       hiddenOverlayTimeoutRef.current = null;
     }, resolveSimulationOverlayTransition(false).durationMs);
@@ -1800,6 +1805,20 @@ export function MapView({
         beginCoverageHandoff(signature);
       }
       cancelCoveragePipeline();
+      return;
+    }
+    const currentHandoff = overlayHandoffRef.current;
+    const handoffWaitingForSignature =
+      currentHandoff.requestKey === signature &&
+      (currentHandoff.phase === "entering" ||
+        currentHandoff.phase === "entered");
+    if (
+      displayedCoverageSignatureRef.current === signature &&
+      !handoffWaitingForSignature
+    ) {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("coverage", null);
       return;
     }
     const hasFreshCoverageCompletion =

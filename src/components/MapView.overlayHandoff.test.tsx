@@ -23,6 +23,7 @@ const overlayMock = vi.hoisted(() => {
 const loadingOverlayMock = vi.hoisted(() => ({
   props: null as null | {
     handoffKey?: string | null;
+    loading?: boolean;
     onCloudEntered?: (requestKey: string) => void;
     onCloudExited?: (requestKey: string) => void;
     onCloudReady?: (requestKey: string) => void;
@@ -219,5 +220,87 @@ describe("MapView overlay handoff", () => {
       "data-url",
       "data:image/mock-1",
     );
+  });
+
+  it("does not replay clouds when a completed signature is observed again", async () => {
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await resolveNextRaster();
+    await waitFor(() => expect(loadingOverlayMock.props?.handoffKey).toBeTruthy());
+    const requestKey = loadingOverlayMock.props?.handoffKey;
+    act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
+    await waitFor(() =>
+      expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+        "data-url",
+        "data:image/mock-1",
+      ),
+    );
+    act(() => loadingOverlayMock.props?.onCloudExited?.(requestKey!));
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+
+    act(() =>
+      useCoverageStore.setState({
+        calculationCycleSource: "auto",
+        completedCoverageRunToken: "repeat-completion",
+      }),
+    );
+
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+    expect(overlayMock.buildCoverage).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+      "data-url",
+      "data:image/mock-1",
+    );
+  });
+
+  it("still bridges a deliberate recalculation of the displayed signature", async () => {
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await resolveNextRaster();
+    await waitFor(() => expect(loadingOverlayMock.props?.handoffKey).toBeTruthy());
+    const requestKey = loadingOverlayMock.props?.handoffKey;
+    act(() => loadingOverlayMock.props?.onCloudReady?.(requestKey!));
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
+    await waitFor(() =>
+      expect(screen.getByTestId("coverage-overlay-source")).toHaveAttribute(
+        "data-url",
+        "data:image/mock-1",
+      ),
+    );
+    act(() => loadingOverlayMock.props?.onCloudExited?.(requestKey!));
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+
+    act(() =>
+      useCoverageStore.setState({
+        calculationCycleSource: "manual",
+        isSimulationRecomputing: true,
+      }),
+    );
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
+
+    act(() =>
+      useCoverageStore.setState({
+        completedCoverageRunToken: "manual-repeat",
+        isSimulationRecomputing: false,
+      }),
+    );
+    expect(loadingOverlayMock.props?.loading).toBe(true);
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(requestKey!));
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
   });
 });
