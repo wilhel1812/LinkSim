@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearMeCache,
+  fetchAuthStatus,
   fetchMe,
   fetchUsers,
   fetchResourceChanges,
@@ -33,6 +34,21 @@ describe("cloudUser client", () => {
     const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
     const headers = new Headers((init as RequestInit | undefined)?.headers ?? {});
     expect(headers.has("content-type")).toBe(false);
+  });
+
+  it("reads auth state from the existing public simulation boundary", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ authenticated: false, authState: "guest" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(fetchAuthStatus()).resolves.toEqual({ authenticated: false, authState: "guest" });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/public-simulation?mode=auth",
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 
   it("preserves username setup state from fetchMe", async () => {

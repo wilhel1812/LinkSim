@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleAlert, CircleCheck, CircleX, Copy, Globe, Info, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Share, UserRoundPlus, UserRoundSearch, Users, X } from "lucide-react";
-import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe } from "../lib/cloudUser";
+import { CloudApiError, type CloudUser, type CollaboratorDirectoryUser, fetchAuthStatus, fetchCollaboratorDirectory, fetchDeepLinkStatus, fetchMe } from "../lib/cloudUser";
 import { fetchCloudLibrary, fetchPublicSimulationLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
 import { buildDeepLinkPathname, buildDeepLinkUrl, buildSettingsPath, canonicalizeDeepLinkKey, matchSettingsPath, parseDeepLinkFromLocation, slugifyName, type SettingsSectionId } from "../lib/deepLink";
 import { canRunDeepLinkApply } from "../lib/deepLinkApplyGate";
@@ -792,18 +792,10 @@ export function AppShell() {
             return;
           }
           if (!isLocalRuntime) {
-            const deepLinkStatus = await fetchDeepLinkStatus(
-              deepLinkParse.ok
-                ? {
-                    simulationId: deepLinkParse.payload.simulationId,
-                    username: deepLinkParse.payload.username,
-                    simulationSlug: deepLinkParse.payload.simulationSlug,
-                  }
-                : {},
-            );
+            const authStatus = await fetchAuthStatus();
             if (!isCurrentRun()) return;
             const bootstrapState = resolveAuthBootstrapState({
-              authState: deepLinkStatus.authState,
+              authState: authStatus.authState,
               hadAuthenticatedSession: hadAuthenticatedSessionRef.current,
             });
             if (bootstrapState === "revoked") {

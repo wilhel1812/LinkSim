@@ -35,6 +35,53 @@ beforeEach(() => {
 });
 
 describe("api/public-simulation", () => {
+  it("reports expected guests through the public auth-status mode", async () => {
+    verifyAuthMock.mockResolvedValueOnce(null);
+
+    const res = await onRequestGet(
+      mkCtx(new Request("https://example.test/api/public-simulation?mode=auth")),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    await expect(res.json()).resolves.toEqual({ authenticated: false, authState: "guest" });
+    expect(fetchPublicSimulationBundleMock).not.toHaveBeenCalled();
+  });
+
+  it("reports authenticated and revoked auth-status states", async () => {
+    verifyAuthMock.mockResolvedValue({ userId: "user-42", tokenPayload: {} });
+    fetchUserProfileMock
+      .mockResolvedValueOnce({ id: "user-42", accountState: "approved" })
+      .mockResolvedValueOnce({ id: "user-42", accountState: "revoked" });
+
+    const authenticated = await onRequestGet(
+      mkCtx(new Request("https://example.test/api/public-simulation?mode=auth")),
+    );
+    const revoked = await onRequestGet(
+      mkCtx(new Request("https://example.test/api/public-simulation?mode=auth")),
+    );
+
+    await expect(authenticated.json()).resolves.toEqual({
+      authenticated: true,
+      authState: "authenticated",
+    });
+    await expect(revoked.json()).resolves.toEqual({
+      authenticated: false,
+      authState: "revoked",
+    });
+    expect(fetchPublicSimulationBundleMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces auth verification failures in auth-status mode", async () => {
+    verifyAuthMock.mockRejectedValueOnce(new Error("Auth verification timed out"));
+
+    const res = await onRequestGet(
+      mkCtx(new Request("https://example.test/api/public-simulation?mode=auth")),
+    );
+
+    expect(res.status).toBe(503);
+  });
+
   it("returns no-store when request is invalid", async () => {
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation")));
     expect(res.status).toBe(400);
