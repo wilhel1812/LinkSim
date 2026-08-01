@@ -10,8 +10,12 @@ import { UserAdminPanel } from "./UserAdminPanel";
 
 // --- Module mocks ----------------------------------------------------------
 
+const { fetchMeMock } = vi.hoisted(() => ({
+  fetchMeMock: vi.fn(),
+}));
+
 vi.mock("../lib/cloudUser", () => ({
-  fetchMe: vi.fn().mockResolvedValue(null),
+  fetchMe: fetchMeMock,
   fetchUsers: vi.fn().mockResolvedValue([]),
   fetchAdminAuditEvents: vi.fn().mockResolvedValue([]),
   fetchAuthDiagnostics: vi.fn().mockResolvedValue({}),
@@ -82,8 +86,10 @@ vi.mock("../store/appStore", () => ({
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  vi.clearAllMocks();
   mockStoreState.currentUser = signedInUser;
   mockStoreState.authState = "signed_in";
+  fetchMeMock.mockResolvedValue(signedInUser);
 });
 
 describe("UserAdminPanel chip — onOpenSettings", () => {
@@ -119,5 +125,14 @@ describe("UserAdminPanel chip — onOpenSettings", () => {
     render(<UserAdminPanel />);
     expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /open user settings/i })).not.toBeInTheDocument();
+  });
+
+  it("does not fetch the protected profile while auth is still checking", () => {
+    mockStoreState.authState = "checking";
+    mockStoreState.currentUser = null;
+
+    render(<UserAdminPanel />);
+
+    expect(fetchMeMock).not.toHaveBeenCalled();
   });
 });

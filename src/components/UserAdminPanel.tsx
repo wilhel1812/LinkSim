@@ -280,6 +280,7 @@ export function UserAdminPanel({
       setMe(null);
       return;
     }
+    if (authState !== "signed_in") return;
     void load();
   }, [authState]);
 

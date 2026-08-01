@@ -30,6 +30,7 @@ const { pushCloudLibraryMock } = vi.hoisted(() => ({
 const sidebarCalls: Array<{ readOnly?: boolean; panelToggleControl?: unknown }> = [];
 
 vi.mock("../lib/cloudUser", () => ({
+  fetchAuthStatus: vi.fn(async () => ({ authenticated: true, authState: "authenticated" })),
   fetchCollaboratorDirectory: vi.fn(async () => []),
   fetchDeepLinkStatus: vi.fn(async () => ({ status: "ok", simulationId: null, authenticated: true })),
   fetchMe: vi.fn(async () => ({

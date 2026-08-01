@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTHENTICATED_SESSION_MARKER_KEY,
+  clearAuthenticatedSessionMarker,
+  hasAuthenticatedSessionMarker,
   isAuthSignInRequiredMessage,
+  markAuthenticatedSession,
+  resolveAuthBootstrapState,
   shouldCloseSimulationLibraryOnLoad,
   shouldRewritePathAfterDeepLinkApply,
-  shouldUseReadonlyFallbackForAuthBootstrap,
 } from "./appShellGuards";
 
 describe("shouldRewritePathAfterDeepLinkApply", () => {
@@ -54,51 +58,53 @@ describe("isAuthSignInRequiredMessage", () => {
   });
 });
 
-describe("shouldUseReadonlyFallbackForAuthBootstrap", () => {
-  it("uses readonly fallback for Firefox auth bootstrap network failure", () => {
-    expect(
-      shouldUseReadonlyFallbackForAuthBootstrap({
-        message: "NetworkError when attempting to fetch resource.",
-        deepLinkMode: false,
-        isLocalRuntime: false,
-        isOnline: true,
-        userAgent: "Mozilla/5.0 Firefox/124.0",
-      }),
-    ).toBe(true);
+describe("authenticated session marker", () => {
+  it("records and clears a prior authenticated session", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    };
+
+    expect(hasAuthenticatedSessionMarker(storage)).toBe(false);
+    markAuthenticatedSession(storage);
+    expect(values.get(AUTHENTICATED_SESSION_MARKER_KEY)).toBe("1");
+    expect(hasAuthenticatedSessionMarker(storage)).toBe(true);
+    clearAuthenticatedSessionMarker(storage);
+    expect(hasAuthenticatedSessionMarker(storage)).toBe(false);
   });
 
-  it("does not use readonly fallback for unrelated failures", () => {
-    expect(
-      shouldUseReadonlyFallbackForAuthBootstrap({
-        message: "Network timeout",
-        deepLinkMode: false,
-        isLocalRuntime: false,
-        isOnline: true,
-        userAgent: "Mozilla/5.0 Firefox/124.0",
-      }),
-    ).toBe(false);
+  it("fails safely when storage is unavailable", () => {
+    const storage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
 
-    expect(
-      shouldUseReadonlyFallbackForAuthBootstrap({
-        message: "NetworkError when attempting to fetch resource.",
-        deepLinkMode: false,
-        isLocalRuntime: false,
-        isOnline: true,
-        userAgent: "Mozilla/5.0 AppleWebKit Safari/605.1.15",
-      }),
-    ).toBe(false);
+    expect(hasAuthenticatedSessionMarker(storage)).toBe(false);
+    expect(() => markAuthenticatedSession(storage)).not.toThrow();
+    expect(() => clearAuthenticatedSessionMarker(storage)).not.toThrow();
+  });
+});
+
+describe("resolveAuthBootstrapState", () => {
+  it("distinguishes expected guests from expired sessions", () => {
+    expect(resolveAuthBootstrapState({ authState: "guest", hadAuthenticatedSession: false })).toBe("guest");
+    expect(resolveAuthBootstrapState({ authState: "guest", hadAuthenticatedSession: true })).toBe("expired");
   });
 
-  it("keeps deep-link flow unchanged", () => {
-    expect(
-      shouldUseReadonlyFallbackForAuthBootstrap({
-        message: "NetworkError when attempting to fetch resource.",
-        deepLinkMode: true,
-        isLocalRuntime: false,
-        isOnline: true,
-        userAgent: "Mozilla/5.0 Firefox/124.0",
-      }),
-    ).toBe(false);
+  it("preserves authenticated and revoked states", () => {
+    expect(resolveAuthBootstrapState({ authState: "authenticated", hadAuthenticatedSession: false })).toBe(
+      "authenticated",
+    );
+    expect(resolveAuthBootstrapState({ authState: "revoked", hadAuthenticatedSession: true })).toBe("revoked");
   });
 });
 
