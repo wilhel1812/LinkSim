@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Egg, Fullscreen, Layers, Locate, LocateFixed, Maximize2, Minimize2, Play, Rabbit, RefreshCw, Square, SquareStack, ToggleLeft, ToggleRight, ZoomIn, ZoomOut } from "lucide-react";
 import { CompactDetails, CompactDetailsSummary } from "./ui/CompactDetails";
 import { FloatingPopover } from "./ui/FloatingPopover";
@@ -86,6 +86,12 @@ import { StateDot } from "./StateDot";
 import { useMapControls } from "./map/useMapControls";
 import { animateMapToCenter, fitMapToBounds, resolveMapCameraPadding } from "./map/mapCamera";
 import { PanelToolbar } from "./ui/PanelToolbar";
+import { SimulationLoadingOverlay } from "./SimulationLoadingOverlay";
+import { resolveSimulationOverlayTransition } from "../lib/simulationLoadingOverlay";
+import {
+  initialSimulationOverlayHandoffState,
+  reduceSimulationOverlayHandoff,
+} from "../lib/simulationOverlayHandoff";
 
 const UI_SECTION_KEYS = {
   mapViewResults: "linksim-ui-mapview-results-v1",
@@ -180,33 +186,45 @@ const panoramaRayLayer = (color: string): LayerProps => ({
   },
 });
 
-const coverageRasterLayer: LayerProps = {
-  id: "coverage-overlay-layer",
-  type: "raster",
-  paint: {
-    "raster-opacity": 0.68,
-    "raster-contrast": 0.08,
-    "raster-saturation": 0.02,
-  },
+const coverageRasterLayer = (fadedForCloud: boolean, hidden: boolean): LayerProps => {
+  const transition = resolveSimulationOverlayTransition(fadedForCloud);
+  return {
+    id: "coverage-overlay-layer",
+    type: "raster",
+    paint: {
+      "raster-opacity": hidden ? 0 : transition.coverageOpacity,
+      "raster-opacity-transition": {
+        duration: transition.durationMs,
+      },
+      "raster-contrast": 0.08,
+      "raster-saturation": 0.02,
+    },
+  };
 };
 
-const targetContourHaloLayer = (color: string): LayerProps => ({
+const targetContourHaloLayer = (color: string, fadedForCloud: boolean, hidden: boolean): LayerProps => ({
   id: "coverage-target-contour-halo-layer",
   type: "line",
   paint: {
     "line-color": color,
     "line-width": 2.5,
-    "line-opacity": 0.82,
+    "line-opacity": fadedForCloud || hidden ? 0 : 0.82,
+    "line-opacity-transition": {
+      duration: resolveSimulationOverlayTransition(fadedForCloud).durationMs,
+    },
   },
 });
 
-const targetContourLineLayer = (color: string): LayerProps => ({
+const targetContourLineLayer = (color: string, fadedForCloud: boolean, hidden: boolean): LayerProps => ({
   id: "coverage-target-contour-line-layer",
   type: "line",
   paint: {
     "line-color": color,
     "line-width": 1.2,
-    "line-opacity": 0.96,
+    "line-opacity": fadedForCloud || hidden ? 0 : 0.96,
+    "line-opacity-transition": {
+      duration: resolveSimulationOverlayTransition(fadedForCloud).durationMs,
+    },
   },
 });
 
@@ -744,6 +762,7 @@ export function MapView({
   const automaticLockNoticeShown = useCoverageStore((state) => state.automaticLockNoticeShown);
   const calculationCycleSource = useCoverageStore((state) => state.calculationCycleSource);
   const markAutomaticLockNoticeShown = useCoverageStore((state) => state.markAutomaticLockNoticeShown);
+  const recomputeCoverage = useCoverageStore((state) => state.recomputeCoverage);
   const setAutoCalculateEnabled = useCoverageStore((state) => state.setAutoCalculateEnabled);
   const startManualCalculation = useCoverageStore((state) => state.startManualCalculation);
   const stopCalculation = useCoverageStore((state) => state.stopCalculation);
@@ -1175,6 +1194,37 @@ export function MapView({
   const previousAutomaticCalculationLockedRef = useRef(automaticCalculationLocked);
   const calculationWorkAllowed =
     (autoCalculateEnabled && !automaticCalculationLocked) || calculationCycleSource === "manual";
+  const initialAutomaticCalculationRequestedRef = useRef(false);
+  useEffect(() => {
+    if (initialAutomaticCalculationRequestedRef.current) return;
+    if (
+      !autoCalculateEnabled ||
+      automaticCalculationLocked ||
+      coverageVizMode === "none" ||
+      analysisTargetSites.length === 0
+    ) {
+      return;
+    }
+    if (
+      coverageSamples.length > 0 ||
+      isSimulationRecomputing ||
+      completedCoverageRunToken !== ""
+    ) {
+      initialAutomaticCalculationRequestedRef.current = true;
+      return;
+    }
+    initialAutomaticCalculationRequestedRef.current = true;
+    recomputeCoverage();
+  }, [
+    analysisTargetSites.length,
+    autoCalculateEnabled,
+    automaticCalculationLocked,
+    completedCoverageRunToken,
+    coverageSamples.length,
+    coverageVizMode,
+    isSimulationRecomputing,
+    recomputeCoverage,
+  ]);
   useEffect(() => {
     const becameLocked = automaticCalculationLocked && !previousAutomaticCalculationLockedRef.current;
     previousAutomaticCalculationLockedRef.current = automaticCalculationLocked;
@@ -1255,23 +1305,44 @@ export function MapView({
     [requiredTargetRadiusTileKeys, loaded30mTileKeys],
   );
   const targetRadiusTerrainSignature = `${targetRadiusKm}|${requiredTargetRadiusTileKeys.join(",")}`;
-  const targetRadiusFetchAttemptRef = useRef("");
+  const targetRadiusFetchAttemptRef = useRef<{
+    signature: string;
+    terrainLoadEpoch: number;
+  }>({ signature: "", terrainLoadEpoch: -1 });
   useEffect(() => {
     if (!calculationWorkAllowed) {
-      targetRadiusFetchAttemptRef.current = "";
+      targetRadiusFetchAttemptRef.current = {
+        signature: "",
+        terrainLoadEpoch: -1,
+      };
       return;
     }
     if (coverageVizMode === "none") {
-      targetRadiusFetchAttemptRef.current = "";
+      targetRadiusFetchAttemptRef.current = {
+        signature: "",
+        terrainLoadEpoch: -1,
+      };
       return;
     }
     if (!analysisTargetSites.length || missingTargetRadiusTileCount <= 0) {
-      targetRadiusFetchAttemptRef.current = "";
+      targetRadiusFetchAttemptRef.current = {
+        signature: "",
+        terrainLoadEpoch: -1,
+      };
       return;
     }
     if (isTerrainFetching || isTerrainRecommending) return;
-    if (targetRadiusFetchAttemptRef.current === targetRadiusTerrainSignature) return;
-    targetRadiusFetchAttemptRef.current = targetRadiusTerrainSignature;
+    if (
+      targetRadiusFetchAttemptRef.current.signature ===
+        targetRadiusTerrainSignature &&
+      targetRadiusFetchAttemptRef.current.terrainLoadEpoch === terrainLoadEpoch
+    ) {
+      return;
+    }
+    targetRadiusFetchAttemptRef.current = {
+      signature: targetRadiusTerrainSignature,
+      terrainLoadEpoch: terrainLoadEpoch + 1,
+    };
     void recommendAndFetchTerrainForCurrentArea(targetRadiusKm);
   }, [
     coverageVizMode,
@@ -1280,6 +1351,7 @@ export function MapView({
     isTerrainFetching,
     isTerrainRecommending,
     normalizedOverlayRadiusOption,
+    terrainLoadEpoch,
     targetRadiusTerrainSignature,
     recommendAndFetchTerrainForCurrentArea,
     targetRadiusKm,
@@ -1569,6 +1641,86 @@ export function MapView({
   }, [setOverlayPipelineProgress]);
   const [coverageOverlay, setCoverageOverlay] = useState<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
   const [simulationTerrainOverlay, setSimulationTerrainOverlay] = useState<OverlayRaster | null>(null);
+  const [overlayHandoff, dispatchOverlayHandoff] = useReducer(
+    reduceSimulationOverlayHandoff,
+    initialSimulationOverlayHandoffState,
+  );
+  const overlayHandoffRef = useRef(overlayHandoff);
+  overlayHandoffRef.current = overlayHandoff;
+  const latestCoverageRequestKeyRef = useRef<string | null>(null);
+  const displayedCoverageSignatureRef = useRef<string | null>(null);
+  const pendingCoverageOverlayRef = useRef<(OverlayRaster & { minDbm?: number; maxDbm?: number }) | null>(null);
+  const pendingTerrainOverlayRef = useRef<OverlayRaster | null>(null);
+  const hiddenOverlayTimeoutRef = useRef<number | null>(null);
+  const beginCoverageHandoff = useCallback((requestKey: string) => {
+    if (hiddenOverlayTimeoutRef.current !== null) {
+      window.clearTimeout(hiddenOverlayTimeoutRef.current);
+      hiddenOverlayTimeoutRef.current = null;
+    }
+    latestCoverageRequestKeyRef.current = requestKey;
+    dispatchOverlayHandoff({ type: "request", requestKey });
+  }, []);
+  const completeCoverageHandoff = useCallback(
+    (
+      requestKey: string,
+      overlay: (OverlayRaster & { minDbm?: number; maxDbm?: number }) | null,
+    ) => {
+      if (latestCoverageRequestKeyRef.current !== requestKey) return;
+      if (!overlay) {
+        dispatchOverlayHandoff({ type: "request-failed", requestKey });
+        return;
+      }
+      pendingCoverageOverlayRef.current = overlay;
+      dispatchOverlayHandoff({ type: "replacement-ready", requestKey });
+    },
+    [],
+  );
+  const failCoverageHandoff = useCallback((requestKey: string) => {
+    if (latestCoverageRequestKeyRef.current !== requestKey) return;
+    dispatchOverlayHandoff({ type: "request-failed", requestKey });
+  }, []);
+  const commitTerrainOverlay = useCallback((overlay: OverlayRaster | null) => {
+    const phase = overlayHandoffRef.current.phase;
+    if (phase === "entering" || phase === "entered") {
+      pendingTerrainOverlayRef.current = overlay;
+      return;
+    }
+    setSimulationTerrainOverlay(overlay);
+  }, []);
+
+  useEffect(() => {
+    if (overlayHandoff.phase !== "exiting") return;
+    if (overlayHandoff.revealReplacement) {
+      const replacement = pendingCoverageOverlayRef.current;
+      if (replacement) {
+        setCoverageOverlay(replacement);
+        displayedCoverageSignatureRef.current = overlayHandoff.requestKey;
+      }
+      if (pendingTerrainOverlayRef.current) {
+        setSimulationTerrainOverlay(pendingTerrainOverlayRef.current);
+      }
+    }
+    pendingCoverageOverlayRef.current = null;
+    pendingTerrainOverlayRef.current = null;
+  }, [overlayHandoff.phase, overlayHandoff.revealReplacement]);
+
+  useEffect(() => {
+    if (overlayHandoff.phase !== "hiding") return;
+    hiddenOverlayTimeoutRef.current = window.setTimeout(() => {
+      setCoverageOverlay(null);
+      pendingCoverageOverlayRef.current = null;
+      latestCoverageRequestKeyRef.current = null;
+      displayedCoverageSignatureRef.current = null;
+      dispatchOverlayHandoff({ type: "hidden" });
+      hiddenOverlayTimeoutRef.current = null;
+    }, resolveSimulationOverlayTransition(false).durationMs);
+    return () => {
+      if (hiddenOverlayTimeoutRef.current !== null) {
+        window.clearTimeout(hiddenOverlayTimeoutRef.current);
+        hiddenOverlayTimeoutRef.current = null;
+      }
+    };
+  }, [overlayHandoff.phase]);
 
   const logOverlaySchedulerEvent = useCallback(
     (
@@ -1602,6 +1754,9 @@ export function MapView({
     return () => {
       coverageOverlaySchedulerRef.current?.dispose();
       terrainOverlaySchedulerRef.current?.dispose();
+      if (hiddenOverlayTimeoutRef.current !== null) {
+        window.clearTimeout(hiddenOverlayTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -1635,43 +1790,36 @@ export function MapView({
 
   useEffect(() => {
     const scheduler = coverageOverlaySchedulerRef.current!;
-    const cancelCoveragePipeline = (clearOverlay: boolean) => {
+    const cancelCoveragePipeline = () => {
       scheduler.clearQueue();
       scheduler.cancelActive();
       setOverlayPipelineProgress("coverage", null);
-      if (clearOverlay) setCoverageOverlay(null);
     };
 
     if (coverageVizMode === "none") {
-      cancelCoveragePipeline(true);
+      cancelCoveragePipeline();
+      latestCoverageRequestKeyRef.current = null;
+      dispatchOverlayHandoff({ type: "hide" });
       return;
     }
     if (!overlayBounds) {
-      cancelCoveragePipeline(true);
-      return;
-    }
-    if (
-      shouldDeferOverlayRasterization({
-        isTerrainFetching,
-        isTerrainRecommending,
-        isSimulationRecomputing,
-      })
-    ) {
-      cancelCoveragePipeline(false);
+      cancelCoveragePipeline();
+      latestCoverageRequestKeyRef.current = null;
+      dispatchOverlayHandoff({ type: "hide" });
       return;
     }
 
     const mode = coverageVizMode;
     if (mode === "passfail" && (!activeSelectionLink || !selectedFromSite || !hasPassFailTopology)) {
-      cancelCoveragePipeline(true);
+      cancelCoveragePipeline();
       return;
     }
     if (mode === "relay" && (!activeSelectionLink || !selectedFromSite || !selectedToSite || !hasRelayTopology)) {
-      cancelCoveragePipeline(true);
+      cancelCoveragePipeline();
       return;
     }
     if (mode === "mesh-extension" && !meshExtensionSites.length) {
-      cancelCoveragePipeline(true);
+      cancelCoveragePipeline();
       return;
     }
 
@@ -1700,6 +1848,33 @@ export function MapView({
       selectedSiteRadioDigest,
       meshExtensionFrequencyMHz,
     ].join("|");
+    if (
+      shouldDeferOverlayRasterization({
+        isTerrainFetching,
+        isTerrainRecommending,
+        isSimulationRecomputing,
+      })
+    ) {
+      if (isTerrainFetching || isSimulationRecomputing) {
+        beginCoverageHandoff(signature);
+      }
+      cancelCoveragePipeline();
+      return;
+    }
+    const currentHandoff = overlayHandoffRef.current;
+    const handoffWaitingForSignature =
+      currentHandoff.requestKey === signature &&
+      (currentHandoff.phase === "entering" ||
+        currentHandoff.phase === "entered");
+    if (
+      displayedCoverageSignatureRef.current === signature &&
+      !handoffWaitingForSignature
+    ) {
+      scheduler.clearQueue();
+      scheduler.cancelActive();
+      setOverlayPipelineProgress("coverage", null);
+      return;
+    }
     const hasFreshCoverageCompletion =
       calculationCycleSource !== null &&
       completedCoverageRunToken !== "" &&
@@ -1717,12 +1892,13 @@ export function MapView({
       lastCoverageOverlayCompletionRef.current = completedCoverageRunToken;
     }
     const cached = coverageOverlayCacheRef.current.get(signature);
+    beginCoverageHandoff(signature);
     if (cached) {
       scheduler.clearQueue();
       scheduler.cancelActive();
       setOverlayPipelineProgress("coverage", null);
       logOverlaySchedulerEvent("coverage", "cache-hit", signature);
-      setCoverageOverlay(cached);
+      completeCoverageHandoff(signature, cached);
       return;
     }
 
@@ -1855,10 +2031,11 @@ export function MapView({
               signature,
               mode,
             });
+            failCoverageHandoff(signature);
             return;
           }
           if (!rasterPixels) {
-            setCoverageOverlay(null);
+            failCoverageHandoff(signature);
             return;
           }
           const raster = overlayPixelsToDataUrl(rasterPixels);
@@ -1871,6 +2048,7 @@ export function MapView({
               signature,
               mode,
             });
+            failCoverageHandoff(signature);
             return;
           }
           recordSimulationOverlayPerf({
@@ -1889,7 +2067,7 @@ export function MapView({
             coverageOverlayCacheRef.current.set(signature, overlayValue);
           }
           setOverlayPipelineProgress("coverage", 100);
-          setCoverageOverlay(overlayValue);
+          completeCoverageHandoff(signature, overlayValue);
         } catch (error) {
           if (error instanceof OverlayTaskCancelledError) {
             recordSimulationRunCancelled({
@@ -1899,9 +2077,11 @@ export function MapView({
               signature,
               mode,
             });
+            failCoverageHandoff(signature);
             return;
           }
           console.error("Failed to render simulation overlay", error);
+          failCoverageHandoff(signature);
         } finally {
           endOverlayJob();
         }
@@ -1944,6 +2124,9 @@ export function MapView({
     selectedNetwork,
     showOverlayDiagnostics,
     beginOverlayJob,
+    beginCoverageHandoff,
+    completeCoverageHandoff,
+    failCoverageHandoff,
     setOverlayPipelineProgress,
     logOverlaySchedulerEvent,
     calculationWorkAllowed,
@@ -1983,7 +2166,41 @@ export function MapView({
         : { type: "FeatureCollection" as const, features: [] },
     [coverageVizMode, overlayBounds, overlayPointMask, rxSensitivityTargetDbm, samplesForOverlay],
   );
-  const showTargetContourLine = coverageVizMode === "contours" && targetContourFeatures.features.length > 0;
+  const [displayedTargetContourFeatures, setDisplayedTargetContourFeatures] =
+    useState(targetContourFeatures);
+  const pendingTargetContourFeaturesRef = useRef(targetContourFeatures);
+  useEffect(() => {
+    if (
+      coverageVizMode === "contours" &&
+      targetContourFeatures.features.length > 0
+    ) {
+      if (
+        overlayHandoff.phase === "entering" ||
+        overlayHandoff.phase === "entered"
+      ) {
+        pendingTargetContourFeaturesRef.current = targetContourFeatures;
+      } else {
+        setDisplayedTargetContourFeatures(targetContourFeatures);
+      }
+    }
+    if (overlayHandoff.phase === "exiting") {
+      setDisplayedTargetContourFeatures(
+        coverageVizMode === "contours"
+          ? pendingTargetContourFeaturesRef.current
+          : { type: "FeatureCollection", features: [] },
+      );
+    }
+    if (overlayHandoff.phase !== "hiding") return;
+    const timeoutId = window.setTimeout(() => {
+      setDisplayedTargetContourFeatures({
+        type: "FeatureCollection",
+        features: [],
+      });
+    }, resolveSimulationOverlayTransition(false).durationMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [coverageVizMode, overlayHandoff.phase, targetContourFeatures]);
+  const showTargetContourLine =
+    displayedTargetContourFeatures.features.length > 0;
   const coverageScaleRange = useMemo(() => {
     if (!coverageOverlay || (coverageVizMode !== "heatmap" && coverageVizMode !== "contours" && coverageVizMode !== "weakest")) {
       return null;
@@ -2068,7 +2285,7 @@ export function MapView({
       scheduler.cancelActive();
       setOverlayPipelineProgress("terrain", null);
       logOverlaySchedulerEvent("terrain", "cache-hit", signature);
-      setSimulationTerrainOverlay(cached);
+      commitTerrainOverlay(cached);
       return;
     }
 
@@ -2137,7 +2354,6 @@ export function MapView({
             return;
           }
           if (!rasterPixels) {
-            setSimulationTerrainOverlay(null);
             return;
           }
           const raster = overlayPixelsToDataUrl(rasterPixels);
@@ -2168,7 +2384,7 @@ export function MapView({
             terrainOverlayCacheRef.current.set(signature, overlayValue);
           }
           setOverlayPipelineProgress("terrain", 100);
-          setSimulationTerrainOverlay(overlayValue);
+          commitTerrainOverlay(overlayValue);
         } catch (error) {
           if (error instanceof OverlayTaskCancelledError) {
             recordSimulationRunCancelled({
@@ -2204,6 +2420,7 @@ export function MapView({
     overlayRadiusKm,
     showOverlayDiagnostics,
     beginOverlayJob,
+    commitTerrainOverlay,
     setOverlayPipelineProgress,
     logOverlaySchedulerEvent,
     calculationWorkAllowed,
@@ -2290,6 +2507,23 @@ export function MapView({
       terrainProgressTilesTotal,
     ],
   );
+  const simulationLoadingOverlayActive =
+    Boolean(analysisBounds && overlayPointMask && overlayHandoff.requestKey) &&
+    (overlayHandoff.phase === "entering" || overlayHandoff.phase === "entered");
+  const simulationOverlayFadedForCloud = simulationLoadingOverlayActive;
+  const simulationOverlayHidden = overlayHandoff.phase === "hiding";
+  const simulationOverlayTransition = resolveSimulationOverlayTransition(
+    simulationOverlayFadedForCloud,
+  );
+  const handleLoadingCloudReady = useCallback((requestKey: string) => {
+    dispatchOverlayHandoff({ type: "cloud-ready", requestKey });
+  }, []);
+  const handleLoadingCloudEntered = useCallback((requestKey: string) => {
+    dispatchOverlayHandoff({ type: "cloud-entered", requestKey });
+  }, []);
+  const handleLoadingCloudExited = useCallback((requestKey: string) => {
+    dispatchOverlayHandoff({ type: "exit-complete", requestKey });
+  }, []);
   const calculationControlRunning = calculationCycleSource !== null || isSimulationRecomputing;
   const handleStopCalculation = useCallback(() => {
     stopCalculation();
@@ -2300,7 +2534,9 @@ export function MapView({
     terrainOverlaySchedulerRef.current?.cancelActive();
     setOverlayPipelineProgress("coverage", null);
     setOverlayPipelineProgress("terrain", null);
-  }, [cancelTerrainLoad, setOverlayPipelineProgress, stopCalculation]);
+    const requestKey = overlayHandoffRef.current.requestKey;
+    if (requestKey) failCoverageHandoff(requestKey);
+  }, [cancelTerrainLoad, failCoverageHandoff, setOverlayPipelineProgress, stopCalculation]);
   useEffect(() => {
     if (!calculationCycleSource || isSimulationRecomputing || overlayJobsInFlight > 0 || isTerrainFetching || isTerrainRecommending) {
       return;
@@ -3756,7 +3992,14 @@ export function MapView({
               type="raster"
               paint={{
                 ...terrainRasterPaint,
-                "raster-opacity": coverageOverlay ? 0.34 : 0.62,
+                "raster-opacity": simulationOverlayFadedForCloud || simulationOverlayHidden
+                  ? 0
+                  : coverageOverlay
+                    ? 0.34
+                    : 0.62,
+                "raster-opacity-transition": {
+                  duration: simulationOverlayTransition.durationMs,
+                },
               }}
             />
           </Source>
@@ -3776,14 +4019,41 @@ export function MapView({
             type="image"
             url={coverageOverlay.url}
           >
-            <Layer {...coverageRasterLayer} />
+            <Layer
+              {...coverageRasterLayer(
+                simulationOverlayFadedForCloud,
+                simulationOverlayHidden,
+              )}
+            />
           </Source>
         ) : null}
 
+        <SimulationLoadingOverlay
+          bounds={analysisBounds}
+          handoffKey={overlayHandoff.requestKey}
+          loading={simulationLoadingOverlayActive}
+          onCloudEntered={handleLoadingCloudEntered}
+          onCloudExited={handleLoadingCloudExited}
+          onCloudReady={handleLoadingCloudReady}
+          pointMask={overlayPointMask}
+        />
+
         {showTargetContourLine ? (
-          <Source data={targetContourFeatures} id="coverage-target-contour-source" type="geojson">
-            <Layer {...targetContourHaloLayer(variant.cssVars["--bg"] ?? linkColor)} />
-            <Layer {...targetContourLineLayer(variant.cssVars["--muted"] ?? selectedLinkColor)} />
+          <Source data={displayedTargetContourFeatures} id="coverage-target-contour-source" type="geojson">
+            <Layer
+              {...targetContourHaloLayer(
+                variant.cssVars["--bg"] ?? linkColor,
+                simulationOverlayFadedForCloud,
+                simulationOverlayHidden,
+              )}
+            />
+            <Layer
+              {...targetContourLineLayer(
+                variant.cssVars["--muted"] ?? selectedLinkColor,
+                simulationOverlayFadedForCloud,
+                simulationOverlayHidden,
+              )}
+            />
           </Source>
         ) : null}
 

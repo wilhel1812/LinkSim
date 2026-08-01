@@ -6,7 +6,12 @@ import { SettingsPanel } from "./SettingsPanel";
 
 // Stub sub-sections so SettingsPanel tests focus on panel-level behaviour.
 vi.mock("./sections/ProfileSection", () => ({
-  ProfileSection: () => <div data-testid="profile-section">Profile Section</div>,
+  ProfileSection: ({ onSignOut }: { onSignOut?: () => void }) => (
+    <div data-testid="profile-section">
+      Profile Section
+      {onSignOut ? <button onClick={onSignOut}>Sign out</button> : null}
+    </div>
+  ),
 }));
 vi.mock("./sections/PreferencesSection", () => ({
   PreferencesSection: () => <div data-testid="preferences-section">Preferences Section</div>,
@@ -46,6 +51,20 @@ beforeEach(() => {
   // Stub history methods to avoid jsdom URL errors.
   vi.spyOn(window.history, "replaceState").mockImplementation(() => {});
   vi.spyOn(window.history, "pushState").mockImplementation(() => {});
+  const storageValues = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => storageValues.get(key) ?? null,
+      setItem: (key: string, value: string) => storageValues.set(key, String(value)),
+      removeItem: (key: string) => storageValues.delete(key),
+      clear: () => storageValues.clear(),
+      key: (index: number) => Array.from(storageValues.keys())[index] ?? null,
+      get length() {
+        return storageValues.size;
+      },
+    },
+  });
 });
 
 describe("SettingsPanel", () => {
@@ -107,6 +126,24 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel initialSection={null} onClose={onClose} />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("clears the authenticated-session marker on explicit sign out", () => {
+    mockState.currentUser = {
+      id: "u1",
+      username: "Alice",
+      email: "alice@example.com",
+      isAdmin: false,
+      isModerator: false,
+      isApproved: true,
+    } as CloudUser;
+    mockState.authState = "signed_in";
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+
+    render(<SettingsPanel initialSection={null} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBeNull();
   });
 
   it("switches to Preferences section when its nav item is clicked", () => {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0] - 2026-08-01
+
+### Fixed
+- Corrected the sync-pending status message and guest-auth recovery feedback so saved work is not misleadingly presented as out of date. (#935, #936)
+- Added visible cloud loading feedback while terrain tiles settle. (#943)
+- Prevented blank map frames during overlay mode and selection changes by preserving prior geometry through the loading handoff, including cancellation recovery. (#948)
+
 ## [0.24.0] - 2026-07-29
 
 ### Changed

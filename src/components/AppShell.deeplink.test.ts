@@ -5,7 +5,7 @@ import { act, render } from "@testing-library/react";
 
 const hoisted = vi.hoisted(() => {
   const fetchMe = vi.fn();
-  const fetchDeepLinkStatus = vi.fn();
+  const fetchAuthStatus = vi.fn();
   const fetchCloudLibrary = vi.fn();
   const fetchPublicSimulationLibrary = vi.fn();
   const loadSimulationPreset = vi.fn();
@@ -68,7 +68,7 @@ const hoisted = vi.hoisted(() => {
 
   return {
     fetchMe,
-    fetchDeepLinkStatus,
+    fetchAuthStatus,
     fetchCloudLibrary,
     fetchPublicSimulationLibrary,
     loadSimulationPreset,
@@ -90,7 +90,7 @@ vi.mock("../lib/cloudUser", () => ({
     }
   },
   fetchCollaboratorDirectory: vi.fn(async () => []),
-  fetchDeepLinkStatus: hoisted.fetchDeepLinkStatus,
+  fetchAuthStatus: hoisted.fetchAuthStatus,
   fetchMe: hoisted.fetchMe,
   setLocalDevRole: vi.fn(async () => ({})),
 }));
@@ -242,10 +242,9 @@ describe("AppShell deeplink cold-load flow", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
       bio: "",
     });
-    hoisted.fetchDeepLinkStatus.mockResolvedValue({
-      status: "ok",
-      simulationId: "sim-mmtk88wx-2didtk",
+    hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: true,
+      authState: "authenticated",
     });
     hoisted.fetchCloudLibrary.mockResolvedValue({
       siteLibrary: [],
@@ -336,13 +335,14 @@ describe("AppShell deeplink cold-load flow", () => {
 
       expect(hoisted.fetchMe).toHaveBeenCalledTimes(2);
       expect(document.body.textContent).not.toContain("Cloud save is unavailable");
+      expect(localStorage.getItem("linksim:had-authenticated-session:v1")).toBe("1");
     } finally {
       unmountAppShell(view);
       vi.useRealTimers();
     }
   });
 
-  it("uses quick retries before falling back to the steady retry interval", async () => {
+  it("stops after the bounded quick retry sequence", async () => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/");
     hoisted.fetchMe.mockRejectedValue(new Error("524 : server timed out"));
@@ -364,11 +364,10 @@ describe("AppShell deeplink cold-load flow", () => {
       await advanceTimers(10_000);
       expect(hoisted.fetchMe).toHaveBeenCalledTimes(4);
 
-      await advanceTimers(59_999);
+      await advanceTimers(120_000);
       expect(hoisted.fetchMe).toHaveBeenCalledTimes(4);
-
-      await advanceTimers(1);
-      expect(hoisted.fetchMe).toHaveBeenCalledTimes(5);
+      expect(document.body.textContent).toContain("Sign in again to resume cloud saving");
+      expect(document.body.textContent).not.toContain("retrying automatically");
     } finally {
       unmountAppShell(view);
       vi.useRealTimers();
@@ -461,20 +460,116 @@ describe("AppShell deeplink cold-load flow", () => {
 
   it("does not start auth recovery for unauthenticated deep-link guests", async () => {
     vi.useFakeTimers();
-    hoisted.fetchDeepLinkStatus.mockResolvedValue({
-      status: "ok",
-      simulationId: "sim-mmtk88wx-2didtk",
+    hoisted.fetchAuthStatus.mockResolvedValue({
       authenticated: false,
+      authState: "guest",
     });
 
     const view = await renderAppShell();
 
     try {
-      expect(hoisted.fetchDeepLinkStatus).toHaveBeenCalledTimes(1);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
       expect(hoisted.fetchMe).not.toHaveBeenCalled();
 
       await advanceTimers(120_000);
       expect(hoisted.fetchMe).not.toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("enters quiet demo mode for an expected root guest", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "guest",
+    });
+
+    const view = await renderAppShell();
+
+    try {
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
+      expect(hoisted.fetchMe).not.toHaveBeenCalled();
+      expect(document.body.textContent).not.toContain("Cloud save is unavailable");
+
+      await advanceTimers(120_000);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
+      expect(hoisted.fetchMe).not.toHaveBeenCalled();
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows an expired-session warning without retrying for a prior authenticated guest", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    localStorage.setItem("linksim:had-authenticated-session:v1", "1");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "guest",
+    });
+
+    const view = await renderAppShell();
+
+    try {
+      expect(document.body.textContent).toContain("Sign in again to resume cloud saving");
+      expect(document.body.textContent).not.toContain("retrying automatically");
+      expect(hoisted.fetchMe).not.toHaveBeenCalled();
+
+      await advanceTimers(120_000);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows an actionable revoked-session warning without retrying", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus.mockResolvedValue({
+      authenticated: false,
+      authState: "revoked",
+    });
+
+    const view = await renderAppShell();
+
+    try {
+      expect(document.body.textContent).toContain("Account access is unavailable");
+      expect(document.body.textContent).not.toContain("retrying automatically");
+      expect(hoisted.fetchMe).not.toHaveBeenCalled();
+
+      await advanceTimers(120_000);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(1);
+    } finally {
+      unmountAppShell(view);
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses a bounded neutral recovery path when the public auth probe fails", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/");
+    hoisted.fetchAuthStatus.mockRejectedValue(new Error("Failed to fetch"));
+
+    const view = await renderAppShell();
+
+    try {
+      expect(document.body.textContent).toContain("Sign-in status could not be checked");
+      expect(document.body.textContent).not.toContain("Cloud save is unavailable");
+
+      await advanceTimers(2_000);
+      await advanceTimers(5_000);
+      await advanceTimers(10_000);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(4);
+
+      await advanceTimers(120_000);
+      expect(hoisted.fetchAuthStatus).toHaveBeenCalledTimes(4);
+      expect(document.body.textContent).toContain("Try signing in again");
+      expect(document.body.textContent).not.toContain("retrying automatically");
     } finally {
       unmountAppShell(view);
       vi.useRealTimers();
