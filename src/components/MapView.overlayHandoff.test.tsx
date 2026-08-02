@@ -22,6 +22,7 @@ const overlayMock = vi.hoisted(() => {
 
 const loadingOverlayMock = vi.hoisted(() => ({
   props: null as null | {
+    beforeLayerId?: string;
     handoffKey?: string | null;
     loading?: boolean;
     onCloudEntered?: (requestKey: string) => void;
@@ -206,6 +207,7 @@ describe("MapView overlay handoff", () => {
 
     await resolveNextRaster();
     await waitFor(() => expect(loadingOverlayMock.props?.handoffKey).toBeTruthy());
+    expect(loadingOverlayMock.props?.beforeLayerId).toBe("link-lines-casing");
     const firstKey = loadingOverlayMock.props?.handoffKey;
     expect(firstKey).toBeTruthy();
     act(() => loadingOverlayMock.props?.onCloudReady?.(firstKey!));
