@@ -277,10 +277,10 @@ describe("MapView user location flow", () => {
     expect(marker.querySelector(".lucide-ship")).toBeInTheDocument();
     expect(marker.querySelector(".lucide-ship")).toHaveAttribute("aria-hidden", "true");
     expect(marker.querySelector(".lucide-ship")).toHaveStyle({ color: "#123456" });
-    expect(marker.querySelector(".lucide-ship")).toHaveClass("has-custom-color");
+    expect(marker.querySelector(".lucide-ship")).not.toHaveClass("has-custom-color");
   });
 
-  it("keeps a selected manual Link color and renders separate contrast casing", () => {
+  it("keeps a selected manual Link solid with one subtle theme-responsive casing", () => {
     const sites = [
       { id: "site-a", name: "A", position: { lat: 59.9, lon: 10.75 }, groundElevationM: 2, antennaHeightM: 2, txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
       { id: "site-b", name: "B", position: { lat: 59.91, lon: 10.76 }, groundElevationM: 2, antennaHeightM: 2, txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
@@ -290,6 +290,7 @@ describe("MapView user location flow", () => {
       sites,
       links: [{ id: "link-a", fromSiteId: "site-a", toSiteId: "site-b", frequencyMHz: 869.618, color: "#654321" }],
       linkColorMode: "manual",
+      uiThemePreference: "light",
       selectedLinkId: "link-a",
       selectedSiteIds: ["site-a", "site-b"],
     });
@@ -301,16 +302,68 @@ describe("MapView user location flow", () => {
       features: [expect.objectContaining({ properties: expect.objectContaining({ color: "#654321", selected: 1 }) })],
     });
     expect(mapMock.layerProps.map((props) => props.id)).toEqual(expect.arrayContaining([
+      "link-lines-casing",
+      "link-lines",
+      "link-lines-selected",
+    ]));
+    expect(mapMock.layerProps.map((props) => props.id)).not.toEqual(expect.arrayContaining([
       "link-lines-selection",
       "link-lines-dark-casing",
       "link-lines-light-casing",
-      "link-lines",
     ]));
     expect(mapMock.layerProps.find((props) => props.id === "link-lines")?.paint?.["line-color"]).toEqual([
       "coalesce",
       ["get", "color"],
       expect.any(String),
     ]);
+    expect(mapMock.layerProps.find((props) => props.id === "link-lines")?.paint?.["line-dasharray"]).toEqual([1.5, 1]);
+    expect(mapMock.layerProps.find((props) => props.id === "link-lines-selected")?.paint).not.toHaveProperty("line-dasharray");
+    expect(mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-opacity"]).toBeLessThan(0.7);
+
+    const lightCasingColor = mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-color"];
+    mapMock.layerProps = [];
+    act(() => useAppStore.setState({ uiThemePreference: "dark" }));
+    const darkCasingColor = mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-color"];
+    expect(darkCasingColor).not.toEqual(lightCasingColor);
+  });
+
+  it("commits the Auto Link colors toggle from the right inspector immediately", () => {
+    const simulation = {
+      id: "sim-color-mode",
+      name: "Color mode",
+      ownerUserId: "owner-1",
+      effectiveRole: "owner" as const,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: {
+        sites: [], links: [], systems: [], networks: [],
+        selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+        propagationModel: "ITM" as const, selectedFrequencyPresetId: "custom",
+        rxSensitivityTargetDbm: -120, environmentLossDb: 0,
+        propagationEnvironment: useAppStore.getState().propagationEnvironment,
+        autoPropagationEnvironment: false, terrainDataset: "copernicus30" as const,
+        linkColorMode: "manual" as const,
+      },
+    };
+    useAppStore.setState({
+      currentUser: {
+        id: "owner-1", username: "Owner", avatarUrl: "", role: "user", accountState: "approved",
+        isApproved: true, isAdmin: false, isModerator: false, createdAt: "", updatedAt: null,
+        approvedAt: null, approvedByUserId: null, emailPublic: true, bio: "",
+      },
+      selectedScenarioId: simulation.id,
+      simulationPresets: [simulation],
+      linkColorMode: "manual",
+    });
+
+    renderMapView({ showInspector: true });
+    const toggle = screen.getByRole("button", { name: "Turn on Auto Link colors" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(toggle);
+
+    expect(useAppStore.getState().linkColorMode).toBe("auto");
+    expect(useAppStore.getState().simulationPresets[0]?.snapshot.linkColorMode).toBe("auto");
+    expect(screen.getByRole("button", { name: "Turn off Auto Link colors" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("centers on the first location update and stops following after user pan", () => {
