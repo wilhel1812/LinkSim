@@ -447,7 +447,11 @@ describe("MapEditorPanel", () => {
     });
 
     render(<MapEditorPanel isMobile={false} />);
+    const picker = await screen.findByLabelText("Link color");
     const themeSwatch = await screen.findByRole("button", { name: "Use theme Link color" });
+    const presetGroup = screen.getByRole("group", { name: "Link color presets" });
+    expect(presetGroup).toContainElement(picker);
+    expect(picker.nextElementSibling).toHaveClass("simulation-color-separator");
     expect(themeSwatch).toHaveClass("simulation-color-swatch", "is-theme-color");
     expect(themeSwatch.previousElementSibling).toHaveClass("simulation-color-separator");
 

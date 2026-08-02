@@ -43,16 +43,7 @@ function SimulationColorControl({
   const pickerValue = value ?? SIMULATION_COLOR_PRESETS[4].value;
   return (
     <div className="simulation-color-field">
-      <label className="field-grid">
-        <span>{label}</span>
-        <input
-          aria-label={label}
-          disabled={disabled}
-          onInput={(event) => onChange(event.currentTarget.value)}
-          type="color"
-          value={pickerValue}
-        />
-      </label>
+      <span>{label}</span>
       <div aria-label={`${label} presets`} className="simulation-color-presets" role="group">
         {SIMULATION_COLOR_PRESETS.map((preset) => (
           <button
@@ -67,6 +58,13 @@ function SimulationColorControl({
             type="button"
           />
         ))}
+        <input
+          aria-label={label}
+          disabled={disabled}
+          onInput={(event) => onChange(event.currentTarget.value)}
+          type="color"
+          value={pickerValue}
+        />
         <span aria-hidden="true" className="simulation-color-separator" />
         <button
           aria-label={`Use theme ${label}`}

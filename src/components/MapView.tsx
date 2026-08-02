@@ -4152,6 +4152,7 @@ export function MapView({
         ) : null}
 
         <SimulationLoadingOverlay
+          beforeLayerId="link-lines-casing"
           bounds={analysisBounds}
           handoffKey={overlayHandoff.requestKey}
           loading={simulationLoadingOverlayActive}
