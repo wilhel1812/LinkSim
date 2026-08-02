@@ -52,6 +52,13 @@ import {
 } from "../lib/simulationOverlayRadius";
 import type { LocaleCode } from "../i18n/locales";
 import type { UiColorTheme } from "../themes/types";
+import {
+  DEFAULT_LINK_COLOR_MODE,
+  normalizeLinkColorMode,
+  normalizeSimulationColor,
+  normalizeSiteIconColors,
+  type LinkColorMode,
+} from "../lib/simulationColors";
 import { getActiveHolidayTheme } from "../themes/holidayThemes";
 import type { CloudUser } from "../lib/cloudUser";
 import type { MeshmapNode } from "../lib/meshtasticMqtt";
@@ -330,6 +337,8 @@ type SimulationPreset = {
     mapViewport?: MapViewport;
     simulationDefaultsOverrideEnabled?: boolean;
     simulationDefaultsOverride?: SimulationDefaults;
+    linkColorMode?: LinkColorMode;
+    siteIconColors?: Record<string, string>;
   };
 };
 
@@ -396,6 +405,8 @@ type AppState = {
   selectedLinkId: string;
   profileCursorIndex: number;
   temporaryDirectionReversed: boolean;
+  linkColorMode: LinkColorMode;
+  siteIconColors: Record<string, string>;
   selectedSiteId: string;
   selectedSiteIds: string[];
   selectedNetworkId: string;
@@ -540,7 +551,7 @@ type AppState = {
   getEffectiveSimulationDefaults: () => SimulationDefaults;
   addSiteByCoordinates: (name: string, lat: number, lon: number) => void;
   deleteSite: (siteId: string) => void;
-  createLink: (fromSiteId: string, toSiteId: string, name?: string) => void;
+  createLink: (fromSiteId: string, toSiteId: string, name?: string, color?: string | null) => void;
   deleteLink: (linkId: string) => void;
   addSiteLibraryEntry: (
     name: string,
@@ -595,6 +606,8 @@ type AppState = {
       autoPropagationEnvironment?: boolean;
       simulationDefaultsOverrideEnabled?: boolean;
       simulationDefaultsOverride?: SimulationDefaults | null;
+      linkColorMode?: LinkColorMode;
+      siteIconColors?: Record<string, string>;
     },
   ) => string | null;
   createBlankSimulationPreset: (
@@ -611,6 +624,8 @@ type AppState = {
       lastEditedByUserId?: string;
       lastEditedByName?: string;
       lastEditedByAvatarUrl?: string;
+      linkColorMode?: LinkColorMode;
+      siteIconColors?: Record<string, string>;
     },
   ) => string | null;
   overwriteSimulationPreset: (presetId: string) => void;
@@ -622,6 +637,8 @@ type AppState = {
     patch: Partial<Pick<SimulationPreset, "name" | "description" | "visibility" | "sharedWith">> & {
       simulationDefaultsOverrideEnabled?: boolean;
       simulationDefaultsOverride?: SimulationDefaults | null;
+      linkColorMode?: LinkColorMode;
+      siteIconColors?: Record<string, string>;
     },
   ) => void;
   deleteSimulationPreset: (presetId: string) => void;
@@ -759,6 +776,8 @@ const buildSimulationSnapshotFromState = (
     | "terrainDataset"
     | "simulationDefaultsOverrideEnabled"
     | "simulationDefaultsOverride"
+    | "linkColorMode"
+    | "siteIconColors"
   >,
 ): SimulationPreset["snapshot"] => ({
   sites: state.sites,
@@ -779,6 +798,8 @@ const buildSimulationSnapshotFromState = (
   terrainDataset: state.terrainDataset,
   simulationDefaultsOverrideEnabled: state.simulationDefaultsOverrideEnabled,
   simulationDefaultsOverride: state.simulationDefaultsOverride ?? undefined,
+  linkColorMode: state.linkColorMode,
+  siteIconColors: normalizeSiteIconColors(state.siteIconColors, state.sites.map((site) => site.id)),
 });
 
 const legacyDemoSiteFingerprint = new Set([
@@ -876,7 +897,15 @@ const normalizeSimulationPresets = (presets: SimulationPreset[]): SimulationPres
         snapshot: {
           ...preset.snapshot,
           sites: migrated.sites,
-          links: migrated.links,
+          links: migrated.links.map((link) => ({
+            ...link,
+            color: normalizeSimulationColor(link.color) ?? undefined,
+          })),
+          linkColorMode: normalizeLinkColorMode(preset.snapshot.linkColorMode),
+          siteIconColors: normalizeSiteIconColors(
+            preset.snapshot.siteIconColors,
+            migrated.sites.map((site) => site.id),
+          ),
         },
       };
     });
@@ -1318,6 +1347,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedLinkId: "",
   profileCursorIndex: 0,
   temporaryDirectionReversed: false,
+  linkColorMode: DEFAULT_LINK_COLOR_MODE,
+  siteIconColors: {},
   selectedSiteId: "",
   selectedSiteIds: [],
   selectedNetworkId: "",
@@ -1962,6 +1993,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedLinkId: scenario.defaultLinkId,
       profileCursorIndex: 0,
       temporaryDirectionReversed: false,
+      linkColorMode: DEFAULT_LINK_COLOR_MODE,
+      siteIconColors: {},
       selectedNetworkId: scenario.defaultNetworkId,
       selectedFrequencyPresetId: scenario.defaultFrequencyPresetId,
       propagationModel: "ITM",
@@ -2012,6 +2045,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedLinkId: scenario.defaultLinkId,
       profileCursorIndex: 0,
       temporaryDirectionReversed: false,
+      linkColorMode: DEFAULT_LINK_COLOR_MODE,
+      siteIconColors: {},
       selectedNetworkId: scenario.defaultNetworkId,
       selectedFrequencyPresetId: scenario.defaultFrequencyPresetId,
       propagationModel: "ITM",
@@ -2350,6 +2385,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           : remainingSites[0]
             ? [remainingSites[0].id]
             : [];
+      const nextSiteIconColors = { ...state.siteIconColors };
+      delete nextSiteIconColors[siteId];
 
       return {
         sites: remainingSites,
@@ -2357,6 +2394,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedSiteId: nextSelectedIds[0] ?? safeSiteId,
         selectedSiteIds: nextSelectedIds,
         selectedLinkId: safeLinkId,
+        siteIconColors: nextSiteIconColors,
         mapOverlayMode: defaultOverlayModeForSelectionCount(nextSelectedIds.length),
         networks: state.networks.map((network) => ({
           ...network,
@@ -2367,7 +2405,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
-  createLink: (fromSiteId, toSiteId, name) => {
+  createLink: (fromSiteId, toSiteId, name, color) => {
     const { currentUser, selectedScenarioId, simulationPresets } = get();
     const user = requireAuth(currentUser, "createLink");
     if (!user) return;
@@ -2395,6 +2433,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       txGainDbi: base?.txGainDbi,
       rxGainDbi: base?.rxGainDbi,
       cableLossDb: base?.cableLossDb,
+      color: normalizeSimulationColor(color) ?? undefined,
     };
     set((state) => ({
       links: [...state.links, link],
@@ -2821,6 +2860,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       simulationDefaultsOverrideEnabled:
         options?.simulationDefaultsOverrideEnabled ?? state.simulationDefaultsOverrideEnabled,
       simulationDefaultsOverride: options?.simulationDefaultsOverride ?? state.simulationDefaultsOverride ?? undefined,
+      linkColorMode: normalizeLinkColorMode(options?.linkColorMode ?? state.linkColorMode),
+      siteIconColors: normalizeSiteIconColors(
+        options?.siteIconColors ?? state.siteIconColors,
+        normalized.sites.map((site) => site.id),
+      ),
     };
     set((current) => {
       const mergedLibrary =
@@ -2891,6 +2935,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoPropagationEnvironment: inheritedDefaults.autoPropagationEnvironment,
         terrainDataset: current.terrainDataset,
         simulationDefaultsOverrideEnabled: false,
+        linkColorMode: normalizeLinkColorMode(options?.linkColorMode),
+        siteIconColors: normalizeSiteIconColors(options?.siteIconColors, []),
       };
       const nextPreset: SimulationPreset = {
         id: makeId("sim"),
@@ -2937,25 +2983,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     );
     const snapshot: SimulationPreset["snapshot"] = {
+      ...buildSimulationSnapshotFromState(state),
       sites: normalized.sites,
       links: normalizedLinks,
-      systems: state.systems,
-      networks: state.networks,
-      selectedSiteId: state.selectedSiteId,
-      selectedLinkId: state.selectedLinkId,
-      selectedNetworkId: state.selectedNetworkId,
-      selectedCoverageResolution: state.selectedCoverageResolution,
-      selectedOverlayRadiusOption: state.selectedOverlayRadiusOption,
-      propagationModel: state.propagationModel,
-      selectedFrequencyPresetId: state.selectedFrequencyPresetId,
-      rxSensitivityTargetDbm: state.rxSensitivityTargetDbm,
-        environmentLossDb: state.environmentLossDb,
-        propagationEnvironment: state.propagationEnvironment,
-        autoPropagationEnvironment: state.autoPropagationEnvironment,
-        terrainDataset: state.terrainDataset,
-        simulationDefaultsOverrideEnabled: state.simulationDefaultsOverrideEnabled,
-        simulationDefaultsOverride: state.simulationDefaultsOverride ?? undefined,
-      };
+    };
     set((current) => {
       const mergedLibrary =
         normalized.addedCount > 0
@@ -3037,6 +3068,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         terrainDataset: get().terrainDataset,
         simulationDefaultsOverrideEnabled: get().simulationDefaultsOverrideEnabled,
         simulationDefaultsOverride: get().simulationDefaultsOverride ?? undefined,
+        linkColorMode: get().linkColorMode,
+        siteIconColors: normalizeSiteIconColors(
+          get().siteIconColors,
+          normalizedSites.sites.map((site) => site.id),
+        ),
       },
       updatedAt: new Date().toISOString(),
       lastEditedByUserId: user.id,
@@ -3083,6 +3119,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedSiteIds: [],
         selectedLinkId: "",
         temporaryDirectionReversed: false,
+        linkColorMode: normalizeLinkColorMode(snap.linkColorMode),
+        siteIconColors: {},
         selectedNetworkId: "",
         selectedCoverageResolution: normalizeCoverageResolution(snap.selectedCoverageResolution),
         selectedOverlayRadiusOption: isOverlayRadiusOption(snap.selectedOverlayRadiusOption)
@@ -3112,7 +3150,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const recovered = ensureMinimumTopology(
       migratedSnap.sites,
-      migratedSnap.links,
+      migratedSnap.links.map((link) => ({
+        ...link,
+        color: normalizeSimulationColor(link.color) ?? undefined,
+      })),
       Array.isArray(snap.systems) ? snap.systems : [],
       Array.isArray(snap.networks) ? snap.networks : [],
     );
@@ -3139,6 +3180,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSiteIds: selectedSiteId ? [selectedSiteId] : [],
       selectedLinkId,
       temporaryDirectionReversed: false,
+      linkColorMode: normalizeLinkColorMode(snap.linkColorMode),
+      siteIconColors: normalizeSiteIconColors(
+        snap.siteIconColors,
+        recoveredSites.map((site) => site.id),
+      ),
       selectedNetworkId,
       selectedCoverageResolution: normalizeCoverageResolution(snap.selectedCoverageResolution),
       selectedOverlayRadiusOption: isOverlayRadiusOption(snap.selectedOverlayRadiusOption)
@@ -3238,7 +3284,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         aliasSet.delete(nextSlug);
         const nextVisibility = patch.visibility ?? preset.visibility ?? "private";
         const snapshotPatch =
-          patch.simulationDefaultsOverrideEnabled !== undefined || patch.simulationDefaultsOverride !== undefined
+          patch.simulationDefaultsOverrideEnabled !== undefined ||
+          patch.simulationDefaultsOverride !== undefined ||
+          patch.linkColorMode !== undefined ||
+          patch.siteIconColors !== undefined
             ? {
                 snapshot: {
                   ...preset.snapshot,
@@ -3248,18 +3297,25 @@ export const useAppStore = create<AppState>((set, get) => ({
                     patch.simulationDefaultsOverride === null
                       ? undefined
                       : patch.simulationDefaultsOverride ?? preset.snapshot.simulationDefaultsOverride,
+                  linkColorMode: normalizeLinkColorMode(
+                    patch.linkColorMode ?? preset.snapshot.linkColorMode,
+                  ),
+                  siteIconColors: normalizeSiteIconColors(
+                    patch.siteIconColors ?? preset.snapshot.siteIconColors,
+                    preset.snapshot.sites.map((site) => site.id),
+                  ),
                 },
               }
             : {};
         return {
           ...preset,
-          ...patch,
           ...snapshotPatch,
           name: nextName,
           description: nextDescription,
           slug: nextSlug,
           slugAliases: Array.from(aliasSet).filter(Boolean),
           visibility: nextVisibility,
+          sharedWith: patch.sharedWith ?? preset.sharedWith,
           updatedAt: new Date().toISOString(),
           lastEditedByUserId: user.id,
           lastEditedByName: user.username,
@@ -3267,7 +3323,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       });
       writeStorage(SIM_PRESETS_KEY, next);
-      return { simulationPresets: next };
+      const activeAppearance = state.selectedScenarioId === presetId
+        ? {
+            linkColorMode: normalizeLinkColorMode(patch.linkColorMode ?? state.linkColorMode),
+            siteIconColors: normalizeSiteIconColors(
+              patch.siteIconColors ?? state.siteIconColors,
+              state.sites.map((site) => site.id),
+            ),
+          }
+        : {};
+      return { simulationPresets: next, ...activeAppearance };
     });
   },
   deleteSimulationPreset: (presetId) => {
@@ -3525,6 +3590,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       links: state.links.map((link) => {
         if (link.id !== id) return link;
         const next = { ...link, ...patch };
+        if ("color" in patch) {
+          next.color = normalizeSimulationColor(patch.color) ?? undefined;
+        }
 
         if (next.fromSiteId === next.toSiteId) {
           const alternative = state.sites.find((site) => site.id !== next.fromSiteId);

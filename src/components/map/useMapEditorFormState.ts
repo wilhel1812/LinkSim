@@ -10,6 +10,13 @@ import { sampleSrtmElevation } from "../../lib/srtm";
 import { getUiErrorMessage } from "../../lib/uiError";
 import { hasDuplicateSimulationNameForOwner } from "../../lib/simulationNameValidation";
 import { isSiteIconKey, type SiteIconKey } from "../../lib/siteIcons";
+import {
+  DEFAULT_LINK_COLOR_MODE,
+  normalizeLinkColorMode,
+  normalizeSimulationColor,
+  normalizeSiteIconColors,
+  type LinkColorMode,
+} from "../../lib/simulationColors";
 import { useAppStore } from "../../store/appStore";
 import type { CollaboratorDirectoryUser } from "../../lib/cloudUser";
 import type { AccessRole, AccessVisibility } from "../AccessSettingsEditor";
@@ -65,6 +72,8 @@ export function useMapEditorFormState() {
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
+  const activeLinkColorMode = useAppStore((state) => state.linkColorMode);
+  const activeSiteIconColors = useAppStore((state) => state.siteIconColors);
   const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
 
@@ -111,6 +120,8 @@ export function useMapEditorFormState() {
     normalizeSimulationDefaults(null),
   );
   const [simulationNameError, setSimulationNameError] = useState("");
+  const [simulationLinkColorMode, setSimulationLinkColorMode] = useState<LinkColorMode>(DEFAULT_LINK_COLOR_MODE);
+  const [simulationSiteIconColors, setSimulationSiteIconColors] = useState<Record<string, string>>({});
 
   const setDuplicateSimulationNameError = () => setSimulationNameError("Name must be unique.");
 
@@ -123,6 +134,7 @@ export function useMapEditorFormState() {
   const [linkTxGain, setLinkTxGain] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [linkRxGain, setLinkRxGain] = useState(STANDARD_SITE_RADIO.rxGainDbi);
   const [linkCableLoss, setLinkCableLoss] = useState(STANDARD_SITE_RADIO.cableLossDb);
+  const [linkColorDraft, setLinkColorDraft] = useState<string | null>(null);
 
   const getLinkDefaultName = (fromId: string, toId: string): string => {
     const from = sites.find((site) => site.id === fromId);
@@ -210,6 +222,8 @@ export function useMapEditorFormState() {
         setCollaboratorRoles({});
         setSimulationFrequencyPresetId(seed?.frequencyPresetId ?? selectedFrequencyPresetId);
         setSimulationAutoPropagationEnvironment(seed?.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        setSimulationLinkColorMode(seed?.copyCurrentSimulation ? activeLinkColorMode : DEFAULT_LINK_COLOR_MODE);
+        setSimulationSiteIconColors(seed?.copyCurrentSimulation ? activeSiteIconColors : {});
         if (seed?.copyCurrentSimulation) {
           setSimulationDefaultsOverrideEnabled(Boolean(seed.simulationDefaultsOverrideEnabled));
           setSimulationDefaultsDraft(
@@ -229,6 +243,11 @@ export function useMapEditorFormState() {
         setAccessVisibility(toAccessVisibility(preset?.visibility) as AccessVisibility);
         setSimulationFrequencyPresetId(preset?.snapshot.selectedFrequencyPresetId ?? selectedFrequencyPresetId);
         setSimulationAutoPropagationEnvironment(preset?.snapshot.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        setSimulationLinkColorMode(normalizeLinkColorMode(preset?.snapshot.linkColorMode));
+        setSimulationSiteIconColors(normalizeSiteIconColors(
+          preset?.snapshot.siteIconColors,
+          (preset?.snapshot.sites ?? []).map((site) => site.id),
+        ));
         setSimulationDefaultsOverrideEnabled(Boolean(preset?.snapshot.simulationDefaultsOverrideEnabled));
         setSimulationDefaultsDraft(
           preset?.snapshot.simulationDefaultsOverride
@@ -258,6 +277,7 @@ export function useMapEditorFormState() {
         setLinkTxGain(baseRadio.txGainDbi);
         setLinkRxGain(baseRadio.rxGainDbi);
         setLinkCableLoss(baseRadio.cableLossDb);
+        setLinkColorDraft(null);
       } else {
         const link = links.find((l) => l.id === mapEditor.resourceId);
         const fromSite = sites.find((s) => s.id === link?.fromSiteId) ?? null;
@@ -278,6 +298,7 @@ export function useMapEditorFormState() {
         setLinkTxGain(baseRadio.txGainDbi);
         setLinkRxGain(baseRadio.rxGainDbi);
         setLinkCableLoss(baseRadio.cableLossDb);
+        setLinkColorDraft(normalizeSimulationColor(link?.color));
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -703,6 +724,8 @@ export function useMapEditorFormState() {
             autoPropagationEnvironment: simulationAutoPropagationEnvironment,
             simulationDefaultsOverrideEnabled,
             simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
+            linkColorMode: simulationLinkColorMode,
+            siteIconColors: simulationSiteIconColors,
           });
           if (!createdId) {
             setStatus("Failed creating simulation copy. Check the name and try again.");
@@ -725,6 +748,8 @@ export function useMapEditorFormState() {
           lastEditedByUserId: currentUser.id,
           lastEditedByName: currentUser.username,
           lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
+          linkColorMode: simulationLinkColorMode,
+          siteIconColors: simulationSiteIconColors,
         });
         if (!createdId) {
           setStatus("Failed creating simulation. Check the name and try again.");
@@ -765,6 +790,8 @@ export function useMapEditorFormState() {
         sharedWith,
         simulationDefaultsOverrideEnabled,
         simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
+        linkColorMode: simulationLinkColorMode,
+        siteIconColors: simulationSiteIconColors,
       });
       closeMapEditor();
       return true;
@@ -791,7 +818,7 @@ export function useMapEditorFormState() {
     }
     try {
       if (mapEditor?.isNew) {
-        createLink(linkFromSiteId, linkToSiteId, linkNameDraft || undefined);
+        createLink(linkFromSiteId, linkToSiteId, linkNameDraft || undefined, linkColorDraft);
       } else if (mapEditor?.resourceId) {
         updateLink(mapEditor.resourceId, {
           name: linkNameDraft || undefined,
@@ -801,6 +828,7 @@ export function useMapEditorFormState() {
           txGainDbi: overrideRadio ? linkTxGain : undefined,
           rxGainDbi: overrideRadio ? linkRxGain : undefined,
           cableLossDb: overrideRadio ? linkCableLoss : undefined,
+          color: linkColorDraft ?? undefined,
         });
       }
       closeMapEditor();
@@ -901,6 +929,18 @@ export function useMapEditorFormState() {
     setSimulationDefaultsOverrideEnabled,
     simulationDefaultsDraft,
     simulationNameError,
+    simulationLinkColorMode,
+    setSimulationLinkColorMode,
+    simulationSiteIconColors,
+    setSimulationSiteIconColor: (siteId: string, value: string | null) => {
+      setSimulationSiteIconColors((current) => {
+        const next = { ...current };
+        const color = normalizeSimulationColor(value);
+        if (color) next[siteId] = color;
+        else delete next[siteId];
+        return next;
+      });
+    },
     setSimulationDefaultsDraft: (patch: Partial<SimulationDefaults>) =>
       setSimulationDefaultsDraft((current) => normalizeSimulationDefaults({ ...current, ...patch }, current)),
     handleSaveSimulation,
@@ -913,6 +953,9 @@ export function useMapEditorFormState() {
     linkTxGain, setLinkTxGain: (v: number | string) => setLinkTxGain(parseNumber(String(v))),
     linkRxGain, setLinkRxGain: (v: number | string) => setLinkRxGain(parseNumber(String(v))),
     linkCableLoss, setLinkCableLoss: (v: number | string) => setLinkCableLoss(parseNumber(String(v))),
+    linkColorDraft,
+    setLinkColorDraft: (value: string | null) => setLinkColorDraft(normalizeSimulationColor(value)),
+    activeLinkColorMode,
     handleSaveLink,
     siteSearchQuery,
     setSiteSearchQuery,
@@ -924,5 +967,9 @@ export function useMapEditorFormState() {
     selectSiteSearchResult,
     // raw data for labels
     sites,
+    simulationAppearanceSites: currentSimulationPreset?.snapshot.sites ??
+      (mapEditor?.kind === "simulation" && mapEditor.isNew && mapEditor.simulationSeed?.copyCurrentSimulation
+        ? sites
+        : []),
   };
 }

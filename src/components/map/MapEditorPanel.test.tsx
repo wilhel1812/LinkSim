@@ -336,6 +336,71 @@ describe("MapEditorPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("edits Simulation link mode and per-Site icon colors in Appearance", async () => {
+    const site = {
+      id: "site-a",
+      name: "Site A",
+      position: { lat: 60, lon: 10 },
+      groundElevationM: 100,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      selectedScenarioId: "sim-appearance",
+      sites: [site],
+      linkColorMode: "manual",
+      siteIconColors: {},
+      simulationPresets: [{
+        id: "sim-appearance",
+        name: "Appearance Plan",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        snapshot: {
+          sites: [site], links: [], systems: [], networks: [],
+          selectedSiteId: "site-a", selectedLinkId: "", selectedNetworkId: "",
+          propagationModel: "ITM", selectedFrequencyPresetId: "custom",
+          rxSensitivityTargetDbm: -120, environmentLossDb: 0,
+          propagationEnvironment: useAppStore.getState().propagationEnvironment,
+          autoPropagationEnvironment: false, terrainDataset: "copernicus30",
+        },
+      }],
+      mapEditor: { kind: "simulation", resourceId: "sim-appearance", isNew: false, label: "Appearance Plan", anchorRect },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Auto link colors" }));
+    fireEvent.change(screen.getByLabelText("Site A icon color"), { target: { value: "#123456" } });
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const state = useAppStore.getState();
+    expect(state.linkColorMode).toBe("auto");
+    expect(state.siteIconColors).toEqual({ "site-a": "#123456" });
+  });
+
+  it("saves a manual color from the existing Link editor", async () => {
+    const sites = [
+      { id: "site-a", name: "Site A", position: { lat: 60, lon: 10 }, groundElevationM: 100, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+      { id: "site-b", name: "Site B", position: { lat: 60.1, lon: 10.1 }, groundElevationM: 110, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+    ];
+    useAppStore.setState({
+      sites,
+      links: [{ id: "link-a", name: "Path A", fromSiteId: "site-a", toSiteId: "site-b", frequencyMHz: 868 }],
+      linkColorMode: "manual",
+      mapEditor: { kind: "link", resourceId: "link-a", isNew: false, label: "Path A", anchorRect },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+    fireEvent.change(await screen.findByLabelText("Link color"), { target: { value: "#654321" } });
+    await userEvent.click(screen.getByRole("button", { name: "Save Link" }));
+
+    expect(useAppStore.getState().links[0]?.color).toBe("#654321");
+  });
+
   it("renders read-only site details as static text", async () => {
     useAppStore.setState({
       siteLibrary: [

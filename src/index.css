@@ -21,6 +21,8 @@
   --state-pass-blocked: var(--warning);
   --state-fail-clear: color-mix(in srgb, var(--warning) 45%, var(--danger));
   --state-fail-blocked: var(--danger);
+  --map-contrast-dark: #000000;
+  --map-contrast-light: #ffffff;
   --panel-shell-divider: color-mix(in srgb, var(--border) 84%, transparent);
   --panel-header-row-gap: 10px;
   --panel-header-row-min-height: 34px;
@@ -678,6 +680,47 @@ button {
 
 .simulation-settings-summary {
   margin: 0;
+}
+
+.simulation-appearance-section,
+.simulation-color-field {
+  display: grid;
+  gap: 8px;
+}
+
+.simulation-appearance-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.simulation-color-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.simulation-color-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-pill);
+  background: var(--simulation-swatch-color);
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: pointer;
+}
+
+.simulation-color-swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--selection);
+}
+
+.simulation-color-field input[type="color"] {
+  justify-self: end;
+  width: 44px;
+  min-height: 32px;
+  padding: 3px;
 }
 
 .simulation-settings-actions {
@@ -2701,6 +2744,12 @@ button {
 
 .map-site-icon {
   flex: 0 0 auto;
+}
+
+.map-site-icon.has-custom-color {
+  filter:
+    drop-shadow(0 0 1px var(--map-contrast-light))
+    drop-shadow(0 0 1.5px var(--map-contrast-dark));
 }
 
 .map-site-surface:not(.is-muted) {
