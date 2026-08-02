@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mapMock = vi.hoisted(() => ({
   easeTo: vi.fn(),
   markerProps: [] as Array<{ latitude?: number; longitude?: number }>,
+  layerProps: [] as Array<{ id?: string; paint?: Record<string, unknown> }>,
+  sourceProps: [] as Array<{ id?: string; data?: unknown }>,
   latestProps: null as null | {
     onMove?: (event: { originalEvent?: unknown; viewState: { longitude: number; latitude: number; zoom: number } }) => void;
   },
@@ -47,7 +49,10 @@ vi.mock("react-map-gl/maplibre", async () => {
       }));
       return <div data-testid="mock-map">{props.children}</div>;
     }),
-    Layer: () => null,
+    Layer: (props: { id?: string; paint?: Record<string, unknown> }) => {
+      mapMock.layerProps.push(props);
+      return null;
+    },
     Marker: ({
       children,
       latitude,
@@ -60,7 +65,10 @@ vi.mock("react-map-gl/maplibre", async () => {
       mapMock.markerProps.push({ latitude, longitude });
       return <div>{children}</div>;
     },
-    Source: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    Source: ({ children, ...props }: { children?: React.ReactNode; id?: string; data?: unknown }) => {
+      mapMock.sourceProps.push(props);
+      return <>{children}</>;
+    },
     useMap: () => ({ current: undefined }),
   };
 });
@@ -138,6 +146,8 @@ describe("MapView user location flow", () => {
     vi.clearAllMocks();
     mapMock.latestProps = null;
     mapMock.markerProps = [];
+    mapMock.layerProps = [];
+    mapMock.sourceProps = [];
     installGeolocation();
     watchPosition.mockReturnValue(42);
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
@@ -258,6 +268,7 @@ describe("MapView user location flow", () => {
           iconKey: "ship",
         },
       ],
+      siteIconColors: { "site-ship": "#123456" },
     });
 
     renderMapView();
@@ -265,6 +276,41 @@ describe("MapView user location flow", () => {
     const marker = screen.getByRole("button", { name: "Harbour node" });
     expect(marker.querySelector(".lucide-ship")).toBeInTheDocument();
     expect(marker.querySelector(".lucide-ship")).toHaveAttribute("aria-hidden", "true");
+    expect(marker.querySelector(".lucide-ship")).toHaveStyle({ color: "#123456" });
+    expect(marker.querySelector(".lucide-ship")).toHaveClass("has-custom-color");
+  });
+
+  it("keeps a selected manual Link color and renders separate contrast casing", () => {
+    const sites = [
+      { id: "site-a", name: "A", position: { lat: 59.9, lon: 10.75 }, groundElevationM: 2, antennaHeightM: 2, txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+      { id: "site-b", name: "B", position: { lat: 59.91, lon: 10.76 }, groundElevationM: 2, antennaHeightM: 2, txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+    ];
+    useAppStore.setState({
+      mapOverlayMode: "none",
+      sites,
+      links: [{ id: "link-a", fromSiteId: "site-a", toSiteId: "site-b", frequencyMHz: 869.618, color: "#654321" }],
+      linkColorMode: "manual",
+      selectedLinkId: "link-a",
+      selectedSiteIds: ["site-a", "site-b"],
+    });
+
+    renderMapView();
+
+    const linksSource = mapMock.sourceProps.find((props) => props.id === "links");
+    expect(linksSource?.data).toMatchObject({
+      features: [expect.objectContaining({ properties: expect.objectContaining({ color: "#654321", selected: 1 }) })],
+    });
+    expect(mapMock.layerProps.map((props) => props.id)).toEqual(expect.arrayContaining([
+      "link-lines-selection",
+      "link-lines-dark-casing",
+      "link-lines-light-casing",
+      "link-lines",
+    ]));
+    expect(mapMock.layerProps.find((props) => props.id === "link-lines")?.paint?.["line-color"]).toEqual([
+      "coalesce",
+      ["get", "color"],
+      expect.any(String),
+    ]);
   });
 
   it("centers on the first location update and stops following after user pan", () => {

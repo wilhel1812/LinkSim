@@ -89,6 +89,12 @@ import { PanelToolbar } from "./ui/PanelToolbar";
 import { SimulationLoadingOverlay } from "./SimulationLoadingOverlay";
 import { resolveSimulationOverlayTransition } from "../lib/simulationLoadingOverlay";
 import {
+  MAP_CONTRAST_DARK,
+  MAP_CONTRAST_LIGHT,
+  resolveAutoLinkStateColor,
+  resolveAutoLinkStateForLink,
+} from "../lib/simulationColors";
+import {
   initialSimulationOverlayHandoffState,
   reduceSimulationOverlayHandoff,
 } from "../lib/simulationOverlayHandoff";
@@ -134,18 +140,39 @@ const WORLD_POLYGON_GEOJSON = {
   properties: {},
 };
 
-const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
+const mapLineSelectionLayer = (selectedColor: string): LayerProps => ({
+  id: "link-lines-selection",
+  type: "line",
+  filter: ["==", ["get", "selected"], 1],
+  paint: {
+    "line-color": selectedColor,
+    "line-width": 11,
+    "line-opacity": 0.95,
+  },
+});
+
+const mapLineCasingLayer = (id: string, color: string, widthOffset: number): LayerProps => ({
+  id,
+  type: "line",
+  paint: {
+    "line-color": color,
+    "line-width": [
+      "case",
+      ["==", ["get", "selected"], 1],
+      4.5 + widthOffset,
+      ["==", ["get", "temporary"], 1],
+      3.5 + widthOffset,
+      3 + widthOffset,
+    ],
+    "line-opacity": 0.92,
+  },
+});
+
+const mapLineLayer = (linkColor: string): LayerProps => ({
   id: "link-lines",
   type: "line",
   paint: {
-    "line-color": [
-      "case",
-      ["==", ["get", "selected"], 1],
-      selectedColor,
-      ["==", ["get", "temporary"], 1],
-      selectedColor,
-      linkColor,
-    ],
+    "line-color": ["coalesce", ["get", "color"], linkColor],
     "line-width": [
       "case",
       ["==", ["get", "selected"], 1],
@@ -594,9 +621,23 @@ function MarkerActionButton({
   );
 }
 
-function SiteMarkerIcon({ site }: { site: Pick<Site, "name" | "antennaHeightM" | "iconKey"> }) {
+function SiteMarkerIcon({
+  site,
+  color,
+}: {
+  site: Pick<Site, "name" | "antennaHeightM" | "iconKey">;
+  color?: string;
+}) {
   const { Icon } = getSiteIconOption(resolveSiteIconKey(site));
-  return <Icon aria-hidden="true" className="map-site-icon" size={15} strokeWidth={1.8} />;
+  return (
+    <Icon
+      aria-hidden="true"
+      className={`map-site-icon ${color ? "has-custom-color" : ""}`}
+      size={15}
+      strokeWidth={1.8}
+      style={color ? { color } : undefined}
+    />
+  );
 }
 
 type PendingNewSiteDraft = {
@@ -703,6 +744,8 @@ export function MapView({
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const links = useAppStore((state) => state.links);
+  const linkColorMode = useAppStore((state) => state.linkColorMode);
+  const siteIconColors = useAppStore((state) => state.siteIconColors);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
@@ -752,6 +795,7 @@ export function MapView({
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
+  const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
   const isSimulationRecomputing = useCoverageStore((state) => state.isSimulationRecomputing);
   const simulationProgress = useCoverageStore((state) => state.simulationProgress);
   const simulationProgressMode = useCoverageStore((state) => state.simulationProgressMode);
@@ -1406,9 +1450,41 @@ export function MapView({
           const from = sites.find((site) => site.id === link.fromSiteId);
           const to = sites.find((site) => site.id === link.toSiteId);
           if (!from || !to) return null;
+          const effectiveLink = {
+            ...link,
+            frequencyMHz:
+              selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? link.frequencyMHz,
+          };
+          const autoState = linkColorMode === "auto"
+            ? resolveAutoLinkStateForLink({
+                link: effectiveLink,
+                sites,
+                reversed: link.id === selectedLinkId && temporaryDirectionReversed,
+                environmentLossDb,
+                rxSensitivityTargetDbm,
+                propagationEnvironment,
+                autoPropagationEnvironment,
+                terrainSampler: (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+              })
+            : null;
+          const color = autoState
+            ? resolveAutoLinkStateColor(autoState, {
+                success: variant.cssVars["--success"],
+                warning: variant.cssVars["--warning"],
+                danger: variant.cssVars["--danger"],
+              })
+            : linkColorMode === "manual"
+              ? link.color ?? linkColor
+              : linkColor;
           return {
             type: "Feature" as const,
-            properties: { id: link.id, selected: showSelectionHighlights && link.id === selectedLinkId ? 1 : 0, temporary: 0 },
+            properties: {
+              id: link.id,
+              selected: showSelectionHighlights && link.id === selectedLinkId ? 1 : 0,
+              temporary: 0,
+              color,
+              autoState: autoState ?? "unavailable",
+            },
             geometry: {
               type: "LineString" as const,
               coordinates: [
@@ -1435,7 +1511,7 @@ export function MapView({
           ? [
               {
                 type: "Feature" as const,
-                properties: { id: "__selection__", selected: 0, temporary: 1 },
+                properties: { id: "__selection__", selected: 0, temporary: 1, color: selectedLinkColor, autoState: "unavailable" },
                 geometry: {
                   type: "LineString" as const,
                   coordinates: [
@@ -1451,7 +1527,25 @@ export function MapView({
         features: [...savedLinkFeatures, ...temporarySelectionFeature],
       };
     },
-    [visibleLinks, selectedLinkId, sites, selectedSites, links, armAddSiteOnNextEmptyMapClick],
+    [
+      visibleLinks,
+      selectedLinkId,
+      sites,
+      selectedSites,
+      links,
+      armAddSiteOnNextEmptyMapClick,
+      selectedNetwork,
+      linkColorMode,
+      temporaryDirectionReversed,
+      environmentLossDb,
+      rxSensitivityTargetDbm,
+      propagationEnvironment,
+      autoPropagationEnvironment,
+      srtmTiles,
+      variant,
+      linkColor,
+      selectedLinkColor,
+    ],
   );
 
   const profileFeatures = useMemo(
@@ -4064,7 +4158,10 @@ export function MapView({
         ) : null}
 
         <Source data={lineFeatures} id="links" type="geojson">
-          <Layer {...mapLineLayer(linkColor, selectedLinkColor)} />
+          <Layer {...mapLineSelectionLayer(selectedLinkColor)} />
+          <Layer {...mapLineCasingLayer("link-lines-dark-casing", MAP_CONTRAST_DARK, 4)} />
+          <Layer {...mapLineCasingLayer("link-lines-light-casing", MAP_CONTRAST_LIGHT, 2)} />
+          <Layer {...mapLineLayer(linkColor)} />
         </Source>
 
         {sites.map((site) => {
@@ -4120,7 +4217,7 @@ export function MapView({
                   onSiteClick(site.id, isMultiSelectMode || Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
                 }}
               >
-                <SiteMarkerIcon site={site} />
+                <SiteMarkerIcon color={siteIconColors[site.id]} site={site} />
                 <span>{site.name}</span>
               </MarkerActionButton>
             </Marker>
