@@ -55,6 +55,7 @@ export function useMapEditorFormState() {
   const setMapEditorSiteDraft = useAppStore((state) => state.setMapEditorSiteDraft);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -402,6 +403,13 @@ export function useMapEditorFormState() {
     mapEditor?.kind === "simulation" && mapEditor.resourceId
       ? simulationPresets.find((preset) => preset.id === mapEditor.resourceId) ?? null
       : null;
+  const activeSimulationPreset = selectedScenarioId
+    ? simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null
+    : null;
+  const activeSimulationSite =
+    mapEditor?.kind === "site" && mapEditor.resourceId
+      ? sites.find((site) => site.id === mapEditor.resourceId || site.libraryEntryId === mapEditor.resourceId) ?? null
+      : null;
   const ownerUserId = (() => {
     if (!mapEditor) return "";
     if (mapEditor.kind === "site" && mapEditor.resourceId) {
@@ -441,6 +449,11 @@ export function useMapEditorFormState() {
     };
   });
   const currentUserIsOwner = Boolean(currentUser?.id && ownerUserId && currentUser.id === ownerUserId);
+  const activeSimulationRole = activeSimulationPreset?.effectiveRole ??
+    (activeSimulationPreset?.ownerUserId === currentUser?.id ? "owner" : "viewer");
+  const canEditActiveSimulationAppearance = Boolean(
+    currentUser?.id && activeSimulationPreset && ["owner", "editor", "admin"].includes(activeSimulationRole),
+  );
   const resolveUserSummary = (
     userId: string | null | undefined,
     fallbackName: string | null | undefined,
@@ -828,7 +841,6 @@ export function useMapEditorFormState() {
           txGainDbi: overrideRadio ? linkTxGain : undefined,
           rxGainDbi: overrideRadio ? linkRxGain : undefined,
           cableLossDb: overrideRadio ? linkCableLoss : undefined,
-          color: linkColorDraft ?? undefined,
         });
       }
       closeMapEditor();
@@ -929,18 +941,6 @@ export function useMapEditorFormState() {
     setSimulationDefaultsOverrideEnabled,
     simulationDefaultsDraft,
     simulationNameError,
-    simulationLinkColorMode,
-    setSimulationLinkColorMode,
-    simulationSiteIconColors,
-    setSimulationSiteIconColor: (siteId: string, value: string | null) => {
-      setSimulationSiteIconColors((current) => {
-        const next = { ...current };
-        const color = normalizeSimulationColor(value);
-        if (color) next[siteId] = color;
-        else delete next[siteId];
-        return next;
-      });
-    },
     setSimulationDefaultsDraft: (patch: Partial<SimulationDefaults>) =>
       setSimulationDefaultsDraft((current) => normalizeSimulationDefaults({ ...current, ...patch }, current)),
     handleSaveSimulation,
@@ -954,7 +954,13 @@ export function useMapEditorFormState() {
     linkRxGain, setLinkRxGain: (v: number | string) => setLinkRxGain(parseNumber(String(v))),
     linkCableLoss, setLinkCableLoss: (v: number | string) => setLinkCableLoss(parseNumber(String(v))),
     linkColorDraft,
-    setLinkColorDraft: (value: string | null) => setLinkColorDraft(normalizeSimulationColor(value)),
+    setLinkColorDraft: (value: string | null) => {
+      const color = normalizeSimulationColor(value);
+      setLinkColorDraft(color);
+      if (!mapEditor?.isNew && mapEditor?.resourceId) {
+        updateLink(mapEditor.resourceId, { color: color ?? undefined });
+      }
+    },
     activeLinkColorMode,
     handleSaveLink,
     siteSearchQuery,
@@ -967,9 +973,16 @@ export function useMapEditorFormState() {
     selectSiteSearchResult,
     // raw data for labels
     sites,
-    simulationAppearanceSites: currentSimulationPreset?.snapshot.sites ??
-      (mapEditor?.kind === "simulation" && mapEditor.isNew && mapEditor.simulationSeed?.copyCurrentSimulation
-        ? sites
-        : []),
+    activeSimulationSiteId: activeSimulationSite?.id ?? null,
+    activeSiteIconColor: activeSimulationSite ? activeSiteIconColors[activeSimulationSite.id] ?? null : null,
+    canEditActiveSimulationAppearance,
+    setActiveSiteIconColor: (value: string | null) => {
+      if (!selectedScenarioId || !activeSimulationSite || !canEditActiveSimulationAppearance) return;
+      const next = { ...activeSiteIconColors };
+      const color = normalizeSimulationColor(value);
+      if (color) next[activeSimulationSite.id] = color;
+      else delete next[activeSimulationSite.id];
+      updateSimulationPresetEntry(selectedScenarioId, { siteIconColors: next });
+    },
   };
 }

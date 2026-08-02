@@ -140,56 +140,53 @@ const WORLD_POLYGON_GEOJSON = {
   properties: {},
 };
 
-const mapLineSelectionLayer = (selectedColor: string): LayerProps => ({
-  id: "link-lines-selection",
-  type: "line",
-  filter: ["==", ["get", "selected"], 1],
-  paint: {
-    "line-color": selectedColor,
-    "line-width": 11,
-    "line-opacity": 0.95,
-  },
-});
-
-const mapLineCasingLayer = (id: string, color: string, widthOffset: number): LayerProps => ({
-  id,
+const mapLineCasingLayer = (color: string): LayerProps => ({
+  id: "link-lines-casing",
   type: "line",
   paint: {
     "line-color": color,
     "line-width": [
       "case",
       ["==", ["get", "selected"], 1],
-      4.5 + widthOffset,
+      6,
       ["==", ["get", "temporary"], 1],
-      3.5 + widthOffset,
-      3 + widthOffset,
+      4.75,
+      4.25,
     ],
-    "line-opacity": 0.92,
+    "line-opacity": 0.56,
   },
 });
 
 const mapLineLayer = (linkColor: string): LayerProps => ({
   id: "link-lines",
   type: "line",
+  filter: ["!=", ["get", "selected"], 1],
   paint: {
     "line-color": ["coalesce", ["get", "color"], linkColor],
     "line-width": [
       "case",
-      ["==", ["get", "selected"], 1],
-      4.5,
       ["==", ["get", "temporary"], 1],
       3.5,
       3,
     ],
     "line-opacity": [
       "case",
-      ["==", ["get", "selected"], 1],
-      0.98,
       ["==", ["get", "temporary"], 1],
       0.9,
       0.72,
     ],
     "line-dasharray": [1.5, 1],
+  },
+});
+
+const mapLineSelectedLayer = (linkColor: string): LayerProps => ({
+  id: "link-lines-selected",
+  type: "line",
+  filter: ["==", ["get", "selected"], 1],
+  paint: {
+    "line-color": ["coalesce", ["get", "color"], linkColor],
+    "line-width": 4.5,
+    "line-opacity": 0.98,
   },
 });
 
@@ -632,7 +629,7 @@ function SiteMarkerIcon({
   return (
     <Icon
       aria-hidden="true"
-      className={`map-site-icon ${color ? "has-custom-color" : ""}`}
+      className="map-site-icon"
       size={15}
       strokeWidth={1.8}
       style={color ? { color } : undefined}
@@ -744,6 +741,8 @@ export function MapView({
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const links = useAppStore((state) => state.links);
+  const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
+  const simulationPresets = useAppStore((state) => state.simulationPresets);
   const linkColorMode = useAppStore((state) => state.linkColorMode);
   const siteIconColors = useAppStore((state) => state.siteIconColors);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
@@ -760,6 +759,7 @@ export function MapView({
   const clearActiveSelection = useAppStore((state) => state.clearActiveSelection);
   const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
+  const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const updateSite = useAppStore((state) => state.updateSite);
   const deleteSite = useAppStore((state) => state.deleteSite);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
@@ -828,6 +828,10 @@ export function MapView({
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
   const profileColor = variant.map.profileLineColor;
+  const linkCasingColor = theme === "dark" ? MAP_CONTRAST_LIGHT : MAP_CONTRAST_DARK;
+  const hasActiveSavedSimulation = Boolean(
+    selectedScenarioId && simulationPresets.some((preset) => preset.id === selectedScenarioId),
+  );
   const selectedProfile = useMemo(
     () => getSelectedProfile(),
     [
@@ -3411,6 +3415,31 @@ export function MapView({
                 </ActionButton>
               ) : null}
             </div>
+            {hasActiveSavedSimulation ? (
+              <div className="map-calculation-controls map-link-color-controls">
+                <ActionButton
+                  aria-label={linkColorMode === "auto" ? "Turn off Auto Link colors" : "Turn on Auto Link colors"}
+                  aria-pressed={linkColorMode === "auto"}
+                  className={`map-calculation-control map-calculation-toggle ${linkColorMode === "auto" ? "is-on" : "is-off"}`}
+                  disabled={!canPersist || readOnly}
+                  onClick={() => {
+                    if (!selectedScenarioId) return;
+                    updateSimulationPresetEntry(selectedScenarioId, {
+                      linkColorMode: linkColorMode === "auto" ? "manual" : "auto",
+                    });
+                  }}
+                  title={linkColorMode === "auto" ? "Turn off Auto Link colors" : "Turn on Auto Link colors"}
+                  variant="ghost"
+                >
+                  {linkColorMode === "auto" ? (
+                    <ToggleRight aria-hidden="true" size={20} strokeWidth={1.8} />
+                  ) : (
+                    <ToggleLeft aria-hidden="true" size={20} strokeWidth={1.8} />
+                  )}
+                  <span>Auto Link colors</span>
+                </ActionButton>
+              </div>
+            ) : null}
           </div>
           {showHolidayThemeNotice && activeHolidayTheme ? (
             <div className="map-inspector-section map-holiday-note" role="status">
@@ -4158,10 +4187,9 @@ export function MapView({
         ) : null}
 
         <Source data={lineFeatures} id="links" type="geojson">
-          <Layer {...mapLineSelectionLayer(selectedLinkColor)} />
-          <Layer {...mapLineCasingLayer("link-lines-dark-casing", MAP_CONTRAST_DARK, 4)} />
-          <Layer {...mapLineCasingLayer("link-lines-light-casing", MAP_CONTRAST_LIGHT, 2)} />
+          <Layer {...mapLineCasingLayer(linkCasingColor)} />
           <Layer {...mapLineLayer(linkColor)} />
+          <Layer {...mapLineSelectedLayer(linkColor)} />
         </Source>
 
         {sites.map((site) => {

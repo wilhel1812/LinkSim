@@ -33,10 +33,12 @@ function SimulationColorControl({
   label,
   value,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: string | null;
   onChange: (value: string | null) => void;
+  disabled?: boolean;
 }) {
   const pickerValue = value ?? SIMULATION_COLOR_PRESETS[4].value;
   return (
@@ -45,7 +47,8 @@ function SimulationColorControl({
         <span>{label}</span>
         <input
           aria-label={label}
-          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          onInput={(event) => onChange(event.currentTarget.value)}
           type="color"
           value={pickerValue}
         />
@@ -56,6 +59,7 @@ function SimulationColorControl({
             aria-label={`Set ${label} to ${preset.label}`}
             aria-pressed={value === preset.value}
             className="simulation-color-swatch"
+            disabled={disabled}
             key={preset.value}
             onClick={() => onChange(preset.value)}
             style={{ "--simulation-swatch-color": preset.value } as CSSProperties}
@@ -63,9 +67,16 @@ function SimulationColorControl({
             type="button"
           />
         ))}
-        <Button onClick={() => onChange(null)} type="button" variant="ghost">
-          Use theme color
-        </Button>
+        <span aria-hidden="true" className="simulation-color-separator" />
+        <button
+          aria-label={`Use theme ${label}`}
+          aria-pressed={value === null}
+          className="simulation-color-swatch is-theme-color"
+          disabled={disabled}
+          onClick={() => onChange(null)}
+          title="Use theme color"
+          type="button"
+        />
       </div>
     </div>
   );
@@ -301,6 +312,9 @@ function SiteEditorCard({
               <ResolvedIcon aria-label={resolvedIconOption.label} role="img" size={16} strokeWidth={1.8} />
             </span>
           </div>
+          {form.activeSimulationSiteId ? (
+            <StaticField label="Site icon color" value={form.activeSiteIconColor ?? "Theme color"} />
+          ) : null}
           <div className="beam-visualizer-field-group">
             <StaticField label="Antenna (m)" value={form.antennaDraft} />
             <StaticField label="Tx power (dBm)" value={form.txPowerDraft} />
@@ -386,6 +400,18 @@ function SiteEditorCard({
             </div>
           </FloatingPopover>
         </div>
+
+        {form.activeSimulationSiteId ? (
+          <div className="simulation-site-color-control">
+            <SimulationColorControl
+              disabled={!form.canEditActiveSimulationAppearance}
+              label="Site icon color"
+              onChange={form.setActiveSiteIconColor}
+              value={form.activeSiteIconColor}
+            />
+            <p className="field-help">Applies to this Simulation only.</p>
+          </div>
+        ) : null}
 
         <label className="field-grid">
           <span>Description</span>
@@ -844,7 +870,6 @@ function SimulationEditorCard({
           <StaticField label="Name" value={form.nameDraft} />
           <StaticField label="Description" value={form.descriptionDraft} />
           <StaticField label="Visibility" value={form.accessVisibility} />
-          <StaticField label="Link colors" value={form.simulationLinkColorMode === "auto" ? "Auto" : "User-selected"} />
           <div className="simulation-settings-block">
             <div className="simulation-settings-header">
               <span>Simulation settings</span>
@@ -888,40 +913,6 @@ function SimulationEditorCard({
           ownerUserId={form.ownerUserId}
           visibility={form.accessVisibility}
         />
-        <section className="simulation-appearance-section" aria-label="Appearance">
-          <div className="simulation-settings-header">
-            <span>Appearance</span>
-          </div>
-          <div className="chip-group" role="group" aria-label="Link color mode">
-            <ActionButton
-              aria-label="User-selected link colors"
-              aria-pressed={form.simulationLinkColorMode === "manual"}
-              onClick={() => form.setSimulationLinkColorMode("manual")}
-              type="button"
-            >
-              User-selected
-            </ActionButton>
-            <ActionButton
-              aria-label="Auto link colors"
-              aria-pressed={form.simulationLinkColorMode === "auto"}
-              onClick={() => form.setSimulationLinkColorMode("auto")}
-              type="button"
-            >
-              Auto
-            </ActionButton>
-          </div>
-          <p className="field-help">
-            Auto uses the Path Profile pass/fail and terrain-obstruction colors for each Link.
-          </p>
-          {form.simulationAppearanceSites.map((site) => (
-            <SimulationColorControl
-              key={site.id}
-              label={`${site.name} icon color`}
-              onChange={(value) => form.setSimulationSiteIconColor(site.id, value)}
-              value={form.simulationSiteIconColors[site.id] ?? null}
-            />
-          ))}
-        </section>
         <div className="simulation-settings-block">
           <div className="simulation-settings-header">
             <span>Simulation settings</span>

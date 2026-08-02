@@ -21,8 +21,6 @@
   --state-pass-blocked: var(--warning);
   --state-fail-clear: color-mix(in srgb, var(--warning) 45%, var(--danger));
   --state-fail-blocked: var(--danger);
-  --map-contrast-dark: #000000;
-  --map-contrast-light: #ffffff;
   --panel-shell-divider: color-mix(in srgb, var(--border) 84%, transparent);
   --panel-header-row-gap: 10px;
   --panel-header-row-min-height: 34px;
@@ -682,16 +680,10 @@ button {
   margin: 0;
 }
 
-.simulation-appearance-section,
-.simulation-color-field {
+.simulation-color-field,
+.simulation-site-color-control {
   display: grid;
   gap: 8px;
-}
-
-.simulation-appearance-section {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
 }
 
 .simulation-color-presets {
@@ -714,6 +706,24 @@ button {
 
 .simulation-color-swatch[aria-pressed="true"] {
   box-shadow: 0 0 0 2px var(--selection);
+}
+
+.simulation-color-swatch.is-theme-color {
+  border-color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.simulation-color-separator {
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
+.simulation-color-swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .simulation-color-field input[type="color"] {
@@ -2415,6 +2425,11 @@ button {
   box-shadow: none;
 }
 
+.map-link-color-controls {
+  padding-top: 4px;
+  border-top: 1px solid var(--panel-shell-divider);
+}
+
 .map-calculation-toggle.is-on,
 .map-calculation-action.is-start {
   color: var(--success);
@@ -2744,12 +2759,6 @@ button {
 
 .map-site-icon {
   flex: 0 0 auto;
-}
-
-.map-site-icon.has-custom-color {
-  filter:
-    drop-shadow(0 0 1px var(--map-contrast-light))
-    drop-shadow(0 0 1.5px var(--map-contrast-dark));
 }
 
 .map-site-surface:not(.is-muted) {
