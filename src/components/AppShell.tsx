@@ -2317,13 +2317,15 @@ export function AppShell() {
           onClose={closeLibrary}
           suspended={mapEditor?.origin?.kind === "library"}
         >
-          <LibraryPanel
-            initialTab={libraryRequest.tab}
-            isMobile={isMobileViewport}
-            onClose={closeLibrary}
-            onOpenUserProfile={(userId, anchor) => setProfileTarget({ anchor, userId })}
-            readOnly={!canPersistWorkspace}
-          />
+          <div className="library-manager-card settings-panel-wrapper library-panel-wrapper">
+            <LibraryPanel
+              initialTab={libraryRequest.tab}
+              isMobile={isMobileViewport}
+              onClose={closeLibrary}
+              onOpenUserProfile={(userId, anchor) => setProfileTarget({ anchor, userId })}
+              readOnly={!canPersistWorkspace}
+            />
+          </div>
         </ModalOverlay>
       ) : null}
       {showShareModal ? (

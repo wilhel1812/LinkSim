@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Filter } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Filter, Menu, X } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -20,6 +20,7 @@ import { ModalOverlay } from "./ModalOverlay";
 import { Badge } from "./ui/Badge";
 import { FloatingPopover } from "./ui/FloatingPopover";
 import { Surface } from "./ui/Surface";
+import { SettingsNav, type SettingsNavItem } from "./settings/SettingsNav";
 
 const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
 const SIMULATION_LIBRARY_FILTERS_KEY = "rmw-simulation-library-filters-v1";
@@ -104,11 +105,17 @@ export function LibraryPanel({
   );
   const [filterDraft, setFilterDraft] = useState<LibraryFilterState | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(true);
   const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(new Set());
   const [deleteSelection, setDeleteSelection] = useState<string[] | null>(null);
   const filterTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const scrollPositionsRef = useRef<Record<LibraryTab, number>>({ sites: 0, simulations: 0 });
 
-  useEffect(() => setActiveTab(initialTab), [initialTab]);
+  useEffect(() => {
+    setActiveTab(initialTab);
+    setMobileDetailOpen(true);
+  }, [initialTab]);
   useEffect(() => persistLibraryFilterState(SITE_LIBRARY_FILTERS_KEY, siteFilters), [siteFilters]);
   useEffect(
     () => persistLibraryFilterState(SIMULATION_LIBRARY_FILTERS_KEY, simulationFilters),
@@ -117,6 +124,13 @@ export function LibraryPanel({
 
   const currentUserId = currentUser?.id ?? null;
   const activeFilters = activeTab === "sites" ? siteFilters : simulationFilters;
+  const sectionItems = useMemo<SettingsNavItem<LibraryTab>[]>(
+    () => [
+      { id: "sites", label: "Sites", description: "Saved locations and radio details" },
+      { id: "simulations", label: "Simulations", description: "Saved workspaces and scenarios" },
+    ],
+    [],
+  );
   const setActiveFilters = (next: LibraryFilterState) => {
     if (activeTab === "sites") setSiteFilters(next);
     else setSimulationFilters(next);
@@ -167,6 +181,25 @@ export function LibraryPanel({
     setFiltersOpen(false);
     setFilterDraft(null);
   };
+  const rememberScrollPosition = () => {
+    if (listRef.current) scrollPositionsRef.current[activeTab] = listRef.current.scrollTop;
+  };
+  const selectSection = (section: LibraryTab) => {
+    rememberScrollPosition();
+    setActiveTab(section);
+    setMobileDetailOpen(true);
+    closeFilters();
+  };
+  const openSectionList = () => {
+    rememberScrollPosition();
+    setMobileDetailOpen(false);
+    closeFilters();
+  };
+
+  useLayoutEffect(() => {
+    if (!mobileDetailOpen || !listRef.current) return;
+    listRef.current.scrollTop = scrollPositionsRef.current[activeTab];
+  }, [activeTab, mobileDetailOpen]);
   const applyFilters = () => {
     if (filterDraft) setActiveFilters(filterDraft);
     closeFilters();
@@ -376,144 +409,155 @@ export function LibraryPanel({
     avatarUrl: resource.createdByAvatarUrl ?? "",
   });
 
+  const showSectionList = !isMobile || !mobileDetailOpen;
+  const showSectionDetail = !isMobile || mobileDetailOpen;
+  const activeSectionLabel = activeTab === "sites" ? "Sites" : "Simulations";
+
   return (
-    <Surface className="library-unified-card" variant="card">
-      <div className="library-manager-header library-unified-header">
-        <h2>Library</h2>
-        <InlineCloseIconButton onClick={onClose} />
-      </div>
-      <div aria-label="Library sections" className="library-tabs" role="tablist">
-        <button
-          aria-selected={activeTab === "sites"}
-          className={activeTab === "sites" ? "is-active" : ""}
-          onClick={() => {
-            setActiveTab("sites");
-            closeFilters();
-          }}
-          role="tab"
-          type="button"
-        >
-          Sites
-        </button>
-        <button
-          aria-selected={activeTab === "simulations"}
-          className={activeTab === "simulations" ? "is-active" : ""}
-          onClick={() => {
-            setActiveTab("simulations");
-            closeFilters();
-          }}
-          role="tab"
-          type="button"
-        >
-          Simulations
-        </button>
-      </div>
-      <div className="library-search-row">
-        <input
-          aria-label={`Search ${activeTab === "sites" ? "Sites" : "Simulations"}`}
-          onChange={(event) => setActiveFilters({ ...activeFilters, searchQuery: event.target.value })}
-          placeholder={activeTab === "sites" ? "Search by name or coordinates" : "Search Simulations"}
-          role="searchbox"
-          type="search"
-          value={activeFilters.searchQuery}
-        />
-        <ActionButton
-          aria-expanded={filtersOpen}
-          aria-label={`Filter and sort ${activeTab === "sites" ? "Sites" : "Simulations"}${filterCount ? `, active` : ""}`}
-          onClick={filtersOpen ? closeFilters : openFilters}
-          ref={filterTriggerRef}
-          type="button"
-        >
-          <Filter aria-hidden="true" size={16} strokeWidth={1.8} />
-          Filter and sort{filterCount ? " · Active" : ""}
-        </ActionButton>
-      </div>
-      {isMobile ? (
-        filtersOpen ? (
-          <ModalOverlay
-            aria-label={`Filter and sort ${activeTab === "sites" ? "Sites" : "Simulations"}`}
-            className="library-filter-sheet-overlay"
-            onClose={closeFilters}
-            tier="raised"
-          >
-            <Surface className="library-filter-sheet" variant="card">
-              <div className="library-manager-header">
-                <h2>Filter and sort</h2>
-                <InlineCloseIconButton onClick={closeFilters} />
-              </div>
-              {filterPanel}
-            </Surface>
-          </ModalOverlay>
-        ) : null
-      ) : (
-        <FloatingPopover
-          className="library-filter-floating"
-          estimatedHeight={520}
-          estimatedWidth={360}
-          onClose={closeFilters}
-          open={filtersOpen}
-          triggerRef={filterTriggerRef}
-        >
-          {filterPanel}
-        </FloatingPopover>
-      )}
-
-      <div className="library-tab-actions">
-        {activeTab === "sites" ? (
-          <ActionButton onClick={(event) => openNewSite(event.currentTarget)} type="button">New Site</ActionButton>
-        ) : (
-          <>
-            <ActionButton onClick={(event) => openNewSimulation(event.currentTarget)} type="button">
-              New Simulation
-            </ActionButton>
-            <ActionButton onClick={(event) => openSimulationCopy(event.currentTarget)} type="button">
-              Save a copy
-            </ActionButton>
-          </>
-        )}
-      </div>
-
-      {!isOnline ? <p className="field-help library-status">Offline: showing cached Library items.</p> : null}
-      {syncErrorMessage ? <p className="field-help warning-text library-status">{syncErrorMessage}</p> : null}
-
-      {activeTab === "sites" && !isMobile ? (
-        <div className="library-bulk-toolbar">
-          <ActionButton
-            onClick={() => setSelectedSiteIds(new Set(filteredSites.map((entry) => entry.id)))}
-            type="button"
-          >
-            Select filtered ({filteredSites.length})
-          </ActionButton>
-          <ActionButton onClick={() => setSelectedSiteIds(new Set())} type="button">Clear selection</ActionButton>
-          <ActionButton
-            disabled={!selectedSiteIds.size || !canAddToActiveSimulation}
-            onClick={() => {
-              insertSitesFromLibrary(Array.from(selectedSiteIds));
-              setSelectedSiteIds(new Set());
-              onClose();
-            }}
-            type="button"
-          >
-            Add selected ({selectedSiteIds.size})
-          </ActionButton>
-          <ActionButton
-            disabled={
-              !selectedSiteIds.size ||
-              Array.from(selectedSiteIds).some((id) => {
-                const entry = siteLibrary.find((candidate) => candidate.id === id);
-                return !entry || !canEditResource(entry, currentUserId);
-              })
-            }
-            onClick={() => setDeleteSelection(Array.from(selectedSiteIds))}
-            type="button"
-            variant="danger"
-          >
-            Delete selected ({selectedSiteIds.size})
-          </ActionButton>
+    <div className="settings-panel library-panel">
+      <header className="settings-panel-header">
+        <div className="settings-panel-header-lead">
+          {isMobile && mobileDetailOpen ? (
+            <button
+              aria-label="Open Library sections"
+              className="settings-panel-menu"
+              onClick={openSectionList}
+              type="button"
+            >
+              <Menu aria-hidden="true" size={20} strokeWidth={2} />
+            </button>
+          ) : null}
+          <h2 className="settings-panel-title">
+            {isMobile && mobileDetailOpen ? activeSectionLabel : "Library"}
+          </h2>
         </div>
-      ) : null}
+        <button
+          aria-label="Close Library"
+          className="settings-panel-close"
+          onClick={onClose}
+          type="button"
+        >
+          <X aria-hidden="true" size={20} strokeWidth={2} />
+        </button>
+      </header>
 
-      <div className="library-unified-list">
+      <div className="settings-panel-body">
+        {showSectionList ? (
+          <aside className="settings-panel-sidebar library-panel-sidebar">
+            <SettingsNav
+              activeSection={activeTab}
+              ariaLabel="Library sections"
+              items={sectionItems}
+              layout={isMobile ? "list" : "sidebar"}
+              onSelect={selectSection}
+            />
+          </aside>
+        ) : null}
+        {showSectionDetail ? (
+          <main className="settings-panel-content library-panel-content">
+            <div className="library-search-row">
+              <input
+                aria-label={`Search ${activeSectionLabel}`}
+                onChange={(event) => setActiveFilters({ ...activeFilters, searchQuery: event.target.value })}
+                placeholder={activeTab === "sites" ? "Search by name or coordinates" : "Search Simulations"}
+                role="searchbox"
+                type="search"
+                value={activeFilters.searchQuery}
+              />
+              <ActionButton
+                aria-expanded={filtersOpen}
+                aria-label={`Filter and sort ${activeSectionLabel}${filterCount ? `, active` : ""}`}
+                onClick={filtersOpen ? closeFilters : openFilters}
+                ref={filterTriggerRef}
+                type="button"
+              >
+                <Filter aria-hidden="true" size={16} strokeWidth={1.8} />
+                Filter and sort{filterCount ? " · Active" : ""}
+              </ActionButton>
+            </div>
+            {isMobile ? (
+              filtersOpen ? (
+                <ModalOverlay
+                  aria-label={`Filter and sort ${activeSectionLabel}`}
+                  className="library-filter-sheet-overlay"
+                  onClose={closeFilters}
+                  tier="raised"
+                >
+                  <Surface className="library-filter-sheet" variant="card">
+                    <div className="library-manager-header">
+                      <h2>Filter and sort</h2>
+                      <InlineCloseIconButton onClick={closeFilters} />
+                    </div>
+                    {filterPanel}
+                  </Surface>
+                </ModalOverlay>
+              ) : null
+            ) : (
+              <FloatingPopover
+                className="library-filter-floating"
+                estimatedHeight={520}
+                estimatedWidth={360}
+                onClose={closeFilters}
+                open={filtersOpen}
+                triggerRef={filterTriggerRef}
+              >
+                {filterPanel}
+              </FloatingPopover>
+            )}
+
+            <div className="library-tab-actions">
+              {activeTab === "sites" ? (
+                <ActionButton onClick={(event) => openNewSite(event.currentTarget)} type="button">New Site</ActionButton>
+              ) : (
+                <>
+                  <ActionButton onClick={(event) => openNewSimulation(event.currentTarget)} type="button">
+                    New Simulation
+                  </ActionButton>
+                  <ActionButton onClick={(event) => openSimulationCopy(event.currentTarget)} type="button">
+                    Save a copy
+                  </ActionButton>
+                </>
+              )}
+            </div>
+
+            {!isOnline ? <p className="field-help library-status">Offline: showing cached Library items.</p> : null}
+            {syncErrorMessage ? <p className="field-help warning-text library-status">{syncErrorMessage}</p> : null}
+
+            {activeTab === "sites" && !isMobile && selectedSiteIds.size > 0 ? (
+              <div className="library-bulk-toolbar">
+                <ActionButton
+                  onClick={() => setSelectedSiteIds(new Set(filteredSites.map((entry) => entry.id)))}
+                  type="button"
+                >
+                  Select filtered ({filteredSites.length})
+                </ActionButton>
+                <ActionButton onClick={() => setSelectedSiteIds(new Set())} type="button">Clear selection</ActionButton>
+                <ActionButton
+                  disabled={!canAddToActiveSimulation}
+                  onClick={() => {
+                    insertSitesFromLibrary(Array.from(selectedSiteIds));
+                    setSelectedSiteIds(new Set());
+                    onClose();
+                  }}
+                  type="button"
+                >
+                  Add selected ({selectedSiteIds.size})
+                </ActionButton>
+                <ActionButton
+                  disabled={Array.from(selectedSiteIds).some((id) => {
+                    const entry = siteLibrary.find((candidate) => candidate.id === id);
+                    return !entry || !canEditResource(entry, currentUserId);
+                  })}
+                  onClick={() => setDeleteSelection(Array.from(selectedSiteIds))}
+                  type="button"
+                  variant="danger"
+                >
+                  Delete selected ({selectedSiteIds.size})
+                </ActionButton>
+              </div>
+            ) : null}
+
+            <div className="library-unified-list" ref={listRef}>
         {isInitializing && !(activeTab === "sites" ? siteLibrary.length : simulationPresets.length) ? (
           <p className="field-help">Loading Library…</p>
         ) : null}
@@ -527,6 +571,7 @@ export function LibraryPanel({
                     <input
                       aria-label={`Select ${entry.name}`}
                       checked={selectedSiteIds.has(entry.id)}
+                      className="library-site-select"
                       onChange={() =>
                         setSelectedSiteIds((current) => {
                           const next = new Set(current);
@@ -538,22 +583,15 @@ export function LibraryPanel({
                       type="checkbox"
                     />
                   ) : null}
-                  <button
-                    aria-label={`Open Site details: ${entry.name}`}
-                    className="library-item-details"
-                    onClick={(event) => openSiteDetails(entry, event.currentTarget)}
-                    type="button"
+                  <div
+                    className="library-item-copy"
                   >
                     <strong>{entry.name}</strong>
                     <span>{entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)}</span>
-                  </button>
+                  </div>
                   <div className="library-item-meta">
                     <Badge variant={visibility as "private" | "public" | "shared"}>{visibility}</Badge>
-                    {entry.sourceMeta?.sourceType === "mqtt-feed" ? (
-                      <Badge variant="mqtt">MQTT</Badge>
-                    ) : (
-                      <span className="library-source-label">Manual</span>
-                    )}
+                    {entry.sourceMeta?.sourceType === "mqtt-feed" ? <Badge variant="mqtt">MQTT</Badge> : null}
                     {entry.ownerUserId && onOpenUserProfile ? (
                       <button
                         aria-label={`Open owner profile: ${owner.name}`}
@@ -592,14 +630,25 @@ export function LibraryPanel({
                       ),
                     )}
                   </div>
-                  <ActionButton
-                    disabled={!canAddToActiveSimulation}
-                    onClick={() => closeAndAddSite(entry.id)}
-                    title={canAddToActiveSimulation ? "Add to Simulation" : "Open an editable Simulation to add this Site"}
-                    type="button"
-                  >
-                    Add
-                  </ActionButton>
+                  <div className="library-item-actions">
+                    <ActionButton
+                      aria-label={`Details for ${entry.name}`}
+                      onClick={(event) => openSiteDetails(entry, event.currentTarget)}
+                      type="button"
+                      variant="ghost"
+                    >
+                      Details
+                    </ActionButton>
+                    <ActionButton
+                      aria-label={`Add ${entry.name}`}
+                      disabled={!canAddToActiveSimulation}
+                      onClick={() => closeAndAddSite(entry.id)}
+                      title={canAddToActiveSimulation ? "Add to Simulation" : "Open an editable Simulation to add this Site"}
+                      type="button"
+                    >
+                      Add
+                    </ActionButton>
+                  </div>
                 </article>
               );
             })
@@ -608,15 +657,12 @@ export function LibraryPanel({
               const visibility = toAccessVisibility(preset.visibility);
               return (
                 <article className="library-unified-item library-simulation-item" key={preset.id}>
-                  <button
-                    aria-label={`Open Simulation details: ${preset.name}`}
-                    className="library-item-details"
-                    onClick={(event) => openSimulationDetails(preset, event.currentTarget)}
-                    type="button"
+                  <div
+                    className="library-item-copy"
                   >
                     <strong>{preset.name}</strong>
                     <span>Updated {formatDate(preset.updatedAt)}</span>
-                  </button>
+                  </div>
                   <div className="library-item-meta">
                     <Badge variant={visibility as "private" | "public" | "shared"}>{visibility}</Badge>
                     {preset.ownerUserId && onOpenUserProfile ? (
@@ -635,7 +681,23 @@ export function LibraryPanel({
                       </span>
                     )}
                   </div>
-                  <ActionButton onClick={() => closeAndLoadSimulation(preset.id)} type="button">Load</ActionButton>
+                  <div className="library-item-actions">
+                    <ActionButton
+                      aria-label={`Details for ${preset.name}`}
+                      onClick={(event) => openSimulationDetails(preset, event.currentTarget)}
+                      type="button"
+                      variant="ghost"
+                    >
+                      Details
+                    </ActionButton>
+                    <ActionButton
+                      aria-label={`Open ${preset.name}`}
+                      onClick={() => closeAndLoadSimulation(preset.id)}
+                      type="button"
+                    >
+                      Open
+                    </ActionButton>
+                  </div>
                 </article>
               );
             })}
@@ -651,6 +713,9 @@ export function LibraryPanel({
         {!isInitializing && activeTab === "simulations" && simulationPresets.length > 0 && !filteredSimulations.length ? (
           <p className="field-help">No Simulations match the current search and filters.</p>
         ) : null}
+            </div>
+          </main>
+        ) : null}
       </div>
 
       {deleteSelection ? (
@@ -665,6 +730,6 @@ export function LibraryPanel({
           title="Delete Sites"
         />
       ) : null}
-    </Surface>
+    </div>
   );
 }

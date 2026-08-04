@@ -87,36 +87,91 @@ describe("LibraryPanel", () => {
     });
   });
 
-  it("keeps search visible and remembers separate search state for each tab", async () => {
+  it("keeps search visible and remembers separate search state for each section", async () => {
     const user = userEvent.setup();
     render(<LibraryPanel initialTab="sites" isMobile={false} onClose={vi.fn()} readOnly={false} />);
 
-    const sitesTab = screen.getByRole("tab", { name: "Sites" });
-    const simulationsTab = screen.getByRole("tab", { name: "Simulations" });
-    expect(sitesTab).toHaveAttribute("aria-selected", "true");
+    const sectionNav = screen.getByRole("navigation", { name: "Library sections" });
+    const sitesSection = within(sectionNav).getByRole("button", { name: "Sites" });
+    const simulationsSection = within(sectionNav).getByRole("button", { name: "Simulations" });
+    expect(sitesSection).toHaveAttribute("aria-current", "page");
 
     const search = screen.getByRole("searchbox", { name: "Search Sites" });
     await user.type(search, "ridge");
-    await user.click(simulationsTab);
+    await user.click(simulationsSection);
     const simulationSearch = screen.getByRole("searchbox", { name: "Search Simulations" });
     expect(simulationSearch).toHaveValue("");
     await user.type(simulationSearch, "valley");
 
-    await user.click(sitesTab);
+    await user.click(sitesSection);
     expect(screen.getByRole("searchbox", { name: "Search Sites" })).toHaveValue("ridge");
   });
 
-  it("opens item details from the item body and keeps Add as a separate action", async () => {
+  it("uses the Settings-style mobile section list without losing section state", async () => {
     const user = userEvent.setup();
     render(<LibraryPanel initialTab="sites" isMobile onClose={vi.fn()} readOnly={false} />);
 
-    await user.click(screen.getByRole("button", { name: "Open Site details: Ridge Site" }));
+    const search = screen.getByRole("searchbox", { name: "Search Sites" });
+    await user.type(search, "ridge");
+    await user.click(screen.getByRole("button", { name: "Open Library sections" }));
+
+    expect(screen.queryByRole("searchbox", { name: "Search Sites" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Simulations/i }));
+    expect(screen.getByRole("searchbox", { name: "Search Simulations" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Open Library sections" }));
+    await user.click(screen.getByRole("button", { name: /Sites/i }));
+    expect(screen.getByRole("searchbox", { name: "Search Sites" })).toHaveValue("ridge");
+  });
+
+  it("restores each section's results scroll position after using the mobile menu", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <LibraryPanel initialTab="sites" isMobile onClose={vi.fn()} readOnly={false} />,
+    );
+
+    const sitesList = container.querySelector<HTMLElement>(".library-unified-list");
+    expect(sitesList).not.toBeNull();
+    if (!sitesList) return;
+    sitesList.scrollTop = 120;
+    await user.click(screen.getByRole("button", { name: "Open Library sections" }));
+    await user.click(screen.getByRole("button", { name: /Simulations/i }));
+
+    const simulationsList = container.querySelector<HTMLElement>(".library-unified-list");
+    expect(simulationsList).not.toBeNull();
+    if (!simulationsList) return;
+    simulationsList.scrollTop = 48;
+    await user.click(screen.getByRole("button", { name: "Open Library sections" }));
+    await user.click(screen.getByRole("button", { name: /Sites/i }));
+
+    expect(container.querySelector<HTMLElement>(".library-unified-list")?.scrollTop).toBe(120);
+  });
+
+  it("opens Site details from an explicit button and keeps Add separate", async () => {
+    const user = userEvent.setup();
+    render(<LibraryPanel initialTab="sites" isMobile onClose={vi.fn()} readOnly={false} />);
+
+    expect(screen.queryByRole("button", { name: "Open Site details: Ridge Site" })).not.toBeInTheDocument();
+    expect(screen.getByText("Ridge Site").closest("button")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Details for Ridge Site" }));
     expect(useAppStore.getState().mapEditor).toMatchObject({
       kind: "site",
       resourceId: "site-library-1",
       origin: { kind: "library", tab: "sites" },
     });
     expect(useAppStore.getState().libraryRequest).toEqual({ tab: "sites" });
+  });
+
+  it("uses explicit Details and Open actions for Simulations", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<LibraryPanel initialTab="simulations" isMobile onClose={onClose} readOnly={false} />);
+
+    expect(screen.getByRole("button", { name: "Details for Valley Plan" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open Valley Plan" }));
+
+    expect(useAppStore.getState().selectedScenarioId).toBe("sim-1");
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("preserves Save a copy in the Simulations tab", async () => {
@@ -135,7 +190,8 @@ describe("LibraryPanel", () => {
     });
   });
 
-  it("hides Site bulk selection on mobile and keeps it on desktop", () => {
+  it("hides Site bulk selection on mobile and reveals desktop actions after selection", async () => {
+    const user = userEvent.setup();
     const mobile = render(
       <LibraryPanel initialTab="sites" isMobile onClose={vi.fn()} readOnly={false} />,
     );
@@ -144,8 +200,36 @@ describe("LibraryPanel", () => {
     mobile.unmount();
 
     render(<LibraryPanel initialTab="sites" isMobile={false} onClose={vi.fn()} readOnly={false} />);
-    expect(screen.getByRole("checkbox", { name: "Select Ridge Site" })).toBeInTheDocument();
+    const checkbox = screen.getByRole("checkbox", { name: "Select Ridge Site" });
+    expect(checkbox).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Select filtered/i })).not.toBeInTheDocument();
+
+    await user.click(checkbox);
     expect(screen.getByRole("button", { name: /Select filtered/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.queryByRole("button", { name: /Select filtered/i })).not.toBeInTheDocument();
+  });
+
+  it("omits Manual item labels while retaining MQTT badges and source filtering", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({
+      siteLibrary: [
+        ...useAppStore.getState().siteLibrary,
+        {
+          ...useAppStore.getState().siteLibrary[0],
+          id: "site-library-2",
+          name: "MQTT Ridge",
+          sourceMeta: { sourceType: "mqtt-feed", sourceUrl: "mqtt://feed-1" },
+        },
+      ],
+    });
+    render(<LibraryPanel initialTab="sites" isMobile onClose={vi.fn()} readOnly={false} />);
+
+    expect(screen.queryByText("Manual")).not.toBeInTheDocument();
+    expect(screen.getByText("MQTT")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /Filter and sort Sites/i }));
+    expect(within(screen.getByRole("dialog", { name: "Filter and sort Sites" })).getByText("Manual")).toBeVisible();
   });
 
   it("keeps search outside the advanced filter panel", async () => {
