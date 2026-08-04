@@ -635,7 +635,6 @@ export function LibraryPanel({
                       aria-label={`Details for ${entry.name}`}
                       onClick={(event) => openSiteDetails(entry, event.currentTarget)}
                       type="button"
-                      variant="ghost"
                     >
                       Details
                     </ActionButton>
@@ -686,7 +685,6 @@ export function LibraryPanel({
                       aria-label={`Details for ${preset.name}`}
                       onClick={(event) => openSimulationDetails(preset, event.currentTarget)}
                       type="button"
-                      variant="ghost"
                     >
                       Details
                     </ActionButton>
