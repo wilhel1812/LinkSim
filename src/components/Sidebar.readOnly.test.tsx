@@ -218,28 +218,14 @@ describe("Sidebar read-only simulation site actions", () => {
     });
   });
 
-  it("opens the same copy flow from the simulation library", async () => {
+  it("routes the Simulation Library entry to the unified Library", async () => {
     render(<Sidebar readOnly />);
 
     const simulationSection = screen.getByText(/Simulation:/).closest("section");
     expect(simulationSection).not.toBeNull();
     await userEvent.click(within(simulationSection as HTMLElement).getByRole("button", { name: "Library" }));
 
-    const dialog = screen.getByRole("dialog", { name: "Simulation Library" });
-    await userEvent.click(within(dialog).getByRole("button", { name: "Save a copy" }));
-
-    expect(useAppStore.getState().mapEditor).toMatchObject({
-      kind: "simulation",
-      resourceId: null,
-      isNew: true,
-      label: "Save a copy",
-      simulationSeed: {
-        copyCurrentSimulation: true,
-        name: "Alpha Simulation Copy",
-        description: "Shared simulation",
-        autoPropagationEnvironment: true,
-      },
-    });
+    expect(useAppStore.getState().libraryRequest).toEqual({ tab: "simulations" });
   });
 
   it("does not expose selected-site editing when the simulation is read-only", () => {

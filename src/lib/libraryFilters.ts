@@ -1,7 +1,7 @@
 export type LibraryFilterRole = "owned" | "collaborator" | "editable" | "viewOnly";
 export type LibraryFilterVisibility = "private" | "sharedPublic";
 export type LibraryFilterSource = "manual" | "mqtt";
-export type LibraryFilterSort = "nameAsc";
+export type LibraryFilterSort = "nameAsc" | "recentDesc";
 
 export interface LibraryFilterState {
   searchQuery: string;
@@ -13,13 +13,15 @@ export interface LibraryFilterState {
 
 export interface FilterableLibraryItem {
   name: string;
+  createdAt?: string;
+  updatedAt?: string;
   ownerUserId?: string;
   effectiveRole?: "owner" | "admin" | "editor" | "viewer";
   visibility?: "private" | "public" | "shared" | "public_read" | "public_write";
 }
 
-type PersistedLibraryFilterStateV1 = {
-  version: 1;
+type PersistedLibraryFilterState = {
+  version: 1 | 2;
   searchQuery: string;
   roleFilters: LibraryFilterRole[];
   visibilityFilters: LibraryFilterVisibility[];
@@ -77,7 +79,8 @@ const sanitizeSourceFilters = (value: unknown): LibraryFilterSource[] => {
   return dedupeInOrder(value.filter((entry): entry is LibraryFilterSource => sourceSet.has(entry as LibraryFilterSource)));
 };
 
-const sanitizeSort = (value: unknown): LibraryFilterSort => (value === "nameAsc" ? "nameAsc" : "nameAsc");
+const sanitizeSort = (value: unknown): LibraryFilterSort =>
+  value === "recentDesc" ? "recentDesc" : "nameAsc";
 
 export const parsePersistedLibraryFilterState = (
   raw: string | null,
@@ -85,9 +88,9 @@ export const parsePersistedLibraryFilterState = (
 ): LibraryFilterState => {
   if (!raw) return fallback;
   try {
-    const parsed = JSON.parse(raw) as Partial<PersistedLibraryFilterStateV1>;
+    const parsed = JSON.parse(raw) as Partial<PersistedLibraryFilterState>;
     if (!parsed || typeof parsed !== "object") return fallback;
-    if (parsed.version !== 1) return fallback;
+    if (parsed.version !== 1 && parsed.version !== 2) return fallback;
     return {
       searchQuery: sanitizeSearchQuery(parsed.searchQuery),
       roleFilters: sanitizeRoleFilters(parsed.roleFilters),
@@ -102,13 +105,13 @@ export const parsePersistedLibraryFilterState = (
 
 export const serializeLibraryFilterState = (state: LibraryFilterState): string =>
   JSON.stringify({
-    version: 1,
+    version: 2,
     searchQuery: state.searchQuery,
     roleFilters: sanitizeRoleFilters(state.roleFilters),
     visibilityFilters: sanitizeVisibilityFilters(state.visibilityFilters),
     sourceFilters: sanitizeSourceFilters(state.sourceFilters),
     sort: sanitizeSort(state.sort),
-  } satisfies PersistedLibraryFilterStateV1);
+  } satisfies PersistedLibraryFilterState);
 
 const isEditable = (item: FilterableLibraryItem, currentUserId: string | null): boolean => {
   if (!currentUserId) return false;
@@ -176,6 +179,14 @@ export const filterAndSortLibraryItems = <T extends FilterableLibraryItem>(
 
   if (filters.sort === "nameAsc") {
     return filtered.slice().sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  if (filters.sort === "recentDesc") {
+    return filtered.slice().sort((a, b) => {
+      const aTimestamp = Date.parse(a.updatedAt ?? a.createdAt ?? "") || 0;
+      const bTimestamp = Date.parse(b.updatedAt ?? b.createdAt ?? "") || 0;
+      return bTimestamp - aTimestamp || a.name.localeCompare(b.name);
+    });
   }
 
   return filtered;

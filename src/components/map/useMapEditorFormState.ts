@@ -52,6 +52,7 @@ export function useMapEditorFormState() {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const mapEditorSiteDraft = useAppStore((state) => state.mapEditorSiteDraft);
   const closeMapEditor = useAppStore((state) => state.closeMapEditor);
+  const closeLibrary = useAppStore((state) => state.closeLibrary);
   const setMapEditorSiteDraft = useAppStore((state) => state.setMapEditorSiteDraft);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
@@ -454,6 +455,11 @@ export function useMapEditorFormState() {
   const canEditActiveSimulationAppearance = Boolean(
     currentUser?.id && activeSimulationPreset && ["owner", "editor", "admin"].includes(activeSimulationRole),
   );
+  const canAddToActiveSimulation = Boolean(
+    currentUser?.id &&
+      selectedScenarioId &&
+      (!activeSimulationPreset || ["owner", "editor", "admin"].includes(activeSimulationRole)),
+  );
   const resolveUserSummary = (
     userId: string | null | undefined,
     fallbackName: string | null | undefined,
@@ -619,7 +625,7 @@ export function useMapEditorFormState() {
   };
 
   // ─── Save handlers ─────────────────────────────────────────────────────────────
-  const handleSaveSite = (): boolean => {
+  const handleSaveSite = (options?: { insertIntoSimulation?: boolean; exitLibrary?: boolean }): boolean => {
     const trimmedName = nameDraft.trim();
     if (!trimmedName) {
       setStatus("Name is required.");
@@ -682,7 +688,7 @@ export function useMapEditorFormState() {
         if (sharedWith.length) {
           updateSiteLibraryEntry(createdId, { sharedWith });
         }
-        if (insertSiteAfterSave) {
+        if (options?.insertIntoSimulation ?? insertSiteAfterSave) {
           insertSiteFromLibrary(createdId);
         }
       } else if (mapEditor?.resourceId) {
@@ -701,6 +707,7 @@ export function useMapEditorFormState() {
           sharedWith,
         });
       }
+      if (options?.exitLibrary) closeLibrary();
       closeMapEditor();
       return true;
     } catch (error) {
@@ -745,6 +752,7 @@ export function useMapEditorFormState() {
             return false;
           }
           loadSimulationPreset(createdId);
+          if (mapEditor.origin?.kind === "library") closeLibrary();
           closeMapEditor();
           return true;
         }
@@ -772,6 +780,7 @@ export function useMapEditorFormState() {
           updateSimulationPresetEntry(createdId, { sharedWith });
         }
         loadSimulationPreset(createdId);
+        if (mapEditor.origin?.kind === "library") closeLibrary();
         closeMapEditor();
         return true;
       } catch (error) {
@@ -904,6 +913,7 @@ export function useMapEditorFormState() {
     siteMetadata,
     simulationMetadata,
     canWrite,
+    canAddToActiveSimulation,
     currentUser,
     // site
     latDraft,

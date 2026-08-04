@@ -21,6 +21,7 @@ import { AvatarBadge } from "../AvatarBadge";
 import { ModalOverlay } from "../ModalOverlay";
 import { FloatingPopover } from "../ui/FloatingPopover";
 import { UserProfilePopover, type UserProfilePopoverTarget } from "../UserProfilePopover";
+import { ConfirmActionModal } from "../ConfirmActionModal";
 import {
   getSiteIconOption,
   resolveSiteIconKey,
@@ -254,12 +255,14 @@ function SiteEditorCard({
   isNew,
   form,
   onClose,
+  onRequestDelete,
   onOpenChangeLog,
   onOpenUserProfile,
 }: {
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
+  onRequestDelete: () => void;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
   onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
 }) {
@@ -620,9 +623,28 @@ function SiteEditorCard({
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       <div className="chip-group">
-        {!isReadOnly ? (
-          <ActionButton onClick={form.handleSaveSite} type="button">
+        {!isReadOnly && isNew && mapEditor?.origin?.kind === "library" ? (
+          <>
+            <ActionButton onClick={() => form.handleSaveSite({ insertIntoSimulation: false })} type="button">
+              Save to Library
+            </ActionButton>
+            {form.canAddToActiveSimulation ? (
+              <ActionButton
+                onClick={() => form.handleSaveSite({ insertIntoSimulation: true, exitLibrary: true })}
+                type="button"
+              >
+                Save &amp; Add to Simulation
+              </ActionButton>
+            ) : null}
+          </>
+        ) : !isReadOnly ? (
+          <ActionButton onClick={() => form.handleSaveSite()} type="button">
             {isNew ? "Create Site" : "Save Site"}
+          </ActionButton>
+        ) : null}
+        {!isNew && !isReadOnly ? (
+          <ActionButton onClick={onRequestDelete} type="button" variant="danger">
+            Delete Site
           </ActionButton>
         ) : null}
         <ActionButton onClick={onClose} type="button">
@@ -821,12 +843,14 @@ function SimulationEditorCard({
   onClose,
   onOpenChangeLog,
   onOpenUserProfile,
+  onRequestDelete,
 }: {
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
   onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
+  onRequestDelete: () => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
@@ -1011,6 +1035,11 @@ function SimulationEditorCard({
             {isNew ? (isCopySimulation ? "Save a copy" : "Create Simulation") : "Save"}
           </ActionButton>
         ) : null}
+        {!isNew && !isReadOnly ? (
+          <ActionButton onClick={onRequestDelete} type="button" variant="danger">
+            Delete Simulation
+          </ActionButton>
+        ) : null}
         <ActionButton onClick={onClose} type="button">
           Cancel
         </ActionButton>
@@ -1036,6 +1065,8 @@ type MapEditorPanelProps = {
 export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const closeMapEditor = useAppStore((state) => state.closeMapEditor);
+  const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
+  const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const form = useMapEditorFormState();
 
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -1048,6 +1079,11 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
     changes: ResourceChange[];
     busy: boolean;
     status: string;
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    kind: "site" | "simulation";
+    resourceId: string;
+    label: string;
   } | null>(null);
 
   const openUserProfilePopup = (userId: string, anchor: HTMLElement) => {
@@ -1137,6 +1173,11 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
           onClose={closeMapEditor}
           onOpenChangeLog={openChangeLogPopup}
           onOpenUserProfile={openUserProfilePopup}
+          onRequestDelete={() => {
+            if (mapEditor.resourceId) {
+              setDeleteTarget({ kind: "site", resourceId: mapEditor.resourceId, label: mapEditor.label });
+            }
+          }}
         />
       );
     }
@@ -1151,11 +1192,34 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
           onClose={closeMapEditor}
           onOpenChangeLog={openChangeLogPopup}
           onOpenUserProfile={openUserProfilePopup}
+          onRequestDelete={() => {
+            if (mapEditor.resourceId) {
+              setDeleteTarget({ kind: "simulation", resourceId: mapEditor.resourceId, label: mapEditor.label });
+            }
+          }}
         />
       );
     }
     return null;
   })();
+
+  const deleteConfirmation = deleteTarget ? (
+    <ConfirmActionModal
+      message={
+        deleteTarget.kind === "site"
+          ? `Delete ${deleteTarget.label} from the Library? Referenced Simulation data will be detached but preserved.`
+          : `Delete ${deleteTarget.label} from the Library?${deleteTarget.resourceId === useAppStore.getState().selectedScenarioId ? " The active workspace will be cleared." : ""}`
+      }
+      onCancel={() => setDeleteTarget(null)}
+      onConfirm={() => {
+        if (deleteTarget.kind === "site") deleteSiteLibraryEntry(deleteTarget.resourceId);
+        else deleteSimulationPreset(deleteTarget.resourceId);
+        setDeleteTarget(null);
+        closeMapEditor();
+      }}
+      title={deleteTarget.kind === "site" ? "Delete Site" : "Delete Simulation"}
+    />
+  ) : null;
 
   if (isMobile) {
     return createPortal(
@@ -1176,6 +1240,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
           profileTarget={profileTarget}
           viewer={form.currentUser}
         />
+        {deleteConfirmation}
       </>,
       document.body,
     );
@@ -1205,6 +1270,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
         profileTarget={profileTarget}
         viewer={form.currentUser}
       />
+      {deleteConfirmation}
     </>,
     document.body,
   );

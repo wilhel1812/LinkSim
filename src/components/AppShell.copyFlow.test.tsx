@@ -75,7 +75,6 @@ vi.mock("./MapView", () => ({
   MapView: ({ inspectorActions }: { inspectorActions?: React.ReactNode }) => <div>{inspectorActions}</div>,
 }));
 vi.mock("./UserAdminPanel", () => ({ UserAdminPanel: () => null }));
-vi.mock("./SimulationLibraryPanel", () => ({ default: () => null }));
 vi.mock("./WelcomeModal", () => ({ default: () => null }));
 vi.mock("./OnboardingTutorialModal", () => ({ default: () => null }));
 vi.mock("./LinkProfileChart", () => ({ LinkProfileChart: () => null }));
