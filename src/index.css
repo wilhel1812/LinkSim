@@ -5034,7 +5034,7 @@ html.panorama-gesture-lock body {
 
 .library-unified-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 8px;
@@ -5044,21 +5044,13 @@ html.panorama-gesture-lock body {
 }
 
 .library-simulation-item {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .library-item-body {
   min-width: 0;
   display: grid;
   gap: 6px;
-}
-
-.library-item-header {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 
 .library-item-copy {
@@ -5078,16 +5070,13 @@ html.panorama-gesture-lock body {
 .library-item-meta {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 6px;
+  padding-left: 6px;
 }
 
-.library-item-header-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
-  flex-shrink: 0;
+.library-item-actions {
+  align-self: center;
 }
 
 .deleted-resource-badge {
@@ -5189,14 +5178,9 @@ html.panorama-gesture-lock body {
     height: 20px;
   }
 
-  .library-unified-item,
+  .library-site-item,
   .library-simulation-item {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .library-item-meta {
-    justify-content: flex-start;
-    padding-left: 6px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .library-filter-options {
