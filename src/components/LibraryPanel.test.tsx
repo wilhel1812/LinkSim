@@ -159,7 +159,8 @@ describe("LibraryPanel", () => {
     expect(addButton).toHaveClass("btn-icon");
     expect(detailsButton.querySelector("svg")).toBeInTheDocument();
     expect(addButton.querySelector("svg")).toBeInTheDocument();
-    expect(detailsButton.closest(".library-item-header-actions")).toBeInTheDocument();
+    const item = detailsButton.closest(".library-unified-item");
+    expect(detailsButton.closest(".library-item-actions")?.parentElement).toBe(item);
     expect(screen.queryByText("Details")).not.toBeInTheDocument();
     expect(screen.queryByText("Add")).not.toBeInTheDocument();
     await user.click(detailsButton);
@@ -180,7 +181,8 @@ describe("LibraryPanel", () => {
     const openButton = screen.getByRole("button", { name: "Open Simulation: Valley Plan" });
     expect(detailsButton).toHaveClass("btn-icon");
     expect(openButton).toHaveClass("btn-icon");
-    expect(detailsButton.closest(".library-item-header-actions")).toBeInTheDocument();
+    const item = detailsButton.closest(".library-unified-item");
+    expect(detailsButton.closest(".library-item-actions")?.parentElement).toBe(item);
     expect(screen.queryByText("Details")).not.toBeInTheDocument();
     expect(screen.queryByText("Open")).not.toBeInTheDocument();
     await user.click(openButton);
