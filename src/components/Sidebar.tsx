@@ -1,48 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CircleAlert, CircleMinus, Funnel, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
+import { CircleAlert, CircleMinus, Handshake, HatGlasses, Info, Pencil } from "lucide-react";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import { t } from "../i18n/locales";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { buildLabelForChannel } from "../lib/buildInfo";
 import { resolveBasemapSelection } from "../lib/basemaps";
 import { parseDeepLinkFromLocation } from "../lib/deepLink";
-import {
-  fetchCollaboratorDirectory,
-  updateUserRole,
-  type CollaboratorDirectoryUser,
-  type CloudUser,
-} from "../lib/cloudUser";
 import { toAccessVisibility } from "../lib/uiFormatting";
-import {
-  DEFAULT_LIBRARY_FILTER_STATE,
-  filterAndSortLibraryItems,
-  type LibraryFilterRole,
-  type LibraryFilterSource,
-  type LibraryFilterState,
-  type LibraryFilterVisibility,
-} from "../lib/libraryFilters";
-import {
-  effectiveSelection,
-  persistLibraryFilterState,
-  readLibraryFilterState,
-  selectionIsFiltered,
-  selectionLabel,
-  toggleValue,
-} from "../lib/libraryFilterUi";
 import { useAppStore } from "../store/appStore";
 import type { Site } from "../types/radio";
 import { siGithub, siMatrix } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ActionButton } from "./ActionButton";
-import { AvatarBadge } from "./AvatarBadge";
-import { InlineCloseIconButton } from "./InlineCloseIconButton";
-import { ModalOverlay } from "./ModalOverlay";
-import SimulationLibraryPanel from "./SimulationLibraryPanel";
+import { ConfirmActionModal } from "./ConfirmActionModal";
 import { Badge } from "./ui/Badge";
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { UserAdminPanel } from "./UserAdminPanel";
-import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfilePopover";
 
 const READ_ONLY_SIMULATION_SITE_HELP =
   "Read-only: you need edit permission to add or edit sites in this simulation.";
@@ -54,31 +28,8 @@ const PRIVATE_SITE_DISCLOSURE_TOOLTIP =
   "This Site is Private in the Library, but is visible to anyone who can access this Shared Simulation.";
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
-const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
-
 const hasDeepLinkSimulationInSearch = (search: string, pathname: string): boolean =>
   parseDeepLinkFromLocation({ search, pathname }).ok;
-
-const ROLE_FILTER_OPTIONS: Array<{ key: LibraryFilterRole; label: string }> = [
-  { key: "owned", label: "Owned" },
-  { key: "collaborator", label: "Collaborator" },
-  { key: "editable", label: "Editable" },
-  { key: "viewOnly", label: "View-only" },
-];
-
-const VISIBILITY_FILTER_OPTIONS: Array<{ key: LibraryFilterVisibility; label: string }> = [
-  { key: "private", label: "Private" },
-  { key: "sharedPublic", label: "Shared/Public" },
-];
-const SITE_SOURCE_FILTER_OPTIONS: Array<{ key: LibraryFilterSource; label: string }> = [
-  { key: "manual", label: "Manual" },
-  { key: "mqtt", label: "MQTT" },
-];
-const ALL_ROLE_FILTERS = ROLE_FILTER_OPTIONS.map((option) => option.key);
-const ALL_VISIBILITY_FILTERS = VISIBILITY_FILTER_OPTIONS.map((option) => option.key);
-const ALL_SITE_SOURCE_FILTERS = SITE_SOURCE_FILTER_OPTIONS.map((option) => option.key);
-
-type SiteFilterGroupKey = "role" | "visibility" | "source";
 
 type SidebarProps = {
   onOpenHelp?: () => void;
@@ -131,9 +82,7 @@ export function Sidebar({
   const pendingSiteLibraryOpenEntryId = useAppStore((state) => state.pendingSiteLibraryOpenEntryId);
   const clearOpenSiteLibraryEntryRequest = useAppStore((state) => state.clearOpenSiteLibraryEntryRequest);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
-  const insertSitesFromLibrary = useAppStore((state) => state.insertSitesFromLibrary);
   const openMapEditor = useAppStore((state) => state.openMapEditor);
-  const deleteSiteLibraryEntries = useAppStore((state) => state.deleteSiteLibraryEntries);
   const deleteSite = useAppStore((state) => state.deleteSite);
   const deleteLink = useAppStore((state) => state.deleteLink);
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
@@ -142,8 +91,7 @@ export function Sidebar({
   const getDefaultFrequencyPresetIdForNewSimulation = useAppStore(
     (state) => state.getDefaultFrequencyPresetIdForNewSimulation,
   );
-  const showSiteLibraryRequest = useAppStore((state) => state.showSiteLibraryRequest);
-  const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
+  const openLibrary = useAppStore((state) => state.openLibrary);
   const resolvedBasemap = useMemo(
     () => resolveBasemapSelection(basemapStyleId, theme, colorTheme),
     [basemapStyleId, theme, colorTheme],
@@ -159,17 +107,6 @@ export function Sidebar({
         : links,
     [hasNonAutoLinks, links],
   );
-  const [showSimulationLibraryManager, setShowSimulationLibraryManager] = useState(false);
-  const [showSiteLibraryManager, setShowSiteLibraryManager] = useState(false);
-  const [siteLibraryFilters, setSiteLibraryFilters] = useState<LibraryFilterState>(() =>
-    readLibraryFilterState(SITE_LIBRARY_FILTERS_KEY),
-  );
-  const [openSiteFilterGroup, setOpenSiteFilterGroup] = useState<SiteFilterGroupKey | null>(null);
-  const [siteRoleDraft, setSiteRoleDraft] = useState<LibraryFilterRole[] | null>(null);
-  const [siteVisibilityDraft, setSiteVisibilityDraft] = useState<LibraryFilterVisibility[] | null>(null);
-  const [siteSourceDraft, setSiteSourceDraft] = useState<LibraryFilterSource[] | null>(null);
-  const siteFilterToolbarRef = useRef<HTMLDivElement | null>(null);
-  const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
   const hasDeepLinkSimulation = useMemo(
     () => hasDeepLinkSimulationInSearch(window.location.search, window.location.pathname),
     [],
@@ -206,62 +143,12 @@ export function Sidebar({
     }
   };
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
-  const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
-  const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
-  const currentUser = useAppStore((state) => state.currentUser);
-
   const [deleteConfirm, setDeleteConfirm] = useState<{
     title: string;
     message: string;
     confirmLabel: string;
     onConfirm: () => void;
   } | null>(null);
-  const currentUserId = currentUser?.id ?? null;
-  const commitSiteRoleFilters = (roleFilters: LibraryFilterRole[]) => {
-    if (!roleFilters.length) return;
-    setSiteLibraryFilters((state) => ({ ...state, roleFilters }));
-    setOpenSiteFilterGroup(null);
-  };
-  const commitSiteVisibilityFilters = (visibilityFilters: LibraryFilterVisibility[]) => {
-    if (!visibilityFilters.length) return;
-    setSiteLibraryFilters((state) => ({ ...state, visibilityFilters }));
-    setOpenSiteFilterGroup(null);
-  };
-  const commitSiteSourceFilters = (sourceFilters: LibraryFilterSource[]) => {
-    if (!sourceFilters.length) return;
-    setSiteLibraryFilters((state) => ({ ...state, sourceFilters }));
-    setOpenSiteFilterGroup(null);
-  };
-  const openSiteRoleEditor = () => {
-    setSiteRoleDraft(effectiveSelection(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS));
-    setOpenSiteFilterGroup((current) => (current === "role" ? null : "role"));
-  };
-  const openSiteVisibilityEditor = () => {
-    setSiteVisibilityDraft(effectiveSelection(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS));
-    setOpenSiteFilterGroup((current) => (current === "visibility" ? null : "visibility"));
-  };
-  const openSiteSourceEditor = () => {
-    setSiteSourceDraft(effectiveSelection(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS));
-    setOpenSiteFilterGroup((current) => (current === "source" ? null : "source"));
-  };
-  const closeSiteFilterEditors = () => {
-    setOpenSiteFilterGroup(null);
-    setSiteRoleDraft(null);
-    setSiteVisibilityDraft(null);
-    setSiteSourceDraft(null);
-  };
-  const filteredSiteLibrary = useMemo(() => {
-    return filterAndSortLibraryItems(
-      siteLibrary,
-      siteLibraryFilters,
-      currentUserId,
-      (entry) => `${entry.name} ${entry.position.lat.toFixed(5)} ${entry.position.lon.toFixed(5)}`,
-      (entry, source) =>
-        source === "mqtt"
-          ? entry.sourceMeta?.sourceType === "mqtt-feed"
-          : entry.sourceMeta?.sourceType !== "mqtt-feed",
-    );
-  }, [siteLibrary, siteLibraryFilters, currentUserId]);
   const newestSiteLibraryEntryId = useMemo(() => {
     if (!siteLibrary.length) return "";
     const parseTs = (value: string): number => {
@@ -292,37 +179,6 @@ export function Sidebar({
       setShowNewSimulationRequest(false);
     }
   }, [autoPropagationEnvironment, hideLibraryBrowsing, openMapEditor, showNewSimulationRequest, setShowNewSimulationRequest, getDefaultFrequencyPresetIdForNewSimulation]);
-  useEffect(() => {
-    if (showSiteLibraryRequest) {
-      if (hideLibraryBrowsing) {
-        setShowSiteLibraryRequest(false);
-        return;
-      }
-      setShowSiteLibraryManager(true);
-      setShowSiteLibraryRequest(false);
-    }
-  }, [hideLibraryBrowsing, showSiteLibraryRequest, setShowSiteLibraryRequest]);
-  useEffect(() => {
-    persistLibraryFilterState(SITE_LIBRARY_FILTERS_KEY, siteLibraryFilters);
-  }, [siteLibraryFilters]);
-  useEffect(() => {
-    const onMouseDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (openSiteFilterGroup && siteFilterToolbarRef.current && !siteFilterToolbarRef.current.contains(target)) {
-        closeSiteFilterEditors();
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      closeSiteFilterEditors();
-    };
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [openSiteFilterGroup]);
   const activeSimulationLabel = useMemo(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -386,24 +242,6 @@ export function Sidebar({
       },
     });
   };
-  const collaboratorDirectoryById = useMemo(
-    () => new globalThis.Map(resourceCollaboratorDirectory.map((user) => [user.id, user])),
-    [resourceCollaboratorDirectory],
-  );
-  const resolveOwnerDisplay = (
-    ownerUserId: string | undefined,
-    fallbackName: string | undefined,
-    fallbackAvatarUrl: string | undefined,
-  ): { name: string; avatarUrl: string } => {
-    const ownerFromDirectory = ownerUserId ? collaboratorDirectoryById.get(ownerUserId) : undefined;
-    const name =
-      ownerFromDirectory?.username ||
-      (fallbackName && fallbackName.trim() && fallbackName.trim() !== "Unknown" ? fallbackName : "") ||
-      ownerUserId ||
-      "Unknown";
-    const avatarUrl = ownerFromDirectory?.avatarUrl || fallbackAvatarUrl || "";
-    return { name, avatarUrl };
-  };
   useEffect(() => {
     if (selectedSimulationRef.startsWith("saved:")) {
       const presetId = selectedSimulationRef.replace("saved:", "");
@@ -441,36 +279,6 @@ export function Sidebar({
     setSelectedLinkId(visibleLinks[0].id);
   }, [selectedLinkId, setSelectedLinkId, visibleLinks]);
   useEffect(() => {
-    if (hideLibraryBrowsing) {
-      setResourceCollaboratorDirectory([]);
-      return;
-    }
-    let canceled = false;
-    const loadDirectory = () => {
-      if (canceled) return;
-      void fetchCollaboratorDirectory()
-        .then((users) => {
-          if (canceled) return;
-          setResourceCollaboratorDirectory(users);
-        })
-        .catch(() => {
-          // Best effort for row avatar labels; detailed errors are shown in edit modal fetches.
-        });
-    };
-    if (typeof requestIdleCallback === "function") {
-      const idleId = requestIdleCallback(() => loadDirectory(), { timeout: 2000 });
-      return () => {
-        canceled = true;
-        cancelIdleCallback(idleId);
-      };
-    }
-    const timerId = window.setTimeout(loadDirectory, 500);
-    return () => {
-      canceled = true;
-      window.clearTimeout(timerId);
-    };
-  }, [hideLibraryBrowsing]);
-  useEffect(() => {
     if (!pendingSiteLibraryDraft) return;
     openMapEditor({
       kind: "site",
@@ -500,10 +308,10 @@ export function Sidebar({
         anchorRect: { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
       });
     } else {
-      setShowSiteLibraryManager(true);
+      openLibrary("sites");
     }
     clearOpenSiteLibraryEntryRequest();
-  }, [pendingSiteLibraryOpenEntryId, siteLibrary, clearOpenSiteLibraryEntryRequest]);
+  }, [pendingSiteLibraryOpenEntryId, siteLibrary, clearOpenSiteLibraryEntryRequest, openLibrary]);
 
   useEffect(() => {
     if (startupSimulationApplied) return;
@@ -555,18 +363,6 @@ export function Sidebar({
     const to = sites.find((site) => site.id === link.toSiteId)?.name ?? "Unknown";
     return `${from} ↔ ${to}`;
   };
-  const toggleLibrarySelection = (entryId: string) => {
-    setSelectedLibraryIds((current) => {
-      const next = new Set(current);
-      if (next.has(entryId)) {
-        next.delete(entryId);
-      } else {
-        next.add(entryId);
-      }
-      return next;
-    });
-  };
-  const selectedLibraryCount = selectedLibraryIds.size;
   const ZERO_RECT = { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 };
   const openLibraryForSite = (site: Site, triggerEl?: Element | null) => {
     const anchorRect = triggerEl?.getBoundingClientRect() ?? ZERO_RECT;
@@ -611,13 +407,6 @@ export function Sidebar({
       siteSeed: { awaitMapClick: true },
     });
   };
-  const openUserProfilePopup = (userId: string | undefined | null, anchor: HTMLElement) => {
-    if (userId) setProfileTarget({ anchor, userId });
-  };
-
-  const changeProfileRole = (user: CloudUser, nextRole: "admin" | "moderator" | "user" | "pending") =>
-    updateUserRole(user.id, nextRole);
-
   return (
     <aside className={`sidebar-panel ${panelClassName ?? ""}`.trim()}>
       <UserAdminPanel authBootstrapPending={authBootstrapPending} extraActions={panelToggleControl} onOpenHelp={onOpenHelp} onOpenSettings={onOpenSettings} onSignInRequested={onSignInRequested} />
@@ -636,7 +425,7 @@ export function Sidebar({
           {!hideLibraryBrowsing ? (
             <>
               <ActionButton
-                onClick={() => setShowSimulationLibraryManager(true)}
+                onClick={() => openLibrary("simulations")}
                 type="button"
               >
                 Library
@@ -762,7 +551,7 @@ export function Sidebar({
                   New
                 </ActionButton>
               ) : null}
-              <ActionButton onClick={() => setShowSiteLibraryManager(true)} type="button">
+              <ActionButton onClick={() => openLibrary("sites")} type="button">
                 Library
               </ActionButton>
               {newestSiteLibraryEntryId && !readOnly ? (
@@ -923,449 +712,18 @@ export function Sidebar({
         </div>
       </footer>
 
-      <UserProfilePopover
-        management
-        onClose={() => setProfileTarget(null)}
-        onRoleChange={changeProfileRole}
-        target={profileTarget}
-        viewer={currentUser}
-      />
-
-      {showSimulationLibraryManager && !hideLibraryBrowsing ? (
-        <ModalOverlay
-          aria-label="Simulation Library"
-          onClose={() => setShowSimulationLibraryManager(false)}
-        >
-          <SimulationLibraryPanel
-            onClose={() => setShowSimulationLibraryManager(false)}
-            onLoadSimulation={(presetId) => {
-              loadSimulationPreset(presetId);
-              persistSelectedSimulationRef(`saved:${presetId}`);
-            }}
-            onOpenUserProfile={openUserProfilePopup}
-            onOpenDetails={(params) => {
-              setShowSimulationLibraryManager(false);
-              openMapEditor({
-                kind: params.kind,
-                resourceId: params.resourceId,
-                isNew: false,
-                label: params.label,
-                anchorRect: params.anchorRect,
-              });
-            }}
-            onCreateSimulation={(triggerEl) => {
-              setShowSimulationLibraryManager(false);
-              openMapEditor({
-                kind: "simulation",
-                resourceId: null,
-                isNew: true,
-                label: "New Simulation",
-                anchorRect: triggerEl?.getBoundingClientRect() ?? { top: 96, right: 320, bottom: 96, left: 320, width: 0, height: 0 },
-                simulationSeed: {
-                  frequencyPresetId: getDefaultFrequencyPresetIdForNewSimulation(),
-                  autoPropagationEnvironment,
-                },
-              });
-            }}
-            onCopySimulation={(triggerEl) => {
-              setShowSimulationLibraryManager(false);
-              openSimulationCopyEditor(triggerEl);
-            }}
-          />
-        </ModalOverlay>
-      ) : null}
-
-      {showSiteLibraryManager && !hideLibraryBrowsing ? (
-        <ModalOverlay
-          aria-label="Site Library"
-          onClose={() => {
-            setShowSiteLibraryManager(false);
-            closeSiteFilterEditors();
-          }}
-        >
-          <div className="library-manager-card">
-            <div className="library-manager-header">
-              <h2>Site Library</h2>
-              <InlineCloseIconButton
-                onClick={() => {
-                  setShowSiteLibraryManager(false);
-                  closeSiteFilterEditors();
-                }}
-              />
-            </div>
-            <p className="field-help">
-              Built for large libraries. Select one or more entries to add into this simulation.
-            </p>
-            <label className="field-grid">
-              <span>Search</span>
-              <input
-                onChange={(event) => setSiteLibraryFilters((state) => ({ ...state, searchQuery: event.target.value }))}
-                placeholder="Filter by name or coordinates"
-                type="text"
-                value={siteLibraryFilters.searchQuery}
-              />
-            </label>
-            <div className="library-filter-toolbar" ref={siteFilterToolbarRef}>
-              <span className="library-filter-row-label">Filters:</span>
-              <div className="library-filter-menu">
-                <ActionButton
-                  className={clsx("library-filter-trigger", {
-                    "library-filter-trigger-active": selectionIsFiltered(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS),
-                  })}
-                  onClick={openSiteRoleEditor}
-                  type="button"
-                >
-                  Ownership {selectionLabel(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS)}
-                  <span className="library-filter-trigger-chevron" aria-hidden="true">
-                    <Funnel aria-hidden="true" strokeWidth={1.8} />
-                  </span>
-                </ActionButton>
-                {openSiteFilterGroup === "role" ? (
-                  <div className="library-filter-popover">
-                    <div className="library-filter-popover-actions">
-                      <ActionButton onClick={() => commitSiteRoleFilters(ALL_ROLE_FILTERS)} type="button">
-                        All
-                      </ActionButton>
-                      <ActionButton onClick={() => setSiteRoleDraft([])} type="button">
-                        None
-                      </ActionButton>
-                    </div>
-                    <div className="library-filter-popover-options">
-                      {ROLE_FILTER_OPTIONS.map((option) => {
-                        const draft = siteRoleDraft ?? effectiveSelection(siteLibraryFilters.roleFilters, ALL_ROLE_FILTERS);
-                        const checked = draft.includes(option.key);
-                        return (
-                          <label className="checkbox-field library-filter-option" key={`site-role-${option.key}`}>
-                            <input
-                              checked={checked}
-                              onChange={() => {
-                                const next = toggleValue(draft, option.key);
-                                setSiteRoleDraft(next);
-                                if (next.length) commitSiteRoleFilters(next);
-                              }}
-                              type="checkbox"
-                            />
-                            <span>{option.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="library-filter-menu">
-                <ActionButton
-                  className={clsx("library-filter-trigger", {
-                    "library-filter-trigger-active": selectionIsFiltered(
-                      siteLibraryFilters.visibilityFilters,
-                      ALL_VISIBILITY_FILTERS,
-                    ),
-                  })}
-                  onClick={openSiteVisibilityEditor}
-                  type="button"
-                >
-                  Access level {selectionLabel(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS)}
-                  <span className="library-filter-trigger-chevron" aria-hidden="true">
-                    <Funnel aria-hidden="true" strokeWidth={1.8} />
-                  </span>
-                </ActionButton>
-                {openSiteFilterGroup === "visibility" ? (
-                  <div className="library-filter-popover">
-                    <div className="library-filter-popover-actions">
-                      <ActionButton
-                        onClick={() => commitSiteVisibilityFilters(ALL_VISIBILITY_FILTERS)}
-                        type="button"
-                      >
-                        All
-                      </ActionButton>
-                      <ActionButton onClick={() => setSiteVisibilityDraft([])} type="button">
-                        None
-                      </ActionButton>
-                    </div>
-                    <div className="library-filter-popover-options">
-                      {VISIBILITY_FILTER_OPTIONS.map((option) => {
-                        const draft =
-                          siteVisibilityDraft ?? effectiveSelection(siteLibraryFilters.visibilityFilters, ALL_VISIBILITY_FILTERS);
-                        const checked = draft.includes(option.key);
-                        return (
-                          <label className="checkbox-field library-filter-option" key={`site-visibility-${option.key}`}>
-                            <input
-                              checked={checked}
-                              onChange={() => {
-                                const next = toggleValue(draft, option.key);
-                                setSiteVisibilityDraft(next);
-                                if (next.length) commitSiteVisibilityFilters(next);
-                              }}
-                              type="checkbox"
-                            />
-                            <span>{option.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="library-filter-menu">
-                <ActionButton
-                  className={clsx("library-filter-trigger", {
-                    "library-filter-trigger-active": selectionIsFiltered(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS),
-                  })}
-                  onClick={openSiteSourceEditor}
-                  type="button"
-                >
-                  Source {selectionLabel(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS)}
-                  <span className="library-filter-trigger-chevron" aria-hidden="true">
-                    <Funnel aria-hidden="true" strokeWidth={1.8} />
-                  </span>
-                </ActionButton>
-                {openSiteFilterGroup === "source" ? (
-                  <div className="library-filter-popover">
-                    <div className="library-filter-popover-actions">
-                      <ActionButton
-                        onClick={() => commitSiteSourceFilters(ALL_SITE_SOURCE_FILTERS)}
-                        type="button"
-                      >
-                        All
-                      </ActionButton>
-                      <ActionButton onClick={() => setSiteSourceDraft([])} type="button">
-                        None
-                      </ActionButton>
-                    </div>
-                    <div className="library-filter-popover-options">
-                      {SITE_SOURCE_FILTER_OPTIONS.map((option) => {
-                        const draft = siteSourceDraft ?? effectiveSelection(siteLibraryFilters.sourceFilters, ALL_SITE_SOURCE_FILTERS);
-                        const checked = draft.includes(option.key);
-                        return (
-                          <label className="checkbox-field library-filter-option" key={`site-source-${option.key}`}>
-                            <input
-                              checked={checked}
-                              onChange={() => {
-                                const next = toggleValue(draft, option.key);
-                                setSiteSourceDraft(next);
-                                if (next.length) commitSiteSourceFilters(next);
-                              }}
-                              type="checkbox"
-                            />
-                            <span>{option.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <ActionButton
-                onClick={() => {
-                  setSiteLibraryFilters(DEFAULT_LIBRARY_FILTER_STATE);
-                  closeSiteFilterEditors();
-                }}
-                type="button"
-              >
-                Clear Filters
-              </ActionButton>
-            </div>
-            <div className="chip-group">
-              <ActionButton
-                onClick={(event) => {
-                  setShowSiteLibraryManager(false);
-                  openMapEditor({
-                    kind: "site",
-                    resourceId: null,
-                    isNew: true,
-                    label: "New Site",
-                    anchorRect: event.currentTarget.getBoundingClientRect(),
-                    siteSeed: { awaitMapClick: true },
-                  });
-                }}
-                type="button"
-              >
-                New
-              </ActionButton>
-              <ActionButton
-                onClick={() => setSelectedLibraryIds(new Set(filteredSiteLibrary.map((entry) => entry.id)))}
-                type="button"
-              >
-                Select Filtered ({filteredSiteLibrary.length})
-              </ActionButton>
-              <ActionButton onClick={() => setSelectedLibraryIds(new Set())} type="button">
-                Clear Selection
-              </ActionButton>
-              <ActionButton
-                disabled={!selectedLibraryCount}
-                onClick={() => {
-                  insertSitesFromLibrary(Array.from(selectedLibraryIds));
-                  setSelectedLibraryIds(new Set());
-                }}
-                type="button"
-              >
-                Add Selected To Simulation ({selectedLibraryCount})
-              </ActionButton>
-              <ActionButton
-                disabled={!selectedLibraryCount}
-                onClick={() => {
-                  const deletedIds = Array.from(selectedLibraryIds);
-                  const affectedSims = simulationPresets.filter((p) =>
-                    p.snapshot.sites.some((s) => s.libraryEntryId && selectedLibraryIds.has(s.libraryEntryId)),
-                  );
-                  let msg = `Delete ${selectedLibraryCount} selected site(s) from the library? This cannot be undone.`;
-                  if (affectedSims.length > 0) {
-                    const names = affectedSims.map((p) => `"${p.name}"`).join(", ");
-                    msg += ` Referenced in ${affectedSims.length} simulation(s): ${names}. Sites will be detached but simulation data will not be lost.`;
-                  }
-                  requestDeleteConfirm(
-                    "Delete Sites",
-                    msg,
-                    () => {
-                      deleteSiteLibraryEntries(deletedIds);
-                      setSelectedLibraryIds(new Set());
-                    },
-                  );
-                }}
-                type="button"
-                variant="danger"
-              >
-                Delete Selected ({selectedLibraryCount})
-              </ActionButton>
-            </div>
-            <div className="library-manager-list">
-              {filteredSiteLibrary.map((entry) => (
-                <div className="library-manager-row" key={entry.id}>
-                  {(() => {
-                    const owner = resolveOwnerDisplay(
-                      (entry as { ownerUserId?: string }).ownerUserId,
-                      (entry as { createdByName?: string }).createdByName,
-                      (entry as { createdByAvatarUrl?: string }).createdByAvatarUrl,
-                    );
-                    return (
-                      <>
-                  <input
-                    checked={selectedLibraryIds.has(entry.id)}
-                    onChange={() => toggleLibrarySelection(entry.id)}
-                    type="checkbox"
-                  />
-                  <span className="library-row-label">
-                    {entry.name} ({entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)})
-                  </span>
-                  <span className="library-row-meta">
-                    {(() => { const v = toAccessVisibility((entry as { visibility?: unknown }).visibility); return <Badge variant={v as "private" | "public" | "shared"}>{v}</Badge>; })()}
-                    {(entry as { sourceMeta?: { sourceType?: string } }).sourceMeta?.sourceType === "mqtt-feed" ? (
-                      <Badge variant="mqtt">MQTT</Badge>
-                    ) : null}
-                    {(entry as { ownerUserId?: string }).ownerUserId ? (
-                      <button
-                        aria-label={`Open owner profile: ${owner.name}`}
-                        className="row-avatar owner-avatar"
-                        onClick={(event) => openUserProfilePopup((entry as { ownerUserId: string }).ownerUserId, event.currentTarget)}
-                        title={`Owner: ${owner.name}`}
-                        type="button"
-                      >
-                        <AvatarBadge
-                          avatarUrl={owner.avatarUrl}
-                          fallbackRawText
-                          imageClassName="row-avatar-image"
-                          name={owner.name}
-                        />
-                      </button>
-                    ) : (
-                      <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
-                        <AvatarBadge
-                          avatarUrl={owner.avatarUrl}
-                          fallbackRawText
-                          imageClassName="row-avatar-image"
-                          name={owner.name}
-                        />
-                      </span>
-                    )}
-                    {((entry.sharedWith ?? [])
-                      .filter((grant) => grant.userId !== (entry as { ownerUserId?: string }).ownerUserId)
-                      .slice(0, 3)
-                      .map((grant) => {
-                        const user = collaboratorDirectoryById.get(grant.userId);
-                        const name = user?.username ?? grant.userId;
-                        const avatarUrl = user?.avatarUrl ?? "";
-                        return (
-                          <button
-                            aria-label={`Open profile for ${name}`}
-                            className="row-avatar"
-                            key={grant.userId}
-                            onClick={(event) => openUserProfilePopup(grant.userId, event.currentTarget)}
-                            title={name}
-                            type="button"
-                          >
-                            <AvatarBadge
-                              avatarUrl={avatarUrl}
-                              fallbackRawText
-                              imageClassName="row-avatar-image"
-                              name={name}
-                            />
-                          </button>
-                        );
-                      }))}
-                  </span>
-                      </>
-                    );
-                  })()}
-                  <div className="library-row-actions">
-                    {readOnly ? (
-                      <span className="field-help">{READ_ONLY_SIMULATION_SITE_HELP}</span>
-                    ) : (
-                      <ActionButton onClick={() => insertSiteFromLibrary(entry.id)} type="button">
-                        Add to simulation
-                      </ActionButton>
-                    )}
-                    <ActionButton
-                      onClick={(e) => {
-                        setShowSiteLibraryManager(false);
-                        openMapEditor({
-                          kind: "site",
-                          resourceId: entry.id,
-                          isNew: false,
-                          label: entry.name,
-                          anchorRect: e.currentTarget.getBoundingClientRect(),
-                        });
-                      }}
-                      type="button"
-                    >
-                      Open
-                    </ActionButton>
-                  </div>
-                </div>
-              ))}
-              {!filteredSiteLibrary.length ? <p className="field-help">No matching sites.</p> : null}
-            </div>
-          </div>
-        </ModalOverlay>
-      ) : null}
       {deleteConfirm ? (
-        <ModalOverlay aria-label="Confirm Delete" onClose={() => setDeleteConfirm(null)} tier="raised">
-          <div className="library-manager-card user-profile-popup">
-            <div className="library-manager-header">
-              <h2>{deleteConfirm.title}</h2>
-              <InlineCloseIconButton onClick={() => setDeleteConfirm(null)} />
-            </div>
-            <p className="field-help">{deleteConfirm.message}</p>
-            <div className="chip-group">
-              <ActionButton onClick={() => setDeleteConfirm(null)} type="button">
-                Cancel
-              </ActionButton>
-              <ActionButton
-                onClick={() => {
-                  const action = deleteConfirm.onConfirm;
-                  setDeleteConfirm(null);
-                  action();
-                }}
-                type="button"
-                variant="danger"
-              >
-                {deleteConfirm.confirmLabel}
-              </ActionButton>
-            </div>
-          </div>
-        </ModalOverlay>
+        <ConfirmActionModal
+          confirmLabel={deleteConfirm.confirmLabel}
+          message={deleteConfirm.message}
+          onCancel={() => setDeleteConfirm(null)}
+          onConfirm={() => {
+            const action = deleteConfirm.onConfirm;
+            setDeleteConfirm(null);
+            action();
+          }}
+          title={deleteConfirm.title}
+        />
       ) : null}
     </aside>
   );

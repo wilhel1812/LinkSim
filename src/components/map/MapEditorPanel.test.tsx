@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
@@ -181,6 +181,19 @@ describe("MapEditorPanel", () => {
       await screen.findByText("Change Log · Alpha Site"),
     ).toBeInTheDocument();
     expect(screen.getByText("Moved site")).toBeInTheDocument();
+  });
+
+  it("confirms deletion from editable Site details", async () => {
+    const deleteSiteLibraryEntry = vi.fn();
+    useAppStore.setState({ deleteSiteLibraryEntry });
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Delete Site" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete Site" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(deleteSiteLibraryEntry).toHaveBeenCalledWith("site-lib-1");
+    expect(useAppStore.getState().mapEditor).toBeNull();
   });
 
   it("opens the shared profile popover from metadata and change-log identities", async () => {
@@ -856,6 +869,65 @@ describe("MapEditorPanel", () => {
       screen.getByText("Failed creating site. Check the name and try again."),
     ).toBeInTheDocument();
     expect(useAppStore.getState().mapEditor).not.toBeNull();
+  });
+
+  it("returns a newly saved Site to its originating Library tab without adding it", async () => {
+    const addSiteLibraryEntry = vi.fn(() => "site-created");
+    const insertSiteFromLibrary = vi.fn();
+    useAppStore.setState({
+      addSiteLibraryEntry,
+      insertSiteFromLibrary,
+      libraryRequest: { tab: "sites" },
+      mapEditor: {
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect,
+        origin: { kind: "library", tab: "sites" },
+        siteSeed: { lat: 60.3, lon: 10.4, insertIntoSimulation: false },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Library Site");
+    await userEvent.click(screen.getByRole("button", { name: "Save to Library" }));
+
+    expect(addSiteLibraryEntry).toHaveBeenCalled();
+    expect(insertSiteFromLibrary).not.toHaveBeenCalled();
+    expect(useAppStore.getState().mapEditor).toBeNull();
+    expect(useAppStore.getState().libraryRequest).toEqual({ tab: "sites" });
+  });
+
+  it("offers Save and Add for an editable active Simulation and exits the Library", async () => {
+    const addSiteLibraryEntry = vi.fn(() => "site-created");
+    const insertSiteFromLibrary = vi.fn();
+    const editableSimulationId = useAppStore.getState().scenarioOptions[0]?.id ?? "starter-default";
+    useAppStore.setState({
+      addSiteLibraryEntry,
+      insertSiteFromLibrary,
+      selectedScenarioId: editableSimulationId,
+      libraryRequest: { tab: "sites" },
+      mapEditor: {
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect,
+        origin: { kind: "library", tab: "sites" },
+        siteSeed: { lat: 60.3, lon: 10.4, insertIntoSimulation: false },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Added Site");
+    await userEvent.click(screen.getByRole("button", { name: "Save & Add to Simulation" }));
+
+    expect(insertSiteFromLibrary).toHaveBeenCalledWith("site-created");
+    expect(useAppStore.getState().mapEditor).toBeNull();
+    expect(useAppStore.getState().libraryRequest).toBeNull();
   });
 
   it("persists a manually selected Site icon", async () => {

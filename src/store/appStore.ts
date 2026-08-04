@@ -263,6 +263,7 @@ const adoptOrphanedSimulations = (
 
 export type MapOverlayMode = MapOverlayModeValue;
 export type AuthSessionState = "checking" | "signed_in" | "signed_out";
+export type LibraryTab = "sites" | "simulations";
 
 type SiteLibraryEntry = {
   id: string;
@@ -479,14 +480,14 @@ type AppState = {
       simulationDefaultsOverride?: SimulationDefaults | null;
     };
     readOnly?: boolean;
+    origin?: { kind: "library"; tab: LibraryTab };
   } | null;
   mapEditorSiteDraft: { lat: number; lon: number; groundElevationM: number | null } | null;
   openMapEditor: (payload: NonNullable<AppState["mapEditor"]>) => void;
   closeMapEditor: () => void;
   setMapEditorSiteDraft: (draft: AppState["mapEditorSiteDraft"]) => void;
-  showSimulationLibraryRequest: boolean;
+  libraryRequest: { tab: LibraryTab } | null;
   showNewSimulationRequest: boolean;
-  showSiteLibraryRequest: boolean;
   pendingSiteLibraryDraft:
     | { lat: number; lon: number; token: string; suggestedName?: string; sourceMeta?: SiteLibraryEntry["sourceMeta"] }
     | null;
@@ -631,6 +632,7 @@ type AppState = {
   overwriteSimulationPreset: (presetId: string) => void;
   updateCurrentSimulationSnapshot: () => void;
   loadSimulationPreset: (presetId: string) => void;
+  clearSimulationWorkspace: () => void;
   renameSimulationPreset: (presetId: string, name: string) => void;
   updateSimulationPresetEntry: (
     presetId: string,
@@ -659,9 +661,9 @@ type AppState = {
     sourceMeta?: SiteLibraryEntry["sourceMeta"],
   ) => void;
   clearPendingSiteLibraryDraft: () => void;
-  setShowSimulationLibraryRequest: (show: boolean) => void;
+  openLibrary: (tab: LibraryTab) => void;
+  closeLibrary: () => void;
   setShowNewSimulationRequest: (show: boolean) => void;
-  setShowSiteLibraryRequest: (show: boolean) => void;
   requestOpenSiteLibraryEntry: (entryId: string) => void;
   clearOpenSiteLibraryEntryRequest: () => void;
   setMapOverlayMode: (mode: MapOverlayMode) => void;
@@ -1393,9 +1395,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   mapEditor: null,
   mapEditorSiteDraft: null,
   pendingSiteLibraryDraft: null,
-  showSimulationLibraryRequest: false,
+  libraryRequest: null,
   showNewSimulationRequest: false,
-  showSiteLibraryRequest: false,
   pendingSiteLibraryOpenEntryId: null,
   scenarioOptions: BUILTIN_SCENARIOS.map((scenario) => ({ id: scenario.id, name: scenario.name })),
   mapOverlayMode: "heatmap",
@@ -2744,6 +2745,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const next = state.siteLibrary.filter((entry) => !requested.has(entry.id));
       writeStorage(SITE_LIBRARY_KEY, next);
+      const detachLibraryReference = <T extends { libraryEntryId?: string }>(site: T): T => {
+        if (!site.libraryEntryId || !requested.has(site.libraryEntryId)) return site;
+        const { libraryEntryId: _removedLibraryEntryId, ...detached } = site;
+        return detached as T;
+      };
+      const nextSites = state.sites.map(detachLibraryReference);
       const updatedPresets = state.simulationPresets.map((preset) => {
         const hasRef = preset.snapshot.sites.some((site) => site.libraryEntryId && requested.has(site.libraryEntryId));
         if (!hasRef) return preset;
@@ -2751,16 +2758,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...preset,
           snapshot: {
             ...preset.snapshot,
-            sites: preset.snapshot.sites.map((site) =>
-              site.libraryEntryId && requested.has(site.libraryEntryId)
-                ? { ...site, libraryEntryId: undefined }
-                : site,
-            ),
+            sites: preset.snapshot.sites.map(detachLibraryReference),
           },
         };
       });
       writeStorage(SIM_PRESETS_KEY, updatedPresets);
-      return { siteLibrary: next, simulationPresets: updatedPresets };
+      return { siteLibrary: next, sites: nextSites, simulationPresets: updatedPresets };
     });
   },
   saveCurrentSimulationPreset: (name) => {
@@ -3216,6 +3219,82 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeStorage(LAST_SESSION_KEY, { selectedScenarioId: preset.id, savedAtIso: new Date().toISOString() });
     useCoverageStore.getState().recomputeCoverage();
   },
+  clearSimulationWorkspace: () => {
+    get().cancelTerrainLoad();
+    const currentUser = get().currentUser;
+    const defaults = resolveUserSimulationDefaults(
+      currentUser?.simulationDefaultsPreference,
+      currentUser?.defaultFrequencyPresetId,
+    );
+    try {
+      localStorage.removeItem(LAST_SESSION_KEY);
+      localStorage.removeItem(LAST_SIMULATION_REF_KEY);
+    } catch {
+      // Best effort only.
+    }
+    clearTerrainLossCache();
+    set({
+      selectedScenarioId: "",
+      sites: [],
+      links: [],
+      systems: defaultScenario.systems,
+      networks: [],
+      selectedSiteId: "",
+      selectedSiteIds: [],
+      selectedLinkId: "",
+      selectedNetworkId: "",
+      temporaryDirectionReversed: false,
+      profileCursorIndex: 0,
+      linkColorMode: DEFAULT_LINK_COLOR_MODE,
+      siteIconColors: {},
+      selectedCoverageResolution: "24",
+      selectedOverlayRadiusOption: defaultOptionForSelectionCount(0),
+      selectedFrequencyPresetId: defaults.frequencyPresetId,
+      rxSensitivityTargetDbm: defaults.rxSensitivityTargetDbm,
+      environmentLossDb: defaults.environmentLossDb,
+      propagationEnvironment: defaults.propagationEnvironment,
+      autoPropagationEnvironment: defaults.autoPropagationEnvironment,
+      propagationEnvironmentReason: defaults.autoPropagationEnvironment
+        ? "Auto defaults active."
+        : "Manual override active.",
+      simulationDefaultsOverrideEnabled: false,
+      simulationDefaultsOverride: null,
+      terrainFetchStatus: "",
+      terrainRecommendation: "",
+      isHighResTerrainLoaded: false,
+      terrainLoadingStartedAtMs: 0,
+      terrainLoadEpoch: get().terrainLoadEpoch + 1,
+      terrainProgressPercent: 0,
+      terrainProgressTilesLoaded: 0,
+      terrainProgressTilesTotal: 0,
+      terrainProgressBytesLoaded: 0,
+      terrainProgressBytesEstimated: 0,
+      terrainProgressTransientDecodeBytesEstimated: 0,
+      terrainProgressPhaseLabel: "",
+      terrainProgressPhaseIndex: 0,
+      terrainProgressPhaseTotal: 0,
+      terrainMemoryDiagnostics: estimateTerrainMemoryDiagnostics([]),
+      siteDragPreview: {},
+      endpointPickTarget: null,
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      mapOverlayMode: defaultOverlayModeForSelectionCount(0),
+      mapViewport: defaultScenario.viewport,
+      fitSitesEpoch: get().fitSitesEpoch + 1,
+    });
+    useCoverageStore.setState({
+      coverageSamples: [],
+      isSimulationRecomputing: false,
+      simulationProgress: 0,
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "",
+      simulationSamplesDone: 0,
+      simulationSamplesTotal: 0,
+      simulationRunToken: "",
+      completedCoverageRunToken: "",
+      calculationCycleSource: null,
+    });
+  },
   renameSimulationPreset: (presetId, name) => {
     const { currentUser } = get();
     const user = requireAuth(currentUser, "renameSimulationPreset");
@@ -3344,11 +3423,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.warn(`[appStore] deleteSimulationPreset: User ${user.id} cannot delete simulation ${presetId}`);
       return;
     }
+    const deletingActiveSimulation = get().selectedScenarioId === presetId;
     set((state) => {
       const next = state.simulationPresets.filter((preset) => preset.id !== presetId);
       writeStorage(SIM_PRESETS_KEY, next);
       return { simulationPresets: next };
     });
+    if (deletingActiveSimulation) {
+      get().clearSimulationWorkspace();
+    }
   },
   importLibraryData: (bundle, mode) => {
     const incomingSites = normalizeSiteLibrary(Array.isArray(bundle.siteLibrary) ? bundle.siteLibrary : []);
@@ -3446,9 +3529,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }),
   clearPendingSiteLibraryDraft: () => set({ pendingSiteLibraryDraft: null }),
-  setShowSimulationLibraryRequest: (show) => set({ showSimulationLibraryRequest: show }),
+  openLibrary: (tab) => set({ libraryRequest: { tab } }),
+  closeLibrary: () => set({ libraryRequest: null }),
   setShowNewSimulationRequest: (show) => set({ showNewSimulationRequest: show }),
-  setShowSiteLibraryRequest: (show) => set({ showSiteLibraryRequest: show }),
   requestOpenSiteLibraryEntry: (entryId) =>
     set({
       pendingSiteLibraryOpenEntryId: entryId.trim() ? entryId : null,

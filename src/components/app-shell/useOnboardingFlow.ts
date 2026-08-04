@@ -4,13 +4,13 @@ const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 
 type UseOnboardingFlowParams = {
   activeUserId: string;
-  setShowSimulationLibraryRequest: (show: boolean) => void;
+  openSimulationLibrary: () => void;
   setShowNewSimulationRequest: (show: boolean) => void;
 };
 
 export function useOnboardingFlow({
   activeUserId,
-  setShowSimulationLibraryRequest,
+  openSimulationLibrary,
   setShowNewSimulationRequest,
 }: UseOnboardingFlowParams) {
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
@@ -41,7 +41,7 @@ export function useOnboardingFlow({
 
   const openLibraryFromWelcome = () => {
     setShowWelcomeModal(false);
-    setShowSimulationLibraryRequest(true);
+    openSimulationLibrary();
     markSeen();
   };
 

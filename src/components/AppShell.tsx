@@ -11,7 +11,6 @@ import {
   type DeepLinkApplyOutcome,
   shouldRewritePathAfterDeepLinkApply,
 } from "../lib/appShellGuards";
-import { handleSimulationLibraryLoad } from "../lib/simulationLibraryLoad";
 import { emptyWorkspaceState } from "../lib/emptyWorkspaceState";
 import { getCurrentRuntimeEnvironment } from "../lib/environment";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -34,7 +33,7 @@ import { InlineCloseIconButton } from "./InlineCloseIconButton";
 import { MapView } from "./MapView";
 import { ModalOverlay } from "./ModalOverlay";
 import OnboardingTutorialModal from "./OnboardingTutorialModal";
-import SimulationLibraryPanel from "./SimulationLibraryPanel";
+import { LibraryPanel } from "./LibraryPanel";
 import WelcomeModal from "./WelcomeModal";
 import { UsernameSetupModal } from "./UsernameSetupModal";
 import { Sidebar } from "./Sidebar";
@@ -46,7 +45,6 @@ import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfile
 
 initializeMigrations();
 
-const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const ONBOARDING_SEEN_KEY_PREFIX = "linksim:onboarding-seen:v1:";
 const LOCAL_FORCE_READONLY_KEY = "linksim:local-force-readonly:v1";
 const ACCESS_CHECK_TIMEOUT_MS = 10_000;
@@ -182,10 +180,11 @@ export function AppShell() {
   const isOnline = useAppStore((state) => state.isOnline);
   const setIsOnline = useAppStore((state) => state.setIsOnline);
   const isInitializing = useAppStore((state) => state.isInitializing);
-  const showSimulationLibraryRequest = useAppStore((state) => state.showSimulationLibraryRequest);
-  const setShowSimulationLibraryRequest = useAppStore((state) => state.setShowSimulationLibraryRequest);
+  const libraryRequest = useAppStore((state) => state.libraryRequest);
+  const openLibrary = useAppStore((state) => state.openLibrary);
+  const closeLibrary = useAppStore((state) => state.closeLibrary);
+  const mapEditor = useAppStore((state) => state.mapEditor);
   const setShowNewSimulationRequest = useAppStore((state) => state.setShowNewSimulationRequest);
-  const setShowSiteLibraryRequest = useAppStore((state) => state.setShowSiteLibraryRequest);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   const [isNavigatorHidden, setIsNavigatorHidden] = useState(() => readPanelBool(UI_PANEL_KEYS.navigatorHidden, false));
@@ -259,7 +258,6 @@ export function AppShell() {
   const [measuredSidebarWidth, setMeasuredSidebarWidth] = useState(0);
   const [measuredInspectorWidth, setMeasuredInspectorWidth] = useState(0);
   const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
-  const [showLibraryFromRequest, setShowLibraryFromRequest] = useState(false);
   const deepLinkAppliedRef = useRef(false);
   const deepLinkLoadFailedRef = useRef(false);
   const deepLinkApplyOutcomeRef = useRef<DeepLinkApplyOutcome>("idle");
@@ -298,7 +296,7 @@ export function AppShell() {
     createNewFromWelcome,
   } = useOnboardingFlow({
     activeUserId,
-    setShowSimulationLibraryRequest,
+    openSimulationLibrary: () => openLibrary("simulations"),
     setShowNewSimulationRequest,
   });
 
@@ -1479,14 +1477,8 @@ export function AppShell() {
       return;
     }
     setLibraryAutoOpened(true);
-    setShowSimulationLibraryRequest(true);
-  }, [libraryAutoOpened, workspaceState, showWelcomeModal, accessState, activeUserId, setShowSimulationLibraryRequest]);
-
-  useEffect(() => {
-    if (!showSimulationLibraryRequest) return;
-    setShowSimulationLibraryRequest(false);
-    setShowLibraryFromRequest(true);
-  }, [showSimulationLibraryRequest, setShowSimulationLibraryRequest]);
+    openLibrary("simulations");
+  }, [libraryAutoOpened, workspaceState, showWelcomeModal, accessState, activeUserId, openLibrary]);
 
   const copyCurrentLink = useCallback(async () => {
     if (!activeSimulation) {
@@ -2061,7 +2053,7 @@ export function AppShell() {
             <div className="empty-workspace-message">
               <p>Open an existing simulation or create a new one to continue.</p>
               <ActionButton
-                onClick={() => setShowSimulationLibraryRequest(true)}
+                onClick={() => openLibrary("simulations")}
                 type="button"
               >
                 Open Library
@@ -2317,29 +2309,20 @@ export function AppShell() {
       ) : null}
       <WelcomeModal onClose={closeWelcome} onCreateNewSimulation={createNewFromWelcome} onOpenLibrary={openLibraryFromWelcome} onOpenOnboarding={openWelcomeFromWelcome} open={showWelcomeModal} />
       {showUsernameSetup ? <UsernameSetupModal onComplete={completeUsernameSetup} /> : null}
-      <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => setShowSimulationLibraryRequest(true)} onOpenSiteLibrary={() => setShowSiteLibraryRequest(true)} open={showOnboardingTutorial} />
-      {showLibraryFromRequest && !isReadOnlyShell ? (
+      <OnboardingTutorialModal onClose={() => setShowOnboardingTutorial(false)} onOpenLibrary={() => openLibrary("simulations")} onOpenSiteLibrary={() => openLibrary("sites")} open={showOnboardingTutorial} />
+      {libraryRequest && !isReadOnlyShell ? (
         <ModalOverlay
-          aria-label="Simulation Library"
-          onClose={() => setShowLibraryFromRequest(false)}
+          aria-label="Library"
+          className={`library-unified-overlay ${mapEditor?.origin?.kind === "library" ? "is-suspended" : ""}`.trim()}
+          onClose={closeLibrary}
+          suspended={mapEditor?.origin?.kind === "library"}
         >
-          <SimulationLibraryPanel
-            onClose={() => setShowLibraryFromRequest(false)}
+          <LibraryPanel
+            initialTab={libraryRequest.tab}
+            isMobile={isMobileViewport}
+            onClose={closeLibrary}
             onOpenUserProfile={(userId, anchor) => setProfileTarget({ anchor, userId })}
-            onLoadSimulation={(presetId) => {
-              handleSimulationLibraryLoad({
-                presetId,
-                loadSimulationPreset,
-                persistSimulationRef: (loadedPresetId) => {
-                  try {
-                    localStorage.setItem(LAST_SIMULATION_REF_KEY, `saved:${loadedPresetId}`);
-                  } catch {
-                    // ignore storage errors
-                  }
-                },
-                closeLibraryModal: () => setShowLibraryFromRequest(false),
-              });
-            }}
+            readOnly={!canPersistWorkspace}
           />
         </ModalOverlay>
       ) : null}

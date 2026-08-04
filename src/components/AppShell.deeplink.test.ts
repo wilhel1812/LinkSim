@@ -53,10 +53,10 @@ const hoisted = vi.hoisted(() => {
     isOnline: true,
     setIsOnline: () => {},
     isInitializing: false,
-    showSimulationLibraryRequest: false,
-    setShowSimulationLibraryRequest: () => {},
+    libraryRequest: null,
+    openLibrary: () => {},
+    closeLibrary: () => {},
     setShowNewSimulationRequest: () => {},
-    setShowSiteLibraryRequest: () => {},
     basemapStyleId: "street-linksim",
   };
 
@@ -126,7 +126,6 @@ vi.mock("../store/appStore", () => ({
 vi.mock("./MapView", () => ({ MapView: () => null }));
 vi.mock("./Sidebar", () => ({ Sidebar: () => null }));
 vi.mock("./UserAdminPanel", () => ({ UserAdminPanel: () => null }));
-vi.mock("./SimulationLibraryPanel", () => ({ default: () => null }));
 vi.mock("./WelcomeModal", () => ({ default: () => null }));
 vi.mock("./OnboardingTutorialModal", () => ({ default: () => null }));
 vi.mock("./LinkProfileChart", () => ({ LinkProfileChart: () => null }));
@@ -227,7 +226,7 @@ describe("AppShell deeplink cold-load flow", () => {
       currentUser: null,
       authState: "checking",
       isInitializing: false,
-      showSimulationLibraryRequest: false,
+      libraryRequest: null,
     });
 
     hoisted.fetchMe.mockResolvedValue({

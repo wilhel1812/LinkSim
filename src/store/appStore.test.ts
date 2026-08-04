@@ -29,6 +29,7 @@ const storage = vi.hoisted(() => {
 
 vi.mock("../lib/coverage", () => ({
   buildCoverage: vi.fn(() => []),
+  clearTerrainLossCache: vi.fn(),
 }));
 
 vi.mock("../lib/elevationService", () => ({
@@ -234,6 +235,34 @@ describe("appStore auth guards", () => {
     expect(useAppStore.getState().sites[0]?.name).toBe("Alpha");
     expect(useAppStore.getState().siteLibrary[0]?.name).toBe("Alpha");
     expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("blocks Library deletion when the current user only has view access", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    useAppStore.getState().setCurrentUser({
+      id: "user-2",
+      username: "viewer",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    useAppStore.getState().deleteSiteLibraryEntry("lib-1");
+    useAppStore.getState().deleteSimulationPreset("sim-1");
+
+    expect(useAppStore.getState().siteLibrary.some((entry) => entry.id === "lib-1")).toBe(true);
+    expect(useAppStore.getState().simulationPresets.some((preset) => preset.id === "sim-1")).toBe(true);
+    expect(warnSpy).toHaveBeenCalledTimes(2);
   });
 
   it("does not auto-sync online elevations when adding a site", async () => {
@@ -561,6 +590,120 @@ describe("appStore blank simulation loading", () => {
     expect(useAppStore.getState().simulationPresets.find((simulation) => simulation.id === createdId)?.visibility)
       .toBe("shared");
     expect(useAppStore.getState().siteLibrary[0]?.visibility).toBe("private");
+  });
+});
+
+describe("appStore unified Library state", () => {
+  beforeEach(() => {
+    storage.mock.clear();
+    vi.restoreAllMocks();
+    useAppStore.setState(useAppStore.getInitialState(), true);
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+  });
+
+  it("opens and closes the Library with an explicit tab", () => {
+    useAppStore.getState().openLibrary("sites");
+    expect(useAppStore.getState().libraryRequest).toEqual({ tab: "sites" });
+
+    useAppStore.getState().openLibrary("simulations");
+    expect(useAppStore.getState().libraryRequest).toEqual({ tab: "simulations" });
+
+    useAppStore.getState().closeLibrary();
+    expect(useAppStore.getState().libraryRequest).toBeNull();
+  });
+
+  it("detaches a deleted Library Site from the live workspace and saved snapshots", () => {
+    const linkedSite = {
+      id: "site-1",
+      name: "Ridge",
+      libraryEntryId: "library-site-1",
+      position: { lat: 60, lon: 11 },
+      groundElevationM: 100,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      siteLibrary: [
+        {
+          ...linkedSite,
+          id: "library-site-1",
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      sites: [linkedSite],
+      simulationPresets: [
+        {
+          id: "sim-1",
+          name: "Ridge plan",
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          snapshot: {
+            sites: [linkedSite],
+            links: [],
+            systems: [],
+            networks: [],
+            selectedSiteId: "site-1",
+            selectedLinkId: "",
+            selectedNetworkId: "",
+            selectedCoverageResolution: "24",
+            propagationModel: "ITM",
+            selectedFrequencyPresetId: "custom",
+            rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0,
+            propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true,
+            terrainDataset: "copernicus30",
+          },
+        },
+      ],
+    });
+
+    useAppStore.getState().deleteSiteLibraryEntry("library-site-1");
+
+    expect(useAppStore.getState().sites[0]).not.toHaveProperty("libraryEntryId");
+    expect(useAppStore.getState().simulationPresets[0]?.snapshot.sites[0]).not.toHaveProperty(
+      "libraryEntryId",
+    );
+  });
+
+  it("clears the workspace and persisted active references when deleting the active Simulation", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Delete me", { visibility: "private", ownerUserId: "owner-1" });
+    expect(createdId).toBeTruthy();
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+    storage.mock.setItem("rmw-last-simulation-ref-v1", `saved:${createdId}`);
+
+    useAppStore.getState().deleteSimulationPreset(createdId as string);
+
+    const state = useAppStore.getState();
+    expect(state.selectedScenarioId).toBe("");
+    expect(state.sites).toEqual([]);
+    expect(state.links).toEqual([]);
+    expect(storage.mock.getItem("linksim-last-session-v1")).toBeNull();
+    expect(storage.mock.getItem("rmw-last-simulation-ref-v1")).toBeNull();
   });
 });
 
