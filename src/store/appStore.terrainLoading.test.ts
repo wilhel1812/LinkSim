@@ -112,6 +112,25 @@ describe("appStore GLO-30 terrain lifecycle", () => {
     expect(useAppStore.getState().terrainFetchStatus).toContain("1 unavailable");
   });
 
+  it("retains successful tiles and recomputes once after a partial load has settled", async () => {
+    terrainClient.loadCopernicus30TilesByKeys.mockResolvedValue({
+      tiles: [tile("N59E009")],
+      failedTiles: ["N60E009"],
+      fetchedTiles: ["N59E009"],
+      cacheHits: [],
+    });
+    const recompute = vi.spyOn(useCoverageStore.getState(), "recomputeCoverage").mockImplementation(() => {
+      expect(useAppStore.getState().isTerrainFetching).toBe(false);
+    });
+
+    await useAppStore.getState().recommendAndFetchTerrainForCurrentArea(20);
+
+    expect(recompute).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().srtmTiles.some((entry) => entry.key === "N59E009")).toBe(true);
+    expect(useAppStore.getState().isHighResTerrainLoaded).toBe(false);
+    expect(useAppStore.getState().terrainFetchStatus).toContain("1 unavailable");
+  });
+
   it("cancels the active load and ignores its late result", async () => {
     let resolveLoad!: (value: {
       tiles: SrtmTile[];

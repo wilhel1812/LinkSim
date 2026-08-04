@@ -177,6 +177,7 @@ describe("MapView user location flow", () => {
       autoCalculateEnabled: true,
       automaticLockNoticeShown: false,
       calculationCycleSource: null,
+      simulationErrorMessage: "",
     });
   });
 
@@ -234,6 +235,28 @@ describe("MapView user location flow", () => {
     act(() => useAppStore.setState({ selectedOverlayRadiusOption: "100" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument());
     expect(onPublishNotice).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes an explicit terrain-unavailable calculation error", async () => {
+    const onPublishNotice = vi.fn();
+    renderMapView({ onPublishNotice });
+
+    act(() => {
+      useCoverageStore.setState({
+        simulationErrorMessage:
+          "The 50 km Simulation could not be completed because required GLO-30 terrain is unavailable.",
+      });
+    });
+
+    await waitFor(() =>
+      expect(onPublishNotice).toHaveBeenCalledWith({
+        id: "simulation-terrain-unavailable",
+        message:
+          "The 50 km Simulation could not be completed because required GLO-30 terrain is unavailable.",
+        tone: "error",
+        persistent: false,
+      }),
+    );
   });
 
   it("starts and stops live geolocation from the map control", () => {

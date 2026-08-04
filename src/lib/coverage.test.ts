@@ -107,6 +107,20 @@ describe("buildCoverage", () => {
     ).rejects.toBeInstanceOf(CoverageBuildCancelledError);
   });
 
+  it("rejects a terrain-backed build when any required terrain sample is unavailable", async () => {
+    await expect(
+      buildCoverageAsync(
+        NORMAL_GRID,
+        network,
+        [sites[0]],
+        systems,
+        defaultPropagationEnvironment(),
+        () => null,
+        { overlayRadiusKm: 50, requireCompleteTerrain: true },
+      ),
+    ).rejects.toThrow("Terrain data is unavailable");
+  });
+
   it("uses single-site radius override for sampling bounds", () => {
     const singleSite = [sites[0]];
     const base = buildCoverage(NORMAL_GRID, network, singleSite, systems, defaultPropagationEnvironment());
