@@ -153,7 +153,9 @@ describe("LibraryPanel", () => {
 
     expect(screen.queryByRole("button", { name: "Open Site details: Ridge Site" })).not.toBeInTheDocument();
     expect(screen.getByText("Ridge Site").closest("button")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Details for Ridge Site" }));
+    const detailsButton = screen.getByRole("button", { name: "Details for Ridge Site" });
+    expect(detailsButton.className).toBe(screen.getByRole("button", { name: "Add Ridge Site" }).className);
+    await user.click(detailsButton);
     expect(useAppStore.getState().mapEditor).toMatchObject({
       kind: "site",
       resourceId: "site-library-1",
@@ -167,8 +169,10 @@ describe("LibraryPanel", () => {
     const onClose = vi.fn();
     render(<LibraryPanel initialTab="simulations" isMobile onClose={onClose} readOnly={false} />);
 
-    expect(screen.getByRole("button", { name: "Details for Valley Plan" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Open Valley Plan" }));
+    const detailsButton = screen.getByRole("button", { name: "Details for Valley Plan" });
+    const openButton = screen.getByRole("button", { name: "Open Valley Plan" });
+    expect(detailsButton.className).toBe(openButton.className);
+    await user.click(openButton);
 
     expect(useAppStore.getState().selectedScenarioId).toBe("sim-1");
     expect(onClose).toHaveBeenCalledOnce();

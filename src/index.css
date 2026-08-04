@@ -5169,8 +5169,7 @@ html.panorama-gesture-lock body {
     height: 20px;
   }
 
-  .library-item-actions .btn,
-  .library-item-actions .btn-ghost {
+  .library-item-actions .btn {
     min-height: 44px;
   }
 
@@ -5188,8 +5187,7 @@ html.panorama-gesture-lock body {
     justify-content: stretch;
   }
 
-  .library-item-actions .btn,
-  .library-item-actions .btn-ghost {
+  .library-item-actions .btn {
     flex: 1 1 0;
   }
 
