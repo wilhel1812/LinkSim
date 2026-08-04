@@ -73,8 +73,9 @@ vi.mock("react-map-gl/maplibre", async () => {
   };
 });
 
-vi.mock("../lib/meshtasticMqtt", () => ({
-  fetchMeshmapNodes: vi.fn(async () => ({
+vi.mock("../lib/meshtasticMqtt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/meshtasticMqtt")>()),
+  fetchMeshmapNodes: vi.fn(async (options?: { sourceId?: "meshmap" | "868-no"; sourceUrl?: string }) => ({
     fromCache: false,
     networkError: false,
     nodes: [
@@ -86,6 +87,8 @@ vi.mock("../lib/meshtasticMqtt", () => ({
         lat: 60.55,
         lon: 11.55,
         updatedAt: 1,
+        sourceId: options?.sourceId,
+        sourceUrl: options?.sourceUrl,
       },
     ],
   })),
@@ -463,10 +466,11 @@ describe("MapView user location flow", () => {
     expect(surface).toHaveClass("has-pointer-tail");
     expect(surface).toHaveClass("visible-site-sources-popover");
     expect(within(popover).getByLabelText("Library")).not.toBeChecked();
-    expect(within(popover).getByLabelText("MQTT")).not.toBeChecked();
+    expect(within(popover).getByLabelText("MeshMap.net")).not.toBeChecked();
+    expect(within(popover).getByLabelText("868.no")).not.toBeChecked();
   });
 
-  it("keeps Library visible when MQTT is also enabled", async () => {
+  it("keeps Library visible when 868.no is also enabled", async () => {
     useAppStore.setState({
       siteLibrary: [
         {
@@ -494,10 +498,13 @@ describe("MapView user location flow", () => {
     fireEvent.click(within(popover).getByLabelText("Library"));
     expect(screen.getByRole("button", { name: "Library Alpha" })).toBeInTheDocument();
 
-    fireEvent.click(within(popover).getByLabelText("MQTT"));
+    fireEvent.click(within(popover).getByLabelText("868.no"));
 
     expect(screen.getByRole("button", { name: "Library Alpha" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Simulation + Library + MQTT" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Simulation + Library + 868.no" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Loading node sources...")).not.toBeInTheDocument();
+    });
     await waitFor(() => {
       expect(useAppStore.getState().discoveryLibraryVisible).toBe(true);
       expect(useAppStore.getState().discoveryMqttVisible).toBe(true);

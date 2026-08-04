@@ -197,6 +197,7 @@ describe("migrations", () => {
 
     setStoredVersion("0.9.0");
     localStorage.setItem("rmw-meshmap-cache-v1", JSON.stringify({ savedAt: Date.now(), nodes: [] }));
+    localStorage.setItem("rmw-node-source-cache-v1:/node-sources/868-no", JSON.stringify({ savedAt: Date.now(), nodes: [] }));
     localStorage.setItem("rmw-storage-health-v1", JSON.stringify({ ok: true }));
     localStorage.setItem("linksim-copernicus-tilelist-v1", JSON.stringify({ copernicus30: {} }));
     localStorage.setItem("linksim-copernicus-tile-index-v1", JSON.stringify({ copernicus30: {} }));
@@ -207,6 +208,7 @@ describe("migrations", () => {
 
     expect(result.migrated).toBe(true);
     expect(localStorage.getItem("rmw-meshmap-cache-v1")).toBe(null);
+    expect(localStorage.getItem("rmw-node-source-cache-v1:/node-sources/868-no")).toBe(null);
     expect(localStorage.getItem("rmw-storage-health-v1")).toBe(null);
     expect(localStorage.getItem("linksim-copernicus-tilelist-v1")).not.toBe(null);
     expect(localStorage.getItem("linksim-copernicus-tile-index-v1")).not.toBe(null);

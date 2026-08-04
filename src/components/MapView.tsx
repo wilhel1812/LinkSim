@@ -40,7 +40,13 @@ import { useAppStore } from "../store/appStore";
 import { isAutomaticCalculationLocked, useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
-import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
+import {
+  fetchMeshmapNodes,
+  mergeMeshmapNodes,
+  NODE_FEED_SOURCES,
+  type MeshmapNode,
+  type NodeFeedSourceId,
+} from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import {
   optionsForSelectionCount,
@@ -870,10 +876,14 @@ export function MapView({
   const [isDraggingSite, setIsDraggingSite] = useState(false);
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [showDiscoverySites, setShowDiscoverySites] = useState(false);
-  const [showDiscoveryMqtt, setShowDiscoveryMqtt] = useState(false);
+  const [showMeshmapFeed, setShowMeshmapFeed] = useState(false);
+  const [show868NoFeed, setShow868NoFeed] = useState(false);
   const [visibleSiteSourcesOpen, setVisibleSiteSourcesOpen] = useState(false);
-  const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
-  const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
+  const [nodeSourceLoads, setNodeSourceLoads] = useState<Partial<Record<NodeFeedSourceId, {
+    status: "loading" | "loaded" | "failed";
+    nodes: MeshmapNode[];
+    message?: string;
+  }>>>({});
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
   const [panoramaInteraction, setPanoramaInteraction] = useState<PanoramaInteractionState | null>(null);
   const [selectedDiscoveryLibraryEntryId, setSelectedDiscoveryLibraryEntryId] = useState<string | null>(null);
@@ -904,6 +914,23 @@ export function MapView({
     pitch: number;
   } | null>(null);
   const editorDraftAnimationKeyRef = useRef("");
+  const enabledNodeSourceIds = useMemo<NodeFeedSourceId[]>(() => [
+    ...(showMeshmapFeed ? ["meshmap" as const] : []),
+    ...(show868NoFeed ? ["868-no" as const] : []),
+  ], [show868NoFeed, showMeshmapFeed]);
+  const showDiscoveryMqtt = enabledNodeSourceIds.length > 0;
+  const mqttNodes = useMemo(
+    () => mergeMeshmapNodes(enabledNodeSourceIds.map((sourceId) => nodeSourceLoads[sourceId]?.nodes ?? [])),
+    [enabledNodeSourceIds, nodeSourceLoads],
+  );
+  const mqttLoadStatus = useMemo(() => {
+    const enabledLoads = enabledNodeSourceIds.map((sourceId) => nodeSourceLoads[sourceId]);
+    if (enabledLoads.some((load) => load?.status === "loading")) return "Loading node sources...";
+    const failed = enabledLoads.filter((load) => load?.status === "failed");
+    if (failed.length) return `Node source load failed: ${failed.map((load) => load?.message).filter(Boolean).join("; ")}`;
+    const cachedWarnings = enabledLoads.map((load) => load?.message).filter(Boolean);
+    return cachedWarnings.length ? cachedWarnings.join("; ") : null;
+  }, [enabledNodeSourceIds, nodeSourceLoads]);
 
   const stopUserLocation = useCallback(() => {
     if (userLocationWatchIdRef.current !== null && navigator.geolocation) {
@@ -1190,29 +1217,38 @@ export function MapView({
   );
 
   useEffect(() => {
-    if (!showDiscoveryMqtt) return;
-    if (mqttNodes.length) return;
-    let canceled = false;
-    setMqttLoadStatus("Loading MQTT nodes...");
-    void fetchMeshmapNodes({ cacheTtlMs: 30 * 60 * 1000 })
-      .then((result) => {
-        if (canceled) return;
-        setMqttNodes(result.nodes);
-        if (result.fromCache && result.networkError) {
-          const ageMin = Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000));
-          setMqttLoadStatus(`Live fetch failed — showing ${result.nodes.length} cached node(s) from ${ageMin} min ago.`);
-        } else {
-          setMqttLoadStatus(null);
-        }
-      })
-      .catch((error) => {
-        if (canceled) return;
-        setMqttLoadStatus(`MQTT load failed: ${getUiErrorMessage(error)}`);
+    const pendingSourceIds = enabledNodeSourceIds.filter((sourceId) => !nodeSourceLoads[sourceId]);
+    if (!pendingSourceIds.length) return;
+    setNodeSourceLoads((current) => {
+      const next = { ...current };
+      for (const sourceId of pendingSourceIds) next[sourceId] = { status: "loading", nodes: [] };
+      return next;
+    });
+    void Promise.allSettled(pendingSourceIds.map(async (sourceId) => {
+      const source = NODE_FEED_SOURCES[sourceId];
+      const result = await fetchMeshmapNodes({
+        sourceId,
+        sourceUrl: source.sourceUrl,
+        cacheTtlMs: 30 * 60 * 1000,
       });
-    return () => {
-      canceled = true;
-    };
-  }, [showDiscoveryMqtt, mqttNodes.length]);
+      const message = result.fromCache && result.networkError
+        ? `${source.label} live fetch failed — showing ${result.nodes.length} cached node(s) from ${Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000))} min ago.`
+        : undefined;
+      return { sourceId, nodes: result.nodes, message };
+    })).then((results) => {
+      setNodeSourceLoads((current) => {
+        const next = { ...current };
+        results.forEach((result, index) => {
+          const sourceId = pendingSourceIds[index];
+          if (!sourceId) return;
+          next[sourceId] = result.status === "fulfilled"
+            ? { status: "loaded", nodes: result.value.nodes, message: result.value.message }
+            : { status: "failed", nodes: [], message: getUiErrorMessage(result.reason) };
+        });
+        return next;
+      });
+    });
+  }, [enabledNodeSourceIds, nodeSourceLoads]);
   useEffect(() => {
     const previousSelectionCount = previousSelectionCountRef.current;
     previousSelectionCountRef.current = selectionCount;
@@ -3070,7 +3106,7 @@ export function MapView({
         insertIntoSimulation: true,
         sourceMeta: {
           sourceType: "mqtt-feed",
-          sourceUrl: "/meshmap/nodes.json",
+          sourceUrl: node.sourceUrl ?? NODE_FEED_SOURCES.meshmap.sourceUrl,
           nodeId: node.nodeId,
           longName: node.longName,
           shortName: node.shortName,
@@ -3112,7 +3148,7 @@ export function MapView({
         insertIntoSimulation: true,
         sourceMeta: {
           sourceType: "mqtt-feed",
-          sourceUrl: "/meshmap/nodes.json",
+          sourceUrl: node.sourceUrl ?? NODE_FEED_SOURCES.meshmap.sourceUrl,
           nodeId: node.nodeId,
           longName: node.longName,
           shortName: node.shortName,
@@ -3220,20 +3256,25 @@ export function MapView({
     setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode;
-  const visibleSiteSourceSummary =
-    showDiscoverySites && showDiscoveryMqtt
-      ? "Simulation + Library + MQTT"
-      : showDiscoverySites
-        ? "Simulation + Library"
-        : showDiscoveryMqtt
-          ? "Simulation + MQTT"
-          : "Simulation only";
-  const setVisibleSiteSource = useCallback((source: "library" | "mqtt", visible: boolean) => {
+  const visibleSiteSourceLabels = [
+    "Simulation",
+    ...(showDiscoverySites ? ["Library"] : []),
+    ...(showMeshmapFeed ? [NODE_FEED_SOURCES.meshmap.label] : []),
+    ...(show868NoFeed ? [NODE_FEED_SOURCES["868-no"].label] : []),
+  ];
+  const visibleSiteSourceSummary = visibleSiteSourceLabels.length === 1
+    ? "Simulation only"
+    : visibleSiteSourceLabels.join(" + ");
+  const setVisibleSiteSource = useCallback((source: "library" | NodeFeedSourceId, visible: boolean) => {
     if (source === "library") {
       setShowDiscoverySites(visible);
       return;
     }
-    setShowDiscoveryMqtt(visible);
+    if (source === "meshmap") {
+      setShowMeshmapFeed(visible);
+      return;
+    }
+    setShow868NoFeed(visible);
   }, []);
   const selectedSite = selectedSites[0] ?? null;
   const selectedDiscoveryLibraryEntry =
@@ -3533,7 +3574,7 @@ export function MapView({
           {showDiscoveryMqtt && mqttLoadStatus ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">{mqttLoadStatus}</p>
-              {mqttLoadStatus === "Loading MQTT nodes..." ? (
+              {mqttLoadStatus.startsWith("Loading") ? (
                 <div className="map-progress-track">
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 </div>
@@ -3542,8 +3583,13 @@ export function MapView({
                   <ActionButton
                     aria-label="Retry MQTT load"
                     onClick={() => {
-                      setMqttNodes([]);
-                      setMqttLoadStatus(null);
+                      setNodeSourceLoads((current) => {
+                        const next = { ...current };
+                        for (const sourceId of enabledNodeSourceIds) {
+                          if (next[sourceId]?.status === "failed") delete next[sourceId];
+                        }
+                        return next;
+                      });
                     }}
                   >
                     <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
@@ -3752,7 +3798,7 @@ export function MapView({
                 </div>
                 <FloatingPopover
                   className="visible-site-sources-popover"
-                  estimatedHeight={120}
+                  estimatedHeight={150}
                   estimatedWidth={240}
                   onClose={() => setVisibleSiteSourcesOpen(false)}
                   open={visibleSiteSourcesOpen}
@@ -3772,11 +3818,19 @@ export function MapView({
                       </label>
                       <label className="checkbox-field visible-site-source-option">
                         <input
-                          checked={showDiscoveryMqtt}
-                          onChange={(event) => setVisibleSiteSource("mqtt", event.currentTarget.checked)}
+                          checked={showMeshmapFeed}
+                          onChange={(event) => setVisibleSiteSource("meshmap", event.currentTarget.checked)}
                           type="checkbox"
                         />
-                        <span>MQTT</span>
+                        <span>{NODE_FEED_SOURCES.meshmap.label}</span>
+                      </label>
+                      <label className="checkbox-field visible-site-source-option">
+                        <input
+                          checked={show868NoFeed}
+                          onChange={(event) => setVisibleSiteSource("868-no", event.currentTarget.checked)}
+                          type="checkbox"
+                        />
+                        <span>{NODE_FEED_SOURCES["868-no"].label}</span>
                       </label>
                     </div>
                   </div>
