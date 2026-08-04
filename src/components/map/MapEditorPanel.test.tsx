@@ -276,6 +276,94 @@ describe("MapEditorPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("confirms Simulation deletion and preserves the editor when deletion fails", async () => {
+    const deleteSimulationPreset = vi.fn(async () => {
+      throw new Error("Cloud unavailable");
+    });
+    useAppStore.setState({
+      deleteSimulationPreset,
+      simulationPresets: [
+        {
+          id: "sim-delete",
+          name: "Delete Plan",
+          visibility: "private",
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [], links: [], systems: [], networks: [], selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+            propagationModel: "ITM", selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: { kind: "simulation", resourceId: "sim-delete", isNew: false, label: "Delete Plan", anchorRect },
+    });
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Delete Simulation" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete Simulation" });
+    expect(within(dialog).getByText(/Delete Delete Plan from the Library/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(await within(dialog).findByText("Delete failed: Cloud unavailable")).toBeInTheDocument();
+    expect(useAppStore.getState().mapEditor?.resourceId).toBe("sim-delete");
+  });
+
+  it("does not offer Simulation deletion to resource collaborators", async () => {
+    useAppStore.setState({
+      simulationPresets: [
+        {
+          id: "sim-editor", name: "Editor Plan", visibility: "shared", ownerUserId: "other-owner",
+          effectiveRole: "editor", updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [], links: [], systems: [], networks: [], selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+            propagationModel: "ITM", selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: { kind: "simulation", resourceId: "sim-editor", isNew: false, label: "Editor Plan", anchorRect },
+    });
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete Simulation" })).not.toBeInTheDocument();
+  });
+
+  it("shows Restore in read-only deleted Simulation details for platform admins", async () => {
+    const restoreSimulationPreset = vi.fn(async () => undefined);
+    useAppStore.setState({
+      currentUser: { ...currentUser, isAdmin: true },
+      restoreSimulationPreset,
+      simulationPresets: [
+        {
+          id: "sim-deleted", name: "Deleted Plan", status: "deleted", visibility: "private", ownerUserId: "owner-1",
+          effectiveRole: "admin", updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [], links: [], systems: [], networks: [], selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+            propagationModel: "ITM", selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: {
+        kind: "simulation", resourceId: "sim-deleted", isNew: false, label: "Deleted Plan", anchorRect, readOnly: true,
+        origin: { kind: "library", tab: "simulations" },
+      },
+    });
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByText(/available to platform admins for inspection/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete Simulation" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Restore Simulation" }));
+    await waitFor(() => expect(restoreSimulationPreset).toHaveBeenCalledWith("sim-deleted"));
+    expect(useAppStore.getState().mapEditor).toBeNull();
+  });
+
   it("shows Simulation settings summary and enables override editing from the edit action", async () => {
     useAppStore.setState({
       selectedFrequencyPresetId: "custom",

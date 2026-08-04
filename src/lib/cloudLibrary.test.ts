@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchCloudLibrary, pushCloudLibrary } from "./cloudLibrary";
+import {
+  deleteCloudSimulation,
+  fetchCloudLibrary,
+  pushCloudLibrary,
+  restoreCloudSimulation,
+} from "./cloudLibrary";
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -52,7 +57,38 @@ describe("cloudLibrary client", () => {
     );
 
     const result = await fetchCloudLibrary();
-    expect(result).toEqual({ siteLibrary: [{ id: "s1" }], simulationPresets: [] });
+    expect(result).toEqual({ siteLibrary: [{ id: "s1" }], simulationPresets: [], deletedSimulationIds: [] });
+  });
+
+  it("normalizes deletion tombstones from Library responses", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ siteLibrary: [], simulationPresets: [], deletedSimulationIds: ["sim-1", 42] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(fetchCloudLibrary()).resolves.toMatchObject({ deletedSimulationIds: ["sim-1"] });
+  });
+
+  it("uses dedicated lifecycle requests for delete and restore", async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, simulationId: "sim-1", status: "deleted" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, simulationId: "sim-1", status: "active" }), { status: 200 }));
+
+    await deleteCloudSimulation("sim-1");
+    await restoreCloudSimulation("sim-1");
+
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenNthCalledWith(
+      1,
+      "/api/library/simulations/sim-1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenNthCalledWith(
+      2,
+      "/api/library/simulations/sim-1",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ status: "active" }) }),
+    );
   });
 
   it("includes simulation names for simulation_name_taken conflicts", async () => {

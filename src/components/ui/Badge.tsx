@@ -1,7 +1,7 @@
-import { Globe, Lock, EthernetPort, Globe2, GlobeOff, FlaskConical } from 'lucide-react';
+import { CircleMinus, Globe, Lock, EthernetPort, Globe2, GlobeOff, FlaskConical } from 'lucide-react';
 import type { HTMLAttributes } from 'react';
 
-type BadgeVariant = 'private' | 'public' | 'shared' | 'mqtt' | 'local' | 'staging';
+type BadgeVariant = 'private' | 'public' | 'shared' | 'mqtt' | 'local' | 'staging' | 'deleted';
 type BadgeTone = 'subtle' | 'prominent';
 
 type BadgeProps = {
@@ -18,6 +18,7 @@ const variantIcon = {
   mqtt: EthernetPort,
   local: GlobeOff,
   staging: FlaskConical,
+  deleted: CircleMinus,
 };
 
 const defaultTone: Record<BadgeVariant, BadgeTone> = {
@@ -27,6 +28,7 @@ const defaultTone: Record<BadgeVariant, BadgeTone> = {
   mqtt: 'subtle',
   local: 'prominent',
   staging: 'prominent',
+  deleted: 'prominent',
 };
 
 export function Badge({ variant, tone, className, children, ...rest }: BadgeProps) {
@@ -34,7 +36,7 @@ export function Badge({ variant, tone, className, children, ...rest }: BadgeProp
   const effectiveTone = tone ?? defaultTone[variant];
   const isMqtt = variant === 'mqtt';
   return (
-    <span className={`ui-badge ${effectiveTone === 'prominent' ? 'prominent' : ''} ${isMqtt ? 'mqtt-source-badge' : ''} ${className ?? ''}`} {...rest}>
+    <span className={`ui-badge ${effectiveTone === 'prominent' ? 'prominent' : ''} ${isMqtt ? 'mqtt-source-badge' : ''} ${variant === 'deleted' ? 'deleted-resource-badge' : ''} ${className ?? ''}`} {...rest}>
       <Icon aria-hidden size={10} strokeWidth={2.2} style={{ marginRight: 4 }} />
       {children}
     </span>
