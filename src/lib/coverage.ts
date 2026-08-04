@@ -19,6 +19,7 @@ export type BuildCoverageOptions = {
   overlayRadiusKm?: number;
   singleSiteRadiusKm?: number;
   shouldCancel?: () => boolean;
+  requireCompleteTerrain?: boolean;
 };
 
 export class CoverageBuildCancelledError extends Error {
@@ -27,6 +28,24 @@ export class CoverageBuildCancelledError extends Error {
     this.name = "CoverageBuildCancelledError";
   }
 }
+
+export class CoverageTerrainUnavailableError extends Error {
+  constructor(coordinates: Coordinates) {
+    super(
+      `Terrain data is unavailable at ${coordinates.lat.toFixed(5)}, ${coordinates.lon.toFixed(5)}`,
+    );
+    this.name = "CoverageTerrainUnavailableError";
+  }
+}
+
+const requireTerrainSample = (
+  terrainSampler: (coordinates: Coordinates) => number | null,
+): ((coordinates: Coordinates) => number) =>
+  (coordinates) => {
+    const elevationM = terrainSampler(coordinates);
+    if (elevationM === null) throw new CoverageTerrainUnavailableError(coordinates);
+    return elevationM;
+  };
 
 export type CoverageGridBounds = {
   minLat: number;
@@ -215,6 +234,10 @@ export const buildCoverage = (
   const effectiveFrequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
   const sampleMultiplier = Math.max(1, options?.sampleMultiplier ?? 1);
   const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
+  const effectiveTerrainSampler =
+    terrainSampler && options?.requireCompleteTerrain
+      ? requireTerrainSample(terrainSampler)
+      : terrainSampler;
   const onProgress = options?.onProgress;
   const shouldCancel = options?.shouldCancel;
   const fallbackSystemId = systems[0]?.id ?? "";
@@ -258,7 +281,7 @@ export const buildCoverage = (
           effectiveFrequencyMHz,
           terrainSamples,
           environment,
-          terrainSampler,
+          effectiveTerrainSampler,
           options?.terrainCacheKey,
         );
       })
@@ -288,6 +311,10 @@ export const buildCoverageAsync = async (
   const effectiveFrequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
   const sampleMultiplier = Math.max(1, options?.sampleMultiplier ?? 1);
   const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
+  const effectiveTerrainSampler =
+    terrainSampler && options?.requireCompleteTerrain
+      ? requireTerrainSample(terrainSampler)
+      : terrainSampler;
   const onProgress = options?.onProgress;
   const shouldCancel = options?.shouldCancel;
   const fallbackSystemId = systems[0]?.id ?? "";
@@ -334,7 +361,7 @@ export const buildCoverageAsync = async (
           effectiveFrequencyMHz,
           terrainSamples,
           environment,
-          terrainSampler,
+          effectiveTerrainSampler,
           options?.terrainCacheKey,
         );
       })

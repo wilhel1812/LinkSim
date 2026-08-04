@@ -50,14 +50,11 @@ import {
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import {
   optionsForSelectionCount,
-  resolveEffectiveOverlayRadiusKm,
-  resolveLoadedOverlayRadiusCapKm,
+  resolveRequiredOverlayTerrainTileKeys,
   resolveOverlayRadiusOptionForSelectionTransition,
   resolveTargetOverlayRadiusKm,
   type SimulationOverlayRadiusOption,
 } from "../lib/simulationOverlayRadius";
-import { simulationAreaBoundsForSites } from "../lib/simulationArea";
-import { tilesForBounds } from "../lib/terrainTiles";
 import {
   buildCoverageOverlayPixelsAsync,
   buildMeshExtensionOverlayPixelsAsync,
@@ -808,6 +805,7 @@ export function MapView({
   const simulationStepLabel = useCoverageStore((state) => state.simulationStepLabel);
   const simulationRunToken = useCoverageStore((state) => state.simulationRunToken);
   const completedCoverageRunToken = useCoverageStore((state) => state.completedCoverageRunToken);
+  const simulationErrorMessage = useCoverageStore((state) => state.simulationErrorMessage);
   const autoCalculateEnabled = useCoverageStore((state) => state.autoCalculateEnabled);
   const automaticLockNoticeShown = useCoverageStore((state) => state.automaticLockNoticeShown);
   const calculationCycleSource = useCoverageStore((state) => state.calculationCycleSource);
@@ -1330,59 +1328,28 @@ export function MapView({
     onPublishNotice,
     setAutoCalculateEnabled,
   ]);
+  useEffect(() => {
+    if (!simulationErrorMessage) return;
+    onPublishNotice?.({
+      id: "simulation-terrain-unavailable",
+      message: simulationErrorMessage,
+      tone: "error",
+      persistent: false,
+    });
+  }, [onPublishNotice, simulationErrorMessage]);
   const targetRadiusKm = useMemo(
     () => resolveTargetOverlayRadiusKm(selectionCount, normalizedOverlayRadiusOption),
     [selectionCount, normalizedOverlayRadiusOption],
   );
-  const loadedRadiusCapKm = useMemo(
-    () => resolveLoadedOverlayRadiusCapKm(analysisTargetSites, targetRadiusKm, srtmTiles, 20),
-    [analysisTargetSites, targetRadiusKm, srtmTiles],
-  );
-  const overlayRadiusKm = useMemo(
-    () =>
-      Math.min(
-        targetRadiusKm,
-        Math.min(
-          loadedRadiusCapKm,
-          resolveEffectiveOverlayRadiusKm({
-            selectionCount,
-            option: normalizedOverlayRadiusOption,
-            selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
-            srtmTiles,
-            isTerrainFetching,
-          }),
-        ),
-      ),
-    [
-      targetRadiusKm,
-      normalizedOverlayRadiusOption,
-      loadedRadiusCapKm,
-      selectionCount,
-      selectedSites,
-      srtmTiles,
-      isTerrainFetching,
-    ],
-  );
+  const overlayRadiusKm = targetRadiusKm;
   const overlayRadiusOptions = optionsForSelectionCount(selectionCount);
   const loaded30mTileKeys = useMemo(
     () => new Set(srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key)),
     [srtmTiles],
   );
-  const targetRadiusBounds = useMemo(
-    () => simulationAreaBoundsForSites(analysisTargetSites, { overlayRadiusKm: targetRadiusKm }),
-    [analysisTargetSites, targetRadiusKm],
-  );
   const requiredTargetRadiusTileKeys = useMemo(
-    () =>
-      targetRadiusBounds
-        ? tilesForBounds(
-            targetRadiusBounds.minLat,
-            targetRadiusBounds.maxLat,
-            targetRadiusBounds.minLon,
-            targetRadiusBounds.maxLon,
-          )
-        : [],
-    [targetRadiusBounds],
+    () => resolveRequiredOverlayTerrainTileKeys(analysisTargetSites, targetRadiusKm),
+    [analysisTargetSites, targetRadiusKm],
   );
   const missingTargetRadiusTileCount = useMemo(
     () => requiredTargetRadiusTileKeys.filter((key) => !loaded30mTileKeys.has(key)).length,
