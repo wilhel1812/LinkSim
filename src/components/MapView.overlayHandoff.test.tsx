@@ -115,7 +115,8 @@ vi.mock("react-map-gl/maplibre", async () => {
   };
 });
 
-vi.mock("../lib/meshtasticMqtt", () => ({
+vi.mock("../lib/meshtasticMqtt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/meshtasticMqtt")>()),
   fetchMeshmapNodes: vi.fn(async () => ({
     fromCache: false,
     networkError: false,
