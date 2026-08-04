@@ -9,7 +9,6 @@ import { resolveBasemapSelection } from "../lib/basemaps";
 import { parseDeepLinkFromLocation } from "../lib/deepLink";
 import {
   fetchCollaboratorDirectory,
-  fetchUserById,
   updateUserRole,
   type CollaboratorDirectoryUser,
   type CloudUser,
@@ -31,8 +30,6 @@ import {
   selectionLabel,
   toggleValue,
 } from "../lib/libraryFilterUi";
-import { getUiErrorMessage } from "../lib/uiError";
-import { formatDate } from "../lib/locale";
 import { useAppStore } from "../store/appStore";
 import type { Site } from "../types/radio";
 import { siGithub, siMatrix } from "simple-icons";
@@ -45,6 +42,7 @@ import SimulationLibraryPanel from "./SimulationLibraryPanel";
 import { Badge } from "./ui/Badge";
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { UserAdminPanel } from "./UserAdminPanel";
+import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfilePopover";
 
 const READ_ONLY_SIMULATION_SITE_HELP =
   "Read-only: you need edit permission to add or edit sites in this simulation.";
@@ -54,13 +52,6 @@ const PRIVATE_SITE_DISCLOSURE_NOTICE =
   "This Simulation is Shared and includes Private Sites. Those Sites are visible to anyone who can access this Simulation.";
 const PRIVATE_SITE_DISCLOSURE_TOOLTIP =
   "This Site is Private in the Library, but is visible to anyone who can access this Shared Simulation.";
-
-const UserBadge = ({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) => (
-  <span className="user-list-row">
-    <AvatarBadge avatarUrl={avatarUrl} imageClassName="profile-avatar" name={name} />
-    <span>{name}</span>
-  </span>
-);
 
 const LAST_SIMULATION_REF_KEY = "rmw-last-simulation-ref-v1";
 const SITE_LIBRARY_FILTERS_KEY = "rmw-site-library-filters-v1";
@@ -215,9 +206,7 @@ export function Sidebar({
     }
   };
   const [startupSimulationApplied, setStartupSimulationApplied] = useState(false);
-  const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
-  const [profilePopupBusy, setProfilePopupBusy] = useState(false);
-  const [profilePopupStatus, setProfilePopupStatus] = useState("");
+  const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
   const [resourceCollaboratorDirectory, setResourceCollaboratorDirectory] = useState<CollaboratorDirectoryUser[]>([]);
   const currentUser = useAppStore((state) => state.currentUser);
 
@@ -622,36 +611,12 @@ export function Sidebar({
       siteSeed: { awaitMapClick: true },
     });
   };
-  const openUserProfilePopup = async (userId: string | undefined | null) => {
-    if (!userId) return;
-    setProfilePopupBusy(true);
-    setProfilePopupStatus("");
-    try {
-      const user = await fetchUserById(userId);
-      setProfilePopupUser(user);
-    } catch (error) {
-      const message = getUiErrorMessage(error);
-      setProfilePopupStatus(`Failed loading user: ${message}`);
-    } finally {
-      setProfilePopupBusy(false);
-    }
+  const openUserProfilePopup = (userId: string | undefined | null, anchor: HTMLElement) => {
+    if (userId) setProfileTarget({ anchor, userId });
   };
 
-  const changeProfileRole = async (nextRole: "admin" | "moderator" | "user" | "pending") => {
-    if (!profilePopupUser) return;
-    setProfilePopupBusy(true);
-    setProfilePopupStatus("");
-    try {
-      const updated = await updateUserRole(profilePopupUser.id, nextRole);
-      setProfilePopupUser(updated);
-      setProfilePopupStatus(`Updated role for ${updated.username}.`);
-    } catch (error) {
-      const message = getUiErrorMessage(error);
-      setProfilePopupStatus(`Role update failed: ${message}`);
-    } finally {
-      setProfilePopupBusy(false);
-    }
-  };
+  const changeProfileRole = (user: CloudUser, nextRole: "admin" | "moderator" | "user" | "pending") =>
+    updateUserRole(user.id, nextRole);
 
   return (
     <aside className={`sidebar-panel ${panelClassName ?? ""}`.trim()}>
@@ -958,85 +923,13 @@ export function Sidebar({
         </div>
       </footer>
 
-      {profilePopupUser ? (
-        <ModalOverlay aria-label="User Profile" onClose={() => setProfilePopupUser(null)} tier="raised">
-          <div className="library-manager-card user-profile-popup">
-            <div className="library-manager-header">
-              <h2>User Profile</h2>
-              <InlineCloseIconButton onClick={() => setProfilePopupUser(null)} />
-            </div>
-            <p className="field-help">
-              <strong>
-                <UserBadge avatarUrl={profilePopupUser.avatarUrl} name={profilePopupUser.username} />
-              </strong>{" "}
-              ({profilePopupUser.id})
-            </p>
-            <p className="field-help">Email: {profilePopupUser.email ?? "Hidden by user"}</p>
-            <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
-            <p className="field-help">
-              Role:{" "}
-              {profilePopupUser.role ??
-                (profilePopupUser.isAdmin
-                  ? "admin"
-                  : profilePopupUser.isModerator
-                    ? "moderator"
-                    : profilePopupUser.isApproved
-                      ? "user"
-                      : "pending")}
-            </p>
-            <p className="field-help">
-              Access:{" "}
-              {profilePopupUser.accountState === "revoked"
-                ? "Revoked"
-                : profilePopupUser.isApproved
-                  ? "Approved"
-                  : "Pending"}{" "}
-              | Created{" "}
-              {formatDate(profilePopupUser.createdAt)}
-            </p>
-            <div className="chip-group">
-              <label className="field-grid">
-                  <span>
-                    Role{" "}
-                  <InfoTip text="Admins can change roles for other users. Moderators can only approve pending users to User, or move existing users back to Pending. No one can change their own role." />
-                  </span>
-                <select
-                  className="locale-select"
-                  disabled={profilePopupBusy}
-                  onChange={(event) =>
-                    void changeProfileRole(event.target.value as "admin" | "moderator" | "user" | "pending")
-                  }
-                  value={
-                    profilePopupUser.role ??
-                    (profilePopupUser.isAdmin
-                      ? "admin"
-                      : profilePopupUser.isModerator
-                        ? "moderator"
-                        : profilePopupUser.isApproved
-                          ? "user"
-                          : "pending")
-                  }
-                >
-                  <option value="pending">Pending</option>
-                  <option value="user">User</option>
-                  <option value="moderator">Moderator</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </label>
-              {!profilePopupUser.isApproved ? (
-                <ActionButton
-                  disabled={profilePopupBusy}
-                  onClick={() => void changeProfileRole("user")}
-                  type="button"
-                >
-                  Approve Access
-                </ActionButton>
-              ) : null}
-            </div>
-            {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
-          </div>
-        </ModalOverlay>
-      ) : null}
+      <UserProfilePopover
+        management
+        onClose={() => setProfileTarget(null)}
+        onRoleChange={changeProfileRole}
+        target={profileTarget}
+        viewer={currentUser}
+      />
 
       {showSimulationLibraryManager && !hideLibraryBrowsing ? (
         <ModalOverlay
@@ -1049,6 +942,7 @@ export function Sidebar({
               loadSimulationPreset(presetId);
               persistSelectedSimulationRef(`saved:${presetId}`);
             }}
+            onOpenUserProfile={openUserProfilePopup}
             onOpenDetails={(params) => {
               setShowSimulationLibraryManager(false);
               openMapEditor({
@@ -1361,19 +1255,31 @@ export function Sidebar({
                     {(entry as { sourceMeta?: { sourceType?: string } }).sourceMeta?.sourceType === "mqtt-feed" ? (
                       <Badge variant="mqtt">MQTT</Badge>
                     ) : null}
-                    <button
-                      className="row-avatar owner-avatar"
-                      onClick={() => void openUserProfilePopup((entry as { ownerUserId?: string }).ownerUserId)}
-                      title={`Owner: ${owner.name}`}
-                      type="button"
-                    >
-                      <AvatarBadge
-                        avatarUrl={owner.avatarUrl}
-                        fallbackRawText
-                        imageClassName="row-avatar-image"
-                        name={owner.name}
-                      />
-                    </button>
+                    {(entry as { ownerUserId?: string }).ownerUserId ? (
+                      <button
+                        aria-label={`Open owner profile: ${owner.name}`}
+                        className="row-avatar owner-avatar"
+                        onClick={(event) => openUserProfilePopup((entry as { ownerUserId: string }).ownerUserId, event.currentTarget)}
+                        title={`Owner: ${owner.name}`}
+                        type="button"
+                      >
+                        <AvatarBadge
+                          avatarUrl={owner.avatarUrl}
+                          fallbackRawText
+                          imageClassName="row-avatar-image"
+                          name={owner.name}
+                        />
+                      </button>
+                    ) : (
+                      <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
+                        <AvatarBadge
+                          avatarUrl={owner.avatarUrl}
+                          fallbackRawText
+                          imageClassName="row-avatar-image"
+                          name={owner.name}
+                        />
+                      </span>
+                    )}
                     {((entry.sharedWith ?? [])
                       .filter((grant) => grant.userId !== (entry as { ownerUserId?: string }).ownerUserId)
                       .slice(0, 3)
@@ -1383,9 +1289,10 @@ export function Sidebar({
                         const avatarUrl = user?.avatarUrl ?? "";
                         return (
                           <button
+                            aria-label={`Open profile for ${name}`}
                             className="row-avatar"
                             key={grant.userId}
-                            onClick={() => void openUserProfilePopup(grant.userId)}
+                            onClick={(event) => openUserProfilePopup(grant.userId, event.currentTarget)}
                             title={name}
                             type="button"
                           >

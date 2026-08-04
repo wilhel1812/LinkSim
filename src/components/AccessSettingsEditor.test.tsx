@@ -72,9 +72,39 @@ describe("AccessSettingsEditor", () => {
     expect(within(popover).queryByRole("button", { name: /Add Alice/i })).not.toBeInTheDocument();
 
     await userEvent.type(within(popover).getByLabelText("Search users"), "ali");
-    const addAlice = await within(popover).findByRole("button", { name: /Add Alice/i });
+    const addAlice = await within(popover).findByRole("button", { name: "Add Alice" });
     expect(addAlice).toBeInTheDocument();
-    expect(within(addAlice).getByText("Add")).not.toHaveClass("inline-action");
+    expect(addAlice).toHaveTextContent("Add");
+  });
+
+  it("opens profiles from selected and candidate identities without taking over collaborator actions", async () => {
+    const onOpenUserProfile = vi.fn();
+    const onAddCollaborator = vi.fn();
+    render(
+      <AccessSettingsEditor
+        collaborators={collaborators}
+        directory={directory}
+        onAddCollaborator={onAddCollaborator}
+        onOpenUserProfile={onOpenUserProfile}
+        onRemoveCollaborator={vi.fn()}
+        onRoleChange={vi.fn()}
+        onVisibilityChange={vi.fn()}
+        visibility="private"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Alice" }));
+    expect(onOpenUserProfile).toHaveBeenCalledWith("user-1", expect.any(HTMLElement));
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit collaborators" }));
+    const popover = await screen.findByRole("dialog", { name: "Edit collaborators" });
+    await userEvent.type(within(popover).getByLabelText("Search users"), "bob");
+    await userEvent.click(await within(popover).findByRole("button", { name: "Open profile for Bob" }));
+    expect(onOpenUserProfile).toHaveBeenCalledWith("user-2", expect.any(HTMLElement));
+    expect(onAddCollaborator).not.toHaveBeenCalled();
+
+    await userEvent.click(within(popover).getByRole("button", { name: "Add Bob" }));
+    expect(onAddCollaborator).toHaveBeenCalledWith("user-2");
   });
 
   it("adds, removes, and changes roles with accessible controls", async () => {

@@ -42,6 +42,7 @@ import { SettingsPanel } from "./settings/SettingsPanel";
 import { MapEditorPanel } from "./map/MapEditorPanel";
 import { MobileWorkspaceTabs } from "./app-shell/MobileWorkspaceTabs";
 import { useOnboardingFlow } from "./app-shell/useOnboardingFlow";
+import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfilePopover";
 
 initializeMigrations();
 
@@ -236,6 +237,7 @@ export function AppShell() {
   }, []);
   const [libraryAutoOpened, setLibraryAutoOpened] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareDirectory, setShareDirectory] = useState<CollaboratorDirectoryUser[]>([]);
   const [shareDirectoryBusy, setShareDirectoryBusy] = useState(false);
@@ -2323,6 +2325,7 @@ export function AppShell() {
         >
           <SimulationLibraryPanel
             onClose={() => setShowLibraryFromRequest(false)}
+            onOpenUserProfile={(userId, anchor) => setProfileTarget({ anchor, userId })}
             onLoadSimulation={(presetId) => {
               handleSimulationLibraryLoad({
                 presetId,
@@ -2395,7 +2398,15 @@ export function AppShell() {
                               const user = shareDirectory.find((u) => u.id === uid);
                               return (
                                 <span className="site-quick-item" key={uid}>
-                                  <span>{user?.username ?? uid}</span>
+                                  <button
+                                    aria-label={`Open profile for ${user?.username ?? uid}`}
+                                    className="inline-link-button"
+                                    disabled={!user}
+                                    onClick={(event) => user && setProfileTarget({ anchor: event.currentTarget, userId: user.id })}
+                                    type="button"
+                                  >
+                                    {user?.username ?? uid}
+                                  </button>
                                   <select
                                     aria-label={`Role for ${user?.username ?? uid}`}
                                     onChange={(e) => setShareSpecificRoles((prev) => ({ ...prev, [uid]: e.target.value as "viewer" | "editor" }))}
@@ -2437,19 +2448,28 @@ export function AppShell() {
                                 .filter((u) => u.username.toLowerCase().includes(shareUserQuery.toLowerCase()) || u.email.toLowerCase().includes(shareUserQuery.toLowerCase()))
                                 .slice(0, 6)
                                 .map((u) => (
-                                  <button
-                                    className="site-quick-item"
-                                    key={u.id}
-                                    onClick={() => {
-                                      setShareSpecificUsers((prev) => prev.includes(u.id) ? prev : [...prev, u.id]);
-                                      setShareUserQuery("");
-                                    }}
-                                    type="button"
-                                  >
-                                    <UserRoundPlus aria-hidden="true" size={14} strokeWidth={1.6} />
-                                    <span>{u.username}</span>
+                                  <div className="site-quick-item" key={u.id}>
+                                    <button
+                                      aria-label={`Open profile for ${u.username}`}
+                                      className="inline-link-button"
+                                      onClick={(event) => setProfileTarget({ anchor: event.currentTarget, userId: u.id })}
+                                      type="button"
+                                    >
+                                      {u.username}
+                                    </button>
                                     {u.email ? <span className="field-help">{u.email}</span> : null}
-                                  </button>
+                                    <ActionButton
+                                      aria-label={`Add ${u.username}`}
+                                      onClick={() => {
+                                        setShareSpecificUsers((prev) => prev.includes(u.id) ? prev : [...prev, u.id]);
+                                        setShareUserQuery("");
+                                      }}
+                                      type="button"
+                                    >
+                                      <UserRoundPlus aria-hidden="true" size={14} strokeWidth={1.6} />
+                                      Add
+                                    </ActionButton>
+                                  </div>
                                 ))
                             )}
                             {!shareDirectoryBusy && shareDirectory.filter((u) => !shareSpecificUsers.includes(u.id) && u.id !== currentUser?.id && (u.username.toLowerCase().includes(shareUserQuery.toLowerCase()) || u.email.toLowerCase().includes(shareUserQuery.toLowerCase()))).length === 0 ? (
@@ -2478,6 +2498,7 @@ export function AppShell() {
           </div>
         </ModalOverlay>
       ) : null}
+      <UserProfilePopover onClose={() => setProfileTarget(null)} target={profileTarget} viewer={currentUser} />
       {settingsRoute ? (
         <ModalOverlay aria-label="Settings" onClose={closeSettings} tier="raised" className="settings-overlay">
           <div className="library-manager-card settings-panel-wrapper">

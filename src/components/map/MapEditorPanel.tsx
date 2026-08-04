@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, History, Loader2, Pencil, RefreshCw, Search } from "lucide-react";
 import {
   fetchResourceChanges,
-  fetchUserById,
   revertResourceChangeCopy,
   type CloudUser,
   type ResourceChange,
@@ -21,6 +20,7 @@ import { SiteBeamVisualizer } from "../SiteBeamVisualizer";
 import { AvatarBadge } from "../AvatarBadge";
 import { ModalOverlay } from "../ModalOverlay";
 import { FloatingPopover } from "../ui/FloatingPopover";
+import { UserProfilePopover, type UserProfilePopoverTarget } from "../UserProfilePopover";
 import {
   getSiteIconOption,
   resolveSiteIconKey,
@@ -158,7 +158,7 @@ function EditorMetadataStrip({
 }: {
   metadata: ResourceMetadata;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
-  onOpenUserProfile: (userId: string) => void;
+  onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
 }) {
   return (
     <div className="editor-meta-footer" aria-label="Resource metadata">
@@ -167,7 +167,7 @@ function EditorMetadataStrip({
         <ActionButton
           aria-label={`Open owner profile: ${metadata.owner.name}`}
           className="editor-meta-avatar-button"
-          onClick={() => onOpenUserProfile(metadata.owner.id)}
+          onClick={(event) => onOpenUserProfile(metadata.owner.id, event.currentTarget)}
           size="icon"
           title={`Owner: ${metadata.owner.name}`}
           type="button"
@@ -184,7 +184,7 @@ function EditorMetadataStrip({
         <ActionButton
           aria-label={`Open last editor profile: ${metadata.lastEditedBy.name}`}
           className="editor-meta-avatar-button"
-          onClick={() => onOpenUserProfile(metadata.lastEditedBy.id)}
+          onClick={(event) => onOpenUserProfile(metadata.lastEditedBy.id, event.currentTarget)}
           size="icon"
           title={`Last edited by: ${metadata.lastEditedBy.name}`}
           type="button"
@@ -261,7 +261,7 @@ function SiteEditorCard({
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
-  onOpenUserProfile: (userId: string) => void;
+  onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
@@ -826,7 +826,7 @@ function SimulationEditorCard({
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
-  onOpenUserProfile: (userId: string) => void;
+  onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
@@ -1040,9 +1040,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
-  const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
-  const [profilePopupBusy, setProfilePopupBusy] = useState(false);
-  const [profilePopupStatus, setProfilePopupStatus] = useState("");
+  const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
   const [changeLogPopup, setChangeLogPopup] = useState<{
     kind: ResourceKindWithChanges;
     resourceId: string;
@@ -1052,18 +1050,8 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
     status: string;
   } | null>(null);
 
-  const openUserProfilePopup = async (userId: string) => {
-    if (!userId) return;
-    setProfilePopupBusy(true);
-    setProfilePopupStatus("");
-    try {
-      const user = await fetchUserById(userId);
-      setProfilePopupUser(user);
-    } catch (error) {
-      setProfilePopupStatus(`Failed loading user: ${getUiErrorMessage(error)}`);
-    } finally {
-      setProfilePopupBusy(false);
-    }
+  const openUserProfilePopup = (userId: string, anchor: HTMLElement) => {
+    if (userId) setProfileTarget({ anchor, userId });
   };
 
   const openChangeLogPopup = async (kind: ResourceKindWithChanges, resourceId: string, label: string) => {
@@ -1094,12 +1082,6 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       );
     }
   };
-  const closeUserProfilePopup = () => {
-    setProfilePopupUser(null);
-    setProfilePopupBusy(false);
-    setProfilePopupStatus("");
-  };
-
   // Compute position on open and on resize
   useEffect(() => {
     if (!mapEditor || isMobile) {
@@ -1138,7 +1120,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
   useEffect(() => {
     if (!mapEditor) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeMapEditor();
+      if (e.key === "Escape" && !e.defaultPrevented) closeMapEditor();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -1154,7 +1136,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
           isNew={mapEditor.isNew}
           onClose={closeMapEditor}
           onOpenChangeLog={openChangeLogPopup}
-          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+          onOpenUserProfile={openUserProfilePopup}
         />
       );
     }
@@ -1168,7 +1150,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
           isNew={mapEditor.isNew}
           onClose={closeMapEditor}
           onOpenChangeLog={openChangeLogPopup}
-          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+          onOpenUserProfile={openUserProfilePopup}
         />
       );
     }
@@ -1187,13 +1169,12 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
         <MapEditorAuxiliaryModals
           changeLogPopup={changeLogPopup}
           onCloseChangeLog={() => setChangeLogPopup(null)}
-          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+          onOpenUserProfile={openUserProfilePopup}
           onRevertChange={revertChangeAsCopy}
           canRevert={form.canWrite}
-          onCloseProfile={closeUserProfilePopup}
-          profilePopupBusy={profilePopupBusy}
-          profilePopupStatus={profilePopupStatus}
-          profilePopupUser={profilePopupUser}
+          onCloseProfile={() => setProfileTarget(null)}
+          profileTarget={profileTarget}
+          viewer={form.currentUser}
         />
       </>,
       document.body,
@@ -1217,13 +1198,12 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       <MapEditorAuxiliaryModals
         changeLogPopup={changeLogPopup}
         onCloseChangeLog={() => setChangeLogPopup(null)}
-        onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+        onOpenUserProfile={openUserProfilePopup}
         onRevertChange={revertChangeAsCopy}
         canRevert={form.canWrite}
-        onCloseProfile={closeUserProfilePopup}
-        profilePopupBusy={profilePopupBusy}
-        profilePopupStatus={profilePopupStatus}
-        profilePopupUser={profilePopupUser}
+        onCloseProfile={() => setProfileTarget(null)}
+        profileTarget={profileTarget}
+        viewer={form.currentUser}
       />
     </>,
     document.body,
@@ -1237,9 +1217,8 @@ function MapEditorAuxiliaryModals({
   onRevertChange,
   canRevert,
   onCloseProfile,
-  profilePopupBusy,
-  profilePopupStatus,
-  profilePopupUser,
+  profileTarget,
+  viewer,
 }: {
   changeLogPopup: {
     kind: ResourceKindWithChanges;
@@ -1250,52 +1229,16 @@ function MapEditorAuxiliaryModals({
     status: string;
   } | null;
   onCloseChangeLog: () => void;
-  onOpenUserProfile: (userId: string) => void;
+  onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
   onRevertChange: (kind: ResourceKindWithChanges, resourceId: string, changeId: number) => void;
   canRevert: boolean;
   onCloseProfile: () => void;
-  profilePopupBusy: boolean;
-  profilePopupStatus: string;
-  profilePopupUser: CloudUser | null;
+  profileTarget: UserProfilePopoverTarget | null;
+  viewer: CloudUser | null;
 }) {
   return (
     <>
-      {profilePopupUser || profilePopupBusy || profilePopupStatus ? (
-        <ModalOverlay aria-label="User Profile" onClose={onCloseProfile} tier="raised">
-          <div className="library-manager-card user-profile-popup">
-            <div className="library-manager-header">
-              <h2>User Profile</h2>
-              <InlineCloseIconButton onClick={onCloseProfile} />
-            </div>
-            {profilePopupBusy ? <p className="field-help">Loading user...</p> : null}
-            {profilePopupUser ? (
-              <>
-                <p className="field-help">
-                  <strong>
-                    <UserBadge avatarUrl={profilePopupUser.avatarUrl} name={profilePopupUser.username} />
-                  </strong>{" "}
-                  ({profilePopupUser.id})
-                </p>
-                <p className="field-help">Email: {profilePopupUser.email ?? "Hidden by user"}</p>
-                <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
-                <p className="field-help">
-                  Role:{" "}
-                  {profilePopupUser.role ??
-                    (profilePopupUser.isAdmin
-                      ? "admin"
-                      : profilePopupUser.isModerator
-                        ? "moderator"
-                        : profilePopupUser.isApproved
-                          ? "user"
-                          : "pending")}
-                </p>
-                <p className="field-help">Access: {profilePopupUser.accountState ?? "approved"}</p>
-              </>
-            ) : null}
-            {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
-          </div>
-        </ModalOverlay>
-      ) : null}
+      <UserProfilePopover onClose={onCloseProfile} target={profileTarget} viewer={viewer} />
 
       {changeLogPopup ? (
         <ModalOverlay aria-label="Change Log" onClose={onCloseChangeLog} tier="raised">
@@ -1313,8 +1256,9 @@ function MapEditorAuxiliaryModals({
                     {change.action.toUpperCase()} · {formatDate(change.changedAt)}
                   </p>
                   <button
+                    aria-label={`Open profile for ${change.actorName ?? change.actorUserId}`}
                     className="inline-link-button"
-                    onClick={() => onOpenUserProfile(change.actorUserId)}
+                    onClick={(event) => onOpenUserProfile(change.actorUserId, event.currentTarget)}
                     type="button"
                   >
                     <UserBadge avatarUrl={change.actorAvatarUrl} name={change.actorName ?? change.actorUserId} />

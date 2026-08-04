@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
-import { fetchResourceChanges } from "../../lib/cloudUser";
+import { fetchResourceChanges, fetchUserById } from "../../lib/cloudUser";
 import { MapEditorPanel } from "./MapEditorPanel";
 
 const storage = vi.hoisted(() => {
@@ -181,6 +181,22 @@ describe("MapEditorPanel", () => {
       await screen.findByText("Change Log · Alpha Site"),
     ).toBeInTheDocument();
     expect(screen.getByText("Moved site")).toBeInTheDocument();
+  });
+
+  it("opens the shared profile popover from metadata and change-log identities", async () => {
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Open owner profile: Owner User" }));
+    expect(await screen.findByRole("dialog", { name: "User profile for Owner User" })).toBeInTheDocument();
+    expect(fetchUserById).toHaveBeenCalledWith("owner-1");
+
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "Open change log" }));
+    const actor = await screen.findByRole("button", { name: "Open profile for Editor User" });
+    await userEvent.click(actor);
+
+    expect(await screen.findByRole("dialog", { name: "User profile for Editor User" })).toBeInTheDocument();
+    expect(fetchUserById).toHaveBeenCalledWith("editor-1");
   });
 
   it("shows compact simulation metadata footer and opens the simulation change log flow", async () => {

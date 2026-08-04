@@ -23,7 +23,20 @@ vi.hoisted(() => {
   };
   vi.stubGlobal("localStorage", localStorageMock);
 });
-const { pushCloudLibraryMock } = vi.hoisted(() => ({
+const { fetchUserByIdMock, pushCloudLibraryMock } = vi.hoisted(() => ({
+  fetchUserByIdMock: vi.fn(async (userId: string) => ({
+    id: userId,
+    username: "Alice",
+    email: "alice@example.com",
+    isAdmin: false,
+    isModerator: false,
+    isApproved: true,
+    accountState: "approved",
+    avatarUrl: "",
+    createdAt: "2026-01-02T00:00:00.000Z",
+    updatedAt: "2026-01-02T00:00:00.000Z",
+    bio: "Radio planner",
+  })),
   pushCloudLibraryMock: vi.fn(async () => {}),
 }));
 
@@ -31,8 +44,9 @@ const sidebarCalls: Array<{ readOnly?: boolean; panelToggleControl?: unknown }> 
 
 vi.mock("../lib/cloudUser", () => ({
   fetchAuthStatus: vi.fn(async () => ({ authenticated: true, authState: "authenticated" })),
-  fetchCollaboratorDirectory: vi.fn(async () => []),
+  fetchCollaboratorDirectory: vi.fn(async () => [{ id: "user-2", username: "Alice", email: "alice@example.com", avatarUrl: "" }]),
   fetchDeepLinkStatus: vi.fn(async () => ({ status: "ok", simulationId: null, authenticated: true })),
+  fetchUserById: fetchUserByIdMock,
   fetchMe: vi.fn(async () => ({
     id: "user-1",
     username: "Owner",
@@ -101,6 +115,7 @@ describe("AppShell copy flow", () => {
     window.history.replaceState(null, "", "/");
     localStorage.clear();
     pushCloudLibraryMock.mockClear();
+    fetchUserByIdMock.mockClear();
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: vi.fn(async () => {}) },
@@ -323,6 +338,36 @@ describe("AppShell copy flow", () => {
         siteLibrary: [],
         simulationPresets: [expect.objectContaining({ visibility: "shared" })],
       }));
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("keeps collaborator profile and Add actions independent", async () => {
+    useAppStore.setState((state) => ({
+      simulationPresets: state.simulationPresets.map((simulation) => ({
+        ...simulation,
+        ownerUserId: "user-1",
+        effectiveRole: "owner",
+        visibility: "private",
+      })),
+    }));
+
+    const view = render(<AppShell />);
+    try {
+      await userEvent.click(await screen.findByRole("button", { name: "Share" }));
+      await userEvent.type(screen.getByPlaceholderText("Search by name or email"), "Ali");
+
+      await userEvent.click(await screen.findByRole("button", { name: "Open profile for Alice" }));
+      expect(await screen.findByText("Radio planner")).toBeInTheDocument();
+      expect(fetchUserByIdMock).toHaveBeenCalledWith("user-2");
+      expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+
+      await userEvent.keyboard("{Escape}");
+      await userEvent.click(screen.getByRole("button", { name: "Add Alice" }));
+
+      expect(await screen.findByRole("button", { name: "Remove" })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "Role for Alice" })).toHaveValue("viewer");
     } finally {
       view.unmount();
     }
