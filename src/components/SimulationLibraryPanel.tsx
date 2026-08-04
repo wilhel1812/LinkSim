@@ -60,6 +60,7 @@ type SimulationLibraryPanelProps = {
   onClose: () => void;
   onLoadSimulation: (presetId: string) => void;
   onOpenDetails?: (params: ResourceOpenParams) => void;
+  onOpenUserProfile?: (userId: string, anchor: HTMLElement) => void;
   onCreateSimulation?: (triggerEl: Element | null) => void;
   onCopySimulation?: (triggerEl: Element | null) => void;
   hideSaveCopy?: boolean;
@@ -69,6 +70,7 @@ export default function SimulationLibraryPanel({
   onClose,
   onLoadSimulation,
   onOpenDetails,
+  onOpenUserProfile,
   onCreateSimulation,
   onCopySimulation,
   hideSaveCopy = false,
@@ -348,14 +350,31 @@ export default function SimulationLibraryPanel({
                 </span>
                 <span className="library-row-meta">
                   {((v: string) => <Badge variant={v as "private" | "public" | "shared"}>{v}</Badge>)(toAccessVisibility((preset as { visibility?: unknown }).visibility))}
-                  <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
-                    <AvatarBadge
-                      avatarUrl={owner.avatarUrl}
-                      fallbackRawText
-                      imageClassName="row-avatar-image"
-                      name={owner.name}
-                    />
-                  </span>
+                  {(preset as { ownerUserId?: string }).ownerUserId && onOpenUserProfile ? (
+                    <button
+                      aria-label={`Open owner profile: ${owner.name}`}
+                      className="row-avatar owner-avatar"
+                      onClick={(event) => onOpenUserProfile((preset as { ownerUserId: string }).ownerUserId, event.currentTarget)}
+                      title={`Owner: ${owner.name}`}
+                      type="button"
+                    >
+                      <AvatarBadge
+                        avatarUrl={owner.avatarUrl}
+                        fallbackRawText
+                        imageClassName="row-avatar-image"
+                        name={owner.name}
+                      />
+                    </button>
+                  ) : (
+                    <span className="row-avatar owner-avatar" title={`Owner: ${owner.name}`}>
+                      <AvatarBadge
+                        avatarUrl={owner.avatarUrl}
+                        fallbackRawText
+                        imageClassName="row-avatar-image"
+                        name={owner.name}
+                      />
+                    </span>
+                  )}
                 </span>
                 <div className="library-row-actions">
                   <ActionButton

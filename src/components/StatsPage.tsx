@@ -17,9 +17,7 @@ import { ActionButton } from "./ActionButton";
 import { AvatarBadge } from "./AvatarBadge";
 import { InfoTip } from "./InfoTip";
 import { StatsDensityMap } from "./StatsDensityMap";
-import { UserProfileModal } from "./UserProfileModal";
-import { fetchUserById, type CloudUser } from "../lib/cloudUser";
-import { getUiErrorMessage } from "../lib/uiError";
+import { UserProfilePopover, type UserProfilePopoverTarget } from "./UserProfilePopover";
 import { fetchStats, type StatsGrowthBucket, type StatsPayload } from "../lib/stats";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 
@@ -193,10 +191,7 @@ export function StatsPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [growthMode, setGrowthMode] = useState<GrowthMode>("last30Days");
-  const [profileUser, setProfileUser] = useState<CloudUser | null>(null);
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [profileStatus, setProfileStatus] = useState("");
-  const showProfileModal = profileBusy || profileStatus || profileUser;
+  const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -230,24 +225,7 @@ export function StatsPage() {
     };
   }, []);
 
-  const openUserProfile = async (userId: string) => {
-    setProfileUser(null);
-    setProfileStatus("");
-    setProfileBusy(true);
-    try {
-      setProfileUser(await fetchUserById(userId));
-    } catch (error) {
-      setProfileStatus(`Failed loading user: ${getUiErrorMessage(error)}`);
-    } finally {
-      setProfileBusy(false);
-    }
-  };
-
-  const closeUserProfile = () => {
-    setProfileUser(null);
-    setProfileStatus("");
-    setProfileBusy(false);
-  };
+  const openUserProfile = (userId: string, anchor: HTMLElement) => setProfileTarget({ anchor, userId });
 
   const activeGrowth = useMemo(() => stats?.growth[growthMode] ?? [], [growthMode, stats]);
 
@@ -313,7 +291,7 @@ export function StatsPage() {
         <Panel className="stats-atlas-side-panel" title="Contributor Highlights">
           <div className="stats-person-list">
             {(stats?.highlights.topContributors ?? []).map((user) => (
-              <button className="stats-person-row" key={user.userId} onClick={() => void openUserProfile(user.userId)} type="button">
+              <button className="stats-person-row" key={user.userId} onClick={(event) => openUserProfile(user.userId, event.currentTarget)} type="button">
                 <AvatarBadge avatarUrl={user.avatarUrl} imageClassName="profile-avatar" name={user.username} />
                 <span>{user.username}</span>
                 <span className="stats-contribution-count">
@@ -344,15 +322,27 @@ export function StatsPage() {
                   <span aria-hidden="true" />
                 </div>
               ) : (
-                <a className="stats-simulation-row" href={simulation.href} key={simulation.id}>
+                <div className="stats-simulation-row" key={simulation.id}>
                   <span>
-                    <strong>{simulation.name}</strong>
-                    <small>by {simulation.owner.username}</small>
+                    <a className="stats-resource-link" href={simulation.href}>{simulation.name}</a>
+                    <small>
+                      by{" "}
+                      <button
+                        aria-label={`Open profile for ${simulation.owner.username}`}
+                        className="inline-link-button stats-owner-profile-trigger"
+                        onClick={(event) => openUserProfile(simulation.owner.userId, event.currentTarget)}
+                        type="button"
+                      >
+                        {simulation.owner.username}
+                      </button>
+                    </small>
                   </span>
                   <span>{simulation.siteCount} Sites</span>
                   <span>{simulation.linkCount} Paths</span>
-                  <ExternalLink aria-hidden="true" size={15} />
-                </a>
+                  <span aria-hidden="true" className="stats-resource-open-link">
+                    <ExternalLink aria-hidden="true" size={15} />
+                  </span>
+                </div>
               ),
             )}
             {!stats?.latestSimulations.length ? <p className="field-help">Latest non-empty Simulations will appear here.</p> : null}
@@ -378,15 +368,27 @@ export function StatsPage() {
         <Panel title="Top Passing Paths" actions={<InfoTip text={passingPathLeaderboardInfo} />}>
           <div className="stats-simulation-list">
             {(stats?.longestPassingPaths ?? []).map((path) => (
-              <a className="stats-simulation-row" href={path.href || path.simulationHref} key={path.id}>
+              <div className="stats-simulation-row" key={path.id}>
                 <span>
-                  <strong>{path.label}</strong>
-                  <small>{path.simulationName} · by {path.owner.username}</small>
+                  <a className="stats-resource-link" href={path.href || path.simulationHref}>{path.label}</a>
+                  <small>
+                    {path.simulationName} · by{" "}
+                    <button
+                      aria-label={`Open profile for ${path.owner.username}`}
+                      className="inline-link-button stats-owner-profile-trigger"
+                      onClick={(event) => openUserProfile(path.owner.userId, event.currentTarget)}
+                      type="button"
+                    >
+                      {path.owner.username}
+                    </button>
+                  </small>
                 </span>
                 <span>{formatKm(path.distanceKm)}</span>
                 <span>+{formatDecimal(path.rxMarginDb)} dB</span>
-                <ExternalLink aria-hidden="true" size={15} />
-              </a>
+                <span aria-hidden="true" className="stats-resource-open-link">
+                  <ExternalLink aria-hidden="true" size={15} />
+                </span>
+              </div>
             ))}
             {!stats?.longestPassingPaths.length ? <p className="field-help">Passing Paths appear after terrain-backed public/shared Simulation Paths are calculated.</p> : null}
           </div>
@@ -395,7 +397,7 @@ export function StatsPage() {
         <Panel title="Newest Members">
           <div className="stats-person-list">
             {(stats?.highlights.newestMembers ?? []).map((user) => (
-              <button className="stats-person-row" key={user.userId} onClick={() => void openUserProfile(user.userId)} type="button">
+              <button className="stats-person-row" key={user.userId} onClick={(event) => openUserProfile(user.userId, event.currentTarget)} type="button">
                 <AvatarBadge avatarUrl={user.avatarUrl} imageClassName="profile-avatar" name={user.username} />
                 <span>{user.username}</span>
                 <span className="stats-person-meta">{formatRelativeTime(user.createdAt)}</span>
@@ -406,9 +408,7 @@ export function StatsPage() {
         </Panel>
       </section>
 
-      {showProfileModal ? (
-        <UserProfileModal busy={profileBusy} onClose={closeUserProfile} status={profileStatus} user={profileUser} />
-      ) : null}
+      <UserProfilePopover onClose={() => setProfileTarget(null)} target={profileTarget} />
     </main>
   );
 }

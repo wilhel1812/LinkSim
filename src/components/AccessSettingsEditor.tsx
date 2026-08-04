@@ -32,7 +32,7 @@ type AccessSettingsEditorProps = {
   directoryStatus?: string;
   status?: string;
   showStatusFallback?: boolean;
-  onOpenUserProfile?: (userId: string) => void;
+  onOpenUserProfile?: (userId: string, anchor: HTMLElement) => void;
 };
 
 export const accessVisibilityCaption = (visibility: AccessVisibility): string =>
@@ -71,9 +71,9 @@ export function AccessSettingsEditor({
       .slice(0, 8);
   }, [directory, ownerUserId, selectedIds, trimmedQuery]);
 
-  const openUserProfile = (userId: string) => {
+  const openUserProfile = (userId: string, anchor: HTMLElement) => {
     if (!onOpenUserProfile) return;
-    onOpenUserProfile(userId);
+    onOpenUserProfile(userId, anchor);
   };
 
   return (
@@ -107,7 +107,7 @@ export function AccessSettingsEditor({
                     className="row-avatar"
                     disabled={!onOpenUserProfile}
                     key={user.id}
-                    onClick={() => openUserProfile(user.id)}
+                    onClick={(event) => openUserProfile(user.id, event.currentTarget)}
                     title={label}
                     type="button"
                   >
@@ -158,21 +158,29 @@ export function AccessSettingsEditor({
                 <p className="field-help">Loading users…</p>
               ) : candidates.length ? (
                 candidates.map((user) => (
-                  <button
-                    aria-label={`Add ${user.username}`}
-                    className="site-quick-item"
-                    disabled={disabled}
-                    key={user.id}
-                    onClick={() => {
-                      onAddCollaborator(user.id);
-                      setQuery("");
-                    }}
-                    type="button"
-                  >
-                    <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                  <div className="site-quick-item access-collaborator-candidate" key={user.id}>
+                    <button
+                      aria-label={`Open profile for ${user.username}`}
+                      className="inline-link-button"
+                      disabled={!onOpenUserProfile}
+                      onClick={(event) => openUserProfile(user.id, event.currentTarget)}
+                      type="button"
+                    >
+                      <UserBadge avatarUrl={user.avatarUrl} name={user.username} />
+                    </button>
                     <span className="field-help">{user.email}</span>
-                    <span className="field-help">Add</span>
-                  </button>
+                    <ActionButton
+                      aria-label={`Add ${user.username}`}
+                      disabled={disabled}
+                      onClick={() => {
+                        onAddCollaborator(user.id);
+                        setQuery("");
+                      }}
+                      type="button"
+                    >
+                      Add
+                    </ActionButton>
+                  </div>
                 ))
               ) : (
                 <p className="field-help">No matching users.</p>
@@ -185,7 +193,15 @@ export function AccessSettingsEditor({
                 const label = user.username || user.id;
                 return (
                   <div className="access-collaborator-row" key={user.id}>
-                    <UserBadge avatarUrl={user.avatarUrl} name={label} />
+                    <button
+                      aria-label={`Open profile for ${label}`}
+                      className="inline-link-button"
+                      disabled={!onOpenUserProfile}
+                      onClick={(event) => openUserProfile(user.id, event.currentTarget)}
+                      type="button"
+                    >
+                      <UserBadge avatarUrl={user.avatarUrl} name={label} />
+                    </button>
                     <select
                       aria-label={`Role for ${label}`}
                       disabled={disabled}
