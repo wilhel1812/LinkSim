@@ -4955,40 +4955,27 @@ html.panorama-gesture-lock body {
   pointer-events: none;
 }
 
-.library-unified-card {
-  width: min(1040px, 96vw);
+.library-panel-wrapper {
+  width: min(1120px, 96vw);
   height: min(86vh, 900px);
   min-height: 0;
-  padding: 14px;
-  display: grid;
-  grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
-  gap: 10px;
+  padding: 0;
   overflow: hidden;
 }
 
-.library-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+.library-panel {
+  background: var(--surface);
 }
 
-.library-tabs button {
-  min-height: 40px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-btn);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
+.library-panel-sidebar {
+  background: var(--surface-2);
 }
 
-.library-tabs button.is-active {
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface));
-  color: var(--text);
+.library-panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
 }
 
 .library-search-row {
@@ -5025,7 +5012,7 @@ html.panorama-gesture-lock body {
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  background: var(--surface-2);
 }
 
 .library-status {
@@ -5041,7 +5028,7 @@ html.panorama-gesture-lock body {
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  background: var(--surface-2);
   overscroll-behavior: contain;
 }
 
@@ -5060,25 +5047,16 @@ html.panorama-gesture-lock body {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
-.library-item-details {
+.library-item-copy {
   min-width: 0;
-  border: 0;
-  border-radius: var(--radius-btn);
-  background: transparent;
   color: var(--text);
-  cursor: pointer;
   display: grid;
   gap: 4px;
   padding: 6px;
   text-align: left;
 }
 
-.library-item-details:hover,
-.library-item-details:focus-visible {
-  background: color-mix(in srgb, var(--accent-soft) 34%, transparent);
-}
-
-.library-item-details span {
+.library-item-copy span {
   color: var(--muted);
   font-size: 0.74rem;
 }
@@ -5090,10 +5068,19 @@ html.panorama-gesture-lock body {
   gap: 6px;
 }
 
-.library-source-label {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 650;
+.library-item-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.library-site-select {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  accent-color: var(--accent);
+  flex-shrink: 0;
 }
 
 .library-filter-floating {
@@ -5136,11 +5123,14 @@ html.panorama-gesture-lock body {
 }
 
 .library-filter-sheet {
+  --surface-pill-background: var(--surface);
   width: min(620px, 100%);
   max-height: min(82dvh, 720px);
   overflow: auto;
   padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
   border-radius: 18px 18px 0 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .confirm-action-card {
@@ -5152,21 +5142,14 @@ html.panorama-gesture-lock body {
     padding: 0;
   }
 
-  .library-unified-card {
+  .library-panel-wrapper {
     width: 100%;
-    height: 100dvh;
+    height: 100%;
     max-height: none;
-    padding:
-      calc(10px + env(safe-area-inset-top))
-      10px
-      calc(10px + env(safe-area-inset-bottom));
+    padding: 0;
     border: 0;
     border-radius: 0;
     box-shadow: none;
-  }
-
-  .library-unified-header {
-    min-height: 44px;
   }
 
   .library-search-row {
@@ -5186,26 +5169,28 @@ html.panorama-gesture-lock body {
     height: 20px;
   }
 
-  .library-tabs button,
-  .library-item-details,
-  .library-unified-item > .btn {
+  .library-item-actions .btn,
+  .library-item-actions .btn-ghost {
     min-height: 44px;
   }
 
   .library-unified-item,
   .library-simulation-item {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .library-item-meta {
-    grid-column: 1;
     justify-content: flex-start;
     padding-left: 6px;
   }
 
-  .library-unified-item > .btn {
-    grid-column: 2;
-    grid-row: 1 / span 2;
+  .library-item-actions {
+    justify-content: stretch;
+  }
+
+  .library-item-actions .btn,
+  .library-item-actions .btn-ghost {
+    flex: 1 1 0;
   }
 
   .library-filter-options {
@@ -5890,7 +5875,7 @@ html.panorama-gesture-lock body {
   line-height: 1.2;
 }
 
-.settings-panel-back,
+.settings-panel-menu,
 .settings-panel-close {
   display: inline-flex;
   align-items: center;
@@ -5904,7 +5889,7 @@ html.panorama-gesture-lock body {
   cursor: pointer;
 }
 
-.settings-panel-back:hover,
+.settings-panel-menu:hover,
 .settings-panel-close:hover {
   background: var(--surface-2);
   border-color: var(--border);
@@ -5939,13 +5924,31 @@ html.panorama-gesture-lock body {
 }
 
 @media (max-width: 980px) {
+  .settings-panel-header {
+    padding:
+      calc(14px + env(safe-area-inset-top))
+      calc(20px + env(safe-area-inset-right))
+      14px
+      calc(20px + env(safe-area-inset-left));
+  }
   .settings-panel-sidebar {
     flex: 1 1 auto;
     border-right: none;
-    padding: 8px;
+    padding:
+      8px
+      calc(8px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      calc(8px + env(safe-area-inset-left));
   }
   .settings-panel-content {
     padding: 16px 16px 36px;
+  }
+  .settings-panel-content.library-panel-content {
+    padding:
+      16px
+      calc(16px + env(safe-area-inset-right))
+      calc(36px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));
   }
   .settings-panel-wrapper {
     width: 100%;

@@ -1,25 +1,31 @@
 import { ChevronRight, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
-import type { SettingsSectionId } from "../../lib/deepLink";
 
-export type SettingsNavItem = {
-  id: SettingsSectionId;
+export type SettingsNavItem<SectionId extends string = string> = {
+  id: SectionId;
   label: string;
   description: string;
-  icon: typeof UserRound;
+  icon?: typeof UserRound;
 };
 
-type SettingsNavProps = {
-  items: SettingsNavItem[];
-  activeSection: SettingsSectionId;
-  onSelect: (section: SettingsSectionId) => void;
+type SettingsNavProps<SectionId extends string> = {
+  activeSection: SectionId;
+  ariaLabel?: string;
+  items: SettingsNavItem<SectionId>[];
+  onSelect: (section: SectionId) => void;
   layout: "sidebar" | "list";
 };
 
-export function SettingsNav({ items, activeSection, onSelect, layout }: SettingsNavProps) {
+export function SettingsNav<SectionId extends string>({
+  activeSection,
+  ariaLabel = "Settings sections",
+  items,
+  onSelect,
+  layout,
+}: SettingsNavProps<SectionId>) {
   return (
     <nav
       className={`settings-nav settings-nav-${layout}`}
-      aria-label="Settings sections"
+      aria-label={ariaLabel}
     >
       <ul>
         {items.map((item) => {
@@ -33,9 +39,11 @@ export function SettingsNav({ items, activeSection, onSelect, layout }: Settings
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => onSelect(item.id)}
               >
-                <span className="settings-nav-item-icon" aria-hidden="true">
-                  <Icon size={18} strokeWidth={2} />
-                </span>
+                {Icon ? (
+                  <span className="settings-nav-item-icon" aria-hidden="true">
+                    <Icon size={18} strokeWidth={2} />
+                  </span>
+                ) : null}
                 <span className="settings-nav-item-copy">
                   <span className="settings-nav-item-label">{item.label}</span>
                   {layout === "list" ? (

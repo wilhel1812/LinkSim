@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { buildSettingsPath, matchSettingsPath, type SettingsSectionId } from "../../lib/deepLink";
 import { useAppStore } from "../../store/appStore";
 import { fetchMe, type CloudUser } from "../../lib/cloudUser";
@@ -124,8 +124,8 @@ export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
     window.location.href = "/cdn-cgi/access/logout";
   }, [setAuthState, setCurrentUser]);
 
-  const navItems = useMemo<SettingsNavItem[]>(() => {
-    const items: SettingsNavItem[] = [
+  const navItems = useMemo<SettingsNavItem<SettingsSectionId>[]>(() => {
+    const items: SettingsNavItem<SettingsSectionId>[] = [
       {
         id: "profile",
         label: "Profile",
@@ -165,7 +165,7 @@ export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
     }
   };
 
-  const onBackToList = () => {
+  const openSectionList = () => {
     setMobileDetailOpen(false);
     if (typeof window !== "undefined") {
       window.history.pushState(null, "", buildSettingsPath(null));
@@ -220,12 +220,11 @@ export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
           {isNarrow && mobileDetailOpen ? (
             <button
               type="button"
-              className="settings-panel-back"
-              aria-label="Back to settings"
-              onClick={onBackToList}
+              className="settings-panel-menu"
+              aria-label="Open Settings sections"
+              onClick={openSectionList}
             >
-              <ArrowLeft size={18} strokeWidth={2} aria-hidden="true" />
-              <span>Back</span>
+              <Menu size={20} strokeWidth={2} aria-hidden="true" />
             </button>
           ) : null}
           <h1 id="settings-panel-title" className="settings-panel-title">
