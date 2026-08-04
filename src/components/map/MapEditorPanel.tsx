@@ -40,7 +40,6 @@ function SimulationColorControl({
   onChange: (value: string | null) => void;
   disabled?: boolean;
 }) {
-  const pickerValue = value ?? SIMULATION_COLOR_PRESETS[4].value;
   return (
     <div className="simulation-color-field">
       <span>{label}</span>
@@ -58,13 +57,6 @@ function SimulationColorControl({
             type="button"
           />
         ))}
-        <input
-          aria-label={label}
-          disabled={disabled}
-          onInput={(event) => onChange(event.currentTarget.value)}
-          type="color"
-          value={pickerValue}
-        />
         <span aria-hidden="true" className="simulation-color-separator" />
         <button
           aria-label={`Use theme ${label}`}

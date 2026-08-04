@@ -828,7 +828,7 @@ export function MapView({
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
   const profileColor = variant.map.profileLineColor;
-  const linkCasingColor = theme === "dark" ? MAP_CONTRAST_LIGHT : MAP_CONTRAST_DARK;
+  const linkCasingColor = theme === "dark" ? MAP_CONTRAST_DARK : MAP_CONTRAST_LIGHT;
   const hasActiveSavedSimulation = Boolean(
     selectedScenarioId && simulationPresets.some((preset) => preset.id === selectedScenarioId),
   );

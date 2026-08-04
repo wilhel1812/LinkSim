@@ -382,11 +382,12 @@ describe("MapEditorPanel", () => {
     render(<MapEditorPanel isMobile={false} />);
 
     expect(screen.getByText("Applies to this Simulation only.")).toBeInTheDocument();
-    fireEvent.input(screen.getByLabelText("Site icon color"), { target: { value: "#123456" } });
+    expect(screen.queryByLabelText("Site icon color")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Set Site icon color to Blue" }));
 
     const state = useAppStore.getState();
-    expect(state.siteIconColors).toEqual({ "site-a": "#123456" });
-    expect(state.simulationPresets[0]?.snapshot.siteIconColors).toEqual({ "site-a": "#123456" });
+    expect(state.siteIconColors).toEqual({ "site-a": "#2563eb" });
+    expect(state.simulationPresets[0]?.snapshot.siteIconColors).toEqual({ "site-a": "#2563eb" });
     expect(state.siteLibrary[0]).not.toHaveProperty("color");
   });
 
@@ -429,12 +430,13 @@ describe("MapEditorPanel", () => {
     });
 
     render(<MapEditorPanel isMobile={false} />);
-    fireEvent.input(await screen.findByLabelText("Link color"), { target: { value: "#654321" } });
+    expect(screen.queryByLabelText("Link color")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Set Link color to Purple" }));
 
-    expect(useAppStore.getState().links[0]?.color).toBe("#654321");
+    expect(useAppStore.getState().links[0]?.color).toBe("#7c3aed");
   });
 
-  it("renders theme color as a separated transparent swatch", async () => {
+  it("renders presets and theme color without an arbitrary picker", async () => {
     const sites = [
       { id: "site-a", name: "Site A", position: { lat: 60, lon: 10 }, groundElevationM: 100, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
       { id: "site-b", name: "Site B", position: { lat: 60.1, lon: 10.1 }, groundElevationM: 110, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
@@ -447,11 +449,9 @@ describe("MapEditorPanel", () => {
     });
 
     render(<MapEditorPanel isMobile={false} />);
-    const picker = await screen.findByLabelText("Link color");
     const themeSwatch = await screen.findByRole("button", { name: "Use theme Link color" });
     const presetGroup = screen.getByRole("group", { name: "Link color presets" });
-    expect(presetGroup).toContainElement(picker);
-    expect(picker.nextElementSibling).toHaveClass("simulation-color-separator");
+    expect(presetGroup.querySelector('input[type="color"]')).not.toBeInTheDocument();
     expect(themeSwatch).toHaveClass("simulation-color-swatch", "is-theme-color");
     expect(themeSwatch.previousElementSibling).toHaveClass("simulation-color-separator");
 

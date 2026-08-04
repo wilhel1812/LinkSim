@@ -321,10 +321,11 @@ describe("MapView user location flow", () => {
     expect(mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-opacity"]).toBeLessThan(0.7);
 
     const lightCasingColor = mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-color"];
+    expect(lightCasingColor).toBe("#ffffff");
     mapMock.layerProps = [];
     act(() => useAppStore.setState({ uiThemePreference: "dark" }));
     const darkCasingColor = mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-color"];
-    expect(darkCasingColor).not.toEqual(lightCasingColor);
+    expect(darkCasingColor).toBe("#000000");
   });
 
   it("commits the Auto Link colors toggle from the right inspector immediately", () => {
