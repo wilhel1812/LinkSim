@@ -3,6 +3,7 @@ import { parseApiErrorMessage } from "./apiError";
 export type CloudLibraryPayload = {
   siteLibrary: unknown[];
   simulationPresets: unknown[];
+  deletedSimulationIds?: string[];
 };
 
 type CloudPushResult = {
@@ -34,16 +35,30 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return (await response.json()) as T;
 };
 
-export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { isDelta?: boolean }> => {
+export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSimulationIds: string[]; isDelta?: boolean }> => {
   const url = opts?.since ? `/api/library?since=${encodeURIComponent(opts.since)}` : "/api/library";
-  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; isDelta?: boolean }>(url, {
+  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; deletedSimulationIds?: unknown[]; isDelta?: boolean }>(url, {
     method: "GET",
   });
   return {
     siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
     simulationPresets: Array.isArray(data.simulationPresets) ? data.simulationPresets : [],
+    deletedSimulationIds: Array.isArray(data.deletedSimulationIds)
+      ? data.deletedSimulationIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+      : [],
     isDelta: data.isDelta,
   };
+};
+
+export const deleteCloudSimulation = async (simulationId: string): Promise<void> => {
+  await apiCall(`/api/library/simulations/${encodeURIComponent(simulationId)}`, { method: "DELETE" });
+};
+
+export const restoreCloudSimulation = async (simulationId: string): Promise<void> => {
+  await apiCall(`/api/library/simulations/${encodeURIComponent(simulationId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "active" }),
+  });
 };
 
 export const fetchPublicSimulationLibrary = async (params: {

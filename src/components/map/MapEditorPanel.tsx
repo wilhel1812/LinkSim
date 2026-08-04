@@ -844,6 +844,11 @@ function SimulationEditorCard({
   onOpenChangeLog,
   onOpenUserProfile,
   onRequestDelete,
+  canDelete,
+  isDeleted,
+  lifecycleBusy,
+  lifecycleError,
+  onRestore,
 }: {
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
@@ -851,6 +856,11 @@ function SimulationEditorCard({
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
   onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
   onRequestDelete: () => void;
+  canDelete: boolean;
+  isDeleted: boolean;
+  lifecycleBusy: boolean;
+  lifecycleError: string;
+  onRestore: () => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
@@ -876,7 +886,9 @@ function SimulationEditorCard({
       </div>
 
       {isReadOnly && (
-        <p className="field-help warning-text">Read-only: you can view this simulation but cannot edit it.</p>
+        <p className="field-help warning-text">
+          {isDeleted ? "Deleted: this Simulation is available to platform admins for inspection and restoration only." : "Read-only: you can view this simulation but cannot edit it."}
+        </p>
       )}
 
       {isReadOnly ? (
@@ -1028,6 +1040,7 @@ function SimulationEditorCard({
 
       {form.simulationNameError ? <p className="field-help field-help-error">{form.simulationNameError}</p> : null}
       {form.status ? <p className="field-help">{form.status}</p> : null}
+      {lifecycleError ? <p className="field-help field-help-error">{lifecycleError}</p> : null}
 
       <div className="chip-group">
         {!isReadOnly ? (
@@ -1035,7 +1048,12 @@ function SimulationEditorCard({
             {isNew ? (isCopySimulation ? "Save a copy" : "Create Simulation") : "Save"}
           </ActionButton>
         ) : null}
-        {!isNew && !isReadOnly ? (
+        {!isNew && isDeleted ? (
+          <ActionButton disabled={lifecycleBusy} onClick={onRestore} type="button">
+            {lifecycleBusy ? "Restoring..." : "Restore Simulation"}
+          </ActionButton>
+        ) : null}
+        {!isNew && !isReadOnly && canDelete ? (
           <ActionButton onClick={onRequestDelete} type="button" variant="danger">
             Delete Simulation
           </ActionButton>
@@ -1067,6 +1085,9 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
   const closeMapEditor = useAppStore((state) => state.closeMapEditor);
   const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
+  const restoreSimulationPreset = useAppStore((state) => state.restoreSimulationPreset);
+  const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const currentUser = useAppStore((state) => state.currentUser);
   const form = useMapEditorFormState();
 
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -1085,6 +1106,13 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
     resourceId: string;
     label: string;
   } | null>(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState("");
+
+  useEffect(() => {
+    setLifecycleBusy(false);
+    setLifecycleError("");
+  }, [mapEditor?.kind, mapEditor?.resourceId]);
 
   const openUserProfilePopup = (userId: string, anchor: HTMLElement) => {
     if (userId) setProfileTarget({ anchor, userId });
@@ -1185,6 +1213,16 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       return <LinkEditorCard form={form} isNew={mapEditor.isNew} onClose={closeMapEditor} />;
     }
     if (mapEditor.kind === "simulation") {
+      const simulation = mapEditor.resourceId
+        ? simulationPresets.find((preset) => preset.id === mapEditor.resourceId)
+        : undefined;
+      const isDeleted = simulation?.status === "deleted";
+      const canDelete = Boolean(
+        simulation &&
+          !isDeleted &&
+          currentUser?.id &&
+          (currentUser.isAdmin || simulation.ownerUserId === currentUser.id || simulation.effectiveRole === "owner"),
+      );
       return (
         <SimulationEditorCard
           form={form}
@@ -1192,10 +1230,23 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
           onClose={closeMapEditor}
           onOpenChangeLog={openChangeLogPopup}
           onOpenUserProfile={openUserProfilePopup}
+          canDelete={canDelete}
+          isDeleted={isDeleted}
+          lifecycleBusy={lifecycleBusy}
+          lifecycleError={lifecycleError}
           onRequestDelete={() => {
             if (mapEditor.resourceId) {
               setDeleteTarget({ kind: "simulation", resourceId: mapEditor.resourceId, label: mapEditor.label });
             }
+          }}
+          onRestore={() => {
+            if (!mapEditor.resourceId || lifecycleBusy) return;
+            setLifecycleBusy(true);
+            setLifecycleError("");
+            void restoreSimulationPreset(mapEditor.resourceId)
+              .then(() => closeMapEditor())
+              .catch((error) => setLifecycleError(`Restore failed: ${getUiErrorMessage(error)}`))
+              .finally(() => setLifecycleBusy(false));
           }}
         />
       );
@@ -1205,17 +1256,36 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
 
   const deleteConfirmation = deleteTarget ? (
     <ConfirmActionModal
+      busy={lifecycleBusy}
+      error={lifecycleError}
       message={
         deleteTarget.kind === "site"
           ? `Delete ${deleteTarget.label} from the Library? Referenced Simulation data will be detached but preserved.`
           : `Delete ${deleteTarget.label} from the Library?${deleteTarget.resourceId === useAppStore.getState().selectedScenarioId ? " The active workspace will be cleared." : ""}`
       }
-      onCancel={() => setDeleteTarget(null)}
+      onCancel={() => {
+        if (!lifecycleBusy) {
+          setLifecycleError("");
+          setDeleteTarget(null);
+        }
+      }}
       onConfirm={() => {
-        if (deleteTarget.kind === "site") deleteSiteLibraryEntry(deleteTarget.resourceId);
-        else deleteSimulationPreset(deleteTarget.resourceId);
-        setDeleteTarget(null);
-        closeMapEditor();
+        if (deleteTarget.kind === "site") {
+          deleteSiteLibraryEntry(deleteTarget.resourceId);
+          setDeleteTarget(null);
+          closeMapEditor();
+          return;
+        }
+        if (lifecycleBusy) return;
+        setLifecycleBusy(true);
+        setLifecycleError("");
+        void deleteSimulationPreset(deleteTarget.resourceId)
+          .then(() => {
+            setDeleteTarget(null);
+            closeMapEditor();
+          })
+          .catch((error) => setLifecycleError(`Delete failed: ${getUiErrorMessage(error)}`))
+          .finally(() => setLifecycleBusy(false));
       }}
       title={deleteTarget.kind === "site" ? "Delete Site" : "Delete Simulation"}
     />

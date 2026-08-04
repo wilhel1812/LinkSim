@@ -5034,7 +5034,7 @@ html.panorama-gesture-lock body {
 
 .library-unified-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   padding: 8px;
@@ -5044,7 +5044,21 @@ html.panorama-gesture-lock body {
 }
 
 .library-simulation-item {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.library-item-body {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.library-item-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .library-item-copy {
@@ -5068,11 +5082,17 @@ html.panorama-gesture-lock body {
   gap: 6px;
 }
 
-.library-item-actions {
+.library-item-header-actions {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.deleted-resource-badge {
+  background: var(--danger);
+  color: var(--danger-on);
 }
 
 .library-site-select {
@@ -5169,10 +5189,6 @@ html.panorama-gesture-lock body {
     height: 20px;
   }
 
-  .library-item-actions .btn {
-    min-height: 44px;
-  }
-
   .library-unified-item,
   .library-simulation-item {
     grid-template-columns: minmax(0, 1fr);
@@ -5181,14 +5197,6 @@ html.panorama-gesture-lock body {
   .library-item-meta {
     justify-content: flex-start;
     padding-left: 6px;
-  }
-
-  .library-item-actions {
-    justify-content: stretch;
-  }
-
-  .library-item-actions .btn {
-    flex: 1 1 0;
   }
 
   .library-filter-options {

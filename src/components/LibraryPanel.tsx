@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Filter, Menu, X } from "lucide-react";
+import { ExternalLink, Filter, Info, MapPlus, Menu, Pencil, X } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
   filterAndSortLibraryItems,
@@ -236,7 +236,7 @@ export function LibraryPanel({
       isNew: false,
       label: preset.name,
       anchorRect: anchor.getBoundingClientRect(),
-      readOnly: !canEditResource(preset, currentUserId),
+      readOnly: preset.status === "deleted" || !canEditResource(preset, currentUserId),
       origin: { kind: "library", tab: "simulations" },
     });
   };
@@ -565,6 +565,7 @@ export function LibraryPanel({
           ? filteredSites.map((entry) => {
               const owner = ownerDisplay(entry);
               const visibility = toAccessVisibility(entry.visibility);
+              const canEdit = canEditResource(entry, currentUserId);
               return (
                 <article className="library-unified-item" key={entry.id}>
                   {!isMobile ? (
@@ -583,13 +584,33 @@ export function LibraryPanel({
                       type="checkbox"
                     />
                   ) : null}
-                  <div
-                    className="library-item-copy"
-                  >
-                    <strong>{entry.name}</strong>
-                    <span>{entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)}</span>
-                  </div>
-                  <div className="library-item-meta">
+                  <div className="library-item-body">
+                    <div className="library-item-header">
+                      <div className="library-item-copy">
+                        <strong>{entry.name}</strong>
+                        <span>{entry.position.lat.toFixed(5)}, {entry.position.lon.toFixed(5)}</span>
+                      </div>
+                      <div className="library-item-header-actions">
+                        <ActionButton
+                          aria-label={`${canEdit ? "Edit" : "View"} Site details: ${entry.name}`}
+                          onClick={(event) => openSiteDetails(entry, event.currentTarget)}
+                          size="icon"
+                          title={`${canEdit ? "Edit" : "View"} Site details: ${entry.name}`}
+                        >
+                          {canEdit ? <Pencil aria-hidden="true" strokeWidth={1.8} /> : <Info aria-hidden="true" strokeWidth={1.8} />}
+                        </ActionButton>
+                        <ActionButton
+                          aria-label={`Add Site to Simulation: ${entry.name}`}
+                          disabled={!canAddToActiveSimulation}
+                          onClick={() => closeAndAddSite(entry.id)}
+                          size="icon"
+                          title={canAddToActiveSimulation ? `Add Site to Simulation: ${entry.name}` : "Open an editable Simulation to add this Site"}
+                        >
+                          <MapPlus aria-hidden="true" strokeWidth={1.8} />
+                        </ActionButton>
+                      </div>
+                    </div>
+                    <div className="library-item-meta">
                     <Badge variant={visibility as "private" | "public" | "shared"}>{visibility}</Badge>
                     {entry.sourceMeta?.sourceType === "mqtt-feed" ? <Badge variant="mqtt">MQTT</Badge> : null}
                     {entry.ownerUserId && onOpenUserProfile ? (
@@ -629,24 +650,7 @@ export function LibraryPanel({
                         </span>
                       ),
                     )}
-                  </div>
-                  <div className="library-item-actions">
-                    <ActionButton
-                      aria-label={`Details for ${entry.name}`}
-                      onClick={(event) => openSiteDetails(entry, event.currentTarget)}
-                      type="button"
-                    >
-                      Details
-                    </ActionButton>
-                    <ActionButton
-                      aria-label={`Add ${entry.name}`}
-                      disabled={!canAddToActiveSimulation}
-                      onClick={() => closeAndAddSite(entry.id)}
-                      title={canAddToActiveSimulation ? "Add to Simulation" : "Open an editable Simulation to add this Site"}
-                      type="button"
-                    >
-                      Add
-                    </ActionButton>
+                    </div>
                   </div>
                 </article>
               );
@@ -654,15 +658,38 @@ export function LibraryPanel({
           : filteredSimulations.map((preset) => {
               const owner = ownerDisplay(preset);
               const visibility = toAccessVisibility(preset.visibility);
+              const isDeleted = preset.status === "deleted";
+              const canEdit = !isDeleted && canEditResource(preset, currentUserId);
               return (
                 <article className="library-unified-item library-simulation-item" key={preset.id}>
-                  <div
-                    className="library-item-copy"
-                  >
-                    <strong>{preset.name}</strong>
-                    <span>Updated {formatDate(preset.updatedAt)}</span>
-                  </div>
-                  <div className="library-item-meta">
+                  <div className="library-item-body">
+                    <div className="library-item-header">
+                      <div className="library-item-copy">
+                        <strong>{preset.name}</strong>
+                        <span>Updated {formatDate(preset.updatedAt)}</span>
+                      </div>
+                      <div className="library-item-header-actions">
+                        <ActionButton
+                          aria-label={`${canEdit ? "Edit" : "View"} Simulation details: ${preset.name}`}
+                          onClick={(event) => openSimulationDetails(preset, event.currentTarget)}
+                          size="icon"
+                          title={`${canEdit ? "Edit" : "View"} Simulation details: ${preset.name}`}
+                        >
+                          {canEdit ? <Pencil aria-hidden="true" strokeWidth={1.8} /> : <Info aria-hidden="true" strokeWidth={1.8} />}
+                        </ActionButton>
+                        <ActionButton
+                          aria-label={`Open Simulation: ${preset.name}`}
+                          disabled={isDeleted}
+                          onClick={() => closeAndLoadSimulation(preset.id)}
+                          size="icon"
+                          title={isDeleted ? "Deleted Simulations cannot be opened" : `Open Simulation: ${preset.name}`}
+                        >
+                          <ExternalLink aria-hidden="true" strokeWidth={1.8} />
+                        </ActionButton>
+                      </div>
+                    </div>
+                    <div className="library-item-meta">
+                    {isDeleted ? <Badge variant="deleted">Deleted</Badge> : null}
                     <Badge variant={visibility as "private" | "public" | "shared"}>{visibility}</Badge>
                     {preset.ownerUserId && onOpenUserProfile ? (
                       <button
@@ -679,22 +706,7 @@ export function LibraryPanel({
                         <AvatarBadge avatarUrl={owner.avatarUrl} fallbackRawText imageClassName="row-avatar-image" name={owner.name} />
                       </span>
                     )}
-                  </div>
-                  <div className="library-item-actions">
-                    <ActionButton
-                      aria-label={`Details for ${preset.name}`}
-                      onClick={(event) => openSimulationDetails(preset, event.currentTarget)}
-                      type="button"
-                    >
-                      Details
-                    </ActionButton>
-                    <ActionButton
-                      aria-label={`Open ${preset.name}`}
-                      onClick={() => closeAndLoadSimulation(preset.id)}
-                      type="button"
-                    >
-                      Open
-                    </ActionButton>
+                    </div>
                   </div>
                 </article>
               );

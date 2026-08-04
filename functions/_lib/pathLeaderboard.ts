@@ -230,7 +230,7 @@ export const submitPathLeaderboardCandidate = async (
       `SELECT s.id, s.owner_user_id, s.name, s.visibility, s.payload_json, r.role AS actor_role
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
-       WHERE s.id = ?
+       WHERE s.id = ? AND s.status = 'active'
        LIMIT 1`,
     )
     .bind(actor.id, candidate.simulationId)
@@ -319,6 +319,7 @@ export const submitPathLeaderboardCandidate = async (
          FROM simulation_path_leaderboard_entries e
          JOIN simulations s ON s.id = e.simulation_id
          WHERE s.visibility IN ('public_read', 'public_write')
+           AND s.status = 'active'
            AND json_extract(s.payload_json, '$.updatedAt') = e.simulation_updated_at
          ORDER BY e.distance_km DESC, e.path_label ASC
          LIMIT ?
@@ -341,6 +342,7 @@ export const listStatsPathLeaderboardEntries = async (env: Env): Promise<StatsPa
        JOIN simulations s ON s.id = e.simulation_id
        LEFT JOIN users u ON u.id = e.owner_user_id
        WHERE s.visibility IN ('public_read', 'public_write')
+         AND s.status = 'active'
          AND json_extract(s.payload_json, '$.updatedAt') = e.simulation_updated_at
        ORDER BY e.distance_km DESC, e.path_label ASC
        LIMIT ?`,

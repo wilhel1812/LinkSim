@@ -40,6 +40,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Apply staging Simulation lifecycle migration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! npx wrangler d1 execute linksim_staging --remote --command "SELECT status FROM simulations LIMIT 0;"; then
+            npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-08-04_simulation_soft_delete.sql --yes
+          fi
+          npx wrangler d1 execute linksim_staging --remote --command "PRAGMA table_info(simulations);"
+
       - name: Deploy staging with guardrails
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

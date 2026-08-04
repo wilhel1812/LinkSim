@@ -11,7 +11,12 @@ import {
 } from "../lib/simulationDefaults";
 import { haversineDistanceKm } from "../lib/geo";
 import { getUiErrorMessage } from "../lib/uiError";
-import { fetchCloudLibrary, pushCloudLibrary } from "../lib/cloudLibrary";
+import {
+  deleteCloudSimulation,
+  fetchCloudLibrary,
+  pushCloudLibrary,
+  restoreCloudSimulation,
+} from "../lib/cloudLibrary";
 import {
   migrateSitesAndLinksToSiteRadioDefaults,
   resolveLinkRadio,
@@ -311,6 +316,7 @@ type SimulationPreset = {
   sharedWith?: Array<{ userId: string; role: "viewer" | "editor" | "admin" }>;
   ownerUserId?: string;
   effectiveRole?: "owner" | "admin" | "editor" | "viewer";
+  status?: "active" | "deleted";
   createdByUserId?: string;
   createdByName?: string;
   createdByAvatarUrl?: string;
@@ -369,7 +375,7 @@ const buildEditableSyncPayloadInfo = (
   currentUser: CloudUser | null,
 ): EditableSyncPayloadInfo => {
   const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
-  const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
+  const editableSims = simulationPresets.filter((sim) => sim.status !== "deleted" && canEditLibraryItem(sim, currentUser));
   const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
   return {
     payload,
@@ -384,7 +390,9 @@ const buildDeltaSyncPayloadInfo = (
   currentUser: CloudUser | null,
 ): EditableSyncPayloadInfo => {
   const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser) && dirtySiteIds.has(site.id));
-  const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser) && dirtySimIds.has(sim.id));
+  const editableSims = simulationPresets.filter(
+    (sim) => sim.status !== "deleted" && canEditLibraryItem(sim, currentUser) && dirtySimIds.has(sim.id),
+  );
   const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
   return {
     payload,
@@ -643,7 +651,9 @@ type AppState = {
       siteIconColors?: Record<string, string>;
     },
   ) => void;
-  deleteSimulationPreset: (presetId: string) => void;
+  deleteSimulationPreset: (presetId: string) => Promise<void>;
+  restoreSimulationPreset: (presetId: string) => Promise<void>;
+  applyDeletedSimulationTombstones: (presetIds: string[]) => void;
   importLibraryData: (
     bundle: { siteLibrary?: SiteLibraryEntry[]; simulationPresets?: SimulationPreset[] },
     mode: "merge" | "replace",
@@ -1457,6 +1467,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Delta fetch: merge server items by ID (server wins), keep local items not returned
       if (cloud.isDelta) {
+        get().applyDeletedSimulationTombstones(cloud.deletedSimulationIds);
         const deltaSites = cloud.siteLibrary as SiteLibraryEntry[];
         const deltaSims = cloud.simulationPresets as SimulationPreset[];
         set((state) => {
@@ -1495,6 +1506,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const cloudSites = Array.isArray(cloud.siteLibrary) ? cloud.siteLibrary as SiteLibraryEntry[] : [];
       const cloudSims = Array.isArray(cloud.simulationPresets) ? cloud.simulationPresets as SimulationPreset[] : [];
+      get().applyDeletedSimulationTombstones(cloud.deletedSimulationIds);
 
       if (currentUser?.id) {
         const fixedCloudSites = adoptOrphanedEntries(
@@ -1876,7 +1888,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { siteLibrary, simulationPresets, currentUser, importLibraryData } = get();
       const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
-      const editableSims = simulationPresets.filter((sim) => canEditLibraryItem(sim, currentUser));
+      const editableSims = simulationPresets.filter((sim) => sim.status !== "deleted" && canEditLibraryItem(sim, currentUser));
       const skippedCount = siteLibrary.length - editableSites.length + simulationPresets.length - editableSims.length;
       const payload = { siteLibrary: editableSites, simulationPresets: editableSims };
       const payloadSignature = computeSyncPayloadSignature(payload);
@@ -1896,6 +1908,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       const cloudPresets =
         (cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"] | undefined) ?? [];
+      get().applyDeletedSimulationTombstones(cloud.deletedSimulationIds);
       console.log("[appStore] Merging cloud data with local...");
       const result = importLibraryData(
         {
@@ -3099,7 +3112,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   loadSimulationPreset: (presetId) => {
     const preset = get().simulationPresets.find((candidate) => candidate.id === presetId);
-    if (!preset) return;
+    if (!preset || preset.status === "deleted") return;
     get().cancelTerrainLoad();
     const snap = preset.snapshot;
     const rawSites = Array.isArray(snap.sites) ? snap.sites : [];
@@ -3414,24 +3427,71 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { simulationPresets: next, ...activeAppearance };
     });
   },
-  deleteSimulationPreset: (presetId) => {
+  applyDeletedSimulationTombstones: (presetIds) => {
+    const deletedIds = new Set((presetIds ?? []).filter(Boolean));
+    if (!deletedIds.size) return;
+    const deletingActiveSimulation = deletedIds.has(get().selectedScenarioId);
+    set((state) => {
+      const next = state.simulationPresets.filter((preset) => !deletedIds.has(preset.id));
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
+    });
+    if (deletingActiveSimulation) get().clearSimulationWorkspace();
+  },
+  deleteSimulationPreset: async (presetId) => {
     const { currentUser } = get();
     const user = requireAuth(currentUser, "deleteSimulationPreset");
-    if (!user) return;
+    if (!user) throw new Error("Sign in to delete a Simulation.");
     const existing = get().simulationPresets.find((preset) => preset.id === presetId);
-    if (existing && !canEditItem(existing, user)) {
-      console.warn(`[appStore] deleteSimulationPreset: User ${user.id} cannot delete simulation ${presetId}`);
-      return;
+    if (!existing) throw new Error("Simulation not found.");
+    const ownsSimulation = existing.ownerUserId === user.id || existing.effectiveRole === "owner";
+    if (!user.isAdmin && !ownsSimulation) {
+      throw new Error("Only the Simulation owner or a platform admin can delete it.");
     }
     const deletingActiveSimulation = get().selectedScenarioId === presetId;
+    await deleteCloudSimulation(presetId);
     set((state) => {
-      const next = state.simulationPresets.filter((preset) => preset.id !== presetId);
+      const next = user.isAdmin
+        ? state.simulationPresets.map((preset) =>
+            preset.id === presetId ? { ...preset, status: "deleted" as const, updatedAt: new Date().toISOString() } : preset,
+          )
+        : state.simulationPresets.filter((preset) => preset.id !== presetId);
       writeStorage(SIM_PRESETS_KEY, next);
       return { simulationPresets: next };
     });
     if (deletingActiveSimulation) {
       get().clearSimulationWorkspace();
     }
+    const state = get();
+    lastSyncedPayloadSignature = buildEditableSyncPayloadInfo(
+      state.siteLibrary,
+      state.simulationPresets,
+      state.currentUser,
+    ).signature;
+    writeStorage(SYNC_SIGNATURE_KEY, lastSyncedPayloadSignature);
+  },
+  restoreSimulationPreset: async (presetId) => {
+    const { currentUser } = get();
+    const user = requireAuth(currentUser, "restoreSimulationPreset");
+    if (!user) throw new Error("Sign in to restore a Simulation.");
+    if (!user.isAdmin) throw new Error("Only a platform admin can restore a Simulation.");
+    const existing = get().simulationPresets.find((preset) => preset.id === presetId);
+    if (!existing) throw new Error("Simulation not found.");
+    await restoreCloudSimulation(presetId);
+    set((state) => {
+      const next = state.simulationPresets.map((preset) =>
+        preset.id === presetId ? { ...preset, status: "active" as const, updatedAt: new Date().toISOString() } : preset,
+      );
+      writeStorage(SIM_PRESETS_KEY, next);
+      return { simulationPresets: next };
+    });
+    const state = get();
+    lastSyncedPayloadSignature = buildEditableSyncPayloadInfo(
+      state.siteLibrary,
+      state.simulationPresets,
+      state.currentUser,
+    ).signature;
+    writeStorage(SYNC_SIGNATURE_KEY, lastSyncedPayloadSignature);
   },
   importLibraryData: (bundle, mode) => {
     const incomingSites = normalizeSiteLibrary(Array.isArray(bundle.siteLibrary) ? bundle.siteLibrary : []);

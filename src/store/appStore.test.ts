@@ -36,8 +36,18 @@ vi.mock("../lib/elevationService", () => ({
   fetchElevations: vi.fn(async () => [123]),
 }));
 
+vi.mock("../lib/cloudLibrary", async () => {
+  const actual = await vi.importActual<typeof import("../lib/cloudLibrary")>("../lib/cloudLibrary");
+  return {
+    ...actual,
+    deleteCloudSimulation: vi.fn(async () => undefined),
+    restoreCloudSimulation: vi.fn(async () => undefined),
+  };
+});
+
 import { useAppStore } from "./appStore";
 import { fetchElevations } from "../lib/elevationService";
+import { deleteCloudSimulation, restoreCloudSimulation } from "../lib/cloudLibrary";
 
 describe("appStore auth session state", () => {
   beforeEach(() => {
@@ -237,7 +247,7 @@ describe("appStore auth guards", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("blocks Library deletion when the current user only has view access", () => {
+  it("blocks Library deletion when the current user only has view access", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     useAppStore.getState().setCurrentUser({
       id: "user-2",
@@ -258,11 +268,13 @@ describe("appStore auth guards", () => {
     });
 
     useAppStore.getState().deleteSiteLibraryEntry("lib-1");
-    useAppStore.getState().deleteSimulationPreset("sim-1");
+    await expect(useAppStore.getState().deleteSimulationPreset("sim-1")).rejects.toThrow(
+      "Only the Simulation owner or a platform admin",
+    );
 
     expect(useAppStore.getState().siteLibrary.some((entry) => entry.id === "lib-1")).toBe(true);
     expect(useAppStore.getState().simulationPresets.some((preset) => preset.id === "sim-1")).toBe(true);
-    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledOnce();
   });
 
   it("does not auto-sync online elevations when adding a site", async () => {
@@ -688,7 +700,7 @@ describe("appStore unified Library state", () => {
     );
   });
 
-  it("clears the workspace and persisted active references when deleting the active Simulation", () => {
+  it("clears the workspace and persisted active references when deleting the active Simulation", async () => {
     const createdId = useAppStore
       .getState()
       .createBlankSimulationPreset("Delete me", { visibility: "private", ownerUserId: "owner-1" });
@@ -696,7 +708,7 @@ describe("appStore unified Library state", () => {
     useAppStore.getState().loadSimulationPreset(createdId as string);
     storage.mock.setItem("rmw-last-simulation-ref-v1", `saved:${createdId}`);
 
-    useAppStore.getState().deleteSimulationPreset(createdId as string);
+    await useAppStore.getState().deleteSimulationPreset(createdId as string);
 
     const state = useAppStore.getState();
     expect(state.selectedScenarioId).toBe("");
@@ -704,6 +716,48 @@ describe("appStore unified Library state", () => {
     expect(state.links).toEqual([]);
     expect(storage.mock.getItem("linksim-last-session-v1")).toBeNull();
     expect(storage.mock.getItem("rmw-last-simulation-ref-v1")).toBeNull();
+  });
+
+  it("keeps the Simulation and active workspace when backend deletion fails", async () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Keep me", { visibility: "private", ownerUserId: "owner-1" });
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+    vi.mocked(deleteCloudSimulation).mockRejectedValueOnce(new Error("Network unavailable"));
+
+    await expect(useAppStore.getState().deleteSimulationPreset(createdId as string)).rejects.toThrow("Network unavailable");
+
+    expect(useAppStore.getState().simulationPresets.some((preset) => preset.id === createdId)).toBe(true);
+    expect(useAppStore.getState().selectedScenarioId).toBe(createdId);
+  });
+
+  it("keeps deleted Simulations inspectable for admins and restores them", async () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Admin lifecycle", { visibility: "private", ownerUserId: "owner-1" });
+    useAppStore.setState({
+      currentUser: { ...useAppStore.getState().currentUser!, isAdmin: true, role: "admin" },
+    });
+
+    await useAppStore.getState().deleteSimulationPreset(createdId as string);
+    expect(useAppStore.getState().simulationPresets.find((preset) => preset.id === createdId)?.status).toBe("deleted");
+    await useAppStore.getState().restoreSimulationPreset(createdId as string);
+
+    expect(restoreCloudSimulation).toHaveBeenCalledWith(createdId);
+    expect(useAppStore.getState().simulationPresets.find((preset) => preset.id === createdId)?.status).toBe("active");
+  });
+
+  it("applies remote deletion tombstones and clears a stale active workspace", () => {
+    const createdId = useAppStore
+      .getState()
+      .createBlankSimulationPreset("Remote delete", { visibility: "shared", ownerUserId: "owner-1" });
+    useAppStore.getState().loadSimulationPreset(createdId as string);
+
+    useAppStore.getState().applyDeletedSimulationTombstones([createdId as string]);
+
+    expect(useAppStore.getState().simulationPresets.some((preset) => preset.id === createdId)).toBe(false);
+    expect(useAppStore.getState().selectedScenarioId).toBe("");
+    expect(useAppStore.getState().sites).toEqual([]);
   });
 });
 

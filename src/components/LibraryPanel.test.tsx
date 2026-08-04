@@ -147,14 +147,21 @@ describe("LibraryPanel", () => {
     expect(container.querySelector<HTMLElement>(".library-unified-list")?.scrollTop).toBe(120);
   });
 
-  it("opens Site details from an explicit button and keeps Add separate", async () => {
+  it("uses side-panel icon actions for Site details and adding", async () => {
     const user = userEvent.setup();
     render(<LibraryPanel initialTab="sites" isMobile onClose={vi.fn()} readOnly={false} />);
 
     expect(screen.queryByRole("button", { name: "Open Site details: Ridge Site" })).not.toBeInTheDocument();
     expect(screen.getByText("Ridge Site").closest("button")).toBeNull();
-    const detailsButton = screen.getByRole("button", { name: "Details for Ridge Site" });
-    expect(detailsButton.className).toBe(screen.getByRole("button", { name: "Add Ridge Site" }).className);
+    const detailsButton = screen.getByRole("button", { name: "Edit Site details: Ridge Site" });
+    const addButton = screen.getByRole("button", { name: "Add Site to Simulation: Ridge Site" });
+    expect(detailsButton).toHaveClass("btn-icon");
+    expect(addButton).toHaveClass("btn-icon");
+    expect(detailsButton.querySelector("svg")).toBeInTheDocument();
+    expect(addButton.querySelector("svg")).toBeInTheDocument();
+    expect(detailsButton.closest(".library-item-header-actions")).toBeInTheDocument();
+    expect(screen.queryByText("Details")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add")).not.toBeInTheDocument();
     await user.click(detailsButton);
     expect(useAppStore.getState().mapEditor).toMatchObject({
       kind: "site",
@@ -164,18 +171,39 @@ describe("LibraryPanel", () => {
     expect(useAppStore.getState().libraryRequest).toEqual({ tab: "sites" });
   });
 
-  it("uses explicit Details and Open actions for Simulations", async () => {
+  it("uses side-panel icon actions for Simulation details and opening", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<LibraryPanel initialTab="simulations" isMobile onClose={onClose} readOnly={false} />);
 
-    const detailsButton = screen.getByRole("button", { name: "Details for Valley Plan" });
-    const openButton = screen.getByRole("button", { name: "Open Valley Plan" });
-    expect(detailsButton.className).toBe(openButton.className);
+    const detailsButton = screen.getByRole("button", { name: "Edit Simulation details: Valley Plan" });
+    const openButton = screen.getByRole("button", { name: "Open Simulation: Valley Plan" });
+    expect(detailsButton).toHaveClass("btn-icon");
+    expect(openButton).toHaveClass("btn-icon");
+    expect(detailsButton.closest(".library-item-header-actions")).toBeInTheDocument();
+    expect(screen.queryByText("Details")).not.toBeInTheDocument();
+    expect(screen.queryByText("Open")).not.toBeInTheDocument();
     await user.click(openButton);
 
     expect(useAppStore.getState().selectedScenarioId).toBe("sim-1");
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("uses Info for read-only details and keeps deleted Simulations inspect-only for admins", () => {
+    useAppStore.setState({
+      currentUser: { ...currentUser, isAdmin: true },
+      simulationPresets: [
+        {
+          ...useAppStore.getState().simulationPresets[0],
+          status: "deleted",
+        },
+      ],
+    });
+    render(<LibraryPanel initialTab="simulations" isMobile onClose={vi.fn()} readOnly={false} />);
+
+    expect(screen.getByText("Deleted")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View Simulation details: Valley Plan" })).toHaveClass("btn-icon");
+    expect(screen.getByRole("button", { name: "Open Simulation: Valley Plan" })).toBeDisabled();
   });
 
   it("preserves Save a copy in the Simulations tab", async () => {

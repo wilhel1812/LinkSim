@@ -7,7 +7,7 @@ const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
-const SCHEMA_VERSION = "2026-05-03a";
+const SCHEMA_VERSION = "2026-08-04a";
 type AccountState = "pending" | "approved" | "revoked";
 
 const dbVisibilityFromVisibility = (value: Visibility): DbVisibility => {
@@ -272,6 +272,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     "last_edited_at",
     "name",
     "visibility",
+    "status",
     "payload_json",
     "updated_at",
   ],
@@ -410,6 +411,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
             last_edited_at TEXT,
             name TEXT NOT NULL,
             visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public_read', 'public_write')),
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
             payload_json TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -480,6 +482,7 @@ const ensureSchema = async (env: Env): Promise<void> => {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_site_roles_user ON site_roles(user_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulations_owner ON simulations(owner_user_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulations_visibility ON simulations(visibility)"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulations_status ON simulations(status)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_simulation_roles_user ON simulation_roles(user_id)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC)"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_path_leaderboard_distance ON simulation_path_leaderboard_entries(distance_km DESC)"),
@@ -1263,6 +1266,7 @@ type ResourceRow = {
   name: string;
   visibility: DbVisibility;
   created_at: string | null;
+  status?: "active" | "deleted";
 };
 
 type ActorPolicy = {
@@ -1314,6 +1318,58 @@ const canEditResource = (
   return false;
 };
 
+export const setSimulationLifecycleStatus = async (
+  env: Env,
+  actor: ActorPolicy,
+  simulationId: string,
+  status: "active" | "deleted",
+): Promise<
+  | { ok: true; simulationId: string; status: "active" | "deleted" }
+  | { ok: false; reason: "missing" | "forbidden" }
+> => {
+  await ensureSchema(env);
+  const id = simulationId.trim();
+  if (!id) return { ok: false, reason: "missing" };
+  const existing = await env.DB
+    .prepare("SELECT id, owner_user_id, status, payload_json FROM simulations WHERE id = ? LIMIT 1")
+    .bind(id)
+    .first<{ id: string; owner_user_id: string; status: "active" | "deleted"; payload_json: string }>();
+  if (!existing) return { ok: false, reason: "missing" };
+  if (status === "deleted" && !(actor.isAdmin || existing.owner_user_id === actor.id)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  if (status === "active" && !actor.isAdmin) return { ok: false, reason: "forbidden" };
+  if (existing.status === status) return { ok: true, simulationId: id, status };
+
+  const now = new Date().toISOString();
+  let snapshot: Record<string, unknown> | undefined;
+  let nextPayload = existing.payload_json;
+  try {
+    snapshot = JSON.parse(existing.payload_json) as Record<string, unknown>;
+    nextPayload = JSON.stringify({ ...snapshot, updatedAt: now });
+  } catch {
+    snapshot = undefined;
+  }
+  await env.DB
+    .prepare(
+      `UPDATE simulations
+       SET status = ?, payload_json = ?, updated_at = ?, last_edited_at = ?, last_edited_by_user_id = ?
+       WHERE id = ?`,
+    )
+    .bind(status, nextPayload, now, now, actor.id, id)
+    .run();
+  await createResourceChange(
+    env,
+    "simulation",
+    id,
+    "updated",
+    actor.id,
+    status === "deleted" ? "Deleted Simulation" : "Restored Simulation",
+    { details: { changedFields: ["status"], diff: { status: { before: existing.status, after: status } } }, snapshot },
+  );
+  return { ok: true, simulationId: id, status };
+};
+
 const upsertOwnedResource = async (
   env: Env,
   kind: "site" | "simulation",
@@ -1334,7 +1390,7 @@ const upsertOwnedResource = async (
 
   const existing = await env.DB
     .prepare(
-      `SELECT t.owner_user_id, t.payload_json, t.name, t.visibility, t.created_at, r.role AS actor_role
+      `SELECT t.owner_user_id, t.payload_json, t.name, t.visibility, t.created_at${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
        FROM ${table} t
        LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
        WHERE t.id = ?`,
@@ -1343,6 +1399,9 @@ const upsertOwnedResource = async (
     .first<ResourceRow & { actor_role?: string | null }>();
 
   if (existing) {
+    if (kind === "simulation" && existing.status === "deleted") {
+      return { ok: false, reason: "simulation_deleted" };
+    }
     const existingVisibility = visibilityFromDbVisibility(existing.visibility);
     const actorRole = typeof existing.actor_role === "string" ? existing.actor_role : null;
     if (!canEditResource(actor, existing.owner_user_id, existingVisibility, actorRole)) {
@@ -1561,13 +1620,14 @@ type LibraryRow = {
   last_actor_avatar_url: string | null;
   created_at: string | null;
   last_edited_at: string | null;
+  status?: "active" | "deleted";
 };
 
 export const fetchLibraryForUser = async (
   env: Env,
   userId: string,
   opts?: { since?: string },
-): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] }> => {
+): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[]; deletedSimulationIds: string[] }> => {
   await ensureSchema(env);
   const me = await fetchUserProfile(env, userId);
   const canReadAllResources = Boolean(me?.isAdmin);
@@ -1602,9 +1662,24 @@ export const fetchLibraryForUser = async (
     .bind(userId, canReadAllResources ? 1 : 0, userId, ...(opts?.since ? [opts.since] : []))
     .all<LibraryRow>();
 
+  const deletedSimulationRows = canReadAllResources
+    ? { results: [] as Array<{ id: string }> }
+    : await env.DB
+        .prepare(
+          `SELECT s.id
+           FROM simulations s
+           LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
+           WHERE s.status = 'deleted'
+             AND (s.owner_user_id = ?
+               OR s.visibility IN ('public_read', 'public_write')
+               OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${opts?.since ? "\n             AND s.updated_at > ?" : ""}`,
+        )
+        .bind(userId, userId, ...(opts?.since ? [opts.since] : []))
+        .all<{ id: string }>();
+
   const simulationRows = await env.DB
     .prepare(
-      `SELECT s.payload_json, s.owner_user_id, s.visibility, r.role,
+      `SELECT s.payload_json, s.owner_user_id, s.visibility, s.status, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
               s.created_by_user_id,
@@ -1624,12 +1699,13 @@ export const fetchLibraryForUser = async (
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
        LEFT JOIN users owner_u ON owner_u.id = s.owner_user_id
-       WHERE (? = 1
+       WHERE ((? = 1
           OR s.owner_user_id = ?
           OR s.visibility IN ('public_read', 'public_write')
-          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${opts?.since ? "\n          AND s.updated_at > ?" : ""}`,
+          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))
+         AND (? = 1 OR s.status = 'active'))${opts?.since ? "\n          AND s.updated_at > ?" : ""}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId, ...(opts?.since ? [opts.since] : []))
+    .bind(userId, canReadAllResources ? 1 : 0, userId, canReadAllResources ? 1 : 0, ...(opts?.since ? [opts.since] : []))
     .all<LibraryRow>();
 
   const mapRows = (rows: LibraryRow[]) =>
@@ -1664,6 +1740,7 @@ export const fetchLibraryForUser = async (
             lastEditedByName,
             lastEditedByAvatarUrl,
             lastEditedAt: row.last_edited_at,
+            ...(row.status ? { status: row.status } : {}),
             effectiveRole:
               canReadAllResources
                 ? "admin"
@@ -1683,6 +1760,7 @@ export const fetchLibraryForUser = async (
   return {
     siteLibrary: mapRows(siteRows.results),
     simulationPresets: mapRows(simulationRows.results),
+    deletedSimulationIds: deletedSimulationRows.results.map((row) => row.id),
   };
 };
 
@@ -1897,6 +1975,7 @@ export const fetchResourceChanges = async (
   env: Env,
   kind: "site" | "simulation",
   resourceId: string,
+  actor?: { isAdmin: boolean },
 ): Promise<
   Array<{
     id: number;
@@ -1911,6 +1990,13 @@ export const fetchResourceChanges = async (
   }>
 > => {
   await ensureSchema(env);
+  if (kind === "simulation" && !actor?.isAdmin) {
+    const simulation = await env.DB
+      .prepare("SELECT status FROM simulations WHERE id = ? LIMIT 1")
+      .bind(resourceId)
+      .first<{ status: "active" | "deleted" }>();
+    if (simulation?.status === "deleted") return [];
+  }
   const rows = await env.DB
     .prepare(
       `SELECT c.id, c.action, c.changed_at, c.note, c.actor_user_id, c.details_json, c.snapshot_json,
@@ -2011,15 +2097,16 @@ export const resolveSimulationAccessForUser = async (
 
   const row = await env.DB
     .prepare(
-      `SELECT s.owner_user_id, s.visibility, r.role AS actor_role
+      `SELECT s.owner_user_id, s.visibility, s.status, r.role AS actor_role
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
        WHERE s.id = ?`,
     )
     .bind(actor.id, id)
-    .first<{ owner_user_id: string; visibility: DbVisibility; actor_role?: string | null }>();
+    .first<{ owner_user_id: string; visibility: DbVisibility; status: "active" | "deleted"; actor_role?: string | null }>();
 
   if (!row) return "missing";
+  if (row.status === "deleted") return "missing";
 
   const canRead = canReadResource(
     {
@@ -2044,7 +2131,7 @@ export const resolveSimulationIdBySlug = async (
   const canonicalKey = canonicalizeSimulationLookupKey(simulationSlug);
   if (!slug && !canonicalKey) return null;
   const rows = await env.DB
-    .prepare("SELECT id, name, payload_json FROM simulations LIMIT 8000")
+    .prepare("SELECT id, name, payload_json FROM simulations WHERE status = 'active' LIMIT 8000")
     .all<{ id: string; name: string; payload_json: string }>();
   for (const row of rows.results) {
     const nameSlug = slugifyName(row.name);
@@ -2094,7 +2181,7 @@ export const resolveSimulationIdByOwnerSlug = async (
   const canonicalKey = canonicalizeSimulationLookupKey(simulationSlug);
   if (!slug && !canonicalKey) return null;
   const rows = await env.DB
-    .prepare("SELECT id, name, payload_json FROM simulations WHERE owner_user_id = ? LIMIT 8000")
+    .prepare("SELECT id, name, payload_json FROM simulations WHERE owner_user_id = ? AND status = 'active' LIMIT 8000")
     .bind(ownerId)
     .all<{ id: string; name: string; payload_json: string }>();
   for (const row of rows.results) {
@@ -2145,10 +2232,11 @@ export const fetchPublicSimulationBundle = async (
   if (!resolvedId) return { status: "missing" };
 
   const simulationRow = await env.DB
-    .prepare("SELECT id, owner_user_id, payload_json, visibility FROM simulations WHERE id = ? LIMIT 1")
+    .prepare("SELECT id, owner_user_id, payload_json, visibility, status FROM simulations WHERE id = ? LIMIT 1")
     .bind(resolvedId)
-    .first<{ id: string; owner_user_id: string; payload_json: string; visibility: DbVisibility }>();
+    .first<{ id: string; owner_user_id: string; payload_json: string; visibility: DbVisibility; status: "active" | "deleted" }>();
   if (!simulationRow) return { status: "missing" };
+  if (simulationRow.status === "deleted") return { status: "missing" };
   const visibility = visibilityFromDbVisibility(simulationRow.visibility);
 
   let actorSimulationRole: string | null = null;
