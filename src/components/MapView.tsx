@@ -14,8 +14,11 @@ import Map, {
   type ViewStateChangeEvent,
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
-import { computeCoverageGridDimensions } from "../lib/coverage";
-import { buildCoverageTargetContourFeatures } from "../lib/coverageContour";
+import {
+  computeCanonicalOverlayGridDimensions,
+  createCoveragePointEvaluator,
+  resolveCanonicalOverlayResolutionScale,
+} from "../lib/coverage";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -58,7 +61,7 @@ import {
   type SimulationOverlayRadiusOption,
 } from "../lib/simulationOverlayRadius";
 import {
-  buildCoverageOverlayPixelsAsync,
+  buildAdaptiveCoverageOverlayPixelsAsync,
   buildMeshExtensionOverlayPixelsAsync,
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
@@ -123,17 +126,6 @@ const readSectionBool = (key: string, fallback: boolean): boolean => {
 const writeSectionBool = (key: string, value: boolean): void => {
   try { localStorage.setItem(key, String(value)); } catch {}
 };
-
-const FNV_OFFSET_BASIS = 2166136261;
-const FNV_PRIME = 16777619;
-
-const updateFvnHash = (hash: number, value: number): number => {
-  const next = hash ^ (value & 0xff_ff_ff_ff);
-  return Math.imul(next, FNV_PRIME) >>> 0;
-};
-
-const roundHashValue = (value: number, factor = 10_000): number =>
-  Number.isFinite(value) ? Math.round(value * factor) : 0;
 
 // Full-world polygon used for the themed basemap color overlay.
 const WORLD_POLYGON_GEOJSON = {
@@ -233,34 +225,6 @@ const coverageRasterLayer = (fadedForCloud: boolean, hidden: boolean): LayerProp
     },
   };
 };
-
-const targetContourHaloLayer = (color: string, fadedForCloud: boolean, hidden: boolean): LayerProps => ({
-  beforeId: LINK_LAYER_ANCHOR_ID,
-  id: "coverage-target-contour-halo-layer",
-  type: "line",
-  paint: {
-    "line-color": color,
-    "line-width": 2.5,
-    "line-opacity": fadedForCloud || hidden ? 0 : 0.82,
-    "line-opacity-transition": {
-      duration: resolveSimulationOverlayTransition(fadedForCloud).durationMs,
-    },
-  },
-});
-
-const targetContourLineLayer = (color: string, fadedForCloud: boolean, hidden: boolean): LayerProps => ({
-  beforeId: LINK_LAYER_ANCHOR_ID,
-  id: "coverage-target-contour-line-layer",
-  type: "line",
-  paint: {
-    "line-color": color,
-    "line-width": 1.2,
-    "line-opacity": fadedForCloud || hidden ? 0 : 0.96,
-    "line-opacity-transition": {
-      duration: resolveSimulationOverlayTransition(fadedForCloud).durationMs,
-    },
-  },
-});
 
 const terrainRasterPaint = {
   "raster-opacity": 0.62,
@@ -523,17 +487,8 @@ const computeOverlayDimensions = (
   targetGridSize: number,
   resolutionScale = 1,
 ): { width: number; height: number } => {
-  const { rows, cols } = computeCoverageGridDimensions(targetGridSize, bounds, 1);
-  // Match the historical visual baseline (~100k display pixels at 24x24 samples)
-  // while keeping display density proportional to simulation sample density.
-  const targetDisplayPixelsPerSample = 174;
-  const displaySupersample = Math.sqrt(targetDisplayPixelsPerSample);
-  const scaledWidth = Math.round(cols * resolutionScale * displaySupersample);
-  const scaledHeight = Math.round(rows * resolutionScale * displaySupersample);
-  return {
-    width: clamp(scaledWidth, 8, 1400),
-    height: clamp(scaledHeight, 8, 1400),
-  };
+  const dimensions = computeCanonicalOverlayGridDimensions(targetGridSize, bounds, resolutionScale);
+  return { width: dimensions.width, height: dimensions.height };
 };
 
 const kmToLatDegrees = (km: number): number => km / 111.32;
@@ -831,6 +786,7 @@ export function MapView({
   const propagationModel = useAppStore((state) => state.propagationModel);
   const selectedNetworkId = useAppStore((state) => state.selectedNetworkId);
   const networks = useAppStore((state) => state.networks);
+  const systems = useAppStore((state) => state.systems);
   const terrainDataset = useAppStore((state) => state.terrainDataset);
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
@@ -1657,11 +1613,9 @@ export function MapView({
   );
 
   const overlayResolutionScale = useMemo(() => {
-    if (analysisBoundsDiagonalKm > 600) return 0.52;
-    if (analysisBoundsDiagonalKm > 400) return 0.64;
-    if (analysisBoundsDiagonalKm > 250) return 0.76;
-    return 1;
-  }, [analysisBoundsDiagonalKm]);
+    if (!analysisBounds) return 1;
+    return resolveCanonicalOverlayResolutionScale(analysisBounds);
+  }, [analysisBounds]);
   const largeAreaOptimizationActive = overlayResolutionScale < 1;
 
   // During a site drag, force low-res (24) to keep overlay recomputations cheap.
@@ -1698,16 +1652,17 @@ export function MapView({
       { gridSize: 168, name: "8x" },
     ] as const;
     return options.map(({ gridSize, name }) => {
-      const fallback = { rows: gridSize, cols: gridSize, totalSamples: gridSize * gridSize };
-      const dims = overlayBounds ? computeCoverageGridDimensions(gridSize, overlayBounds, 1) : fallback;
+      const fallback = { width: gridSize, height: gridSize, totalSamples: gridSize * gridSize };
+      const dims = overlayBounds
+        ? computeCanonicalOverlayGridDimensions(gridSize, overlayBounds, overlayResolutionScale)
+        : fallback;
       const isDefault = gridSize === 24;
       return {
         value: String(gridSize) as "24" | "42" | "84" | "168",
-        label: `${name} (${dims.rows}x${dims.cols}, ${dims.totalSamples} samples)${isDefault ? " - Default" : ""}`,
+        label: `${name} (${dims.height}x${dims.width}, ${dims.totalSamples} samples)${isDefault ? " - Default" : ""}`,
       };
     });
-  }, [overlayBounds]);
-  const effectiveBandStepDb = 5;
+  }, [overlayBounds, overlayResolutionScale]);
   const overlayLongTaskWarnedRef = useRef<Set<string>>(new Set());
   const showOverlayDiagnostics =
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
@@ -1911,15 +1866,6 @@ export function MapView({
     };
   }, []);
 
-  const overlaySampleDigest = useMemo(() => {
-    let hash = FNV_OFFSET_BASIS;
-    for (const sample of samplesForOverlay) {
-      hash = updateFvnHash(hash, roundHashValue(sample.lat, 100_000));
-      hash = updateFvnHash(hash, roundHashValue(sample.lon, 100_000));
-      hash = updateFvnHash(hash, roundHashValue(sample.valueDbm, 10));
-    }
-    return hash.toString(16);
-  }, [samplesForOverlay]);
   const propagationEnvironmentDigest = useMemo(
     () =>
       [
@@ -1936,6 +1882,39 @@ export function MapView({
   );
   const selectedSiteDigest = useMemo(() => selectedSiteIds.join(","), [selectedSiteIds]);
   const selectedSiteRadioDigest = useMemo(() => meshExtensionSiteDigest(meshExtensionSites), [meshExtensionSites]);
+  const coverageAnalysisInputDigest = useMemo(
+    () =>
+      [
+        selectedNetwork?.id ?? "",
+        selectedNetwork?.frequencyMHz ?? "",
+        selectedNetwork?.frequencyOverrideMHz ?? "",
+        ...(selectedNetwork?.memberships ?? []).map((membership) => `${membership.siteId}:${membership.systemId}`),
+        ...sites.map((site) =>
+          [
+            site.id,
+            site.position.lat,
+            site.position.lon,
+            site.groundElevationM,
+            site.antennaHeightM,
+            site.txPowerDbm,
+            site.txGainDbi,
+            site.rxGainDbi,
+            site.cableLossDb,
+          ].join(":"),
+        ),
+        ...systems.map((system) =>
+          [
+            system.id,
+            system.txPowerDbm,
+            system.txGainDbi,
+            system.rxGainDbi,
+            system.cableLossDb,
+            system.antennaHeightM,
+          ].join(":"),
+        ),
+      ].join("|"),
+    [selectedNetwork, sites, systems],
+  );
   const meshExtensionFrequencyMHz =
     selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? activeSelectionLink?.frequencyMHz ?? 869.618;
 
@@ -1961,6 +1940,13 @@ export function MapView({
     }
 
     const mode = coverageVizMode;
+    if (
+      (mode === "heatmap" || mode === "contours" || mode === "weakest") &&
+      (!selectedNetwork || !sites.length || !systems.length)
+    ) {
+      cancelCoveragePipeline();
+      return;
+    }
     if (mode === "passfail" && (!activeSelectionLink || !selectedFromSite || !hasPassFailTopology)) {
       cancelCoveragePipeline();
       return;
@@ -1982,9 +1968,6 @@ export function MapView({
       overlayBounds.maxLon.toFixed(5),
       overlayDimensions.width,
       overlayDimensions.height,
-      effectiveBandStepDb,
-      samplesForOverlay.length,
-      overlaySampleDigest,
       srtmTiles.length,
       terrainLoadEpoch,
       effectiveGridSize,
@@ -2017,6 +2000,20 @@ export function MapView({
       activeSelectionLink?.rxGainDbi ?? "",
       activeSelectionLink?.cableLossDb ?? "",
       selectedSiteRadioDigest,
+      propagationEnvironmentDigest,
+    ].join("|");
+    const coverageAnalysisCacheKey = [
+      "coverage",
+      overlayBounds.minLat.toFixed(5),
+      overlayBounds.maxLat.toFixed(5),
+      overlayBounds.minLon.toFixed(5),
+      overlayBounds.maxLon.toFixed(5),
+      overlayDimensions.width,
+      overlayDimensions.height,
+      srtmTiles.length,
+      terrainLoadEpoch,
+      effectiveGridSize,
+      coverageAnalysisInputDigest,
       propagationEnvironmentDigest,
     ].join("|");
     if (
@@ -2124,24 +2121,30 @@ export function MapView({
           } as const;
           let rasterPixels: OverlayRasterPixels | null = null;
           if (mode === "heatmap" || mode === "contours" || mode === "weakest") {
-            const overlaySamples =
-              mode === "weakest"
-                ? samplesForOverlay.map((sample) => ({
-                    ...sample,
-                    valueDbm: sample.weakestDbm ?? sample.valueDbm,
-                  }))
-                : samplesForOverlay;
-            rasterPixels = await buildCoverageOverlayPixelsAsync(
-              overlayBounds,
-              overlaySamples,
-              mode === "contours" || mode === "weakest" ? "heatmap" : mode,
-              effectiveBandStepDb,
-              overlayDimensions,
-              overlayPointMask,
-              terrainSampler,
-              context,
-              { rxTargetDbm: rxSensitivityTargetDbm },
+            const evaluateCoveragePoint = createCoveragePointEvaluator(
+              selectedNetwork!,
+              sites,
+              systems,
+              propagationEnvironment,
+              ({ lat, lon }) => terrainSampler(lat, lon),
+              {
+                terrainSamples: 20,
+                terrainCacheKey: coverageAnalysisCacheKey,
+                requireCompleteTerrain: true,
+              },
             );
+            rasterPixels = await buildAdaptiveCoverageOverlayPixelsAsync({
+              bounds: overlayBounds,
+              dimensions: overlayDimensions,
+              initialGridSize: effectiveGridSize,
+              mode,
+              rxTargetDbm: rxSensitivityTargetDbm,
+              evaluatePoint: evaluateCoveragePoint,
+              pointMask: overlayPointMask,
+              context,
+              adaptive: true,
+              analysisCacheKey: coverageAnalysisCacheKey,
+            });
           } else if (mode === "passfail") {
             const receiverAntennaHeightM = selectedToSite?.antennaHeightM ?? selectedFromSite!.antennaHeightM ?? 2;
             const receiverRxGainDbi =
@@ -2283,9 +2286,6 @@ export function MapView({
     overlayPointMask,
     srtmTiles,
     terrainLoadEpoch,
-    effectiveBandStepDb,
-    samplesForOverlay,
-    overlaySampleDigest,
     propagationEnvironment,
     propagationEnvironmentDigest,
     rxSensitivityTargetDbm,
@@ -2297,6 +2297,9 @@ export function MapView({
     meshExtensionFrequencyMHz,
     meshExtensionSites,
     selectedNetwork,
+    sites,
+    systems,
+    coverageAnalysisInputDigest,
     showOverlayDiagnostics,
     beginOverlayJob,
     beginCoverageHandoff,
@@ -2334,48 +2337,6 @@ export function MapView({
     return { min, max };
   }, [samplesForOverlay]);
 
-  const targetContourFeatures = useMemo(
-    () =>
-      coverageVizMode === "contours"
-        ? buildCoverageTargetContourFeatures(samplesForOverlay, rxSensitivityTargetDbm, overlayBounds, overlayPointMask)
-        : { type: "FeatureCollection" as const, features: [] },
-    [coverageVizMode, overlayBounds, overlayPointMask, rxSensitivityTargetDbm, samplesForOverlay],
-  );
-  const [displayedTargetContourFeatures, setDisplayedTargetContourFeatures] =
-    useState(targetContourFeatures);
-  const pendingTargetContourFeaturesRef = useRef(targetContourFeatures);
-  useEffect(() => {
-    if (
-      coverageVizMode === "contours" &&
-      targetContourFeatures.features.length > 0
-    ) {
-      if (
-        overlayHandoff.phase === "entering" ||
-        overlayHandoff.phase === "entered"
-      ) {
-        pendingTargetContourFeaturesRef.current = targetContourFeatures;
-      } else {
-        setDisplayedTargetContourFeatures(targetContourFeatures);
-      }
-    }
-    if (overlayHandoff.phase === "exiting") {
-      setDisplayedTargetContourFeatures(
-        coverageVizMode === "contours"
-          ? pendingTargetContourFeaturesRef.current
-          : { type: "FeatureCollection", features: [] },
-      );
-    }
-    if (overlayHandoff.phase !== "hiding") return;
-    const timeoutId = window.setTimeout(() => {
-      setDisplayedTargetContourFeatures({
-        type: "FeatureCollection",
-        features: [],
-      });
-    }, resolveSimulationOverlayTransition(false).durationMs);
-    return () => window.clearTimeout(timeoutId);
-  }, [coverageVizMode, overlayHandoff.phase, targetContourFeatures]);
-  const showTargetContourLine =
-    displayedTargetContourFeatures.features.length > 0;
   const coverageScaleRange = useMemo(() => {
     if (!coverageOverlay || (coverageVizMode !== "heatmap" && coverageVizMode !== "contours" && coverageVizMode !== "weakest")) {
       return null;
@@ -4259,25 +4220,6 @@ export function MapView({
           onCloudReady={handleLoadingCloudReady}
           pointMask={overlayPointMask}
         />
-
-        {showTargetContourLine ? (
-          <Source data={displayedTargetContourFeatures} id="coverage-target-contour-source" type="geojson">
-            <Layer
-              {...targetContourHaloLayer(
-                variant.cssVars["--bg"] ?? linkColor,
-                simulationOverlayFadedForCloud,
-                simulationOverlayHidden,
-              )}
-            />
-            <Layer
-              {...targetContourLineLayer(
-                variant.cssVars["--muted"] ?? selectedLinkColor,
-                simulationOverlayFadedForCloud,
-                simulationOverlayHidden,
-              )}
-            />
-          </Source>
-        ) : null}
 
         {userLocationFix ? (
           <Source data={userLocationAccuracyGeoJson} id="user-location-accuracy" type="geojson">

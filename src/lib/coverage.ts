@@ -68,6 +68,7 @@ export type CoverageGridPoint = {
 
 const COVERAGE_COMPUTE_CHUNK_SIZE = 48;
 const COVERAGE_COMPUTE_FRAME_BUDGET_MS = 12;
+export const CANONICAL_OVERLAY_PIXELS_PER_BASE_SAMPLE = 174;
 
 export const computeCoverageGridDimensions = (
   gridSize: number,
@@ -88,6 +89,32 @@ export const computeCoverageGridDimensions = (
     totalSamples: rows * cols,
     targetSamples,
   };
+};
+
+export const computeCanonicalOverlayGridDimensions = (
+  gridSize: number,
+  bounds: CoverageGridBounds,
+  resolutionScale = 1,
+): { width: number; height: number; totalSamples: number } => {
+  const { rows, cols } = computeCoverageGridDimensions(gridSize, bounds, 1);
+  const displaySupersample = Math.sqrt(CANONICAL_OVERLAY_PIXELS_PER_BASE_SAMPLE);
+  const width = Math.max(8, Math.min(1400, Math.round(cols * resolutionScale * displaySupersample)));
+  const height = Math.max(8, Math.min(1400, Math.round(rows * resolutionScale * displaySupersample)));
+  return { width, height, totalSamples: width * height };
+};
+
+export const resolveCanonicalOverlayResolutionScale = (bounds: CoverageGridBounds): number => {
+  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+  const latSpanKm = Math.abs(bounds.maxLat - bounds.minLat) * 111.32;
+  const lonSpanKm =
+    Math.abs(bounds.maxLon - bounds.minLon) *
+    111.32 *
+    Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+  const diagonalKm = Math.hypot(latSpanKm, lonSpanKm);
+  if (diagonalKm > 600) return 0.52;
+  if (diagonalKm > 400) return 0.64;
+  if (diagonalKm > 250) return 0.76;
+  return 1;
 };
 
 export const buildCoverageGridPoints = (
@@ -268,6 +295,35 @@ const evaluateCoveragePoint = (
   return {
     valueDbm: Number.isFinite(strongestDbm) ? strongestDbm : -140,
     weakestDbm: Number.isFinite(weakestDbm) ? weakestDbm : -140,
+  };
+};
+
+export const createCoveragePointEvaluator = (
+  network: Network,
+  sites: Site[],
+  systems: RadioSystem[],
+  environment: PropagationEnvironment,
+  terrainSampler?: (coordinates: Coordinates) => number | null,
+  options?: Pick<BuildCoverageOptions, "terrainSamples" | "terrainCacheKey" | "requireCompleteTerrain">,
+): ((lat: number, lon: number) => { strongestDbm: number; weakestDbm: number }) => {
+  const memberships = resolveCoverageMemberships(network, sites, systems);
+  const frequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
+  const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
+  const effectiveTerrainSampler =
+    terrainSampler && options?.requireCompleteTerrain
+      ? requireTerrainSample(terrainSampler)
+      : terrainSampler;
+  return (lat, lon) => {
+    const levels = evaluateCoveragePoint(
+      { lat, lon },
+      memberships,
+      frequencyMHz,
+      terrainSamples,
+      environment,
+      effectiveTerrainSampler,
+      options?.terrainCacheKey,
+    );
+    return { strongestDbm: levels.valueDbm, weakestDbm: levels.weakestDbm ?? levels.valueDbm };
   };
 };
 

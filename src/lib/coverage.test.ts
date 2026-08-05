@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCoverage,
   buildCoverageAsync,
+  computeCanonicalOverlayGridDimensions,
   computeCoverageGridDimensions,
   CoverageBuildCancelledError,
 } from "./coverage";
@@ -161,5 +162,20 @@ describe("buildCoverage", () => {
     expect(dims.targetSamples).toBe(576);
     expect(dims.rows).toBeGreaterThan(0);
     expect(dims.cols).toBeGreaterThan(0);
+  });
+
+  it("uses the Pass/Fail raster as the canonical area-overlay grid", () => {
+    const bounds = {
+      minLat: 59.8,
+      maxLat: 60.1,
+      minLon: 10.7,
+      maxLon: 10.8,
+    };
+    const base = computeCoverageGridDimensions(24, bounds);
+    const canonical = computeCanonicalOverlayGridDimensions(24, bounds);
+
+    expect(canonical.width).toBe(Math.round(base.cols * Math.sqrt(174)));
+    expect(canonical.height).toBe(Math.round(base.rows * Math.sqrt(174)));
+    expect(canonical.totalSamples).toBe(canonical.width * canonical.height);
   });
 });
