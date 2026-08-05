@@ -1,9 +1,8 @@
 import { createPortal } from "react-dom";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, History, Loader2, Pencil, RefreshCw, Search } from "lucide-react";
 import {
   fetchResourceChanges,
-  fetchUserById,
   revertResourceChangeCopy,
   type CloudUser,
   type ResourceChange,
@@ -21,12 +20,58 @@ import { SiteBeamVisualizer } from "../SiteBeamVisualizer";
 import { AvatarBadge } from "../AvatarBadge";
 import { ModalOverlay } from "../ModalOverlay";
 import { FloatingPopover } from "../ui/FloatingPopover";
+import { UserProfilePopover, type UserProfilePopoverTarget } from "../UserProfilePopover";
+import { ConfirmActionModal } from "../ConfirmActionModal";
 import {
   getSiteIconOption,
   resolveSiteIconKey,
   SITE_ICON_OPTIONS,
   suggestSiteIconKey,
 } from "../../lib/siteIcons";
+import { SIMULATION_COLOR_PRESETS } from "../../lib/simulationColors";
+
+function SimulationColorControl({
+  label,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="simulation-color-field">
+      <span>{label}</span>
+      <div aria-label={`${label} presets`} className="simulation-color-presets" role="group">
+        {SIMULATION_COLOR_PRESETS.map((preset) => (
+          <button
+            aria-label={`Set ${label} to ${preset.label}`}
+            aria-pressed={value === preset.value}
+            className="simulation-color-swatch"
+            disabled={disabled}
+            key={preset.value}
+            onClick={() => onChange(preset.value)}
+            style={{ "--simulation-swatch-color": preset.value } as CSSProperties}
+            title={preset.label}
+            type="button"
+          />
+        ))}
+        <span aria-hidden="true" className="simulation-color-separator" />
+        <button
+          aria-label={`Use theme ${label}`}
+          aria-pressed={value === null}
+          className="simulation-color-swatch is-theme-color"
+          disabled={disabled}
+          onClick={() => onChange(null)}
+          title="Use theme color"
+          type="button"
+        />
+      </div>
+    </div>
+  );
+}
 
 // ─── Positioning ─────────────────────────────────────────────────────────────
 
@@ -114,7 +159,7 @@ function EditorMetadataStrip({
 }: {
   metadata: ResourceMetadata;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
-  onOpenUserProfile: (userId: string) => void;
+  onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
 }) {
   return (
     <div className="editor-meta-footer" aria-label="Resource metadata">
@@ -123,7 +168,7 @@ function EditorMetadataStrip({
         <ActionButton
           aria-label={`Open owner profile: ${metadata.owner.name}`}
           className="editor-meta-avatar-button"
-          onClick={() => onOpenUserProfile(metadata.owner.id)}
+          onClick={(event) => onOpenUserProfile(metadata.owner.id, event.currentTarget)}
           size="icon"
           title={`Owner: ${metadata.owner.name}`}
           type="button"
@@ -140,7 +185,7 @@ function EditorMetadataStrip({
         <ActionButton
           aria-label={`Open last editor profile: ${metadata.lastEditedBy.name}`}
           className="editor-meta-avatar-button"
-          onClick={() => onOpenUserProfile(metadata.lastEditedBy.id)}
+          onClick={(event) => onOpenUserProfile(metadata.lastEditedBy.id, event.currentTarget)}
           size="icon"
           title={`Last edited by: ${metadata.lastEditedBy.name}`}
           type="button"
@@ -210,14 +255,16 @@ function SiteEditorCard({
   isNew,
   form,
   onClose,
+  onRequestDelete,
   onOpenChangeLog,
   onOpenUserProfile,
 }: {
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
+  onRequestDelete: () => void;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
-  onOpenUserProfile: (userId: string) => void;
+  onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
@@ -258,6 +305,9 @@ function SiteEditorCard({
               <ResolvedIcon aria-label={resolvedIconOption.label} role="img" size={16} strokeWidth={1.8} />
             </span>
           </div>
+          {form.activeSimulationSiteId ? (
+            <StaticField label="Site icon color" value={form.activeSiteIconColor ?? "Theme color"} />
+          ) : null}
           <div className="beam-visualizer-field-group">
             <StaticField label="Antenna (m)" value={form.antennaDraft} />
             <StaticField label="Tx power (dBm)" value={form.txPowerDraft} />
@@ -343,6 +393,18 @@ function SiteEditorCard({
             </div>
           </FloatingPopover>
         </div>
+
+        {form.activeSimulationSiteId ? (
+          <div className="simulation-site-color-control">
+            <SimulationColorControl
+              disabled={!form.canEditActiveSimulationAppearance}
+              label="Site icon color"
+              onChange={form.setActiveSiteIconColor}
+              value={form.activeSiteIconColor}
+            />
+            <p className="field-help">Applies to this Simulation only.</p>
+          </div>
+        ) : null}
 
         <label className="field-grid">
           <span>Description</span>
@@ -561,9 +623,28 @@ function SiteEditorCard({
       {form.status ? <p className="field-help">{form.status}</p> : null}
 
       <div className="chip-group">
-        {!isReadOnly ? (
-          <ActionButton onClick={form.handleSaveSite} type="button">
+        {!isReadOnly && isNew && mapEditor?.origin?.kind === "library" ? (
+          <>
+            <ActionButton onClick={() => form.handleSaveSite({ insertIntoSimulation: false })} type="button">
+              Save to Library
+            </ActionButton>
+            {form.canAddToActiveSimulation ? (
+              <ActionButton
+                onClick={() => form.handleSaveSite({ insertIntoSimulation: true, exitLibrary: true })}
+                type="button"
+              >
+                Save &amp; Add to Simulation
+              </ActionButton>
+            ) : null}
+          </>
+        ) : !isReadOnly ? (
+          <ActionButton onClick={() => form.handleSaveSite()} type="button">
             {isNew ? "Create Site" : "Save Site"}
+          </ActionButton>
+        ) : null}
+        {!isNew && !isReadOnly ? (
+          <ActionButton onClick={onRequestDelete} type="button" variant="danger">
+            Delete Site
           </ActionButton>
         ) : null}
         <ActionButton onClick={onClose} type="button">
@@ -613,6 +694,10 @@ function LinkEditorCard({
           <StaticField label="Link name" value={form.linkNameDraft} />
           <StaticField label="From site" value={fromSiteName} />
           <StaticField label="To site" value={toSiteName} />
+          <StaticField
+            label="Link color"
+            value={form.linkColorDraft ?? (form.activeLinkColorMode === "auto" ? "Automatic" : "Theme color")}
+          />
           <StaticField label="Override site radio settings" value={form.overrideRadio ? "Yes" : "No"} />
           {form.overrideRadio ? (
             <>
@@ -672,6 +757,16 @@ function LinkEditorCard({
             ))}
         </select>
       </label>
+
+      {form.activeLinkColorMode === "manual" ? (
+        <SimulationColorControl
+          label="Link color"
+          onChange={form.setLinkColorDraft}
+          value={form.linkColorDraft}
+        />
+      ) : (
+        <p className="field-help">This Simulation uses automatic Link colors from the Path Profile result.</p>
+      )}
 
         <label className="field-grid">
           <span>Override site radio settings</span>
@@ -748,12 +843,24 @@ function SimulationEditorCard({
   onClose,
   onOpenChangeLog,
   onOpenUserProfile,
+  onRequestDelete,
+  canDelete,
+  isDeleted,
+  lifecycleBusy,
+  lifecycleError,
+  onRestore,
 }: {
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
   onClose: () => void;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
-  onOpenUserProfile: (userId: string) => void;
+  onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
+  onRequestDelete: () => void;
+  canDelete: boolean;
+  isDeleted: boolean;
+  lifecycleBusy: boolean;
+  lifecycleError: string;
+  onRestore: () => void;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
@@ -779,7 +886,9 @@ function SimulationEditorCard({
       </div>
 
       {isReadOnly && (
-        <p className="field-help warning-text">Read-only: you can view this simulation but cannot edit it.</p>
+        <p className="field-help warning-text">
+          {isDeleted ? "Deleted: this Simulation is available to platform admins for inspection and restoration only." : "Read-only: you can view this simulation but cannot edit it."}
+        </p>
       )}
 
       {isReadOnly ? (
@@ -931,11 +1040,22 @@ function SimulationEditorCard({
 
       {form.simulationNameError ? <p className="field-help field-help-error">{form.simulationNameError}</p> : null}
       {form.status ? <p className="field-help">{form.status}</p> : null}
+      {lifecycleError ? <p className="field-help field-help-error">{lifecycleError}</p> : null}
 
       <div className="chip-group">
         {!isReadOnly ? (
           <ActionButton onClick={form.handleSaveSimulation} type="button">
             {isNew ? (isCopySimulation ? "Save a copy" : "Create Simulation") : "Save"}
+          </ActionButton>
+        ) : null}
+        {!isNew && isDeleted ? (
+          <ActionButton disabled={lifecycleBusy} onClick={onRestore} type="button">
+            {lifecycleBusy ? "Restoring..." : "Restore Simulation"}
+          </ActionButton>
+        ) : null}
+        {!isNew && !isReadOnly && canDelete ? (
+          <ActionButton onClick={onRequestDelete} type="button" variant="danger">
+            Delete Simulation
           </ActionButton>
         ) : null}
         <ActionButton onClick={onClose} type="button">
@@ -963,13 +1083,16 @@ type MapEditorPanelProps = {
 export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const closeMapEditor = useAppStore((state) => state.closeMapEditor);
+  const deleteSiteLibraryEntry = useAppStore((state) => state.deleteSiteLibraryEntry);
+  const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
+  const restoreSimulationPreset = useAppStore((state) => state.restoreSimulationPreset);
+  const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const currentUser = useAppStore((state) => state.currentUser);
   const form = useMapEditorFormState();
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
-  const [profilePopupUser, setProfilePopupUser] = useState<CloudUser | null>(null);
-  const [profilePopupBusy, setProfilePopupBusy] = useState(false);
-  const [profilePopupStatus, setProfilePopupStatus] = useState("");
+  const [profileTarget, setProfileTarget] = useState<UserProfilePopoverTarget | null>(null);
   const [changeLogPopup, setChangeLogPopup] = useState<{
     kind: ResourceKindWithChanges;
     resourceId: string;
@@ -978,19 +1101,21 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
     busy: boolean;
     status: string;
   } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    kind: "site" | "simulation";
+    resourceId: string;
+    label: string;
+  } | null>(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState("");
 
-  const openUserProfilePopup = async (userId: string) => {
-    if (!userId) return;
-    setProfilePopupBusy(true);
-    setProfilePopupStatus("");
-    try {
-      const user = await fetchUserById(userId);
-      setProfilePopupUser(user);
-    } catch (error) {
-      setProfilePopupStatus(`Failed loading user: ${getUiErrorMessage(error)}`);
-    } finally {
-      setProfilePopupBusy(false);
-    }
+  useEffect(() => {
+    setLifecycleBusy(false);
+    setLifecycleError("");
+  }, [mapEditor?.kind, mapEditor?.resourceId]);
+
+  const openUserProfilePopup = (userId: string, anchor: HTMLElement) => {
+    if (userId) setProfileTarget({ anchor, userId });
   };
 
   const openChangeLogPopup = async (kind: ResourceKindWithChanges, resourceId: string, label: string) => {
@@ -1021,12 +1146,6 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       );
     }
   };
-  const closeUserProfilePopup = () => {
-    setProfilePopupUser(null);
-    setProfilePopupBusy(false);
-    setProfilePopupStatus("");
-  };
-
   // Compute position on open and on resize
   useEffect(() => {
     if (!mapEditor || isMobile) {
@@ -1065,7 +1184,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
   useEffect(() => {
     if (!mapEditor) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeMapEditor();
+      if (e.key === "Escape" && !e.defaultPrevented) closeMapEditor();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -1081,7 +1200,12 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
           isNew={mapEditor.isNew}
           onClose={closeMapEditor}
           onOpenChangeLog={openChangeLogPopup}
-          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+          onOpenUserProfile={openUserProfilePopup}
+          onRequestDelete={() => {
+            if (mapEditor.resourceId) {
+              setDeleteTarget({ kind: "site", resourceId: mapEditor.resourceId, label: mapEditor.label });
+            }
+          }}
         />
       );
     }
@@ -1089,18 +1213,83 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       return <LinkEditorCard form={form} isNew={mapEditor.isNew} onClose={closeMapEditor} />;
     }
     if (mapEditor.kind === "simulation") {
+      const simulation = mapEditor.resourceId
+        ? simulationPresets.find((preset) => preset.id === mapEditor.resourceId)
+        : undefined;
+      const isDeleted = simulation?.status === "deleted";
+      const canDelete = Boolean(
+        simulation &&
+          !isDeleted &&
+          currentUser?.id &&
+          (currentUser.isAdmin || simulation.ownerUserId === currentUser.id || simulation.effectiveRole === "owner"),
+      );
       return (
         <SimulationEditorCard
           form={form}
           isNew={mapEditor.isNew}
           onClose={closeMapEditor}
           onOpenChangeLog={openChangeLogPopup}
-          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+          onOpenUserProfile={openUserProfilePopup}
+          canDelete={canDelete}
+          isDeleted={isDeleted}
+          lifecycleBusy={lifecycleBusy}
+          lifecycleError={lifecycleError}
+          onRequestDelete={() => {
+            if (mapEditor.resourceId) {
+              setDeleteTarget({ kind: "simulation", resourceId: mapEditor.resourceId, label: mapEditor.label });
+            }
+          }}
+          onRestore={() => {
+            if (!mapEditor.resourceId || lifecycleBusy) return;
+            setLifecycleBusy(true);
+            setLifecycleError("");
+            void restoreSimulationPreset(mapEditor.resourceId)
+              .then(() => closeMapEditor())
+              .catch((error) => setLifecycleError(`Restore failed: ${getUiErrorMessage(error)}`))
+              .finally(() => setLifecycleBusy(false));
+          }}
         />
       );
     }
     return null;
   })();
+
+  const deleteConfirmation = deleteTarget ? (
+    <ConfirmActionModal
+      busy={lifecycleBusy}
+      error={lifecycleError}
+      message={
+        deleteTarget.kind === "site"
+          ? `Delete ${deleteTarget.label} from the Library? Referenced Simulation data will be detached but preserved.`
+          : `Delete ${deleteTarget.label} from the Library?${deleteTarget.resourceId === useAppStore.getState().selectedScenarioId ? " The active workspace will be cleared." : ""}`
+      }
+      onCancel={() => {
+        if (!lifecycleBusy) {
+          setLifecycleError("");
+          setDeleteTarget(null);
+        }
+      }}
+      onConfirm={() => {
+        if (deleteTarget.kind === "site") {
+          deleteSiteLibraryEntry(deleteTarget.resourceId);
+          setDeleteTarget(null);
+          closeMapEditor();
+          return;
+        }
+        if (lifecycleBusy) return;
+        setLifecycleBusy(true);
+        setLifecycleError("");
+        void deleteSimulationPreset(deleteTarget.resourceId)
+          .then(() => {
+            setDeleteTarget(null);
+            closeMapEditor();
+          })
+          .catch((error) => setLifecycleError(`Delete failed: ${getUiErrorMessage(error)}`))
+          .finally(() => setLifecycleBusy(false));
+      }}
+      title={deleteTarget.kind === "site" ? "Delete Site" : "Delete Simulation"}
+    />
+  ) : null;
 
   if (isMobile) {
     return createPortal(
@@ -1114,14 +1303,14 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
         <MapEditorAuxiliaryModals
           changeLogPopup={changeLogPopup}
           onCloseChangeLog={() => setChangeLogPopup(null)}
-          onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+          onOpenUserProfile={openUserProfilePopup}
           onRevertChange={revertChangeAsCopy}
           canRevert={form.canWrite}
-          onCloseProfile={closeUserProfilePopup}
-          profilePopupBusy={profilePopupBusy}
-          profilePopupStatus={profilePopupStatus}
-          profilePopupUser={profilePopupUser}
+          onCloseProfile={() => setProfileTarget(null)}
+          profileTarget={profileTarget}
+          viewer={form.currentUser}
         />
+        {deleteConfirmation}
       </>,
       document.body,
     );
@@ -1144,14 +1333,14 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       <MapEditorAuxiliaryModals
         changeLogPopup={changeLogPopup}
         onCloseChangeLog={() => setChangeLogPopup(null)}
-        onOpenUserProfile={(userId) => void openUserProfilePopup(userId)}
+        onOpenUserProfile={openUserProfilePopup}
         onRevertChange={revertChangeAsCopy}
         canRevert={form.canWrite}
-        onCloseProfile={closeUserProfilePopup}
-        profilePopupBusy={profilePopupBusy}
-        profilePopupStatus={profilePopupStatus}
-        profilePopupUser={profilePopupUser}
+        onCloseProfile={() => setProfileTarget(null)}
+        profileTarget={profileTarget}
+        viewer={form.currentUser}
       />
+      {deleteConfirmation}
     </>,
     document.body,
   );
@@ -1164,9 +1353,8 @@ function MapEditorAuxiliaryModals({
   onRevertChange,
   canRevert,
   onCloseProfile,
-  profilePopupBusy,
-  profilePopupStatus,
-  profilePopupUser,
+  profileTarget,
+  viewer,
 }: {
   changeLogPopup: {
     kind: ResourceKindWithChanges;
@@ -1177,52 +1365,16 @@ function MapEditorAuxiliaryModals({
     status: string;
   } | null;
   onCloseChangeLog: () => void;
-  onOpenUserProfile: (userId: string) => void;
+  onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
   onRevertChange: (kind: ResourceKindWithChanges, resourceId: string, changeId: number) => void;
   canRevert: boolean;
   onCloseProfile: () => void;
-  profilePopupBusy: boolean;
-  profilePopupStatus: string;
-  profilePopupUser: CloudUser | null;
+  profileTarget: UserProfilePopoverTarget | null;
+  viewer: CloudUser | null;
 }) {
   return (
     <>
-      {profilePopupUser || profilePopupBusy || profilePopupStatus ? (
-        <ModalOverlay aria-label="User Profile" onClose={onCloseProfile} tier="raised">
-          <div className="library-manager-card user-profile-popup">
-            <div className="library-manager-header">
-              <h2>User Profile</h2>
-              <InlineCloseIconButton onClick={onCloseProfile} />
-            </div>
-            {profilePopupBusy ? <p className="field-help">Loading user...</p> : null}
-            {profilePopupUser ? (
-              <>
-                <p className="field-help">
-                  <strong>
-                    <UserBadge avatarUrl={profilePopupUser.avatarUrl} name={profilePopupUser.username} />
-                  </strong>{" "}
-                  ({profilePopupUser.id})
-                </p>
-                <p className="field-help">Email: {profilePopupUser.email ?? "Hidden by user"}</p>
-                <p className="field-help">Bio: {profilePopupUser.bio || "-"}</p>
-                <p className="field-help">
-                  Role:{" "}
-                  {profilePopupUser.role ??
-                    (profilePopupUser.isAdmin
-                      ? "admin"
-                      : profilePopupUser.isModerator
-                        ? "moderator"
-                        : profilePopupUser.isApproved
-                          ? "user"
-                          : "pending")}
-                </p>
-                <p className="field-help">Access: {profilePopupUser.accountState ?? "approved"}</p>
-              </>
-            ) : null}
-            {profilePopupStatus ? <p className="field-help">{profilePopupStatus}</p> : null}
-          </div>
-        </ModalOverlay>
-      ) : null}
+      <UserProfilePopover onClose={onCloseProfile} target={profileTarget} viewer={viewer} />
 
       {changeLogPopup ? (
         <ModalOverlay aria-label="Change Log" onClose={onCloseChangeLog} tier="raised">
@@ -1240,8 +1392,9 @@ function MapEditorAuxiliaryModals({
                     {change.action.toUpperCase()} · {formatDate(change.changedAt)}
                   </p>
                   <button
+                    aria-label={`Open profile for ${change.actorName ?? change.actorUserId}`}
                     className="inline-link-button"
-                    onClick={() => onOpenUserProfile(change.actorUserId)}
+                    onClick={(event) => onOpenUserProfile(change.actorUserId, event.currentTarget)}
                     type="button"
                   >
                     <UserBadge avatarUrl={change.actorAvatarUrl} name={change.actorName ?? change.actorUserId} />

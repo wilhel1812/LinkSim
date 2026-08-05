@@ -4,13 +4,13 @@ This project supports a separate staging stack with production-like data.
 
 ## What is configured
 
-- Staging Worker environment in [`wrangler.staging.toml`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/wrangler.staging.toml)
+- Staging Worker environment in [`wrangler.staging.toml`](../wrangler.staging.toml)
 - Staging avatar fallback to production origin while staging R2 catches up
-- Staging scripts in [`package.json`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/package.json)
+- Staging scripts in [`package.json`](../package.json)
 - Custom domain: https://staging.linksim.link
 - Refresh scripts:
-  - [`scripts/refresh-staging-d1.sh`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/scripts/refresh-staging-d1.sh)
-  - [`scripts/refresh-staging-r2.sh`](/Users/wilhelmfrancke/Applications/CodexSandboxGeneric/LinkSim/scripts/refresh-staging-r2.sh)
+  - [`scripts/refresh-staging-d1.sh`](../scripts/refresh-staging-d1.sh)
+  - [`scripts/refresh-staging-r2.sh`](../scripts/refresh-staging-r2.sh)
 
 ## Routine workflows
 
@@ -26,7 +26,7 @@ Do not run `npm run deploy:staging` locally for routine verification; Cloudflare
 npm run deploy:staging:preview
 ```
 
-This creates a separate preview URL for side-by-side comparisons.
+This creates a separate preview URL for an explicitly requested side-by-side comparison. It is not part of routine issue verification.
 
 ### Refresh staging DB from production D1
 

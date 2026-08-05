@@ -8,7 +8,7 @@ import {
   type LibraryFilterState,
 } from "./libraryFilters";
 
-type MockItem = FilterableLibraryItem & { id: string; searchText?: string };
+type MockItem = FilterableLibraryItem & { id: string; searchText?: string; createdAt?: string; updatedAt?: string };
 
 const items: MockItem[] = [
   { id: "a", name: "Alpha", ownerUserId: "u1", effectiveRole: "owner", visibility: "private" },
@@ -112,6 +112,46 @@ describe("libraryFilters", () => {
       (item, source) => (source === "mqtt" ? item.sourceType === "mqtt-feed" : item.sourceType !== "mqtt-feed"),
     );
     expect(ids(result)).toEqual(["m"]);
+  });
+
+  it("sorts recent items from newest to oldest using their available Library timestamp", () => {
+    const filters: LibraryFilterState = {
+      ...DEFAULT_LIBRARY_FILTER_STATE,
+      roleFilters: [],
+      sort: "recentDesc",
+    };
+    const recentItems: MockItem[] = [
+      { id: "older", name: "Older", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "newer", name: "Newer", updatedAt: "2026-02-01T00:00:00.000Z" },
+      { id: "undated", name: "Undated" },
+    ];
+
+    expect(ids(filterAndSortLibraryItems(recentItems, filters, "u1"))).toEqual([
+      "newer",
+      "older",
+      "undated",
+    ]);
+  });
+
+  it("migrates version 1 persisted filters to the name sort", () => {
+    expect(
+      parsePersistedLibraryFilterState(
+        JSON.stringify({
+          version: 1,
+          searchQuery: "ridge",
+          roleFilters: ["owned"],
+          visibilityFilters: ["private"],
+          sourceFilters: ["manual"],
+          sort: "nameAsc",
+        }),
+      ),
+    ).toEqual({
+      searchQuery: "ridge",
+      roleFilters: ["owned"],
+      visibilityFilters: ["private"],
+      sourceFilters: ["manual"],
+      sort: "nameAsc",
+    });
   });
 
   it("falls back for malformed persisted state", () => {

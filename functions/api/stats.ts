@@ -355,7 +355,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const [usersResult, sitesResult, simulationsResult, longestPassingPaths] = await Promise.all([
       env.DB.prepare("SELECT id, username, avatar_url, created_at FROM users").all<UserRow>(),
       env.DB.prepare("SELECT id, owner_user_id, created_at, visibility, payload_json FROM sites").all<ResourceRow>(),
-      env.DB.prepare("SELECT id, owner_user_id, created_at, name, visibility, payload_json FROM simulations").all<ResourceRow>(),
+      env.DB.prepare("SELECT id, owner_user_id, created_at, name, visibility, payload_json FROM simulations WHERE status = 'active'").all<ResourceRow>(),
       listStatsPathLeaderboardEntries(env),
     ]);
 

@@ -27,6 +27,7 @@ export type Link = {
   txGainDbi?: number;
   rxGainDbi?: number;
   cableLossDb?: number;
+  color?: string;
 };
 
 export type PropagationModel = "ITM";

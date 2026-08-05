@@ -6,6 +6,8 @@ import {
   useCoverageStore,
 } from "./coverageStore";
 import * as coverageLib from "../lib/coverage";
+import { simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { tilesForBounds } from "../lib/terrainTiles";
 import type { CoverageSample, Site } from "../types/radio";
 
 const site: Site = {
@@ -20,6 +22,28 @@ const site: Site = {
   cableLossDb: 1,
 };
 
+const completeTerrainTiles = (radiusKm = 50) => {
+  const bounds = simulationAreaBoundsForSites([site], { overlayRadiusKm: radiusKm });
+  if (!bounds) return [];
+  return tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon).map((key) => {
+    const match = /^([NS])(\d{2})([EW])(\d{3})$/.exec(key);
+    if (!match) throw new Error(`Unexpected tile key: ${key}`);
+    const latStart = Number(match[2]) * (match[1] === "S" ? -1 : 1);
+    const lonStart = Number(match[4]) * (match[3] === "W" ? -1 : 1);
+    return {
+      key,
+      latStart,
+      lonStart,
+      size: 2,
+      width: 2,
+      height: 2,
+      arcSecondSpacing: 1 as const,
+      elevations: new Int16Array([100, 100, 100, 100]),
+      sourceId: "copernicus30",
+    };
+  });
+};
+
 const makeBridgeState = () => ({
   selectedCoverageResolution: "24",
   networks: [{ id: "net-1", memberships: [], frequencyMHz: 869.5 }],
@@ -27,7 +51,7 @@ const makeBridgeState = () => ({
   sites: [site],
   systems: [],
   propagationModel: "ITM",
-  srtmTiles: [],
+  srtmTiles: completeTerrainTiles(),
   links: [],
   selectedLinkId: "",
   autoPropagationEnvironment: false,
@@ -79,6 +103,7 @@ describe("coverageStore simulation progress phases", () => {
       completedCoverageRunToken: "",
       autoCalculateEnabled: true,
       calculationCycleSource: null,
+      simulationErrorMessage: "",
     });
     resetCoverageSchedulerForTests();
     setAppStoreBridge({
@@ -147,6 +172,24 @@ describe("coverageStore simulation progress phases", () => {
     expect(buildSpy).toHaveBeenCalledTimes(1);
     expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
     expect(useCoverageStore.getState().calculationCycleSource).toBe("manual");
+    expect(buildSpy.mock.calls[0]?.[6]).toEqual(expect.objectContaining({ overlayRadiusKm: 50 }));
+  });
+
+  it("does not calculate or retain results when required terrain tiles remain unavailable", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    bridgeState.srtmTiles = completeTerrainTiles().slice(0, 1);
+    useCoverageStore.setState({
+      coverageSamples: [{ lat: site.position.lat, lon: site.position.lon, valueDbm: -80 }],
+    });
+
+    useCoverageStore.getState().startManualCalculation();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+
+    expect(buildSpy).not.toHaveBeenCalled();
+    expect(useCoverageStore.getState().coverageSamples).toEqual([]);
+    expect(useCoverageStore.getState().simulationErrorMessage).toContain("50 km");
+    expect(useCoverageStore.getState().simulationErrorMessage).toContain("terrain");
   });
 
   it("locks automatic calculation for 100 km+ or 4x+ settings", () => {
@@ -196,6 +239,30 @@ describe("coverageStore simulation progress phases", () => {
 
     expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+
+    bridgeState.isTerrainFetching = false;
+    bridgeState.terrainLoadEpoch += 1;
+    useCoverageStore.getState().recomputeCoverage();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+    vi.advanceTimersByTime(700);
+    await flushAsyncTicks();
+
+    expect(buildSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a manual Start waiting without committing coverage while terrain loads", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    bridgeState.isTerrainFetching = true;
+    useCoverageStore.setState({ coverageSamples: [] });
+
+    useCoverageStore.getState().startManualCalculation();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+
+    expect(buildSpy).not.toHaveBeenCalled();
+    expect(useCoverageStore.getState().coverageSamples).toEqual([]);
+    expect(useCoverageStore.getState().calculationCycleSource).toBe("manual");
 
     bridgeState.isTerrainFetching = false;
     bridgeState.terrainLoadEpoch += 1;

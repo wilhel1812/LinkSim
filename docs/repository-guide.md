@@ -36,34 +36,27 @@ Operational rule:
 
 ## Quick Start (Local)
 
-Install dependencies:
+CI uses Node.js 22. Install dependencies from the lockfile:
 
 ```bash
-npm install
+npm ci
 ```
 
-Run local edge-parity stack:
-
-```bash
-docker compose up --build edge
-```
-
-Open:
-- `http://localhost:8788`
-
-Other local runtime options (legacy/optional):
+Start the Vite development server for normal frontend work:
 
 ```bash
 npm run dev
-npm run dev:edge
-docker compose up --build web
-docker compose up --build dev
 ```
 
-Default ports:
-- `edge`: `http://localhost:8788`
-- `web`: `http://localhost:8080`
-- `dev`: `http://localhost:5173`
+Vite reports the local URL, normally `http://localhost:5173`.
+
+Use the local edge stack when Pages Functions, D1, or R2 behavior is part of the change:
+
+```bash
+npm run dev:edge
+```
+
+It serves the built app and local Cloudflare bindings at `http://localhost:8788`. Docker Compose provides equivalent `dev`, `edge`, and production-style `web` services when a container workflow is preferred.
 
 ## Build, Test, Smoke
 
@@ -124,15 +117,7 @@ deployment and release operations. Normal staging and production deploys run
 from CI after PRs merge to `staging` or `main`; do not run deploy scripts
 locally for the standard release flow.
 
-Production deploys are guarded and require:
-- `HEAD` is tagged `v<package.json version>`
-- Version is bumped in `HEAD` compared to `HEAD^`
-
-Build label rules:
-- Local: `vX.Y.Z-alpha+<commit>`
-- Staging: `vX.Y.Z-beta+<commit>`
-- Production: `vX.Y.Z`
-- Same commit always keeps the same base version (`X.Y.Z`) across all environments.
+Do not duplicate release commands or version requirements here. The release-flow document owns the branch, tag, SemVer, build-label, deployment, and promotion rules.
 
 ## Cloudflare Setup Overview
 
@@ -192,6 +177,6 @@ npm run refresh:staging:r2
 
 ## Contributor Notes
 
-- Keep working tree clean before deploy commands, except expected generated build metadata in `.tmp/buildInfo.ts`.
+- Keep the working tree clean before release operations. Build metadata under `.tmp/` is generated and untracked.
 - Follow [docs/release-flow.md](./release-flow.md) for production promotion.
 - When changing auth/permissions, add or update tests in the same pass.

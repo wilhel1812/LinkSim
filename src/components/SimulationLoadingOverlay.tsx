@@ -21,6 +21,7 @@ const SOURCE_ID = "simulation-loading-overlay-source";
 const LAYER_ID = "simulation-loading-overlay-layer";
 
 type SimulationLoadingOverlayProps = {
+  beforeLayerId?: string;
   bounds: TerrainBounds | null;
   handoffKey?: string | null;
   loading: boolean;
@@ -50,6 +51,7 @@ const usePrefersReducedMotion = (): boolean => {
 };
 
 export function SimulationLoadingOverlay({
+  beforeLayerId,
   bounds,
   handoffKey = null,
   loading,
@@ -198,7 +200,7 @@ export function SimulationLoadingOverlay({
         }
         if (!map.getLayer(LAYER_ID)) {
           const transition = resolveSimulationOverlayTransition(false);
-          map.addLayer({
+          const layer = {
             id: LAYER_ID,
             paint: {
               "raster-opacity": transition.loadingOpacity,
@@ -207,8 +209,15 @@ export function SimulationLoadingOverlay({
               },
             },
             source: SOURCE_ID,
-            type: "raster",
-          });
+            type: "raster" as const,
+          };
+          const anchorLayerId = beforeLayerId && map.getLayer(beforeLayerId)
+            ? beforeLayerId
+            : undefined;
+          if (anchorLayerId) map.addLayer(layer, anchorLayerId);
+          else map.addLayer(layer);
+        } else if (beforeLayerId && map.getLayer(beforeLayerId)) {
+          map.moveLayer(LAYER_ID, beforeLayerId);
         }
       } catch {
         // MapLibre can emit styledata before the style accepts custom sources.
@@ -261,6 +270,7 @@ export function SimulationLoadingOverlay({
       map.off("styledata", addAfterStyleChange);
     };
   }, [
+    beforeLayerId,
     canvas,
     coordinates,
     handoffKey,

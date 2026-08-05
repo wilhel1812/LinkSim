@@ -38,6 +38,7 @@ const CLIENT_STORAGE_RULES: ClientStorageRule[] = [
   { scope: "localStorage", policy: "preserve", key: "linksim-basemap-style-preset-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-panorama-settings-v1" },
   { scope: "localStorage", policy: "resetOnVersionChange", key: "rmw-meshmap-cache-v1" },
+  { scope: "localStorage", policy: "resetOnVersionChange", prefix: "rmw-node-source-cache-v1:" },
   { scope: "localStorage", policy: "preserve", key: "rmw-meshmap-source-url-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-copernicus-tilelist-v1" },
   { scope: "localStorage", policy: "preserve", key: "linksim-copernicus-tile-index-v1" },

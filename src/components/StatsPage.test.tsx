@@ -118,14 +118,15 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/api/users/u1")) {
+      if (url.includes("/api/users/")) {
+        const isAda = url.includes("/api/users/u1");
         return {
           ok: true,
           json: async () => ({
             user: {
-              id: "u1",
-              username: "Ada",
-              bio: "Radio planner",
+              id: isAda ? "u1" : "u2",
+              username: isAda ? "Ada" : "Grace",
+              bio: isAda ? "Radio planner" : "Mountain mapper",
               avatarUrl: "",
               isAdmin: false,
               isApproved: true,
@@ -200,15 +201,27 @@ describe("StatsPage", () => {
     });
   });
 
-  it("opens the profile modal from contributor rows", async () => {
+  it("opens the compact profile popover from contributor rows", async () => {
     render(<StatsPage />);
     await screen.findByText("Contributor Highlights");
 
     fireEvent.click(screen.getByRole("button", { name: /Ada/i }));
 
-    expect(await screen.findByRole("heading", { name: "User Profile" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "User profile for Ada" })).toBeInTheDocument();
     expect(screen.getByText(/Radio planner/)).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/users/u1", expect.objectContaining({ method: "GET" }));
+  });
+
+  it("keeps resource navigation separate from owner profile triggers", async () => {
+    render(<StatsPage />);
+    await screen.findByText("Latest Simulations");
+
+    expect(screen.getByRole("link", { name: "Shared Ridge" })).toHaveAttribute("href", "/Grace/Shared-Ridge");
+    fireEvent.click(screen.getAllByRole("button", { name: "Open profile for Grace" })[0]);
+
+    expect(await screen.findByRole("dialog", { name: "User profile for Grace" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/users/u2", expect.objectContaining({ method: "GET" }));
+    expect(screen.getByRole("link", { name: "Ridge ~ Valley" })).toHaveAttribute("href", "/Grace/Shared-Ridge/Ridge~Valley");
   });
 
   it("renders polished empty states", async () => {

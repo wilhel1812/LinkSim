@@ -32,7 +32,7 @@
   - Modal stack behavior
   - User settings open/save/logout
 
-### 4) Deployment checks (preview/prod)
+### 4) Deployment checks (staging/production)
 - Cloudflare Access gate active.
 - D1 migration applied.
 - Diagnostics endpoints for admins:
@@ -42,7 +42,8 @@
 ## Required checks before push
 1. `npm test`
 2. `npm run build`
-3. Manual quick pass:
+3. `git diff --check`
+4. Manual quick pass when the change affects interactive behavior:
   - open app
   - open/close nested modals
   - load simulation library + site library
@@ -58,7 +59,8 @@
 
 ## CI Quality Gates
 - Workflow: `.github/workflows/ci-quality-gates.yml`
-- Triggered on pull requests to `main` and pushes to non-main branches.
+- Triggered on pull requests to `main` or `staging`, and on pushes to branches other than `main` and `staging`.
 - Runs:
-  1. `npm run test:ci`
-  2. `npm run build`
+  1. `npm run security:scan`
+  2. `npm run test:ci`
+  3. `npm run build`
