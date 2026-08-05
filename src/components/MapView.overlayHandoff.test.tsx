@@ -2,7 +2,8 @@
 import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Site } from "../types/radio";
+import type { Site, SrtmTile } from "../types/radio";
+import { resolveRequiredOverlayTerrainTileKeys } from "../lib/simulationOverlayRadius";
 
 const overlayMock = vi.hoisted(() => {
   const requests: Array<{
@@ -33,6 +34,7 @@ const loadingOverlayMock = vi.hoisted(() => ({
 
 const layerMock = vi.hoisted(() => ({
   coveragePaint: null as null | Record<string, unknown>,
+  props: [] as Array<{ beforeId?: string; id?: string }>,
 }));
 
 vi.hoisted(() => {
@@ -91,7 +93,8 @@ vi.mock("react-map-gl/maplibre", async () => {
         return <div>{props.children}</div>;
       },
     ),
-    Layer: (props: { id?: string; paint?: Record<string, unknown> }) => {
+    Layer: (props: { beforeId?: string; id?: string; paint?: Record<string, unknown> }) => {
+      layerMock.props.push(props);
       if (props.id === "coverage-overlay-layer") {
         layerMock.coveragePaint = props.paint ?? null;
       }
@@ -162,6 +165,7 @@ describe("MapView overlay handoff", () => {
     overlayMock.encodedRasterCount = 0;
     loadingOverlayMock.props = null;
     layerMock.coveragePaint = null;
+    layerMock.props = [];
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
       configurable: true,
       value: vi.fn(() => ({})),
@@ -219,6 +223,13 @@ describe("MapView overlay handoff", () => {
         "data:image/mock-1",
       ),
     );
+    expect(layerMock.props.find((props) => props.id === "coverage-overlay-layer")?.beforeId).toBe(
+      "link-lines-casing",
+    );
+    expect(
+      screen.getByTestId("links").compareDocumentPosition(screen.getByTestId("coverage-overlay-source")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     act(() => loadingOverlayMock.props?.onCloudExited?.(firstKey!));
 
     act(() => useAppStore.getState().setMapOverlayMode("contours"));
@@ -319,7 +330,53 @@ describe("MapView overlay handoff", () => {
     );
   });
 
-  it("does not auto-start a manually locked initial calculation", async () => {
+  it("retries only the remaining terrain after a partial load and stops after no progress", async () => {
+    const requiredKeys = resolveRequiredOverlayTerrainTileKeys([site], 20);
+    expect(requiredKeys.length).toBeGreaterThan(1);
+    const tileForKey = (key: string): SrtmTile => ({
+      key,
+      latStart: 0,
+      lonStart: 0,
+      size: 2,
+      width: 2,
+      height: 2,
+      arcSecondSpacing: 1,
+      elevations: new Int16Array([0, 0, 0, 0]),
+      sourceId: "copernicus30",
+    });
+    const recommendAndFetchTerrainForCurrentArea = vi.fn(async () => {
+      const currentEpoch = useAppStore.getState().terrainLoadEpoch;
+      useAppStore.setState({
+        isTerrainFetching: true,
+        terrainLoadEpoch: currentEpoch + 1,
+      });
+    });
+    useAppStore.setState({ recommendAndFetchTerrainForCurrentArea });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await waitFor(() => expect(recommendAndFetchTerrainForCurrentArea).toHaveBeenCalledTimes(1));
+    act(() => {
+      useAppStore.setState({
+        isTerrainFetching: false,
+        srtmTiles: [tileForKey(requiredKeys[0])],
+      });
+    });
+    await waitFor(() => expect(recommendAndFetchTerrainForCurrentArea).toHaveBeenCalledTimes(2));
+
+    act(() => useAppStore.setState({ isTerrainFetching: false }));
+    await act(async () => undefined);
+    expect(recommendAndFetchTerrainForCurrentArea).toHaveBeenCalledTimes(2);
+  });
+
+  it("opts out before an expensive initial automatic calculation starts", async () => {
     const recomputeCoverage = vi.fn();
     useAppStore.setState({ selectedCoverageResolution: "84" });
     useCoverageStore.setState({
@@ -340,6 +397,7 @@ describe("MapView overlay handoff", () => {
 
     await act(async () => undefined);
     expect(recomputeCoverage).not.toHaveBeenCalled();
+    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
   });
 
   it("does not replay clouds when a completed signature is observed again", async () => {
