@@ -17,6 +17,7 @@ export type CopernicusLoadResult = {
   failedTiles: string[];
   fetchedTiles: string[];
   cacheHits: string[];
+  seaLevelTiles: string[];
 };
 
 export type RetryPolicy = {
@@ -48,6 +49,9 @@ type TileParserResponseMessage =
   | { id: number; ok: false; error: string };
 
 const CACHE_NAME = "linksim-copernicus-cog-v1";
+const TILE_INDEX_CACHE_KEY = "linksim-copernicus-tile-index-v1";
+const TILE_INDEX_TTL_MS = 6 * 60 * 60 * 1000;
+const TILE_LIST_PATH = "/copernicus/30m/tileList.txt";
 const RESPONSE_START_TIMEOUT_MS = 15_000;
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const TILE_RETRY_POLICY: RetryPolicy = {
@@ -155,6 +159,57 @@ type TileResponse = {
 
 class PermanentTileError extends Error {}
 
+type CachedTileIndex = {
+  fetchedAtMs: number;
+  keys: string[];
+};
+
+const COPERNICUS_CATALOG_ENTRY = /Copernicus_DSM_COG_10_([NS])(\d{2})_00_([EW])(\d{3})_00_DEM/;
+const TERRAIN_TILE_KEY = /^([NS])(\d{2})([EW])(\d{3})$/;
+
+const readCachedTileIndex = (): CachedTileIndex | null => {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(TILE_INDEX_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const entry = parsed.copernicus30 as Partial<CachedTileIndex> | undefined;
+    if (!entry || !Number.isFinite(entry.fetchedAtMs) || !Array.isArray(entry.keys)) return null;
+    const keys = entry.keys.filter((key): key is string => typeof key === "string" && TERRAIN_TILE_KEY.test(key));
+    return keys.length > 0 ? { fetchedAtMs: Number(entry.fetchedAtMs), keys } : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedTileIndex = (entry: CachedTileIndex): void => {
+  if (typeof localStorage === "undefined") return;
+  let parsed: Record<string, unknown> = {};
+  try {
+    const raw = localStorage.getItem(TILE_INDEX_CACHE_KEY);
+    if (raw) parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    parsed = {};
+  }
+  try {
+    parsed.copernicus30 = entry;
+    localStorage.setItem(TILE_INDEX_CACHE_KEY, JSON.stringify(parsed));
+  } catch {
+    // The catalog remains usable for this load when persistent storage is unavailable.
+  }
+};
+
+const parseCatalogTileKeys = (text: string): string[] => {
+  const keys = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    const match = COPERNICUS_CATALOG_ENTRY.exec(line);
+    if (!match) continue;
+    const [, ns, lat, ew, lon] = match;
+    keys.add(`${ns}${lat}${ew}${lon}`);
+  }
+  return Array.from(keys).sort();
+};
+
 const requestTile = async (url: string, signal?: AbortSignal): Promise<TileResponse> => {
   throwIfAborted(signal);
   const controller = new AbortController();
@@ -175,6 +230,49 @@ const requestTile = async (url: string, signal?: AbortSignal): Promise<TileRespo
     clearTimeout(timeout);
     signal?.removeEventListener("abort", relayAbort);
   }
+};
+
+const loadCopernicus30TileIndex = async (signal?: AbortSignal): Promise<Set<string> | null> => {
+  const cached = readCachedTileIndex();
+  if (cached && Date.now() - cached.fetchedAtMs < TILE_INDEX_TTL_MS) {
+    return new Set(cached.keys);
+  }
+
+  try {
+    const requested = await requestTile(TILE_LIST_PATH, signal);
+    if (!requested.response.ok || !requested.buffer) {
+      throw new Error(`GLO-30 catalog returned HTTP ${requested.response.status}`);
+    }
+    const keys = parseCatalogTileKeys(new TextDecoder().decode(requested.buffer));
+    if (keys.length <= 0) throw new Error("GLO-30 catalog contained no valid tile keys");
+    writeCachedTileIndex({ fetchedAtMs: Date.now(), keys });
+    return new Set(keys);
+  } catch (error) {
+    if (isAbortError(error) || signal?.aborted) throw error;
+    return cached ? new Set(cached.keys) : null;
+  }
+};
+
+const seaLevelTileForKey = (key: string): SrtmTile => {
+  const match = TERRAIN_TILE_KEY.exec(key);
+  if (!match) throw new Error(`Invalid terrain tile key: ${key}`);
+  const [, ns, latRaw, ew, lonRaw] = match;
+  const latStart = Number(latRaw) * (ns === "S" ? -1 : 1);
+  const lonStart = Number(lonRaw) * (ew === "W" ? -1 : 1);
+  return {
+    key,
+    latStart,
+    lonStart,
+    size: 2,
+    width: 2,
+    height: 2,
+    arcSecondSpacing: 3,
+    elevations: new Int16Array([0, 0, 0, 0]),
+    sourceKind: "auto-fetch",
+    sourceId: "copernicus30",
+    sourceLabel: "Copernicus GLO-30 sea level",
+    sourceDetail: "Catalog-confirmed ocean cell",
+  };
 };
 
 const fetchTileBuffer = async (
@@ -310,18 +408,34 @@ export const loadCopernicus30TilesByKeys = async (
   } = {},
 ): Promise<CopernicusLoadResult> => {
   const keys = Array.from(new Set(tileKeys));
+  if (keys.length <= 0) {
+    return { tiles: [], failedTiles: [], fetchedTiles: [], cacheHits: [], seaLevelTiles: [] };
+  }
+  const catalogKeys = await loadCopernicus30TileIndex(options.signal);
+  const seaLevelTiles = catalogKeys ? keys.filter((key) => !catalogKeys.has(key)) : [];
+  const keysToFetch = catalogKeys ? keys.filter((key) => catalogKeys.has(key)) : keys;
   const concurrency = Math.max(1, Math.min(2, Math.floor(options.concurrency ?? 2)));
-  const tiles: SrtmTile[] = [];
+  const tiles: SrtmTile[] = seaLevelTiles.map(seaLevelTileForKey);
   const failedTiles: string[] = [];
   const fetchedTiles: string[] = [];
   const cacheHits: string[] = [];
   let nextIndex = 0;
-  let completedTiles = 0;
+  let completedTiles = seaLevelTiles.length;
+
+  seaLevelTiles.forEach((tileKey, index) => {
+    options.onTileProgress?.({
+      dataset: "copernicus30",
+      tileKey,
+      bytes: 0,
+      completedTiles: index + 1,
+      totalTiles: keys.length,
+    });
+  });
 
   const worker = async () => {
-    while (nextIndex < keys.length) {
+    while (nextIndex < keysToFetch.length) {
       throwIfAborted(options.signal);
-      const tileKey = keys[nextIndex];
+      const tileKey = keysToFetch[nextIndex];
       nextIndex += 1;
       let bytes = 0;
       try {
@@ -348,9 +462,9 @@ export const loadCopernicus30TilesByKeys = async (
     }
   };
 
-  await Promise.all(Array.from({ length: Math.min(concurrency, keys.length) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(concurrency, keysToFetch.length) }, () => worker()));
   throwIfAborted(options.signal);
-  return { tiles, failedTiles, fetchedTiles, cacheHits };
+  return { tiles, failedTiles, fetchedTiles, cacheHits, seaLevelTiles };
 };
 
 export const clearCopernicusCache = async (): Promise<void> => {
