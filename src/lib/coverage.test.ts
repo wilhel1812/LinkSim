@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildCoverage,
   buildCoverageAsync,
+  computeCalibratedOverlayGridDimensions,
   computeCanonicalOverlayGridDimensions,
   computeCoverageGridDimensions,
   CoverageBuildCancelledError,
+  resolveMeshExtensionCoverageBudgetGridSize,
+  resolveOverlayGridWorkloadScale,
 } from "./coverage";
 import { haversineDistanceKm } from "./geo";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
@@ -64,6 +67,32 @@ const NORMAL_GRID = 24;
 const HIGH_GRID = 42;
 
 describe("buildCoverage", () => {
+  it("keeps Pass/Fail as the 1x workload baseline and budgets costlier modes independently", () => {
+    expect(resolveOverlayGridWorkloadScale("passfail", 2)).toBe(1);
+    expect(resolveOverlayGridWorkloadScale("relay", 2)).toBeLessThan(1);
+    expect(resolveOverlayGridWorkloadScale("heatmap", 2)).toBeLessThan(
+      resolveOverlayGridWorkloadScale("heatmap", 1),
+    );
+    expect(resolveOverlayGridWorkloadScale("mesh-extension", 4)).toBeLessThan(
+      resolveOverlayGridWorkloadScale("mesh-extension", 2),
+    );
+  });
+
+  it("returns the honest logical grid size for the active overlay workload", () => {
+    const bounds = { minLat: 59.8, maxLat: 60, minLon: 10.6, maxLon: 10.8 };
+    const passFail = computeCalibratedOverlayGridDimensions(24, bounds, "passfail", 1, 2);
+    const heatmap = computeCalibratedOverlayGridDimensions(24, bounds, "heatmap", 1, 2);
+
+    expect(passFail).toEqual(computeCanonicalOverlayGridDimensions(24, bounds, 1));
+    expect(heatmap.totalSamples).toBeLessThan(passFail.totalSamples);
+    expect(heatmap.totalSamples).toBe(heatmap.width * heatmap.height);
+  });
+
+  it("budgets Mesh Extension's nested coverage comparison grid separately", () => {
+    expect(resolveMeshExtensionCoverageBudgetGridSize(24)).toBe(12);
+    expect(resolveMeshExtensionCoverageBudgetGridSize(42)).toBe(21);
+  });
+
   it("creates non-empty coverage at normal resolution", () => {
     const result = buildCoverage(NORMAL_GRID, network, sites, systems, defaultPropagationEnvironment());
     expect(result.length).toBeGreaterThan(100);

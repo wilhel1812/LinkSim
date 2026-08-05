@@ -15,10 +15,14 @@ import Map, {
 } from "react-map-gl/maplibre";
 import type { LayerProps } from "react-map-gl/maplibre";
 import {
-  computeCanonicalOverlayGridDimensions,
+  computeCalibratedOverlayGridDimensions,
   createCoveragePointEvaluator,
   resolveCanonicalOverlayResolutionScale,
+  resolveCoverageParticipantCount,
+  resolveMeshExtensionCoverageBudgetGridSize,
+  type CalibratedOverlayGridMode,
 } from "../lib/coverage";
+import { formatCompactCount } from "../lib/locale";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
@@ -485,9 +489,17 @@ const boundsDiagonalKm = (bounds: TerrainBounds): number => {
 const computeOverlayDimensions = (
   bounds: TerrainBounds,
   targetGridSize: number,
+  mode: CalibratedOverlayGridMode,
   resolutionScale = 1,
+  participantCount = 1,
 ): { width: number; height: number } => {
-  const dimensions = computeCanonicalOverlayGridDimensions(targetGridSize, bounds, resolutionScale);
+  const dimensions = computeCalibratedOverlayGridDimensions(
+    targetGridSize,
+    bounds,
+    mode,
+    resolutionScale,
+    participantCount,
+  );
   return { width: dimensions.width, height: dimensions.height };
 };
 
@@ -1099,6 +1111,10 @@ export function MapView({
     [selectedSiteIds, sites],
   );
   const meshExtensionSites = selectedSites.length > 0 ? selectedSites : sites;
+  const coverageParticipantCount = useMemo(
+    () => selectedNetwork ? resolveCoverageParticipantCount(selectedNetwork, sites, systems) : 1,
+    [selectedNetwork, sites, systems],
+  );
   const selectedSiteSet = useMemo(() => new Set(selectedSites.map((site) => site.id)), [selectedSites]);
   const selectionCount = selectedSites.length;
   const singleSelectedSite = selectionCount === 1 ? selectedSites[0] ?? null : null;
@@ -1637,11 +1653,42 @@ export function MapView({
         ? lastCompletedGridSize
         : selectedGridSize;
 
+  const calibratedOverlayMode: CalibratedOverlayGridMode =
+    coverageVizMode === "heatmap" ||
+    coverageVizMode === "weakest" ||
+    coverageVizMode === "contours" ||
+    coverageVizMode === "passfail" ||
+    coverageVizMode === "relay" ||
+    coverageVizMode === "mesh-extension"
+      ? coverageVizMode
+      : "passfail";
+  const overlayParticipantCount =
+    calibratedOverlayMode === "mesh-extension"
+      ? Math.max(1, meshExtensionSites.length)
+      : calibratedOverlayMode === "heatmap" ||
+          calibratedOverlayMode === "weakest" ||
+          calibratedOverlayMode === "contours"
+        ? coverageParticipantCount
+        : 1;
+
   const overlayDimensions = useMemo(() => {
     const bounds = analysisBounds ?? computeCoverageBounds(samplesForOverlay);
     if (!bounds) return { width: 24, height: 24 };
-    return computeOverlayDimensions(bounds, effectiveGridSize, overlayResolutionScale);
-  }, [analysisBounds, samplesForOverlay, effectiveGridSize, overlayResolutionScale]);
+    return computeOverlayDimensions(
+      bounds,
+      effectiveGridSize,
+      calibratedOverlayMode,
+      overlayResolutionScale,
+      overlayParticipantCount,
+    );
+  }, [
+    analysisBounds,
+    samplesForOverlay,
+    effectiveGridSize,
+    calibratedOverlayMode,
+    overlayResolutionScale,
+    overlayParticipantCount,
+  ]);
 
   const overlayBounds = useMemo(() => analysisBounds ?? computeCoverageBounds(samplesForOverlay), [analysisBounds, samplesForOverlay]);
   const resolutionOptionLabels = useMemo(() => {
@@ -1654,15 +1701,21 @@ export function MapView({
     return options.map(({ gridSize, name }) => {
       const fallback = { width: gridSize, height: gridSize, totalSamples: gridSize * gridSize };
       const dims = overlayBounds
-        ? computeCanonicalOverlayGridDimensions(gridSize, overlayBounds, overlayResolutionScale)
+        ? computeCalibratedOverlayGridDimensions(
+            gridSize,
+            overlayBounds,
+            calibratedOverlayMode,
+            overlayResolutionScale,
+            overlayParticipantCount,
+          )
         : fallback;
       const isDefault = gridSize === 24;
       return {
         value: String(gridSize) as "24" | "42" | "84" | "168",
-        label: `${name} (${dims.height}x${dims.width}, ${dims.totalSamples} samples)${isDefault ? " - Default" : ""}`,
+        label: `${name} (${dims.height}×${dims.width} · ~${formatCompactCount(dims.totalSamples)} grid points)${isDefault ? " - Default" : ""}`,
       };
     });
-  }, [overlayBounds, overlayResolutionScale]);
+  }, [calibratedOverlayMode, overlayBounds, overlayParticipantCount, overlayResolutionScale]);
   const overlayLongTaskWarnedRef = useRef<Set<string>>(new Set());
   const showOverlayDiagnostics =
     import.meta.env.DEV || (typeof window !== "undefined" && window.location.hostname === "localhost");
@@ -2191,7 +2244,7 @@ export function MapView({
               terrainSampler,
               dimensions: overlayDimensions,
               candidateGridSize: effectiveGridSize,
-              coverageGridSize: effectiveGridSize,
+              coverageGridSize: resolveMeshExtensionCoverageBudgetGridSize(effectiveGridSize),
               terrainSamples: 20,
               pointMask: overlayPointMask,
               context,

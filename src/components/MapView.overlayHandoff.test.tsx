@@ -296,6 +296,28 @@ describe("MapView overlay handoff", () => {
     await waitFor(() => expect(recomputeCoverage).toHaveBeenCalledTimes(1));
   });
 
+  it("shows compact, mode-specific logical grid-point counts in the existing resolution selector", async () => {
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector
+      />,
+    );
+
+    const resolutionSelect = screen.getByLabelText("Simulation Resolution") as HTMLSelectElement;
+    const heatmapLabel = resolutionSelect.options[0].textContent ?? "";
+    expect(heatmapLabel).toMatch(/~\d+(?:\.\d+)?k grid points/u);
+    expect(heatmapLabel).not.toContain("samples");
+
+    act(() => useAppStore.getState().setMapOverlayMode("mesh-extension"));
+    await waitFor(() => {
+      expect((screen.getByLabelText("Simulation Resolution") as HTMLSelectElement).options[0].textContent)
+        .not.toBe(heatmapLabel);
+    });
+  });
+
   it("starts clouds while cold-start terrain loads before Pass/Fail is raster-ready", async () => {
     useAppStore.setState({
       mapOverlayMode: "passfail",
