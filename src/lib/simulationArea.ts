@@ -19,6 +19,13 @@ export type SimulationAreaOptions = {
   singleSiteRadiusKm?: number;
 };
 
+export const resolveSimulationSitesForSelection = (sites: Site[], selectedSiteIds: string[]): Site[] => {
+  if (selectedSiteIds.length === 0) return sites;
+  const selectedIds = new Set(selectedSiteIds);
+  const selectedSites = sites.filter((site) => selectedIds.has(site.id));
+  return selectedSites.length > 0 ? selectedSites : sites;
+};
+
 export const simulationAreaBoundsForSites = (
   sites: Pick<Site, "position">[],
   options?: SimulationAreaOptions,

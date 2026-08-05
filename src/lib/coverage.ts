@@ -78,34 +78,18 @@ export type CalibratedOverlayGridMode =
   | "relay"
   | "mesh-extension";
 
-const COVERAGE_OVERLAY_BASE_SCALE = 0.22;
-const RELAY_OVERLAY_SCALE = 0.52;
-const MESH_EXTENSION_BASE_SCALE = 0.12;
-const MESH_EXTENSION_COVERAGE_GRID_SCALE = 0.5;
-
-const participantAdjustedScale = (baseScale: number, participantCount: number): number => {
-  const count = Math.max(1, Math.round(participantCount));
-  return Math.max(0.1, Math.min(1, baseScale * Math.sqrt(2 / count)));
-};
-
 /**
- * Workload calibration uses Pass/Fail 1x as the timing baseline. Coverage and
- * Mesh Extension scale with the number of sites they evaluate at each point.
+ * Every area overlay shares Pass/Fail's logical grid so the selected
+ * resolution always means the same thing. Adaptive evaluation can still
+ * reduce the number of expensive RF calculations underneath that grid.
  */
 export const resolveOverlayGridWorkloadScale = (
-  mode: CalibratedOverlayGridMode,
-  participantCount = 1,
-): number => {
-  if (mode === "passfail") return 1;
-  if (mode === "relay") return RELAY_OVERLAY_SCALE;
-  if (mode === "mesh-extension") {
-    return participantAdjustedScale(MESH_EXTENSION_BASE_SCALE, participantCount);
-  }
-  return participantAdjustedScale(COVERAGE_OVERLAY_BASE_SCALE, participantCount);
-};
+  _mode: CalibratedOverlayGridMode,
+  _participantCount = 1,
+): number => 1;
 
 export const resolveMeshExtensionCoverageBudgetGridSize = (gridSize: number): number =>
-  Math.max(6, Math.round(gridSize * MESH_EXTENSION_COVERAGE_GRID_SCALE));
+  Math.max(6, Math.round(gridSize));
 
 export const computeCoverageGridDimensions = (
   gridSize: number,
@@ -315,12 +299,6 @@ const resolveCoverageMemberships = (
   const fallbackSystem = systems[0];
   return fallbackSystem ? sites.map((site) => ({ site, system: fallbackSystem })) : [];
 };
-
-export const resolveCoverageParticipantCount = (
-  network: Network,
-  sites: Site[],
-  systems: RadioSystem[],
-): number => Math.max(1, resolveCoverageMemberships(network, sites, systems).length);
 
 const evaluateCoveragePoint = (
   sample: CoverageGridPoint,

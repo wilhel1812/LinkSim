@@ -2,10 +2,9 @@ import { create } from "zustand";
 import {
   computeCalibratedOverlayGridDimensions,
   resolveCanonicalOverlayResolutionScale,
-  resolveCoverageParticipantCount,
   type CalibratedOverlayGridMode,
 } from "../lib/coverage";
-import { simulationAreaBoundsForSites } from "../lib/simulationArea";
+import { resolveSimulationSitesForSelection, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import {
   deriveDynamicPropagationEnvironment,
 } from "../lib/propagationEnvironment";
@@ -149,18 +148,6 @@ const normalizeCalibratedOverlayGridMode = (raw: string): CalibratedOverlayGridM
   raw === "mesh-extension"
     ? raw
     : "passfail";
-
-const overlayParticipantCount = (
-  mode: CalibratedOverlayGridMode,
-  inputs: CoverageInputs,
-  network: Network,
-): number => {
-  if (mode === "mesh-extension") {
-    return Math.max(1, inputs.selectedSiteIds.length || inputs.sites.length);
-  }
-  if (mode !== "heatmap" && mode !== "weakest" && mode !== "contours") return 1;
-  return resolveCoverageParticipantCount(network, inputs.sites, inputs.systems);
-};
 
 const readCoverageInputs = (appState: Record<string, unknown>): CoverageInputs => {
   const selectedCoverageResolution = normalizeCoverageResolution(appState.selectedCoverageResolution);
@@ -397,10 +384,7 @@ const runCoverageComputation = async (
     const targetRadiusKm = resolveTargetOverlayRadiusKm(selectionCount, selectedOverlayRadiusOption);
     const effectiveOverlayRadiusKm = targetRadiusKm;
 
-    const countSites =
-      selectionCount === 1
-        ? inputs.sites.filter((site) => site.id === inputs.selectedSiteIds[0])
-        : inputs.sites;
+    const countSites = resolveSimulationSitesForSelection(inputs.sites, inputs.selectedSiteIds);
     const boundsForCount = simulationAreaBoundsForSites(countSites, { overlayRadiusKm: effectiveOverlayRadiusKm });
     const calibratedMode = normalizeCalibratedOverlayGridMode(inputs.mapOverlayMode);
     const sampleCount = boundsForCount
@@ -409,7 +393,6 @@ const runCoverageComputation = async (
           boundsForCount,
           calibratedMode,
           resolveCanonicalOverlayResolutionScale(boundsForCount),
-          overlayParticipantCount(calibratedMode, inputs, network),
         ).totalSamples
       : 0;
     set({
@@ -466,10 +449,7 @@ const flushCoverageRunQueue = async (): Promise<void> => {
     return;
   }
   const selectionCount = inputs.selectedSiteIds.length;
-  const selectedTerrainSites =
-    selectionCount === 1
-      ? inputs.sites.filter((site) => site.id === inputs.selectedSiteIds[0])
-      : inputs.sites;
+  const selectedTerrainSites = resolveSimulationSitesForSelection(inputs.sites, inputs.selectedSiteIds);
   const selectedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(
     selectionCount,
     inputs.selectedOverlayRadiusOptionRaw,

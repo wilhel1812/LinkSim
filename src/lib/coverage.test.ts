@@ -6,11 +6,13 @@ import {
   computeCanonicalOverlayGridDimensions,
   computeCoverageGridDimensions,
   CoverageBuildCancelledError,
+  createCoveragePointEvaluator,
   resolveMeshExtensionCoverageBudgetGridSize,
   resolveOverlayGridWorkloadScale,
 } from "./coverage";
 import { haversineDistanceKm } from "./geo";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
+import { resolveSimulationSitesForSelection } from "./simulationArea";
 import type { Network, RadioSystem, Site } from "../types/radio";
 
 const sites: Site[] = [
@@ -67,30 +69,54 @@ const NORMAL_GRID = 24;
 const HIGH_GRID = 42;
 
 describe("buildCoverage", () => {
-  it("keeps Pass/Fail as the 1x workload baseline and budgets costlier modes independently", () => {
+  it("keeps every area overlay on the full Pass/Fail logical grid", () => {
     expect(resolveOverlayGridWorkloadScale("passfail", 2)).toBe(1);
-    expect(resolveOverlayGridWorkloadScale("relay", 2)).toBeLessThan(1);
-    expect(resolveOverlayGridWorkloadScale("heatmap", 2)).toBeLessThan(
-      resolveOverlayGridWorkloadScale("heatmap", 1),
-    );
-    expect(resolveOverlayGridWorkloadScale("mesh-extension", 4)).toBeLessThan(
-      resolveOverlayGridWorkloadScale("mesh-extension", 2),
-    );
+    expect(resolveOverlayGridWorkloadScale("relay", 2)).toBe(1);
+    expect(resolveOverlayGridWorkloadScale("heatmap", 1)).toBe(1);
+    expect(resolveOverlayGridWorkloadScale("heatmap", 4)).toBe(1);
+    expect(resolveOverlayGridWorkloadScale("weakest", 4)).toBe(1);
+    expect(resolveOverlayGridWorkloadScale("contours", 4)).toBe(1);
+    expect(resolveOverlayGridWorkloadScale("mesh-extension", 2)).toBe(1);
+    expect(resolveOverlayGridWorkloadScale("mesh-extension", 4)).toBe(1);
   });
 
-  it("returns the honest logical grid size for the active overlay workload", () => {
+  it("returns the same honest logical grid size for Pass/Fail and coverage modes", () => {
     const bounds = { minLat: 59.8, maxLat: 60, minLon: 10.6, maxLon: 10.8 };
     const passFail = computeCalibratedOverlayGridDimensions(24, bounds, "passfail", 1, 2);
-    const heatmap = computeCalibratedOverlayGridDimensions(24, bounds, "heatmap", 1, 2);
+    const heatmap = computeCalibratedOverlayGridDimensions(24, bounds, "heatmap", 1, 4);
 
     expect(passFail).toEqual(computeCanonicalOverlayGridDimensions(24, bounds, 1));
-    expect(heatmap.totalSamples).toBeLessThan(passFail.totalSamples);
-    expect(heatmap.totalSamples).toBe(heatmap.width * heatmap.height);
+    expect(heatmap).toEqual(passFail);
   });
 
-  it("budgets Mesh Extension's nested coverage comparison grid separately", () => {
-    expect(resolveMeshExtensionCoverageBudgetGridSize(24)).toBe(12);
-    expect(resolveMeshExtensionCoverageBudgetGridSize(42)).toBe(21);
+  it("uses selected sites as coverage contributors and all sites for an empty selection", () => {
+    expect(resolveSimulationSitesForSelection(sites, ["s2"])).toEqual([sites[1]]);
+    expect(resolveSimulationSitesForSelection(sites, ["missing", "s1"])).toEqual([sites[0]]);
+    expect(resolveSimulationSitesForSelection(sites, [])).toEqual(sites);
+    expect(resolveSimulationSitesForSelection(sites, ["missing"])).toEqual(sites);
+  });
+
+  it("evaluates only the selected coverage contributors", () => {
+    const selectedSites = resolveSimulationSitesForSelection(sites, ["s1"]);
+    const selectedEvaluator = createCoveragePointEvaluator(
+      network,
+      selectedSites,
+      systems,
+      defaultPropagationEnvironment(),
+    );
+    const singleMembershipEvaluator = createCoveragePointEvaluator(
+      { ...network, memberships: [network.memberships[0]] },
+      sites,
+      systems,
+      defaultPropagationEnvironment(),
+    );
+
+    expect(selectedEvaluator(59.95, 10.85)).toEqual(singleMembershipEvaluator(59.95, 10.85));
+  });
+
+  it("keeps Mesh Extension's nested comparison grid at the selected resolution", () => {
+    expect(resolveMeshExtensionCoverageBudgetGridSize(24)).toBe(24);
+    expect(resolveMeshExtensionCoverageBudgetGridSize(42)).toBe(42);
   });
 
   it("creates non-empty coverage at normal resolution", () => {
