@@ -16,6 +16,38 @@ import {
   copernicus30PathForTileKey,
   loadCopernicus30TilesByKeys,
 } from "./copernicusTerrainClient";
+import { sampleSrtmElevation } from "./srtm";
+
+const TILE_INDEX_CACHE_KEY = "linksim-copernicus-tile-index-v1";
+
+const storage = new Map<string, string>();
+const localStorageMock = {
+  getItem: (key: string) => storage.get(key) ?? null,
+  setItem: (key: string, value: string) => storage.set(key, String(value)),
+  removeItem: (key: string) => storage.delete(key),
+  clear: () => storage.clear(),
+  key: (index: number) => Array.from(storage.keys())[index] ?? null,
+  get length() {
+    return storage.size;
+  },
+};
+
+const catalogEntryFor = (key: string): string => {
+  const match = /^([NS])(\d{2})([EW])(\d{3})$/.exec(key);
+  if (!match) throw new Error(`Unexpected key: ${key}`);
+  const [, ns, lat, ew, lon] = match;
+  return `Copernicus_DSM_COG_10_${ns}${lat}_00_${ew}${lon}_00_DEM`;
+};
+
+const catalogResponse = (keys: string[]): Response =>
+  new Response(keys.map(catalogEntryFor).join("\n"), { status: 200 });
+
+const seedCatalogCache = (keys: string[], fetchedAtMs = Date.now()) => {
+  localStorageMock.setItem(
+    TILE_INDEX_CACHE_KEY,
+    JSON.stringify({ copernicus30: { fetchedAtMs, keys } }),
+  );
+};
 
 const installEmptyCache = () => {
   Object.defineProperty(globalThis, "caches", {
@@ -33,7 +65,9 @@ const installEmptyCache = () => {
 describe("Copernicus GLO-30 tile loading", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    storage.clear();
     installEmptyCache();
+    vi.stubGlobal("localStorage", localStorageMock);
     vi.stubGlobal("Worker", undefined);
   });
 
@@ -51,7 +85,10 @@ describe("Copernicus GLO-30 tile loading", () => {
     let maxActive = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => {
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith("/tileList.txt")) {
+          return catalogResponse(["N60E009", "N60E010", "N61E009", "N61E010"]);
+        }
         active += 1;
         maxActive = Math.max(maxActive, active);
         await new Promise((resolve) => setTimeout(resolve, 5));
@@ -73,6 +110,7 @@ describe("Copernicus GLO-30 tile loading", () => {
   it("retries one transient response but not a permanent 404", async () => {
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(catalogResponse(["N60E009", "N60E010"]))
       .mockResolvedValueOnce(new Response("", { status: 503 }))
       .mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }))
       .mockResolvedValueOnce(new Response("", { status: 404 }));
@@ -82,9 +120,91 @@ describe("Copernicus GLO-30 tile loading", () => {
       concurrency: 1,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(result.tiles).toHaveLength(1);
     expect(result.failedTiles).toEqual(["N60E010"]);
+    expect(result.seaLevelTiles).toEqual([]);
+  });
+
+  it("creates zero-elevation tiles for catalog-confirmed ocean cells without requesting their TIFFs", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const requestUrl = String(url);
+      if (requestUrl.endsWith("/tileList.txt")) return catalogResponse(["N70E018"]);
+      if (requestUrl.includes("N70_00_E018_00")) {
+        return new Response(new Uint8Array([1]), { status: 200 });
+      }
+      throw new Error(`Unexpected ocean TIFF request: ${requestUrl}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await loadCopernicus30TilesByKeys(["N70E016", "N70E017", "N70E018"]);
+
+    expect(result.failedTiles).toEqual([]);
+    expect(result.seaLevelTiles).toEqual(["N70E016", "N70E017"]);
+    expect(result.tiles.map((tile) => tile.key).sort()).toEqual(["N70E016", "N70E017", "N70E018"]);
+    expect(sampleSrtmElevation(result.tiles, 70.5, 16.5)).toBe(0);
+    expect(sampleSrtmElevation(result.tiles, 70.5, 17.5)).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a fresh compact catalog cache without fetching the catalog", async () => {
+    seedCatalogCache(["N70E018"]);
+    const fetchMock = vi.fn(async () => {
+      throw new Error("No request expected");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await loadCopernicus30TilesByKeys(["N70E016"]);
+
+    expect(result.seaLevelTiles).toEqual(["N70E016"]);
+    expect(result.failedTiles).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uses a stale catalog cache when refreshing the catalog fails", async () => {
+    seedCatalogCache(["N70E018"], 1);
+    const fetchMock = vi.fn(async () => new Response("", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await loadCopernicus30TilesByKeys(["N70E016"]);
+
+    expect(result.seaLevelTiles).toEqual(["N70E016"]);
+    expect(result.failedTiles).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches a corrupt catalog cache", async () => {
+    localStorageMock.setItem(TILE_INDEX_CACHE_KEY, "{bad-json");
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith("/tileList.txt")) return catalogResponse(["N70E018"]);
+      throw new Error(`Unexpected TIFF request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await loadCopernicus30TilesByKeys(["N70E016"]);
+
+    expect(result.seaLevelTiles).toEqual(["N70E016"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorageMock.getItem(TILE_INDEX_CACHE_KEY) ?? "null")).toEqual(
+      expect.objectContaining({
+        copernicus30: expect.objectContaining({ keys: ["N70E018"] }),
+      }),
+    );
+  });
+
+  it("does not infer ocean when no catalog is available", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(new Response("", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await loadCopernicus30TilesByKeys(["N70E016"]);
+
+    expect(result.tiles).toEqual([]);
+    expect(result.seaLevelTiles).toEqual([]);
+    expect(result.failedTiles).toEqual(["N70E016"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("aborts active work without reporting cancellation as a failed tile", async () => {
@@ -92,14 +212,16 @@ describe("Copernicus GLO-30 tile loading", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
-        (_url: string, init?: RequestInit) =>
-          new Promise<Response>((_resolve, reject) => {
+        (url: string, init?: RequestInit) => {
+          if (String(url).endsWith("/tileList.txt")) return Promise.resolve(catalogResponse(["N60E009"]));
+          return new Promise<Response>((_resolve, reject) => {
             init?.signal?.addEventListener(
               "abort",
               () => reject(new DOMException("Stopped", "AbortError")),
               { once: true },
             );
-          }),
+          });
+        },
       ),
     );
 

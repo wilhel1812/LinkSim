@@ -8,7 +8,7 @@ import {
 import * as coverageLib from "../lib/coverage";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
-import type { CoverageSample, Site } from "../types/radio";
+import type { CoverageSample, Site, SrtmTile } from "../types/radio";
 
 const site: Site = {
   id: "site-1",
@@ -22,7 +22,7 @@ const site: Site = {
   cableLossDb: 1,
 };
 
-const completeTerrainTiles = (radiusKm = 50) => {
+const completeTerrainTiles = (radiusKm = 50): SrtmTile[] => {
   const bounds = simulationAreaBoundsForSites([site], { overlayRadiusKm: radiusKm });
   if (!bounds) return [];
   return tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon).map((key) => {
@@ -190,6 +190,26 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().coverageSamples).toEqual([]);
     expect(useCoverageStore.getState().simulationErrorMessage).toContain("50 km");
     expect(useCoverageStore.getState().simulationErrorMessage).toContain("terrain");
+  });
+
+  it("accepts zero-elevation Copernicus ocean cells as complete 100 km terrain", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    const terrainTiles = completeTerrainTiles(100);
+    terrainTiles[0] = {
+      ...terrainTiles[0],
+      elevations: new Int16Array([0, 0, 0, 0]),
+      sourceLabel: "Copernicus GLO-30 sea level",
+      sourceDetail: "Catalog-confirmed ocean cell",
+    };
+    bridgeState.selectedOverlayRadiusOption = "100";
+    bridgeState.srtmTiles = terrainTiles;
+
+    useCoverageStore.getState().startManualCalculation();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+
+    expect(buildSpy).toHaveBeenCalledTimes(1);
+    expect(useCoverageStore.getState().simulationErrorMessage).toBe("");
   });
 
   it("identifies the independent 100 km+ and 4x+ automatic opt-out thresholds", () => {
