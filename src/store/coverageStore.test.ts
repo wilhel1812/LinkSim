@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  isAutomaticCalculationLocked,
+  resolveAutomaticCalculationThresholds,
   resetCoverageSchedulerForTests,
   setAppStoreBridge,
   useCoverageStore,
@@ -192,17 +192,29 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().simulationErrorMessage).toContain("terrain");
   });
 
-  it("locks automatic calculation for 100 km+ or 4x+ settings", () => {
-    expect(isAutomaticCalculationLocked("24", "50")).toBe(false);
-    expect(isAutomaticCalculationLocked("24", "100")).toBe(true);
-    expect(isAutomaticCalculationLocked("84", "20")).toBe(true);
+  it("identifies the independent 100 km+ and 4x+ automatic opt-out thresholds", () => {
+    expect(resolveAutomaticCalculationThresholds("24", "50")).toEqual({
+      highResolution: false,
+      largeRadius: false,
+    });
+    expect(resolveAutomaticCalculationThresholds("24", "100")).toEqual({
+      highResolution: false,
+      largeRadius: true,
+    });
+    expect(resolveAutomaticCalculationThresholds("84", "20")).toEqual({
+      highResolution: true,
+      largeRadius: false,
+    });
+  });
 
+  it("allows the user to enable automatic calculation at an expensive setting", () => {
     bridgeState.selectedCoverageResolution = "84";
-    useCoverageStore.getState().recomputeCoverage();
-    vi.advanceTimersByTime(220);
+    useCoverageStore.getState().setAutoCalculateEnabled(false);
+    useCoverageStore.getState().setAutoCalculateEnabled(true);
 
-    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
-    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(true);
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(true);
+    expect(useCoverageStore.getState().calculationCycleSource).toBe("auto");
   });
 
   it("stops active coverage work and clears queued reruns", async () => {
