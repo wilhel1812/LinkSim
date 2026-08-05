@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.2] - 2026-08-05
+
+### Fixed
+- Allowed Auto calculate to be deliberately re-enabled after its 100 km or 4x safety opt-out. (#989)
+- Retried partial GLO-30 terrain loads and treated catalog-confirmed ocean cells as sea level without weakening missing-terrain protection. (#990, #993)
+- Kept Link lines visible above completed Simulation overlays. (#991)
+
 ## [0.26.1] - 2026-08-05
 
 ### Fixed

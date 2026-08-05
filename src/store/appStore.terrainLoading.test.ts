@@ -79,6 +79,7 @@ describe("appStore GLO-30 terrain lifecycle", () => {
       failedTiles: [],
       fetchedTiles: ["N59E009"],
       cacheHits: [],
+      seaLevelTiles: [],
     });
     const recompute = vi.spyOn(useCoverageStore.getState(), "recomputeCoverage").mockImplementation(() => {
       expect(useAppStore.getState().isTerrainFetching).toBe(false);
@@ -101,6 +102,7 @@ describe("appStore GLO-30 terrain lifecycle", () => {
       failedTiles: ["N59E009"],
       fetchedTiles: [],
       cacheHits: [],
+      seaLevelTiles: [],
     });
     const recompute = vi.spyOn(useCoverageStore.getState(), "recomputeCoverage").mockImplementation(() => {
       expect(useAppStore.getState().isTerrainFetching).toBe(false);
@@ -118,6 +120,7 @@ describe("appStore GLO-30 terrain lifecycle", () => {
       failedTiles: ["N60E009"],
       fetchedTiles: ["N59E009"],
       cacheHits: [],
+      seaLevelTiles: [],
     });
     const recompute = vi.spyOn(useCoverageStore.getState(), "recomputeCoverage").mockImplementation(() => {
       expect(useAppStore.getState().isTerrainFetching).toBe(false);
@@ -137,6 +140,7 @@ describe("appStore GLO-30 terrain lifecycle", () => {
       failedTiles: string[];
       fetchedTiles: string[];
       cacheHits: string[];
+      seaLevelTiles: string[];
     }) => void;
     terrainClient.loadCopernicus30TilesByKeys.mockImplementation(
       () =>
@@ -152,11 +156,37 @@ describe("appStore GLO-30 terrain lifecycle", () => {
       failedTiles: [],
       fetchedTiles: ["N59E009"],
       cacheHits: [],
+      seaLevelTiles: [],
     });
     await loading;
 
     expect(useAppStore.getState().isTerrainFetching).toBe(false);
     expect(useAppStore.getState().terrainFetchStatus).toBe("Terrain loading stopped.");
     expect(useAppStore.getState().srtmTiles.some((entry) => entry.key === "N59E009")).toBe(false);
+  });
+
+  it("merges catalog-confirmed sea-level cells without reporting them unavailable", async () => {
+    const seaLevelTile = {
+      ...tile("N59E009"),
+      elevations: new Int16Array([0, 0, 0, 0]),
+      sourceLabel: "Copernicus GLO-30 sea level",
+      sourceDetail: "Catalog-confirmed ocean cell",
+    };
+    terrainClient.loadCopernicus30TilesByKeys.mockResolvedValue({
+      tiles: [seaLevelTile],
+      failedTiles: [],
+      fetchedTiles: [],
+      cacheHits: [],
+      seaLevelTiles: ["N59E009"],
+    });
+    const recompute = vi.spyOn(useCoverageStore.getState(), "recomputeCoverage").mockImplementation(() => {});
+
+    await useAppStore.getState().recommendAndFetchTerrainForCurrentArea(20);
+
+    expect(recompute).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().srtmTiles).toContainEqual(seaLevelTile);
+    expect(useAppStore.getState().terrainFetchStatus).toContain("1 sea-level");
+    expect(useAppStore.getState().terrainFetchStatus).not.toContain("unavailable");
+    expect(useAppStore.getState().isHighResTerrainLoaded).toBe(true);
   });
 });

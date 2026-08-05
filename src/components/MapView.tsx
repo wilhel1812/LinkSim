@@ -37,7 +37,7 @@ import {
 } from "../lib/profileDraftEvent";
 import { subscribePanoramaInteraction, type PanoramaFocusPoint, type PanoramaInteractionEvent } from "../lib/panoramaEvents";
 import { useAppStore } from "../store/appStore";
-import { isAutomaticCalculationLocked, useCoverageStore } from "../store/coverageStore";
+import { resolveAutomaticCalculationThresholds, useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
 import {
@@ -145,8 +145,10 @@ const WORLD_POLYGON_GEOJSON = {
   properties: {},
 };
 
+const LINK_LAYER_ANCHOR_ID = "link-lines-casing";
+
 const mapLineCasingLayer = (color: string): LayerProps => ({
-  id: "link-lines-casing",
+  id: LINK_LAYER_ANCHOR_ID,
   type: "line",
   paint: {
     "line-color": color,
@@ -218,6 +220,7 @@ const panoramaRayLayer = (color: string): LayerProps => ({
 const coverageRasterLayer = (fadedForCloud: boolean, hidden: boolean): LayerProps => {
   const transition = resolveSimulationOverlayTransition(fadedForCloud);
   return {
+    beforeId: LINK_LAYER_ANCHOR_ID,
     id: "coverage-overlay-layer",
     type: "raster",
     paint: {
@@ -232,6 +235,7 @@ const coverageRasterLayer = (fadedForCloud: boolean, hidden: boolean): LayerProp
 };
 
 const targetContourHaloLayer = (color: string, fadedForCloud: boolean, hidden: boolean): LayerProps => ({
+  beforeId: LINK_LAYER_ANCHOR_ID,
   id: "coverage-target-contour-halo-layer",
   type: "line",
   paint: {
@@ -245,6 +249,7 @@ const targetContourHaloLayer = (color: string, fadedForCloud: boolean, hidden: b
 });
 
 const targetContourLineLayer = (color: string, fadedForCloud: boolean, hidden: boolean): LayerProps => ({
+  beforeId: LINK_LAYER_ANCHOR_ID,
   id: "coverage-target-contour-line-layer",
   type: "line",
   paint: {
@@ -839,9 +844,9 @@ export function MapView({
   const completedCoverageRunToken = useCoverageStore((state) => state.completedCoverageRunToken);
   const simulationErrorMessage = useCoverageStore((state) => state.simulationErrorMessage);
   const autoCalculateEnabled = useCoverageStore((state) => state.autoCalculateEnabled);
-  const automaticLockNoticeShown = useCoverageStore((state) => state.automaticLockNoticeShown);
+  const automaticOptOutNoticeShown = useCoverageStore((state) => state.automaticOptOutNoticeShown);
   const calculationCycleSource = useCoverageStore((state) => state.calculationCycleSource);
-  const markAutomaticLockNoticeShown = useCoverageStore((state) => state.markAutomaticLockNoticeShown);
+  const markAutomaticOptOutNoticeShown = useCoverageStore((state) => state.markAutomaticOptOutNoticeShown);
   const recomputeCoverage = useCoverageStore((state) => state.recomputeCoverage);
   const setAutoCalculateEnabled = useCoverageStore((state) => state.setAutoCalculateEnabled);
   const startManualCalculation = useCoverageStore((state) => state.startManualCalculation);
@@ -1302,19 +1307,31 @@ export function MapView({
     selectionCount,
     option: selectedOverlayRadiusOption,
   });
-  const automaticCalculationLocked = isAutomaticCalculationLocked(
-    selectedCoverageResolution,
-    normalizedOverlayRadiusOption,
+  const automaticCalculationThresholds = useMemo(
+    () =>
+      resolveAutomaticCalculationThresholds(
+        selectedCoverageResolution,
+        normalizedOverlayRadiusOption,
+      ),
+    [normalizedOverlayRadiusOption, selectedCoverageResolution],
   );
-  const previousAutomaticCalculationLockedRef = useRef(automaticCalculationLocked);
+  const previousAutomaticCalculationThresholdsRef = useRef({
+    highResolution: false,
+    largeRadius: false,
+  });
+  const automaticCalculationThresholdCrossed =
+    (automaticCalculationThresholds.highResolution &&
+      !previousAutomaticCalculationThresholdsRef.current.highResolution) ||
+    (automaticCalculationThresholds.largeRadius &&
+      !previousAutomaticCalculationThresholdsRef.current.largeRadius);
   const calculationWorkAllowed =
-    (autoCalculateEnabled && !automaticCalculationLocked) || calculationCycleSource === "manual";
+    (autoCalculateEnabled && !automaticCalculationThresholdCrossed) || calculationCycleSource === "manual";
   const initialAutomaticCalculationRequestedRef = useRef(false);
   useEffect(() => {
     if (initialAutomaticCalculationRequestedRef.current) return;
     if (
       !autoCalculateEnabled ||
-      automaticCalculationLocked ||
+      automaticCalculationThresholdCrossed ||
       coverageVizMode === "none" ||
       analysisTargetSites.length === 0
     ) {
@@ -1333,7 +1350,7 @@ export function MapView({
   }, [
     analysisTargetSites.length,
     autoCalculateEnabled,
-    automaticCalculationLocked,
+    automaticCalculationThresholdCrossed,
     completedCoverageRunToken,
     coverageSamples.length,
     coverageVizMode,
@@ -1341,23 +1358,23 @@ export function MapView({
     recomputeCoverage,
   ]);
   useEffect(() => {
-    const becameLocked = automaticCalculationLocked && !previousAutomaticCalculationLockedRef.current;
-    previousAutomaticCalculationLockedRef.current = automaticCalculationLocked;
-    if (!automaticCalculationLocked) return;
-    if (autoCalculateEnabled) setAutoCalculateEnabled(false);
-    if (!becameLocked || automaticLockNoticeShown) return;
-    markAutomaticLockNoticeShown();
+    previousAutomaticCalculationThresholdsRef.current = automaticCalculationThresholds;
+    if (!automaticCalculationThresholdCrossed || !autoCalculateEnabled) return;
+    setAutoCalculateEnabled(false);
+    if (automaticOptOutNoticeShown) return;
+    markAutomaticOptOutNoticeShown();
     onPublishNotice?.({
-      id: "automatic-calculation-locked",
+      id: "automatic-calculation-opt-out",
       message: "Auto calculate was turned off for 100 km or 4x and above. Press Start to calculate.",
       tone: "info",
       persistent: false,
     });
   }, [
-    automaticCalculationLocked,
-    automaticLockNoticeShown,
+    automaticCalculationThresholdCrossed,
+    automaticCalculationThresholds,
+    automaticOptOutNoticeShown,
     autoCalculateEnabled,
-    markAutomaticLockNoticeShown,
+    markAutomaticOptOutNoticeShown,
     onPublishNotice,
     setAutoCalculateEnabled,
   ]);
@@ -1384,11 +1401,11 @@ export function MapView({
     () => resolveRequiredOverlayTerrainTileKeys(analysisTargetSites, targetRadiusKm),
     [analysisTargetSites, targetRadiusKm],
   );
-  const missingTargetRadiusTileCount = useMemo(
-    () => requiredTargetRadiusTileKeys.filter((key) => !loaded30mTileKeys.has(key)).length,
+  const missingTargetRadiusTileKeys = useMemo(
+    () => requiredTargetRadiusTileKeys.filter((key) => !loaded30mTileKeys.has(key)).sort(),
     [requiredTargetRadiusTileKeys, loaded30mTileKeys],
   );
-  const targetRadiusTerrainSignature = `${targetRadiusKm}|${requiredTargetRadiusTileKeys.join(",")}`;
+  const targetRadiusTerrainSignature = `${targetRadiusKm}|${missingTargetRadiusTileKeys.join(",")}`;
   const targetRadiusFetchAttemptRef = useRef<{
     signature: string;
     terrainLoadEpoch: number;
@@ -1408,7 +1425,7 @@ export function MapView({
       };
       return;
     }
-    if (!analysisTargetSites.length || missingTargetRadiusTileCount <= 0) {
+    if (!analysisTargetSites.length || missingTargetRadiusTileKeys.length <= 0) {
       targetRadiusFetchAttemptRef.current = {
         signature: "",
         terrainLoadEpoch: -1,
@@ -1431,7 +1448,7 @@ export function MapView({
   }, [
     coverageVizMode,
     analysisTargetSites.length,
-    missingTargetRadiusTileCount,
+    missingTargetRadiusTileKeys.length,
     isTerrainFetching,
     isTerrainRecommending,
     normalizedOverlayRadiusOption,
@@ -3414,22 +3431,17 @@ export function MapView({
             <div className="map-calculation-controls">
               <ActionButton
                 aria-label={
-                  automaticCalculationLocked
-                    ? "Automatic calculation unavailable at 100 km or 4x and above"
-                    : autoCalculateEnabled
-                      ? "Turn off automatic calculation"
-                      : "Turn on automatic calculation"
+                  autoCalculateEnabled
+                    ? "Turn off automatic calculation"
+                    : "Turn on automatic calculation"
                 }
                 aria-pressed={autoCalculateEnabled}
                 className={`map-calculation-control map-calculation-toggle ${autoCalculateEnabled ? "is-on" : "is-off"}`}
-                disabled={automaticCalculationLocked}
                 onClick={() => setAutoCalculateEnabled(!autoCalculateEnabled)}
                 title={
-                  automaticCalculationLocked
-                    ? "Automatic calculation unavailable at 100 km or 4x and above"
-                    : autoCalculateEnabled
-                      ? "Turn off automatic calculation"
-                      : "Turn on automatic calculation"
+                  autoCalculateEnabled
+                    ? "Turn off automatic calculation"
+                    : "Turn on automatic calculation"
                 }
                 variant="ghost"
               >
@@ -4158,6 +4170,12 @@ export function MapView({
           </Source>
         ) : null}
 
+        <Source data={lineFeatures} id="links" type="geojson">
+          <Layer {...mapLineCasingLayer(linkCasingColor)} />
+          <Layer {...mapLineLayer(linkColor)} />
+          <Layer {...mapLineSelectedLayer(linkColor)} />
+        </Source>
+
         {showTerrainOverlay && simulationTerrainOverlay ? (
           <Source
             coordinates={simulationTerrainOverlay.coordinates}
@@ -4166,6 +4184,7 @@ export function MapView({
             url={simulationTerrainOverlay.url}
           >
             <Layer
+              beforeId={LINK_LAYER_ANCHOR_ID}
               id="terrain-overlay-layer"
               type="raster"
               paint={{
@@ -4207,7 +4226,7 @@ export function MapView({
         ) : null}
 
         <SimulationLoadingOverlay
-          beforeLayerId="link-lines-casing"
+          beforeLayerId={LINK_LAYER_ANCHOR_ID}
           bounds={analysisBounds}
           handoffKey={overlayHandoff.requestKey}
           loading={simulationLoadingOverlayActive}
@@ -4252,12 +4271,6 @@ export function MapView({
             />
           </Source>
         ) : null}
-
-        <Source data={lineFeatures} id="links" type="geojson">
-          <Layer {...mapLineCasingLayer(linkCasingColor)} />
-          <Layer {...mapLineLayer(linkColor)} />
-          <Layer {...mapLineSelectedLayer(linkColor)} />
-        </Source>
 
         {sites.map((site) => {
           const isEditedSiteInSimulation =
