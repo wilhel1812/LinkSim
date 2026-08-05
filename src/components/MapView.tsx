@@ -42,6 +42,8 @@ import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
 import {
   fetchMeshmapNodes,
+  formatPositionPrecision,
+  getPositionPrecisionBounds,
   mergeMeshmapNodes,
   NODE_FEED_SOURCES,
   type MeshmapNode,
@@ -261,8 +263,8 @@ const terrainRasterPaint = {
   "raster-saturation": -0.06,
 };
 
-const userLocationAccuracyLayer = (color: string): LayerProps => ({
-  id: "user-location-accuracy-layer",
+const positionAreaLayer = (id: string, color: string): LayerProps => ({
+  id,
   type: "fill",
   paint: {
     "fill-color": color,
@@ -662,6 +664,7 @@ type PendingSiteMove = {
 type MapInspectorHoverInfo = {
   text: string;
   libraryEntryId?: string;
+  mqttNode?: MeshmapNode;
 };
 
 type PanoramaInteractionState = {
@@ -721,6 +724,35 @@ const buildUserLocationAccuracyGeoJson = (fix: UserLocationFix | null) => {
         geometry: {
           type: "Polygon" as const,
           coordinates: [coordinates],
+        },
+      },
+    ],
+  };
+};
+
+const buildMqttPositionPrecisionGeoJson = (node: MeshmapNode | undefined) => {
+  const bounds = node ? getPositionPrecisionBounds(node) : null;
+  if (!bounds) {
+    return {
+      type: "FeatureCollection" as const,
+      features: [],
+    };
+  }
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: {},
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [[
+            [bounds.minLon, bounds.minLat],
+            [bounds.maxLon, bounds.minLat],
+            [bounds.maxLon, bounds.maxLat],
+            [bounds.minLon, bounds.maxLat],
+            [bounds.minLon, bounds.minLat],
+          ]],
         },
       },
     ],
@@ -1039,6 +1071,7 @@ export function MapView({
   useEffect(() => {
     if (showDiscoveryMqtt) return;
     setMqttDuplicatePrompt(null);
+    setOverlayHoverInfo((current) => (current?.mqttNode ? null : current));
   }, [showDiscoveryMqtt]);
 
   useEffect(() => {
@@ -3150,6 +3183,7 @@ export function MapView({
     () => buildUserLocationAccuracyGeoJson(userLocationFix),
     [userLocationFix],
   );
+  const mqttPositionPrecisionGeoJson = buildMqttPositionPrecisionGeoJson(overlayHoverInfo?.mqttNode);
   const userLocationSelectionColor = variant.cssVars["--selection"] ?? selectedLinkColor;
   // Track the selected category in local state; initialize from the current style's category.
   const [selectedCategory, setSelectedCategory] = useState<BasemapCategory>(
@@ -4204,7 +4238,18 @@ export function MapView({
 
         {userLocationFix ? (
           <Source data={userLocationAccuracyGeoJson} id="user-location-accuracy" type="geojson">
-            <Layer {...userLocationAccuracyLayer(userLocationSelectionColor)} />
+            <Layer {...positionAreaLayer("user-location-accuracy-layer", userLocationSelectionColor)} />
+          </Source>
+        ) : null}
+
+        {mqttPositionPrecisionGeoJson.features.length ? (
+          <Source data={mqttPositionPrecisionGeoJson} id="mqtt-position-precision" type="geojson">
+            <Layer
+              {...positionAreaLayer(
+                "mqtt-position-precision-layer",
+                variant.cssVars["--temporary"] ?? userLocationSelectionColor,
+              )}
+            />
           </Source>
         ) : null}
 
@@ -4327,7 +4372,8 @@ export function MapView({
                     setOverlayHoverInfo({
                       text: `${node.longName ?? node.shortName ?? node.nodeId} · ${node.nodeId}${
                         node.shortName ? ` · ${node.shortName}` : ""
-                      }${node.hwModel ? ` · ${node.hwModel}` : ""}`,
+                      }${node.hwModel ? ` · ${node.hwModel}` : ""} · ${formatPositionPrecision(node.positionPrecisionBits)}`,
+                      mqttNode: node,
                     })
                   }
                   onMouseLeave={() => setOverlayHoverInfo(null)}

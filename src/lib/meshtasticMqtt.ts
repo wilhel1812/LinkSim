@@ -7,6 +7,7 @@ export type MeshmapNode = {
   lat: number;
   lon: number;
   altitudeM?: number;
+  positionPrecisionBits?: number;
   updatedAt?: number;
   sourceId?: NodeFeedSourceId;
   sourceUrl?: string;
@@ -77,6 +78,41 @@ const toNumber = (value: unknown): number | null => {
 const toStringOrUndefined = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim().length ? value : undefined;
 
+const toPositionPrecisionBits = (value: unknown): number | undefined => {
+  const precision = toNumber(value);
+  return precision !== null && Number.isInteger(precision) && precision >= 1 && precision <= 32
+    ? precision
+    : undefined;
+};
+
+export const getPositionPrecisionBounds = (
+  node: Pick<MeshmapNode, "lat" | "lon" | "positionPrecisionBits">,
+): { minLat: number; maxLat: number; minLon: number; maxLon: number } | null => {
+  const precisionBits = node.positionPrecisionBits;
+  if (precisionBits === undefined) return null;
+  const halfSpanDegrees = 2 ** (31 - precisionBits) * 1e-7;
+  const stableCoordinate = (value: number): number => Number(value.toFixed(12));
+  return {
+    minLat: stableCoordinate(node.lat - halfSpanDegrees),
+    maxLat: stableCoordinate(node.lat + halfSpanDegrees),
+    minLon: stableCoordinate(node.lon - halfSpanDegrees),
+    maxLon: stableCoordinate(node.lon + halfSpanDegrees),
+  };
+};
+
+export const formatPositionPrecision = (precisionBits: number | undefined): string => {
+  if (precisionBits === undefined) return "Position precision unavailable";
+  if (precisionBits === 32) return "Position precision: full (32 bits)";
+  const halfSpanM = 2 ** (31 - precisionBits) * 1e-7 * 111_195;
+  const formattedSpan =
+    halfSpanM >= 1_000
+      ? `${(halfSpanM / 1_000).toFixed(1)} km`
+      : halfSpanM >= 1
+        ? `${Math.round(halfSpanM)} m`
+        : "<1 m";
+  return `Position precision: ${precisionBits} bits · ≈${formattedSpan}`;
+};
+
 const cacheKeyFor = (sourceUrl: string): string =>
   sourceUrl === DEFAULT_MESHMAP_FEED_URL
     ? MESHMAP_CACHE_KEY
@@ -130,6 +166,7 @@ const parseNode = (nodeId: string, node: MeshmapNodeRaw): MeshmapNode | null => 
     lat,
     lon,
     altitudeM: toNumber(node.altitudeM ?? node.altitude) ?? undefined,
+    positionPrecisionBits: toPositionPrecisionBits(node.precision),
     updatedAt: updatedAt ?? undefined,
   };
 };
