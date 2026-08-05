@@ -85,24 +85,27 @@ export type CoverageState = {
   simulationRunToken: string;
   completedCoverageRunToken: string;
   autoCalculateEnabled: boolean;
-  automaticLockNoticeShown: boolean;
+  automaticOptOutNoticeShown: boolean;
   calculationCycleSource: "auto" | "manual" | null;
   simulationErrorMessage: string;
   recomputeCoverage: () => void;
-  markAutomaticLockNoticeShown: () => void;
+  markAutomaticOptOutNoticeShown: () => void;
   setAutoCalculateEnabled: (enabled: boolean) => void;
   startManualCalculation: () => void;
   stopCalculation: () => void;
   finishCalculationCycle: () => void;
 };
 
-export const isAutomaticCalculationLocked = (
+export const resolveAutomaticCalculationThresholds = (
   resolution: unknown,
   radiusOption: unknown,
-): boolean => {
+): { highResolution: boolean; largeRadius: boolean } => {
   const gridSize = Number(resolution);
   const radiusKm = Number(radiusOption);
-  return (Number.isFinite(gridSize) && gridSize >= 84) || (Number.isFinite(radiusKm) && radiusKm >= 100);
+  return {
+    highResolution: Number.isFinite(gridSize) && gridSize >= 84,
+    largeRadius: Number.isFinite(radiusKm) && radiusKm >= 100,
+  };
 };
 
 type NetworkLike = {
@@ -613,22 +616,14 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
   simulationRunToken: "",
   completedCoverageRunToken: "",
   autoCalculateEnabled: true,
-  automaticLockNoticeShown: false,
+  automaticOptOutNoticeShown: false,
   calculationCycleSource: null,
   simulationErrorMessage: "",
   recomputeCoverage: () => {
     if (!appStoreBridge) return;
-    const appState = appStoreBridge.getState();
-    const locked = isAutomaticCalculationLocked(
-      appState.selectedCoverageResolution,
-      appState.selectedOverlayRadiusOption,
-    );
     const state = get();
-    if (locked && state.autoCalculateEnabled) {
-      set({ autoCalculateEnabled: false });
-    }
     const manualRun = state.calculationCycleSource === "manual";
-    if (!manualRun && (!state.autoCalculateEnabled || locked)) return;
+    if (!manualRun && !state.autoCalculateEnabled) return;
     coverageRerunQueued = true;
     queueCoverageRunFlush(COVERAGE_RECOMPUTE_DEBOUNCE_MS);
     if (coverageRunInFlight) return;
@@ -644,7 +639,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
       simulationSamplesTotal: 0,
     });
   },
-  markAutomaticLockNoticeShown: () => set({ automaticLockNoticeShown: true }),
+  markAutomaticOptOutNoticeShown: () => set({ automaticOptOutNoticeShown: true }),
   setAutoCalculateEnabled: (enabled) => {
     if (!enabled) {
       const hadPendingRun = coverageRecomputeTimer !== null;
@@ -667,11 +662,6 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
       return;
     }
     if (!appStoreBridge) return;
-    const appState = appStoreBridge.getState();
-    if (isAutomaticCalculationLocked(appState.selectedCoverageResolution, appState.selectedOverlayRadiusOption)) {
-      set({ autoCalculateEnabled: false });
-      return;
-    }
     set({ autoCalculateEnabled: true, calculationCycleSource: "auto" });
     get().recomputeCoverage();
   },

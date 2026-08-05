@@ -176,7 +176,7 @@ describe("MapView user location flow", () => {
       simulationRunToken: "",
       completedCoverageRunToken: "",
       autoCalculateEnabled: true,
-      automaticLockNoticeShown: false,
+      automaticOptOutNoticeShown: false,
       calculationCycleSource: null,
       simulationErrorMessage: "",
     });
@@ -213,29 +213,38 @@ describe("MapView user location flow", () => {
     expect(cancelTerrainLoad).toHaveBeenCalledTimes(1);
   });
 
-  it("locks automatic calculation at 4x while preserving manual Start", async () => {
+  it("opts out at each expensive threshold while allowing a deliberate override", async () => {
     const onPublishNotice = vi.fn();
     renderMapView({ showInspector: true, onPublishNotice });
 
     act(() => useAppStore.setState({ selectedCoverageResolution: "84" }));
 
-    const lockedToggle = await screen.findByRole("button", {
-      name: "Automatic calculation unavailable at 100 km or 4x and above",
+    const optedOutToggle = await screen.findByRole("button", {
+      name: "Turn on automatic calculation",
     });
-    expect(lockedToggle).toBeDisabled();
-    expect(lockedToggle).toHaveClass("is-off");
+    expect(optedOutToggle).toBeEnabled();
+    expect(optedOutToggle).toHaveClass("is-off");
     expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument();
     expect(onPublishNotice).toHaveBeenCalledWith({
-      id: "automatic-calculation-locked",
+      id: "automatic-calculation-opt-out",
       message: "Auto calculate was turned off for 100 km or 4x and above. Press Start to calculate.",
       tone: "info",
       persistent: false,
     });
 
-    act(() => useAppStore.setState({ selectedCoverageResolution: "24" }));
+    fireEvent.click(optedOutToggle);
+    expect(screen.getByRole("button", { name: "Turn off automatic calculation" })).toHaveClass("is-on");
+
+    act(() => useAppStore.setState({ selectedCoverageResolution: "168" }));
+    expect(screen.getByRole("button", { name: "Turn off automatic calculation" })).toHaveClass("is-on");
+
     act(() => useAppStore.setState({ selectedOverlayRadiusOption: "100" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Start calculation" })).toBeInTheDocument());
     expect(onPublishNotice).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Turn on automatic calculation" }));
+    act(() => useAppStore.setState({ selectedOverlayRadiusOption: "200" }));
+    expect(screen.getByRole("button", { name: "Turn off automatic calculation" })).toHaveClass("is-on");
   });
 
   it("publishes an explicit terrain-unavailable calculation error", async () => {

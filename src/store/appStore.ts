@@ -3902,6 +3902,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         `Loaded ${result.tiles.length} tile(s)`,
         result.fetchedTiles.length ? `${result.fetchedTiles.length} fetched` : "",
         result.cacheHits.length ? `${result.cacheHits.length} from cache` : "",
+        result.seaLevelTiles.length ? `${result.seaLevelTiles.length} sea-level` : "",
         result.failedTiles.length ? `${result.failedTiles.length} unavailable` : "",
       ].filter(Boolean);
       const missing = result.failedTiles.length

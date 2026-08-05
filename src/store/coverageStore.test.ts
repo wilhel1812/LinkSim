@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  isAutomaticCalculationLocked,
+  resolveAutomaticCalculationThresholds,
   resetCoverageSchedulerForTests,
   setAppStoreBridge,
   useCoverageStore,
@@ -8,7 +8,7 @@ import {
 import * as coverageLib from "../lib/coverage";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
-import type { CoverageSample, Site } from "../types/radio";
+import type { CoverageSample, Site, SrtmTile } from "../types/radio";
 
 const site: Site = {
   id: "site-1",
@@ -22,7 +22,7 @@ const site: Site = {
   cableLossDb: 1,
 };
 
-const completeTerrainTiles = (radiusKm = 50) => {
+const completeTerrainTiles = (radiusKm = 50): SrtmTile[] => {
   const bounds = simulationAreaBoundsForSites([site], { overlayRadiusKm: radiusKm });
   if (!bounds) return [];
   return tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon).map((key) => {
@@ -192,17 +192,49 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().simulationErrorMessage).toContain("terrain");
   });
 
-  it("locks automatic calculation for 100 km+ or 4x+ settings", () => {
-    expect(isAutomaticCalculationLocked("24", "50")).toBe(false);
-    expect(isAutomaticCalculationLocked("24", "100")).toBe(true);
-    expect(isAutomaticCalculationLocked("84", "20")).toBe(true);
+  it("accepts zero-elevation Copernicus ocean cells as complete 100 km terrain", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    const terrainTiles = completeTerrainTiles(100);
+    terrainTiles[0] = {
+      ...terrainTiles[0],
+      elevations: new Int16Array([0, 0, 0, 0]),
+      sourceLabel: "Copernicus GLO-30 sea level",
+      sourceDetail: "Catalog-confirmed ocean cell",
+    };
+    bridgeState.selectedOverlayRadiusOption = "100";
+    bridgeState.srtmTiles = terrainTiles;
 
-    bridgeState.selectedCoverageResolution = "84";
-    useCoverageStore.getState().recomputeCoverage();
+    useCoverageStore.getState().startManualCalculation();
     vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
 
-    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
-    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+    expect(buildSpy).toHaveBeenCalledTimes(1);
+    expect(useCoverageStore.getState().simulationErrorMessage).toBe("");
+  });
+
+  it("identifies the independent 100 km+ and 4x+ automatic opt-out thresholds", () => {
+    expect(resolveAutomaticCalculationThresholds("24", "50")).toEqual({
+      highResolution: false,
+      largeRadius: false,
+    });
+    expect(resolveAutomaticCalculationThresholds("24", "100")).toEqual({
+      highResolution: false,
+      largeRadius: true,
+    });
+    expect(resolveAutomaticCalculationThresholds("84", "20")).toEqual({
+      highResolution: true,
+      largeRadius: false,
+    });
+  });
+
+  it("allows the user to enable automatic calculation at an expensive setting", () => {
+    bridgeState.selectedCoverageResolution = "84";
+    useCoverageStore.getState().setAutoCalculateEnabled(false);
+    useCoverageStore.getState().setAutoCalculateEnabled(true);
+
+    expect(useCoverageStore.getState().autoCalculateEnabled).toBe(true);
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(true);
+    expect(useCoverageStore.getState().calculationCycleSource).toBe("auto");
   });
 
   it("stops active coverage work and clears queued reruns", async () => {
