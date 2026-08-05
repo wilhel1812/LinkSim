@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAdaptiveCoverageOverlayPixelsAsync,
   buildCoverageOverlayPixelsAsync,
   buildMeshExtensionOverlayPixelsAsync,
   computeCoverageRxTargetScale,
@@ -77,6 +78,79 @@ const environment: PropagationEnvironment = {
 const terrainSampler = () => 135;
 
 describe("overlayRaster async builders", () => {
+  it("builds Heatmap on the Pass/Fail logical grid with bounded adaptive error", async () => {
+    const dimensions = { width: 312, height: 312 };
+    let exactEvaluations = 0;
+    let adaptiveEvaluations = 0;
+    const evaluateSignal = (lat: number, lon: number) => {
+      const latOffset = (lat - 59.9) / 0.1;
+      const lonOffset = (lon - 10.7) / 0.1;
+      const ridgeOffset = latOffset - lonOffset * 0.4 - 0.42;
+      const strongestDbm = -116 + lonOffset * 16 + Math.exp(-(ridgeOffset ** 2) / 0.006) * 11;
+      return { strongestDbm, weakestDbm: strongestDbm - 7 };
+    };
+    const exact = await buildAdaptiveCoverageOverlayPixelsAsync({
+      bounds,
+      dimensions,
+      initialGridSize: 24,
+      mode: "heatmap",
+      rxTargetDbm: -118,
+      evaluatePoint: (lat, lon) => {
+        exactEvaluations += 1;
+        return evaluateSignal(lat, lon);
+      },
+      adaptive: false,
+    });
+    const adaptive = await buildAdaptiveCoverageOverlayPixelsAsync({
+      bounds,
+      dimensions,
+      initialGridSize: 24,
+      mode: "heatmap",
+      rxTargetDbm: -118,
+      evaluatePoint: (lat, lon) => {
+        adaptiveEvaluations += 1;
+        return evaluateSignal(lat, lon);
+      },
+      adaptive: true,
+    });
+
+    expect(exact?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    expect(adaptive?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    const errors = Array.from(exact!.signalValuesDbm!, (value, index) =>
+      Math.abs(value - adaptive!.signalValuesDbm![index]));
+    errors.sort((left, right) => left - right);
+    expect(errors[Math.floor(errors.length * 0.5)]).toBeLessThanOrEqual(0.25);
+    expect(errors[Math.floor(errors.length * 0.99)]).toBeLessThanOrEqual(1);
+    expect(adaptiveEvaluations).toBeLessThan(exactEvaluations * 0.45);
+    expect(adaptive?.analysisStats?.totalPixels).toBe(dimensions.width * dimensions.height);
+  });
+
+  it("reuses the same canonical signal samples when switching coverage overlay", async () => {
+    const dimensions = { width: 96, height: 96 };
+    let evaluations = 0;
+    const common = {
+      bounds,
+      dimensions,
+      initialGridSize: 24,
+      rxTargetDbm: -118,
+      evaluatePoint: (lat: number, lon: number) => {
+        evaluations += 1;
+        const strongestDbm = -104 + (lat - bounds.minLat) * 20 + (lon - bounds.minLon) * 10;
+        return { strongestDbm, weakestDbm: strongestDbm - 8 };
+      },
+      adaptive: true,
+      analysisCacheKey: "coverage-mode-switch-cache",
+    } as const;
+    const heatmap = await buildAdaptiveCoverageOverlayPixelsAsync({ ...common, mode: "heatmap" });
+    const firstEvaluations = evaluations;
+    const weakest = await buildAdaptiveCoverageOverlayPixelsAsync({ ...common, mode: "weakest" });
+
+    expect(heatmap?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    expect(weakest?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    expect(evaluations).toBe(firstEvaluations);
+    expect(weakest?.analysisStats?.evaluatedPaths).toBe(0);
+  });
+
   it("keeps adaptive Pass/Fail within the accuracy gate while reducing terrain work", async () => {
     const dimensions = { width: 120, height: 120 };
     let exactTerrainReads = 0;
@@ -579,6 +653,28 @@ describe("overlayRaster async builders", () => {
 
     expect(raster).not.toBeNull();
     expect(terrainReads).toBeLessThan(70_000);
+    expect(Array.from(raster!.pixels).filter((_, index) => index % 4 === 3).every((alpha) => alpha === 0)).toBe(true);
+  });
+
+  it("uses the canonical Mesh Extension candidate grid while merging safely failing regions", async () => {
+    const dimensions = { width: 48, height: 48 };
+    const raster = await buildMeshExtensionOverlayPixelsAsync({
+      bounds,
+      selectedSites: [fromSite],
+      frequencyMHz: 868,
+      propagationEnvironment: environment,
+      rxTargetDbm: -20,
+      environmentLossDb: 0,
+      terrainSampler,
+      dimensions,
+      candidateGridSize: 6,
+      coverageGridSize: 6,
+      terrainSamples: 16,
+      context: { phase: "mesh-extension", signature: "mesh-extension-canonical-grid" },
+    });
+
+    expect(raster?.analysisStats?.totalPixels).toBe(dimensions.width * dimensions.height);
+    expect(raster?.analysisStats?.evaluatedPaths).toBeLessThan(dimensions.width * dimensions.height * 0.25);
     expect(Array.from(raster!.pixels).filter((_, index) => index % 4 === 3).every((alpha) => alpha === 0)).toBe(true);
   });
 

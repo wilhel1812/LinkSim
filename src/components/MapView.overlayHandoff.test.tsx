@@ -2,7 +2,7 @@
 import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Site, SrtmTile } from "../types/radio";
+import type { Network, RadioSystem, Site, SrtmTile } from "../types/radio";
 import { resolveRequiredOverlayTerrainTileKeys } from "../lib/simulationOverlayRadius";
 
 const overlayMock = vi.hoisted(() => {
@@ -52,6 +52,7 @@ vi.hoisted(() => {
 });
 
 vi.mock("../lib/overlayRaster", () => ({
+  buildAdaptiveCoverageOverlayPixelsAsync: overlayMock.buildCoverage,
   buildCoverageOverlayPixelsAsync: overlayMock.buildCoverage,
   buildMeshExtensionOverlayPixelsAsync: vi.fn(),
   buildRelayCandidateOverlayPixelsAsync: vi.fn(),
@@ -145,6 +146,26 @@ const site: Site = {
   cableLossDb: 1,
 };
 
+const system: RadioSystem = {
+  id: "system-a",
+  name: "System A",
+  txPowerDbm: 30,
+  txGainDbi: 2,
+  rxGainDbi: 2,
+  cableLossDb: 1,
+  antennaHeightM: 8,
+};
+
+const network: Network = {
+  id: "network-a",
+  name: "Network A",
+  frequencyMHz: 869.618,
+  bandwidthKhz: 250,
+  spreadFactor: 11,
+  codingRate: 5,
+  memberships: [{ siteId: site.id, systemId: system.id }],
+};
+
 const resolveNextRaster = async () => {
   await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
   const request = overlayMock.requests.shift();
@@ -172,6 +193,9 @@ describe("MapView overlay handoff", () => {
     });
     useAppStore.setState({
       sites: [site],
+      systems: [system],
+      networks: [network],
+      selectedNetworkId: network.id,
       links: [],
       selectedSiteId: site.id,
       selectedSiteIds: [site.id],

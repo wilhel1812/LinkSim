@@ -8,7 +8,7 @@ import {
 import * as coverageLib from "../lib/coverage";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { tilesForBounds } from "../lib/terrainTiles";
-import type { CoverageSample, Site, SrtmTile } from "../types/radio";
+import type { Site, SrtmTile } from "../types/radio";
 
 const site: Site = {
   id: "site-1",
@@ -118,15 +118,8 @@ describe("coverageStore simulation progress phases", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses indeterminate prep/finalizing phases and determinate sampling percent", async () => {
-    let resolveBuild!: (value: CoverageSample[]) => void;
-    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation((...args) => {
-      const options = args[6];
-      options?.onProgress?.(0.5);
-      return new Promise<CoverageSample[]>((resolve) => {
-        resolveBuild = resolve;
-      });
-    });
+  it("hands every area overlay to the canonical raster pipeline", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
 
     useCoverageStore.getState().recomputeCoverage();
     expect(useCoverageStore.getState().simulationProgressMode).toBe("indeterminate");
@@ -135,20 +128,9 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(180);
     await flushAsyncTicks();
 
-    expect(useCoverageStore.getState().simulationProgressMode).toBe("determinate");
-    expect(useCoverageStore.getState().simulationProgress).toBe(50);
-    expect(useCoverageStore.getState().simulationStepLabel).toBe("Sampling simulation grid...");
-
-    resolveBuild([{ lat: site.position.lat, lon: site.position.lon, valueDbm: -90 }]);
-    await flushAsyncTicks();
-    expect(useCoverageStore.getState().simulationProgressMode).toBe("indeterminate");
-    expect(useCoverageStore.getState().simulationStepLabel).toBe("Finalizing simulation overlay...");
-
-    vi.advanceTimersByTime(700);
-    await flushAsyncTicks();
-
+    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
-    expect(useCoverageStore.getState().coverageSamples).toHaveLength(1);
+    expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
   });
 
   it("suppresses automatic recomputes while Auto calculate is off", () => {
@@ -170,13 +152,12 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(700);
     await flushAsyncTicks();
 
-    expect(buildSpy).toHaveBeenCalledTimes(1);
+    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
     expect(useCoverageStore.getState().calculationCycleSource).toBe("manual");
-    expect(buildSpy.mock.calls[0]?.[6]).toEqual(expect.objectContaining({ overlayRadiusKm: 50 }));
   });
 
-  it("skips the generic coverage grid for direct-analysis overlay modes", async () => {
+  it("clears legacy coverage samples when handing off to the canonical raster", async () => {
     const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     bridgeState.mapOverlayMode = "passfail";
     useCoverageStore.setState({
@@ -190,7 +171,7 @@ describe("coverageStore simulation progress phases", () => {
     expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
     expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
-    expect(useCoverageStore.getState().coverageSamples[0]?.valueDbm).toBe(-88);
+    expect(useCoverageStore.getState().coverageSamples).toEqual([]);
   });
 
   it("does not calculate or retain results when required terrain tiles remain unavailable", async () => {
@@ -226,7 +207,7 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
 
-    expect(buildSpy).toHaveBeenCalledTimes(1);
+    expect(buildSpy).not.toHaveBeenCalled();
     expect(useCoverageStore.getState().simulationErrorMessage).toBe("");
   });
 
@@ -255,27 +236,14 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().calculationCycleSource).toBe("auto");
   });
 
-  it("stops active coverage work and clears queued reruns", async () => {
-    let observedCancellation = false;
-    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation((...args) => {
-      const options = args[6];
-      return new Promise<CoverageSample[]>((resolve) => {
-        window.setTimeout(() => {
-          observedCancellation = options?.shouldCancel?.() ?? false;
-          resolve([]);
-        }, 20);
-      });
-    });
-
+  it("stops a queued canonical-overlay run", async () => {
     useCoverageStore.getState().recomputeCoverage();
+    useCoverageStore.getState().stopCalculation();
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
-    useCoverageStore.getState().stopCalculation();
-    vi.advanceTimersByTime(30);
-    await flushAsyncTicks();
 
-    expect(observedCancellation).toBe(true);
     expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+    expect(useCoverageStore.getState().simulationRunToken).toBe("");
     expect(useCoverageStore.getState().calculationCycleSource).toBe(null);
   });
 
@@ -298,7 +266,8 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(700);
     await flushAsyncTicks();
 
-    expect(buildSpy).toHaveBeenCalledTimes(1);
+    expect(buildSpy).not.toHaveBeenCalled();
+    expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
   });
 
   it("keeps a manual Start waiting without committing coverage while terrain loads", async () => {
@@ -322,117 +291,31 @@ describe("coverageStore simulation progress phases", () => {
     vi.advanceTimersByTime(700);
     await flushAsyncTicks();
 
-    expect(buildSpy).toHaveBeenCalledTimes(1);
+    expect(buildSpy).not.toHaveBeenCalled();
+    expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
   });
 
-  it("runs as single-flight with one queued rerun under rapid triggers", async () => {
-    let resolveFirst!: (value: CoverageSample[]) => void;
-    let resolveSecond!: (value: CoverageSample[]) => void;
-    const runResolvers: Array<(value: CoverageSample[]) => void> = [];
-    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation(() => {
-      return new Promise<CoverageSample[]>((resolve) => {
-        runResolvers.push(resolve);
-        if (runResolvers.length === 1) resolveFirst = resolve;
-        if (runResolvers.length === 2) resolveSecond = resolve;
-      });
-    });
-
+  it("coalesces rapid triggers into one canonical-overlay handoff", async () => {
     useCoverageStore.getState().recomputeCoverage();
-    vi.advanceTimersByTime(220);
-    await flushAsyncTicks();
-    expect(runResolvers).toHaveLength(1);
-
-    bridgeState.selectedCoverageResolution = "42";
     useCoverageStore.getState().recomputeCoverage();
     useCoverageStore.getState().recomputeCoverage();
     useCoverageStore.getState().recomputeCoverage();
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
 
-    expect(runResolvers).toHaveLength(1);
-
-    resolveFirst([{ lat: site.position.lat, lon: site.position.lon, valueDbm: -95 }]);
-    await flushAsyncTicks();
-    vi.advanceTimersByTime(40);
-    await flushAsyncTicks();
-    expect(runResolvers).toHaveLength(2);
-
-    resolveSecond([{ lat: site.position.lat, lon: site.position.lon, valueDbm: -82 }]);
-    await flushAsyncTicks();
-    vi.advanceTimersByTime(760);
-    await flushAsyncTicks();
-    expect(useCoverageStore.getState().coverageSamples[0]?.valueDbm).toBe(-82);
+    expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
   });
 
   it("skips recompute when effective simulation inputs are unchanged", async () => {
-    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    useCoverageStore.getState().recomputeCoverage();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+    const completedToken = useCoverageStore.getState().completedCoverageRunToken;
 
     useCoverageStore.getState().recomputeCoverage();
     vi.advanceTimersByTime(220);
     await flushAsyncTicks();
-    vi.advanceTimersByTime(760);
-    await flushAsyncTicks();
-    expect(buildSpy).toHaveBeenCalledTimes(1);
-
-    useCoverageStore.getState().recomputeCoverage();
-    vi.advanceTimersByTime(220);
-    await flushAsyncTicks();
-    vi.advanceTimersByTime(760);
-    await flushAsyncTicks();
-    expect(buildSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not commit stale run results when a rerun is queued", async () => {
-    const runResolvers: Array<(value: CoverageSample[]) => void> = [];
-    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation(() => {
-      return new Promise<CoverageSample[]>((resolve) => {
-        runResolvers.push(resolve);
-      });
-    });
-
-    useCoverageStore.getState().recomputeCoverage();
-    vi.advanceTimersByTime(220);
-    await flushAsyncTicks();
-    expect(runResolvers).toHaveLength(1);
-
-    bridgeState.selectedCoverageResolution = "42";
-    useCoverageStore.getState().recomputeCoverage();
-    vi.advanceTimersByTime(220);
-    await flushAsyncTicks();
-
-    runResolvers[0]([{ lat: site.position.lat, lon: site.position.lon, valueDbm: -110 }]);
-    await flushAsyncTicks();
-    vi.advanceTimersByTime(60);
-    await flushAsyncTicks();
-    expect(useCoverageStore.getState().coverageSamples).toEqual([]);
-
-    vi.advanceTimersByTime(80);
-    await flushAsyncTicks();
-    expect(runResolvers).toHaveLength(2);
-
-    runResolvers[1]([{ lat: site.position.lat, lon: site.position.lon, valueDbm: -70 }]);
-    await flushAsyncTicks();
-    vi.advanceTimersByTime(760);
-    await flushAsyncTicks();
-    expect(useCoverageStore.getState().coverageSamples[0]?.valueDbm).toBe(-70);
-  });
-
-  it("discards a stale result without scheduling a rerun while automatic calculation is off", async () => {
-    let resolveBuild!: (value: CoverageSample[]) => void;
-    vi.spyOn(coverageLib, "buildCoverageAsync").mockImplementation(
-      () => new Promise<CoverageSample[]>((resolve) => { resolveBuild = resolve; }),
-    );
-
-    useCoverageStore.getState().recomputeCoverage();
-    vi.advanceTimersByTime(220);
-    await flushAsyncTicks();
-    useCoverageStore.getState().setAutoCalculateEnabled(false);
-    bridgeState.selectedCoverageResolution = "42";
-    useCoverageStore.getState().recomputeCoverage();
-    resolveBuild([{ lat: site.position.lat, lon: site.position.lon, valueDbm: -60 }]);
-    await flushAsyncTicks();
-
-    expect(useCoverageStore.getState().coverageSamples).toEqual([]);
-    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+    expect(useCoverageStore.getState().completedCoverageRunToken).toBe(completedToken);
   });
 });
