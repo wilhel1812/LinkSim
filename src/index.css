@@ -2970,7 +2970,7 @@ button {
   letter-spacing: 0.01em;
 }
 
-.chart-svg-wrap svg {
+.chart-svg-wrap > svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -2988,17 +2988,11 @@ button {
   flex-shrink: 0;
 }
 
-.chart-panel.is-expanded .panorama-label-overlay svg {
-  width: 10px;
-  height: 10px;
-  min-height: unset;
-}
-
 .chart-panel.is-expanded .chart-svg-wrap {
   min-height: clamp(280px, 62vh, 760px);
 }
 
-.chart-panel.is-expanded .chart-svg-wrap svg {
+.chart-panel.is-expanded .chart-svg-wrap > svg {
   max-height: none;
   min-height: clamp(280px, 62vh, 760px);
 }
