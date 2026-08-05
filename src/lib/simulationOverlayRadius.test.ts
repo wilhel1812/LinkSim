@@ -3,8 +3,7 @@ import {
   defaultOptionForSelectionCount,
   normalizeOverlayRadiusOptionForSelectionCount,
   optionsForSelectionCount,
-  resolveEffectiveOverlayRadiusKm,
-  resolveLoadedOverlayRadiusCapKm,
+  resolveMissingOverlayTerrainTileKeys,
   resolveOverlayRadiusOptionForSelectionTransition,
   resolveTargetOverlayRadiusKm,
 } from "./simulationOverlayRadius";
@@ -52,36 +51,16 @@ describe("simulationOverlayRadius", () => {
     ).toBe("50");
   });
 
-  it("uses fixed values in single-site mode", () => {
-    const radius = resolveEffectiveOverlayRadiusKm({
-      selectionCount: 1,
-      option: "100",
-      selectedSingleSite: site,
-      srtmTiles: [mkTile("N59E010")],
-      isTerrainFetching: false,
-    });
-    expect(radius).toBe(100);
-  });
-
-  it("uses fixed values outside single-site mode", () => {
-    const radius = resolveEffectiveOverlayRadiusKm({
-      selectionCount: 2,
-      option: "100",
-      selectedSingleSite: null,
-      srtmTiles: [],
-      isTerrainFetching: false,
-    });
-    expect(radius).toBe(100);
-  });
-
   it("resolves target radius by context and option", () => {
     expect(resolveTargetOverlayRadiusKm(1, "20")).toBe(20);
     expect(resolveTargetOverlayRadiusKm(1, "200")).toBe(200);
     expect(resolveTargetOverlayRadiusKm(3, "100")).toBe(100);
   });
 
-  it("caps loaded radius conservatively to available 30m tiles", () => {
-    const capped = resolveLoadedOverlayRadiusCapKm([site], 200, [mkTile("N59E010")], 20);
-    expect(capped).toBe(20);
+  it("reports every missing GLO-30 tile for the full selected radius", () => {
+    const missing = resolveMissingOverlayTerrainTileKeys([site], 200, [mkTile("N59E010")]);
+
+    expect(missing.length).toBeGreaterThan(1);
+    expect(missing).not.toContain("N59E010");
   });
 });

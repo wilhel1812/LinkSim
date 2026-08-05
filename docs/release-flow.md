@@ -62,7 +62,7 @@
 
 ## Versioning Policy
 - SemVer is mandatory (`MAJOR.MINOR.PATCH`).
-- Current baseline: `0.24.0`.
+- The current version is defined by `package.json`; do not duplicate it in release documentation.
 - Bump level decision rules:
   - `PATCH` (`0.9.x`): bug fixes, polish, performance tuning, and non-breaking UX behavior fixes.
   - `MINOR` (`0.x.0`): new user-facing features or meaningful workflow additions that are backward-compatible.

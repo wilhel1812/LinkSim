@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
-import { fetchResourceChanges } from "../../lib/cloudUser";
+import { fetchResourceChanges, fetchUserById } from "../../lib/cloudUser";
 import { MapEditorPanel } from "./MapEditorPanel";
 
 const storage = vi.hoisted(() => {
@@ -183,6 +183,35 @@ describe("MapEditorPanel", () => {
     expect(screen.getByText("Moved site")).toBeInTheDocument();
   });
 
+  it("confirms deletion from editable Site details", async () => {
+    const deleteSiteLibraryEntry = vi.fn();
+    useAppStore.setState({ deleteSiteLibraryEntry });
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Delete Site" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete Site" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(deleteSiteLibraryEntry).toHaveBeenCalledWith("site-lib-1");
+    expect(useAppStore.getState().mapEditor).toBeNull();
+  });
+
+  it("opens the shared profile popover from metadata and change-log identities", async () => {
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Open owner profile: Owner User" }));
+    expect(await screen.findByRole("dialog", { name: "User profile for Owner User" })).toBeInTheDocument();
+    expect(fetchUserById).toHaveBeenCalledWith("owner-1");
+
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "Open change log" }));
+    const actor = await screen.findByRole("button", { name: "Open profile for Editor User" });
+    await userEvent.click(actor);
+
+    expect(await screen.findByRole("dialog", { name: "User profile for Editor User" })).toBeInTheDocument();
+    expect(fetchUserById).toHaveBeenCalledWith("editor-1");
+  });
+
   it("shows compact simulation metadata footer and opens the simulation change log flow", async () => {
     useAppStore.setState({
       simulationPresets: [
@@ -245,6 +274,94 @@ describe("MapEditorPanel", () => {
     expect(
       await screen.findByText("Change Log · Mesh Plan"),
     ).toBeInTheDocument();
+  });
+
+  it("confirms Simulation deletion and preserves the editor when deletion fails", async () => {
+    const deleteSimulationPreset = vi.fn(async () => {
+      throw new Error("Cloud unavailable");
+    });
+    useAppStore.setState({
+      deleteSimulationPreset,
+      simulationPresets: [
+        {
+          id: "sim-delete",
+          name: "Delete Plan",
+          visibility: "private",
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [], links: [], systems: [], networks: [], selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+            propagationModel: "ITM", selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: { kind: "simulation", resourceId: "sim-delete", isNew: false, label: "Delete Plan", anchorRect },
+    });
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Delete Simulation" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete Simulation" });
+    expect(within(dialog).getByText(/Delete Delete Plan from the Library/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(await within(dialog).findByText("Delete failed: Cloud unavailable")).toBeInTheDocument();
+    expect(useAppStore.getState().mapEditor?.resourceId).toBe("sim-delete");
+  });
+
+  it("does not offer Simulation deletion to resource collaborators", async () => {
+    useAppStore.setState({
+      simulationPresets: [
+        {
+          id: "sim-editor", name: "Editor Plan", visibility: "shared", ownerUserId: "other-owner",
+          effectiveRole: "editor", updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [], links: [], systems: [], networks: [], selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+            propagationModel: "ITM", selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: { kind: "simulation", resourceId: "sim-editor", isNew: false, label: "Editor Plan", anchorRect },
+    });
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete Simulation" })).not.toBeInTheDocument();
+  });
+
+  it("shows Restore in read-only deleted Simulation details for platform admins", async () => {
+    const restoreSimulationPreset = vi.fn(async () => undefined);
+    useAppStore.setState({
+      currentUser: { ...currentUser, isAdmin: true },
+      restoreSimulationPreset,
+      simulationPresets: [
+        {
+          id: "sim-deleted", name: "Deleted Plan", status: "deleted", visibility: "private", ownerUserId: "owner-1",
+          effectiveRole: "admin", updatedAt: "2026-01-02T00:00:00.000Z",
+          snapshot: {
+            sites: [], links: [], systems: [], networks: [], selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+            propagationModel: "ITM", selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+            environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+            autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+          },
+        },
+      ],
+      mapEditor: {
+        kind: "simulation", resourceId: "sim-deleted", isNew: false, label: "Deleted Plan", anchorRect, readOnly: true,
+        origin: { kind: "library", tab: "simulations" },
+      },
+    });
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByText(/available to platform admins for inspection/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete Simulation" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Restore Simulation" }));
+    await waitFor(() => expect(restoreSimulationPreset).toHaveBeenCalledWith("sim-deleted"));
+    expect(useAppStore.getState().mapEditor).toBeNull();
   });
 
   it("shows Simulation settings summary and enables override editing from the edit action", async () => {
@@ -334,6 +451,129 @@ describe("MapEditorPanel", () => {
     expect(
       screen.getByRole("button", { name: "Use inherited defaults" }),
     ).toBeInTheDocument();
+  });
+
+  it("moves Simulation-scoped icon color to the Site editor and commits it immediately", async () => {
+    const site = {
+      id: "site-a",
+      name: "Site A",
+      position: { lat: 60, lon: 10 },
+      groundElevationM: 100,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      selectedScenarioId: "sim-appearance",
+      siteLibrary: [{
+        ...site,
+        visibility: "private",
+        sharedWith: [],
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }],
+      sites: [site],
+      linkColorMode: "manual",
+      siteIconColors: {},
+      simulationPresets: [{
+        id: "sim-appearance",
+        name: "Appearance Plan",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        snapshot: {
+          sites: [site], links: [], systems: [], networks: [],
+          selectedSiteId: "site-a", selectedLinkId: "", selectedNetworkId: "",
+          propagationModel: "ITM", selectedFrequencyPresetId: "custom",
+          rxSensitivityTargetDbm: -120, environmentLossDb: 0,
+          propagationEnvironment: useAppStore.getState().propagationEnvironment,
+          autoPropagationEnvironment: false, terrainDataset: "copernicus30",
+        },
+      }],
+      mapEditor: { kind: "site", resourceId: "site-a", isNew: false, label: "Site A", anchorRect },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(screen.getByText("Applies to this Simulation only.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Site icon color")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Set Site icon color to Blue" }));
+
+    const state = useAppStore.getState();
+    expect(state.siteIconColors).toEqual({ "site-a": "#2563eb" });
+    expect(state.simulationPresets[0]?.snapshot.siteIconColors).toEqual({ "site-a": "#2563eb" });
+    expect(state.siteLibrary[0]).not.toHaveProperty("color");
+  });
+
+  it("does not list Site colors or Link color mode in the Simulation editor", () => {
+    useAppStore.setState({
+      simulationPresets: [{
+        id: "sim-appearance",
+        name: "Appearance Plan",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        snapshot: {
+          sites: [], links: [], systems: [], networks: [],
+          selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+          propagationModel: "ITM", selectedFrequencyPresetId: "custom",
+          rxSensitivityTargetDbm: -120, environmentLossDb: 0,
+          propagationEnvironment: useAppStore.getState().propagationEnvironment,
+          autoPropagationEnvironment: false, terrainDataset: "copernicus30",
+        },
+      }],
+      mapEditor: { kind: "simulation", resourceId: "sim-appearance", isNew: false, label: "Appearance Plan", anchorRect },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(screen.queryByLabelText("Appearance")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Auto link colors" })).not.toBeInTheDocument();
+  });
+
+  it("commits a manual Link color immediately without waiting for Save Link", async () => {
+    const sites = [
+      { id: "site-a", name: "Site A", position: { lat: 60, lon: 10 }, groundElevationM: 100, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+      { id: "site-b", name: "Site B", position: { lat: 60.1, lon: 10.1 }, groundElevationM: 110, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+    ];
+    useAppStore.setState({
+      sites,
+      links: [{ id: "link-a", name: "Path A", fromSiteId: "site-a", toSiteId: "site-b", frequencyMHz: 868 }],
+      linkColorMode: "manual",
+      mapEditor: { kind: "link", resourceId: "link-a", isNew: false, label: "Path A", anchorRect },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+    expect(screen.queryByLabelText("Link color")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Set Link color to Purple" }));
+
+    expect(useAppStore.getState().links[0]?.color).toBe("#7c3aed");
+  });
+
+  it("renders presets and theme color without an arbitrary picker", async () => {
+    const sites = [
+      { id: "site-a", name: "Site A", position: { lat: 60, lon: 10 }, groundElevationM: 100, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+      { id: "site-b", name: "Site B", position: { lat: 60.1, lon: 10.1 }, groundElevationM: 110, antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+    ];
+    useAppStore.setState({
+      sites,
+      links: [{ id: "link-a", name: "Path A", fromSiteId: "site-a", toSiteId: "site-b", frequencyMHz: 868, color: "#654321" }],
+      linkColorMode: "manual",
+      mapEditor: { kind: "link", resourceId: "link-a", isNew: false, label: "Path A", anchorRect },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+    const themeSwatch = await screen.findByRole("button", { name: "Use theme Link color" });
+    const presetGroup = screen.getByRole("group", { name: "Link color presets" });
+    expect(presetGroup.querySelector('input[type="color"]')).not.toBeInTheDocument();
+    expect(themeSwatch).toHaveClass("simulation-color-swatch", "is-theme-color");
+    expect(themeSwatch.previousElementSibling).toHaveClass("simulation-color-separator");
+
+    await userEvent.click(themeSwatch);
+    expect(useAppStore.getState().links[0]?.color).toBeUndefined();
   });
 
   it("renders read-only site details as static text", async () => {
@@ -717,6 +957,65 @@ describe("MapEditorPanel", () => {
       screen.getByText("Failed creating site. Check the name and try again."),
     ).toBeInTheDocument();
     expect(useAppStore.getState().mapEditor).not.toBeNull();
+  });
+
+  it("returns a newly saved Site to its originating Library tab without adding it", async () => {
+    const addSiteLibraryEntry = vi.fn(() => "site-created");
+    const insertSiteFromLibrary = vi.fn();
+    useAppStore.setState({
+      addSiteLibraryEntry,
+      insertSiteFromLibrary,
+      libraryRequest: { tab: "sites" },
+      mapEditor: {
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect,
+        origin: { kind: "library", tab: "sites" },
+        siteSeed: { lat: 60.3, lon: 10.4, insertIntoSimulation: false },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Library Site");
+    await userEvent.click(screen.getByRole("button", { name: "Save to Library" }));
+
+    expect(addSiteLibraryEntry).toHaveBeenCalled();
+    expect(insertSiteFromLibrary).not.toHaveBeenCalled();
+    expect(useAppStore.getState().mapEditor).toBeNull();
+    expect(useAppStore.getState().libraryRequest).toEqual({ tab: "sites" });
+  });
+
+  it("offers Save and Add for an editable active Simulation and exits the Library", async () => {
+    const addSiteLibraryEntry = vi.fn(() => "site-created");
+    const insertSiteFromLibrary = vi.fn();
+    const editableSimulationId = useAppStore.getState().scenarioOptions[0]?.id ?? "starter-default";
+    useAppStore.setState({
+      addSiteLibraryEntry,
+      insertSiteFromLibrary,
+      selectedScenarioId: editableSimulationId,
+      libraryRequest: { tab: "sites" },
+      mapEditor: {
+        kind: "site",
+        resourceId: null,
+        isNew: true,
+        label: "New Site",
+        anchorRect,
+        origin: { kind: "library", tab: "sites" },
+        siteSeed: { lat: 60.3, lon: 10.4, insertIntoSimulation: false },
+      },
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.type(await screen.findByLabelText("Name"), "Added Site");
+    await userEvent.click(screen.getByRole("button", { name: "Save & Add to Simulation" }));
+
+    expect(insertSiteFromLibrary).toHaveBeenCalledWith("site-created");
+    expect(useAppStore.getState().mapEditor).toBeNull();
+    expect(useAppStore.getState().libraryRequest).toBeNull();
   });
 
   it("persists a manually selected Site icon", async () => {

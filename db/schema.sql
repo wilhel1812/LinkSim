@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS simulations (
   last_edited_at TEXT,
   name TEXT NOT NULL,
   visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public_read', 'public_write')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
   payload_json TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -96,5 +97,6 @@ CREATE INDEX IF NOT EXISTS idx_sites_visibility ON sites(visibility);
 CREATE INDEX IF NOT EXISTS idx_site_roles_user ON site_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_simulations_owner ON simulations(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_simulations_visibility ON simulations(visibility);
+CREATE INDEX IF NOT EXISTS idx_simulations_status ON simulations(status);
 CREATE INDEX IF NOT EXISTS idx_simulation_roles_user ON simulation_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC);

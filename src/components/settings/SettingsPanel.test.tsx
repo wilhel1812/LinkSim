@@ -152,4 +152,21 @@ describe("SettingsPanel", () => {
     expect(screen.getByTestId("preferences-section")).toBeInTheDocument();
     expect(screen.queryByTestId("profile-section")).not.toBeInTheDocument();
   });
+
+  it("uses a hamburger control to return to the mobile section list", () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+
+    render(<SettingsPanel initialSection="preferences" onClose={vi.fn()} />);
+    expect(screen.getByTestId("preferences-section")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Settings sections" }));
+    expect(screen.queryByTestId("preferences-section")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
 });

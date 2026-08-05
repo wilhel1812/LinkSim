@@ -22,6 +22,7 @@ const overlayMock = vi.hoisted(() => {
 
 const loadingOverlayMock = vi.hoisted(() => ({
   props: null as null | {
+    beforeLayerId?: string;
     handoffKey?: string | null;
     loading?: boolean;
     onCloudEntered?: (requestKey: string) => void;
@@ -114,7 +115,8 @@ vi.mock("react-map-gl/maplibre", async () => {
   };
 });
 
-vi.mock("../lib/meshtasticMqtt", () => ({
+vi.mock("../lib/meshtasticMqtt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/meshtasticMqtt")>()),
   fetchMeshmapNodes: vi.fn(async () => ({
     fromCache: false,
     networkError: false,
@@ -206,6 +208,7 @@ describe("MapView overlay handoff", () => {
 
     await resolveNextRaster();
     await waitFor(() => expect(loadingOverlayMock.props?.handoffKey).toBeTruthy());
+    expect(loadingOverlayMock.props?.beforeLayerId).toBe("link-lines-casing");
     const firstKey = loadingOverlayMock.props?.handoffKey;
     expect(firstKey).toBeTruthy();
     act(() => loadingOverlayMock.props?.onCloudReady?.(firstKey!));

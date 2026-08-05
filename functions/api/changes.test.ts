@@ -23,7 +23,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   verifyAuthMock.mockResolvedValue({ userId: "u1", tokenPayload: {}, source: "headers" });
   ensureUserMock.mockResolvedValue(undefined);
-  assertUserAccessMock.mockResolvedValue(undefined);
+  assertUserAccessMock.mockResolvedValue({ id: "u1", isAdmin: false });
   fetchResourceChangesMock.mockResolvedValue([{ id: 1, action: "updated" }]);
 });
 
@@ -43,6 +43,6 @@ describe("api/changes", () => {
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/changes?kind=simulation&id=sim-1")));
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ changes: [{ id: 1, action: "updated" }] });
-    expect(fetchResourceChangesMock).toHaveBeenCalledWith(env, "simulation", "sim-1");
+    expect(fetchResourceChangesMock).toHaveBeenCalledWith(env, "simulation", "sim-1", { isAdmin: false });
   });
 });

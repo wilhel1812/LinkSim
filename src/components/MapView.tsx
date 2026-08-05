@@ -40,18 +40,23 @@ import { useAppStore } from "../store/appStore";
 import { isAutomaticCalculationLocked, useCoverageStore } from "../store/coverageStore";
 import { TERRAIN_DATASET_LABEL } from "../lib/terrainDataset";
 import type { Link, Site } from "../types/radio";
-import { fetchMeshmapNodes, type MeshmapNode } from "../lib/meshtasticMqtt";
+import {
+  fetchMeshmapNodes,
+  formatPositionPrecision,
+  getPositionPrecisionBounds,
+  mergeMeshmapNodes,
+  NODE_FEED_SOURCES,
+  type MeshmapNode,
+  type NodeFeedSourceId,
+} from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import {
   optionsForSelectionCount,
-  resolveEffectiveOverlayRadiusKm,
-  resolveLoadedOverlayRadiusCapKm,
+  resolveRequiredOverlayTerrainTileKeys,
   resolveOverlayRadiusOptionForSelectionTransition,
   resolveTargetOverlayRadiusKm,
   type SimulationOverlayRadiusOption,
 } from "../lib/simulationOverlayRadius";
-import { simulationAreaBoundsForSites } from "../lib/simulationArea";
-import { tilesForBounds } from "../lib/terrainTiles";
 import {
   buildCoverageOverlayPixelsAsync,
   buildMeshExtensionOverlayPixelsAsync,
@@ -88,6 +93,12 @@ import { animateMapToCenter, fitMapToBounds, resolveMapCameraPadding } from "./m
 import { PanelToolbar } from "./ui/PanelToolbar";
 import { SimulationLoadingOverlay } from "./SimulationLoadingOverlay";
 import { resolveSimulationOverlayTransition } from "../lib/simulationLoadingOverlay";
+import {
+  MAP_CONTRAST_DARK,
+  MAP_CONTRAST_LIGHT,
+  resolveAutoLinkStateColor,
+  resolveAutoLinkStateForLink,
+} from "../lib/simulationColors";
 import {
   initialSimulationOverlayHandoffState,
   reduceSimulationOverlayHandoff,
@@ -134,35 +145,53 @@ const WORLD_POLYGON_GEOJSON = {
   properties: {},
 };
 
-const mapLineLayer = (linkColor: string, selectedColor: string): LayerProps => ({
-  id: "link-lines",
+const mapLineCasingLayer = (color: string): LayerProps => ({
+  id: "link-lines-casing",
   type: "line",
   paint: {
-    "line-color": [
-      "case",
-      ["==", ["get", "selected"], 1],
-      selectedColor,
-      ["==", ["get", "temporary"], 1],
-      selectedColor,
-      linkColor,
-    ],
+    "line-color": color,
     "line-width": [
       "case",
       ["==", ["get", "selected"], 1],
-      4.5,
+      6,
+      ["==", ["get", "temporary"], 1],
+      4.75,
+      4.25,
+    ],
+    "line-opacity": 0.56,
+  },
+});
+
+const mapLineLayer = (linkColor: string): LayerProps => ({
+  id: "link-lines",
+  type: "line",
+  filter: ["!=", ["get", "selected"], 1],
+  paint: {
+    "line-color": ["coalesce", ["get", "color"], linkColor],
+    "line-width": [
+      "case",
       ["==", ["get", "temporary"], 1],
       3.5,
       3,
     ],
     "line-opacity": [
       "case",
-      ["==", ["get", "selected"], 1],
-      0.98,
       ["==", ["get", "temporary"], 1],
       0.9,
       0.72,
     ],
     "line-dasharray": [1.5, 1],
+  },
+});
+
+const mapLineSelectedLayer = (linkColor: string): LayerProps => ({
+  id: "link-lines-selected",
+  type: "line",
+  filter: ["==", ["get", "selected"], 1],
+  paint: {
+    "line-color": ["coalesce", ["get", "color"], linkColor],
+    "line-width": 4.5,
+    "line-opacity": 0.98,
   },
 });
 
@@ -234,8 +263,8 @@ const terrainRasterPaint = {
   "raster-saturation": -0.06,
 };
 
-const userLocationAccuracyLayer = (color: string): LayerProps => ({
-  id: "user-location-accuracy-layer",
+const positionAreaLayer = (id: string, color: string): LayerProps => ({
+  id,
   type: "fill",
   paint: {
     "fill-color": color,
@@ -594,9 +623,23 @@ function MarkerActionButton({
   );
 }
 
-function SiteMarkerIcon({ site }: { site: Pick<Site, "name" | "antennaHeightM" | "iconKey"> }) {
+function SiteMarkerIcon({
+  site,
+  color,
+}: {
+  site: Pick<Site, "name" | "antennaHeightM" | "iconKey">;
+  color?: string;
+}) {
   const { Icon } = getSiteIconOption(resolveSiteIconKey(site));
-  return <Icon aria-hidden="true" className="map-site-icon" size={15} strokeWidth={1.8} />;
+  return (
+    <Icon
+      aria-hidden="true"
+      className="map-site-icon"
+      size={15}
+      strokeWidth={1.8}
+      style={color ? { color } : undefined}
+    />
+  );
 }
 
 type PendingNewSiteDraft = {
@@ -621,6 +664,7 @@ type PendingSiteMove = {
 type MapInspectorHoverInfo = {
   text: string;
   libraryEntryId?: string;
+  mqttNode?: MeshmapNode;
 };
 
 type PanoramaInteractionState = {
@@ -686,6 +730,35 @@ const buildUserLocationAccuracyGeoJson = (fix: UserLocationFix | null) => {
   };
 };
 
+const buildMqttPositionPrecisionGeoJson = (node: MeshmapNode | undefined) => {
+  const bounds = node ? getPositionPrecisionBounds(node) : null;
+  if (!bounds) {
+    return {
+      type: "FeatureCollection" as const,
+      features: [],
+    };
+  }
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: {},
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [[
+            [bounds.minLon, bounds.minLat],
+            [bounds.maxLon, bounds.minLat],
+            [bounds.maxLon, bounds.maxLat],
+            [bounds.minLon, bounds.maxLat],
+            [bounds.minLon, bounds.minLat],
+          ]],
+        },
+      },
+    ],
+  };
+};
+
 export function MapView({
   isMapExpanded,
   showInspector = true,
@@ -703,6 +776,10 @@ export function MapView({
   const sites = useAppStore((state) => state.sites);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const links = useAppStore((state) => state.links);
+  const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
+  const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const linkColorMode = useAppStore((state) => state.linkColorMode);
+  const siteIconColors = useAppStore((state) => state.siteIconColors);
   const selectedLinkId = useAppStore((state) => state.selectedLinkId);
   const selectedSiteIds = useAppStore((state) => state.selectedSiteIds);
   const temporaryDirectionReversed = useAppStore((state) => state.temporaryDirectionReversed);
@@ -717,6 +794,7 @@ export function MapView({
   const clearActiveSelection = useAppStore((state) => state.clearActiveSelection);
   const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
+  const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
   const updateSite = useAppStore((state) => state.updateSite);
   const deleteSite = useAppStore((state) => state.deleteSite);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
@@ -752,12 +830,14 @@ export function MapView({
   const rxSensitivityTargetDbm = useAppStore((state) => state.rxSensitivityTargetDbm);
   const environmentLossDb = useAppStore((state) => state.environmentLossDb);
   const propagationEnvironment = useAppStore((state) => state.propagationEnvironment);
+  const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
   const isSimulationRecomputing = useCoverageStore((state) => state.isSimulationRecomputing);
   const simulationProgress = useCoverageStore((state) => state.simulationProgress);
   const simulationProgressMode = useCoverageStore((state) => state.simulationProgressMode);
   const simulationStepLabel = useCoverageStore((state) => state.simulationStepLabel);
   const simulationRunToken = useCoverageStore((state) => state.simulationRunToken);
   const completedCoverageRunToken = useCoverageStore((state) => state.completedCoverageRunToken);
+  const simulationErrorMessage = useCoverageStore((state) => state.simulationErrorMessage);
   const autoCalculateEnabled = useCoverageStore((state) => state.autoCalculateEnabled);
   const automaticLockNoticeShown = useCoverageStore((state) => state.automaticLockNoticeShown);
   const calculationCycleSource = useCoverageStore((state) => state.calculationCycleSource);
@@ -784,6 +864,10 @@ export function MapView({
   const linkColor = variant.map.linkColor;
   const selectedLinkColor = variant.map.selectedLinkColor;
   const profileColor = variant.map.profileLineColor;
+  const linkCasingColor = theme === "dark" ? MAP_CONTRAST_DARK : MAP_CONTRAST_LIGHT;
+  const hasActiveSavedSimulation = Boolean(
+    selectedScenarioId && simulationPresets.some((preset) => preset.id === selectedScenarioId),
+  );
   const selectedProfile = useMemo(
     () => getSelectedProfile(),
     [
@@ -822,10 +906,14 @@ export function MapView({
   const [isDraggingSite, setIsDraggingSite] = useState(false);
   const [siteDraftStatus, setSiteDraftStatus] = useState<string | null>(null);
   const [showDiscoverySites, setShowDiscoverySites] = useState(false);
-  const [showDiscoveryMqtt, setShowDiscoveryMqtt] = useState(false);
+  const [showMeshmapFeed, setShowMeshmapFeed] = useState(false);
+  const [show868NoFeed, setShow868NoFeed] = useState(false);
   const [visibleSiteSourcesOpen, setVisibleSiteSourcesOpen] = useState(false);
-  const [mqttNodes, setMqttNodes] = useState<MeshmapNode[]>([]);
-  const [mqttLoadStatus, setMqttLoadStatus] = useState<string | null>(null);
+  const [nodeSourceLoads, setNodeSourceLoads] = useState<Partial<Record<NodeFeedSourceId, {
+    status: "loading" | "loaded" | "failed";
+    nodes: MeshmapNode[];
+    message?: string;
+  }>>>({});
   const [overlayHoverInfo, setOverlayHoverInfo] = useState<MapInspectorHoverInfo | null>(null);
   const [panoramaInteraction, setPanoramaInteraction] = useState<PanoramaInteractionState | null>(null);
   const [selectedDiscoveryLibraryEntryId, setSelectedDiscoveryLibraryEntryId] = useState<string | null>(null);
@@ -856,6 +944,23 @@ export function MapView({
     pitch: number;
   } | null>(null);
   const editorDraftAnimationKeyRef = useRef("");
+  const enabledNodeSourceIds = useMemo<NodeFeedSourceId[]>(() => [
+    ...(showMeshmapFeed ? ["meshmap" as const] : []),
+    ...(show868NoFeed ? ["868-no" as const] : []),
+  ], [show868NoFeed, showMeshmapFeed]);
+  const showDiscoveryMqtt = enabledNodeSourceIds.length > 0;
+  const mqttNodes = useMemo(
+    () => mergeMeshmapNodes(enabledNodeSourceIds.map((sourceId) => nodeSourceLoads[sourceId]?.nodes ?? [])),
+    [enabledNodeSourceIds, nodeSourceLoads],
+  );
+  const mqttLoadStatus = useMemo(() => {
+    const enabledLoads = enabledNodeSourceIds.map((sourceId) => nodeSourceLoads[sourceId]);
+    if (enabledLoads.some((load) => load?.status === "loading")) return "Loading node sources...";
+    const failed = enabledLoads.filter((load) => load?.status === "failed");
+    if (failed.length) return `Node source load failed: ${failed.map((load) => load?.message).filter(Boolean).join("; ")}`;
+    const cachedWarnings = enabledLoads.map((load) => load?.message).filter(Boolean);
+    return cachedWarnings.length ? cachedWarnings.join("; ") : null;
+  }, [enabledNodeSourceIds, nodeSourceLoads]);
 
   const stopUserLocation = useCallback(() => {
     if (userLocationWatchIdRef.current !== null && navigator.geolocation) {
@@ -966,6 +1071,7 @@ export function MapView({
   useEffect(() => {
     if (showDiscoveryMqtt) return;
     setMqttDuplicatePrompt(null);
+    setOverlayHoverInfo((current) => (current?.mqttNode ? null : current));
   }, [showDiscoveryMqtt]);
 
   useEffect(() => {
@@ -1142,29 +1248,38 @@ export function MapView({
   );
 
   useEffect(() => {
-    if (!showDiscoveryMqtt) return;
-    if (mqttNodes.length) return;
-    let canceled = false;
-    setMqttLoadStatus("Loading MQTT nodes...");
-    void fetchMeshmapNodes({ cacheTtlMs: 30 * 60 * 1000 })
-      .then((result) => {
-        if (canceled) return;
-        setMqttNodes(result.nodes);
-        if (result.fromCache && result.networkError) {
-          const ageMin = Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000));
-          setMqttLoadStatus(`Live fetch failed — showing ${result.nodes.length} cached node(s) from ${ageMin} min ago.`);
-        } else {
-          setMqttLoadStatus(null);
-        }
-      })
-      .catch((error) => {
-        if (canceled) return;
-        setMqttLoadStatus(`MQTT load failed: ${getUiErrorMessage(error)}`);
+    const pendingSourceIds = enabledNodeSourceIds.filter((sourceId) => !nodeSourceLoads[sourceId]);
+    if (!pendingSourceIds.length) return;
+    setNodeSourceLoads((current) => {
+      const next = { ...current };
+      for (const sourceId of pendingSourceIds) next[sourceId] = { status: "loading", nodes: [] };
+      return next;
+    });
+    void Promise.allSettled(pendingSourceIds.map(async (sourceId) => {
+      const source = NODE_FEED_SOURCES[sourceId];
+      const result = await fetchMeshmapNodes({
+        sourceId,
+        sourceUrl: source.sourceUrl,
+        cacheTtlMs: 30 * 60 * 1000,
       });
-    return () => {
-      canceled = true;
-    };
-  }, [showDiscoveryMqtt, mqttNodes.length]);
+      const message = result.fromCache && result.networkError
+        ? `${source.label} live fetch failed — showing ${result.nodes.length} cached node(s) from ${Math.max(1, Math.round((result.cacheAgeMs ?? 0) / 60_000))} min ago.`
+        : undefined;
+      return { sourceId, nodes: result.nodes, message };
+    })).then((results) => {
+      setNodeSourceLoads((current) => {
+        const next = { ...current };
+        results.forEach((result, index) => {
+          const sourceId = pendingSourceIds[index];
+          if (!sourceId) return;
+          next[sourceId] = result.status === "fulfilled"
+            ? { status: "loaded", nodes: result.value.nodes, message: result.value.message }
+            : { status: "failed", nodes: [], message: getUiErrorMessage(result.reason) };
+        });
+        return next;
+      });
+    });
+  }, [enabledNodeSourceIds, nodeSourceLoads]);
   useEffect(() => {
     const previousSelectionCount = previousSelectionCountRef.current;
     previousSelectionCountRef.current = selectionCount;
@@ -1246,59 +1361,28 @@ export function MapView({
     onPublishNotice,
     setAutoCalculateEnabled,
   ]);
+  useEffect(() => {
+    if (!simulationErrorMessage) return;
+    onPublishNotice?.({
+      id: "simulation-terrain-unavailable",
+      message: simulationErrorMessage,
+      tone: "error",
+      persistent: false,
+    });
+  }, [onPublishNotice, simulationErrorMessage]);
   const targetRadiusKm = useMemo(
     () => resolveTargetOverlayRadiusKm(selectionCount, normalizedOverlayRadiusOption),
     [selectionCount, normalizedOverlayRadiusOption],
   );
-  const loadedRadiusCapKm = useMemo(
-    () => resolveLoadedOverlayRadiusCapKm(analysisTargetSites, targetRadiusKm, srtmTiles, 20),
-    [analysisTargetSites, targetRadiusKm, srtmTiles],
-  );
-  const overlayRadiusKm = useMemo(
-    () =>
-      Math.min(
-        targetRadiusKm,
-        Math.min(
-          loadedRadiusCapKm,
-          resolveEffectiveOverlayRadiusKm({
-            selectionCount,
-            option: normalizedOverlayRadiusOption,
-            selectedSingleSite: selectionCount === 1 ? selectedSites[0] ?? null : null,
-            srtmTiles,
-            isTerrainFetching,
-          }),
-        ),
-      ),
-    [
-      targetRadiusKm,
-      normalizedOverlayRadiusOption,
-      loadedRadiusCapKm,
-      selectionCount,
-      selectedSites,
-      srtmTiles,
-      isTerrainFetching,
-    ],
-  );
+  const overlayRadiusKm = targetRadiusKm;
   const overlayRadiusOptions = optionsForSelectionCount(selectionCount);
   const loaded30mTileKeys = useMemo(
     () => new Set(srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key)),
     [srtmTiles],
   );
-  const targetRadiusBounds = useMemo(
-    () => simulationAreaBoundsForSites(analysisTargetSites, { overlayRadiusKm: targetRadiusKm }),
-    [analysisTargetSites, targetRadiusKm],
-  );
   const requiredTargetRadiusTileKeys = useMemo(
-    () =>
-      targetRadiusBounds
-        ? tilesForBounds(
-            targetRadiusBounds.minLat,
-            targetRadiusBounds.maxLat,
-            targetRadiusBounds.minLon,
-            targetRadiusBounds.maxLon,
-          )
-        : [],
-    [targetRadiusBounds],
+    () => resolveRequiredOverlayTerrainTileKeys(analysisTargetSites, targetRadiusKm),
+    [analysisTargetSites, targetRadiusKm],
   );
   const missingTargetRadiusTileCount = useMemo(
     () => requiredTargetRadiusTileKeys.filter((key) => !loaded30mTileKeys.has(key)).length,
@@ -1406,9 +1490,41 @@ export function MapView({
           const from = sites.find((site) => site.id === link.fromSiteId);
           const to = sites.find((site) => site.id === link.toSiteId);
           if (!from || !to) return null;
+          const effectiveLink = {
+            ...link,
+            frequencyMHz:
+              selectedNetwork?.frequencyOverrideMHz ?? selectedNetwork?.frequencyMHz ?? link.frequencyMHz,
+          };
+          const autoState = linkColorMode === "auto"
+            ? resolveAutoLinkStateForLink({
+                link: effectiveLink,
+                sites,
+                reversed: link.id === selectedLinkId && temporaryDirectionReversed,
+                environmentLossDb,
+                rxSensitivityTargetDbm,
+                propagationEnvironment,
+                autoPropagationEnvironment,
+                terrainSampler: (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
+              })
+            : null;
+          const color = autoState
+            ? resolveAutoLinkStateColor(autoState, {
+                success: variant.cssVars["--success"],
+                warning: variant.cssVars["--warning"],
+                danger: variant.cssVars["--danger"],
+              })
+            : linkColorMode === "manual"
+              ? link.color ?? linkColor
+              : linkColor;
           return {
             type: "Feature" as const,
-            properties: { id: link.id, selected: showSelectionHighlights && link.id === selectedLinkId ? 1 : 0, temporary: 0 },
+            properties: {
+              id: link.id,
+              selected: showSelectionHighlights && link.id === selectedLinkId ? 1 : 0,
+              temporary: 0,
+              color,
+              autoState: autoState ?? "unavailable",
+            },
             geometry: {
               type: "LineString" as const,
               coordinates: [
@@ -1435,7 +1551,7 @@ export function MapView({
           ? [
               {
                 type: "Feature" as const,
-                properties: { id: "__selection__", selected: 0, temporary: 1 },
+                properties: { id: "__selection__", selected: 0, temporary: 1, color: selectedLinkColor, autoState: "unavailable" },
                 geometry: {
                   type: "LineString" as const,
                   coordinates: [
@@ -1451,7 +1567,25 @@ export function MapView({
         features: [...savedLinkFeatures, ...temporarySelectionFeature],
       };
     },
-    [visibleLinks, selectedLinkId, sites, selectedSites, links, armAddSiteOnNextEmptyMapClick],
+    [
+      visibleLinks,
+      selectedLinkId,
+      sites,
+      selectedSites,
+      links,
+      armAddSiteOnNextEmptyMapClick,
+      selectedNetwork,
+      linkColorMode,
+      temporaryDirectionReversed,
+      environmentLossDb,
+      rxSensitivityTargetDbm,
+      propagationEnvironment,
+      autoPropagationEnvironment,
+      srtmTiles,
+      variant,
+      linkColor,
+      selectedLinkColor,
+    ],
   );
 
   const profileFeatures = useMemo(
@@ -2972,7 +3106,7 @@ export function MapView({
         insertIntoSimulation: true,
         sourceMeta: {
           sourceType: "mqtt-feed",
-          sourceUrl: "/meshmap/nodes.json",
+          sourceUrl: node.sourceUrl ?? NODE_FEED_SOURCES.meshmap.sourceUrl,
           nodeId: node.nodeId,
           longName: node.longName,
           shortName: node.shortName,
@@ -3014,7 +3148,7 @@ export function MapView({
         insertIntoSimulation: true,
         sourceMeta: {
           sourceType: "mqtt-feed",
-          sourceUrl: "/meshmap/nodes.json",
+          sourceUrl: node.sourceUrl ?? NODE_FEED_SOURCES.meshmap.sourceUrl,
           nodeId: node.nodeId,
           longName: node.longName,
           shortName: node.shortName,
@@ -3049,6 +3183,7 @@ export function MapView({
     () => buildUserLocationAccuracyGeoJson(userLocationFix),
     [userLocationFix],
   );
+  const mqttPositionPrecisionGeoJson = buildMqttPositionPrecisionGeoJson(overlayHoverInfo?.mqttNode);
   const userLocationSelectionColor = variant.cssVars["--selection"] ?? selectedLinkColor;
   // Track the selected category in local state; initialize from the current style's category.
   const [selectedCategory, setSelectedCategory] = useState<BasemapCategory>(
@@ -3122,20 +3257,25 @@ export function MapView({
     setCoverageVizMode(selectionCount === 1 ? "passfail" : selectionCount === 2 ? "relay" : "heatmap");
   }, [allowedOverlayModes, coverageVizMode, selectionCount, setCoverageVizMode]);
   const simulationOverlaySelectValue = coverageVizMode;
-  const visibleSiteSourceSummary =
-    showDiscoverySites && showDiscoveryMqtt
-      ? "Simulation + Library + MQTT"
-      : showDiscoverySites
-        ? "Simulation + Library"
-        : showDiscoveryMqtt
-          ? "Simulation + MQTT"
-          : "Simulation only";
-  const setVisibleSiteSource = useCallback((source: "library" | "mqtt", visible: boolean) => {
+  const visibleSiteSourceLabels = [
+    "Simulation",
+    ...(showDiscoverySites ? ["Library"] : []),
+    ...(showMeshmapFeed ? [NODE_FEED_SOURCES.meshmap.label] : []),
+    ...(show868NoFeed ? [NODE_FEED_SOURCES["868-no"].label] : []),
+  ];
+  const visibleSiteSourceSummary = visibleSiteSourceLabels.length === 1
+    ? "Simulation only"
+    : visibleSiteSourceLabels.join(" + ");
+  const setVisibleSiteSource = useCallback((source: "library" | NodeFeedSourceId, visible: boolean) => {
     if (source === "library") {
       setShowDiscoverySites(visible);
       return;
     }
-    setShowDiscoveryMqtt(visible);
+    if (source === "meshmap") {
+      setShowMeshmapFeed(visible);
+      return;
+    }
+    setShow868NoFeed(visible);
   }, []);
   const selectedSite = selectedSites[0] ?? null;
   const selectedDiscoveryLibraryEntry =
@@ -3317,6 +3457,31 @@ export function MapView({
                 </ActionButton>
               ) : null}
             </div>
+            {hasActiveSavedSimulation ? (
+              <div className="map-calculation-controls map-link-color-controls">
+                <ActionButton
+                  aria-label={linkColorMode === "auto" ? "Turn off Auto Link colors" : "Turn on Auto Link colors"}
+                  aria-pressed={linkColorMode === "auto"}
+                  className={`map-calculation-control map-calculation-toggle ${linkColorMode === "auto" ? "is-on" : "is-off"}`}
+                  disabled={!canPersist || readOnly}
+                  onClick={() => {
+                    if (!selectedScenarioId) return;
+                    updateSimulationPresetEntry(selectedScenarioId, {
+                      linkColorMode: linkColorMode === "auto" ? "manual" : "auto",
+                    });
+                  }}
+                  title={linkColorMode === "auto" ? "Turn off Auto Link colors" : "Turn on Auto Link colors"}
+                  variant="ghost"
+                >
+                  {linkColorMode === "auto" ? (
+                    <ToggleRight aria-hidden="true" size={20} strokeWidth={1.8} />
+                  ) : (
+                    <ToggleLeft aria-hidden="true" size={20} strokeWidth={1.8} />
+                  )}
+                  <span>Auto Link colors</span>
+                </ActionButton>
+              </div>
+            ) : null}
           </div>
           {showHolidayThemeNotice && activeHolidayTheme ? (
             <div className="map-inspector-section map-holiday-note" role="status">
@@ -3410,7 +3575,7 @@ export function MapView({
           {showDiscoveryMqtt && mqttLoadStatus ? (
             <div className="map-inspector-section">
               <p className="map-inspector-line">{mqttLoadStatus}</p>
-              {mqttLoadStatus === "Loading MQTT nodes..." ? (
+              {mqttLoadStatus.startsWith("Loading") ? (
                 <div className="map-progress-track">
                   <div className="map-progress-fill map-progress-fill-indeterminate" />
                 </div>
@@ -3419,8 +3584,13 @@ export function MapView({
                   <ActionButton
                     aria-label="Retry MQTT load"
                     onClick={() => {
-                      setMqttNodes([]);
-                      setMqttLoadStatus(null);
+                      setNodeSourceLoads((current) => {
+                        const next = { ...current };
+                        for (const sourceId of enabledNodeSourceIds) {
+                          if (next[sourceId]?.status === "failed") delete next[sourceId];
+                        }
+                        return next;
+                      });
                     }}
                   >
                     <RefreshCw aria-hidden="true" size={12} strokeWidth={2} />
@@ -3629,7 +3799,7 @@ export function MapView({
                 </div>
                 <FloatingPopover
                   className="visible-site-sources-popover"
-                  estimatedHeight={120}
+                  estimatedHeight={150}
                   estimatedWidth={240}
                   onClose={() => setVisibleSiteSourcesOpen(false)}
                   open={visibleSiteSourcesOpen}
@@ -3649,11 +3819,19 @@ export function MapView({
                       </label>
                       <label className="checkbox-field visible-site-source-option">
                         <input
-                          checked={showDiscoveryMqtt}
-                          onChange={(event) => setVisibleSiteSource("mqtt", event.currentTarget.checked)}
+                          checked={showMeshmapFeed}
+                          onChange={(event) => setVisibleSiteSource("meshmap", event.currentTarget.checked)}
                           type="checkbox"
                         />
-                        <span>MQTT</span>
+                        <span>{NODE_FEED_SOURCES.meshmap.label}</span>
+                      </label>
+                      <label className="checkbox-field visible-site-source-option">
+                        <input
+                          checked={show868NoFeed}
+                          onChange={(event) => setVisibleSiteSource("868-no", event.currentTarget.checked)}
+                          type="checkbox"
+                        />
+                        <span>{NODE_FEED_SOURCES["868-no"].label}</span>
                       </label>
                     </div>
                   </div>
@@ -4029,6 +4207,7 @@ export function MapView({
         ) : null}
 
         <SimulationLoadingOverlay
+          beforeLayerId="link-lines-casing"
           bounds={analysisBounds}
           handoffKey={overlayHandoff.requestKey}
           loading={simulationLoadingOverlayActive}
@@ -4059,12 +4238,25 @@ export function MapView({
 
         {userLocationFix ? (
           <Source data={userLocationAccuracyGeoJson} id="user-location-accuracy" type="geojson">
-            <Layer {...userLocationAccuracyLayer(userLocationSelectionColor)} />
+            <Layer {...positionAreaLayer("user-location-accuracy-layer", userLocationSelectionColor)} />
+          </Source>
+        ) : null}
+
+        {mqttPositionPrecisionGeoJson.features.length ? (
+          <Source data={mqttPositionPrecisionGeoJson} id="mqtt-position-precision" type="geojson">
+            <Layer
+              {...positionAreaLayer(
+                "mqtt-position-precision-layer",
+                variant.cssVars["--temporary"] ?? userLocationSelectionColor,
+              )}
+            />
           </Source>
         ) : null}
 
         <Source data={lineFeatures} id="links" type="geojson">
-          <Layer {...mapLineLayer(linkColor, selectedLinkColor)} />
+          <Layer {...mapLineCasingLayer(linkCasingColor)} />
+          <Layer {...mapLineLayer(linkColor)} />
+          <Layer {...mapLineSelectedLayer(linkColor)} />
         </Source>
 
         {sites.map((site) => {
@@ -4120,7 +4312,7 @@ export function MapView({
                   onSiteClick(site.id, isMultiSelectMode || Boolean(nativeEvent.ctrlKey || nativeEvent.metaKey));
                 }}
               >
-                <SiteMarkerIcon site={site} />
+                <SiteMarkerIcon color={siteIconColors[site.id]} site={site} />
                 <span>{site.name}</span>
               </MarkerActionButton>
             </Marker>
@@ -4180,7 +4372,8 @@ export function MapView({
                     setOverlayHoverInfo({
                       text: `${node.longName ?? node.shortName ?? node.nodeId} · ${node.nodeId}${
                         node.shortName ? ` · ${node.shortName}` : ""
-                      }${node.hwModel ? ` · ${node.hwModel}` : ""}`,
+                      }${node.hwModel ? ` · ${node.hwModel}` : ""} · ${formatPositionPrecision(node.positionPrecisionBits)}`,
+                      mqttNode: node,
                     })
                   }
                   onMouseLeave={() => setOverlayHoverInfo(null)}

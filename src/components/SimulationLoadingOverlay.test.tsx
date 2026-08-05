@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mapMock = vi.hoisted(() => {
   const state = {
+    anchorLayerPresent: false,
     layerPresent: false,
     sourcePresent: false,
     styleLoaded: true,
@@ -26,7 +27,10 @@ const mapMock = vi.hoisted(() => {
       }
       state.sourcePresent = true;
     }),
-    getLayer: vi.fn(() => (state.layerPresent ? {} : undefined)),
+    getLayer: vi.fn((id: string) => {
+      if (id === "link-lines-casing") return state.anchorLayerPresent ? {} : undefined;
+      return state.layerPresent ? {} : undefined;
+    }),
     getSource: vi.fn(() => (state.sourcePresent ? source : undefined)),
     isStyleLoaded: vi.fn(() => state.styleLoaded),
     off: vi.fn(),
@@ -39,6 +43,7 @@ const mapMock = vi.hoisted(() => {
     removeSource: vi.fn(() => {
       state.sourcePresent = false;
     }),
+    moveLayer: vi.fn(),
     setPaintProperty: vi.fn(),
     triggerRepaint: vi.fn(),
   };
@@ -67,6 +72,7 @@ describe("SimulationLoadingOverlay", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    mapMock.state.anchorLayerPresent = false;
     mapMock.state.layerPresent = false;
     mapMock.state.sourcePresent = false;
     mapMock.state.styleLoaded = true;
@@ -200,6 +206,36 @@ describe("SimulationLoadingOverlay", () => {
       "simulation-loading-overlay-source",
     );
     expect(onCloudExited).toHaveBeenCalledWith("heatmap");
+  });
+
+  it("keeps the loading overlay below the Link layers", () => {
+    mapMock.state.anchorLayerPresent = true;
+    vi.mocked(window.matchMedia).mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList);
+
+    render(
+      <SimulationLoadingOverlay
+        beforeLayerId="link-lines-casing"
+        bounds={bounds}
+        handoffKey="heatmap"
+        loading
+        pointMask={() => true}
+      />,
+    );
+
+    expect(mapMock.map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "simulation-loading-overlay-layer" }),
+      "link-lines-casing",
+    );
+
+    act(() => mapMock.state.styleDataListener?.());
+    expect(mapMock.map.moveLayer).toHaveBeenCalledWith(
+      "simulation-loading-overlay-layer",
+      "link-lines-casing",
+    );
   });
 
   it("renders one static cloud frame for reduced motion", () => {

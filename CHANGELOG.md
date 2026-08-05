@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.26.0] - 2026-08-05
+
+### Added
+- Added per-Simulation colors for Links and Site icons. (#958)
+- Added 868.no as a second MQTT source, including position-precision bounds for MQTT nodes. (#954, #968)
+- Added a shared compact user profile popover. (#891)
+- Added safe deletion for owned Simulations from the unified Library. (#966)
+
+### Changed
+- Redesigned the Library as a unified, mobile-first Sites and Simulations experience with consistent row actions. (#965)
+- Refreshed the documentation and Getting Started guidance for the 0.26 workflow. (#970, #971)
+
+### Fixed
+- Prevented panorama labels from changing size when the panel is expanded. (#969)
+- Required complete terrain for the selected Simulation radius and reported unavailable terrain instead of presenting partial results. (#972)
+
 ## [0.25.0] - 2026-08-01
 
 ### Fixed

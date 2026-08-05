@@ -3,6 +3,7 @@ import {
   buildCoverageAsync,
   computeCoverageGridDimensions,
   CoverageBuildCancelledError,
+  CoverageTerrainUnavailableError,
 } from "../lib/coverage";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import {
@@ -10,8 +11,7 @@ import {
 } from "../lib/propagationEnvironment";
 import {
   normalizeOverlayRadiusOptionForSelectionCount,
-  resolveLoadedOverlayRadiusCapKm,
-  resolveEffectiveOverlayRadiusKm,
+  resolveMissingOverlayTerrainTileKeys,
   resolveTargetOverlayRadiusKm,
 } from "../lib/simulationOverlayRadius";
 import {
@@ -87,6 +87,7 @@ export type CoverageState = {
   autoCalculateEnabled: boolean;
   automaticLockNoticeShown: boolean;
   calculationCycleSource: "auto" | "manual" | null;
+  simulationErrorMessage: string;
   recomputeCoverage: () => void;
   markAutomaticLockNoticeShown: () => void;
   setAutoCalculateEnabled: (enabled: boolean) => void;
@@ -385,29 +386,12 @@ const runCoverageComputation = async (
     }
 
     const selectionCount = inputs.selectedSiteIds.length;
-    const selectedSingleSite =
-      selectionCount === 1
-        ? inputs.sites.find((site) => site.id === inputs.selectedSiteIds[0]) ?? null
-        : null;
     const selectedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(
       selectionCount,
       inputs.selectedOverlayRadiusOptionRaw,
     );
-    const overlayRadiusKm = resolveEffectiveOverlayRadiusKm({
-      selectionCount,
-      option: selectedOverlayRadiusOption,
-      selectedSingleSite,
-      srtmTiles: inputs.srtmTiles,
-      isTerrainFetching: inputs.isTerrainFetching,
-    });
     const targetRadiusKm = resolveTargetOverlayRadiusKm(selectionCount, selectedOverlayRadiusOption);
-    const loadedRadiusCapKm = resolveLoadedOverlayRadiusCapKm(
-      selectionCount === 1 && selectedSingleSite ? [selectedSingleSite] : inputs.sites,
-      targetRadiusKm,
-      inputs.srtmTiles,
-      20,
-    );
-    const effectiveOverlayRadiusKm = Math.min(targetRadiusKm, overlayRadiusKm, loadedRadiusCapKm);
+    const effectiveOverlayRadiusKm = targetRadiusKm;
 
     const boundsForCount = simulationAreaBoundsForSites(inputs.sites, { overlayRadiusKm: effectiveOverlayRadiusKm });
     const sampleCount = boundsForCount
@@ -443,6 +427,7 @@ const runCoverageComputation = async (
           }
         },
         shouldCancel: () => get().simulationRunToken !== runId,
+        requireCompleteTerrain: true,
         terrainCacheKey: `${inputs.effectiveCoverageResolution}|${inputs.selectedNetworkId}|${inputs.propagationModel}|${inputs.terrainLoadEpoch}`,
       },
     );
@@ -498,6 +483,27 @@ const runCoverageComputation = async (
       markCancelled("coverage-build-cancelled");
       return;
     }
+    if (error instanceof CoverageTerrainUnavailableError) {
+      const message =
+        "Simulation could not be completed because required terrain samples are unavailable.";
+      if (get().simulationRunToken === runId) {
+        set({
+          coverageSamples: [],
+          isSimulationRecomputing: false,
+          simulationProgress: 0,
+          simulationProgressMode: "indeterminate",
+          simulationStepLabel: "",
+          simulationSamplesDone: 0,
+          simulationSamplesTotal: 0,
+          simulationRunToken: "",
+          completedCoverageRunToken: "",
+          calculationCycleSource: null,
+          simulationErrorMessage: message,
+        });
+        appStoreBridge?.setState({ terrainFetchStatus: message });
+      }
+      return;
+    }
     console.error("Coverage recompute failed", error);
     if (get().simulationRunToken === runId) {
       set({
@@ -535,6 +541,40 @@ const flushCoverageRunQueue = async (): Promise<void> => {
       simulationSamplesTotal: 0,
       simulationRunToken: "",
     });
+    return;
+  }
+  const selectionCount = inputs.selectedSiteIds.length;
+  const selectedTerrainSites =
+    selectionCount === 1
+      ? inputs.sites.filter((site) => site.id === inputs.selectedSiteIds[0])
+      : inputs.sites;
+  const selectedOverlayRadiusOption = normalizeOverlayRadiusOptionForSelectionCount(
+    selectionCount,
+    inputs.selectedOverlayRadiusOptionRaw,
+  );
+  const targetRadiusKm = resolveTargetOverlayRadiusKm(selectionCount, selectedOverlayRadiusOption);
+  const missingTerrainTileKeys = resolveMissingOverlayTerrainTileKeys(
+    selectedTerrainSites,
+    targetRadiusKm,
+    inputs.srtmTiles,
+  );
+  if (missingTerrainTileKeys.length > 0) {
+    coverageRerunQueued = false;
+    const message = `The ${targetRadiusKm} km Simulation could not be completed because ${missingTerrainTileKeys.length} required GLO-30 terrain tile${missingTerrainTileKeys.length === 1 ? " is" : "s are"} unavailable.`;
+    useCoverageStore.setState({
+      coverageSamples: [],
+      isSimulationRecomputing: false,
+      simulationProgress: 0,
+      simulationProgressMode: "indeterminate",
+      simulationStepLabel: "",
+      simulationSamplesDone: 0,
+      simulationSamplesTotal: 0,
+      simulationRunToken: "",
+      completedCoverageRunToken: "",
+      calculationCycleSource: null,
+      simulationErrorMessage: message,
+    });
+    appStoreBridge.setState({ terrainFetchStatus: message });
     return;
   }
   const runSignature = coverageInputSignature(inputs);
@@ -575,6 +615,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
   autoCalculateEnabled: true,
   automaticLockNoticeShown: false,
   calculationCycleSource: null,
+  simulationErrorMessage: "",
   recomputeCoverage: () => {
     if (!appStoreBridge) return;
     const appState = appStoreBridge.getState();
@@ -594,6 +635,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
     if (get().isSimulationRecomputing) return;
     set({
       calculationCycleSource: manualRun ? "manual" : "auto",
+      simulationErrorMessage: "",
       isSimulationRecomputing: true,
       simulationProgress: 0,
       simulationProgressMode: "indeterminate",
@@ -640,6 +682,7 @@ export const useCoverageStore = create<CoverageState>((set, get) => ({
     if (coverageRunInFlight || get().isSimulationRecomputing) return;
     set({
       isSimulationRecomputing: true,
+      simulationErrorMessage: "",
       simulationProgress: 0,
       simulationProgressMode: "indeterminate",
       simulationStepLabel: "Preparing simulation bounds...",

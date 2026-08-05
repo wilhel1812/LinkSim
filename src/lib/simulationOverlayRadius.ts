@@ -40,18 +40,6 @@ export const isOverlayRadiusOption = (value: unknown): value is SimulationOverla
   typeof value === "string" &&
   (["20", "50", "100", "200"] as const).includes(value as SimulationOverlayRadiusOption);
 
-export const resolveEffectiveOverlayRadiusKm = (params: {
-  selectionCount: number;
-  option: SimulationOverlayRadiusOption;
-  selectedSingleSite: Pick<Site, "position"> | null;
-  srtmTiles: ReadonlyArray<SrtmTile>;
-  isTerrainFetching: boolean;
-}): number => {
-  const { option } = params;
-  const fixed = option === "20" || option === "50" || option === "100" || option === "200" ? Number(option) : 20;
-  return fixed;
-};
-
 export const resolveTargetOverlayRadiusKm = (
   selectionCount: number,
   option: SimulationOverlayRadiusOption,
@@ -60,36 +48,23 @@ export const resolveTargetOverlayRadiusKm = (
     ? Number(option)
     : 20;
 
-export const resolveLoadedOverlayRadiusCapKm = (
+export const resolveRequiredOverlayTerrainTileKeys = (
+  sites: Pick<Site, "position">[],
+  targetRadiusKm: number,
+): string[] => {
+  const bounds = simulationAreaBoundsForSites(sites, { overlayRadiusKm: targetRadiusKm });
+  return bounds ? tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon) : [];
+};
+
+export const resolveMissingOverlayTerrainTileKeys = (
   sites: Pick<Site, "position">[],
   targetRadiusKm: number,
   srtmTiles: ReadonlyArray<SrtmTile>,
-  minimumRadiusKm = 20,
-): number => {
-  if (!sites.length) return minimumRadiusKm;
-  const loaded30m = new Set(srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key));
-  if (!loaded30m.size) return minimumRadiusKm;
-
-  const minRadiusKm = Math.max(1, minimumRadiusKm);
-  const maxRadiusKm = Math.max(minRadiusKm, Math.round(targetRadiusKm));
-  const hasCoverageForRadius = (radiusKm: number): boolean => {
-    const bounds = simulationAreaBoundsForSites(sites, { overlayRadiusKm: radiusKm });
-    if (!bounds) return false;
-    const needed = tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon);
-    if (!needed.length) return false;
-    return needed.every((key) => loaded30m.has(key));
-  };
-
-  if (!hasCoverageForRadius(minRadiusKm)) return minRadiusKm;
-  let low = minRadiusKm;
-  let high = maxRadiusKm;
-  while (low < high) {
-    const mid = Math.ceil((low + high + 1) / 2);
-    if (hasCoverageForRadius(mid)) {
-      low = mid;
-    } else {
-      high = mid - 1;
-    }
-  }
-  return low;
+): string[] => {
+  const loaded30m = new Set(
+    srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key),
+  );
+  return resolveRequiredOverlayTerrainTileKeys(sites, targetRadiusKm).filter(
+    (key) => !loaded30m.has(key),
+  );
 };

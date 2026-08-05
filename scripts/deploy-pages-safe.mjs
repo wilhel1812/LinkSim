@@ -195,11 +195,17 @@ async function verifyRemoteSchema(targetName, databaseName) {
   // Skip in CI: schema correctness is enforced by the PR/migration review process.
   // The check requires D1 API access beyond what the deploy token provides.
   if (process.env.GITHUB_ACTIONS === "true") return;
-  let d1Result;
+  let resourceChangesResult;
+  let simulationsResult;
   try {
-    d1Result = await run(
+    resourceChangesResult = await run(
       wrangler,
       ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(resource_changes);"],
+      { capture: true },
+    );
+    simulationsResult = await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(simulations);"],
       { capture: true },
     );
   } catch (err) {
@@ -213,8 +219,7 @@ async function verifyRemoteSchema(targetName, databaseName) {
     }
     throw err;
   }
-  const { stdout } = d1Result;
-  const parsed = parseWranglerJsonPayload(stdout);
+  const parsed = parseWranglerJsonPayload(resourceChangesResult.stdout);
   assert(Array.isArray(parsed) && parsed.length > 0, "Preflight failed: unable to parse D1 schema output.");
   const first = parsed[0];
   const rows = Array.isArray(first?.results) ? first.results : [];
@@ -226,6 +231,15 @@ async function verifyRemoteSchema(targetName, databaseName) {
     `Preflight failed: D1 schema missing columns in resource_changes: ${missing.join(
       ", ",
     )}. Apply migration db/migrations/2026-03-15_changelog_details.sql before deploy.`,
+  );
+
+  const simulationsParsed = parseWranglerJsonPayload(simulationsResult.stdout);
+  assert(Array.isArray(simulationsParsed) && simulationsParsed.length > 0, "Preflight failed: unable to parse simulations schema output.");
+  const simulationRows = Array.isArray(simulationsParsed[0]?.results) ? simulationsParsed[0].results : [];
+  const simulationColumns = new Set(simulationRows.map((row) => String(row?.name ?? "")).filter(Boolean));
+  assert(
+    simulationColumns.has("status"),
+    "Preflight failed: D1 schema missing simulations.status. Apply migration db/migrations/2026-08-04_simulation_soft_delete.sql before deploy.",
   );
 }
 

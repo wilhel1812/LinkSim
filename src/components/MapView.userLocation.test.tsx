@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mapMock = vi.hoisted(() => ({
   easeTo: vi.fn(),
   markerProps: [] as Array<{ latitude?: number; longitude?: number }>,
+  layerProps: [] as Array<{ id?: string; paint?: Record<string, unknown> }>,
+  sourceProps: [] as Array<{ id?: string; data?: unknown }>,
   latestProps: null as null | {
     onMove?: (event: { originalEvent?: unknown; viewState: { longitude: number; latitude: number; zoom: number } }) => void;
   },
@@ -47,7 +49,10 @@ vi.mock("react-map-gl/maplibre", async () => {
       }));
       return <div data-testid="mock-map">{props.children}</div>;
     }),
-    Layer: () => null,
+    Layer: (props: { id?: string; paint?: Record<string, unknown> }) => {
+      mapMock.layerProps.push(props);
+      return null;
+    },
     Marker: ({
       children,
       latitude,
@@ -60,13 +65,17 @@ vi.mock("react-map-gl/maplibre", async () => {
       mapMock.markerProps.push({ latitude, longitude });
       return <div>{children}</div>;
     },
-    Source: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    Source: ({ children, ...props }: { children?: React.ReactNode; id?: string; data?: unknown }) => {
+      mapMock.sourceProps.push(props);
+      return <>{children}</>;
+    },
     useMap: () => ({ current: undefined }),
   };
 });
 
-vi.mock("../lib/meshtasticMqtt", () => ({
-  fetchMeshmapNodes: vi.fn(async () => ({
+vi.mock("../lib/meshtasticMqtt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/meshtasticMqtt")>()),
+  fetchMeshmapNodes: vi.fn(async (options?: { sourceId?: "meshmap" | "868-no"; sourceUrl?: string }) => ({
     fromCache: false,
     networkError: false,
     nodes: [
@@ -77,7 +86,10 @@ vi.mock("../lib/meshtasticMqtt", () => ({
         hwModel: "T-Beam",
         lat: 60.55,
         lon: 11.55,
+        positionPrecisionBits: options?.sourceId === "meshmap" ? 16 : undefined,
         updatedAt: 1,
+        sourceId: options?.sourceId,
+        sourceUrl: options?.sourceUrl,
       },
     ],
   })),
@@ -138,6 +150,8 @@ describe("MapView user location flow", () => {
     vi.clearAllMocks();
     mapMock.latestProps = null;
     mapMock.markerProps = [];
+    mapMock.layerProps = [];
+    mapMock.sourceProps = [];
     installGeolocation();
     watchPosition.mockReturnValue(42);
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
@@ -164,6 +178,7 @@ describe("MapView user location flow", () => {
       autoCalculateEnabled: true,
       automaticLockNoticeShown: false,
       calculationCycleSource: null,
+      simulationErrorMessage: "",
     });
   });
 
@@ -223,6 +238,28 @@ describe("MapView user location flow", () => {
     expect(onPublishNotice).toHaveBeenCalledTimes(1);
   });
 
+  it("publishes an explicit terrain-unavailable calculation error", async () => {
+    const onPublishNotice = vi.fn();
+    renderMapView({ onPublishNotice });
+
+    act(() => {
+      useCoverageStore.setState({
+        simulationErrorMessage:
+          "The 50 km Simulation could not be completed because required GLO-30 terrain is unavailable.",
+      });
+    });
+
+    await waitFor(() =>
+      expect(onPublishNotice).toHaveBeenCalledWith({
+        id: "simulation-terrain-unavailable",
+        message:
+          "The 50 km Simulation could not be completed because required GLO-30 terrain is unavailable.",
+        tone: "error",
+        persistent: false,
+      }),
+    );
+  });
+
   it("starts and stops live geolocation from the map control", () => {
     renderMapView();
 
@@ -258,6 +295,7 @@ describe("MapView user location flow", () => {
           iconKey: "ship",
         },
       ],
+      siteIconColors: { "site-ship": "#123456" },
     });
 
     renderMapView();
@@ -265,6 +303,95 @@ describe("MapView user location flow", () => {
     const marker = screen.getByRole("button", { name: "Harbour node" });
     expect(marker.querySelector(".lucide-ship")).toBeInTheDocument();
     expect(marker.querySelector(".lucide-ship")).toHaveAttribute("aria-hidden", "true");
+    expect(marker.querySelector(".lucide-ship")).toHaveStyle({ color: "#123456" });
+    expect(marker.querySelector(".lucide-ship")).not.toHaveClass("has-custom-color");
+  });
+
+  it("keeps a selected manual Link solid with one subtle theme-responsive casing", () => {
+    const sites = [
+      { id: "site-a", name: "A", position: { lat: 59.9, lon: 10.75 }, groundElevationM: 2, antennaHeightM: 2, txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+      { id: "site-b", name: "B", position: { lat: 59.91, lon: 10.76 }, groundElevationM: 2, antennaHeightM: 2, txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1 },
+    ];
+    useAppStore.setState({
+      mapOverlayMode: "none",
+      sites,
+      links: [{ id: "link-a", fromSiteId: "site-a", toSiteId: "site-b", frequencyMHz: 869.618, color: "#654321" }],
+      linkColorMode: "manual",
+      uiThemePreference: "light",
+      selectedLinkId: "link-a",
+      selectedSiteIds: ["site-a", "site-b"],
+    });
+
+    renderMapView();
+
+    const linksSource = mapMock.sourceProps.find((props) => props.id === "links");
+    expect(linksSource?.data).toMatchObject({
+      features: [expect.objectContaining({ properties: expect.objectContaining({ color: "#654321", selected: 1 }) })],
+    });
+    expect(mapMock.layerProps.map((props) => props.id)).toEqual(expect.arrayContaining([
+      "link-lines-casing",
+      "link-lines",
+      "link-lines-selected",
+    ]));
+    expect(mapMock.layerProps.map((props) => props.id)).not.toEqual(expect.arrayContaining([
+      "link-lines-selection",
+      "link-lines-dark-casing",
+      "link-lines-light-casing",
+    ]));
+    expect(mapMock.layerProps.find((props) => props.id === "link-lines")?.paint?.["line-color"]).toEqual([
+      "coalesce",
+      ["get", "color"],
+      expect.any(String),
+    ]);
+    expect(mapMock.layerProps.find((props) => props.id === "link-lines")?.paint?.["line-dasharray"]).toEqual([1.5, 1]);
+    expect(mapMock.layerProps.find((props) => props.id === "link-lines-selected")?.paint).not.toHaveProperty("line-dasharray");
+    expect(mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-opacity"]).toBeLessThan(0.7);
+
+    const lightCasingColor = mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-color"];
+    expect(lightCasingColor).toBe("#ffffff");
+    mapMock.layerProps = [];
+    act(() => useAppStore.setState({ uiThemePreference: "dark" }));
+    const darkCasingColor = mapMock.layerProps.find((props) => props.id === "link-lines-casing")?.paint?.["line-color"];
+    expect(darkCasingColor).toBe("#000000");
+  });
+
+  it("commits the Auto Link colors toggle from the right inspector immediately", () => {
+    const simulation = {
+      id: "sim-color-mode",
+      name: "Color mode",
+      ownerUserId: "owner-1",
+      effectiveRole: "owner" as const,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: {
+        sites: [], links: [], systems: [], networks: [],
+        selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+        propagationModel: "ITM" as const, selectedFrequencyPresetId: "custom",
+        rxSensitivityTargetDbm: -120, environmentLossDb: 0,
+        propagationEnvironment: useAppStore.getState().propagationEnvironment,
+        autoPropagationEnvironment: false, terrainDataset: "copernicus30" as const,
+        linkColorMode: "manual" as const,
+      },
+    };
+    useAppStore.setState({
+      currentUser: {
+        id: "owner-1", username: "Owner", avatarUrl: "", role: "user", accountState: "approved",
+        isApproved: true, isAdmin: false, isModerator: false, createdAt: "", updatedAt: null,
+        approvedAt: null, approvedByUserId: null, emailPublic: true, bio: "",
+      },
+      selectedScenarioId: simulation.id,
+      simulationPresets: [simulation],
+      linkColorMode: "manual",
+    });
+
+    renderMapView({ showInspector: true });
+    const toggle = screen.getByRole("button", { name: "Turn on Auto Link colors" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(toggle);
+
+    expect(useAppStore.getState().linkColorMode).toBe("auto");
+    expect(useAppStore.getState().simulationPresets[0]?.snapshot.linkColorMode).toBe("auto");
+    expect(screen.getByRole("button", { name: "Turn off Auto Link colors" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("centers on the first location update and stops following after user pan", () => {
@@ -363,10 +490,11 @@ describe("MapView user location flow", () => {
     expect(surface).toHaveClass("has-pointer-tail");
     expect(surface).toHaveClass("visible-site-sources-popover");
     expect(within(popover).getByLabelText("Library")).not.toBeChecked();
-    expect(within(popover).getByLabelText("MQTT")).not.toBeChecked();
+    expect(within(popover).getByLabelText("MeshMap.net")).not.toBeChecked();
+    expect(within(popover).getByLabelText("868.no")).not.toBeChecked();
   });
 
-  it("keeps Library visible when MQTT is also enabled", async () => {
+  it("keeps Library visible when 868.no is also enabled", async () => {
     useAppStore.setState({
       siteLibrary: [
         {
@@ -394,14 +522,76 @@ describe("MapView user location flow", () => {
     fireEvent.click(within(popover).getByLabelText("Library"));
     expect(screen.getByRole("button", { name: "Library Alpha" })).toBeInTheDocument();
 
-    fireEvent.click(within(popover).getByLabelText("MQTT"));
+    fireEvent.click(within(popover).getByLabelText("868.no"));
 
     expect(screen.getByRole("button", { name: "Library Alpha" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Simulation + Library + MQTT" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Simulation + Library + 868.no" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Loading node sources...")).not.toBeInTheDocument();
+    });
     await waitFor(() => {
       expect(useAppStore.getState().discoveryLibraryVisible).toBe(true);
       expect(useAppStore.getState().discoveryMqttVisible).toBe(true);
     });
+  });
+
+  it("shows the exact MQTT position precision rectangle only while hovering", async () => {
+    useAppStore.setState({ mapViewport: { center: { lat: 60.55, lon: 11.55 }, zoom: 12 } });
+    renderMapView({ showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    const popover = await openVisibleSiteSources();
+    fireEvent.click(within(popover).getByLabelText("MeshMap.net"));
+    const marker = await screen.findByRole("button", { name: "MQTT Alpha" });
+
+    fireEvent.mouseEnter(marker);
+
+    expect(await screen.findByText(/Position precision: 16 bits · ≈364 m/)).toBeVisible();
+    await waitFor(() => {
+      const source = [...mapMock.sourceProps]
+        .reverse()
+        .find((props) => props.id === "mqtt-position-precision");
+      expect(source?.data).toEqual({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "Polygon",
+              coordinates: [[
+                [11.5467232, 60.5467232],
+                [11.5532768, 60.5467232],
+                [11.5532768, 60.5532768],
+                [11.5467232, 60.5532768],
+                [11.5467232, 60.5467232],
+              ]],
+            },
+          },
+        ],
+      });
+    });
+
+    fireEvent.mouseLeave(marker);
+    expect(screen.queryByText(/Position precision: 16 bits/)).not.toBeInTheDocument();
+  });
+
+  it("reports unavailable MQTT precision without rendering a rectangle and preserves marker activation", async () => {
+    useAppStore.setState({ mapViewport: { center: { lat: 60.55, lon: 11.55 }, zoom: 12 } });
+    renderMapView({ showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    const popover = await openVisibleSiteSources();
+    fireEvent.click(within(popover).getByLabelText("868.no"));
+    const marker = await screen.findByRole("button", { name: "MQTT Alpha" });
+
+    fireEvent.mouseEnter(marker);
+
+    expect(await screen.findByText(/Position precision unavailable/)).toBeVisible();
+    expect(mapMock.sourceProps.some((props) => props.id === "mqtt-position-precision")).toBe(false);
+
+    fireEvent.click(marker);
+    expect(await screen.findByText(/Opened MQTT node in the site editor/)).toBeVisible();
   });
 
   it("clears selected library discovery actions when Library is disabled", async () => {

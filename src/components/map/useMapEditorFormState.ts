@@ -10,6 +10,13 @@ import { sampleSrtmElevation } from "../../lib/srtm";
 import { getUiErrorMessage } from "../../lib/uiError";
 import { hasDuplicateSimulationNameForOwner } from "../../lib/simulationNameValidation";
 import { isSiteIconKey, type SiteIconKey } from "../../lib/siteIcons";
+import {
+  DEFAULT_LINK_COLOR_MODE,
+  normalizeLinkColorMode,
+  normalizeSimulationColor,
+  normalizeSiteIconColors,
+  type LinkColorMode,
+} from "../../lib/simulationColors";
 import { useAppStore } from "../../store/appStore";
 import type { CollaboratorDirectoryUser } from "../../lib/cloudUser";
 import type { AccessRole, AccessVisibility } from "../AccessSettingsEditor";
@@ -45,9 +52,11 @@ export function useMapEditorFormState() {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const mapEditorSiteDraft = useAppStore((state) => state.mapEditorSiteDraft);
   const closeMapEditor = useAppStore((state) => state.closeMapEditor);
+  const closeLibrary = useAppStore((state) => state.closeLibrary);
   const setMapEditorSiteDraft = useAppStore((state) => state.setMapEditorSiteDraft);
   const siteLibrary = useAppStore((state) => state.siteLibrary);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const selectedScenarioId = useAppStore((state) => state.selectedScenarioId);
   const sites = useAppStore((state) => state.sites);
   const links = useAppStore((state) => state.links);
   const srtmTiles = useAppStore((state) => state.srtmTiles);
@@ -65,6 +74,8 @@ export function useMapEditorFormState() {
   const loadSimulationPreset = useAppStore((state) => state.loadSimulationPreset);
   const selectedFrequencyPresetId = useAppStore((state) => state.selectedFrequencyPresetId);
   const autoPropagationEnvironment = useAppStore((state) => state.autoPropagationEnvironment);
+  const activeLinkColorMode = useAppStore((state) => state.linkColorMode);
+  const activeSiteIconColors = useAppStore((state) => state.siteIconColors);
   const createLink = useAppStore((state) => state.createLink);
   const updateLink = useAppStore((state) => state.updateLink);
 
@@ -111,6 +122,8 @@ export function useMapEditorFormState() {
     normalizeSimulationDefaults(null),
   );
   const [simulationNameError, setSimulationNameError] = useState("");
+  const [simulationLinkColorMode, setSimulationLinkColorMode] = useState<LinkColorMode>(DEFAULT_LINK_COLOR_MODE);
+  const [simulationSiteIconColors, setSimulationSiteIconColors] = useState<Record<string, string>>({});
 
   const setDuplicateSimulationNameError = () => setSimulationNameError("Name must be unique.");
 
@@ -123,6 +136,7 @@ export function useMapEditorFormState() {
   const [linkTxGain, setLinkTxGain] = useState(STANDARD_SITE_RADIO.txGainDbi);
   const [linkRxGain, setLinkRxGain] = useState(STANDARD_SITE_RADIO.rxGainDbi);
   const [linkCableLoss, setLinkCableLoss] = useState(STANDARD_SITE_RADIO.cableLossDb);
+  const [linkColorDraft, setLinkColorDraft] = useState<string | null>(null);
 
   const getLinkDefaultName = (fromId: string, toId: string): string => {
     const from = sites.find((site) => site.id === fromId);
@@ -210,6 +224,8 @@ export function useMapEditorFormState() {
         setCollaboratorRoles({});
         setSimulationFrequencyPresetId(seed?.frequencyPresetId ?? selectedFrequencyPresetId);
         setSimulationAutoPropagationEnvironment(seed?.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        setSimulationLinkColorMode(seed?.copyCurrentSimulation ? activeLinkColorMode : DEFAULT_LINK_COLOR_MODE);
+        setSimulationSiteIconColors(seed?.copyCurrentSimulation ? activeSiteIconColors : {});
         if (seed?.copyCurrentSimulation) {
           setSimulationDefaultsOverrideEnabled(Boolean(seed.simulationDefaultsOverrideEnabled));
           setSimulationDefaultsDraft(
@@ -229,6 +245,11 @@ export function useMapEditorFormState() {
         setAccessVisibility(toAccessVisibility(preset?.visibility) as AccessVisibility);
         setSimulationFrequencyPresetId(preset?.snapshot.selectedFrequencyPresetId ?? selectedFrequencyPresetId);
         setSimulationAutoPropagationEnvironment(preset?.snapshot.autoPropagationEnvironment ?? autoPropagationEnvironment);
+        setSimulationLinkColorMode(normalizeLinkColorMode(preset?.snapshot.linkColorMode));
+        setSimulationSiteIconColors(normalizeSiteIconColors(
+          preset?.snapshot.siteIconColors,
+          (preset?.snapshot.sites ?? []).map((site) => site.id),
+        ));
         setSimulationDefaultsOverrideEnabled(Boolean(preset?.snapshot.simulationDefaultsOverrideEnabled));
         setSimulationDefaultsDraft(
           preset?.snapshot.simulationDefaultsOverride
@@ -258,6 +279,7 @@ export function useMapEditorFormState() {
         setLinkTxGain(baseRadio.txGainDbi);
         setLinkRxGain(baseRadio.rxGainDbi);
         setLinkCableLoss(baseRadio.cableLossDb);
+        setLinkColorDraft(null);
       } else {
         const link = links.find((l) => l.id === mapEditor.resourceId);
         const fromSite = sites.find((s) => s.id === link?.fromSiteId) ?? null;
@@ -278,6 +300,7 @@ export function useMapEditorFormState() {
         setLinkTxGain(baseRadio.txGainDbi);
         setLinkRxGain(baseRadio.rxGainDbi);
         setLinkCableLoss(baseRadio.cableLossDb);
+        setLinkColorDraft(normalizeSimulationColor(link?.color));
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -381,6 +404,13 @@ export function useMapEditorFormState() {
     mapEditor?.kind === "simulation" && mapEditor.resourceId
       ? simulationPresets.find((preset) => preset.id === mapEditor.resourceId) ?? null
       : null;
+  const activeSimulationPreset = selectedScenarioId
+    ? simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null
+    : null;
+  const activeSimulationSite =
+    mapEditor?.kind === "site" && mapEditor.resourceId
+      ? sites.find((site) => site.id === mapEditor.resourceId || site.libraryEntryId === mapEditor.resourceId) ?? null
+      : null;
   const ownerUserId = (() => {
     if (!mapEditor) return "";
     if (mapEditor.kind === "site" && mapEditor.resourceId) {
@@ -420,6 +450,16 @@ export function useMapEditorFormState() {
     };
   });
   const currentUserIsOwner = Boolean(currentUser?.id && ownerUserId && currentUser.id === ownerUserId);
+  const activeSimulationRole = activeSimulationPreset?.effectiveRole ??
+    (activeSimulationPreset?.ownerUserId === currentUser?.id ? "owner" : "viewer");
+  const canEditActiveSimulationAppearance = Boolean(
+    currentUser?.id && activeSimulationPreset && ["owner", "editor", "admin"].includes(activeSimulationRole),
+  );
+  const canAddToActiveSimulation = Boolean(
+    currentUser?.id &&
+      selectedScenarioId &&
+      (!activeSimulationPreset || ["owner", "editor", "admin"].includes(activeSimulationRole)),
+  );
   const resolveUserSummary = (
     userId: string | null | undefined,
     fallbackName: string | null | undefined,
@@ -585,7 +625,7 @@ export function useMapEditorFormState() {
   };
 
   // ─── Save handlers ─────────────────────────────────────────────────────────────
-  const handleSaveSite = (): boolean => {
+  const handleSaveSite = (options?: { insertIntoSimulation?: boolean; exitLibrary?: boolean }): boolean => {
     const trimmedName = nameDraft.trim();
     if (!trimmedName) {
       setStatus("Name is required.");
@@ -648,7 +688,7 @@ export function useMapEditorFormState() {
         if (sharedWith.length) {
           updateSiteLibraryEntry(createdId, { sharedWith });
         }
-        if (insertSiteAfterSave) {
+        if (options?.insertIntoSimulation ?? insertSiteAfterSave) {
           insertSiteFromLibrary(createdId);
         }
       } else if (mapEditor?.resourceId) {
@@ -667,6 +707,7 @@ export function useMapEditorFormState() {
           sharedWith,
         });
       }
+      if (options?.exitLibrary) closeLibrary();
       closeMapEditor();
       return true;
     } catch (error) {
@@ -703,12 +744,15 @@ export function useMapEditorFormState() {
             autoPropagationEnvironment: simulationAutoPropagationEnvironment,
             simulationDefaultsOverrideEnabled,
             simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
+            linkColorMode: simulationLinkColorMode,
+            siteIconColors: simulationSiteIconColors,
           });
           if (!createdId) {
             setStatus("Failed creating simulation copy. Check the name and try again.");
             return false;
           }
           loadSimulationPreset(createdId);
+          if (mapEditor.origin?.kind === "library") closeLibrary();
           closeMapEditor();
           return true;
         }
@@ -725,6 +769,8 @@ export function useMapEditorFormState() {
           lastEditedByUserId: currentUser.id,
           lastEditedByName: currentUser.username,
           lastEditedByAvatarUrl: currentUser.avatarUrl ?? "",
+          linkColorMode: simulationLinkColorMode,
+          siteIconColors: simulationSiteIconColors,
         });
         if (!createdId) {
           setStatus("Failed creating simulation. Check the name and try again.");
@@ -734,6 +780,7 @@ export function useMapEditorFormState() {
           updateSimulationPresetEntry(createdId, { sharedWith });
         }
         loadSimulationPreset(createdId);
+        if (mapEditor.origin?.kind === "library") closeLibrary();
         closeMapEditor();
         return true;
       } catch (error) {
@@ -765,6 +812,8 @@ export function useMapEditorFormState() {
         sharedWith,
         simulationDefaultsOverrideEnabled,
         simulationDefaultsOverride: simulationDefaultsOverrideEnabled ? simulationDefaultsDraft : null,
+        linkColorMode: simulationLinkColorMode,
+        siteIconColors: simulationSiteIconColors,
       });
       closeMapEditor();
       return true;
@@ -791,7 +840,7 @@ export function useMapEditorFormState() {
     }
     try {
       if (mapEditor?.isNew) {
-        createLink(linkFromSiteId, linkToSiteId, linkNameDraft || undefined);
+        createLink(linkFromSiteId, linkToSiteId, linkNameDraft || undefined, linkColorDraft);
       } else if (mapEditor?.resourceId) {
         updateLink(mapEditor.resourceId, {
           name: linkNameDraft || undefined,
@@ -864,6 +913,7 @@ export function useMapEditorFormState() {
     siteMetadata,
     simulationMetadata,
     canWrite,
+    canAddToActiveSimulation,
     currentUser,
     // site
     latDraft,
@@ -913,6 +963,15 @@ export function useMapEditorFormState() {
     linkTxGain, setLinkTxGain: (v: number | string) => setLinkTxGain(parseNumber(String(v))),
     linkRxGain, setLinkRxGain: (v: number | string) => setLinkRxGain(parseNumber(String(v))),
     linkCableLoss, setLinkCableLoss: (v: number | string) => setLinkCableLoss(parseNumber(String(v))),
+    linkColorDraft,
+    setLinkColorDraft: (value: string | null) => {
+      const color = normalizeSimulationColor(value);
+      setLinkColorDraft(color);
+      if (!mapEditor?.isNew && mapEditor?.resourceId) {
+        updateLink(mapEditor.resourceId, { color: color ?? undefined });
+      }
+    },
+    activeLinkColorMode,
     handleSaveLink,
     siteSearchQuery,
     setSiteSearchQuery,
@@ -924,5 +983,16 @@ export function useMapEditorFormState() {
     selectSiteSearchResult,
     // raw data for labels
     sites,
+    activeSimulationSiteId: activeSimulationSite?.id ?? null,
+    activeSiteIconColor: activeSimulationSite ? activeSiteIconColors[activeSimulationSite.id] ?? null : null,
+    canEditActiveSimulationAppearance,
+    setActiveSiteIconColor: (value: string | null) => {
+      if (!selectedScenarioId || !activeSimulationSite || !canEditActiveSimulationAppearance) return;
+      const next = { ...activeSiteIconColors };
+      const color = normalizeSimulationColor(value);
+      if (color) next[activeSimulationSite.id] = color;
+      else delete next[activeSimulationSite.id];
+      updateSimulationPresetEntry(selectedScenarioId, { siteIconColors: next });
+    },
   };
 }
