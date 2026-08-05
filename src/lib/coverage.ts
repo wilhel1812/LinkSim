@@ -220,6 +220,57 @@ const evalRx = (
   return eirp + txSystem.rxGainDbi - (loss + terrainLoss);
 };
 
+type ResolvedCoverageMembership = { site: Site; system: RadioSystem };
+
+const resolveCoverageMemberships = (
+  network: Network,
+  sites: Site[],
+  systems: RadioSystem[],
+): ResolvedCoverageMembership[] => {
+  const sitesById = new Map(sites.map((site) => [site.id, site]));
+  const systemsById = new Map(systems.map((system) => [system.id, system]));
+  const resolved = network.memberships.flatMap((member) => {
+    const site = sitesById.get(member.siteId);
+    const system = systemsById.get(member.systemId);
+    return site && system ? [{ site, system }] : [];
+  });
+  if (resolved.length) return resolved;
+  const fallbackSystem = systems[0];
+  return fallbackSystem ? sites.map((site) => ({ site, system: fallbackSystem })) : [];
+};
+
+const evaluateCoveragePoint = (
+  sample: CoverageGridPoint,
+  memberships: ResolvedCoverageMembership[],
+  frequencyMHz: number,
+  terrainSamples: number,
+  environment: PropagationEnvironment,
+  terrainSampler?: (coordinates: Coordinates) => number | null,
+  terrainCacheKey?: string,
+): Pick<CoverageSample, "valueDbm" | "weakestDbm"> => {
+  let strongestDbm = Number.NEGATIVE_INFINITY;
+  let weakestDbm = Number.POSITIVE_INFINITY;
+  for (const { site, system } of memberships) {
+    const valueDbm = evalRx(
+      sample.lat,
+      sample.lon,
+      site,
+      system,
+      frequencyMHz,
+      terrainSamples,
+      environment,
+      terrainSampler,
+      terrainCacheKey,
+    );
+    strongestDbm = Math.max(strongestDbm, valueDbm);
+    weakestDbm = Math.min(weakestDbm, valueDbm);
+  }
+  return {
+    valueDbm: Number.isFinite(strongestDbm) ? strongestDbm : -140,
+    weakestDbm: Number.isFinite(weakestDbm) ? weakestDbm : -140,
+  };
+};
+
 
 export const buildCoverage = (
   gridSize: number,
@@ -240,19 +291,7 @@ export const buildCoverage = (
       : terrainSampler;
   const onProgress = options?.onProgress;
   const shouldCancel = options?.shouldCancel;
-  const fallbackSystemId = systems[0]?.id ?? "";
-  const effectiveMemberships =
-    network.memberships
-      .filter(
-        (member) =>
-          sites.some((site) => site.id === member.siteId) &&
-          systems.some((system) => system.id === member.systemId),
-      )
-      .map((member) => ({ siteId: member.siteId, systemId: member.systemId })) || [];
-  const membershipsToUse =
-    effectiveMemberships.length > 0
-      ? effectiveMemberships
-      : sites.map((site) => ({ siteId: site.id, systemId: fallbackSystemId }));
+  const membershipsToUse = resolveCoverageMemberships(network, sites, systems);
 
   const bounds = simulationAreaBoundsForSites(sites, {
     overlayRadiusKm: options?.overlayRadiusKm,
@@ -268,29 +307,16 @@ export const buildCoverage = (
   for (let i = 0; i < samples.length; i += 1) {
     if (shouldCancel?.()) throw new CoverageBuildCancelledError();
     const sample = samples[i];
-    const rxLevels = membershipsToUse
-      .map((m) => {
-        const site = sites.find((s) => s.id === m.siteId);
-        const system = systems.find((sys) => sys.id === m.systemId);
-        if (!site || !system) return null;
-        return evalRx(
-          sample.lat,
-          sample.lon,
-          site,
-          system,
-          effectiveFrequencyMHz,
-          terrainSamples,
-          environment,
-          effectiveTerrainSampler,
-          options?.terrainCacheKey,
-        );
-      })
-      .filter((v): v is number => v !== null);
-
-    const valueDbm = rxLevels.length ? Math.max(...rxLevels) : -140;
-    const weakestDbm = rxLevels.length ? Math.min(...rxLevels) : -140;
-
-    results.push({ ...sample, valueDbm, weakestDbm });
+    const levels = evaluateCoveragePoint(
+      sample,
+      membershipsToUse,
+      effectiveFrequencyMHz,
+      terrainSamples,
+      environment,
+      effectiveTerrainSampler,
+      options?.terrainCacheKey,
+    );
+    results.push({ ...sample, ...levels });
     if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
       onProgress?.((i + 1) / total);
     }
@@ -317,19 +343,7 @@ export const buildCoverageAsync = async (
       : terrainSampler;
   const onProgress = options?.onProgress;
   const shouldCancel = options?.shouldCancel;
-  const fallbackSystemId = systems[0]?.id ?? "";
-  const effectiveMemberships =
-    network.memberships
-      .filter(
-        (member) =>
-          sites.some((site) => site.id === member.siteId) &&
-          systems.some((system) => system.id === member.systemId),
-      )
-      .map((member) => ({ siteId: member.siteId, systemId: member.systemId })) || [];
-  const membershipsToUse =
-    effectiveMemberships.length > 0
-      ? effectiveMemberships
-      : sites.map((site) => ({ siteId: site.id, systemId: fallbackSystemId }));
+  const membershipsToUse = resolveCoverageMemberships(network, sites, systems);
 
   const bounds = simulationAreaBoundsForSites(sites, {
     overlayRadiusKm: options?.overlayRadiusKm,
@@ -348,29 +362,16 @@ export const buildCoverageAsync = async (
   for (let i = 0; i < samples.length; i += 1) {
     if (shouldCancel?.()) throw new CoverageBuildCancelledError();
     const sample = samples[i];
-    const rxLevels = membershipsToUse
-      .map((m) => {
-        const site = sites.find((s) => s.id === m.siteId);
-        const system = systems.find((sys) => sys.id === m.systemId);
-        if (!site || !system) return null;
-        return evalRx(
-          sample.lat,
-          sample.lon,
-          site,
-          system,
-          effectiveFrequencyMHz,
-          terrainSamples,
-          environment,
-          effectiveTerrainSampler,
-          options?.terrainCacheKey,
-        );
-      })
-      .filter((v): v is number => v !== null);
-
-    const valueDbm = rxLevels.length ? Math.max(...rxLevels) : -140;
-    const weakestDbm = rxLevels.length ? Math.min(...rxLevels) : -140;
-
-    results.push({ ...sample, valueDbm, weakestDbm });
+    const levels = evaluateCoveragePoint(
+      sample,
+      membershipsToUse,
+      effectiveFrequencyMHz,
+      terrainSamples,
+      environment,
+      effectiveTerrainSampler,
+      options?.terrainCacheKey,
+    );
+    results.push({ ...sample, ...levels });
     if ((i + 1) % notifyEvery === 0 || i === samples.length - 1) {
       onProgress?.((i + 1) / total);
     }

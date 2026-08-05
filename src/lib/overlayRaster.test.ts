@@ -77,6 +77,194 @@ const environment: PropagationEnvironment = {
 const terrainSampler = () => 135;
 
 describe("overlayRaster async builders", () => {
+  it("keeps adaptive Pass/Fail within the accuracy gate while reducing terrain work", async () => {
+    const dimensions = { width: 120, height: 120 };
+    let exactTerrainReads = 0;
+    let adaptiveTerrainReads = 0;
+    const exact = await buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      link,
+      toSite.antennaHeightM,
+      toSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      () => {
+        exactTerrainReads += 1;
+        return 135;
+      },
+      dimensions,
+      24,
+      undefined,
+      { phase: "passfail", signature: "passfail-reference" },
+      { adaptive: false },
+    );
+    const adaptive = await buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      link,
+      toSite.antennaHeightM,
+      toSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      () => {
+        adaptiveTerrainReads += 1;
+        return 135;
+      },
+      dimensions,
+      24,
+      undefined,
+      { phase: "passfail", signature: "passfail-adaptive" },
+      { adaptive: true },
+    );
+
+    expect(exact).not.toBeNull();
+    expect(adaptive).not.toBeNull();
+    let matchingPixels = 0;
+    for (let index = 0; index < dimensions.width * dimensions.height; index += 1) {
+      const offset = index * 4;
+      const exactState = Array.from(exact!.pixels.slice(offset, offset + 4)).join(",");
+      const adaptiveState = Array.from(adaptive!.pixels.slice(offset, offset + 4)).join(",");
+      if (exactState === adaptiveState) matchingPixels += 1;
+    }
+    expect(matchingPixels / (dimensions.width * dimensions.height)).toBeGreaterThanOrEqual(0.99);
+    expect(adaptiveTerrainReads).toBeLessThan(exactTerrainReads * 0.3);
+    expect(adaptive?.analysisStats?.evaluatedPaths).toBeLessThan(dimensions.width * dimensions.height * 0.3);
+  });
+
+  it("keeps adaptive Relay signal within the error gate while reducing terrain work", async () => {
+    const dimensions = { width: 120, height: 120 };
+    let exactTerrainReads = 0;
+    let adaptiveTerrainReads = 0;
+    const exact = await buildRelayCandidateOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      toSite,
+      link,
+      environment,
+      0,
+      () => {
+        exactTerrainReads += 1;
+        return 135;
+      },
+      dimensions,
+      24,
+      undefined,
+      { phase: "relay", signature: "relay-reference" },
+      { adaptive: false },
+    );
+    const adaptive = await buildRelayCandidateOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      toSite,
+      link,
+      environment,
+      0,
+      () => {
+        adaptiveTerrainReads += 1;
+        return 135;
+      },
+      dimensions,
+      24,
+      undefined,
+      { phase: "relay", signature: "relay-adaptive" },
+      { adaptive: true },
+    );
+
+    expect(exact).not.toBeNull();
+    expect(adaptive).not.toBeNull();
+    const signalErrors: number[] = [];
+    for (let index = 0; index < dimensions.width * dimensions.height; index += 1) {
+      signalErrors.push(Math.abs(exact!.signalValuesDbm![index] - adaptive!.signalValuesDbm![index]));
+    }
+    signalErrors.sort((left, right) => left - right);
+    const medianError = signalErrors[Math.floor(signalErrors.length * 0.5)];
+    expect(medianError).toBeLessThanOrEqual(0.5);
+    expect(signalErrors[Math.floor(signalErrors.length * 0.99)]).toBeLessThanOrEqual(2);
+    expect(adaptiveTerrainReads).toBeLessThan(exactTerrainReads * 0.3);
+    expect(adaptive?.analysisStats?.evaluatedPaths).toBeLessThan(dimensions.width * dimensions.height * 0.3);
+  });
+
+  it("keeps adaptive Pass/Fail accurate across a narrow terrain ridge", async () => {
+    const dimensions = { width: 96, height: 96 };
+    const ridgeTerrain = (lat: number, lon: number) => {
+      const latOffset = (lat - 59.9) / 0.1;
+      const lonOffset = (lon - 10.7) / 0.1;
+      return 105 + Math.exp(-((latOffset - lonOffset * 0.35 - 0.45) ** 2) / 0.0025) * 140;
+    };
+    const exact = await buildSourcePassFailOverlayPixelsAsync(
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+      -118, 0, ridgeTerrain, dimensions, 24, undefined,
+      { phase: "passfail", signature: "ridge-reference" }, { adaptive: false },
+    );
+    const adaptive = await buildSourcePassFailOverlayPixelsAsync(
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+      -118, 0, ridgeTerrain, dimensions, 24, undefined,
+      { phase: "passfail", signature: "ridge-adaptive" }, { adaptive: true },
+    );
+
+    let matchingPixels = 0;
+    for (let index = 0; index < dimensions.width * dimensions.height; index += 1) {
+      const offset = index * 4;
+      if (
+        exact!.pixels[offset] === adaptive!.pixels[offset] &&
+        exact!.pixels[offset + 1] === adaptive!.pixels[offset + 1] &&
+        exact!.pixels[offset + 2] === adaptive!.pixels[offset + 2]
+      ) matchingPixels += 1;
+    }
+    expect(matchingPixels / (dimensions.width * dimensions.height)).toBeGreaterThanOrEqual(0.99);
+  });
+
+  it("reuses cached Pass/Fail RF metrics when only the target changes", async () => {
+    const dimensions = { width: 96, height: 96 };
+    let firstReads = 0;
+    let secondReads = 0;
+    const common = [
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+    ] as const;
+    await buildSourcePassFailOverlayPixelsAsync(
+      ...common, -118, 0, () => { firstReads += 1; return 135; }, dimensions, 24, undefined,
+      { phase: "passfail", signature: "cache-first" },
+      { adaptive: true, analysisCacheKey: "passfail-target-cache" },
+    );
+    await buildSourcePassFailOverlayPixelsAsync(
+      ...common, -112, 0, () => { secondReads += 1; return 135; }, dimensions, 24, undefined,
+      { phase: "passfail", signature: "cache-second" },
+      { adaptive: true, analysisCacheKey: "passfail-target-cache" },
+    );
+
+    expect(firstReads).toBeGreaterThan(0);
+    expect(secondReads).toBeLessThan(firstReads * 0.2);
+  });
+
+  it("builds adaptive Pass/Fail at least three times faster than the exact reference fixture", async () => {
+    const dimensions = { width: 120, height: 120 };
+    const measure = async (adaptive: boolean): Promise<number> => {
+      const startedAt = performance.now();
+      await buildSourcePassFailOverlayPixelsAsync(
+        bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+        -118, 0, terrainSampler, dimensions, 24, undefined,
+        { phase: "passfail", signature: adaptive ? "timing-adaptive" : "timing-reference" },
+        { adaptive },
+      );
+      return performance.now() - startedAt;
+    };
+
+    await measure(true);
+    await measure(false);
+    const exactDurations: number[] = [];
+    const adaptiveDurations: number[] = [];
+    for (let run = 0; run < 3; run += 1) {
+      exactDurations.push(await measure(false));
+      adaptiveDurations.push(await measure(true));
+    }
+    exactDurations.sort((left, right) => left - right);
+    adaptiveDurations.sort((left, right) => left - right);
+    expect(adaptiveDurations[1] * 3).toBeLessThan(exactDurations[1]);
+  });
+
   it("derives a representative mesh-extension profile from selected-site medians", () => {
     const profile = deriveMeshExtensionCandidateProfile([
       { ...fromSite, antennaHeightM: 4, txPowerDbm: 18, txGainDbi: 1, rxGainDbi: 2, cableLossDb: 0.5 },
