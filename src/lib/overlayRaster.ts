@@ -107,6 +107,8 @@ export type OverlayTaskContext = {
 
 const DEFAULT_FRAME_BUDGET_MS = 8;
 const DEFAULT_LONG_TASK_MS = 28;
+const PASS_FAIL_BOUNDARY_MARGIN_DB = 5;
+const PASS_FAIL_DENSE_SAMPLE_MIN_SPAN_PX = 9;
 
 type PassFailMetricCache = {
   width: number;
@@ -289,6 +291,25 @@ const sampleIndicesForRasterBlock = (block: RasterBlock, width: number): number[
     yLast * width + block.x0,
     yLast * width + xLast,
     yMid * width + xMid,
+  ]));
+};
+
+const passFailSampleIndicesForRasterBlock = (block: RasterBlock, width: number): number[] => {
+  const baseIndices = sampleIndicesForRasterBlock(block, width);
+  if (
+    block.x1 - block.x0 < PASS_FAIL_DENSE_SAMPLE_MIN_SPAN_PX &&
+    block.y1 - block.y0 < PASS_FAIL_DENSE_SAMPLE_MIN_SPAN_PX
+  ) return baseIndices;
+  const xLast = block.x1 - 1;
+  const yLast = block.y1 - 1;
+  const xMid = Math.floor((block.x0 + xLast) / 2);
+  const yMid = Math.floor((block.y0 + yLast) / 2);
+  return Array.from(new Set([
+    ...baseIndices,
+    block.y0 * width + xMid,
+    yLast * width + xMid,
+    yMid * width + block.x0,
+    yMid * width + xLast,
   ]));
 };
 
@@ -801,14 +822,17 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
       width * height,
       (block) => {
         const area = rasterBlockArea(block);
-        const sampleIndices = sampleIndicesForRasterBlock(block, width);
+        const sampleIndices = passFailSampleIndicesForRasterBlock(block, width);
         const states = sampleIndices.map(evaluate);
         const firstState = states[0] ?? 0;
         const stableState = states.every((state) => state === firstState);
         const safelyAwayFromThreshold =
-          firstState === 0 || sampleIndices.every((index) => Math.abs(marginByPixel[index]) >= 3);
+          firstState === 0 || sampleIndices.every((index) => Math.abs(marginByPixel[index]) >= PASS_FAIL_BOUNDARY_MARGIN_DB);
         const stableUnavailable = firstState === 0 && !pointMask;
-        if (area === 1 || (stableState && safelyAwayFromThreshold && (firstState !== 0 || stableUnavailable))) {
+        if (
+          area === 1 ||
+          (stableState && safelyAwayFromThreshold && (firstState !== 0 || stableUnavailable))
+        ) {
           for (let y = block.y0; y < block.y1; y += 1) {
             for (let x = block.x0; x < block.x1; x += 1) {
               const index = y * width + x;
