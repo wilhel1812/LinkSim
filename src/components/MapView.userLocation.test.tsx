@@ -86,6 +86,7 @@ vi.mock("../lib/meshtasticMqtt", async (importOriginal) => ({
         hwModel: "T-Beam",
         lat: 60.55,
         lon: 11.55,
+        positionPrecisionBits: options?.sourceId === "meshmap" ? 16 : undefined,
         updatedAt: 1,
         sourceId: options?.sourceId,
         sourceUrl: options?.sourceUrl,
@@ -532,6 +533,65 @@ describe("MapView user location flow", () => {
       expect(useAppStore.getState().discoveryLibraryVisible).toBe(true);
       expect(useAppStore.getState().discoveryMqttVisible).toBe(true);
     });
+  });
+
+  it("shows the exact MQTT position precision rectangle only while hovering", async () => {
+    useAppStore.setState({ mapViewport: { center: { lat: 60.55, lon: 11.55 }, zoom: 12 } });
+    renderMapView({ showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    const popover = await openVisibleSiteSources();
+    fireEvent.click(within(popover).getByLabelText("MeshMap.net"));
+    const marker = await screen.findByRole("button", { name: "MQTT Alpha" });
+
+    fireEvent.mouseEnter(marker);
+
+    expect(await screen.findByText(/Position precision: 16 bits · ≈364 m/)).toBeVisible();
+    await waitFor(() => {
+      const source = [...mapMock.sourceProps]
+        .reverse()
+        .find((props) => props.id === "mqtt-position-precision");
+      expect(source?.data).toEqual({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "Polygon",
+              coordinates: [[
+                [11.5467232, 60.5467232],
+                [11.5532768, 60.5467232],
+                [11.5532768, 60.5532768],
+                [11.5467232, 60.5532768],
+                [11.5467232, 60.5467232],
+              ]],
+            },
+          },
+        ],
+      });
+    });
+
+    fireEvent.mouseLeave(marker);
+    expect(screen.queryByText(/Position precision: 16 bits/)).not.toBeInTheDocument();
+  });
+
+  it("reports unavailable MQTT precision without rendering a rectangle and preserves marker activation", async () => {
+    useAppStore.setState({ mapViewport: { center: { lat: 60.55, lon: 11.55 }, zoom: 12 } });
+    renderMapView({ showInspector: true });
+
+    fireEvent.click(screen.getByText("Map"));
+    const popover = await openVisibleSiteSources();
+    fireEvent.click(within(popover).getByLabelText("868.no"));
+    const marker = await screen.findByRole("button", { name: "MQTT Alpha" });
+
+    fireEvent.mouseEnter(marker);
+
+    expect(await screen.findByText(/Position precision unavailable/)).toBeVisible();
+    expect(mapMock.sourceProps.some((props) => props.id === "mqtt-position-precision")).toBe(false);
+
+    fireEvent.click(marker);
+    expect(await screen.findByText(/Opened MQTT node in the site editor/)).toBeVisible();
   });
 
   it("clears selected library discovery actions when Library is disabled", async () => {
