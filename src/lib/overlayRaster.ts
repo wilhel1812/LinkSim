@@ -1,6 +1,10 @@
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "./passFailState";
 import { STANDARD_SITE_RADIO } from "./linkRadio";
-import { buildCoverageGridPoints, computeCoverageGridDimensions } from "./coverage";
+import {
+  buildCoverageGridPoints,
+  computeCoverageGridDimensions,
+  type CoverageContributorEvaluator,
+} from "./coverage";
 import { haversineDistanceKm } from "./geo";
 import { getPathLossDb } from "./rfModels";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
@@ -26,7 +30,7 @@ export type AdaptiveCoverageOverlayInput = {
   initialGridSize: number;
   mode: "heatmap" | "weakest" | "contours";
   rxTargetDbm: number;
-  evaluatePoint: (lat: number, lon: number) => { strongestDbm: number; weakestDbm: number };
+  contributors: readonly CoverageContributorEvaluator[];
   pointMask?: (lat: number, lon: number) => boolean;
   context?: OverlayTaskContext;
   adaptive?: boolean;
@@ -136,7 +140,6 @@ type CoverageMetricCache = {
   height: number;
   strongestDbm: Float32Array;
   weakestDbm: Float32Array;
-  evaluated: Uint8Array;
 };
 
 type RelayMetricCache = {
@@ -293,8 +296,17 @@ const partitionRasterBlocks = (
   bounds: TerrainBounds,
 ): RasterBlock[] => {
   const dimensions = computeCoverageGridDimensions(gridSize, bounds);
-  const rowPartitions = Math.max(1, Math.min(height, dimensions.rows));
-  const colPartitions = Math.max(1, Math.min(width, dimensions.cols));
+  return partitionRasterBlocksByCount(width, height, dimensions.rows, dimensions.cols);
+};
+
+const partitionRasterBlocksByCount = (
+  width: number,
+  height: number,
+  requestedRows: number,
+  requestedCols: number,
+): RasterBlock[] => {
+  const rowPartitions = Math.max(1, Math.min(height, requestedRows));
+  const colPartitions = Math.max(1, Math.min(width, requestedCols));
   const blocks: RasterBlock[] = [];
   for (let row = 0; row < rowPartitions; row += 1) {
     const y0 = Math.floor((row * height) / rowPartitions);
@@ -306,6 +318,18 @@ const partitionRasterBlocks = (
     }
   }
   return blocks;
+};
+
+const partitionAdaptiveCoverageBlocks = (
+  width: number,
+  height: number,
+  seedGridSize: number,
+): RasterBlock[] => {
+  const targetBlocks = Math.max(16, Math.round(seedGridSize * seedGridSize));
+  const aspect = Math.max(0.2, Math.min(5, width / Math.max(1, height)));
+  const cols = Math.max(2, Math.round(Math.sqrt(targetBlocks * aspect)));
+  const rows = Math.max(2, Math.round(targetBlocks / cols));
+  return partitionRasterBlocksByCount(width, height, rows, cols);
 };
 
 const splitRasterBlock = (block: RasterBlock): RasterBlock[] => {
@@ -646,7 +670,7 @@ const computeDenseCoverageRxTargetScale = (
   values: Float32Array,
   rxTargetDbm: number,
 ): CoverageRxTargetScale => {
-  const stride = Math.max(1, Math.floor(values.length / 20_000));
+  const stride = Math.max(1, Math.floor(values.length / 1_024));
   const finiteValues: number[] = [];
   for (let index = 0; index < values.length; index += stride) {
     const value = values[index];
@@ -677,104 +701,114 @@ const computeDensePositivePercentile = (values: Float32Array, ratio: number): nu
 export const buildAdaptiveCoverageOverlayPixelsAsync = async (
   input: AdaptiveCoverageOverlayInput,
 ): Promise<OverlayRasterPixels | null> => {
-  const { bounds, dimensions, initialGridSize, mode, rxTargetDbm, evaluatePoint, pointMask, context } = input;
+  const { bounds, dimensions, initialGridSize, mode, rxTargetDbm, contributors, pointMask, context } = input;
   const width = dimensions.width;
   const height = dimensions.height;
   const totalPixels = width * height;
-  if (totalPixels <= 0) return null;
+  if (totalPixels <= 0 || contributors.length === 0) return null;
   const { latByRow, lonByCol } = precomputeGridAxes(bounds, dimensions);
   const metricCacheKey = input.analysisCacheKey ? `${input.analysisCacheKey}|${width}x${height}` : "";
   const cachedMetrics = metricCacheKey ? coverageMetricCache.get(metricCacheKey) : undefined;
+  const reuseCachedMetrics = cachedMetrics?.width === width && cachedMetrics.height === height;
   const metricCache =
-    cachedMetrics?.width === width && cachedMetrics.height === height
+    reuseCachedMetrics
       ? cachedMetrics
       : {
           width,
           height,
-          strongestDbm: new Float32Array(totalPixels).fill(Number.NaN),
-          weakestDbm: new Float32Array(totalPixels).fill(Number.NaN),
-          evaluated: new Uint8Array(totalPixels),
+          strongestDbm: new Float32Array(totalPixels).fill(Number.NEGATIVE_INFINITY),
+          weakestDbm: new Float32Array(totalPixels).fill(Number.POSITIVE_INFINITY),
         };
   let evaluatedPaths = 0;
-  const analysisContext = contextForProgressRange(context, 0, 90);
   const colorContext = contextForProgressRange(context, 90, 100);
-
-  const evaluate = (index: number): { strongestDbm: number; weakestDbm: number } => {
-    if (!metricCache.evaluated[index]) {
-      metricCache.evaluated[index] = 1;
-      const y = Math.floor(index / width);
-      const x = index - y * width;
-      const lat = latByRow[y];
-      const lon = lonByCol[x];
-      if (!pointMask || pointMask(lat, lon)) {
-        const value = evaluatePoint(lat, lon);
-        metricCache.strongestDbm[index] = value.strongestDbm;
-        metricCache.weakestDbm[index] = value.weakestDbm;
-        evaluatedPaths += 1;
-      }
-    }
-    return {
-      strongestDbm: metricCache.strongestDbm[index],
-      weakestDbm: metricCache.weakestDbm[index],
-    };
-  };
-
+  const adaptiveSeedGridSize = Math.max(4, Math.round(initialGridSize / 4));
   let refinedBlocks = 0;
-  let filledPixels = totalPixels;
-  if (input.adaptive === false) {
-    await runCooperativeLoop(totalPixels, evaluate, analysisContext);
-  } else {
-    const result = await runAdaptiveBlockQueue(
-      partitionRasterBlocks(width, height, initialGridSize, bounds),
-      totalPixels,
-      (block) => {
-        const area = rasterBlockArea(block);
-        const sampleIndices = passFailSampleIndicesForRasterBlock(block, width);
-        const samples = sampleIndices.map((index) => ({ index, ...evaluate(index) }));
-        const finiteSamples = samples.filter(
-          (sample) => Number.isFinite(sample.strongestDbm) && Number.isFinite(sample.weakestDbm),
-        );
-        if (area === 1 || finiteSamples.length === 0) return null;
-        if (finiteSamples.length !== samples.length) return splitRasterBlock(block);
-
-        const xLast = block.x1 - 1;
-        const yLast = block.y1 - 1;
-        const cornerIndices = [
-          block.y0 * width + block.x0,
-          block.y0 * width + xLast,
-          yLast * width + block.x0,
-          yLast * width + xLast,
-        ];
-        const corners = cornerIndices.map(evaluate);
-        const predict = (index: number, field: "strongestDbm" | "weakestDbm"): number => {
+  const filledPixels = totalPixels;
+  if (!reuseCachedMetrics) {
+    for (let contributorIndex = 0; contributorIndex < contributors.length; contributorIndex += 1) {
+      const contributor = contributors[contributorIndex];
+      const surface = new Float32Array(totalPixels).fill(Number.NaN);
+      const evaluated = new Uint8Array(totalPixels);
+      const analysisContext = contextForProgressRange(
+        context,
+        (contributorIndex / contributors.length) * 90,
+        ((contributorIndex + 1) / contributors.length) * 90,
+      );
+      const evaluate = (index: number): number => {
+        if (!evaluated[index]) {
+          evaluated[index] = 1;
           const y = Math.floor(index / width);
           const x = index - y * width;
-          const tx = xLast === block.x0 ? 0 : (x - block.x0) / (xLast - block.x0);
-          const ty = yLast === block.y0 ? 0 : (y - block.y0) / (yLast - block.y0);
-          const top = corners[0][field] + (corners[1][field] - corners[0][field]) * tx;
-          const bottom = corners[2][field] + (corners[3][field] - corners[2][field]) * tx;
-          return top + (bottom - top) * ty;
-        };
-        const stable = finiteSamples.every(
-          (sample) =>
-            Math.abs(sample.strongestDbm - predict(sample.index, "strongestDbm")) <= 0.75 &&
-            Math.abs(sample.weakestDbm - predict(sample.index, "weakestDbm")) <= 0.75,
-        );
-        if (!stable) return splitRasterBlock(block);
-
-        for (let y = block.y0; y < block.y1; y += 1) {
-          for (let x = block.x0; x < block.x1; x += 1) {
-            const index = y * width + x;
-            metricCache.strongestDbm[index] = predict(index, "strongestDbm");
-            metricCache.weakestDbm[index] = predict(index, "weakestDbm");
+          const lat = latByRow[y];
+          const lon = lonByCol[x];
+          if (!pointMask || pointMask(lat, lon)) {
+            surface[index] = contributor.evaluatePoint(lat, lon);
+            evaluatedPaths += 1;
           }
         }
-        return null;
-      },
-      analysisContext,
-    );
-    refinedBlocks = result.refinedBlocks;
-    filledPixels = result.filledPixels;
+        return surface[index];
+      };
+
+      if (input.adaptive === false) {
+        await runCooperativeLoop(totalPixels, evaluate, analysisContext);
+      } else {
+        const result = await runAdaptiveBlockQueue(
+          partitionAdaptiveCoverageBlocks(width, height, adaptiveSeedGridSize),
+          totalPixels,
+          (block) => {
+            const area = rasterBlockArea(block);
+            const sampleIndices = passFailSampleIndicesForRasterBlock(block, width);
+            const finiteSamples = sampleIndices
+              .map((index) => ({ index, valueDbm: evaluate(index) }))
+              .filter((sample) => Number.isFinite(sample.valueDbm));
+            if (area === 1 || finiteSamples.length === 0) return null;
+            if (finiteSamples.length !== sampleIndices.length) return splitRasterBlock(block);
+
+            const xLast = block.x1 - 1;
+            const yLast = block.y1 - 1;
+            const cornerValues = [
+              evaluate(block.y0 * width + block.x0),
+              evaluate(block.y0 * width + xLast),
+              evaluate(yLast * width + block.x0),
+              evaluate(yLast * width + xLast),
+            ];
+            const predict = (index: number): number => {
+              const y = Math.floor(index / width);
+              const x = index - y * width;
+              const tx = xLast === block.x0 ? 0 : (x - block.x0) / (xLast - block.x0);
+              const ty = yLast === block.y0 ? 0 : (y - block.y0) / (yLast - block.y0);
+              const top = cornerValues[0] + (cornerValues[1] - cornerValues[0]) * tx;
+              const bottom = cornerValues[2] + (cornerValues[3] - cornerValues[2]) * tx;
+              return top + (bottom - top) * ty;
+            };
+            if (finiteSamples.some((sample) => Math.abs(sample.valueDbm - predict(sample.index)) > 0.75)) {
+              return splitRasterBlock(block);
+            }
+
+            for (let y = block.y0; y < block.y1; y += 1) {
+              for (let x = block.x0; x < block.x1; x += 1) {
+                const index = y * width + x;
+                surface[index] = predict(index);
+              }
+            }
+            return null;
+          },
+          analysisContext,
+        );
+        refinedBlocks += result.refinedBlocks;
+      }
+
+      for (let index = 0; index < totalPixels; index += 1) {
+        const valueDbm = surface[index];
+        if (!Number.isFinite(valueDbm)) continue;
+        metricCache.strongestDbm[index] = Math.max(metricCache.strongestDbm[index], valueDbm);
+        metricCache.weakestDbm[index] = Math.min(metricCache.weakestDbm[index], valueDbm);
+      }
+    }
+    for (let index = 0; index < totalPixels; index += 1) {
+      if (!Number.isFinite(metricCache.strongestDbm[index])) metricCache.strongestDbm[index] = Number.NaN;
+      if (!Number.isFinite(metricCache.weakestDbm[index])) metricCache.weakestDbm[index] = Number.NaN;
+    }
   }
   if (metricCacheKey) coverageMetricCache.set(metricCacheKey, metricCache);
 
@@ -1466,6 +1500,7 @@ export const buildMeshExtensionOverlayPixelsAsync = async (
   const coverageGridSize = resolveMeshExtensionCoverageGridSize(input.coverageGridSize ?? candidateGridSize);
   const coveragePoints = buildCoverageGridPoints(coverageGridSize, input.bounds);
   const coverageDimensions = computeCoverageGridDimensions(coverageGridSize, input.bounds);
+  const candidateDimensions = computeCoverageGridDimensions(candidateGridSize, input.bounds);
   const profile = deriveMeshExtensionCandidateProfile(input.selectedSites);
   const terrainSamples = Math.max(16, Math.round(input.terrainSamples));
   const thresholdBeforeEnvironmentDbm = input.rxTargetDbm + input.environmentLossDb;
@@ -1519,10 +1554,10 @@ export const buildMeshExtensionOverlayPixelsAsync = async (
   const uncoveredAreaPrefix = buildAreaPrefixSum(uncoveredAreaByTarget, coverageDimensions);
   const adaptiveBlocks = buildAdaptiveGridBlocks(coverageDimensions);
 
-  const width = input.dimensions.width;
-  const height = input.dimensions.height;
+  const width = candidateDimensions.cols;
+  const height = candidateDimensions.rows;
   const totalCandidates = width * height;
-  const { latByRow, lonByCol } = precomputeGridAxes(input.bounds, input.dimensions);
+  const { latByRow, lonByCol } = precomputeGridAxes(input.bounds, { width, height });
   const connectivityDbm = new Float32Array(totalCandidates).fill(Number.NaN);
   const newlyCoveredAreaKm2 = new Float32Array(totalCandidates).fill(Number.NaN);
   const candidateEvaluated = new Uint8Array(totalCandidates);
@@ -1541,7 +1576,6 @@ export const buildMeshExtensionOverlayPixelsAsync = async (
     const x = candidateIndex - y * width;
     const lat = latByRow[y];
     const lon = lonByCol[x];
-    if (input.pointMask && !input.pointMask(lat, lon)) return;
     const ground = input.terrainSampler(lat, lon);
     if (ground === null) return;
     const candidate = siteFromProfile(`__mesh_extension_candidate_${candidateIndex}__`, lat, lon, ground, profile);
@@ -1701,19 +1735,44 @@ export const buildMeshExtensionOverlayPixelsAsync = async (
   if (!hasFiniteCandidate) return null;
   const maxAreaKm2 = computeDensePositivePercentile(newlyCoveredAreaKm2, 0.95);
   const connectivityScale = computeDenseCoverageRxTargetScale(connectivityDbm, input.rxTargetDbm);
-  const pixels = new Uint8ClampedArray(totalCandidates * 4);
+  const outputWidth = input.dimensions.width;
+  const outputHeight = input.dimensions.height;
+  const outputPixels = outputWidth * outputHeight;
+  const pixels = new Uint8ClampedArray(outputPixels * 4);
+  const { latByRow: outputLatByRow, lonByCol: outputLonByCol } = precomputeGridAxes(
+    input.bounds,
+    input.dimensions,
+  );
+  const interpolateCandidateValue = (values: Float32Array, x: number, y: number): number => {
+    const sourceX = outputWidth <= 1 ? 0 : (x / (outputWidth - 1)) * (width - 1);
+    const sourceY = outputHeight <= 1 ? 0 : (y / (outputHeight - 1)) * (height - 1);
+    const x0 = Math.floor(sourceX);
+    const y0 = Math.floor(sourceY);
+    const x1 = Math.min(width - 1, x0 + 1);
+    const y1 = Math.min(height - 1, y0 + 1);
+    const tx = sourceX - x0;
+    const ty = sourceY - y0;
+    const q00 = values[y0 * width + x0];
+    const q10 = values[y0 * width + x1];
+    const q01 = values[y1 * width + x0];
+    const q11 = values[y1 * width + x1];
+    if (![q00, q10, q01, q11].every(Number.isFinite)) return Number.NaN;
+    const top = q00 + (q10 - q00) * tx;
+    const bottom = q01 + (q11 - q01) * tx;
+    return top + (bottom - top) * ty;
+  };
 
   await runCooperativeLoop(
-    totalCandidates,
+    outputPixels,
     (index) => {
-      const y = Math.floor(index / width);
-      const x = index - y * width;
-      const lat = latByRow[y];
-      const lon = lonByCol[x];
+      const y = Math.floor(index / outputWidth);
+      const x = index - y * outputWidth;
+      const lat = outputLatByRow[y];
+      const lon = outputLonByCol[x];
       if (input.pointMask && !input.pointMask(lat, lon)) return;
       if (input.terrainSampler(lat, lon) === null) return;
-      const area = newlyCoveredAreaKm2[index];
-      const connectivity = connectivityDbm[index];
+      const area = interpolateCandidateValue(newlyCoveredAreaKm2, x, y);
+      const connectivity = interpolateCandidateValue(connectivityDbm, x, y);
       if (!Number.isFinite(area) || !Number.isFinite(connectivity)) return;
       const [r, g, b] = meshExtensionColorForArea(area, maxAreaKm2);
       const px = index * 4;
@@ -1726,8 +1785,8 @@ export const buildMeshExtensionOverlayPixelsAsync = async (
   );
 
   return {
-    width: input.dimensions.width,
-    height: input.dimensions.height,
+    width: outputWidth,
+    height: outputHeight,
     pixels,
     coordinates: overlayCoordinates(input.bounds),
     minDbm: connectivityScale.min,
