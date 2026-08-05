@@ -217,6 +217,39 @@ describe("overlayRaster async builders", () => {
     expect(matchingPixels / (dimensions.width * dimensions.height)).toBeGreaterThanOrEqual(0.99);
   });
 
+  it("keeps supersampled Pass/Fail boundaries close to the exact display-pixel result", async () => {
+    const dimensions = { width: 312, height: 312 };
+    const ridgeTerrain = (lat: number, lon: number) => {
+      const latOffset = (lat - 59.9) / 0.1;
+      const lonOffset = (lon - 10.7) / 0.1;
+      const ridgeOffset = latOffset - lonOffset * 0.42 - 0.413;
+      return 105 + Math.exp(-(ridgeOffset ** 2) / 0.0014) * 155;
+    };
+    const exact = await buildSourcePassFailOverlayPixelsAsync(
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+      -118, 0, ridgeTerrain, dimensions, 24, undefined,
+      { phase: "passfail", signature: "supersampled-ridge-reference" }, { adaptive: false },
+    );
+    const adaptive = await buildSourcePassFailOverlayPixelsAsync(
+      bounds, fromSite, link, toSite.antennaHeightM, toSite.rxGainDbi, environment,
+      -118, 0, ridgeTerrain, dimensions, 24, undefined,
+      { phase: "passfail", signature: "supersampled-ridge-adaptive" }, { adaptive: true },
+    );
+
+    let matchingPixels = 0;
+    for (let index = 0; index < dimensions.width * dimensions.height; index += 1) {
+      const offset = index * 4;
+      if (
+        exact!.pixels[offset] === adaptive!.pixels[offset] &&
+        exact!.pixels[offset + 1] === adaptive!.pixels[offset + 1] &&
+        exact!.pixels[offset + 2] === adaptive!.pixels[offset + 2]
+      ) matchingPixels += 1;
+    }
+    const agreement = matchingPixels / (dimensions.width * dimensions.height);
+    expect(agreement).toBeGreaterThanOrEqual(0.9999);
+    expect(adaptive?.analysisStats?.evaluatedPaths).toBeLessThan(dimensions.width * dimensions.height * 0.45);
+  });
+
   it("reuses cached Pass/Fail RF metrics when only the target changes", async () => {
     const dimensions = { width: 96, height: 96 };
     let firstReads = 0;
