@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.26.1] - 2026-08-05
+
+### Fixed
+- Restored production access after the Simulation lifecycle rollout by applying and verifying its required D1 migration before production deployment. (#984)
+
 ## [0.26.0] - 2026-08-05
 
 ### Added
