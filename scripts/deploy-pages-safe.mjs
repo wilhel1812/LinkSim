@@ -192,8 +192,8 @@ const parseWranglerJsonPayload = (stdout) => {
 
 async function verifyRemoteSchema(targetName, databaseName) {
   if (targetName !== "staging" && targetName !== "prod-main") return;
-  // Skip in CI: schema correctness is enforced by the PR/migration review process.
-  // The check requires D1 API access beyond what the deploy token provides.
+  // CI workflows apply and verify required migrations before invoking this deploy script.
+  // Keep the local preflight for operators with D1 read access.
   if (process.env.GITHUB_ACTIONS === "true") return;
   let resourceChangesResult;
   let simulationsResult;
