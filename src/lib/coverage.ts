@@ -70,6 +70,43 @@ const COVERAGE_COMPUTE_CHUNK_SIZE = 48;
 const COVERAGE_COMPUTE_FRAME_BUDGET_MS = 12;
 export const CANONICAL_OVERLAY_PIXELS_PER_BASE_SAMPLE = 174;
 
+export type CalibratedOverlayGridMode =
+  | "heatmap"
+  | "weakest"
+  | "contours"
+  | "passfail"
+  | "relay"
+  | "mesh-extension";
+
+const COVERAGE_OVERLAY_BASE_SCALE = 0.22;
+const RELAY_OVERLAY_SCALE = 0.52;
+const MESH_EXTENSION_BASE_SCALE = 0.12;
+const MESH_EXTENSION_COVERAGE_GRID_SCALE = 0.5;
+
+const participantAdjustedScale = (baseScale: number, participantCount: number): number => {
+  const count = Math.max(1, Math.round(participantCount));
+  return Math.max(0.1, Math.min(1, baseScale * Math.sqrt(2 / count)));
+};
+
+/**
+ * Workload calibration uses Pass/Fail 1x as the timing baseline. Coverage and
+ * Mesh Extension scale with the number of sites they evaluate at each point.
+ */
+export const resolveOverlayGridWorkloadScale = (
+  mode: CalibratedOverlayGridMode,
+  participantCount = 1,
+): number => {
+  if (mode === "passfail") return 1;
+  if (mode === "relay") return RELAY_OVERLAY_SCALE;
+  if (mode === "mesh-extension") {
+    return participantAdjustedScale(MESH_EXTENSION_BASE_SCALE, participantCount);
+  }
+  return participantAdjustedScale(COVERAGE_OVERLAY_BASE_SCALE, participantCount);
+};
+
+export const resolveMeshExtensionCoverageBudgetGridSize = (gridSize: number): number =>
+  Math.max(6, Math.round(gridSize * MESH_EXTENSION_COVERAGE_GRID_SCALE));
+
 export const computeCoverageGridDimensions = (
   gridSize: number,
   bounds: CoverageGridBounds,
@@ -102,6 +139,19 @@ export const computeCanonicalOverlayGridDimensions = (
   const height = Math.max(8, Math.min(1400, Math.round(rows * resolutionScale * displaySupersample)));
   return { width, height, totalSamples: width * height };
 };
+
+export const computeCalibratedOverlayGridDimensions = (
+  gridSize: number,
+  bounds: CoverageGridBounds,
+  mode: CalibratedOverlayGridMode,
+  resolutionScale = 1,
+  participantCount = 1,
+): { width: number; height: number; totalSamples: number } =>
+  computeCanonicalOverlayGridDimensions(
+    gridSize,
+    bounds,
+    resolutionScale * resolveOverlayGridWorkloadScale(mode, participantCount),
+  );
 
 export const resolveCanonicalOverlayResolutionScale = (bounds: CoverageGridBounds): number => {
   const centerLat = (bounds.minLat + bounds.maxLat) / 2;
@@ -265,6 +315,12 @@ const resolveCoverageMemberships = (
   const fallbackSystem = systems[0];
   return fallbackSystem ? sites.map((site) => ({ site, system: fallbackSystem })) : [];
 };
+
+export const resolveCoverageParticipantCount = (
+  network: Network,
+  sites: Site[],
+  systems: RadioSystem[],
+): number => Math.max(1, resolveCoverageMemberships(network, sites, systems).length);
 
 const evaluateCoveragePoint = (
   sample: CoverageGridPoint,

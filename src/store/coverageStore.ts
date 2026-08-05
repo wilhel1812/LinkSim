@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import {
-  computeCanonicalOverlayGridDimensions,
+  computeCalibratedOverlayGridDimensions,
   resolveCanonicalOverlayResolutionScale,
+  resolveCoverageParticipantCount,
+  type CalibratedOverlayGridMode,
 } from "../lib/coverage";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import {
@@ -16,8 +18,7 @@ import {
   recordSimulationRunCancelled,
 } from "../lib/simulationPerf";
 import { sampleSrtmElevation } from "../lib/srtm";
-import type { Site, SrtmTile } from "../types/radio";
-import type { CoverageSample } from "../types/radio";
+import type { CoverageSample, Network, RadioSystem, Site, SrtmTile } from "../types/radio";
 
 const COVERAGE_RECOMPUTE_DEBOUNCE_MS = 140;
 const COVERAGE_MIN_VISIBLE_MS = 600;
@@ -105,14 +106,6 @@ export const resolveAutomaticCalculationThresholds = (
   };
 };
 
-type NetworkLike = {
-  id: string;
-  frequencyMHz?: number;
-  frequencyOverrideMHz?: number;
-  memberships?: Array<{ siteId: string; systemId: string }>;
-  [key: string]: unknown;
-};
-
 type LinkLike = {
   id: string;
   fromSiteId: string;
@@ -123,10 +116,10 @@ type LinkLike = {
 type CoverageInputs = {
   selectedCoverageResolution: "24" | "42" | "84" | "168";
   effectiveCoverageResolution: "24" | "42" | "84" | "168";
-  networks: NetworkLike[];
+  networks: Network[];
   selectedNetworkId: string;
   sites: Site[];
-  systems: unknown[];
+  systems: RadioSystem[];
   propagationModel: string;
   srtmTiles: SrtmTile[];
   links: LinkLike[];
@@ -147,6 +140,28 @@ const normalizeCoverageResolution = (raw: unknown): "24" | "42" | "84" | "168" =
   return "24";
 };
 
+const normalizeCalibratedOverlayGridMode = (raw: string): CalibratedOverlayGridMode =>
+  raw === "heatmap" ||
+  raw === "weakest" ||
+  raw === "contours" ||
+  raw === "passfail" ||
+  raw === "relay" ||
+  raw === "mesh-extension"
+    ? raw
+    : "passfail";
+
+const overlayParticipantCount = (
+  mode: CalibratedOverlayGridMode,
+  inputs: CoverageInputs,
+  network: Network,
+): number => {
+  if (mode === "mesh-extension") {
+    return Math.max(1, inputs.selectedSiteIds.length || inputs.sites.length);
+  }
+  if (mode !== "heatmap" && mode !== "weakest" && mode !== "contours") return 1;
+  return resolveCoverageParticipantCount(network, inputs.sites, inputs.systems);
+};
+
 const readCoverageInputs = (appState: Record<string, unknown>): CoverageInputs => {
   const selectedCoverageResolution = normalizeCoverageResolution(appState.selectedCoverageResolution);
   const isTerrainFetching = Boolean(appState.isTerrainFetching);
@@ -154,10 +169,10 @@ const readCoverageInputs = (appState: Record<string, unknown>): CoverageInputs =
   return {
     selectedCoverageResolution,
     effectiveCoverageResolution,
-    networks: (appState.networks as NetworkLike[]) ?? [],
+    networks: (appState.networks as Network[]) ?? [],
     selectedNetworkId: (appState.selectedNetworkId as string) ?? "",
     sites: (appState.sites as Site[]) ?? [],
-    systems: (appState.systems as unknown[]) ?? [],
+    systems: (appState.systems as RadioSystem[]) ?? [],
     propagationModel: (appState.propagationModel as string) ?? "",
     srtmTiles: (appState.srtmTiles as SrtmTile[]) ?? [],
     links: (appState.links as LinkLike[]) ?? [],
@@ -188,7 +203,7 @@ const siteSignature = (site: Site): string =>
 
 const linkSignature = (link: LinkLike): string => [link.id, link.fromSiteId, link.toSiteId].join(":");
 
-const networkSignature = (network: NetworkLike): string => {
+const networkSignature = (network: Network): string => {
   const memberships = (network.memberships ?? [])
     .map((member) => `${member.siteId}>${member.systemId}`)
     .sort()
@@ -382,12 +397,19 @@ const runCoverageComputation = async (
     const targetRadiusKm = resolveTargetOverlayRadiusKm(selectionCount, selectedOverlayRadiusOption);
     const effectiveOverlayRadiusKm = targetRadiusKm;
 
-    const boundsForCount = simulationAreaBoundsForSites(inputs.sites, { overlayRadiusKm: effectiveOverlayRadiusKm });
+    const countSites =
+      selectionCount === 1
+        ? inputs.sites.filter((site) => site.id === inputs.selectedSiteIds[0])
+        : inputs.sites;
+    const boundsForCount = simulationAreaBoundsForSites(countSites, { overlayRadiusKm: effectiveOverlayRadiusKm });
+    const calibratedMode = normalizeCalibratedOverlayGridMode(inputs.mapOverlayMode);
     const sampleCount = boundsForCount
-      ? computeCanonicalOverlayGridDimensions(
+      ? computeCalibratedOverlayGridDimensions(
           gridSize,
           boundsForCount,
+          calibratedMode,
           resolveCanonicalOverlayResolutionScale(boundsForCount),
+          overlayParticipantCount(calibratedMode, inputs, network),
         ).totalSamples
       : 0;
     set({
