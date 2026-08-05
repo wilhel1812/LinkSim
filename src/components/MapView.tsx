@@ -1999,6 +1999,26 @@ export function MapView({
       selectedSiteRadioDigest,
       meshExtensionFrequencyMHz,
     ].join("|");
+    const directAnalysisCacheKey = [
+      mode,
+      overlayBounds.minLat.toFixed(5),
+      overlayBounds.maxLat.toFixed(5),
+      overlayBounds.minLon.toFixed(5),
+      overlayBounds.maxLon.toFixed(5),
+      overlayDimensions.width,
+      overlayDimensions.height,
+      srtmTiles.length,
+      terrainLoadEpoch,
+      effectiveGridSize,
+      activeSelectionLink?.id ?? "",
+      activeSelectionLink?.frequencyMHz ?? "",
+      activeSelectionLink?.txPowerDbm ?? "",
+      activeSelectionLink?.txGainDbi ?? "",
+      activeSelectionLink?.rxGainDbi ?? "",
+      activeSelectionLink?.cableLossDb ?? "",
+      selectedSiteRadioDigest,
+      propagationEnvironmentDigest,
+    ].join("|");
     if (
       shouldDeferOverlayRasterization({
         isTerrainFetching,
@@ -2140,6 +2160,7 @@ export function MapView({
               effectiveGridSize,
               overlayPointMask,
               context,
+              { adaptive: true, analysisCacheKey: directAnalysisCacheKey },
             );
           } else if (mode === "relay") {
             rasterPixels = await buildRelayCandidateOverlayPixelsAsync(
@@ -2154,6 +2175,7 @@ export function MapView({
               effectiveGridSize,
               overlayPointMask,
               context,
+              { adaptive: true, analysisCacheKey: directAnalysisCacheKey },
             );
           } else if (mode === "mesh-extension") {
             rasterPixels = await buildMeshExtensionOverlayPixelsAsync({
@@ -2212,6 +2234,8 @@ export function MapView({
             pixelCount: rasterPixels.width * rasterPixels.height,
             gridSize: effectiveGridSize,
             effectiveRadiusKm: overlayRadiusKm,
+            evaluatedPaths: rasterPixels.analysisStats?.evaluatedPaths,
+            refinedBlocks: rasterPixels.analysisStats?.refinedBlocks,
           });
           const overlayValue = raster ? { ...raster } : null;
           if (overlayValue) {

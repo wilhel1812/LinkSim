@@ -17,6 +17,8 @@ type OverlayPerfRecord = {
   pixelCount: number;
   gridSize: number;
   effectiveRadiusKm: number;
+  evaluatedPaths?: number;
+  refinedBlocks?: number;
 };
 
 type PendingRunPerf = {
@@ -92,6 +94,8 @@ const maybeLogRun = (runId: string): void => {
     overlayGridSize: pending.overlay.gridSize,
     effectiveRadiusKm: pending.coverage.effectiveRadiusKm,
     overlayRadiusKm: pending.overlay.effectiveRadiusKm,
+    evaluatedPaths: pending.overlay.evaluatedPaths,
+    refinedBlocks: pending.overlay.refinedBlocks,
   });
 
   pendingByRun.delete(runId);

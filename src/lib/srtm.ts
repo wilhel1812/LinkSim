@@ -164,6 +164,15 @@ const pickTileForCoordinate = (
   lat: number,
   lon: number,
 ): SrtmTile | null => {
+  const latFloor = Math.floor(lat);
+  const lonFloor = Math.floor(lon);
+  const onLatBoundary = Math.abs(lat - latFloor) <= NEAR_INTEGER_EPSILON;
+  const onLonBoundary = Math.abs(lon - lonFloor) <= NEAR_INTEGER_EPSILON;
+  if (!onLatBoundary && !onLonBoundary) {
+    const candidate = lookup.get(tileKeyForStart(latFloor, lonFloor));
+    return candidate && inTile(candidate, lat, lon) ? candidate : null;
+  }
+
   let chosen: SrtmTile | null = null;
 
   for (const key of candidateTileKeysForCoordinate(lat, lon)) {

@@ -3597,11 +3597,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       pendingSiteLibraryOpenEntryId: entryId.trim() ? entryId : null,
     }),
   clearOpenSiteLibraryEntryRequest: () => set({ pendingSiteLibraryOpenEntryId: null }),
-  setMapOverlayMode: (mode) =>
+  setMapOverlayMode: (mode) => {
+    let changed = false;
     set((state) => {
       if (state.mapOverlayMode === mode) return state;
+      changed = true;
       return { mapOverlayMode: mode };
-    }),
+    });
+    if (changed) useCoverageStore.getState().recomputeCoverage();
+  },
   setDiscoveryVisibility: ({ libraryVisible, mqttVisible }) =>
     set((state) => {
       if (

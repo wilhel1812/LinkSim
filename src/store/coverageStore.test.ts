@@ -68,6 +68,7 @@ const makeBridgeState = () => ({
   selectedSiteIds: ["site-1"],
   isTerrainFetching: false,
   selectedOverlayRadiusOption: "50",
+  mapOverlayMode: "heatmap",
 });
 
 let bridgeState = makeBridgeState();
@@ -173,6 +174,23 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
     expect(useCoverageStore.getState().calculationCycleSource).toBe("manual");
     expect(buildSpy.mock.calls[0]?.[6]).toEqual(expect.objectContaining({ overlayRadiusKm: 50 }));
+  });
+
+  it("skips the generic coverage grid for direct-analysis overlay modes", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    bridgeState.mapOverlayMode = "passfail";
+    useCoverageStore.setState({
+      coverageSamples: [{ lat: site.position.lat, lon: site.position.lon, valueDbm: -88 }],
+    });
+
+    useCoverageStore.getState().startManualCalculation();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+
+    expect(buildSpy).not.toHaveBeenCalled();
+    expect(useCoverageStore.getState().isSimulationRecomputing).toBe(false);
+    expect(useCoverageStore.getState().completedCoverageRunToken).not.toBe("");
+    expect(useCoverageStore.getState().coverageSamples[0]?.valueDbm).toBe(-88);
   });
 
   it("does not calculate or retain results when required terrain tiles remain unavailable", async () => {

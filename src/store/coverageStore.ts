@@ -141,6 +141,7 @@ type CoverageInputs = {
   selectedSiteIds: string[];
   isTerrainFetching: boolean;
   selectedOverlayRadiusOptionRaw: unknown;
+  mapOverlayMode: string;
 };
 
 const normalizeCoverageResolution = (raw: unknown): "24" | "42" | "84" | "168" => {
@@ -171,6 +172,7 @@ const readCoverageInputs = (appState: Record<string, unknown>): CoverageInputs =
     selectedSiteIds: ((appState.selectedSiteIds as string[]) ?? []).filter((id) => typeof id === "string"),
     isTerrainFetching,
     selectedOverlayRadiusOptionRaw: appState.selectedOverlayRadiusOption,
+    mapOverlayMode: String(appState.mapOverlayMode ?? "heatmap"),
   };
 };
 
@@ -234,6 +236,7 @@ const coverageInputSignature = (inputs: CoverageInputs): string => {
     `selectedSites=${inputs.selectedSiteIds.join(",")}`,
     `terrainFetching=${inputs.isTerrainFetching ? 1 : 0}`,
     `overlayRadius=${String(inputs.selectedOverlayRadiusOptionRaw ?? "")}`,
+    `overlayMode=${inputs.mapOverlayMode}`,
   ].join("|");
 };
 
@@ -395,6 +398,24 @@ const runCoverageComputation = async (
     );
     const targetRadiusKm = resolveTargetOverlayRadiusKm(selectionCount, selectedOverlayRadiusOption);
     const effectiveOverlayRadiusKm = targetRadiusKm;
+
+    const requiresCoverageSamples =
+      inputs.mapOverlayMode === "heatmap" ||
+      inputs.mapOverlayMode === "weakest" ||
+      inputs.mapOverlayMode === "contours";
+    if (!requiresCoverageSamples) {
+      set({
+        simulationProgressMode: "indeterminate",
+        simulationStepLabel: "Preparing Simulation overlay...",
+      });
+      if (get().simulationRunToken !== runId) {
+        markCancelled("token-mismatch-before-mode-finalize");
+        return;
+      }
+      finalizeRunComplete(set, get, runId, get().coverageSamples);
+      lastAppliedCoverageSignature = runSignature;
+      return;
+    }
 
     const boundsForCount = simulationAreaBoundsForSites(inputs.sites, { overlayRadiusKm: effectiveOverlayRadiusKm });
     const sampleCount = boundsForCount
