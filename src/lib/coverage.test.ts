@@ -6,7 +6,7 @@ import {
   computeCanonicalOverlayGridDimensions,
   computeCoverageGridDimensions,
   CoverageBuildCancelledError,
-  createCoveragePointEvaluator,
+  createCoverageContributorEvaluators,
   resolveMeshExtensionCoverageBudgetGridSize,
   resolveOverlayGridWorkloadScale,
 } from "./coverage";
@@ -98,20 +98,24 @@ describe("buildCoverage", () => {
 
   it("evaluates only the selected coverage contributors", () => {
     const selectedSites = resolveSimulationSitesForSelection(sites, ["s1"]);
-    const selectedEvaluator = createCoveragePointEvaluator(
+    const selectedEvaluators = createCoverageContributorEvaluators(
       network,
       selectedSites,
       systems,
       defaultPropagationEnvironment(),
     );
-    const singleMembershipEvaluator = createCoveragePointEvaluator(
+    const singleMembershipEvaluators = createCoverageContributorEvaluators(
       { ...network, memberships: [network.memberships[0]] },
       sites,
       systems,
       defaultPropagationEnvironment(),
     );
 
-    expect(selectedEvaluator(59.95, 10.85)).toEqual(singleMembershipEvaluator(59.95, 10.85));
+    expect(selectedEvaluators).toHaveLength(1);
+    expect(singleMembershipEvaluators).toHaveLength(1);
+    expect(selectedEvaluators[0].evaluatePoint(59.95, 10.85)).toBe(
+      singleMembershipEvaluators[0].evaluatePoint(59.95, 10.85),
+    );
   });
 
   it("keeps Mesh Extension's nested comparison grid at the selected resolution", () => {

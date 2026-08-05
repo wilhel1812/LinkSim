@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCoverageGridPoints,
   computeCalibratedOverlayGridDimensions,
-  createCoveragePointEvaluator,
+  createCoverageContributorEvaluators,
   resolveMeshExtensionCoverageBudgetGridSize,
 } from "./coverage";
 import {
   buildAdaptiveCoverageOverlayPixelsAsync,
+  buildCoverageOverlayPixelsAsync,
   buildMeshExtensionOverlayPixelsAsync,
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
@@ -29,6 +31,14 @@ const sites: Site[] = [
   {
     id: "b", name: "B", position: { lat: 59.93, lon: 10.74 }, groundElevationM: 140,
     antennaHeightM: 12, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+  },
+  {
+    id: "c", name: "C", position: { lat: 59.84, lon: 10.72 }, groundElevationM: 110,
+    antennaHeightM: 14, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+  },
+  {
+    id: "d", name: "D", position: { lat: 59.97, lon: 10.66 }, groundElevationM: 150,
+    antennaHeightM: 10, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
   },
 ];
 const system: RadioSystem = {
@@ -66,7 +76,7 @@ describe("overlay mode timing calibration", () => {
     ));
     await measure("heatmap", () => buildAdaptiveCoverageOverlayPixelsAsync({
       bounds, dimensions: heatmapDimensions, initialGridSize: 24, mode: "heatmap", rxTargetDbm: -118,
-      evaluatePoint: createCoveragePointEvaluator(network, sites, [system], environment, () => 100, {
+      contributors: createCoverageContributorEvaluators(network, sites, [system], environment, () => 100, {
         terrainSamples: 20, terrainCacheKey: "bench-heatmap", requireCompleteTerrain: true,
       }),
       context: context("heatmap"), adaptive: true, analysisCacheKey: "bench-heatmap",
@@ -83,6 +93,68 @@ describe("overlay mode timing calibration", () => {
     }));
     expect(Object.values(timings)).toHaveLength(4);
     expect(Object.values(timings).every((durationMs) => durationMs > 0)).toBe(true);
+  }, 120_000);
+
+  it("keeps four-site 1x Heatmap within the production timing budget", async () => {
+    const dimensions = computeCalibratedOverlayGridDimensions(24, bounds, "heatmap");
+    const rasterDimensions = { width: dimensions.width, height: dimensions.height };
+    const measure = async (run: () => Promise<unknown>): Promise<number> => {
+      const startedAt = performance.now();
+      await run();
+      return performance.now() - startedAt;
+    };
+    const productionDurations: number[] = [];
+    const adaptiveDurations: number[] = [];
+    for (let runIndex = 0; runIndex < 3; runIndex += 1) {
+      const productionContributors = createCoverageContributorEvaluators(
+        network,
+        sites,
+        [system],
+        environment,
+        () => 100,
+        { terrainSamples: 20, terrainCacheKey: `production-${runIndex}`, requireCompleteTerrain: true },
+      );
+      productionDurations.push(await measure(async () => {
+        const samples = buildCoverageGridPoints(24, bounds).map((point) => ({
+          ...point,
+          valueDbm: Math.max(...productionContributors.map((contributor) =>
+            contributor.evaluatePoint(point.lat, point.lon))),
+        }));
+        await buildCoverageOverlayPixelsAsync(
+          bounds,
+          samples,
+          "heatmap",
+          5,
+          rasterDimensions,
+          undefined,
+          () => 100,
+          context(`production-${runIndex}`),
+          { rxTargetDbm: -118 },
+        );
+      }));
+
+      const adaptiveContributors = createCoverageContributorEvaluators(
+        network,
+        sites,
+        [system],
+        environment,
+        () => 100,
+        { terrainSamples: 20, terrainCacheKey: `adaptive-${runIndex}`, requireCompleteTerrain: true },
+      );
+      adaptiveDurations.push(await measure(() => buildAdaptiveCoverageOverlayPixelsAsync({
+        bounds,
+        dimensions: rasterDimensions,
+        initialGridSize: 24,
+        mode: "heatmap",
+        rxTargetDbm: -118,
+        contributors: adaptiveContributors,
+        context: context(`adaptive-${runIndex}`),
+        adaptive: true,
+      })));
+    }
+    productionDurations.sort((left, right) => left - right);
+    adaptiveDurations.sort((left, right) => left - right);
+    expect(adaptiveDurations[1]).toBeLessThanOrEqual(productionDurations[1] * 1.1);
   }, 120_000);
 
 });

@@ -84,9 +84,13 @@ export type CalibratedOverlayGridMode =
  * reduce the number of expensive RF calculations underneath that grid.
  */
 export const resolveOverlayGridWorkloadScale = (
-  _mode: CalibratedOverlayGridMode,
-  _participantCount = 1,
-): number => 1;
+  mode: CalibratedOverlayGridMode,
+  participantCount = 1,
+): number => {
+  void mode;
+  void participantCount;
+  return 1;
+};
 
 export const resolveMeshExtensionCoverageBudgetGridSize = (gridSize: number): number =>
   Math.max(6, Math.round(gridSize));
@@ -332,14 +336,19 @@ const evaluateCoveragePoint = (
   };
 };
 
-export const createCoveragePointEvaluator = (
+export type CoverageContributorEvaluator = {
+  id: string;
+  evaluatePoint: (lat: number, lon: number) => number;
+};
+
+export const createCoverageContributorEvaluators = (
   network: Network,
   sites: Site[],
   systems: RadioSystem[],
   environment: PropagationEnvironment,
   terrainSampler?: (coordinates: Coordinates) => number | null,
   options?: Pick<BuildCoverageOptions, "terrainSamples" | "terrainCacheKey" | "requireCompleteTerrain">,
-): ((lat: number, lon: number) => { strongestDbm: number; weakestDbm: number }) => {
+): CoverageContributorEvaluator[] => {
   const memberships = resolveCoverageMemberships(network, sites, systems);
   const frequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
   const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
@@ -347,18 +356,21 @@ export const createCoveragePointEvaluator = (
     terrainSampler && options?.requireCompleteTerrain
       ? requireTerrainSample(terrainSampler)
       : terrainSampler;
-  return (lat, lon) => {
-    const levels = evaluateCoveragePoint(
-      { lat, lon },
-      memberships,
-      frequencyMHz,
-      terrainSamples,
-      environment,
-      effectiveTerrainSampler,
-      options?.terrainCacheKey,
-    );
-    return { strongestDbm: levels.valueDbm, weakestDbm: levels.weakestDbm ?? levels.valueDbm };
-  };
+  return memberships.map(({ site, system }) => ({
+    id: `${site.id}:${system.id}`,
+    evaluatePoint: (lat, lon) =>
+      evalRx(
+        lat,
+        lon,
+        site,
+        system,
+        frequencyMHz,
+        terrainSamples,
+        environment,
+        effectiveTerrainSampler,
+        options?.terrainCacheKey,
+      ),
+  }));
 };
 
 

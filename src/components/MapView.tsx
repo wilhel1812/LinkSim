@@ -16,7 +16,8 @@ import Map, {
 import type { LayerProps } from "react-map-gl/maplibre";
 import {
   computeCalibratedOverlayGridDimensions,
-  createCoveragePointEvaluator,
+  computeCoverageGridDimensions,
+  createCoverageContributorEvaluators,
   resolveCanonicalOverlayResolutionScale,
   resolveMeshExtensionCoverageBudgetGridSize,
   type CalibratedOverlayGridMode,
@@ -1688,12 +1689,17 @@ export function MapView({
     return options.map(({ gridSize, name }) => {
       const fallback = { width: gridSize, height: gridSize, totalSamples: gridSize * gridSize };
       const dims = overlayBounds
-        ? computeCalibratedOverlayGridDimensions(
-            gridSize,
-            overlayBounds,
-            calibratedOverlayMode,
-            overlayResolutionScale,
-          )
+        ? calibratedOverlayMode === "mesh-extension"
+          ? (() => {
+              const analysis = computeCoverageGridDimensions(gridSize, overlayBounds);
+              return { width: analysis.cols, height: analysis.rows, totalSamples: analysis.totalSamples };
+            })()
+          : computeCalibratedOverlayGridDimensions(
+              gridSize,
+              overlayBounds,
+              calibratedOverlayMode,
+              overlayResolutionScale,
+            )
         : fallback;
       const isDefault = gridSize === 24;
       return {
@@ -2161,7 +2167,7 @@ export function MapView({
           } as const;
           let rasterPixels: OverlayRasterPixels | null = null;
           if (mode === "heatmap" || mode === "contours" || mode === "weakest") {
-            const evaluateCoveragePoint = createCoveragePointEvaluator(
+            const contributors = createCoverageContributorEvaluators(
               selectedNetwork!,
               coverageSites,
               systems,
@@ -2179,7 +2185,7 @@ export function MapView({
               initialGridSize: effectiveGridSize,
               mode,
               rxTargetDbm: rxSensitivityTargetDbm,
-              evaluatePoint: evaluateCoveragePoint,
+              contributors,
               pointMask: overlayPointMask,
               context,
               adaptive: true,

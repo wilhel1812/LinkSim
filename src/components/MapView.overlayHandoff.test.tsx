@@ -296,7 +296,7 @@ describe("MapView overlay handoff", () => {
     await waitFor(() => expect(recomputeCoverage).toHaveBeenCalledTimes(1));
   });
 
-  it("shows the same compact logical grid-point count for every area overlay", async () => {
+  it("shows the actual Mesh Extension analysis grid in the existing resolution selector", async () => {
     render(
       <MapView
         canPersist
@@ -313,8 +313,9 @@ describe("MapView overlay handoff", () => {
 
     act(() => useAppStore.getState().setMapOverlayMode("mesh-extension"));
     await waitFor(() => {
-      expect((screen.getByLabelText("Simulation Resolution") as HTMLSelectElement).options[0].textContent)
-        .toBe(heatmapLabel);
+      const meshLabel = (screen.getByLabelText("Simulation Resolution") as HTMLSelectElement).options[0].textContent ?? "";
+      expect(meshLabel).not.toBe(heatmapLabel);
+      expect(meshLabel).toContain("~576 grid points");
     });
   });
 

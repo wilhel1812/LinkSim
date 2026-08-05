@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   computeCalibratedOverlayGridDimensions,
+  computeCoverageGridDimensions,
   resolveCanonicalOverlayResolutionScale,
   type CalibratedOverlayGridMode,
 } from "../lib/coverage";
@@ -388,12 +389,14 @@ const runCoverageComputation = async (
     const boundsForCount = simulationAreaBoundsForSites(countSites, { overlayRadiusKm: effectiveOverlayRadiusKm });
     const calibratedMode = normalizeCalibratedOverlayGridMode(inputs.mapOverlayMode);
     const sampleCount = boundsForCount
-      ? computeCalibratedOverlayGridDimensions(
-          gridSize,
-          boundsForCount,
-          calibratedMode,
-          resolveCanonicalOverlayResolutionScale(boundsForCount),
-        ).totalSamples
+      ? calibratedMode === "mesh-extension"
+        ? computeCoverageGridDimensions(gridSize, boundsForCount).totalSamples
+        : computeCalibratedOverlayGridDimensions(
+            gridSize,
+            boundsForCount,
+            calibratedMode,
+            resolveCanonicalOverlayResolutionScale(boundsForCount),
+          ).totalSamples
       : 0;
     set({
       simulationProgress: 0,
