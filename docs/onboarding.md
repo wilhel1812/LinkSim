@@ -1,43 +1,59 @@
 # Getting Started
 
-## Simulations
-- A **simulation** is a complete setup of sites, links, and radio/model settings.
-- Open an existing simulation from the **Simulation Library** or create a new one.
-- Use clear names so teammates can find simulations quickly.
+LinkSim plans terrain-aware radio coverage and Paths between reusable Sites. Work is organized in Simulations, and signed-in users can sync and share their Library resources.
 
-## Sites
-- Sites are physical node locations with coordinates, ground elevation, and antenna height.
-- Manage your reusable site collection in **Site Library**.
-- Add sites by coordinates, map click, search, or Meshtastic MQTT sources.
-- Add sites from the library into the current simulation as needed.
-- Click on the map to create a temporary site pin, drag to refine position, then use **Save to Library** or **Dismiss**.
-- Drag existing sites to test alternative positions instantly, then use **Save Positions** or **Dismiss** to commit or revert.
+## 1. Choose or create a Simulation
 
-## Links and Site Selection
-- **Select multiple sites** on the map or sidebar using **{{MODIFIER}}+Click** to view a link between them.
-- The map overlay automatically adjusts based on your selection:
-  - **No selection** — Heatmap (quality overview)
-  - **One site** — Pass/Fail (threshold + terrain context)
-  - **Two sites** — Relay (best relay-candidate regions)
-- To save a link permanently, select two sites and press **Save** in the map inspector.
+- A **Simulation** contains its Sites, saved Paths, radio settings, map state, and calculation settings.
+- Open an existing Simulation from the **Simulation Library**, or choose **Create New Simulation** from the welcome screen.
+- The Library keeps search visible. Use **Filter and sort** to narrow Simulations by your role or visibility and to sort by name or recent activity.
+- Simulations are private by default. Use a clear name before sharing one with collaborators.
 
-## Channel and Model Settings
-- **Channel**: frequency, bandwidth, SF, coding rate, TX power, gains, cable loss, environment loss.
-- **Propagation model**: FSPL, TwoRay, or ITM (terrain-aware approximation).
-- **Terrain**: fetch and refresh terrain before relying on pass/fail decisions.
-- **RX target**: your decision threshold; pass/fail is based on this target.
+## 2. Add Sites
 
-## Map Overlays
-- The map can display several overlay modes:
+- A **Site** is a physical node location with coordinates, ground elevation, antenna height, and radio values.
+- Browse reusable Sites in the **Site Library**. Search and filters work independently in the Sites and Simulations sections.
+- Add one or several Library Sites to the current Simulation. On desktop, bulk selection applies to the filtered Site results.
+- You can also add a Site from coordinates, map search, a map click, or a visible Meshtastic MQTT source.
+- A map click creates a temporary Site pin. Drag it to refine the location, then choose **Save to Library** or **Dismiss**.
+- Drag existing Simulation Sites to compare positions, then choose **Save Positions** or **Dismiss** to commit or revert the move.
+
+## 3. Select Sites and inspect a Path
+
+- Select multiple Sites on the map or in the sidebar with **{{MODIFIER}}+Click**.
+- One selected Site makes single-Site analysis such as Pass/Fail and Panorama available. Two selected Sites make their Path, Path profile, and Relay analysis available.
+- Select two Sites and choose **Save** in the Inspector to keep the Path in the Simulation.
+- The browser address follows the active Simulation and Site selection, so the Share action can copy a deep link to the same view.
+
+## 4. Set the Channel and calculation area
+
+- Channel settings include the frequency plan, bandwidth, spreading factor, coding rate, TX power, antenna gains, cable loss, and environment loss.
+- LinkSim uses ITM for terrain-aware propagation. FSPL may appear in results as a reference value; it is not a selectable propagation model.
+- The **RX target** is the signal threshold used by Pass/Fail and target-line displays.
+- Choose the Simulation Resolution and Radius deliberately. Larger areas and higher resolutions require more terrain and calculation time.
+- LinkSim fetches Copernicus GLO-30 terrain for the selected area. A Simulation result is not calculated from a partial terrain set: if required terrain is unavailable, LinkSim clears the stale overlay and reports the problem.
+- Automatic calculation is convenient for normal work. For expensive settings, use **Start** for a deliberate one-shot run or **Stop** to cancel current terrain and calculation work.
+
+## 5. Choose an overlay or detailed view
+
+The available Simulation Overlay follows the current Site selection. You can switch among the compatible modes in the Inspector.
 
 | Overlay | What it shows | What to use it for |
 | --- | --- | --- |
-| Heatmap | Continuous RX strength estimate (dBm) across sampled area | Quick quality overview and hotspot discovery |
-| Contours | Stepped strength zones (grouped levels) | Fast threshold-oriented planning and area segmentation |
-| Pass/Fail | Four-state check: green (clear+pass), yellow (blocked+pass), orange (clear+fail), red (blocked+fail) | Clear threshold + terrain context in one view |
-| Relay | Best relay-candidate regions for selected From/To pair | Find where a third node could bridge weak links |
-| Terrain overlay | Terrain raster used by simulation in current area | Confirm what elevation input the model is actually using |
-| Path profile | Elevation profile + link geometry between selected endpoints | Validate LOS/Fresnel context and understand obstructions |
+| Heatmap | Strongest predicted Site signal across the selected area | Get a general coverage overview |
+| Weakest Site | Weakest signal from each point to any applicable Site | Find locations that must reach every Site |
+| Heatmap + Target Line | Heatmap plus the boundary where signal crosses the RX target | See coverage shape and the pass/fail edge together |
+| Pass/Fail | Clear/blocked and above/below-target states for one selected Site | Make a terrain-aware go/no-go check |
+| Relay | Candidate quality between two selected Sites | Find where a third node could bridge a weak Path |
+| Mesh Extension | Bidirectionally connected candidate areas that add terrain coverage | Place a new node that extends the existing mesh |
+| Terrain | Copernicus terrain shading for the current area | Confirm the terrain used by the Simulation |
 
-## Sharing and Permissions
-- Everything is **private by default**. Share simulations and sites with specific users when you're ready to collaborate.
+Use the **Path profile** for terrain, line-of-sight, and Fresnel context between two Sites. Use **Panorama** for a terrain-clipped 360-degree view from one Site.
+
+## 6. Save, share, and collaborate
+
+- Simulations and Sites are private by default. Their access settings are independent: a private Site can remain private when referenced by a shared Simulation.
+- Share with specific users as viewer or editor, or use the broader visibility options when the resource is intended for wider access.
+- Viewers can inspect shared work without editing it. Owners and editors can save permitted changes.
+- Library visibility and roles are collaboration controls, not a place to store secrets.
+- Cloud sync runs in the background while signed in. The account toolbar shows pending, syncing, offline, and current states.

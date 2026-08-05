@@ -20,8 +20,9 @@ Before pushing a branch:
 
 1. `npm test`
 2. `npm run build`
+3. `git diff --check`
 
-For pull requests, CI also runs coverage mode (`npm run test:ci`) and build.
+For pull requests, CI also runs the security scan, coverage mode (`npm run test:ci`), and the production build.
 
 ## Practical Rules
 

@@ -22,11 +22,7 @@ Copy the returned `database_id` into `wrangler.toml`.
 npx wrangler d1 execute linksim --file ./db/schema.sql
 ```
 
-For upgrades from older deployments, apply migrations explicitly (runtime auto-migrations are disabled):
-
-```bash
-npx wrangler d1 execute linksim --file ./db/migrations/2026-03-12_schema_alignment.sql
-```
+For upgrades from older deployments, review [`db/migrations`](../db/migrations) and apply each migration that the target database has not received, in filename order. Runtime auto-migrations are disabled, and deployment preflight stops when a required column is missing.
 
 ## 3) Configure Cloudflare Access (GitHub + OTP)
 
@@ -108,5 +104,7 @@ This is for local testing only.
 
 ## Related docs
 
-- Access policy templates: `docs/access-policy-templates.md`
-- Testing plan: `docs/testing-plan.md`
+- [Access policy templates](./access-policy-templates.md)
+- [Testing plan](./testing-plan.md)
+- [Staging environment](./staging-environment.md)
+- [Release flow](./release-flow.md)
