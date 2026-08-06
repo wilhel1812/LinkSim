@@ -132,7 +132,14 @@ vi.mock("./LinkProfileChart", () => ({ LinkProfileChart: () => null }));
 vi.mock("./PanoramaChart", () => ({ PanoramaChart: () => null }));
 vi.mock("./ActionButton", () => ({ ActionButton: ({ children, variant, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) => React.createElement("button", { ...props, "data-variant": variant }, children) }));
 vi.mock("./InlineCloseIconButton", () => ({ InlineCloseIconButton: () => null }));
-vi.mock("./ModalOverlay", () => ({ ModalOverlay: ({ children }: { children?: React.ReactNode }) => children ?? null }));
+vi.mock("./ModalOverlay", () => ({
+  ModalOverlay: ({ children, suspended, ...props }: { children?: React.ReactNode; suspended?: boolean; "aria-label": string }) =>
+    React.createElement("div", {
+      "aria-hidden": suspended || undefined,
+      "aria-label": props["aria-label"],
+      "data-modal-overlay": "true",
+    }, children),
+}));
 vi.mock("./app-shell/MobileWorkspaceTabs", () => ({ MobileWorkspaceTabs: () => null }));
 vi.mock("./app-shell/useOnboardingFlow", () => ({
   useOnboardingFlow: () => ({
@@ -312,6 +319,23 @@ describe("AppShell deeplink cold-load flow", () => {
       expect(document.body.textContent).toContain("869.4 MHz");
       expect(document.body.textContent).toContain("-127 dBm");
       expect(document.body.textContent).toContain("Sign in to save");
+    } finally {
+      unmountAppShell(view);
+    }
+  });
+
+  it("renders the preset import above and suspends the Settings dialog", async () => {
+    const defaults = { ...simulationDefaultsFromPreset("mt-eu_868"), autoPropagationEnvironment: false };
+    window.history.replaceState(null, "", `/settings/preferences${buildRadioPresetShareHash({ name: "Alpine Mesh", defaults })}`);
+
+    const view = await renderAppShell();
+    try {
+      const settings = document.querySelector<HTMLElement>('[data-modal-overlay="true"][aria-label="Settings"]');
+      const presetImport = document.querySelector<HTMLElement>('[data-modal-overlay="true"][aria-label="Import radio preset"]');
+      expect(settings).not.toBeNull();
+      expect(presetImport).not.toBeNull();
+      expect(settings).toHaveAttribute("aria-hidden", "true");
+      expect((settings as Node).compareDocumentPosition(presetImport as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     } finally {
       unmountAppShell(view);
     }

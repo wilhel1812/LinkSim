@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Plus, Trash2 } from "lucide-react";
 import { updateMyProfile, type CloudUser } from "../../../lib/cloudUser";
 import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../../lib/frequencyPlans";
@@ -34,8 +34,18 @@ type SelectFieldState = {
 };
 
 const IDLE_SELECT: SelectFieldState = { state: "idle", error: null };
+const PRESET_VALUE_SAVE_DEBOUNCE_MS = 300;
 
 export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps) {
+  const preferenceKey = JSON.stringify([
+    me?.id ?? null,
+    me?.defaultFrequencyPresetId ?? null,
+    me?.simulationDefaultsPreference ?? null,
+  ]);
+  return <PreferencesSectionContent key={preferenceKey} me={me} onMeUpdated={onMeUpdated} />;
+}
+
+function PreferencesSectionContent({ me, onMeUpdated }: PreferencesSectionProps) {
   const uiThemePreference = useAppStore((state) => state.uiThemePreference);
   const setUiThemePreference = useAppStore((state) => state.setUiThemePreference);
   const uiColorTheme = useAppStore((state) => state.uiColorTheme);
@@ -44,22 +54,31 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
   const setAuthState = useAppStore((state) => state.setAuthState);
   const { activeHolidayTheme, holidayThemesVisible } = useThemeVariant();
 
-  const preference = useMemo(
+  const initialPreference = useMemo(
     () => normalizeUserSimulationDefaultsPreference(
       me?.simulationDefaultsPreference,
       me?.defaultFrequencyPresetId,
     ),
     [me?.defaultFrequencyPresetId, me?.simulationDefaultsPreference],
   );
+  const [preference, setPreference] = useState(initialPreference);
   const customPresets = useMemo(() => preference.customPresets ?? [], [preference.customPresets]);
 
   const [presetState, setPresetState] = useState<SelectFieldState>(IDLE_SELECT);
   const [managedPresetId, setManagedPresetId] = useState(
-    preference.mode === "custom" ? preference.customPresetId ?? customPresets[0]?.id ?? "" : "",
+    initialPreference.mode === "custom" ? initialPreference.customPresetId ?? initialPreference.customPresets?.[0]?.id ?? "" : "",
   );
   const [newPresetName, setNewPresetName] = useState("");
   const [renameDraft, setRenameDraft] = useState<{ presetId: string; value: string } | null>(null);
   const [presetActionStatus, setPresetActionStatus] = useState("");
+  const latestRevisionRef = useRef(0);
+  const persistedRevisionRef = useRef(0);
+  const pendingSaveRef = useRef<{ preference: UserSimulationDefaultsPreference; revision: number } | null>(null);
+  const queuedSaveRef = useRef<{ preference: UserSimulationDefaultsPreference; revision: number } | null>(null);
+  const saveInFlightRef = useRef(false);
+  const debounceTimerRef = useRef<number | null>(null);
+  const savedTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
 
   const resolvedManagedPresetId = customPresets.some((preset) => preset.id === managedPresetId)
     ? managedPresetId
@@ -75,47 +94,118 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
   const holidayThemes = getHolidayThemeCatalog();
   const selectedColorThemeValue = activeHolidayTheme?.key ? `holiday:${activeHolidayTheme.key}` : uiColorTheme;
 
-  const saveSimulationDefaultsPreference = useCallback(
-    async (nextPreference: UserSimulationDefaultsPreference) => {
-      setPresetState({ state: "saving", error: null });
+  const drainPreferenceSaveQueue = useCallback(
+    async function drainPreferenceSaveQueue(): Promise<void> {
+      if (saveInFlightRef.current || !queuedSaveRef.current) return;
+      const request = queuedSaveRef.current;
+      queuedSaveRef.current = null;
+      saveInFlightRef.current = true;
       try {
-        const normalized = normalizeUserSimulationDefaultsPreference(nextPreference);
         const updated = await updateMyProfile({
-          defaultFrequencyPresetId: normalized.presetId,
-          simulationDefaultsPreference: normalized,
+          defaultFrequencyPresetId: request.preference.presetId,
+          simulationDefaultsPreference: request.preference,
         });
-        onMeUpdated(updated);
-        setCurrentUser(updated);
-        setAuthState("signed_in");
-        setPresetState({ state: "saved", error: null });
-        window.setTimeout(() => {
-          setPresetState((current) => (current.state === "saved" ? IDLE_SELECT : current));
-        }, 1800);
+        const isLatest = request.revision === latestRevisionRef.current
+          && !pendingSaveRef.current
+          && !queuedSaveRef.current;
+        if (isLatest) {
+          persistedRevisionRef.current = request.revision;
+          if (mountedRef.current) {
+            onMeUpdated(updated);
+            setCurrentUser(updated);
+            setAuthState("signed_in");
+            setPresetState({ state: "saved", error: null });
+            if (savedTimerRef.current != null) window.clearTimeout(savedTimerRef.current);
+            savedTimerRef.current = window.setTimeout(() => {
+              if (mountedRef.current) setPresetState((current) => (current.state === "saved" ? IDLE_SELECT : current));
+            }, 1800);
+          }
+        }
       } catch (error) {
-        setPresetState({ state: "error", error: getUiErrorMessage(error) });
+        const isLatest = request.revision === latestRevisionRef.current
+          && !pendingSaveRef.current
+          && !queuedSaveRef.current;
+        if (isLatest && mountedRef.current) {
+          setPresetState({ state: "error", error: getUiErrorMessage(error) });
+        }
+      } finally {
+        saveInFlightRef.current = false;
+        if (queuedSaveRef.current) await drainPreferenceSaveQueue();
       }
     },
     [onMeUpdated, setAuthState, setCurrentUser],
   );
 
+  const flushPendingPreferenceSave = useCallback(() => {
+    if (debounceTimerRef.current != null) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (!pendingSaveRef.current) return;
+    queuedSaveRef.current = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    void drainPreferenceSaveQueue();
+  }, [drainPreferenceSaveQueue]);
+
+  const saveSimulationDefaultsPreference = useCallback(
+    (nextPreference: UserSimulationDefaultsPreference, debounce = false) => {
+      const normalized = normalizeUserSimulationDefaultsPreference(nextPreference);
+      const revision = latestRevisionRef.current + 1;
+      latestRevisionRef.current = revision;
+      setPreference(normalized);
+      setPresetState({ state: "saving", error: null });
+      if (savedTimerRef.current != null) {
+        window.clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = null;
+      }
+
+      // A newer complete draft supersedes any queued snapshot that has not started.
+      queuedSaveRef.current = null;
+      pendingSaveRef.current = { preference: normalized, revision };
+      if (!debounce) {
+        flushPendingPreferenceSave();
+        return;
+      }
+      if (debounceTimerRef.current != null) window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = window.setTimeout(() => {
+        debounceTimerRef.current = null;
+        flushPendingPreferenceSave();
+      }, PRESET_VALUE_SAVE_DEBOUNCE_MS);
+    },
+    [flushPendingPreferenceSave],
+  );
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (debounceTimerRef.current != null) window.clearTimeout(debounceTimerRef.current);
+      if (savedTimerRef.current != null) window.clearTimeout(savedTimerRef.current);
+      if (pendingSaveRef.current) {
+        queuedSaveRef.current = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        void drainPreferenceSaveQueue();
+      }
+    };
+  }, [drainPreferenceSaveQueue]);
+
   const patchPreferenceDefaults = (patch: Partial<SimulationDefaults>) => {
     if (managedPreset) {
       const nextDefaults = { ...managedPreset.defaults, ...patch, frequencyPresetId: managedPreset.id };
-      void saveSimulationDefaultsPreference({
+      saveSimulationDefaultsPreference({
         ...preference,
         customPresets: customPresets.map((preset) =>
           preset.id === managedPreset.id ? { ...preset, defaults: nextDefaults } : preset,
         ),
-      });
+      }, true);
       return;
     }
     const base = simulationDefaultsFromPreset(preference.presetId);
     const nextDefaults = { ...base, ...activeDefaults, ...patch };
-    void saveSimulationDefaultsPreference({
+    saveSimulationDefaultsPreference({
       ...preference,
       overridePresetDefaults: true,
       overrides: nextDefaults,
-    });
+    }, true);
   };
 
   const createCustomPreset = () => {
@@ -133,7 +223,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
       return;
     }
     const id = `radio-${crypto.randomUUID()}`;
-    void saveSimulationDefaultsPreference({
+    saveSimulationDefaultsPreference({
       ...preference,
       customPresets: [...customPresets, { id, name, defaults: { ...activeDefaults, frequencyPresetId: id } }],
     });
@@ -153,7 +243,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
       setPresetActionStatus("Preset names must be unique.");
       return;
     }
-    void saveSimulationDefaultsPreference({
+    saveSimulationDefaultsPreference({
       ...preference,
       customPresets: customPresets.map((preset) => preset.id === managedPreset.id ? { ...preset, name } : preset),
     });
@@ -162,7 +252,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
 
   const deleteManagedPreset = () => {
     if (!managedPreset || preference.mode === "custom" && preference.customPresetId === managedPreset.id) return;
-    void saveSimulationDefaultsPreference({
+    saveSimulationDefaultsPreference({
       ...preference,
       customPresets: customPresets.filter((preset) => preset.id !== managedPreset.id),
     });
@@ -171,7 +261,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
   };
 
   const shareManagedPreset = async () => {
-    if (!managedPreset || presetState.state === "saving" || presetState.state === "error") return;
+    if (!managedPreset || latestRevisionRef.current !== persistedRevisionRef.current || presetState.state === "error") return;
     try {
       await navigator.clipboard.writeText(buildRadioPresetShareUrl(managedPreset, window.location));
       setPresetActionStatus("Preset link copied.");
@@ -278,7 +368,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
               const next = event.target.value;
               if (next.startsWith("custom:")) {
                 const customPresetId = next.slice("custom:".length);
-                void saveSimulationDefaultsPreference({
+                saveSimulationDefaultsPreference({
                   ...preference,
                   mode: "custom",
                   customPresetId,
@@ -288,7 +378,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
                 return;
               }
               setManagedPresetId("");
-              void saveSimulationDefaultsPreference({ ...preference, mode: "preset", presetId: next, overridePresetDefaults: false });
+              saveSimulationDefaultsPreference({ ...preference, mode: "preset", presetId: next, overridePresetDefaults: false });
             }}
           >
             {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
@@ -348,7 +438,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
                   <div className="custom-radio-preset-actions">
                     <Button
                       aria-label={`Share custom preset: ${managedPreset.name}`}
-                      disabled={presetState.state === "saving" || presetState.state === "error"}
+                      disabled={latestRevisionRef.current !== persistedRevisionRef.current || presetState.state === "error"}
                       onClick={() => void shareManagedPreset()}
                       title="Copy share link"
                       type="button"
@@ -378,7 +468,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
               checked={preference.overridePresetDefaults}
               onChange={(event) => {
                 setManagedPresetId("");
-                void saveSimulationDefaultsPreference({
+                saveSimulationDefaultsPreference({
                   ...preference,
                   overridePresetDefaults: event.target.checked,
                   overrides: event.target.checked ? activeDefaults : undefined,
@@ -390,7 +480,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
         ) : null}
 
         {managedPreset || preference.overridePresetDefaults ? (
-          <div className="autosave-field">
+          <div className="autosave-field" onBlur={flushPendingPreferenceSave}>
             <label className="field-grid">
               <span>Frequency (MHz)</span>
               <input type="number" value={editableDefaults.frequencyMHz} onChange={(event) => patchPreferenceDefaults({ frequencyMHz: Number(event.target.value) })} />
@@ -437,6 +527,13 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
                     <option value="Equatorial">Equatorial</option>
                     <option value="Continental Subtropical">Continental Subtropical</option>
                     <option value="Maritime Subtropical">Maritime Subtropical</option>
+                  </select>
+                </label>
+                <label className="field-grid">
+                  <span>Polarization</span>
+                  <select className="locale-select" value={editableDefaults.propagationEnvironment.polarization} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...editableDefaults.propagationEnvironment, polarization: event.target.value as SimulationDefaults["propagationEnvironment"]["polarization"] } })}>
+                    <option value="Vertical">Vertical</option>
+                    <option value="Horizontal">Horizontal</option>
                   </select>
                 </label>
                 <label className="field-grid">

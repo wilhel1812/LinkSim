@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { simulationDefaultsFromPreset, type UserSimulationDefaultsPreference } from "../../../lib/simulationDefaults";
 import type { CloudUser } from "../../../lib/cloudUser";
 import { parseRadioPresetShareHash } from "../../../lib/radioPresetShare";
@@ -59,6 +59,10 @@ describe("PreferencesSection custom radio presets", () => {
     hoisted.clipboardWriteText.mockResolvedValue(undefined);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows the migrated legacy custom preset and blocks deleting the active default", async () => {
     const me = userWithPreference({
       mode: "custom",
@@ -110,5 +114,130 @@ describe("PreferencesSection custom radio presets", () => {
       presetId: "mt-us",
       customPresets: [expect.objectContaining({ name: "Field Mesh" })],
     });
+  });
+
+  it("keeps multi-character value edits optimistic and debounces the final draft", async () => {
+    vi.useFakeTimers();
+    const defaults = { ...simulationDefaultsFromPreset("mt-eu_868"), frequencyPresetId: "radio-alpine" };
+    const me = userWithPreference({
+      mode: "custom",
+      presetId: "mt-eu_868",
+      customPresetId: "radio-alpine",
+      customPresets: [{ id: "radio-alpine", name: "Alpine Mesh", defaults }],
+      overridePresetDefaults: false,
+    });
+    hoisted.updateMyProfile.mockImplementation(() => new Promise(() => {}));
+    render(<PreferencesSection me={me} onMeUpdated={vi.fn()} />);
+
+    const frequency = screen.getByRole("spinbutton", { name: "Frequency (MHz)" });
+    fireEvent.change(frequency, { target: { value: "9" } });
+    fireEvent.change(frequency, { target: { value: "91" } });
+    fireEvent.change(frequency, { target: { value: "915" } });
+
+    expect(frequency).toHaveValue(915);
+    expect(hoisted.updateMyProfile).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Share custom preset: Alpine Mesh" })).toBeDisabled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(1);
+    expect(hoisted.updateMyProfile.mock.calls[0]?.[0].simulationDefaultsPreference.customPresets[0].defaults.frequencyMHz).toBe(915);
+    vi.useRealTimers();
+  });
+
+  it("serializes overlapping saves and sends the newest complete draft", async () => {
+    vi.useFakeTimers();
+    const defaults = { ...simulationDefaultsFromPreset("mt-eu_868"), frequencyPresetId: "radio-alpine" };
+    const me = userWithPreference({
+      mode: "custom",
+      presetId: "mt-eu_868",
+      customPresetId: "radio-alpine",
+      customPresets: [{ id: "radio-alpine", name: "Alpine Mesh", defaults }],
+      overridePresetDefaults: false,
+    });
+    const resolvers: Array<(user: CloudUser) => void> = [];
+    hoisted.updateMyProfile.mockImplementation(() => new Promise<CloudUser>((resolve) => resolvers.push(resolve)));
+    render(<PreferencesSection me={me} onMeUpdated={vi.fn()} />);
+
+    const frequency = screen.getByRole("spinbutton", { name: "Frequency (MHz)" });
+    const bandwidth = screen.getByRole("spinbutton", { name: "Bandwidth (kHz)" });
+    fireEvent.change(frequency, { target: { value: "915" } });
+    await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve(); });
+    expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(bandwidth, { target: { value: "125" } });
+    await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve(); });
+    expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(1);
+    expect(frequency).toHaveValue(915);
+    expect(bandwidth).toHaveValue(125);
+
+    const firstPatch = hoisted.updateMyProfile.mock.calls[0]?.[0];
+    await act(async () => {
+      resolvers[0]?.({ ...me, simulationDefaultsPreference: firstPatch.simulationDefaultsPreference });
+      await Promise.resolve();
+    });
+    expect(hoisted.updateMyProfile).toHaveBeenCalledTimes(2);
+    const secondDefaults = hoisted.updateMyProfile.mock.calls[1]?.[0].simulationDefaultsPreference.customPresets[0].defaults;
+    expect(secondDefaults).toMatchObject({ frequencyMHz: 915, bandwidthKhz: 125 });
+    expect(frequency).toHaveValue(915);
+    expect(bandwidth).toHaveValue(125);
+    vi.useRealTimers();
+  });
+
+  it("retains the optimistic draft and disables sharing after a save failure", async () => {
+    vi.useFakeTimers();
+    const defaults = { ...simulationDefaultsFromPreset("mt-eu_868"), frequencyPresetId: "radio-alpine" };
+    const me = userWithPreference({
+      mode: "custom",
+      presetId: "mt-eu_868",
+      customPresetId: "radio-alpine",
+      customPresets: [{ id: "radio-alpine", name: "Alpine Mesh", defaults }],
+      overridePresetDefaults: false,
+    });
+    hoisted.updateMyProfile.mockRejectedValue(new Error("Preset save failed"));
+    render(<PreferencesSection me={me} onMeUpdated={vi.fn()} />);
+
+    const frequency = screen.getByRole("spinbutton", { name: "Frequency (MHz)" });
+    fireEvent.change(frequency, { target: { value: "915" } });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(frequency).toHaveValue(915);
+    expect(screen.getAllByText("Preset save failed")).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Share custom preset: Alpine Mesh" })).toBeDisabled();
+    vi.useRealTimers();
+  });
+
+  it("edits and saves polarization as part of the complete manual defaults", async () => {
+    vi.useFakeTimers();
+    const defaults = {
+      ...simulationDefaultsFromPreset("mt-eu_868"),
+      frequencyPresetId: "radio-alpine",
+      autoPropagationEnvironment: false,
+    };
+    const me = userWithPreference({
+      mode: "custom",
+      presetId: "mt-eu_868",
+      customPresetId: "radio-alpine",
+      customPresets: [{ id: "radio-alpine", name: "Alpine Mesh", defaults }],
+      overridePresetDefaults: false,
+    });
+    hoisted.updateMyProfile.mockImplementation(async (patch: { simulationDefaultsPreference: UserSimulationDefaultsPreference }) => ({
+      ...me,
+      simulationDefaultsPreference: patch.simulationDefaultsPreference,
+    }));
+    render(<PreferencesSection me={me} onMeUpdated={vi.fn()} />);
+
+    const polarization = screen.getByRole("combobox", { name: "Polarization" });
+    fireEvent.change(polarization, { target: { value: "Horizontal" } });
+    expect(polarization).toHaveValue("Horizontal");
+    await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve(); });
+    expect(hoisted.updateMyProfile.mock.calls[0]?.[0].simulationDefaultsPreference.customPresets[0].defaults.propagationEnvironment.polarization).toBe("Horizontal");
+    vi.useRealTimers();
   });
 });

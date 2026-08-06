@@ -16,6 +16,8 @@ type SettingsPanelProps = {
   /** Active section resolved from the URL; null → default to "profile". */
   initialSection: SettingsSectionId | null;
   onClose: () => void;
+  /** Disable panel-level focus and keyboard handling while a raised child modal is active. */
+  suspended?: boolean;
 };
 
 const useIsNarrow = () => {
@@ -33,7 +35,7 @@ const useIsNarrow = () => {
   return isNarrow;
 };
 
-export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ initialSection, onClose, suspended = false }: SettingsPanelProps) {
   const currentUser = useAppStore((state) => state.currentUser);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const authState = useAppStore((state) => state.authState);
@@ -92,6 +94,7 @@ export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
 
   // Escape key closes the panel.
   useEffect(() => {
+    if (suspended) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -100,12 +103,13 @@ export function SettingsPanel({ initialSection, onClose }: SettingsPanelProps) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, suspended]);
 
   useEffect(() => {
     // Focus the close button when opening for a11y.
+    if (suspended) return;
     closeButtonRef.current?.focus();
-  }, []);
+  }, [suspended]);
 
   const handleMeUpdated = useCallback(
     (user: CloudUser) => {
