@@ -171,7 +171,7 @@ const decodeCfAccessJwt = async (
 
     const fallback = typeof payload.sub === "string" ? payload.sub.trim() : "";
     const fromHeader = normalizeUserId(request);
-    const userId = fromHeader || fallback;
+    const userId = fallback || fromHeader;
     if (!userId) return null;
 
     return {

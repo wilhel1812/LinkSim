@@ -89,6 +89,30 @@ describe("verifyAuth", () => {
     expect(auth?.source).toBe("jwt");
   });
 
+  it("prefers the verified JWT subject over an email identity header", async () => {
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const request = new Request("https://preview.linksim-staging.pages.dev/api/me", {
+      headers: {
+        "Cf-Access-Authenticated-User-Email": "user@example.com",
+        cookie: `CF_Authorization=${accessJwt({
+          iss: "https://team.example",
+          sub: "stable-user-uuid",
+          email: "user@example.com",
+          aud: "preview-aud",
+          exp,
+        })}`,
+      },
+    });
+
+    const auth = await verifyAuth(
+      request,
+      makeEnv({ ACCESS_TEAM_DOMAIN: "team.example", ACCESS_AUD: "preview-aud" }),
+      decodeTestJwt,
+    );
+
+    expect(auth?.userId).toBe("stable-user-uuid");
+  });
+
   it("rejects a JWT whose audience is not configured", async () => {
     const exp = Math.floor(Date.now() / 1000) + 3600;
     const request = new Request("https://preview.linksim-staging.pages.dev/api/me", {
