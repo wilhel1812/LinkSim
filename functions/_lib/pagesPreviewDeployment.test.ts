@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parsePagesDeploymentUrl, validatePreviewBranch } from "../../scripts/pages-preview.mjs";
+import {
+  hasMatchingPagesDeployment,
+  parsePagesDeploymentUrl,
+  validatePreviewBranch,
+} from "../../scripts/pages-preview.mjs";
 
 describe("Pages preview deployment helpers", () => {
   it("accepts a same-repository feature branch name", () => {
@@ -33,5 +37,35 @@ describe("Pages preview deployment helpers", () => {
         "linksim-staging",
       ),
     ).toThrow();
+  });
+
+  it("matches Wrangler's seven-character source for the deployed branch and URL", () => {
+    const row = [
+      "│ 6b1cae65-74ca-4103-a60d-1c49979690f4",
+      "Preview",
+      "issue/1010-authenticated-pr-previews",
+      "39d6b82",
+      "https://6b1cae65.linksim-staging.pages.dev │",
+    ].join(" │ ");
+
+    expect(
+      hasMatchingPagesDeployment(row, {
+        commit: "39d6b825",
+        branch: "issue/1010-authenticated-pr-previews",
+        deploymentUrl: "https://6b1cae65.linksim-staging.pages.dev",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a matching commit on the wrong branch or deployment URL", () => {
+    const row =
+      "│ id │ Preview │ another-branch │ 39d6b82 │ https://other.linksim-staging.pages.dev │";
+    expect(
+      hasMatchingPagesDeployment(row, {
+        commit: "39d6b825",
+        branch: "issue/1010-authenticated-pr-previews",
+        deploymentUrl: "https://6b1cae65.linksim-staging.pages.dev",
+      }),
+    ).toBe(false);
   });
 });

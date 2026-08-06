@@ -28,3 +28,27 @@ export function parsePagesDeploymentUrl(output, projectName) {
   }
   return match[0].replace(/[),.;]+$/, "");
 }
+
+export function hasMatchingPagesDeployment(output, { commit, branch, deploymentUrl = "" }) {
+  const expectedCommit = String(commit ?? "").trim().toLowerCase();
+  const expectedBranch = String(branch ?? "").trim();
+  const expectedUrl = String(deploymentUrl ?? "").trim();
+  if (expectedCommit.length < 7 || !expectedBranch) return false;
+
+  const withoutAnsi = String(output).replace(/\u001b\[[0-9;]*m/g, "");
+  return withoutAnsi.split("\n").some((line) => {
+    if (!line.includes("│")) return false;
+    const columns = line
+      .split("│")
+      .map((column) => column.trim())
+      .filter(Boolean);
+    const source = columns.find(
+      (column) => /^[a-f0-9]{7,40}$/i.test(column) && expectedCommit.startsWith(column.toLowerCase()),
+    );
+    return (
+      Boolean(source) &&
+      columns.includes(expectedBranch) &&
+      (!expectedUrl || columns.includes(expectedUrl))
+    );
+  });
+}
