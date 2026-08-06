@@ -48,6 +48,7 @@ vi.mock("../lib/cloudLibrary", async () => {
 import { useAppStore } from "./appStore";
 import { fetchElevations } from "../lib/elevationService";
 import { deleteCloudSimulation, restoreCloudSimulation } from "../lib/cloudLibrary";
+import { simulationDefaultsFromPreset } from "../lib/simulationDefaults";
 
 describe("appStore auth session state", () => {
   beforeEach(() => {
@@ -834,6 +835,37 @@ describe("appStore new simulation default frequency preset", () => {
     expect(created?.snapshot.environmentLossDb).toBe(4);
     expect(created?.snapshot.autoPropagationEnvironment).toBe(false);
     expect(created?.snapshot.simulationDefaultsOverrideEnabled).toBe(false);
+  });
+
+  it("uses a selected named custom preset when creating a blank simulation", () => {
+    const defaults = {
+      ...simulationDefaultsFromPreset("mt-eu_868"),
+      frequencyPresetId: "radio-field-mesh",
+      frequencyMHz: 869.4,
+      rxSensitivityTargetDbm: -127,
+    };
+    useAppStore.setState((state) => ({
+      currentUser: state.currentUser ? {
+        ...state.currentUser,
+        simulationDefaultsPreference: {
+          mode: "custom",
+          presetId: "mt-eu_868",
+          customPresetId: "radio-field-mesh",
+          customPresets: [{ id: "radio-field-mesh", name: "Field Mesh", defaults }],
+          overridePresetDefaults: false,
+        },
+      } : null,
+    }));
+
+    const createdId = useAppStore.getState().createBlankSimulationPreset("Named custom", {
+      visibility: "private",
+      ownerUserId: "owner-1",
+    });
+    const created = useAppStore.getState().simulationPresets.find((entry) => entry.id === createdId);
+    expect(created?.snapshot).toMatchObject({
+      selectedFrequencyPresetId: "radio-field-mesh",
+      rxSensitivityTargetDbm: -127,
+    });
   });
 
   it("falls back to app default when cloud default is invalid", () => {

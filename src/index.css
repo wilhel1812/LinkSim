@@ -6125,6 +6125,62 @@ html.panorama-gesture-lock body {
   font-size: 0.85rem;
 }
 
+.custom-radio-preset-manager {
+  gap: 0.65rem;
+}
+
+.custom-radio-preset-create-row,
+.custom-radio-preset-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.custom-radio-preset-create-row > input {
+  flex: 1;
+  min-width: 0;
+}
+
+.custom-radio-preset-create-row .btn,
+.custom-radio-preset-create-row .btn-ghost,
+.custom-radio-preset-actions .btn,
+.custom-radio-preset-actions .btn-ghost,
+.custom-radio-preset-actions .btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.radio-preset-import-card {
+  max-width: 36rem;
+}
+
+.radio-preset-import-values dl {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(8rem, 1fr);
+  gap: 0.35rem 1rem;
+  margin: 0.75rem 0 0;
+}
+
+.radio-preset-import-values dt {
+  color: var(--muted);
+}
+
+.radio-preset-import-values dd {
+  margin: 0;
+  text-align: right;
+}
+
+.radio-preset-conflict-options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.radio-preset-import-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 /* Auto-save indicator */
 .autosave-indicator {
   display: inline-flex;
