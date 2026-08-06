@@ -42,6 +42,12 @@ variable "pages_env_vars_secret" {
   sensitive   = true
 }
 
+variable "pages_access_audience_keys" {
+  description = "Access application keys whose computed AUD values are published to Pages ACCESS_AUD."
+  type        = set(string)
+  default     = []
+}
+
 variable "d1_database_name" {
   description = "D1 database name."
   type        = string
@@ -94,9 +100,9 @@ variable "dns_records" {
   default = {}
 }
 
-variable "access_application" {
-  description = "Account-level Access app for this environment. Set null to skip Access app management."
-  type = object({
+variable "access_applications" {
+  description = "Account-level Access applications keyed by stable import name."
+  type = map(object({
     name   = string
     domain = string
     type   = optional(string, "self_hosted")
@@ -104,8 +110,8 @@ variable "access_application" {
       id         = string
       precedence = number
     })), [])
-  })
-  default = null
+  }))
+  default = {}
 }
 
 variable "access_policies" {

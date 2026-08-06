@@ -1,4 +1,8 @@
-import { decodeJwt } from "jose";
+import {
+  createRemoteJWKSet,
+  jwtVerify,
+  type JWTPayload,
+} from "jose";
 import type { AuthContext, Env } from "./types";
 
 
@@ -9,6 +13,10 @@ export class AuthVerificationTimeoutError extends Error {
   }
 }
 
+type AccessTokenVerifier = (token: string, env: Env) => Promise<JWTPayload>;
+
+const accessKeySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
 const normalizeTeamDomain = (raw: string): string => {
   const trimmed = raw.trim();
   if (!trimmed) return "";
@@ -18,6 +26,43 @@ const normalizeTeamDomain = (raw: string): string => {
   } catch {
     return trimmed.replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
   }
+};
+
+const configuredAccessAudiences = (env: Env): Set<string> =>
+  new Set(
+    (env.ACCESS_AUD ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+
+const hasConfiguredAudience = (payload: Record<string, unknown>, env: Env): boolean => {
+  const configured = configuredAccessAudiences(env);
+  if (configured.size === 0) return true;
+  const tokenAudiences = Array.isArray(payload.aud)
+    ? payload.aud.filter((value): value is string => typeof value === "string")
+    : typeof payload.aud === "string"
+      ? [payload.aud]
+      : [];
+  return tokenAudiences.some((audience) => configured.has(audience.trim()));
+};
+
+const verifyAccessToken: AccessTokenVerifier = async (token, env) => {
+  const teamDomain = normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? "");
+  const audiences = [...configuredAccessAudiences(env)];
+  if (!teamDomain || audiences.length === 0) {
+    throw new Error("Cloudflare Access issuer and audience must be configured");
+  }
+  let keySet = accessKeySets.get(teamDomain);
+  if (!keySet) {
+    keySet = createRemoteJWKSet(new URL(`https://${teamDomain}/cdn-cgi/access/certs`));
+    accessKeySets.set(teamDomain, keySet);
+  }
+  const { payload } = await jwtVerify(token, keySet, {
+    issuer: `https://${teamDomain}`,
+    audience: audiences,
+  });
+  return payload;
 };
 
 const normalizeUserId = (request: Request): string => {
@@ -102,14 +147,15 @@ const emitAuthLog = (env: Env, payload: Record<string, unknown>) => {
   console.info(JSON.stringify({ event: "auth", ...payload }));
 };
 
-// CF Access verifies the JWT signature at the edge before the request reaches
-// the worker. Decoding without re-verification is safe: the worker is only
-// reachable through the CF Access gate, so any token present was already
-// validated by Cloudflare.
-const decodeCfAccessJwt = (token: string, request: Request, env: Env): AuthContext | null => {
+const decodeCfAccessJwt = async (
+  token: string,
+  request: Request,
+  env: Env,
+  verifier: AccessTokenVerifier,
+): Promise<AuthContext | null> => {
   const teamDomain = normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? "");
   try {
-    const payload = decodeJwt(token) as Record<string, unknown>;
+    const payload = (await verifier(token, env)) as Record<string, unknown>;
 
     // Sanity-check: reject tokens not issued by our Access team domain.
     if (teamDomain) {
@@ -117,13 +163,15 @@ const decodeCfAccessJwt = (token: string, request: Request, env: Env): AuthConte
       if (iss && !iss.includes(teamDomain)) return null;
     }
 
+    if (!hasConfiguredAudience(payload, env)) return null;
+
     // Reject expired tokens.
     const exp = typeof payload.exp === "number" ? payload.exp : null;
     if (exp !== null && exp < Math.floor(Date.now() / 1000)) return null;
 
     const fallback = typeof payload.sub === "string" ? payload.sub.trim() : "";
     const fromHeader = normalizeUserId(request);
-    const userId = fromHeader || fallback;
+    const userId = fallback || fromHeader;
     if (!userId) return null;
 
     return {
@@ -184,15 +232,12 @@ const allowInsecureDevAuth = (env: Env): AuthContext | null => {
   };
 };
 
-export const verifyAuth = async (request: Request, env: Env): Promise<AuthContext | null> => {
+export const verifyAuth = async (
+  request: Request,
+  env: Env,
+  verifier: AccessTokenVerifier = verifyAccessToken,
+): Promise<AuthContext | null> => {
   const authSignals = inspectAuthRequest(request);
-
-  const byHeader = verifyByHeadersOnly(request);
-  if (byHeader) {
-    emitAuthLog(env, { result: "ok", source: byHeader.source, ...authSignals });
-    return byHeader;
-  }
-
   const token =
     request.headers.get("cf-access-jwt-assertion") ??
     request.headers.get("Cf-Access-Jwt-Assertion") ??
@@ -200,12 +245,28 @@ export const verifyAuth = async (request: Request, env: Env): Promise<AuthContex
     "";
 
   if (token.trim()) {
-    const decoded = decodeCfAccessJwt(token.trim(), request, env);
+    const decoded = await decodeCfAccessJwt(token.trim(), request, env, verifier);
     if (decoded) {
       emitAuthLog(env, { result: "ok", source: decoded.source, ...authSignals });
       return decoded;
     }
     emitAuthLog(env, { result: "fail", reason: "jwt_decode_failed", ...authSignals });
+  }
+
+  if (configuredAccessAudiences(env).size > 0) {
+    const dev = allowInsecureDevAuth(env);
+    if (dev) {
+      emitAuthLog(env, { result: "ok", source: dev.source, ...authSignals });
+      return dev;
+    }
+    emitAuthLog(env, { result: "fail", reason: "access_audience_unverified", ...authSignals });
+    return null;
+  }
+
+  const byHeader = verifyByHeadersOnly(request);
+  if (byHeader) {
+    emitAuthLog(env, { result: "ok", source: byHeader.source, ...authSignals });
+    return byHeader;
   }
 
   const dev = allowInsecureDevAuth(env);

@@ -70,6 +70,11 @@ Populate IDs for:
 - DNS record IDs in `linksim.link`
 - Access app/policy IDs
 
+For staging, `TF_ACCESS_APP_IMPORTS_JSON` must account for the stable keys
+`primary`, `pages_root`, and `pages_previews`. If an application already exists,
+import it; do not let a plan replace it. After import, confirm all three computed
+AUD values feed the Pages `ACCESS_AUD` variable.
+
 ## 5) Step A: Adoption (safe import)
 
 ### Important Pages caveat

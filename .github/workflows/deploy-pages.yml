@@ -1,6 +1,13 @@
 name: Deploy LinkSim Pages
 
 on:
+  pull_request:
+    branches:
+      - staging
+    types:
+      - opened
+      - reopened
+      - synchronize
   push:
     branches:
       - staging
@@ -17,6 +24,101 @@ on:
           - prod-main
 
 jobs:
+  deploy-staging-preview:
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.ENABLE_AUTHENTICATED_PREVIEWS == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: pages-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build preview
+        env:
+          VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+        run: npm run build:bundle && npm run build:verify
+
+      - name: Deploy authenticated staging preview
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
+          PREVIEW_BRANCH: ${{ github.head_ref }}
+        run: node scripts/deploy-pages-safe.mjs --target staging-preview --branch "$PREVIEW_BRANCH"
+
+      - name: Update pull request preview comment
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+        with:
+          script: |
+            const registry = require('./config/ai-agents.json');
+            const beacon = registry.agents.find((agent) => agent.name === 'Beacon');
+            if (!beacon?.signature || !registry.markerPrefix) {
+              core.setFailed('Beacon identity or provenance marker is missing from the agent registry.');
+              return;
+            }
+            const marker = '<!-- linksim-preview:v1 -->';
+            const sha = context.payload.pull_request.head.sha;
+            const runId = require('node:crypto').randomUUID();
+            const provenance = `<!-- ${registry.markerPrefix} agent=${beacon.name} bot=true run=${runId} source=pull-request-${context.issue.number} commit=${sha} -->`;
+            const body = [
+              marker,
+              'Authenticated staging preview:',
+              '',
+              `[Open preview](${process.env.PREVIEW_URL})`,
+              '',
+              `Commit: \`${sha}\``,
+              '',
+              beacon.signature,
+              '',
+              provenance,
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
   deploy-staging:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||

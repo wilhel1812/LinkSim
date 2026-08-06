@@ -34,6 +34,11 @@ variable "pages_env_vars_secret" {
   sensitive = true
 }
 
+variable "pages_access_audience_keys" {
+  type    = set(string)
+  default = []
+}
+
 variable "d1_database_name" {
   type = string
 }
@@ -73,8 +78,8 @@ variable "dns_records" {
   default = {}
 }
 
-variable "access_application" {
-  type = object({
+variable "access_applications" {
+  type = map(object({
     name   = string
     domain = string
     type   = optional(string, "self_hosted")
@@ -82,8 +87,8 @@ variable "access_application" {
       id         = string
       precedence = number
     })), [])
-  })
-  default = null
+  }))
+  default = {}
 }
 
 variable "access_policies" {

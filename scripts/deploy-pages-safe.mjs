@@ -1,6 +1,11 @@
-import { copyFile, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import {
+  hasMatchingPagesDeployment,
+  parsePagesDeploymentUrl,
+  validatePreviewBranch,
+} from "./pages-preview.mjs";
 
 const root = process.cwd();
 const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
@@ -324,22 +329,19 @@ async function withWranglerConfig(configPath, fn) {
   }
 }
 
-async function verifyDeployment(targetName, projectName, commit) {
+async function verifyDeployment(targetName, projectName, commit, branch, deploymentUrl = "") {
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const { stdout } = await run(
       wrangler,
       ["pages", "deployment", "list", "--project-name", projectName],
       { capture: true },
     );
-    const lines = stdout.split("\n");
-    const tableRows = lines.filter((line) => line.includes("│") && line.includes("http"));
-    const top = tableRows[0] ?? "";
-    if (top.includes(commit)) {
+    if (hasMatchingPagesDeployment(stdout, { commit, branch, deploymentUrl })) {
       return;
     }
     await sleep(5000);
   }
-  const message = `Post-deploy verification failed: latest deployment for ${projectName} did not show commit ${commit}.`;
+  const message = `Post-deploy verification failed: no ${projectName} deployment matched branch ${branch} and commit ${commit}.`;
   if (targetName === "prod-main") {
     console.warn(`[deploy-pages-safe] ${message} Proceeding because the Pages deploy itself completed successfully.`);
     return;
@@ -359,9 +361,17 @@ async function main() {
   }
 
   const { branch: currentBranch, commit } = await preflight(targetName, target);
-  const deployBranch = target.branch === "CURRENT" ? currentBranch : target.branch;
+  const requestedPreviewBranch = parseArg("branch");
+  if (requestedPreviewBranch && targetName !== "staging-preview") {
+    throw new Error("--branch is only valid for the staging-preview target.");
+  }
+  const deployBranch =
+    targetName === "staging-preview"
+      ? validatePreviewBranch(requestedPreviewBranch || currentBranch)
+      : target.branch;
 
   await writeReleaseManifest(targetName, target.projectName, deployBranch, commit);
+  let deployedPreviewUrl = "";
 
   const rawCommitMsg = await getGitRef(["log", "-1", "--format=%s"]);
   // Cloudflare Pages API requires a pure ASCII commit message string.
@@ -373,7 +383,7 @@ async function main() {
 
   try {
     await withWranglerConfig(target.configPath, async () => {
-      await run(wrangler, [
+      const result = await run(wrangler, [
         "pages",
         "deploy",
         "dist",
@@ -383,10 +393,31 @@ async function main() {
         deployBranch,
         "--commit-message",
         commitMessage || commit,
-      ]);
+        "--commit-hash",
+        commit,
+      ], { capture: true });
+      process.stdout.write(result.stdout);
+      process.stderr.write(result.stderr);
+
+      if (targetName === "staging-preview") {
+        const previewUrl = parsePagesDeploymentUrl(
+          `${result.stdout}\n${result.stderr}`,
+          target.projectName,
+        );
+        deployedPreviewUrl = previewUrl;
+        const githubOutput = (process.env.GITHUB_OUTPUT ?? "").trim();
+        if (githubOutput) await appendFile(githubOutput, `preview_url=${previewUrl}\n`, "utf8");
+        console.log(`[deploy-pages-safe] Preview URL: ${previewUrl}`);
+      }
     });
 
-    await verifyDeployment(targetName, target.projectName, commit);
+    await verifyDeployment(
+      targetName,
+      target.projectName,
+      commit,
+      deployBranch,
+      deployedPreviewUrl,
+    );
     console.log(
       `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
     );

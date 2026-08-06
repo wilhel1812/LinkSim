@@ -9,8 +9,33 @@ const workflow = readFileSync(
 );
 
 const productionJob = workflow.split("  deploy-prod-main:")[1] ?? "";
+const previewJob =
+  workflow.split("  deploy-staging-preview:")[1]?.split("  deploy-staging:")[0] ?? "";
 
 describe("Deploy LinkSim Pages workflow", () => {
+  it("deploys previews only for same-repository pull requests targeting staging", () => {
+    expect(workflow).toContain("pull_request:");
+    expect(workflow).toContain("      - staging");
+    expect(previewJob).toContain(
+      "github.event.pull_request.head.repo.full_name == github.repository",
+    );
+    expect(previewJob).toContain("vars.ENABLE_AUTHENTICATED_PREVIEWS == 'true'");
+    expect(previewJob).toContain("environment: staging");
+    expect(previewJob).toContain("pull-requests: write");
+    expect(previewJob).toContain("ref: ${{ github.event.pull_request.head.sha }}");
+    expect(previewJob).toContain("PREVIEW_BRANCH: ${{ github.head_ref }}");
+    expect(previewJob).toContain('--target staging-preview --branch "$PREVIEW_BRANCH"');
+  });
+
+  it("updates one signed preview comment instead of posting duplicates", () => {
+    expect(previewJob).toContain("<!-- linksim-preview:v1 -->");
+    expect(previewJob).toContain("require('./config/ai-agents.json')");
+    expect(previewJob).toContain("beacon.signature");
+    expect(previewJob).toContain("registry.markerPrefix");
+    expect(previewJob).toContain("github.rest.issues.updateComment");
+    expect(previewJob).toContain("github.rest.issues.createComment");
+  });
+
   it("applies and verifies the Simulation lifecycle migration before production deployment", () => {
     const migrationStep = "- name: Apply production Simulation lifecycle migration";
     const deployStep = "- name: Deploy prod/main with guardrails";

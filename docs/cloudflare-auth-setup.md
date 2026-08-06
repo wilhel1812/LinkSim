@@ -29,11 +29,13 @@ For upgrades from older deployments, review [`db/migrations`](../db/migrations) 
 In Cloudflare Zero Trust:
 
 1. Go to **Access** → **Applications**
-2. Add/update application protecting your Pages app domain
+2. Add/update applications protecting every served hostname. For staging this
+   means `staging.linksim.link`, `linksim-staging.pages.dev`, and
+   `*.linksim-staging.pages.dev`.
 3. Add login methods:
    - `GitHub` (primary)
    - `One-time PIN` (fallback)
-4. In application settings, find the **AUD** tag
+4. In each application settings page, find the **AUD** tag
 5. Note your team domain (example: `your-team.cloudflareaccess.com`)
 
 Notes:
@@ -57,11 +59,12 @@ In this mode:
 In Pages project env vars (Production + Preview):
 
 - `ACCESS_TEAM_DOMAIN` = your team domain (without `https://`)
-- `ACCESS_AUD` = Access app AUD tag
+- `ACCESS_AUD` = comma-separated Access app AUD tags for every hostname served
+  by that Pages environment
 - `ADMIN_USER_IDS` = bootstrap admin user IDs
 - `REGISTRATION_MODE` = `open`
 
-Do not enable local dev fallback vars in production.
+Do not enable local dev fallback vars in production or shared preview deployments.
 
 ## 6) D1 Binding in Pages
 
