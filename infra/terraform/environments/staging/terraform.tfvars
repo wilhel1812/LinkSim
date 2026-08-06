@@ -56,7 +56,7 @@ access_applications = {
     type   = "self_hosted"
     policy_bindings = [
       {
-        id         = "32915afb-f399-4c5c-90ea-e5bf0f377b7c"
+        id         = "fd96072d-843b-4320-811a-281767b011ee"
         precedence = 1
       }
     ]
@@ -67,7 +67,7 @@ access_applications = {
     type   = "self_hosted"
     policy_bindings = [
       {
-        id         = "32915afb-f399-4c5c-90ea-e5bf0f377b7c"
+        id         = "fd96072d-843b-4320-811a-281767b011ee"
         precedence = 1
       }
     ]
