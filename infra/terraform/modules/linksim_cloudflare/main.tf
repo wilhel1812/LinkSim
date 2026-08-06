@@ -74,6 +74,15 @@ resource "cloudflare_pages_project" "project" {
   }
 
   lifecycle {
+    # Direct-upload deployments update these hashes, while Cloudflare redacts
+    # secret values on read. Ignore only those non-convergent values; continue
+    # managing bindings, variable names/types, and all plain-text values.
+    ignore_changes = [
+      deployment_configs.preview.wrangler_config_hash,
+      deployment_configs.production.wrangler_config_hash,
+      deployment_configs.preview.env_vars["VITE_MAPTILER_KEY"].value,
+      deployment_configs.production.env_vars["VITE_MAPTILER_KEY"].value,
+    ]
     prevent_destroy = true
   }
 }
