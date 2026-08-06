@@ -46,5 +46,6 @@ describe("authenticated Pages preview Terraform intent", () => {
     const preview = moduleSource.split("    preview = {")[1]?.split("    production = {")[0] ?? "";
     expect(preview).toContain("id = var.d1_database_id");
     expect(preview).toContain("name = var.r2_bucket_name");
+    expect(moduleSource).not.toContain("ignore_changes  = [deployment_configs]");
   });
 });

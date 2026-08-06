@@ -74,9 +74,6 @@ resource "cloudflare_pages_project" "project" {
   }
 
   lifecycle {
-    # Adoption step safety: prevents accidental broad config rewrites until
-    # all live values are imported and reviewed.
-    ignore_changes  = [deployment_configs]
     prevent_destroy = true
   }
 }
