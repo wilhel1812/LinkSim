@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "markerPrefix": "linksim-ai:v1",
+  "agents": [
+    {
+      "name": "Linky",
+      "role": "Discord liaison, short answers, issue drafting and filing",
+      "signature": "— Linky · AI community bot",
+      "githubIdentity": { "kind": "github-app", "slug": "linksim-linky" },
+      "allowedActions": ["reply-in-configured-discord-scope", "draft-issue", "file-approved-issue", "maintain-own-managed-issue"],
+      "prohibitedActions": ["file-without-thread-approval", "edit-human-content", "close-issue", "assign-issue", "change-milestone", "change-code", "merge", "release"]
+    },
+    {
+      "name": "Scout",
+      "role": "Read-only repository investigation and issue analysis",
+      "signature": "— Scout · AI investigator",
+      "githubIdentity": { "kind": "relayed-by", "agent": "Linky" },
+      "allowedActions": ["read-immutable-repository-snapshot", "produce-attributed-findings"],
+      "prohibitedActions": ["publish-independently", "file-issue", "change-code", "write-repository", "merge", "release"]
+    },
+    {
+      "name": "Sentry",
+      "role": "Automated pull request and existing-issue review",
+      "signature": "— Sentry · AI reviewer",
+      "githubIdentity": { "kind": "github-app", "slug": "linksim-sentry" },
+      "allowedActions": ["read-repository", "read-actions", "review-pull-request", "review-existing-issue"],
+      "prohibitedActions": ["write-repository", "push", "merge", "rerun-workflow", "resolve-human-thread", "human-approval", "release"]
+    },
+    {
+      "name": "Forge",
+      "role": "Explicitly approved implementation, tests, pull requests, and CI fixes",
+      "signature": "— Forge · AI coding agent",
+      "githubIdentity": { "kind": "approved-codex-session" },
+      "allowedActions": ["investigate-approved-work", "change-code", "run-tests", "create-signed-commit", "create-pull-request", "address-ci"],
+      "prohibitedActions": ["start-unapproved-implementation", "merge", "release-production", "change-policy-without-review"]
+    },
+    {
+      "name": "Beacon",
+      "role": "Release preparation, deployment monitoring, and approved release execution",
+      "signature": "— Beacon · AI release agent",
+      "githubIdentity": { "kind": "approved-codex-session" },
+      "allowedActions": ["prepare-release", "monitor-deployment", "execute-human-approved-release", "publish-signed-release-report"],
+      "prohibitedActions": ["promote-without-explicit-approval", "bypass-protected-release-flow", "alter-user-facing-changelog-format"]
+    },
+    {
+      "name": "Steward",
+      "role": "Policy, skills, memory, and workflow-improvement advice",
+      "signature": "— Steward · AI policy advisor",
+      "githubIdentity": { "kind": "approved-codex-session" },
+      "allowedActions": ["audit-policy", "suggest-policy-wording", "identify-workflow-improvement"],
+      "prohibitedActions": ["edit-policy", "edit-skills", "edit-prompts", "change-permissions", "change-infrastructure", "implement-own-suggestion"]
+    }
+  ]
+}

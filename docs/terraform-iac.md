@@ -27,6 +27,15 @@ Terraform manages these resources for both `staging` and `prod` environments:
   - `cloudflare_zero_trust_access_application`
   - `cloudflare_zero_trust_access_policy`
 
+Staging Access applications use stable map keys. `primary` protects
+`staging.linksim.link`; `pages_root` protects `linksim-staging.pages.dev`; and
+`pages_previews` protects `*.linksim-staging.pages.dev`. Discover and import any
+existing live application IDs before apply; never replace an existing Access
+application just because it is absent from local state.
+
+`pages_access_audience_keys` derives the Pages `ACCESS_AUD` value from those
+managed applications. Do not copy AUD strings between staging and production.
+
 ## Explicitly out of scope
 
 The `linksim.wilhelmfrancke.com` domains are intentionally **not** managed by Terraform in this pass.
@@ -70,6 +79,9 @@ Goal: attach existing live resources to Terraform state without changing behavio
   - `prevent_destroy = true` on critical resources
   - import-first `ignore_changes` guards for risky attributes
 - Import all in-scope resources into state.
+- Supply Access application imports as `TF_ACCESS_APP_IMPORTS_JSON`, keyed the
+  same way as `access_applications`. The legacy single-app state address moves
+  to `app["primary"]` without replacement.
 - Verify with `terraform plan` until diff is zero or only expected/documented drift.
 
 ### Step B: Management (controlled updates)

@@ -7,8 +7,19 @@ terraform {
 }
 
 locals {
+  managed_access_audiences = [
+    for key in var.pages_access_audience_keys : cloudflare_zero_trust_access_application.app[key].aud
+  ]
+
+  effective_pages_env_vars_plain = merge(
+    var.pages_env_vars_plain,
+    length(local.managed_access_audiences) == 0 ? {} : {
+      ACCESS_AUD = join(",", local.managed_access_audiences)
+    },
+  )
+
   pages_env_vars_plain = {
-    for name, value in var.pages_env_vars_plain :
+    for name, value in local.effective_pages_env_vars_plain :
     name => {
       type  = "plain_text"
       value = value
@@ -32,6 +43,20 @@ resource "cloudflare_pages_project" "project" {
   production_branch = var.project_production_branch
 
   deployment_configs = {
+    preview = {
+      compatibility_date = var.pages_compatibility_date
+      d1_databases = {
+        (var.d1_binding_name) = {
+          id = var.d1_database_id
+        }
+      }
+      r2_buckets = {
+        (var.r2_binding_name) = {
+          name = var.r2_bucket_name
+        }
+      }
+      env_vars = local.pages_env_vars
+    }
     production = {
       compatibility_date = var.pages_compatibility_date
       d1_databases = {
@@ -107,15 +132,15 @@ resource "cloudflare_dns_record" "records" {
 }
 
 resource "cloudflare_zero_trust_access_application" "app" {
-  count = var.access_application == null ? 0 : 1
+  for_each = var.access_applications
 
   account_id = var.account_id
-  name       = var.access_application.name
-  domain     = var.access_application.domain
-  type       = var.access_application.type
+  name       = each.value.name
+  domain     = each.value.domain
+  type       = each.value.type
 
   policies = [
-    for binding in var.access_application.policy_bindings : {
+    for binding in each.value.policy_bindings : {
       id         = binding.id
       precedence = binding.precedence
     }
@@ -127,6 +152,11 @@ resource "cloudflare_zero_trust_access_application" "app" {
     ignore_changes  = all
     prevent_destroy = true
   }
+}
+
+moved {
+  from = cloudflare_zero_trust_access_application.app[0]
+  to   = cloudflare_zero_trust_access_application.app["primary"]
 }
 
 resource "cloudflare_zero_trust_access_policy" "policy" {

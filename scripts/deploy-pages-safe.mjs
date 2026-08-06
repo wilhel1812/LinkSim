@@ -1,6 +1,7 @@
-import { copyFile, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { parsePagesDeploymentUrl, validatePreviewBranch } from "./pages-preview.mjs";
 
 const root = process.cwd();
 const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
@@ -359,7 +360,14 @@ async function main() {
   }
 
   const { branch: currentBranch, commit } = await preflight(targetName, target);
-  const deployBranch = target.branch === "CURRENT" ? currentBranch : target.branch;
+  const requestedPreviewBranch = parseArg("branch");
+  if (requestedPreviewBranch && targetName !== "staging-preview") {
+    throw new Error("--branch is only valid for the staging-preview target.");
+  }
+  const deployBranch =
+    targetName === "staging-preview"
+      ? validatePreviewBranch(requestedPreviewBranch || currentBranch)
+      : target.branch;
 
   await writeReleaseManifest(targetName, target.projectName, deployBranch, commit);
 
@@ -373,7 +381,7 @@ async function main() {
 
   try {
     await withWranglerConfig(target.configPath, async () => {
-      await run(wrangler, [
+      const result = await run(wrangler, [
         "pages",
         "deploy",
         "dist",
@@ -383,7 +391,21 @@ async function main() {
         deployBranch,
         "--commit-message",
         commitMessage || commit,
-      ]);
+        "--commit-hash",
+        commit,
+      ], { capture: true });
+      process.stdout.write(result.stdout);
+      process.stderr.write(result.stderr);
+
+      if (targetName === "staging-preview") {
+        const previewUrl = parsePagesDeploymentUrl(
+          `${result.stdout}\n${result.stderr}`,
+          target.projectName,
+        );
+        const githubOutput = (process.env.GITHUB_OUTPUT ?? "").trim();
+        if (githubOutput) await appendFile(githubOutput, `preview_url=${previewUrl}\n`, "utf8");
+        console.log(`[deploy-pages-safe] Preview URL: ${previewUrl}`);
+      }
     });
 
     await verifyDeployment(targetName, target.projectName, commit);

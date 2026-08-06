@@ -18,9 +18,9 @@ output "managed_dns_record_ids" {
   description = "Managed DNS record IDs keyed by dns_records map key."
 }
 
-output "access_application_id" {
-  value       = length(cloudflare_zero_trust_access_application.app) == 0 ? null : cloudflare_zero_trust_access_application.app[0].id
-  description = "Managed Access application ID (or null when disabled)."
+output "access_application_ids" {
+  value       = { for key, app in cloudflare_zero_trust_access_application.app : key => app.id }
+  description = "Managed Access application IDs keyed by access_applications map key."
 }
 
 output "access_policy_ids" {
