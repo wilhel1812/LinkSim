@@ -126,7 +126,7 @@ describe("overlayRaster async builders", () => {
     expect(adaptive?.analysisStats?.totalPixels).toBe(dimensions.width * dimensions.height);
   });
 
-  it("reuses the same canonical signal samples when switching coverage overlay", async () => {
+  it("reuses the same canonical signal samples when switching between strongest-signal overlays", async () => {
     const dimensions = { width: 96, height: 96 };
     let evaluations = 0;
     const common = {
@@ -143,12 +143,12 @@ describe("overlayRaster async builders", () => {
     } as const;
     const heatmap = await buildAdaptiveCoverageOverlayPixelsAsync({ ...common, mode: "heatmap" });
     const firstEvaluations = evaluations;
-    const weakest = await buildAdaptiveCoverageOverlayPixelsAsync({ ...common, mode: "weakest" });
+    const contours = await buildAdaptiveCoverageOverlayPixelsAsync({ ...common, mode: "contours" });
 
     expect(heatmap?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
-    expect(weakest?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+    expect(contours?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
     expect(evaluations).toBe(firstEvaluations);
-    expect(weakest?.analysisStats?.evaluatedPaths).toBe(0);
+    expect(contours?.analysisStats?.evaluatedPaths).toBe(0);
   });
 
   it("keeps multi-contributor strongest and weakest surfaces within the accuracy gate", async () => {
@@ -186,7 +186,173 @@ describe("overlayRaster async builders", () => {
     assertAccuracy(exactWeakest!.signalValuesDbm!, adaptiveWeakest!.signalValuesDbm!);
   });
 
-  it("adapts each contributor before combining strongest and weakest surfaces", async () => {
+  it("keeps strongest and weakest coverage work roughly linear from one through eight contributors", async () => {
+    const dimensions = { width: 160, height: 160 };
+    for (const mode of ["heatmap", "weakest"] as const) {
+      const evaluationsByCount: number[] = [];
+
+      for (let contributorCount = 1; contributorCount <= 8; contributorCount += 1) {
+        let evaluations = 0;
+        const contributors = Array.from({ length: contributorCount }, (_, contributorIndex) => ({
+          id: `site-${contributorIndex}`,
+          evaluatePoint: (lat: number, lon: number) => {
+            evaluations += 1;
+            if (contributorIndex === 0) {
+              const baseDbm = mode === "heatmap" ? -89 : -109;
+              return baseDbm + (lat - bounds.minLat) * 2 + (lon - bounds.minLon);
+            }
+            const frequency = 35 + contributorIndex * 3;
+            const dominatedDbm = mode === "heatmap" ? -108 : -80;
+            return dominatedDbm
+              + Math.sin((lat - bounds.minLat) * frequency * Math.PI) * 6
+              + Math.cos((lon - bounds.minLon) * frequency * Math.PI) * 6;
+          },
+        }));
+
+        const raster = await buildAdaptiveCoverageOverlayPixelsAsync({
+          bounds,
+          dimensions,
+          initialGridSize: 24,
+          mode,
+          rxTargetDbm: -118,
+          contributors,
+          adaptive: true,
+        });
+
+        expect(raster?.signalValuesDbm).toHaveLength(dimensions.width * dimensions.height);
+        evaluationsByCount.push(evaluations);
+      }
+
+      const singleContributorWork = evaluationsByCount[0];
+      evaluationsByCount.forEach((evaluations, index) => {
+        const contributorCount = index + 1;
+        expect(evaluations).toBeLessThanOrEqual(singleContributorWork * contributorCount * 1.35);
+      });
+    }
+  });
+
+  it("keeps Heatmap scaling bounded when each added contributor wins a local area", async () => {
+    const dimensions = { width: 160, height: 160 };
+    const centers = [
+      [59.84, 10.64], [59.96, 10.76], [59.96, 10.64], [59.84, 10.76],
+      [59.90, 10.70], [59.90, 10.64], [59.90, 10.76], [59.84, 10.70],
+    ] as const;
+    const uniqueSamplesByCount: number[] = [];
+
+    for (let contributorCount = 1; contributorCount <= centers.length; contributorCount += 1) {
+      let evaluations = 0;
+      const contributors = centers.slice(0, contributorCount).map(([centerLat, centerLon], contributorIndex) => ({
+        id: `local-winner-${contributorIndex}`,
+        evaluatePoint: (lat: number, lon: number) => {
+          evaluations += 1;
+          return -82 - (lat - centerLat) ** 2 * 1_100 - (lon - centerLon) ** 2 * 850;
+        },
+      }));
+      await buildAdaptiveCoverageOverlayPixelsAsync({
+        bounds,
+        dimensions,
+        initialGridSize: 24,
+        mode: "heatmap",
+        rxTargetDbm: -118,
+        contributors,
+        adaptive: true,
+      });
+      uniqueSamplesByCount.push(evaluations / contributorCount);
+    }
+
+    const singleContributorSamples = uniqueSamplesByCount[0];
+    expect(Math.max(...uniqueSamplesByCount)).toBeLessThanOrEqual(singleContributorSamples * 2.5);
+  });
+
+  it("does not introduce a three-or-four Site cliff when the buffered selection hull expands", async () => {
+    const dimensions = { width: 160, height: 160 };
+    const positions = [
+      [0.25, 0.30], [0.75, 0.30], [0.50, 0.72], [0.50, 0.12],
+      [0.18, 0.55], [0.82, 0.55], [0.35, 0.82], [0.65, 0.82],
+    ] as const;
+    const distanceToSegment = (x: number, y: number, a: readonly [number, number], b: readonly [number, number]) => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const lengthSquared = dx * dx + dy * dy;
+      const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / lengthSquared));
+      return Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t));
+    };
+    const convexHull = (points: ReadonlyArray<readonly [number, number]>): Array<readonly [number, number]> => {
+      if (points.length <= 2) return [...points];
+      const sorted = [...points].sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+      const cross = (origin: readonly [number, number], a: readonly [number, number], b: readonly [number, number]) =>
+        (a[0] - origin[0]) * (b[1] - origin[1]) - (a[1] - origin[1]) * (b[0] - origin[0]);
+      const half = (input: Array<readonly [number, number]>) => {
+        const output: Array<readonly [number, number]> = [];
+        for (const point of input) {
+          while (output.length >= 2 && cross(output[output.length - 2], output[output.length - 1], point) <= 0) output.pop();
+          output.push(point);
+        }
+        output.pop();
+        return output;
+      };
+      return [...half(sorted), ...half(sorted.reverse())];
+    };
+    const bufferedHullMask = (selected: ReadonlyArray<readonly [number, number]>) => {
+      const hull = convexHull(selected);
+      return (lat: number, lon: number) => {
+        const x = lon;
+        const y = lat;
+        if (hull.length === 1) return Math.hypot(x - hull[0][0], y - hull[0][1]) <= 0.24;
+        let inside = false;
+        if (hull.length >= 3) {
+          for (let index = 0, previous = hull.length - 1; index < hull.length; previous = index, index += 1) {
+            const currentPoint = hull[index];
+            const previousPoint = hull[previous];
+            if (
+              currentPoint[1] > y !== previousPoint[1] > y &&
+              x < ((previousPoint[0] - currentPoint[0]) * (y - currentPoint[1])) /
+                ((previousPoint[1] - currentPoint[1]) || 1e-9) + currentPoint[0]
+            ) inside = !inside;
+          }
+        }
+        if (inside) return true;
+        return hull.some((point, index) => distanceToSegment(x, y, point, hull[(index + 1) % hull.length]) <= 0.24);
+      };
+    };
+    const workByCount: number[] = [];
+
+    for (let contributorCount = 1; contributorCount <= positions.length; contributorCount += 1) {
+      let evaluations = 0;
+      const selected = positions.slice(0, contributorCount);
+      const selectionBounds = {
+        minLat: Math.min(...selected.map((position) => position[1])) - 0.24,
+        maxLat: Math.max(...selected.map((position) => position[1])) + 0.24,
+        minLon: Math.min(...selected.map((position) => position[0])) - 0.24,
+        maxLon: Math.max(...selected.map((position) => position[0])) + 0.24,
+      };
+      const contributors = selected.map(([x, y], contributorIndex) => ({
+        id: `hull-site-${contributorIndex}`,
+        evaluatePoint: (lat: number, lon: number) => {
+          evaluations += 1;
+          return -82 - Math.hypot(lon - x, lat - y) * 24;
+        },
+      }));
+      await buildAdaptiveCoverageOverlayPixelsAsync({
+        bounds: selectionBounds,
+        dimensions,
+        initialGridSize: 24,
+        mode: "heatmap",
+        rxTargetDbm: -118,
+        contributors,
+        pointMask: bufferedHullMask(selected),
+        adaptive: true,
+      });
+      workByCount.push(evaluations);
+    }
+
+    const singleSiteWork = workByCount[0];
+    workByCount.forEach((work, index) => {
+      expect(work).toBeLessThanOrEqual(singleSiteWork * (index + 1) * 1.4);
+    });
+  });
+
+  it("combines contributors before adapting the requested coverage surface", async () => {
     const dimensions = { width: 192, height: 192 };
     let evaluations = 0;
     const contributors = [
