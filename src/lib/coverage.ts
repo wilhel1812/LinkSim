@@ -79,17 +79,16 @@ export type CalibratedOverlayGridMode =
   | "mesh-extension";
 
 /**
- * Every area overlay shares Pass/Fail's logical grid so the selected
- * resolution always means the same thing. Adaptive evaluation can still
- * reduce the number of expensive RF calculations underneath that grid.
+ * Smooth coverage surfaces render at half the Pass/Fail resolution per axis.
+ * Adaptive evaluation can still reduce the expensive RF calculations beneath
+ * each mode's honest logical output grid.
  */
 export const resolveOverlayGridWorkloadScale = (
   mode: CalibratedOverlayGridMode,
   participantCount = 1,
 ): number => {
-  void mode;
   void participantCount;
-  return 1;
+  return mode === "heatmap" || mode === "weakest" || mode === "contours" ? 0.5 : 1;
 };
 
 export const resolveMeshExtensionCoverageBudgetGridSize = (gridSize: number): number =>
@@ -181,6 +180,8 @@ const nUnitsToKFactor = (nUnits: number): number => {
 
 const TERRAIN_LOSS_CACHE_LIMIT = 100_000;
 const terrainLossMemo = new Map<string, number>();
+let terrainLossMemoScope = "";
+let terrainLossMemoScopeVersion = 0;
 
 const quantize = (value: number): string => value.toFixed(5);
 
@@ -217,16 +218,24 @@ const getMemoizedTerrainLoss = (
   const cached = terrainLossMemo.get(key);
   if (typeof cached === "number") return cached;
   const value = compute();
+  if (terrainLossMemo.size >= TERRAIN_LOSS_CACHE_LIMIT) return value;
   terrainLossMemo.set(key, value);
-  if (terrainLossMemo.size > TERRAIN_LOSS_CACHE_LIMIT) {
-    const oldest = terrainLossMemo.keys().next().value;
-    if (typeof oldest === "string") terrainLossMemo.delete(oldest);
-  }
   return value;
 };
 
 export const clearTerrainLossCache = (): void => {
   terrainLossMemo.clear();
+  terrainLossMemoScope = "";
+  terrainLossMemoScopeVersion += 1;
+};
+
+const prepareTerrainLossCacheScope = (scope: string): string => {
+  if (scope !== terrainLossMemoScope) {
+    terrainLossMemo.clear();
+    terrainLossMemoScope = scope;
+    terrainLossMemoScopeVersion += 1;
+  }
+  return `coverage-${terrainLossMemoScopeVersion}`;
 };
 
 const evalRx = (
@@ -349,6 +358,7 @@ export const createCoverageContributorEvaluators = (
   terrainSampler?: (coordinates: Coordinates) => number | null,
   options?: Pick<BuildCoverageOptions, "terrainSamples" | "terrainCacheKey" | "requireCompleteTerrain">,
 ): CoverageContributorEvaluator[] => {
+  const terrainCacheNamespace = prepareTerrainLossCacheScope(options?.terrainCacheKey ?? "global");
   const memberships = resolveCoverageMemberships(network, sites, systems);
   const frequencyMHz = network.frequencyOverrideMHz ?? network.frequencyMHz;
   const terrainSamples = Math.max(16, Math.round(options?.terrainSamples ?? 20));
@@ -368,7 +378,7 @@ export const createCoverageContributorEvaluators = (
         terrainSamples,
         environment,
         effectiveTerrainSampler,
-        options?.terrainCacheKey,
+        terrainCacheNamespace,
       ),
   }));
 };

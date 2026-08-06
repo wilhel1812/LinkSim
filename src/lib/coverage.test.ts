@@ -6,6 +6,7 @@ import {
   computeCanonicalOverlayGridDimensions,
   computeCoverageGridDimensions,
   CoverageBuildCancelledError,
+  clearTerrainLossCache,
   createCoverageContributorEvaluators,
   resolveMeshExtensionCoverageBudgetGridSize,
   resolveOverlayGridWorkloadScale,
@@ -69,24 +70,29 @@ const NORMAL_GRID = 24;
 const HIGH_GRID = 42;
 
 describe("buildCoverage", () => {
-  it("keeps every area overlay on the full Pass/Fail logical grid", () => {
+  it("renders smooth coverage modes at half the Pass/Fail resolution per axis", () => {
     expect(resolveOverlayGridWorkloadScale("passfail", 2)).toBe(1);
     expect(resolveOverlayGridWorkloadScale("relay", 2)).toBe(1);
-    expect(resolveOverlayGridWorkloadScale("heatmap", 1)).toBe(1);
-    expect(resolveOverlayGridWorkloadScale("heatmap", 4)).toBe(1);
-    expect(resolveOverlayGridWorkloadScale("weakest", 4)).toBe(1);
-    expect(resolveOverlayGridWorkloadScale("contours", 4)).toBe(1);
+    expect(resolveOverlayGridWorkloadScale("heatmap", 1)).toBe(0.5);
+    expect(resolveOverlayGridWorkloadScale("heatmap", 4)).toBe(0.5);
+    expect(resolveOverlayGridWorkloadScale("weakest", 4)).toBe(0.5);
+    expect(resolveOverlayGridWorkloadScale("contours", 4)).toBe(0.5);
     expect(resolveOverlayGridWorkloadScale("mesh-extension", 2)).toBe(1);
     expect(resolveOverlayGridWorkloadScale("mesh-extension", 4)).toBe(1);
   });
 
-  it("returns the same honest logical grid size for Pass/Fail and coverage modes", () => {
-    const bounds = { minLat: 59.8, maxLat: 60, minLon: 10.6, maxLon: 10.8 };
+  it("turns a 317x317 Pass/Fail grid into a 158x158 smooth coverage grid", () => {
+    const bounds = { minLat: 59.8, maxLat: 60, minLon: 10.6, maxLon: 11.0 };
     const passFail = computeCalibratedOverlayGridDimensions(24, bounds, "passfail", 1, 2);
     const heatmap = computeCalibratedOverlayGridDimensions(24, bounds, "heatmap", 1, 4);
+    const weakest = computeCalibratedOverlayGridDimensions(24, bounds, "weakest", 1, 4);
+    const contours = computeCalibratedOverlayGridDimensions(24, bounds, "contours", 1, 4);
 
     expect(passFail).toEqual(computeCanonicalOverlayGridDimensions(24, bounds, 1));
-    expect(heatmap).toEqual(passFail);
+    expect(passFail).toMatchObject({ width: 317, height: 317 });
+    expect(heatmap).toMatchObject({ width: 158, height: 158, totalSamples: 24_964 });
+    expect(weakest).toEqual(heatmap);
+    expect(contours).toEqual(heatmap);
   });
 
   it("uses selected sites as coverage contributors and all sites for an empty selection", () => {
@@ -116,6 +122,34 @@ describe("buildCoverage", () => {
     expect(selectedEvaluators[0].evaluatePoint(59.95, 10.85)).toBe(
       singleMembershipEvaluators[0].evaluatePoint(59.95, 10.85),
     );
+  });
+
+  it("discards stale terrain-loss entries when the coverage selection scope changes", () => {
+    clearTerrainLossCache();
+    let terrainReads = 0;
+    const terrainSampler = () => {
+      terrainReads += 1;
+      return 120;
+    };
+    const createForScope = (terrainCacheKey: string) => createCoverageContributorEvaluators(
+      network,
+      [sites[0]],
+      systems,
+      defaultPropagationEnvironment(),
+      terrainSampler,
+      { terrainSamples: 20, terrainCacheKey, requireCompleteTerrain: true },
+    )[0];
+
+    createForScope("selection-one").evaluatePoint(59.95, 10.85);
+    terrainReads = 0;
+    createForScope("selection-one").evaluatePoint(59.95, 10.85);
+    expect(terrainReads).toBe(1);
+
+    createForScope("selection-two").evaluatePoint(59.96, 10.86);
+    terrainReads = 0;
+    createForScope("selection-one").evaluatePoint(59.95, 10.85);
+
+    expect(terrainReads).toBeGreaterThan(1);
   });
 
   it("keeps Mesh Extension's nested comparison grid at the selected resolution", () => {
