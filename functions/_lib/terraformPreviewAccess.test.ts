@@ -20,6 +20,9 @@ const applicationBlock = (key: string): string => {
 
 describe("authenticated Pages preview Terraform intent", () => {
   it("models the Pages root and wildcard applications with authenticated policy", () => {
+    expect(applicationBlock("authenticated_api")).toContain(
+      'domain = "staging.linksim.link/api/*"',
+    );
     expect(applicationBlock("pages_root")).toContain('domain = "linksim-staging.pages.dev"');
     expect(applicationBlock("pages_previews")).toContain(
       'domain = "*.linksim-staging.pages.dev"',
@@ -34,7 +37,7 @@ describe("authenticated Pages preview Terraform intent", () => {
 
   it("derives all staging audiences from the managed Access applications", () => {
     expect(staging).toContain(
-      'pages_access_audience_keys = ["primary", "pages_root", "pages_previews"]',
+      'pages_access_audience_keys = ["authenticated_api", "pages_root", "pages_previews"]',
     );
     expect(moduleSource).toContain("ACCESS_AUD = join(\",\", local.managed_access_audiences)");
   });
