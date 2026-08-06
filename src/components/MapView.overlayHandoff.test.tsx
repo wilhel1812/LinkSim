@@ -308,7 +308,8 @@ describe("MapView overlay handoff", () => {
 
     const resolutionSelect = screen.getByLabelText("Simulation Resolution") as HTMLSelectElement;
     const heatmapLabel = resolutionSelect.options[0].textContent ?? "";
-    expect(heatmapLabel).toMatch(/~\d+(?:\.\d+)?k grid points/u);
+    expect(heatmapLabel).toContain("158×158");
+    expect(heatmapLabel).toContain("~25k grid points");
     expect(heatmapLabel).not.toContain("samples");
 
     act(() => useAppStore.getState().setMapOverlayMode("mesh-extension"));

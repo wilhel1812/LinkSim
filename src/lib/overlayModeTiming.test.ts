@@ -12,6 +12,7 @@ import {
   buildRelayCandidateOverlayPixelsAsync,
   buildSourcePassFailOverlayPixelsAsync,
 } from "./overlayRaster";
+import { simulationAreaBoundsForSites } from "./simulationArea";
 import type { Link, Network, PropagationEnvironment, RadioSystem, Site } from "../types/radio";
 
 const bounds = { minLat: 59.8, maxLat: 60, minLon: 10.6, maxLon: 10.8 };
@@ -161,6 +162,56 @@ describe("overlay mode timing calibration", () => {
     const productionPathBudget = buildCoverageGridPoints(24, bounds).length * sites.length;
     expect(adaptivePathCounts.every((count) => count <= productionPathBudget * 3.5)).toBe(true);
     expect(adaptiveDurations[1]).toBeLessThanOrEqual(productionDurations[1] * 2);
+  }, 120_000);
+
+  it("keeps rolling-terrain Heatmap work progressive as the third and fourth Sites expand the area", async () => {
+    const measurements: Array<{ sites: number; pixels: number; paths: number; terrainReads: number }> = [];
+    for (let siteCount = 1; siteCount <= 4; siteCount += 1) {
+      const selectedSites = sites.slice(0, siteCount);
+      const selectedBounds = simulationAreaBoundsForSites(selectedSites, { overlayRadiusKm: 20 })!;
+      const dimensions = computeCalibratedOverlayGridDimensions(24, selectedBounds, "heatmap");
+      let terrainReads = 0;
+      const contributors = createCoverageContributorEvaluators(
+        network,
+        selectedSites,
+        [system],
+        environment,
+        ({ lat, lon }) => {
+          terrainReads += 1;
+          return 125
+            + Math.sin(lat * 240) * 55
+            + Math.cos(lon * 190) * 35
+            + Math.sin((lat + lon) * 410) * 20;
+        },
+        {
+          terrainSamples: 20,
+          terrainCacheKey: `rolling-terrain-${siteCount}`,
+          requireCompleteTerrain: true,
+        },
+      );
+      const result = await buildAdaptiveCoverageOverlayPixelsAsync({
+        bounds: selectedBounds,
+        dimensions,
+        initialGridSize: 24,
+        mode: "heatmap",
+        rxTargetDbm: -118,
+        contributors,
+        context: context(`rolling-terrain-${siteCount}`),
+        adaptive: true,
+      });
+      measurements.push({
+        sites: siteCount,
+        pixels: dimensions.totalSamples,
+        paths: result?.analysisStats?.evaluatedPaths ?? Number.POSITIVE_INFINITY,
+        terrainReads,
+      });
+    }
+    const singleSitePaths = measurements[0].paths;
+    measurements.forEach((measurement) => {
+      expect(measurement.pixels).toBeLessThanOrEqual(25_500);
+      expect(measurement.paths).toBeLessThanOrEqual(singleSitePaths * measurement.sites * 1.05);
+      expect(measurement.terrainReads).toBeLessThanOrEqual(measurement.paths * 22);
+    });
   }, 120_000);
 
 });
