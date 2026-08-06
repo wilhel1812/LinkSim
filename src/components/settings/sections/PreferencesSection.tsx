@@ -1,12 +1,18 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 import { updateMyProfile, type CloudUser } from "../../../lib/cloudUser";
 import { FREQUENCY_PRESETS, frequencyPresetGroups } from "../../../lib/frequencyPlans";
 import {
+  MAX_CUSTOM_RADIO_PRESETS,
+  findCustomRadioPreset,
+  normalizeCustomRadioPresetName,
+  normalizeUserSimulationDefaultsPreference,
   resolveUserSimulationDefaults,
   simulationDefaultsFromPreset,
   type SimulationDefaults,
   type UserSimulationDefaultsPreference,
 } from "../../../lib/simulationDefaults";
+import { buildRadioPresetShareUrl } from "../../../lib/radioPresetShare";
 import { getUiErrorMessage } from "../../../lib/uiError";
 import { useAppStore } from "../../../store/appStore";
 import { useThemeVariant } from "../../../hooks/useThemeVariant";
@@ -15,6 +21,7 @@ import { setHolidayThemePreview } from "../../../themes/holidayThemeDev";
 import type { HolidayThemeKey, UiColorTheme } from "../../../themes/types";
 import { AutoSaveIndicator, type AutoSaveState } from "../../ui/AutoSaveIndicator";
 import { InfoTip } from "../../InfoTip";
+import { Button } from "../../ui/Button";
 
 type PreferencesSectionProps = {
   me: CloudUser | null;
@@ -37,14 +44,34 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
   const setAuthState = useAppStore((state) => state.setAuthState);
   const { activeHolidayTheme, holidayThemesVisible } = useThemeVariant();
 
-  const [presetState, setPresetState] = useState<SelectFieldState>(IDLE_SELECT);
+  const preference = useMemo(
+    () => normalizeUserSimulationDefaultsPreference(
+      me?.simulationDefaultsPreference,
+      me?.defaultFrequencyPresetId,
+    ),
+    [me?.defaultFrequencyPresetId, me?.simulationDefaultsPreference],
+  );
+  const customPresets = useMemo(() => preference.customPresets ?? [], [preference.customPresets]);
 
-  const preference: UserSimulationDefaultsPreference = me?.simulationDefaultsPreference ?? {
-    mode: "preset",
-    presetId: me?.defaultFrequencyPresetId ?? "oslo-local-869618",
-    overridePresetDefaults: false,
-  };
+  const [presetState, setPresetState] = useState<SelectFieldState>(IDLE_SELECT);
+  const [managedPresetId, setManagedPresetId] = useState(
+    preference.mode === "custom" ? preference.customPresetId ?? customPresets[0]?.id ?? "" : "",
+  );
+  const [newPresetName, setNewPresetName] = useState("");
+  const [renameDraft, setRenameDraft] = useState<{ presetId: string; value: string } | null>(null);
+  const [presetActionStatus, setPresetActionStatus] = useState("");
+
+  const resolvedManagedPresetId = customPresets.some((preset) => preset.id === managedPresetId)
+    ? managedPresetId
+    : preference.mode === "custom"
+      ? preference.customPresetId ?? customPresets[0]?.id ?? ""
+      : "";
+  const managedPreset = findCustomRadioPreset(preference, resolvedManagedPresetId);
+  const renameValue = renameDraft && renameDraft.presetId === managedPreset?.id
+    ? renameDraft.value
+    : managedPreset?.name ?? "";
   const activeDefaults = resolveUserSimulationDefaults(preference, me?.defaultFrequencyPresetId);
+  const editableDefaults = managedPreset?.defaults ?? activeDefaults;
   const holidayThemes = getHolidayThemeCatalog();
   const selectedColorThemeValue = activeHolidayTheme?.key ? `holiday:${activeHolidayTheme.key}` : uiColorTheme;
 
@@ -52,9 +79,10 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
     async (nextPreference: UserSimulationDefaultsPreference) => {
       setPresetState({ state: "saving", error: null });
       try {
+        const normalized = normalizeUserSimulationDefaultsPreference(nextPreference);
         const updated = await updateMyProfile({
-          defaultFrequencyPresetId: nextPreference.presetId,
-          simulationDefaultsPreference: nextPreference,
+          defaultFrequencyPresetId: normalized.presetId,
+          simulationDefaultsPreference: normalized,
         });
         onMeUpdated(updated);
         setCurrentUser(updated);
@@ -71,13 +99,85 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
   );
 
   const patchPreferenceDefaults = (patch: Partial<SimulationDefaults>) => {
-    const base = preference.mode === "custom" ? activeDefaults : simulationDefaultsFromPreset(preference.presetId);
+    if (managedPreset) {
+      const nextDefaults = { ...managedPreset.defaults, ...patch, frequencyPresetId: managedPreset.id };
+      void saveSimulationDefaultsPreference({
+        ...preference,
+        customPresets: customPresets.map((preset) =>
+          preset.id === managedPreset.id ? { ...preset, defaults: nextDefaults } : preset,
+        ),
+      });
+      return;
+    }
+    const base = simulationDefaultsFromPreset(preference.presetId);
     const nextDefaults = { ...base, ...activeDefaults, ...patch };
     void saveSimulationDefaultsPreference({
       ...preference,
-      overridePresetDefaults: preference.mode === "custom" ? preference.overridePresetDefaults : true,
-      ...(preference.mode === "custom" ? { custom: nextDefaults } : { overrides: nextDefaults }),
+      overridePresetDefaults: true,
+      overrides: nextDefaults,
     });
+  };
+
+  const createCustomPreset = () => {
+    const name = normalizeCustomRadioPresetName(newPresetName);
+    if (!name) {
+      setPresetActionStatus("Enter a preset name.");
+      return;
+    }
+    if (customPresets.some((preset) => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setPresetActionStatus("Preset names must be unique.");
+      return;
+    }
+    if (customPresets.length >= MAX_CUSTOM_RADIO_PRESETS) {
+      setPresetActionStatus(`You can save up to ${MAX_CUSTOM_RADIO_PRESETS} custom presets.`);
+      return;
+    }
+    const id = `radio-${crypto.randomUUID()}`;
+    void saveSimulationDefaultsPreference({
+      ...preference,
+      customPresets: [...customPresets, { id, name, defaults: { ...activeDefaults, frequencyPresetId: id } }],
+    });
+    setManagedPresetId(id);
+    setNewPresetName("");
+    setPresetActionStatus("Custom preset created.");
+  };
+
+  const renameManagedPreset = () => {
+    if (!managedPreset) return;
+    const name = normalizeCustomRadioPresetName(renameValue);
+    if (!name) {
+      setPresetActionStatus("Enter a preset name.");
+      return;
+    }
+    if (customPresets.some((preset) => preset.id !== managedPreset.id && preset.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setPresetActionStatus("Preset names must be unique.");
+      return;
+    }
+    void saveSimulationDefaultsPreference({
+      ...preference,
+      customPresets: customPresets.map((preset) => preset.id === managedPreset.id ? { ...preset, name } : preset),
+    });
+    setPresetActionStatus("Preset renamed.");
+  };
+
+  const deleteManagedPreset = () => {
+    if (!managedPreset || preference.mode === "custom" && preference.customPresetId === managedPreset.id) return;
+    void saveSimulationDefaultsPreference({
+      ...preference,
+      customPresets: customPresets.filter((preset) => preset.id !== managedPreset.id),
+    });
+    setManagedPresetId("");
+    setPresetActionStatus("Preset deleted.");
+  };
+
+  const shareManagedPreset = async () => {
+    if (!managedPreset || presetState.state === "saving" || presetState.state === "error") return;
+    try {
+      await navigator.clipboard.writeText(buildRadioPresetShareUrl(managedPreset, window.location));
+      setPresetActionStatus("Preset link copied.");
+    } catch (error) {
+      setPresetActionStatus(`Unable to copy preset link: ${getUiErrorMessage(error)}`);
+    }
   };
 
   const setHolidayThemeSelection = (holidayThemeKey: HolidayThemeKey | null) => {
@@ -173,22 +273,24 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
           <select
             id="pref-default-preset"
             className="locale-select"
-            value={preference.mode === "custom" ? "custom" : preference.presetId}
+            value={preference.mode === "custom" ? `custom:${preference.customPresetId}` : preference.presetId}
             onChange={(event) => {
               const next = event.target.value;
-              if (next === "custom") {
+              if (next.startsWith("custom:")) {
+                const customPresetId = next.slice("custom:".length);
                 void saveSimulationDefaultsPreference({
+                  ...preference,
                   mode: "custom",
-                  presetId: preference.presetId,
+                  customPresetId,
                   overridePresetDefaults: false,
-                  custom: activeDefaults,
                 });
+                setManagedPresetId(customPresetId);
                 return;
               }
-              void saveSimulationDefaultsPreference({ mode: "preset", presetId: next, overridePresetDefaults: false });
+              setManagedPresetId("");
+              void saveSimulationDefaultsPreference({ ...preference, mode: "preset", presetId: next, overridePresetDefaults: false });
             }}
           >
-            <option value="custom">Custom preset</option>
             {frequencyPresetGroups(FREQUENCY_PRESETS).map((groupEntry) => (
               <optgroup key={groupEntry.group} label={groupEntry.group}>
                 {groupEntry.presets.map((preset) => (
@@ -198,7 +300,74 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
                 ))}
               </optgroup>
             ))}
+            {customPresets.length ? (
+              <optgroup label="My presets">
+                {customPresets.map((preset) => (
+                  <option key={preset.id} value={`custom:${preset.id}`}>{preset.name}</option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
+        </div>
+
+        <div className="autosave-field custom-radio-preset-manager">
+          <label className="autosave-field-label" htmlFor="pref-custom-preset-manager">
+            <span>Custom radio presets <InfoTip text="Create named presets, edit their complete Simulation defaults, or copy a portable share link." /></span>
+          </label>
+          <div className="custom-radio-preset-create-row">
+            <input
+              aria-label="New custom preset name"
+              maxLength={80}
+              onChange={(event) => setNewPresetName(event.target.value)}
+              placeholder="New preset name"
+              type="text"
+              value={newPresetName}
+            />
+            <Button disabled={customPresets.length >= MAX_CUSTOM_RADIO_PRESETS} onClick={createCustomPreset} type="button">
+              <Plus aria-hidden="true" size={14} /> Create
+            </Button>
+          </div>
+          {customPresets.length ? (
+            <>
+              <select
+                aria-label="Custom preset to manage"
+                className="locale-select"
+                id="pref-custom-preset-manager"
+                onChange={(event) => { setManagedPresetId(event.target.value); setPresetActionStatus(""); }}
+                value={resolvedManagedPresetId}
+              >
+                <option value="">Select a custom preset to manage</option>
+                {customPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+              </select>
+              {managedPreset ? (
+                <>
+                  <div className="custom-radio-preset-create-row">
+                    <input aria-label="Custom preset name" maxLength={80} onChange={(event) => setRenameDraft({ presetId: managedPreset.id, value: event.target.value })} type="text" value={renameValue} />
+                    <Button disabled={renameValue.trim() === managedPreset.name} onClick={renameManagedPreset} type="button" variant="ghost">Rename</Button>
+                  </div>
+                  <div className="custom-radio-preset-actions">
+                    <Button
+                      aria-label={`Share custom preset: ${managedPreset.name}`}
+                      disabled={presetState.state === "saving" || presetState.state === "error"}
+                      onClick={() => void shareManagedPreset()}
+                      title="Copy share link"
+                      type="button"
+                      variant="ghost"
+                    ><Copy aria-hidden="true" size={14} /> Share</Button>
+                    <Button
+                      aria-label={`Delete custom preset: ${managedPreset.name}`}
+                      disabled={preference.mode === "custom" && preference.customPresetId === managedPreset.id}
+                      onClick={deleteManagedPreset}
+                      title={preference.mode === "custom" && preference.customPresetId === managedPreset.id ? "Select another account default before deleting" : "Delete custom preset"}
+                      type="button"
+                      variant="danger"
+                    ><Trash2 aria-hidden="true" size={14} /> Delete</Button>
+                  </div>
+                </>
+              ) : null}
+            </>
+          ) : <p className="field-help">No custom presets saved yet.</p>}
+          {presetActionStatus ? <p className="field-help" role="status">{presetActionStatus}</p> : null}
         </div>
 
         {preference.mode === "preset" ? (
@@ -208,6 +377,7 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
               aria-label="Override preset settings"
               checked={preference.overridePresetDefaults}
               onChange={(event) => {
+                setManagedPresetId("");
                 void saveSimulationDefaultsPreference({
                   ...preference,
                   overridePresetDefaults: event.target.checked,
@@ -219,47 +389,47 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
           </label>
         ) : null}
 
-        {preference.mode === "custom" || preference.overridePresetDefaults ? (
+        {managedPreset || preference.overridePresetDefaults ? (
           <div className="autosave-field">
             <label className="field-grid">
               <span>Frequency (MHz)</span>
-              <input type="number" value={activeDefaults.frequencyMHz} onChange={(event) => patchPreferenceDefaults({ frequencyMHz: Number(event.target.value), frequencyPresetId: preference.presetId })} />
+              <input type="number" value={editableDefaults.frequencyMHz} onChange={(event) => patchPreferenceDefaults({ frequencyMHz: Number(event.target.value) })} />
             </label>
             <label className="field-grid">
               <span>Bandwidth (kHz)</span>
-              <input type="number" value={activeDefaults.bandwidthKhz} onChange={(event) => patchPreferenceDefaults({ bandwidthKhz: Number(event.target.value) })} />
+              <input type="number" value={editableDefaults.bandwidthKhz} onChange={(event) => patchPreferenceDefaults({ bandwidthKhz: Number(event.target.value) })} />
             </label>
             <label className="field-grid">
               <span>Spread factor</span>
-              <input type="number" value={activeDefaults.spreadFactor} onChange={(event) => patchPreferenceDefaults({ spreadFactor: Number(event.target.value) })} />
+              <input type="number" value={editableDefaults.spreadFactor} onChange={(event) => patchPreferenceDefaults({ spreadFactor: Number(event.target.value) })} />
             </label>
             <label className="field-grid">
               <span>Coding rate</span>
-              <input type="number" value={activeDefaults.codingRate} onChange={(event) => patchPreferenceDefaults({ codingRate: Number(event.target.value) })} />
+              <input type="number" value={editableDefaults.codingRate} onChange={(event) => patchPreferenceDefaults({ codingRate: Number(event.target.value) })} />
             </label>
             <label className="field-grid">
               <span>Region code</span>
-              <input type="text" value={activeDefaults.regionCode ?? ""} onChange={(event) => patchPreferenceDefaults({ regionCode: event.target.value || undefined })} />
+              <input type="text" value={editableDefaults.regionCode ?? ""} onChange={(event) => patchPreferenceDefaults({ regionCode: event.target.value || undefined })} />
             </label>
             <label className="field-grid">
               <span>RX target (dBm)</span>
-              <input type="number" value={activeDefaults.rxSensitivityTargetDbm} onChange={(event) => patchPreferenceDefaults({ rxSensitivityTargetDbm: Number(event.target.value) })} />
+              <input type="number" value={editableDefaults.rxSensitivityTargetDbm} onChange={(event) => patchPreferenceDefaults({ rxSensitivityTargetDbm: Number(event.target.value) })} />
             </label>
             <label className="field-grid">
               <span>Env loss (dB)</span>
-              <input min={0} type="number" value={activeDefaults.environmentLossDb} onChange={(event) => patchPreferenceDefaults({ environmentLossDb: Number(event.target.value) })} />
+              <input min={0} type="number" value={editableDefaults.environmentLossDb} onChange={(event) => patchPreferenceDefaults({ environmentLossDb: Number(event.target.value) })} />
             </label>
             <label className="field-grid">
               <span>Auto environment defaults</span>
-              <input aria-label="Auto environment defaults" checked={activeDefaults.autoPropagationEnvironment} onChange={(event) => patchPreferenceDefaults({ autoPropagationEnvironment: event.target.checked })} type="checkbox" />
+              <input aria-label="Auto environment defaults" checked={editableDefaults.autoPropagationEnvironment} onChange={(event) => patchPreferenceDefaults({ autoPropagationEnvironment: event.target.checked })} type="checkbox" />
             </label>
-            {activeDefaults.autoPropagationEnvironment ? (
+            {editableDefaults.autoPropagationEnvironment ? (
               <p className="field-help">Auto derives climate and clutter from terrain for each path. Turn it off to use fixed manual environment values.</p>
             ) : (
               <>
                 <label className="field-grid">
                   <span>Radio climate</span>
-                  <select className="locale-select" value={activeDefaults.propagationEnvironment.radioClimate} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, radioClimate: event.target.value as SimulationDefaults["propagationEnvironment"]["radioClimate"] } })}>
+                  <select className="locale-select" value={editableDefaults.propagationEnvironment.radioClimate} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...editableDefaults.propagationEnvironment, radioClimate: event.target.value as SimulationDefaults["propagationEnvironment"]["radioClimate"] } })}>
                     <option value="Continental Temperate">Continental Temperate</option>
                     <option value="Maritime Temperate (Land)">Maritime Temperate (Land)</option>
                     <option value="Maritime Temperate (Sea)">Maritime Temperate (Sea)</option>
@@ -271,19 +441,19 @@ export function PreferencesSection({ me, onMeUpdated }: PreferencesSectionProps)
                 </label>
                 <label className="field-grid">
                   <span>Clutter height (m)</span>
-                  <input type="number" value={activeDefaults.propagationEnvironment.clutterHeightM} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, clutterHeightM: Number(event.target.value) } })} />
+                  <input type="number" value={editableDefaults.propagationEnvironment.clutterHeightM} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...editableDefaults.propagationEnvironment, clutterHeightM: Number(event.target.value) } })} />
                 </label>
                 <label className="field-grid">
                   <span>Ground dielectric</span>
-                  <input type="number" value={activeDefaults.propagationEnvironment.groundDielectric} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, groundDielectric: Number(event.target.value) } })} />
+                  <input type="number" value={editableDefaults.propagationEnvironment.groundDielectric} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...editableDefaults.propagationEnvironment, groundDielectric: Number(event.target.value) } })} />
                 </label>
                 <label className="field-grid">
                   <span>Ground conductivity</span>
-                  <input type="number" value={activeDefaults.propagationEnvironment.groundConductivity} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, groundConductivity: Number(event.target.value) } })} />
+                  <input type="number" value={editableDefaults.propagationEnvironment.groundConductivity} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...editableDefaults.propagationEnvironment, groundConductivity: Number(event.target.value) } })} />
                 </label>
                 <label className="field-grid">
                   <span>Atmospheric bending (N-units)</span>
-                  <input type="number" value={activeDefaults.propagationEnvironment.atmosphericBendingNUnits} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...activeDefaults.propagationEnvironment, atmosphericBendingNUnits: Number(event.target.value) } })} />
+                  <input type="number" value={editableDefaults.propagationEnvironment.atmosphericBendingNUnits} onChange={(event) => patchPreferenceDefaults({ propagationEnvironment: { ...editableDefaults.propagationEnvironment, atmosphericBendingNUnits: Number(event.target.value) } })} />
                 </label>
               </>
             )}

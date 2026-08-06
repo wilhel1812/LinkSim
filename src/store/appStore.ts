@@ -4,6 +4,7 @@ import { setAppStoreBridge, useCoverageStore } from "./coverageStore";
 import { findPresetById } from "../lib/frequencyPlans";
 import {
   FALLBACK_SIMULATION_PRESET_ID,
+  findCustomRadioPreset,
   normalizeSimulationDefaults,
   resolveUserSimulationDefaults,
   simulationDefaultsFromPreset,
@@ -160,9 +161,10 @@ const requireAuth = (currentUser: CloudUser | null, action: string): CloudUser |
 };
 
 const resolveDefaultFrequencyPresetIdForNewSimulation = (currentUser: CloudUser | null): string => {
-  const preferred = currentUser?.simulationDefaultsPreference?.presetId ?? currentUser?.defaultFrequencyPresetId;
-  if (typeof preferred === "string" && findPresetById(preferred)) return preferred;
-  return FALLBACK_SIMULATION_PRESET_ID;
+  return resolveUserSimulationDefaults(
+    currentUser?.simulationDefaultsPreference,
+    currentUser?.defaultFrequencyPresetId,
+  ).frequencyPresetId;
 };
 
 const resolveEffectiveSimulationDefaultsForSnapshot = (
@@ -2928,8 +2930,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (hasDuplicateSimulationName(get().simulationPresets, presetName)) return null;
     const inheritedDefaults = resolveUserSimulationDefaults(user.simulationDefaultsPreference, user.defaultFrequencyPresetId);
     const defaultPresetId = inheritedDefaults.frequencyPresetId;
+    const requestedCustomPreset = findCustomRadioPreset(user.simulationDefaultsPreference, options?.frequencyPresetId);
     const selectedPresetId =
-      typeof options?.frequencyPresetId === "string" && findPresetById(options.frequencyPresetId)
+      typeof options?.frequencyPresetId === "string" && (findPresetById(options.frequencyPresetId) || requestedCustomPreset)
         ? options.frequencyPresetId
         : defaultPresetId;
     set((current) => {
@@ -3641,24 +3644,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const { selectedFrequencyPresetId, selectedNetworkId } = get();
     const preset = findPresetById(selectedFrequencyPresetId);
-    if (!preset) return;
-    const defaults = simulationDefaultsFromPreset(preset.id);
+    const customPreset = findCustomRadioPreset(user.simulationDefaultsPreference, selectedFrequencyPresetId);
+    if (!preset && !customPreset) return;
+    const defaults = customPreset?.defaults ?? simulationDefaultsFromPreset(preset?.id ?? FALLBACK_SIMULATION_PRESET_ID);
 
     set((state) => ({
       networks: state.networks.map((network) =>
         network.id === selectedNetworkId
           ? {
               ...network,
-              frequencyMHz: preset.frequencyMHz,
-              bandwidthKhz: preset.bandwidthKhz,
-              spreadFactor: preset.spreadFactor,
-              codingRate: preset.codingRate,
-              frequencyOverrideMHz: preset.frequencyMHz,
-              regionCode: preset.regionCode,
+              frequencyMHz: defaults.frequencyMHz,
+              bandwidthKhz: defaults.bandwidthKhz,
+              spreadFactor: defaults.spreadFactor,
+              codingRate: defaults.codingRate,
+              frequencyOverrideMHz: defaults.frequencyMHz,
+              regionCode: defaults.regionCode,
             }
           : network,
       ),
-      links: state.links.map((link) => ({ ...link, frequencyMHz: preset.frequencyMHz })),
+      links: state.links.map((link) => ({ ...link, frequencyMHz: defaults.frequencyMHz })),
       rxSensitivityTargetDbm: defaults.rxSensitivityTargetDbm,
       environmentLossDb: defaults.environmentLossDb,
       propagationEnvironment: defaults.propagationEnvironment,

@@ -130,7 +130,7 @@ vi.mock("./WelcomeModal", () => ({ default: () => null }));
 vi.mock("./OnboardingTutorialModal", () => ({ default: () => null }));
 vi.mock("./LinkProfileChart", () => ({ LinkProfileChart: () => null }));
 vi.mock("./PanoramaChart", () => ({ PanoramaChart: () => null }));
-vi.mock("./ActionButton", () => ({ ActionButton: () => null }));
+vi.mock("./ActionButton", () => ({ ActionButton: ({ children, variant, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) => React.createElement("button", { ...props, "data-variant": variant }, children) }));
 vi.mock("./InlineCloseIconButton", () => ({ InlineCloseIconButton: () => null }));
 vi.mock("./ModalOverlay", () => ({ ModalOverlay: ({ children }: { children?: React.ReactNode }) => children ?? null }));
 vi.mock("./app-shell/MobileWorkspaceTabs", () => ({ MobileWorkspaceTabs: () => null }));
@@ -149,6 +149,8 @@ vi.mock("./app-shell/useOnboardingFlow", () => ({
 }));
 
 import { AppShell, buildAuthStartPath } from "./AppShell";
+import { buildRadioPresetShareHash } from "../lib/radioPresetShare";
+import { simulationDefaultsFromPreset } from "../lib/simulationDefaults";
 
 const waitForCondition = async (check: () => boolean, timeoutMs = 2500): Promise<void> => {
   const started = Date.now();
@@ -290,6 +292,29 @@ describe("AppShell deeplink cold-load flow", () => {
     expect(buildAuthStartPath({ pathname: "/sim/site", search: "?mode=demo", hash: "#panel" })).toBe(
       "/api/auth-start?returnTo=%2Fsim%2Fsite%3Fmode%3Ddemo%23panel",
     );
+  });
+
+  it("previews every shared radio preset value before an anonymous import", async () => {
+    const defaults = {
+      ...simulationDefaultsFromPreset("mt-eu_868"),
+      frequencyMHz: 869.4,
+      rxSensitivityTargetDbm: -127,
+      autoPropagationEnvironment: false,
+    };
+    window.history.replaceState(null, "", `/${buildRadioPresetShareHash({ name: "Alpine Mesh", defaults })}`);
+    hoisted.fetchMe.mockRejectedValue(new Error("Unauthorized"));
+    hoisted.fetchAuthStatus.mockResolvedValue({ authenticated: false, authState: "guest" });
+
+    const view = await renderAppShell();
+    try {
+      expect(document.body.textContent).toContain("Import Radio Preset");
+      expect(document.body.textContent).toContain("Alpine Mesh");
+      expect(document.body.textContent).toContain("869.4 MHz");
+      expect(document.body.textContent).toContain("-127 dBm");
+      expect(document.body.textContent).toContain("Sign in to save");
+    } finally {
+      unmountAppShell(view);
+    }
   });
 
   it("loads the resolved simulation id and does not emit unavailable", async () => {

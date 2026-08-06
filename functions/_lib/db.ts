@@ -1,6 +1,9 @@
 import type { CloudResourceRecord, DbVisibility, Env, Grant, ResourceRole, UserRole, Visibility } from "./types";
 import { findPresetById } from "../../src/lib/frequencyPlans";
-import { normalizeSimulationDefaults, type UserSimulationDefaultsPreference } from "../../src/lib/simulationDefaults";
+import {
+  normalizeUserSimulationDefaultsPreference,
+  type UserSimulationDefaultsPreference,
+} from "../../src/lib/simulationDefaults";
 
 const VISIBILITIES: Visibility[] = ["private", "public", "shared"];
 const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write"];
@@ -177,16 +180,8 @@ const sanitizeSimulationDefaultsPreference = (value: unknown): string | null | u
   if (value === undefined) return undefined;
   if (value === null) return null;
   if (typeof value !== "object" || Array.isArray(value)) throw new Error("Simulation defaults preference must be an object or null.");
-  const raw = value as Partial<UserSimulationDefaultsPreference>;
-  const mode = raw.mode === "custom" ? "custom" : "preset";
-  const presetId = typeof raw.presetId === "string" && findPresetById(raw.presetId) ? raw.presetId : "oslo-local-869618";
-  const normalized: UserSimulationDefaultsPreference = {
-    mode,
-    presetId,
-    overridePresetDefaults: Boolean(raw.overridePresetDefaults),
-    ...(raw.overrides ? { overrides: normalizeSimulationDefaults(raw.overrides) } : {}),
-    ...(raw.custom ? { custom: normalizeSimulationDefaults(raw.custom) } : {}),
-  };
+  const raw = value as UserSimulationDefaultsPreference;
+  const normalized = normalizeUserSimulationDefaultsPreference(raw);
   return JSON.stringify(normalized);
 };
 

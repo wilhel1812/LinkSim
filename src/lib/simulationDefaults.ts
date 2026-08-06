@@ -15,9 +15,21 @@ export type SimulationDefaults = {
   autoPropagationEnvironment: boolean;
 };
 
+export type CustomRadioPreset = {
+  id: string;
+  name: string;
+  defaults: SimulationDefaults;
+};
+
+export const MAX_CUSTOM_RADIO_PRESETS = 50;
+export const MAX_CUSTOM_RADIO_PRESET_NAME_LENGTH = 80;
+export const LEGACY_CUSTOM_RADIO_PRESET_ID = "radio-legacy-custom";
+
 export type UserSimulationDefaultsPreference = {
   mode: "preset" | "custom";
   presetId: string;
+  customPresetId?: string;
+  customPresets?: CustomRadioPreset[];
   overridePresetDefaults: boolean;
   overrides?: Partial<SimulationDefaults>;
   custom?: Partial<SimulationDefaults>;
@@ -78,16 +90,102 @@ const mergeDefaults = (base: SimulationDefaults, patch?: Partial<SimulationDefau
       : base.autoPropagationEnvironment,
 });
 
+const normalizeCustomRadioPresetId = (value: unknown): string =>
+  typeof value === "string" ? value.trim().slice(0, 120) : "";
+
+export const normalizeCustomRadioPresetName = (value: unknown): string =>
+  typeof value === "string" ? value.trim().slice(0, MAX_CUSTOM_RADIO_PRESET_NAME_LENGTH) : "";
+
+export const findCustomRadioPreset = (
+  preference: UserSimulationDefaultsPreference | null | undefined,
+  id: string | null | undefined,
+): CustomRadioPreset | undefined =>
+  preference?.customPresets?.find((preset) => preset.id === id);
+
+export const normalizeUserSimulationDefaultsPreference = (
+  value?: UserSimulationDefaultsPreference | null,
+  legacyPresetId?: string | null,
+): UserSimulationDefaultsPreference => {
+  const raw = value ?? {
+    mode: "preset" as const,
+    presetId: legacyPresetId ?? FALLBACK_SIMULATION_PRESET_ID,
+    overridePresetDefaults: false,
+  };
+  const presetId = findPresetById(raw.presetId)
+    ? raw.presetId
+    : findPresetById(legacyPresetId ?? "")
+      ? String(legacyPresetId)
+      : FALLBACK_SIMULATION_PRESET_ID;
+  const customPresets: CustomRadioPreset[] = [];
+  const ids = new Set<string>();
+  const names = new Set<string>();
+
+  const addPreset = (candidate: unknown, preserveDefaultsPresetId = false) => {
+    if (customPresets.length >= MAX_CUSTOM_RADIO_PRESETS) return;
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return;
+    const rawCandidate = candidate as Partial<CustomRadioPreset>;
+    const id = normalizeCustomRadioPresetId(rawCandidate.id);
+    const name = normalizeCustomRadioPresetName(rawCandidate.name);
+    const nameKey = name.toLocaleLowerCase();
+    if (!id || !name || ids.has(id) || names.has(nameKey) || !rawCandidate.defaults) return;
+    const normalizedDefaults = normalizeSimulationDefaults(rawCandidate.defaults);
+    ids.add(id);
+    names.add(nameKey);
+    customPresets.push({
+      id,
+      name,
+      defaults: {
+        ...normalizedDefaults,
+        frequencyPresetId: preserveDefaultsPresetId
+          ? normalizedDefaults.frequencyPresetId
+          : id,
+      },
+    });
+  };
+
+  if (Array.isArray(raw.customPresets)) {
+    for (const candidate of raw.customPresets) addPreset(candidate);
+  }
+  if (raw.mode === "custom" && raw.custom && !customPresets.length) {
+    addPreset({
+      id: LEGACY_CUSTOM_RADIO_PRESET_ID,
+      name: "My custom preset",
+      defaults: normalizeSimulationDefaults(raw.custom, simulationDefaultsFromPreset(presetId)),
+    }, true);
+  }
+
+  const requestedCustomId = normalizeCustomRadioPresetId(raw.customPresetId);
+  const selectedCustom = customPresets.find((preset) => preset.id === requestedCustomId)
+    ?? (raw.mode === "custom" ? customPresets[0] : undefined);
+
+  return {
+    mode: raw.mode === "custom" && selectedCustom ? "custom" : "preset",
+    presetId,
+    ...(selectedCustom ? { customPresetId: selectedCustom.id } : {}),
+    ...(customPresets.length ? { customPresets } : {}),
+    overridePresetDefaults: Boolean(raw.overridePresetDefaults),
+    ...(raw.overrides ? { overrides: normalizeSimulationDefaults(raw.overrides, simulationDefaultsFromPreset(presetId)) } : {}),
+  };
+};
+
 export const resolveUserSimulationDefaults = (
   preference?: UserSimulationDefaultsPreference | null,
   legacyPresetId?: string | null,
 ): SimulationDefaults => {
-  const presetId = preference?.presetId || legacyPresetId || FALLBACK_SIMULATION_PRESET_ID;
+  const normalizedPreference = normalizeUserSimulationDefaultsPreference(preference, legacyPresetId);
+  const presetId = normalizedPreference.presetId || legacyPresetId || FALLBACK_SIMULATION_PRESET_ID;
   const presetDefaults = simulationDefaultsFromPreset(presetId);
-  if (preference?.mode === "custom") {
-    return mergeDefaults(presetDefaults, preference.custom);
+  if (normalizedPreference.mode === "custom") {
+    const customPreset = findCustomRadioPreset(normalizedPreference, normalizedPreference.customPresetId);
+    if (customPreset) {
+      return customPreset.id === LEGACY_CUSTOM_RADIO_PRESET_ID
+        ? customPreset.defaults
+        : { ...customPreset.defaults, frequencyPresetId: customPreset.id };
+    }
   }
-  return preference?.overridePresetDefaults ? mergeDefaults(presetDefaults, preference.overrides) : presetDefaults;
+  return normalizedPreference.overridePresetDefaults
+    ? mergeDefaults(presetDefaults, normalizedPreference.overrides)
+    : presetDefaults;
 };
 
 export const normalizeSimulationDefaults = (
