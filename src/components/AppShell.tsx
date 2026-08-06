@@ -2393,6 +2393,19 @@ export function AppShell() {
           </div>
         </ModalOverlay>
       ) : null}
+      {settingsRoute ? (
+        <ModalOverlay
+          aria-label="Settings"
+          className="settings-overlay"
+          onClose={closeSettings}
+          suspended={Boolean(presetImport)}
+          tier="raised"
+        >
+          <div className="library-manager-card settings-panel-wrapper">
+            <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} suspended={Boolean(presetImport)} />
+          </div>
+        </ModalOverlay>
+      ) : null}
       {presetImport ? (
         <ModalOverlay aria-label="Import radio preset" onClose={clearPresetImport} tier="raised">
           <div className="library-manager-card radio-preset-import-card">
@@ -2640,13 +2653,6 @@ export function AppShell() {
         </ModalOverlay>
       ) : null}
       <UserProfilePopover onClose={() => setProfileTarget(null)} target={profileTarget} viewer={currentUser} />
-      {settingsRoute ? (
-        <ModalOverlay aria-label="Settings" onClose={closeSettings} tier="raised" className="settings-overlay">
-          <div className="library-manager-card settings-panel-wrapper">
-            <SettingsPanel initialSection={settingsRoute.section} onClose={closeSettings} />
-          </div>
-        </ModalOverlay>
-      ) : null}
       <MapEditorPanel isMobile={isMobileViewport} />
     </main>
   );
