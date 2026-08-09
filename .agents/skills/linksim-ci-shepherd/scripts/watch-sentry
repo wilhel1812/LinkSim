@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Wait for one exact private Sentry shadow review without triggering a model call."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import time
+from typing import Any
+
+
+TERMINAL_FAILURE_STATES = {"cancelled", "failed", "needs-human"}
+PENDING_STATES = {"missing", "queued", "running"}
+
+
+def read_pr_head(pr: int, repository: str) -> str:
+    process = subprocess.run(
+        ["gh", "pr", "view", str(pr), "--repo", repository, "--json", "headRefOid", "--jq", ".headRefOid"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode != 0:
+        raise RuntimeError(process.stderr.strip() or "gh pr view failed")
+    head_sha = process.stdout.strip()
+    if len(head_sha) != 40:
+        raise ValueError("GitHub returned an invalid PR head SHA")
+    return head_sha
+
+
+def read_review_status(host: str, pr: int, head_sha: str) -> dict[str, Any]:
+    process = subprocess.run(
+        [
+            "ssh",
+            host,
+            "docker",
+            "exec",
+            "sentry-reviewer",
+            "/opt/hermes/.venv/bin/python3",
+            "/opt/linky/linky_runtime.py",
+            "review-status",
+            f"pr:{pr}",
+            head_sha,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode != 0:
+        raise RuntimeError(process.stderr.strip() or "Sentry status query failed")
+    value = json.loads(process.stdout)
+    if not isinstance(value, dict):
+        raise ValueError("Sentry status query returned non-object JSON")
+    return value
+
+
+def emit(result: str, pr: int, repository: str, head_sha: str, started: float, **extra: Any) -> int:
+    payload = {
+        "result": result,
+        "repository": repository,
+        "pull_request": pr,
+        "head_sha": head_sha,
+        "elapsed_seconds": int(time.monotonic() - started),
+        **extra,
+    }
+    print(json.dumps(payload, separators=(",", ":")))
+    return 0 if result == "pass" else 1 if result == "needs-human" else 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("pull_request", type=int)
+    parser.add_argument("--repo", default="wilhel1812/LinkSim")
+    parser.add_argument("--host", default=os.environ.get("LINKSIM_SENTRY_HOST", ""))
+    parser.add_argument("--head-sha")
+    parser.add_argument("--interval", type=int, default=15)
+    parser.add_argument("--timeout", type=int, default=900)
+    args = parser.parse_args(argv)
+
+    if not args.host:
+        parser.error("--host or LINKSIM_SENTRY_HOST is required")
+    if args.interval < 1 or args.timeout < 1:
+        parser.error("interval and timeout must be positive")
+
+    started = time.monotonic()
+    try:
+        current_head = read_pr_head(args.pull_request, args.repo)
+        head_sha = args.head_sha or current_head
+        if current_head != head_sha:
+            return emit(
+                "head-changed",
+                args.pull_request,
+                args.repo,
+                head_sha,
+                started,
+                current_head_sha=current_head,
+            )
+
+        while True:
+            status = read_review_status(args.host, args.pull_request, head_sha)
+            state = str(status.get("state", ""))
+            if state == "completed":
+                current_head = read_pr_head(args.pull_request, args.repo)
+                if current_head != head_sha:
+                    return emit(
+                        "head-changed",
+                        args.pull_request,
+                        args.repo,
+                        head_sha,
+                        started,
+                        current_head_sha=current_head,
+                    )
+                return emit(
+                    "pass",
+                    args.pull_request,
+                    args.repo,
+                    head_sha,
+                    started,
+                    terminal_reason=str(status.get("terminal_reason", "")),
+                )
+            if state in TERMINAL_FAILURE_STATES:
+                return emit(
+                    "needs-human",
+                    args.pull_request,
+                    args.repo,
+                    head_sha,
+                    started,
+                    state=state,
+                    terminal_reason=str(status.get("terminal_reason", "")),
+                )
+            if state not in PENDING_STATES:
+                raise ValueError(f"unknown Sentry review state: {state or '<empty>'}")
+            if time.monotonic() - started >= args.timeout:
+                return emit(
+                    "timeout",
+                    args.pull_request,
+                    args.repo,
+                    head_sha,
+                    started,
+                    state=state,
+                )
+            time.sleep(args.interval)
+    except (RuntimeError, ValueError, json.JSONDecodeError) as error:
+        return emit(
+            "error",
+            args.pull_request,
+            args.repo,
+            args.head_sha or "",
+            started,
+            error=str(error)[:500],
+        )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
