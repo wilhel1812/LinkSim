@@ -78,8 +78,10 @@ describe("AI agent registry", () => {
       expect.arrayContaining([
         "edit-policy",
         "edit-skills",
+        "edit-prompts",
         "edit-workflows",
         "edit-memory",
+        "change-permissions",
         "change-infrastructure",
         "implement-own-suggestion",
         "progress-epic-automatically",
