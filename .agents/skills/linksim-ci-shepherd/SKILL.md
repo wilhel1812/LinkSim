@@ -12,11 +12,29 @@ Shepherd one PR to a truthful handoff. Never merge or approve the PR.
 1. Read `AGENTS.md` and confirm the PR targets `staging` from an allowed branch.
 2. Verify the local branch and PR head SHA match before changing anything.
 3. Run
-   `python3 scripts/watch-ci <pr-number> --repo wilhel1812/LinkSim`. It emits
+   `python3 .agents/skills/linksim-ci-shepherd/scripts/watch-ci <pr-number> --repo wilhel1812/LinkSim`. It emits
    one final JSON result and a meaningful exit code instead of streaming logs
    into model context.
 4. If checks pass, inspect unresolved review threads and hand off. Do not invent
    work merely to consume the cycle budget.
+
+## Hold for private Sentry shadow evaluation
+
+While the Sentry shadow-evaluation gate is active, a green CI result is not yet
+merge-ready. Run:
+
+`python3 .agents/skills/linksim-ci-shepherd/scripts/watch-sentry <pr-number> --repo wilhel1812/LinkSim`
+
+Set `LINKSIM_SENTRY_HOST` to the approved SSH target for the private runtime.
+The watcher reads deterministic SQLite state through the isolated
+`sentry-reviewer` container. It cannot enqueue a review, trigger a model call,
+publish a result, or rerun CI.
+
+Do not hand off a PR as merge-ready until the watcher returns `pass` for the
+exact current head SHA. A review of a superseded SHA does not satisfy the gate.
+`needs-human`, timeout, missing access, or malformed state fails closed. Re-run
+both watchers after every pushed fix. Reassess and remove this temporary hold
+when private shadow evaluation is replaced by an accepted public-review flow.
 
 ## Fix failures deliberately
 
