@@ -321,6 +321,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         groundElevationM: site.groundElevationM,
         antennaHeightM: site.antennaHeightM,
         rxGainDbi: site.rxGainDbi,
+        antennaMode: site.antennaMode,
+        antennaAzimuthDeg: site.antennaAzimuthDeg,
+        antennaTiltDeg: site.antennaTiltDeg,
+        antennaHorizontalBeamwidthDeg: site.antennaHorizontalBeamwidthDeg,
+        antennaVerticalBeamwidthDeg: site.antennaVerticalBeamwidthDeg,
+        antennaMaxAttenuationDb: site.antennaMaxAttenuationDb,
         iconKey: resolveSiteIconKey(site),
       }));
 
@@ -336,6 +342,12 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
             groundElevationM: entry.groundElevationM,
             antennaHeightM: entry.antennaHeightM,
             rxGainDbi: entry.rxGainDbi,
+            antennaMode: entry.antennaMode,
+            antennaAzimuthDeg: entry.antennaAzimuthDeg,
+            antennaTiltDeg: entry.antennaTiltDeg,
+            antennaHorizontalBeamwidthDeg: entry.antennaHorizontalBeamwidthDeg,
+            antennaVerticalBeamwidthDeg: entry.antennaVerticalBeamwidthDeg,
+            antennaMaxAttenuationDb: entry.antennaMaxAttenuationDb,
             iconKey: resolveSiteIconKey(entry),
           }))
       : [];

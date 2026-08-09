@@ -146,6 +146,49 @@ describe("api/v1/calculate", () => {
     expect(body.result.from_antenna_height_m).toBe(5);
   });
 
+  it("applies optional directional patterns at both API endpoints", async () => {
+    const baselineRequest = new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(mkPayload()),
+    });
+    const baselineResponse = await onRequestPost(mkCtx(baselineRequest, { DB: {} }));
+    const baseline = (await baselineResponse.json()) as { result: { rx_dbm: number } };
+
+    const directional: any = mkPayload();
+    directional.input.nodes = directional.input.nodes.map((node, index) => ({
+      ...node,
+      antenna_mode: "directional",
+      antenna_azimuth_deg: index === 0 ? 225 : 45,
+      antenna_tilt_deg: 0,
+      antenna_horizontal_beamwidth_deg: 30,
+      antenna_vertical_beamwidth_deg: 30,
+      antenna_max_attenuation_db: 20,
+    }));
+    const directionalRequest = new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(directional),
+    });
+    const directionalResponse = await onRequestPost(mkCtx(directionalRequest, { DB: {} }));
+    const result = (await directionalResponse.json()) as { result: { rx_dbm: number } };
+
+    expect(baseline.result.rx_dbm - result.result.rx_dbm).toBeCloseTo(40, 5);
+  });
+
+  it("validates directional API field ranges", async () => {
+    const payload: any = mkPayload();
+    payload.input.nodes[0] = { ...payload.input.nodes[0], antenna_mode: "directional", antenna_tilt_deg: 91 };
+    const req = new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const res = await onRequestPost(mkCtx(req, { DB: {} }));
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "nodes[0].antenna_tilt_deg must be between -90 and 90." });
+  });
+
   it("returns 404 when named sites are missing", async () => {
     const req = new Request("https://linksim.link/api/v1/calculate", {
       method: "POST",

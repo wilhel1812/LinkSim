@@ -46,32 +46,53 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
   const cy = 116;
   const maxRadius = 96 * metrics.rangeScore;
   const baselineRadius = 96 * heltecBaselineMetrics.rangeScore;
+  const isDirectional = values.antennaMode === "directional";
 
   return (
     <div
       className="beam-visualizer"
       role="img"
-      aria-label={`Educational beam preview: ${metrics.rangeLabel.toLowerCase()} relative range with stronger and weaker illustrated beam areas.`}
+      aria-label={`Educational ${isDirectional ? "directional" : "omnidirectional"} beam preview: ${metrics.rangeLabel.toLowerCase()} relative range with stronger and weaker illustrated beam areas.`}
     >
       <div className="beam-visualizer-header">
         <strong>Beam preview</strong>
         <span>{metrics.rangeLabel} range</span>
       </div>
-      <svg className="beam-visualizer-chart" viewBox="0 0 220 132" aria-hidden="true" focusable="false">
-        <line className="beam-visualizer-axis" x1={cx} x2={cx} y1="18" y2={cy} />
-        {metrics.bands.map((band) => (
-          <path
-            className={`beam-visualizer-band beam-visualizer-band-${band.state}`}
-            d={sectorPath(cx, cy, maxRadius * (band.radiusPercent / 100), metrics.beamWidthDeg)}
-            key={band.state}
-          />
+      <div className={`beam-visualizer-charts ${isDirectional ? "is-directional" : ""}`}>
+        {(isDirectional
+          ? [
+              { label: "Horizontal", widthDeg: metrics.beamWidthDeg },
+              { label: "Vertical", widthDeg: metrics.verticalBeamWidthDeg },
+            ]
+          : [{ label: "All directions", widthDeg: 360 }]
+        ).map((chart) => (
+          <div className="beam-visualizer-chart-group" key={chart.label}>
+            <span>{chart.label}</span>
+            <svg className="beam-visualizer-chart" viewBox="0 0 220 132" aria-hidden="true" focusable="false">
+              {isDirectional ? <line className="beam-visualizer-axis" x1={cx} x2={cx} y1="18" y2={cy} /> : null}
+              {metrics.bands.map((band) => isDirectional ? (
+                <path
+                  className={`beam-visualizer-band beam-visualizer-band-${band.state}`}
+                  d={sectorPath(cx, cy, maxRadius * (band.radiusPercent / 100), chart.widthDeg)}
+                  key={band.state}
+                />
+              ) : (
+                <circle
+                  className={`beam-visualizer-band beam-visualizer-band-${band.state}`}
+                  cx={cx}
+                  cy={66}
+                  key={band.state}
+                  r={maxRadius * 0.55 * (band.radiusPercent / 100)}
+                />
+              ))}
+              {isDirectional ? (
+                <circle className="beam-visualizer-baseline" cx={cx} cy={cy} r={baselineRadius * 0.45} />
+              ) : null}
+              <circle className="beam-visualizer-origin" cx={cx} cy={isDirectional ? cy : 66} r="5" />
+            </svg>
+          </div>
         ))}
-        <path
-          className="beam-visualizer-baseline"
-          d={sectorPath(cx, cy, baselineRadius, heltecBaselineMetrics.beamWidthDeg)}
-        />
-        <circle className="beam-visualizer-origin" cx={cx} cy={cy} r="5" />
-      </svg>
+      </div>
       <ul className="beam-visualizer-legend">
         <li>
           <StateDot state="pass_clear" />
@@ -83,6 +104,11 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
         </li>
       </ul>
       <p className="field-help beam-visualizer-baseline-note">Outline: Typical Heltec V3 setup</p>
+      {isDirectional ? (
+        <p className="field-help beam-visualizer-pattern-note">
+          Horizontal {metrics.beamWidthDeg.toFixed(0)}° · Vertical {metrics.verticalBeamWidthDeg.toFixed(0)}° · Side/rear loss capped at {metrics.maxAttenuationDb.toFixed(0)} dB
+        </p>
+      ) : null}
       <p className="field-help beam-visualizer-note">Not to scale, illustration only.</p>
     </div>
   );

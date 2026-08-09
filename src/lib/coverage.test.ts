@@ -102,6 +102,24 @@ describe("buildCoverage", () => {
     expect(resolveSimulationSitesForSelection(sites, ["missing"])).toEqual(sites);
   });
 
+  it("applies Site receive directionality to coverage contributors", () => {
+    const directionalSite: Site = {
+      ...sites[0],
+      antennaMode: "directional",
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 180,
+      antennaMaxAttenuationDb: 20,
+    };
+    const singleNetwork = { ...network, memberships: [{ siteId: directionalSite.id, systemId: systems[0].id }] };
+    const toward = createCoverageContributorEvaluators(singleNetwork, [directionalSite], systems, defaultPropagationEnvironment())[0];
+    const awaySite = { ...directionalSite, antennaAzimuthDeg: 180 };
+    const away = createCoverageContributorEvaluators(singleNetwork, [awaySite], systems, defaultPropagationEnvironment())[0];
+
+    expect(toward.evaluatePoint(59.91, 10.7) - away.evaluatePoint(59.91, 10.7)).toBeCloseTo(20, 4);
+  });
+
   it("evaluates only the selected coverage contributors", () => {
     const selectedSites = resolveSimulationSitesForSelection(sites, ["s1"]);
     const selectedEvaluators = createCoverageContributorEvaluators(

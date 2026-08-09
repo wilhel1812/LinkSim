@@ -110,6 +110,13 @@ curl -X POST http://localhost:8788/api/v1/calculate \
   }'
 ```
 
+API nodes may optionally set `antenna_mode` to `directional` and provide
+`antenna_azimuth_deg`, `antenna_tilt_deg`,
+`antenna_horizontal_beamwidth_deg`, `antenna_vertical_beamwidth_deg`, and
+`antenna_max_attenuation_db`. Omitted antenna fields preserve omnidirectional
+behavior. Site-target tracking is an editor convenience; API requests use fixed
+angles.
+
 ## Deploy and Release
 
 Use [docs/release-flow.md](./release-flow.md) as the source of truth for

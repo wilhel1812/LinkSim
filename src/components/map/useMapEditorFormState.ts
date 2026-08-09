@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DEFAULT_DIRECTIONAL_ANTENNA, orientationBetweenPoints } from "../../lib/antennaPattern";
 import { collapseSiteGainToTx, getSyncedSiteGainPair, shouldUseSeparateSiteGain } from "../../lib/siteGainFields";
 import { resolveLinkRadio, STANDARD_SITE_RADIO } from "../../lib/linkRadio";
 import { toAccessVisibility } from "../../lib/uiFormatting";
@@ -66,6 +67,7 @@ export function useMapEditorFormState() {
   const isEditorTerrainFetching = useAppStore((state) => state.isEditorTerrainFetching);
   const loadTerrainForCoordinate = useAppStore((state) => state.loadTerrainForCoordinate);
   const updateSiteLibraryEntry = useAppStore((state) => state.updateSiteLibraryEntry);
+  const updateSite = useAppStore((state) => state.updateSite);
   const addSiteLibraryEntry = useAppStore((state) => state.addSiteLibraryEntry);
   const insertSiteFromLibrary = useAppStore((state) => state.insertSiteFromLibrary);
   const updateSimulationPresetEntry = useAppStore((state) => state.updateSimulationPresetEntry);
@@ -105,6 +107,13 @@ export function useMapEditorFormState() {
   const [rxGainDraft, setRxGainDraft] = useState(STANDARD_SITE_RADIO.rxGainDbi);
   const [separateGain, setSeparateGain] = useState(false);
   const [cableLossDraft, setCableLossDraft] = useState(STANDARD_SITE_RADIO.cableLossDb);
+  const [antennaMode, setAntennaMode] = useState<"omnidirectional" | "directional">("omnidirectional");
+  const [antennaAzimuthDraft, setAntennaAzimuthDraft] = useState<number>(DEFAULT_DIRECTIONAL_ANTENNA.azimuthDeg);
+  const [antennaTiltDraft, setAntennaTiltDraft] = useState<number>(DEFAULT_DIRECTIONAL_ANTENNA.tiltDeg);
+  const [antennaHorizontalBeamwidthDraft, setAntennaHorizontalBeamwidthDraft] = useState<number>(DEFAULT_DIRECTIONAL_ANTENNA.horizontalBeamwidthDeg);
+  const [antennaVerticalBeamwidthDraft, setAntennaVerticalBeamwidthDraft] = useState<number>(DEFAULT_DIRECTIONAL_ANTENNA.verticalBeamwidthDeg);
+  const [antennaMaxAttenuationDraft, setAntennaMaxAttenuationDraft] = useState<number>(DEFAULT_DIRECTIONAL_ANTENNA.maxAttenuationDb);
+  const [antennaTargetSiteId, setAntennaTargetSiteId] = useState("");
   const [isElevationUserSet, setIsElevationUserSet] = useState(false);
   const [siteSourceMeta, setSiteSourceMeta] = useState<NonNullable<NonNullable<typeof mapEditor>["siteSeed"]>["sourceMeta"]>();
   const [insertSiteAfterSave, setInsertSiteAfterSave] = useState(false);
@@ -170,6 +179,13 @@ export function useMapEditorFormState() {
         setRxGainDraft(STANDARD_SITE_RADIO.rxGainDbi);
         setSeparateGain(false);
         setCableLossDraft(STANDARD_SITE_RADIO.cableLossDb);
+        setAntennaMode("omnidirectional");
+        setAntennaAzimuthDraft(DEFAULT_DIRECTIONAL_ANTENNA.azimuthDeg);
+        setAntennaTiltDraft(DEFAULT_DIRECTIONAL_ANTENNA.tiltDeg);
+        setAntennaHorizontalBeamwidthDraft(DEFAULT_DIRECTIONAL_ANTENNA.horizontalBeamwidthDeg);
+        setAntennaVerticalBeamwidthDraft(DEFAULT_DIRECTIONAL_ANTENNA.verticalBeamwidthDeg);
+        setAntennaMaxAttenuationDraft(DEFAULT_DIRECTIONAL_ANTENNA.maxAttenuationDb);
+        setAntennaTargetSiteId("");
         setAccessVisibility("private");
         setCollaboratorUserIds([]);
         setCollaboratorRoles({});
@@ -199,6 +215,16 @@ export function useMapEditorFormState() {
         setRxGainDraft(nextRxGain);
         setSeparateGain(shouldUseSeparateSiteGain(nextTxGain, nextRxGain));
         setCableLossDraft(entry?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
+        setAntennaMode((activeSimulationSite?.antennaMode ?? entry?.antennaMode) === "directional" ? "directional" : "omnidirectional");
+        setAntennaAzimuthDraft(activeSimulationSite?.antennaAzimuthDeg ?? entry?.antennaAzimuthDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.azimuthDeg);
+        setAntennaTiltDraft(activeSimulationSite?.antennaTiltDeg ?? entry?.antennaTiltDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.tiltDeg);
+        setAntennaHorizontalBeamwidthDraft(entry?.antennaHorizontalBeamwidthDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.horizontalBeamwidthDeg);
+        setAntennaVerticalBeamwidthDraft(entry?.antennaVerticalBeamwidthDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.verticalBeamwidthDeg);
+        setAntennaMaxAttenuationDraft(entry?.antennaMaxAttenuationDb ?? DEFAULT_DIRECTIONAL_ANTENNA.maxAttenuationDb);
+        setAntennaTargetSiteId(activeSimulationSite?.antennaTargetSiteId ?? "");
+        if (activeSimulationSite?.antennaTargetDetachedReason === "target-deleted") {
+          setStatus("The pointing target was deleted. The antenna kept its last orientation and is now manual.");
+        }
         setAccessVisibility(toAccessVisibility(entry?.visibility) as AccessVisibility);
         const grants = (entry?.sharedWith ?? []).filter((g) => g.userId !== entry?.ownerUserId);
         setCollaboratorUserIds(grants.map((g) => g.userId));
@@ -624,6 +650,28 @@ export function useMapEditorFormState() {
     }
   };
 
+  const pointAntennaAtSite = (targetSiteId: string) => {
+    setAntennaTargetSiteId(targetSiteId);
+    if (!targetSiteId) return;
+    const target = sites.find((site) => site.id === targetSiteId);
+    const lat = parseCoordinateDraft(latDraft);
+    const lon = parseCoordinateDraft(lonDraft);
+    if (!target || lat === null || lon === null) return;
+    const orientation = orientationBetweenPoints(
+      { lat, lon },
+      groundDraft + antennaDraft,
+      target.position,
+      target.groundElevationM + target.antennaHeightM,
+    );
+    setAntennaAzimuthDraft(orientation.azimuthDeg);
+    setAntennaTiltDraft(orientation.elevationDeg);
+  };
+
+  useEffect(() => {
+    if (!antennaTargetSiteId) return;
+    pointAntennaAtSite(antennaTargetSiteId);
+  }, [antennaTargetSiteId, latDraft, lonDraft, groundDraft, antennaDraft, sites]);
+
   // ─── Save handlers ─────────────────────────────────────────────────────────────
   const handleSaveSite = (options?: { insertIntoSimulation?: boolean; exitLibrary?: boolean }): boolean => {
     const trimmedName = nameDraft.trim();
@@ -644,6 +692,20 @@ export function useMapEditorFormState() {
       return false;
     }
     const normalizedVisibility: "private" | "shared" = accessVisibility;
+    if (antennaMode === "directional") {
+      if (antennaTiltDraft < -90 || antennaTiltDraft > 90) {
+        setStatus("Antenna tilt must be between -90 and 90 degrees.");
+        return false;
+      }
+      if (antennaHorizontalBeamwidthDraft < 1 || antennaHorizontalBeamwidthDraft > 180 || antennaVerticalBeamwidthDraft < 1 || antennaVerticalBeamwidthDraft > 180) {
+        setStatus("Directional beamwidths must be between 1 and 180 degrees.");
+        return false;
+      }
+      if (antennaMaxAttenuationDraft < 0 || antennaMaxAttenuationDraft > 60) {
+        setStatus("Maximum attenuation must be between 0 and 60 dB.");
+        return false;
+      }
+    }
     if (collaboratorUserIds.includes(ownerUserId)) {
       setStatus("Owner is implicit and cannot be added as collaborator.");
       return false;
@@ -685,6 +747,14 @@ export function useMapEditorFormState() {
           setStatus("Failed creating site. Check the name and try again.");
           return false;
         }
+        updateSiteLibraryEntry(createdId, {
+          antennaMode,
+          antennaAzimuthDeg: ((antennaAzimuthDraft % 360) + 360) % 360,
+          antennaTiltDeg: antennaTiltDraft,
+          antennaHorizontalBeamwidthDeg: antennaHorizontalBeamwidthDraft,
+          antennaVerticalBeamwidthDeg: antennaVerticalBeamwidthDraft,
+          antennaMaxAttenuationDb: antennaMaxAttenuationDraft,
+        });
         if (sharedWith.length) {
           updateSiteLibraryEntry(createdId, { sharedWith });
         }
@@ -702,10 +772,22 @@ export function useMapEditorFormState() {
           txGainDbi: txGainDraft,
           rxGainDbi: rxGainDraft,
           cableLossDb: cableLossDraft,
+          antennaMode,
+          antennaAzimuthDeg: ((antennaAzimuthDraft % 360) + 360) % 360,
+          antennaTiltDeg: antennaTiltDraft,
+          antennaHorizontalBeamwidthDeg: antennaHorizontalBeamwidthDraft,
+          antennaVerticalBeamwidthDeg: antennaVerticalBeamwidthDraft,
+          antennaMaxAttenuationDb: antennaMaxAttenuationDraft,
           iconKey: iconDraft === "auto" ? undefined : iconDraft,
           visibility: normalizedVisibility,
           sharedWith,
         });
+        if (activeSimulationSite) {
+          updateSite(activeSimulationSite.id, {
+            antennaTargetSiteId: antennaMode === "directional" && antennaTargetSiteId ? antennaTargetSiteId : undefined,
+            antennaTargetDetachedReason: undefined,
+          });
+        }
       }
       if (options?.exitLibrary) closeLibrary();
       closeMapEditor();
@@ -937,6 +1019,15 @@ export function useMapEditorFormState() {
     rxGainDraft, setRxGainDraft: (v: number | string) => setRxGainDraft(parseNumber(String(v))),
     separateGain,
     cableLossDraft, setCableLossDraft: (v: number | string) => setCableLossDraft(parseNumber(String(v))),
+    antennaMode, setAntennaMode,
+    antennaAzimuthDraft, setAntennaAzimuthDraft: (v: number | string) => setAntennaAzimuthDraft(parseNumber(String(v))),
+    antennaTiltDraft, setAntennaTiltDraft: (v: number | string) => setAntennaTiltDraft(parseNumber(String(v))),
+    antennaHorizontalBeamwidthDraft, setAntennaHorizontalBeamwidthDraft: (v: number | string) => setAntennaHorizontalBeamwidthDraft(parseNumber(String(v))),
+    antennaVerticalBeamwidthDraft, setAntennaVerticalBeamwidthDraft: (v: number | string) => setAntennaVerticalBeamwidthDraft(parseNumber(String(v))),
+    antennaMaxAttenuationDraft, setAntennaMaxAttenuationDraft: (v: number | string) => setAntennaMaxAttenuationDraft(parseNumber(String(v))),
+    antennaTargetSiteId,
+    pointAntennaAtSite,
+    detachAntennaTarget: () => setAntennaTargetSiteId(""),
     isEditorTerrainFetching,
     fetchGroundElevation,
     handleGainChange,

@@ -11,6 +11,7 @@ import {
   type SimulationDefaults,
 } from "../lib/simulationDefaults";
 import { haversineDistanceKm } from "../lib/geo";
+import { resolveTrackedSiteOrientation, resolveTrackedSiteOrientations } from "../lib/antennaPattern";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
   deleteCloudSimulation,
@@ -293,6 +294,12 @@ type SiteLibraryEntry = {
   txGainDbi: number;
   rxGainDbi: number;
   cableLossDb: number;
+  antennaMode?: Site["antennaMode"];
+  antennaAzimuthDeg?: number;
+  antennaTiltDeg?: number;
+  antennaHorizontalBeamwidthDeg?: number;
+  antennaVerticalBeamwidthDeg?: number;
+  antennaMaxAttenuationDb?: number;
   iconKey?: SiteIconKey;
   createdAt: string;
   sourceMeta?: {
@@ -600,6 +607,12 @@ type AppState = {
         | "txGainDbi"
         | "rxGainDbi"
         | "cableLossDb"
+        | "antennaMode"
+        | "antennaAzimuthDeg"
+        | "antennaTiltDeg"
+        | "antennaHorizontalBeamwidthDeg"
+        | "antennaVerticalBeamwidthDeg"
+        | "antennaMaxAttenuationDb"
         | "iconKey"
         | "visibility"
         | "sharedWith"
@@ -999,6 +1012,12 @@ const syncLibraryLinkedSiteValues = (sites: Site[], library: SiteLibraryEntry[])
       txGainDbi: entry.txGainDbi,
       rxGainDbi: entry.rxGainDbi,
       cableLossDb: entry.cableLossDb,
+      antennaMode: entry.antennaMode,
+      antennaAzimuthDeg: site.antennaTargetSiteId || site.antennaTargetDetachedReason ? site.antennaAzimuthDeg : entry.antennaAzimuthDeg,
+      antennaTiltDeg: site.antennaTargetSiteId || site.antennaTargetDetachedReason ? site.antennaTiltDeg : entry.antennaTiltDeg,
+      antennaHorizontalBeamwidthDeg: entry.antennaHorizontalBeamwidthDeg,
+      antennaVerticalBeamwidthDeg: entry.antennaVerticalBeamwidthDeg,
+      antennaMaxAttenuationDb: entry.antennaMaxAttenuationDb,
       iconKey: entry.iconKey,
       libraryEntryId: entry.id,
     };
@@ -1042,6 +1061,12 @@ const ensureSitesBackedByLibrary = (
         txGainDbi: normalizedSite.txGainDbi,
         rxGainDbi: normalizedSite.rxGainDbi,
         cableLossDb: normalizedSite.cableLossDb,
+        antennaMode: normalizedSite.antennaMode,
+        antennaAzimuthDeg: normalizedSite.antennaAzimuthDeg,
+        antennaTiltDeg: normalizedSite.antennaTiltDeg,
+        antennaHorizontalBeamwidthDeg: normalizedSite.antennaHorizontalBeamwidthDeg,
+        antennaVerticalBeamwidthDeg: normalizedSite.antennaVerticalBeamwidthDeg,
+        antennaMaxAttenuationDb: normalizedSite.antennaMaxAttenuationDb,
         iconKey: normalizedSite.iconKey,
         createdAt: new Date().toISOString(),
       };
@@ -1063,12 +1088,18 @@ const ensureSitesBackedByLibrary = (
       txGainDbi: entry.txGainDbi,
       rxGainDbi: entry.rxGainDbi,
       cableLossDb: entry.cableLossDb,
+      antennaMode: entry.antennaMode,
+      antennaAzimuthDeg: normalizedSite.antennaTargetSiteId || normalizedSite.antennaTargetDetachedReason ? normalizedSite.antennaAzimuthDeg : entry.antennaAzimuthDeg,
+      antennaTiltDeg: normalizedSite.antennaTargetSiteId || normalizedSite.antennaTargetDetachedReason ? normalizedSite.antennaTiltDeg : entry.antennaTiltDeg,
+      antennaHorizontalBeamwidthDeg: entry.antennaHorizontalBeamwidthDeg,
+      antennaVerticalBeamwidthDeg: entry.antennaVerticalBeamwidthDeg,
+      antennaMaxAttenuationDb: entry.antennaMaxAttenuationDb,
       iconKey: entry.iconKey,
       libraryEntryId: entry.id,
     };
   });
   return {
-    sites: normalizedSites,
+    sites: resolveTrackedSiteOrientations(normalizedSites),
     siteLibrary: dedupeLibraryEntries(nextLibrary),
     addedCount,
   };
@@ -2362,7 +2393,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     set((state) => {
-      const remainingSites = state.sites.filter((site) => site.id !== siteId);
+      const remainingSites = state.sites
+        .map((site) => {
+          if (site.antennaTargetSiteId !== siteId) return site;
+          const resolved = resolveTrackedSiteOrientation(site, state.sites);
+          return { ...resolved, antennaTargetSiteId: undefined, antennaTargetDetachedReason: "target-deleted" as const };
+        })
+        .filter((site) => site.id !== siteId);
       if (!remainingSites.length) return state;
 
       let remainingLinks = state.links.filter(
@@ -2726,7 +2763,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         }),
       );
       writeStorage(SITE_LIBRARY_KEY, next);
-      const nextSites = syncLibraryLinkedSiteValues(state.sites, next);
+      const nextSites = resolveTrackedSiteOrientations(syncLibraryLinkedSiteValues(state.sites, next));
       const nextSitesById = new Map(nextSites.map((site) => [site.id, site]));
       const nextLinks = state.links.map((link) =>
         stripRedundantLinkRadioOverrides(
@@ -3688,9 +3725,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
     set((state) => {
-      const nextSites = state.sites.map((site) =>
+      const nextSites = resolveTrackedSiteOrientations(state.sites.map((site) =>
         site.id === id ? withSiteRadioDefaults({ ...site, ...patch }) : site,
-      );
+      ));
       const updatedSite = nextSites.find((site) => site.id === id);
       if (!updatedSite?.libraryEntryId) {
         return { sites: nextSites };
@@ -3707,6 +3744,12 @@ export const useAppStore = create<AppState>((set, get) => ({
               txGainDbi: updatedSite.txGainDbi,
               rxGainDbi: updatedSite.rxGainDbi,
               cableLossDb: updatedSite.cableLossDb,
+              antennaMode: updatedSite.antennaMode,
+              antennaAzimuthDeg: updatedSite.antennaAzimuthDeg,
+              antennaTiltDeg: updatedSite.antennaTiltDeg,
+              antennaHorizontalBeamwidthDeg: updatedSite.antennaHorizontalBeamwidthDeg,
+              antennaVerticalBeamwidthDeg: updatedSite.antennaVerticalBeamwidthDeg,
+              antennaMaxAttenuationDb: updatedSite.antennaMaxAttenuationDb,
               iconKey: updatedSite.iconKey,
             }
           : entry,

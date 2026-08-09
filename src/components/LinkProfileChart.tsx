@@ -437,6 +437,7 @@ export function LinkProfileChart({
           sampleTerrain,
           24,
           propagationEnvironment,
+          selectedToSiteEffective,
         );
         const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
         const losBlocked = metrics.terrainObstructed;
@@ -578,6 +579,7 @@ export function LinkProfileChart({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
+      selectedToSiteEffective,
     );
     const forwardPass = forward.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
     const forwardBlocked = forward.terrainObstructed;
@@ -594,6 +596,7 @@ export function LinkProfileChart({
         (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
         24,
         propagationEnvironment,
+        selectedFromSiteEffective,
       );
       const reversePass = reverse.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
       const reverseBlocked = reverse.terrainObstructed;
@@ -668,6 +671,7 @@ export function LinkProfileChart({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
+      selectedToSiteEffective,
     );
     const forwardPass = forwardMetrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
     const forwardBlocked = forwardMetrics.terrainObstructed;
@@ -696,6 +700,7 @@ export function LinkProfileChart({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
+      selectedFromSiteEffective,
     );
     const reversePass = reverseMetrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
     const reverseBlocked = reverseMetrics.terrainObstructed;

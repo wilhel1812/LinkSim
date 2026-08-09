@@ -183,6 +183,70 @@ describe("MapEditorPanel", () => {
     expect(screen.getByText("Moved site")).toBeInTheDocument();
   });
 
+  it("reveals directional settings only while the antenna toggle is enabled and retains drafts", async () => {
+    render(<MapEditorPanel isMobile={false} />);
+
+    const toggle = await screen.findByRole("checkbox", { name: "Directional antenna" });
+    expect(toggle).not.toBeChecked();
+    expect(screen.queryByLabelText("Antenna azimuth")).not.toBeInTheDocument();
+
+    await userEvent.click(toggle);
+    const azimuth = screen.getByLabelText("Antenna azimuth");
+    expect(screen.getByLabelText("Antenna tilt")).toBeInTheDocument();
+    expect(screen.getByLabelText("Horizontal beamwidth")).toBeInTheDocument();
+    expect(screen.getByLabelText("Vertical beamwidth")).toBeInTheDocument();
+    expect(screen.getByLabelText("Maximum off-axis attenuation")).toBeInTheDocument();
+
+    await userEvent.clear(azimuth);
+    await userEvent.type(azimuth, "123");
+    await userEvent.click(toggle);
+    expect(screen.queryByLabelText("Antenna azimuth")).not.toBeInTheDocument();
+    await userEvent.click(toggle);
+    expect(screen.getByLabelText("Antenna azimuth")).toHaveValue(123);
+  });
+
+  it("derives orientation from another Simulation Site and supports detaching", async () => {
+    useAppStore.setState({
+      sites: [
+        {
+          id: "sim-site-a",
+          libraryEntryId: "site-lib-1",
+          name: "Alpha Site",
+          position: { lat: 60.1, lon: 10.2 },
+          groundElevationM: 111,
+          antennaHeightM: 10,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+        {
+          id: "sim-site-b",
+          name: "Summit",
+          position: { lat: 60.2, lon: 10.2 },
+          groundElevationM: 900,
+          antennaHeightM: 10,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+        },
+      ],
+    });
+    render(<MapEditorPanel isMobile={false} />);
+
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Directional antenna" }));
+    const target = screen.getByRole("combobox", { name: "Point antenna at Site" });
+    await userEvent.selectOptions(target, "sim-site-b");
+
+    expect(target).toHaveValue("sim-site-b");
+    expect(screen.getByLabelText("Antenna azimuth")).toBeDisabled();
+    expect(screen.getByLabelText("Antenna tilt")).toBeDisabled();
+    expect(screen.getByLabelText("Antenna azimuth")).toHaveValue(0);
+    await userEvent.click(screen.getByRole("button", { name: "Detach pointing target" }));
+    expect(screen.getByLabelText("Antenna azimuth")).toBeEnabled();
+  });
+
   it("confirms deletion from editable Site details", async () => {
     const deleteSiteLibraryEntry = vi.fn();
     useAppStore.setState({ deleteSiteLibraryEntry });

@@ -56,6 +56,33 @@ describe("analyzeLink", () => {
     expect(Number.isFinite(result.rxLevelDbm)).toBe(true);
   });
 
+  it("applies independent transmit and receive off-axis attenuation", () => {
+    const baseline = analyzeLink(link, a, b, "ITM");
+    const pointedAwayA: Site = {
+      ...a,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 180,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 20,
+    };
+    const pointedAwayB: Site = {
+      ...b,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 20,
+    };
+
+    const oneEnd = analyzeLink(link, pointedAwayA, b, "ITM");
+    const bothEnds = analyzeLink(link, pointedAwayA, pointedAwayB, "ITM");
+    expect(baseline.rxLevelDbm - oneEnd.rxLevelDbm).toBeCloseTo(20, 5);
+    expect(baseline.rxLevelDbm - bothEnds.rxLevelDbm).toBeCloseTo(40, 5);
+  });
+
   it("ITM adds excess path loss compared to free-space baseline", () => {
     const distanceKm = 1;
     const frequencyMHz = 5800;

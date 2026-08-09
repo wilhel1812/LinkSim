@@ -43,6 +43,12 @@ type MeshExtensionSiteDigestInput = Pick<
   | "txGainDbi"
   | "rxGainDbi"
   | "cableLossDb"
+  | "antennaMode"
+  | "antennaAzimuthDeg"
+  | "antennaTiltDeg"
+  | "antennaHorizontalBeamwidthDeg"
+  | "antennaVerticalBeamwidthDeg"
+  | "antennaMaxAttenuationDb"
 >;
 
 export const meshExtensionSiteDigest = (sites: MeshExtensionSiteDigestInput[]): string =>
@@ -58,6 +64,12 @@ export const meshExtensionSiteDigest = (sites: MeshExtensionSiteDigestInput[]): 
         site.txGainDbi,
         site.rxGainDbi,
         site.cableLossDb,
+        site.antennaMode,
+        site.antennaAzimuthDeg,
+        site.antennaTiltDeg,
+        site.antennaHorizontalBeamwidthDeg,
+        site.antennaVerticalBeamwidthDeg,
+        site.antennaMaxAttenuationDb,
       ].join(":"),
     )
     .join("|");

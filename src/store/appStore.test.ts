@@ -358,6 +358,45 @@ describe("appStore auth guards", () => {
     expect(state.simulationPresets[0]?.snapshot.sites.some((site) => site.id === "site-1")).toBe(false);
   });
 
+  it("tracks a pointing target and detaches at the last orientation when the target is deleted", () => {
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+    useAppStore.setState((state) => ({
+      siteLibrary: state.siteLibrary.map((entry) => entry.id === "lib-1" ? { ...entry, effectiveRole: "owner" as const } : entry),
+    }));
+    useAppStore.getState().updateSite("site-1", {
+        antennaMode: "directional" as const,
+        antennaTargetSiteId: "site-2",
+    });
+
+    useAppStore.getState().updateSite("site-2", { position: { lat: 1, lon: 0 } });
+    expect(useAppStore.getState().sites.find((site) => site.id === "site-2")?.position).toEqual({ lat: 1, lon: 0 });
+    const tracked = useAppStore.getState().sites.find((site) => site.id === "site-1");
+    expect(tracked?.antennaAzimuthDeg).toBeCloseTo(270, 1);
+    expect(tracked?.antennaTargetSiteId).toBe("site-2");
+
+    useAppStore.getState().deleteSite("site-2");
+    const detached = useAppStore.getState().sites.find((site) => site.id === "site-1");
+    expect(detached?.antennaTargetSiteId).toBeUndefined();
+    expect(detached?.antennaTargetDetachedReason).toBe("target-deleted");
+    expect(detached?.antennaAzimuthDeg).toBeCloseTo(270, 1);
+  });
+
   it("persists selected overlay radius option to active simulation snapshot", () => {
     useAppStore.getState().setCurrentUser({
       id: "owner-1",

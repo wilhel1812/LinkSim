@@ -1945,6 +1945,12 @@ export function MapView({
             site.txGainDbi,
             site.rxGainDbi,
             site.cableLossDb,
+            site.antennaMode,
+            site.antennaAzimuthDeg,
+            site.antennaTiltDeg,
+            site.antennaHorizontalBeamwidthDeg,
+            site.antennaVerticalBeamwidthDeg,
+            site.antennaMaxAttenuationDb,
           ].join(":"),
         ),
         ...systems.map((system) =>

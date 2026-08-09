@@ -27,7 +27,7 @@ LinkSim plans terrain-aware radio coverage and Paths between reusable Sites. Wor
 
 ## 4. Set the Channel and calculation area
 
-- Channel settings include the frequency plan, bandwidth, spreading factor, coding rate, TX power, antenna gains, cable loss, and environment loss.
+- Channel settings include the frequency plan, bandwidth, spreading factor, coding rate, TX power, antenna gains, cable loss, and environment loss. A Site antenna can be omnidirectional or directional; directional Sites add azimuth, up/down tilt, horizontal and vertical beamwidth, and a maximum off-axis attenuation. They can also track another Site as their pointing target.
 - LinkSim uses ITM for terrain-aware propagation. FSPL may appear in results as a reference value; it is not a selectable propagation model.
 - The **RX target** is the signal threshold used by Pass/Fail and target-line displays.
 - Choose the Simulation Resolution and Radius deliberately. Larger areas and higher resolutions require more terrain and calculation time.

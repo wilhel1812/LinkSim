@@ -1,5 +1,6 @@
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "./passFailState";
 import { STANDARD_SITE_RADIO } from "./linkRadio";
+import { effectiveGainTowardSiteDbi } from "./antennaPattern";
 import {
   buildCoverageGridPoints,
   computeCoverageGridDimensions,
@@ -1312,7 +1313,9 @@ const directionalBaseRxDbm = (
     toSite.antennaHeightM,
     environment,
   );
-  return fromSite.txPowerDbm + fromSite.txGainDbi - fromSite.cableLossDb + toSite.rxGainDbi - loss;
+  const txGainDbi = effectiveGainTowardSiteDbi(fromSite.txGainDbi, fromSite, toSite);
+  const rxGainDbi = effectiveGainTowardSiteDbi(toSite.rxGainDbi, toSite, fromSite);
+  return fromSite.txPowerDbm + txGainDbi - fromSite.cableLossDb + rxGainDbi - loss;
 };
 
 const directionalTerrainRxDbm = (
@@ -1338,6 +1341,7 @@ const directionalTerrainRxDbm = (
     terrainSampler,
     terrainSamples,
     environment,
+    toSite,
   ).rxDbm;
 
 const bidirectionalBaseDbm = (

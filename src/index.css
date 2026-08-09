@@ -3252,6 +3252,12 @@ button {
   gap: 8px;
 }
 
+.directional-antenna-fields {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
 @media (max-width: 980px) {
   .beam-visualizer-popover {
     left: 50vw !important;
@@ -3275,6 +3281,28 @@ button {
 .beam-visualizer-header span {
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.beam-visualizer-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.beam-visualizer-charts.is-directional {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.beam-visualizer-chart-group {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  text-align: center;
+}
+
+.beam-visualizer-chart-group > span {
+  color: var(--muted);
+  font-size: 0.68rem;
 }
 
 .beam-visualizer-chart {

@@ -13,6 +13,14 @@ export type Site = {
   txGainDbi: number;
   rxGainDbi: number;
   cableLossDb: number;
+  antennaMode?: "omnidirectional" | "directional";
+  antennaAzimuthDeg?: number;
+  antennaTiltDeg?: number;
+  antennaHorizontalBeamwidthDeg?: number;
+  antennaVerticalBeamwidthDeg?: number;
+  antennaMaxAttenuationDb?: number;
+  antennaTargetSiteId?: string;
+  antennaTargetDetachedReason?: "target-deleted";
   iconKey?: import("../lib/siteIcons").SiteIconKey;
   libraryEntryId?: string;
 };

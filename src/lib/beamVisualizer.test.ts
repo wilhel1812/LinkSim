@@ -24,12 +24,25 @@ describe("computeBeamPreviewMetrics", () => {
     expect(highLoss.rangeScore).toBeLessThan(lowLoss.rangeScore);
   });
 
-  it("narrows beam width and increases range when gain increases", () => {
+  it("keeps configured beamwidth independent from gain", () => {
     const lowGain = computeBeamPreviewMetrics({ ...base, txGainDbi: 1, rxGainDbi: 1 });
     const highGain = computeBeamPreviewMetrics({ ...base, txGainDbi: 9, rxGainDbi: 9 });
 
     expect(highGain.rangeScore).toBeGreaterThan(lowGain.rangeScore);
-    expect(highGain.beamWidthDeg).toBeLessThan(lowGain.beamWidthDeg);
+    expect(highGain.beamWidthDeg).toBe(lowGain.beamWidthDeg);
+  });
+
+  it("uses explicit horizontal and vertical widths for directional antennas", () => {
+    const metrics = computeBeamPreviewMetrics({
+      ...base,
+      antennaMode: "directional",
+      antennaHorizontalBeamwidthDeg: 70,
+      antennaVerticalBeamwidthDeg: 25,
+      antennaMaxAttenuationDb: 22,
+    });
+    expect(metrics.beamWidthDeg).toBe(70);
+    expect(metrics.verticalBeamWidthDeg).toBe(25);
+    expect(metrics.maxAttenuationDb).toBe(22);
   });
 
   it("modestly increases relative range when antenna height increases", () => {
@@ -51,8 +64,7 @@ describe("computeBeamPreviewMetrics", () => {
 
     expect(metrics.rangeScore).toBeGreaterThanOrEqual(0.16);
     expect(metrics.rangeScore).toBeLessThanOrEqual(0.96);
-    expect(metrics.beamWidthDeg).toBeGreaterThanOrEqual(32);
-    expect(metrics.beamWidthDeg).toBeLessThanOrEqual(150);
+    expect(metrics.beamWidthDeg).toBe(150);
     expect(metrics.bands).toHaveLength(4);
   });
 });

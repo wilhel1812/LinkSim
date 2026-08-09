@@ -104,6 +104,7 @@ export const resolveAutoLinkStateForLink = ({
     terrainSampler,
     24,
     effectiveEnvironment,
+    toSite,
   );
   return classifyAutoLinkState({
     rxDbm: metrics.rxDbm,

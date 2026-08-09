@@ -187,6 +187,12 @@ const siteSignature = (site: Site): string =>
     site.txGainDbi,
     site.rxGainDbi,
     site.cableLossDb,
+    site.antennaMode,
+    site.antennaAzimuthDeg,
+    site.antennaTiltDeg,
+    site.antennaHorizontalBeamwidthDeg,
+    site.antennaVerticalBeamwidthDeg,
+    site.antennaMaxAttenuationDb,
   ].join(":");
 
 const linkSignature = (link: LinkLike): string => [link.id, link.fromSiteId, link.toSiteId].join(":");
