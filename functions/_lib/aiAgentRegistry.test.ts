@@ -62,4 +62,30 @@ describe("AI agent registry", () => {
       registry.agents.find((agent) => agent.name === "Steward")?.prohibitedActions,
     ).toContain("edit-policy");
   });
+
+  it("keeps Steward suggestion-only across epics and policy audits", () => {
+    const steward = registry.agents.find((agent) => agent.name === "Steward");
+
+    expect(steward?.allowedActions).toEqual(
+      expect.arrayContaining([
+        "propose-epic",
+        "audit-policy",
+        "suggest-policy-wording",
+        "publish-signed-suggestion",
+      ]),
+    );
+    expect(steward?.prohibitedActions).toEqual(
+      expect.arrayContaining([
+        "edit-policy",
+        "edit-skills",
+        "edit-prompts",
+        "edit-workflows",
+        "edit-memory",
+        "change-permissions",
+        "change-infrastructure",
+        "implement-own-suggestion",
+        "progress-epic-automatically",
+      ]),
+    );
+  });
 });

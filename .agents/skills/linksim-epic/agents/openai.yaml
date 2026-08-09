@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkSim Epic"
+  short_description: "Design durable phased LinkSim epics"
+  default_prompt: "Use $linksim-epic to design this LinkSim epic as a reviewable suggestion."
