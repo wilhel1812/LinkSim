@@ -4,6 +4,7 @@ import importlib.util
 from importlib.machinery import SourceFileLoader
 import io
 import json
+import subprocess
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -90,6 +91,59 @@ class WatchSentryTest(unittest.TestCase):
         self.assertEqual(result["result"], "head-changed")
         self.assertEqual(result["head_sha"], reviewed)
         self.assertEqual(result["current_head_sha"], current)
+
+    def test_rejects_completed_status_for_wrong_or_missing_exact_identity(self):
+        head = "e" * 40
+        invalid_statuses = [
+            {"target": "pr:41", "revision": head, "state": "completed"},
+            {"target": "pr:42", "revision": "f" * 40, "state": "completed"},
+            {"target": "pr:42", "state": "completed"},
+        ]
+        for status in invalid_statuses:
+            with self.subTest(status=status):
+                with (
+                    patch.object(watch_sentry, "read_pr_head", return_value=head),
+                    patch.object(watch_sentry, "read_review_status", return_value=status),
+                ):
+                    code, result = self.run_main("42", "--host", "operator@example")
+
+                self.assertEqual(code, 2)
+                self.assertEqual(result["result"], "error")
+
+    def test_converts_process_start_and_timeout_failures_to_final_error(self):
+        head = "a" * 40
+        errors = [
+            FileNotFoundError("ssh not found"),
+            subprocess.TimeoutExpired(["ssh"], 30),
+        ]
+        for error in errors:
+            with self.subTest(error=type(error).__name__):
+                with (
+                    patch.object(watch_sentry, "read_pr_head", return_value=head),
+                    patch.object(watch_sentry, "read_review_status", side_effect=error),
+                ):
+                    code, result = self.run_main("42", "--host", "operator@example")
+
+                self.assertEqual(code, 2)
+                self.assertEqual(result["result"], "error")
+
+    def test_external_processes_have_bounded_timeouts(self):
+        completed = subprocess.CompletedProcess([], 0, stdout="a" * 40, stderr="")
+        with patch.object(watch_sentry.subprocess, "run", return_value=completed) as run:
+            watch_sentry.read_pr_head(42, "wilhel1812/LinkSim")
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+
+        completed = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=json.dumps(
+                {"target": "pr:42", "revision": "a" * 40, "state": "completed"}
+            ),
+            stderr="",
+        )
+        with patch.object(watch_sentry.subprocess, "run", return_value=completed) as run:
+            watch_sentry.read_review_status("operator@example", 42, "a" * 40)
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
 
 
 if __name__ == "__main__":

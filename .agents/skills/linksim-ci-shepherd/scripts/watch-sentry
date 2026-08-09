@@ -13,6 +13,7 @@ from typing import Any
 
 TERMINAL_FAILURE_STATES = {"cancelled", "failed", "needs-human"}
 PENDING_STATES = {"missing", "queued", "running"}
+PROCESS_TIMEOUT_SECONDS = 30
 
 
 def read_pr_head(pr: int, repository: str) -> str:
@@ -21,6 +22,7 @@ def read_pr_head(pr: int, repository: str) -> str:
         check=False,
         capture_output=True,
         text=True,
+        timeout=PROCESS_TIMEOUT_SECONDS,
     )
     if process.returncode != 0:
         raise RuntimeError(process.stderr.strip() or "gh pr view failed")
@@ -47,6 +49,7 @@ def read_review_status(host: str, pr: int, head_sha: str) -> dict[str, Any]:
         check=False,
         capture_output=True,
         text=True,
+        timeout=PROCESS_TIMEOUT_SECONDS,
     )
     if process.returncode != 0:
         raise RuntimeError(process.stderr.strip() or "Sentry status query failed")
@@ -85,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("interval and timeout must be positive")
 
     started = time.monotonic()
+    head_sha = args.head_sha or ""
     try:
         current_head = read_pr_head(args.pull_request, args.repo)
         head_sha = args.head_sha or current_head
@@ -100,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
 
         while True:
             status = read_review_status(args.host, args.pull_request, head_sha)
+            if status.get("target") != f"pr:{args.pull_request}" or status.get("revision") != head_sha:
+                raise ValueError("Sentry status did not match the requested PR head SHA")
             state = str(status.get("state", ""))
             if state == "completed":
                 current_head = read_pr_head(args.pull_request, args.repo)
@@ -142,12 +148,18 @@ def main(argv: list[str] | None = None) -> int:
                     state=state,
                 )
             time.sleep(args.interval)
-    except (RuntimeError, ValueError, json.JSONDecodeError) as error:
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        json.JSONDecodeError,
+        subprocess.TimeoutExpired,
+    ) as error:
         return emit(
             "error",
             args.pull_request,
             args.repo,
-            args.head_sha or "",
+            head_sha,
             started,
             error=str(error)[:500],
         )
