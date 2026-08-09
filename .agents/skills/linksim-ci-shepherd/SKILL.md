@@ -18,23 +18,23 @@ Shepherd one PR to a truthful handoff. Never merge or approve the PR.
 4. If checks pass, inspect unresolved review threads and hand off. Do not invent
    work merely to consume the cycle budget.
 
-## Hold for private Sentry shadow evaluation
+## Coordinate native Codex review
 
-While the Sentry shadow-evaluation gate is active, a green CI result is not yet
-merge-ready. Run:
+After required checks pass, tell the maintainer that the supported manual
+trigger is an exact pull-request comment: `@codex review`. Do not post that
+trigger automatically or operate a separate reviewer; each request spends
+usage and requires deliberate maintainer intent.
 
-`python3 .agents/skills/linksim-ci-shepherd/scripts/watch-sentry <pr-number> --repo wilhel1812/LinkSim`
+When a review is requested, inspect the standard GitHub review and unresolved
+threads through GitHub. Confirm the review applies to the current PR head before
+describing its findings as current. Address actionable findings within the
+approved issue scope, then rerun CI. If a fix changes the head SHA, hand the
+updated PR back to the maintainer, who decides whether another native review is
+warranted.
 
-Set `LINKSIM_SENTRY_HOST` to the approved SSH target for the private runtime.
-The watcher reads deterministic SQLite state through the isolated
-`sentry-reviewer` container. It cannot enqueue a review, trigger a model call,
-publish a result, or rerun CI.
-
-Do not hand off a PR as merge-ready until the watcher returns `pass` for the
-exact current head SHA. A review of a superseded SHA does not satisfy the gate.
-`needs-human`, timeout, missing access, or malformed state fails closed. Re-run
-both watchers after every pushed fix. Reassess and remove this temporary hold
-when private shadow evaluation is replaced by an accepted public-review flow.
+The official Codex bot is the transparent author. Do not relay, rewrite,
+re-sign, or present its review as Sentry App output. A Codex review remains
+advisory and does not replace human approval.
 
 ## Fix failures deliberately
 
