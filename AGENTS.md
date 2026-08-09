@@ -84,3 +84,13 @@
 
 - A new agent must be able to continue using this file and its required linked documents only.
 - Keep durable repo policy here or in the linked source of truth; do not rely on chat-only knowledge.
+
+## AI Artifact Provenance
+
+- Treat `config/ai-agents.json` as the single source of truth for named-agent
+  identity, authority, and visible signatures.
+- Generate and validate bot-authored GitHub artifact footers through
+  `node scripts/ai-provenance.mjs`; do not hand-build provenance markers in
+  skills or workflows.
+- Validate the complete rendered artifact before publication and fail closed
+  when its identity, signature, run ID, source event, or commit SHA is invalid.

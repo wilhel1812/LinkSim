@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "enabled": false,
+  "cadence": "weekly",
+  "executor": "unconfigured",
+  "discussionIssue": 1027,
+  "preModelGuard": {
+    "requiredState": "normal",
+    "minimumRemainingPercentExclusive": 25,
+    "maximumTelemetryAgeSeconds": 600
+  },
+  "publication": {
+    "appendOnly": true,
+    "evidenceRequired": true,
+    "idempotentByAuditWindow": true,
+    "publishWhenNoSuggestion": false,
+    "signedAgent": "Steward"
+  },
+  "blockedReason": "No approved executor can currently evaluate the shared usage guard before starting a model call. Native Codex scheduled tasks have no pre-run percentage threshold, and API-key-backed execution is excluded."
+}

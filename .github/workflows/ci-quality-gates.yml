@@ -29,6 +29,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate named-agent identity and provenance contract
+        run: npm run agents:validate
+
       - name: Secret pattern scan
         run: npm run security:scan
 

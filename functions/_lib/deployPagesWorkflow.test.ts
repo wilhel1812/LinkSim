@@ -29,9 +29,11 @@ describe("Deploy LinkSim Pages workflow", () => {
 
   it("updates one signed preview comment instead of posting duplicates", () => {
     expect(previewJob).toContain("<!-- linksim-preview:v1 -->");
-    expect(previewJob).toContain("require('./config/ai-agents.json')");
-    expect(previewJob).toContain("beacon.signature");
-    expect(previewJob).toContain("registry.markerPrefix");
+    expect(previewJob).toContain("scripts/ai-provenance.mjs");
+    expect(previewJob).toContain("execFileSync");
+    expect(previewJob).toContain("footer.signature");
+    expect(previewJob).toContain("footer.marker");
+    expect(previewJob).not.toContain("`<!-- ${registry.markerPrefix}");
     expect(previewJob).toContain("github.rest.issues.updateComment");
     expect(previewJob).toContain("github.rest.issues.createComment");
   });
