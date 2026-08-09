@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkSim Create PR"
+  short_description: "Create policy-compliant LinkSim pull requests"
+  default_prompt: "Use $linksim-create-pr to deliver this approved LinkSim change as a tested pull request to staging."
