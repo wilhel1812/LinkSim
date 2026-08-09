@@ -20,11 +20,11 @@
     },
     {
       "name": "Sentry",
-      "role": "Automated pull request and existing-issue review",
+      "role": "Explicitly requested Codex Cloud pull request review",
       "signature": "— Sentry · AI reviewer",
-      "githubIdentity": { "kind": "github-app", "slug": "linksim-sentry" },
-      "allowedActions": ["read-repository", "read-actions", "review-pull-request", "review-existing-issue"],
-      "prohibitedActions": ["write-repository", "push", "merge", "rerun-workflow", "resolve-human-thread", "human-approval", "release"]
+      "githubIdentity": { "kind": "official-codex-cloud-review" },
+      "allowedActions": ["review-maintainer-requested-pull-request", "publish-native-github-review"],
+      "prohibitedActions": ["review-automatically", "write-repository", "push", "merge", "rerun-workflow", "resolve-human-thread", "human-approval", "release"]
     },
     {
       "name": "Forge",
