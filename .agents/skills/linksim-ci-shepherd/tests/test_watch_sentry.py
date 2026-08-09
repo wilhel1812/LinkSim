@@ -43,7 +43,10 @@ class WatchSentryTest(unittest.TestCase):
                     "target": "pr:42",
                     "revision": head,
                     "state": "completed",
-                    "terminal_reason": "shadow-review-stored",
+                    "terminal_reason": "native-shadow-review-stored",
+                    "engine_version": "codex-native-v2",
+                    "verdict": "clean",
+                    "finding_count": 0,
                 },
             ) as status,
         ):
@@ -57,6 +60,57 @@ class WatchSentryTest(unittest.TestCase):
         status.assert_called_once_with(
             "operator@example", 42, head, timeout_seconds=30
         )
+
+    def test_fails_closed_when_native_review_has_findings(self):
+        head = "9" * 40
+        with (
+            patch.object(watch_sentry, "read_pr_head", return_value=head),
+            patch.object(
+                watch_sentry,
+                "read_review_status",
+                return_value={
+                    "target": "pr:42",
+                    "revision": head,
+                    "state": "completed",
+                    "terminal_reason": "native-shadow-review-stored",
+                    "engine_version": "codex-native-v2",
+                    "verdict": "non-blocking-findings",
+                    "finding_count": 1,
+                },
+            ),
+        ):
+            code, result = self.run_main("42", "--host", "operator@example")
+
+        self.assertEqual(code, 1)
+        self.assertEqual(result["result"], "needs-human")
+        self.assertEqual(result["finding_count"], 1)
+        self.assertEqual(result["review_verdict"], "non-blocking-findings")
+
+    def test_rejects_legacy_or_incomplete_completed_review_contract(self):
+        head = "8" * 40
+        invalid_statuses = [
+            {
+                "target": "pr:42", "revision": head, "state": "completed",
+                "engine_version": "legacy-one-shot-v1", "verdict": "clean", "finding_count": 0,
+            },
+            {
+                "target": "pr:42", "revision": head, "state": "completed",
+                "engine_version": "codex-native-v2", "finding_count": 0,
+            },
+            {
+                "target": "pr:42", "revision": head, "state": "completed",
+                "engine_version": "codex-native-v2", "verdict": "clean", "finding_count": 1,
+            },
+        ]
+        for status in invalid_statuses:
+            with self.subTest(status=status):
+                with (
+                    patch.object(watch_sentry, "read_pr_head", return_value=head),
+                    patch.object(watch_sentry, "read_review_status", return_value=status),
+                ):
+                    code, result = self.run_main("42", "--host", "operator@example")
+                self.assertNotEqual(code, 0)
+                self.assertNotEqual(result["result"], "pass")
 
     def test_fails_closed_for_terminal_review_failure(self):
         head = "b" * 40
@@ -87,7 +141,14 @@ class WatchSentryTest(unittest.TestCase):
             patch.object(
                 watch_sentry,
                 "read_review_status",
-                return_value={"target": "pr:42", "revision": reviewed, "state": "completed"},
+                return_value={
+                    "target": "pr:42",
+                    "revision": reviewed,
+                    "state": "completed",
+                    "engine_version": "codex-native-v2",
+                    "verdict": "clean",
+                    "finding_count": 0,
+                },
             ),
         ):
             code, result = self.run_main("42", "--host", "operator@example")

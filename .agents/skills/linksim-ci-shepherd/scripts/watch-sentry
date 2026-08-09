@@ -16,6 +16,7 @@ TERMINAL_FAILURE_STATES = {"cancelled", "failed", "needs-human"}
 PENDING_STATES = {"missing", "queued", "running"}
 PROCESS_TIMEOUT_SECONDS = 30
 HEAD_SHA_PATTERN = re.compile(r"[0-9a-fA-F]{40}")
+EXPECTED_REVIEW_ENGINE = "codex-native-v2"
 
 
 def validate_head_sha(value: str) -> str:
@@ -144,6 +145,28 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("Sentry status did not match the requested PR head SHA")
             state = str(status.get("state", ""))
             if state == "completed":
+                engine_version = str(status.get("engine_version", ""))
+                verdict = str(status.get("verdict", ""))
+                finding_count = status.get("finding_count")
+                if engine_version != EXPECTED_REVIEW_ENGINE:
+                    return emit(
+                        "needs-human",
+                        args.pull_request,
+                        args.repo,
+                        head_sha,
+                        started,
+                        state=state,
+                        terminal_reason="unexpected-review-engine",
+                        engine_version=engine_version,
+                    )
+                if (
+                    verdict not in {"clean", "blocking-findings", "non-blocking-findings"}
+                    or not isinstance(finding_count, int)
+                    or finding_count < 0
+                    or (verdict == "clean" and finding_count != 0)
+                    or (verdict != "clean" and finding_count == 0)
+                ):
+                    raise ValueError("Sentry completed with an invalid native review contract")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return emit("timeout", args.pull_request, args.repo, head_sha, started)
@@ -161,6 +184,19 @@ def main(argv: list[str] | None = None) -> int:
                         started,
                         current_head_sha=current_head,
                     )
+                if verdict != "clean" or finding_count:
+                    return emit(
+                        "needs-human",
+                        args.pull_request,
+                        args.repo,
+                        head_sha,
+                        started,
+                        state=state,
+                        terminal_reason=str(status.get("terminal_reason", "")),
+                        engine_version=engine_version,
+                        review_verdict=verdict,
+                        finding_count=finding_count,
+                    )
                 return emit(
                     "pass",
                     args.pull_request,
@@ -168,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
                     head_sha,
                     started,
                     terminal_reason=str(status.get("terminal_reason", "")),
+                    engine_version=engine_version,
+                    review_verdict=verdict,
+                    finding_count=finding_count,
                 )
             if state in TERMINAL_FAILURE_STATES:
                 return emit(

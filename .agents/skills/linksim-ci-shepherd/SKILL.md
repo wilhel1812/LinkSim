@@ -30,6 +30,13 @@ The watcher reads deterministic SQLite state through the isolated
 `sentry-reviewer` container. It cannot enqueue a review, trigger a model call,
 publish a result, or rerun CI.
 
+The accepted private contract is review engine `codex-native-v2`: the official
+native Codex repository-review workflow checks the complete diff and related
+repository context, then stores a schema-validated verdict and finding count.
+Legacy compact reviews never satisfy this gate. A `clean` verdict with zero
+findings passes; any blocking or non-blocking finding returns `needs-human` so
+the finding can be inspected and addressed before handoff.
+
 Do not hand off a PR as merge-ready until the watcher returns `pass` for the
 exact current head SHA. A review of a superseded SHA does not satisfy the gate.
 `needs-human`, timeout, missing access, or malformed state fails closed. Re-run
