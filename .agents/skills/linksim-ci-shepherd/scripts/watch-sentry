@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import time
 from typing import Any
@@ -16,13 +17,15 @@ PENDING_STATES = {"missing", "queued", "running"}
 PROCESS_TIMEOUT_SECONDS = 30
 
 
-def read_pr_head(pr: int, repository: str) -> str:
+def read_pr_head(
+    pr: int, repository: str, *, timeout_seconds: float = PROCESS_TIMEOUT_SECONDS
+) -> str:
     process = subprocess.run(
         ["gh", "pr", "view", str(pr), "--repo", repository, "--json", "headRefOid", "--jq", ".headRefOid"],
         check=False,
         capture_output=True,
         text=True,
-        timeout=PROCESS_TIMEOUT_SECONDS,
+        timeout=timeout_seconds,
     )
     if process.returncode != 0:
         raise RuntimeError(process.stderr.strip() or "gh pr view failed")
@@ -32,10 +35,17 @@ def read_pr_head(pr: int, repository: str) -> str:
     return head_sha
 
 
-def read_review_status(host: str, pr: int, head_sha: str) -> dict[str, Any]:
+def read_review_status(
+    host: str,
+    pr: int,
+    head_sha: str,
+    *,
+    timeout_seconds: float = PROCESS_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
     process = subprocess.run(
         [
             "ssh",
+            "--",
             host,
             "docker",
             "exec",
@@ -49,7 +59,7 @@ def read_review_status(host: str, pr: int, head_sha: str) -> dict[str, Any]:
         check=False,
         capture_output=True,
         text=True,
-        timeout=PROCESS_TIMEOUT_SECONDS,
+        timeout=timeout_seconds,
     )
     if process.returncode != 0:
         raise RuntimeError(process.stderr.strip() or "Sentry status query failed")
@@ -76,21 +86,34 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pull_request", type=int)
     parser.add_argument("--repo", default="wilhel1812/LinkSim")
-    parser.add_argument("--host", default=os.environ.get("LINKSIM_SENTRY_HOST", ""))
+    parser.add_argument("--host")
     parser.add_argument("--head-sha")
     parser.add_argument("--interval", type=int, default=15)
     parser.add_argument("--timeout", type=int, default=900)
     args = parser.parse_args(argv)
 
-    if not args.host:
-        parser.error("--host or LINKSIM_SENTRY_HOST is required")
     if args.interval < 1 or args.timeout < 1:
         parser.error("interval and timeout must be positive")
 
     started = time.monotonic()
+    deadline = started + args.timeout
     head_sha = args.head_sha or ""
     try:
-        current_head = read_pr_head(args.pull_request, args.repo)
+        approved_host = os.environ.get("LINKSIM_SENTRY_HOST", "").strip()
+        host = args.host or approved_host
+        if not approved_host or host != approved_host:
+            raise ValueError("Sentry host is not in the configured allowlist")
+        if not re.fullmatch(r"[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+", host):
+            raise ValueError("Sentry host has an invalid SSH destination format")
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return emit("timeout", args.pull_request, args.repo, head_sha, started)
+        current_head = read_pr_head(
+            args.pull_request,
+            args.repo,
+            timeout_seconds=min(PROCESS_TIMEOUT_SECONDS, remaining),
+        )
         head_sha = args.head_sha or current_head
         if current_head != head_sha:
             return emit(
@@ -103,12 +126,27 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         while True:
-            status = read_review_status(args.host, args.pull_request, head_sha)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return emit("timeout", args.pull_request, args.repo, head_sha, started)
+            status = read_review_status(
+                host,
+                args.pull_request,
+                head_sha,
+                timeout_seconds=min(PROCESS_TIMEOUT_SECONDS, remaining),
+            )
             if status.get("target") != f"pr:{args.pull_request}" or status.get("revision") != head_sha:
                 raise ValueError("Sentry status did not match the requested PR head SHA")
             state = str(status.get("state", ""))
             if state == "completed":
-                current_head = read_pr_head(args.pull_request, args.repo)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return emit("timeout", args.pull_request, args.repo, head_sha, started)
+                current_head = read_pr_head(
+                    args.pull_request,
+                    args.repo,
+                    timeout_seconds=min(PROCESS_TIMEOUT_SECONDS, remaining),
+                )
                 if current_head != head_sha:
                     return emit(
                         "head-changed",
@@ -138,7 +176,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             if state not in PENDING_STATES:
                 raise ValueError(f"unknown Sentry review state: {state or '<empty>'}")
-            if time.monotonic() - started >= args.timeout:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 return emit(
                     "timeout",
                     args.pull_request,
@@ -147,13 +186,23 @@ def main(argv: list[str] | None = None) -> int:
                     started,
                     state=state,
                 )
-            time.sleep(args.interval)
+            time.sleep(min(float(args.interval), remaining))
+    except subprocess.TimeoutExpired as error:
+        if time.monotonic() >= deadline:
+            return emit("timeout", args.pull_request, args.repo, head_sha, started)
+        return emit(
+            "error",
+            args.pull_request,
+            args.repo,
+            head_sha,
+            started,
+            error=str(error)[:500],
+        )
     except (
         OSError,
         RuntimeError,
         ValueError,
         json.JSONDecodeError,
-        subprocess.TimeoutExpired,
     ) as error:
         return emit(
             "error",

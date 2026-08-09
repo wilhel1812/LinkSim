@@ -25,7 +25,10 @@ SPEC.loader.exec_module(watch_sentry)
 class WatchSentryTest(unittest.TestCase):
     def run_main(self, *arguments: str):
         output = io.StringIO()
-        with redirect_stdout(output):
+        with (
+            patch.dict(watch_sentry.os.environ, {"LINKSIM_SENTRY_HOST": "operator@example"}),
+            redirect_stdout(output),
+        ):
             code = watch_sentry.main(list(arguments))
         return code, json.loads(output.getvalue())
 
@@ -51,7 +54,9 @@ class WatchSentryTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result["result"], "pass")
         self.assertEqual(result["head_sha"], head)
-        status.assert_called_once_with("operator@example", 42, head)
+        status.assert_called_once_with(
+            "operator@example", 42, head, timeout_seconds=30
+        )
 
     def test_fails_closed_for_terminal_review_failure(self):
         head = "b" * 40
@@ -144,6 +149,56 @@ class WatchSentryTest(unittest.TestCase):
         with patch.object(watch_sentry.subprocess, "run", return_value=completed) as run:
             watch_sentry.read_review_status("operator@example", 42, "a" * 40)
         self.assertEqual(run.call_args.kwargs["timeout"], 30)
+        self.assertEqual(run.call_args.args[0][0:3], ["ssh", "--", "operator@example"])
+
+    def test_rejects_host_outside_the_configured_allowlist(self):
+        with (
+            patch.dict(
+                watch_sentry.os.environ,
+                {"LINKSIM_SENTRY_HOST": "operator@example"},
+            ),
+            patch.object(watch_sentry, "read_pr_head") as read_head,
+        ):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = watch_sentry.main(["42", "--host=-oProxyCommand=unsafe"])
+
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.getvalue())["result"], "error")
+        read_head.assert_not_called()
+
+    def test_overall_timeout_caps_the_poll_sleep(self):
+        head = "a" * 40
+
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        with (
+            patch.object(watch_sentry, "read_pr_head", return_value=head),
+            patch.object(
+                watch_sentry,
+                "read_review_status",
+                return_value={"target": "pr:42", "revision": head, "state": "missing"},
+            ),
+            patch.object(watch_sentry.time, "monotonic", side_effect=clock.monotonic),
+            patch.object(watch_sentry.time, "sleep", side_effect=clock.sleep),
+        ):
+            code, result = self.run_main(
+                "42", "--host", "operator@example", "--timeout", "1", "--interval", "15"
+            )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(result["result"], "timeout")
+        self.assertEqual(clock.sleeps, [1.0])
 
 
 if __name__ == "__main__":
