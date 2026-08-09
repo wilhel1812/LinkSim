@@ -21,13 +21,21 @@ import { buildProfile } from "../lib/propagation";
 import { StateDot } from "./StateDot";
 import { buildSelectionEffectiveLink } from "../lib/selectionEffectiveLink";
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
+import { antennaPatternSignature } from "../lib/antennaPattern";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { useAppStore } from "../store/appStore";
+import type { Site } from "../types/radio";
 
 const M = { t: 14, r: 28, b: 34, l: 50 };
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+export const profileAntennaSignature = (fromSite: Site | null, toSite: Site | null): string =>
+  [
+    fromSite ? antennaPatternSignature(fromSite) : "missing",
+    toSite ? antennaPatternSignature(toSite) : "missing",
+  ].join("|");
 
 const linePath = (points: { x: number; y: number }[]): string =>
   points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
@@ -393,6 +401,7 @@ export function LinkProfileChart({
         propagationEnvironment.atmosphericBendingNUnits,
         propagationEnvironment.clutterHeightM,
         propagationEnvironment.polarization,
+        profileAntennaSignature(selectedFromSiteEffective, selectedToSiteEffective),
       ].join("|"),
     [
       profileRevision,
@@ -402,6 +411,8 @@ export function LinkProfileChart({
       propagationEnvironment.atmosphericBendingNUnits,
       propagationEnvironment.clutterHeightM,
       propagationEnvironment.polarization,
+      selectedFromSiteEffective,
+      selectedToSiteEffective,
     ],
   );
 

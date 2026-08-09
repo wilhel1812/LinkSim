@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  antennaPatternSignature,
   antennaAttenuationDb,
   effectiveDirectionalGainDbi,
   orientationTowardSite,
@@ -72,6 +73,26 @@ describe("directional antenna pattern", () => {
       verticalBeamwidthDeg: 180,
       maxAttenuationDb: 60,
     });
+  });
+
+  it("changes the cache signature for every effective directional setting", () => {
+    const directional = site({
+      antennaMode: "directional",
+      antennaAzimuthDeg: 10,
+      antennaTiltDeg: 2,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+    const signature = antennaPatternSignature(directional);
+
+    expect(antennaPatternSignature({ ...directional, antennaAzimuthDeg: 11 })).not.toBe(signature);
+    expect(antennaPatternSignature({ ...directional, antennaTiltDeg: 3 })).not.toBe(signature);
+    expect(antennaPatternSignature({ ...directional, antennaHorizontalBeamwidthDeg: 61 })).not.toBe(signature);
+    expect(antennaPatternSignature({ ...directional, antennaVerticalBeamwidthDeg: 31 })).not.toBe(signature);
+    expect(antennaPatternSignature({ ...directional, antennaMaxAttenuationDb: 26 })).not.toBe(signature);
+    expect(antennaPatternSignature({ ...directional, antennaMode: "omnidirectional" })).not.toBe(signature);
+    expect(antennaPatternSignature(site({ antennaAzimuthDeg: 90 }))).toBe(antennaPatternSignature(site()));
   });
 
   it("derives upward and downward pointing from antenna-tip elevations", () => {

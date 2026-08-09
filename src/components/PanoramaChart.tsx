@@ -7,6 +7,7 @@ import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountai
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
+import { antennaPatternSignature } from "../lib/antennaPattern";
 import {
   createLatestOnlyTaskScheduler,
   type LatestOnlyTask,
@@ -453,6 +454,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const detailSampling = resolvePanoramaSampling(quality, { zoomModeEnabled: true, fovScale: normalizedFovScale });
     const detailCenterBucketSizeDeg = Math.max(1, Math.round(detailSampling.azimuthStepDeg * 4));
     const detailCenterBucketDeg = Math.round(viewportCenterAzimuthDeg / detailCenterBucketSizeDeg) * detailCenterBucketSizeDeg;
+    const sourceAntennaSignature = antennaPatternSignature(selectedSiteEffective);
+    const candidateAntennaSignature = nodeCandidates
+      .map((candidate) => `${candidate.id}:${antennaPatternSignature(candidate)}`)
+      .join(",");
 
     const baseSignature = [
       "panorama-base",
@@ -461,6 +466,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       selectedSiteEffective.position.lon.toFixed(6),
       selectedSiteEffective.groundElevationM,
       selectedSiteEffective.antennaHeightM,
+      sourceAntennaSignature,
       selectedNetwork.id,
       effectiveLink.frequencyMHz,
       propagationEnvironment.atmosphericBendingNUnits,
@@ -469,7 +475,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       baseSampling.radialSamples,
       terrainLoadEpoch,
       srtmTiles.length,
-      nodeCandidates.length,
+      candidateAntennaSignature,
       rxSensitivityTargetDbm,
       environmentLossDb,
     ].join("|");
@@ -480,6 +486,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       selectedSiteEffective.position.lon.toFixed(6),
       selectedSiteEffective.groundElevationM,
       selectedSiteEffective.antennaHeightM,
+      sourceAntennaSignature,
       selectedNetwork.id,
       effectiveLink.frequencyMHz,
       propagationEnvironment.atmosphericBendingNUnits,
@@ -491,7 +498,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       detailSampling.radialSamples,
       terrainLoadEpoch,
       srtmTiles.length,
-      nodeCandidates.length,
+      candidateAntennaSignature,
       rxSensitivityTargetDbm,
       environmentLossDb,
     ].join("|");

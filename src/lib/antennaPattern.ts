@@ -1,6 +1,16 @@
 import { haversineDistanceKm, initialBearingDeg } from "./geo";
 import type { Coordinates, Site } from "../types/radio";
 
+export type AntennaPatternSettings = Pick<
+  Site,
+  | "antennaMode"
+  | "antennaAzimuthDeg"
+  | "antennaTiltDeg"
+  | "antennaHorizontalBeamwidthDeg"
+  | "antennaVerticalBeamwidthDeg"
+  | "antennaMaxAttenuationDb"
+>;
+
 export const DEFAULT_DIRECTIONAL_ANTENNA = {
   azimuthDeg: 0,
   tiltDeg: 0,
@@ -32,7 +42,7 @@ const normalizeDegrees = (value: number): number => ((value % 360) + 360) % 360;
 export const shortestAngularOffsetDeg = (fromDeg: number, toDeg: number): number =>
   ((normalizeDegrees(toDeg) - normalizeDegrees(fromDeg) + 540) % 360) - 180;
 
-export const resolveSiteAntennaPattern = (site: Site): ResolvedAntennaPattern => {
+export const resolveSiteAntennaPattern = (site: AntennaPatternSettings): ResolvedAntennaPattern => {
   if (site.antennaMode !== "directional") return { mode: "omnidirectional" };
   return {
     mode: "directional",
@@ -54,6 +64,19 @@ export const resolveSiteAntennaPattern = (site: Site): ResolvedAntennaPattern =>
       60,
     ),
   };
+};
+
+export const antennaPatternSignature = (site: AntennaPatternSettings): string => {
+  const pattern = resolveSiteAntennaPattern(site);
+  if (pattern.mode === "omnidirectional") return pattern.mode;
+  return [
+    pattern.mode,
+    pattern.azimuthDeg,
+    pattern.tiltDeg,
+    pattern.horizontalBeamwidthDeg,
+    pattern.verticalBeamwidthDeg,
+    pattern.maxAttenuationDb,
+  ].join(":");
 };
 
 export const antennaAttenuationDb = (site: Site, direction: AntennaDirection): number => {

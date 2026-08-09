@@ -219,6 +219,13 @@ describe("MapEditorPanel", () => {
           txGainDbi: 2,
           rxGainDbi: 2,
           cableLossDb: 1,
+          antennaMode: "directional",
+          antennaAzimuthDeg: 0,
+          antennaTiltDeg: 35,
+          antennaHorizontalBeamwidthDeg: 60,
+          antennaVerticalBeamwidthDeg: 30,
+          antennaMaxAttenuationDb: 25,
+          antennaTargetSiteId: "sim-site-b",
         },
         {
           id: "sim-site-b",
@@ -235,9 +242,8 @@ describe("MapEditorPanel", () => {
     });
     render(<MapEditorPanel isMobile={false} />);
 
-    await userEvent.click(await screen.findByRole("checkbox", { name: "Directional antenna" }));
+    expect(await screen.findByRole("checkbox", { name: "Directional antenna" })).toBeChecked();
     const target = screen.getByRole("combobox", { name: "Point antenna at Site" });
-    await userEvent.selectOptions(target, "sim-site-b");
 
     expect(target).toHaveValue("sim-site-b");
     expect(screen.getByLabelText("Antenna azimuth")).toBeDisabled();
@@ -245,6 +251,23 @@ describe("MapEditorPanel", () => {
     expect(screen.getByLabelText("Antenna azimuth")).toHaveValue(0);
     await userEvent.click(screen.getByRole("button", { name: "Detach pointing target" }));
     expect(screen.getByLabelText("Antenna azimuth")).toBeEnabled();
+
+    await userEvent.clear(screen.getByLabelText("Antenna azimuth"));
+    await userEvent.type(screen.getByLabelText("Antenna azimuth"), "123");
+    fireEvent.change(screen.getByLabelText("Antenna tilt"), { target: { value: "-7" } });
+    await userEvent.click(screen.getByRole("button", { name: "Save Site" }));
+
+    const savedSite = useAppStore.getState().sites.find((site) => site.id === "sim-site-a");
+    const savedLibrarySite = useAppStore.getState().siteLibrary.find((site) => site.id === "site-lib-1");
+    expect(savedSite).toMatchObject({
+      antennaTargetSiteId: undefined,
+      antennaAzimuthDeg: 123,
+      antennaTiltDeg: -7,
+    });
+    expect(savedLibrarySite).toMatchObject({
+      antennaAzimuthDeg: 123,
+      antennaTiltDeg: -7,
+    });
   });
 
   it("confirms deletion from editable Site details", async () => {

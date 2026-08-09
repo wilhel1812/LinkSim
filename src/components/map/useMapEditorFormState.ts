@@ -784,6 +784,12 @@ export function useMapEditorFormState() {
         });
         if (activeSimulationSite) {
           updateSite(activeSimulationSite.id, {
+            antennaMode,
+            antennaAzimuthDeg: ((antennaAzimuthDraft % 360) + 360) % 360,
+            antennaTiltDeg: antennaTiltDraft,
+            antennaHorizontalBeamwidthDeg: antennaHorizontalBeamwidthDraft,
+            antennaVerticalBeamwidthDeg: antennaVerticalBeamwidthDraft,
+            antennaMaxAttenuationDb: antennaMaxAttenuationDraft,
             antennaTargetSiteId: antennaMode === "directional" && antennaTargetSiteId ? antennaTargetSiteId : undefined,
             antennaTargetDetachedReason: undefined,
           });

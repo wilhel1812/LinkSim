@@ -179,6 +179,19 @@ const renderChart = (wrapper?: "strict", onRender?: ProfilerOnRenderCallback) =>
 describe("PanoramaChart scheduling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    testState.store.sites = [
+      {
+        id: "site-1",
+        name: "Test site",
+        position: { lat: 59.91, lon: 10.75 },
+        groundElevationM: 100,
+        antennaHeightM: 10,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      },
+    ];
     testState.schedulers.length = 0;
     testState.buildPanorama.mockImplementation((input) =>
       panoramaResult(input.options.windowCenterDeg != null),
@@ -265,6 +278,45 @@ describe("PanoramaChart scheduling", () => {
 
     expect(testState.buildPanorama).toHaveBeenCalledTimes(2);
     expect(renderCount).toBeLessThanOrEqual(8);
+  });
+
+  it("rebuilds cached panoramas when source or candidate antenna settings change", async () => {
+    testState.store.sites = [
+      testState.store.sites[0],
+      {
+        ...testState.store.sites[0],
+        id: "site-2",
+        name: "Candidate",
+        position: { lat: 59.92, lon: 10.76 },
+      },
+    ];
+    const view = renderChart();
+    expect(await screen.findByRole("img", { name: "Panorama" })).toBeInTheDocument();
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(2);
+
+    testState.store.sites = testState.store.sites.map((site) =>
+      site.id === "site-1"
+        ? { ...site, antennaMode: "directional", antennaAzimuthDeg: 90 }
+        : site,
+    );
+    view.rerender(<PanoramaChart isExpanded={false} onToggleExpanded={() => undefined} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(4);
+
+    testState.store.sites = testState.store.sites.map((site) =>
+      site.id === "site-2"
+        ? { ...site, antennaMode: "directional", antennaTiltDeg: 12 }
+        : site,
+    );
+    view.rerender(<PanoramaChart isExpanded={false} onToggleExpanded={() => undefined} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(6);
   });
 
   it("recreates disposed schedulers during StrictMode replay and still renders", async () => {
