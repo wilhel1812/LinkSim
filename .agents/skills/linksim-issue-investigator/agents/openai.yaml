@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkSim Issue Investigator"
+  short_description: "Gather evidence before LinkSim implementation"
+  default_prompt: "Use $linksim-issue-investigator to investigate this approved LinkSim issue without changing code."
