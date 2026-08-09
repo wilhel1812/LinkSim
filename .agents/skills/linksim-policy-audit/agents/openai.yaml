@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkSim Policy Audit"
+  short_description: "Suggest evidence-backed policy improvements"
+  default_prompt: "Use $linksim-policy-audit to audit recurring LinkSim workflow problems and suggest reviewed improvements."

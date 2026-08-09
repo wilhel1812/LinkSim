@@ -47,8 +47,8 @@
       "role": "Policy, skills, memory, and workflow-improvement advice",
       "signature": "— Steward · AI policy advisor",
       "githubIdentity": { "kind": "approved-codex-session" },
-      "allowedActions": ["audit-policy", "suggest-policy-wording", "identify-workflow-improvement"],
-      "prohibitedActions": ["edit-policy", "edit-skills", "edit-prompts", "change-permissions", "change-infrastructure", "implement-own-suggestion"]
+      "allowedActions": ["propose-epic", "audit-policy", "suggest-policy-wording", "identify-workflow-improvement", "publish-signed-suggestion"],
+      "prohibitedActions": ["edit-policy", "edit-skills", "edit-prompts", "change-permissions", "change-infrastructure", "implement-own-suggestion", "progress-epic-automatically"]
     }
   ]
 }
