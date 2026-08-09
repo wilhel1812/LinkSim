@@ -15,6 +15,13 @@ from typing import Any
 TERMINAL_FAILURE_STATES = {"cancelled", "failed", "needs-human"}
 PENDING_STATES = {"missing", "queued", "running"}
 PROCESS_TIMEOUT_SECONDS = 30
+HEAD_SHA_PATTERN = re.compile(r"[0-9a-fA-F]{40}")
+
+
+def validate_head_sha(value: str) -> str:
+    if not HEAD_SHA_PATTERN.fullmatch(value):
+        raise ValueError("GitHub returned an invalid PR head SHA")
+    return value.lower()
 
 
 def read_pr_head(
@@ -29,10 +36,7 @@ def read_pr_head(
     )
     if process.returncode != 0:
         raise RuntimeError(process.stderr.strip() or "gh pr view failed")
-    head_sha = process.stdout.strip()
-    if len(head_sha) != 40:
-        raise ValueError("GitHub returned an invalid PR head SHA")
-    return head_sha
+    return validate_head_sha(process.stdout.strip())
 
 
 def read_review_status(
@@ -105,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("Sentry host is not in the configured allowlist")
         if not re.fullmatch(r"[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+", host):
             raise ValueError("Sentry host has an invalid SSH destination format")
+        requested_head = validate_head_sha(args.head_sha) if args.head_sha else ""
 
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -114,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             args.repo,
             timeout_seconds=min(PROCESS_TIMEOUT_SECONDS, remaining),
         )
-        head_sha = args.head_sha or current_head
+        head_sha = requested_head or current_head
         if current_head != head_sha:
             return emit(
                 "head-changed",

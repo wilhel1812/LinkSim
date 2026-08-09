@@ -200,6 +200,27 @@ class WatchSentryTest(unittest.TestCase):
         self.assertEqual(result["result"], "timeout")
         self.assertEqual(clock.sleeps, [1.0])
 
+    def test_rejects_non_hexadecimal_head_sha_before_status_query(self):
+        valid_head = "a" * 40
+        invalid_head = "g" * 40
+        with (
+            patch.object(watch_sentry, "read_pr_head", return_value=valid_head),
+            patch.object(watch_sentry, "read_review_status") as read_status,
+        ):
+            code, result = self.run_main(
+                "42", "--host", "operator@example", "--head-sha", invalid_head
+            )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(result["result"], "error")
+        read_status.assert_not_called()
+
+    def test_rejects_non_hexadecimal_github_head(self):
+        completed = subprocess.CompletedProcess([], 0, stdout="g" * 40, stderr="")
+        with patch.object(watch_sentry.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(ValueError, "invalid PR head SHA"):
+                watch_sentry.read_pr_head(42, "wilhel1812/LinkSim")
+
 
 if __name__ == "__main__":
     unittest.main()
