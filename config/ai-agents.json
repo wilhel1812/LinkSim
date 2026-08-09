@@ -48,7 +48,7 @@
       "signature": "— Steward · AI policy advisor",
       "githubIdentity": { "kind": "approved-codex-session" },
       "allowedActions": ["propose-epic", "audit-policy", "suggest-policy-wording", "identify-workflow-improvement", "publish-signed-suggestion"],
-      "prohibitedActions": ["edit-policy", "edit-skills", "edit-prompts", "change-permissions", "change-infrastructure", "implement-own-suggestion", "progress-epic-automatically"]
+      "prohibitedActions": ["edit-policy", "edit-skills", "edit-prompts", "edit-workflows", "edit-memory", "change-permissions", "change-infrastructure", "implement-own-suggestion", "progress-epic-automatically"]
     }
   ]
 }
