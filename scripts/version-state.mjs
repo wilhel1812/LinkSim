@@ -26,6 +26,40 @@ export const compareBaseVersions = (left, right) => {
   return a.major - b.major || a.minor - b.minor || a.patch - b.patch;
 };
 
+export const parsePackageVersionInputs = (packageContent, lockfileContent) => {
+  const packageJson = JSON.parse(packageContent);
+  const packageLock = JSON.parse(lockfileContent);
+  return {
+    packageVersion: packageJson.version,
+    lockfileVersion: packageLock.version,
+    lockfileRootVersion: packageLock.packages?.[""]?.version,
+  };
+};
+
+export const validatePackageVersionParity = ({
+  packageVersion,
+  lockfileVersion,
+  lockfileRootVersion,
+  label = "package",
+}) => {
+  const declared = parseBaseVersion(packageVersion, `${label} package.json version`);
+  const lockfile = parseBaseVersion(
+    lockfileVersion,
+    `${label} package-lock.json version`,
+  );
+  const lockfileRoot = parseBaseVersion(
+    lockfileRootVersion,
+    `${label} package-lock.json root package version`,
+  );
+  if (lockfile.value !== declared.value || lockfileRoot.value !== declared.value) {
+    throw new Error(
+      `${label} package-lock.json versions must match package.json ` +
+        `(${declared.value}); found ${lockfile.value} and ${lockfileRoot.value}.`,
+    );
+  }
+  return declared.value;
+};
+
 export const validateStagingVersionState = ({
   productionVersion,
   stagingVersion,
@@ -72,11 +106,6 @@ export const validateStagingVersionState = ({
   };
 };
 
-const readPackageVersion = (content, label) => {
-  const parsed = JSON.parse(content);
-  return parseBaseVersion(parsed.version, label).value;
-};
-
 const runGit = (args, options = {}) =>
   execFileSync("git", args, {
     encoding: "utf8",
@@ -84,14 +113,20 @@ const runGit = (args, options = {}) =>
   });
 
 export const validateCurrentStagingVersionState = ({ productionRef = "origin/main" } = {}) => {
-  const stagingVersion = readPackageVersion(
-    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-    "staging version",
-  );
-  const productionVersion = readPackageVersion(
-    runGit(["show", `${productionRef}:package.json`]),
-    "production version",
-  );
+  const stagingVersion = validatePackageVersionParity({
+    ...parsePackageVersionInputs(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+      readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"),
+    ),
+    label: "staging",
+  });
+  const productionVersion = validatePackageVersionParity({
+    ...parsePackageVersionInputs(
+      runGit(["show", `${productionRef}:package.json`]),
+      runGit(["show", `${productionRef}:package-lock.json`]),
+    ),
+    label: "production",
+  });
 
   let treesMatch = true;
   try {

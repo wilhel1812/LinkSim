@@ -32,6 +32,8 @@ describe("production release version policy", () => {
     expect(
       evaluatePolicy(`validateReleaseVersionInputs({
         version: "0.27.0",
+        lockfileVersion: "0.27.0",
+        lockfileRootVersion: "0.27.0",
         previousProductionVersion: "0.26.2",
         hasMatchingHeadTag: true,
       })`),
@@ -47,9 +49,30 @@ describe("production release version policy", () => {
     expect(
       evaluatePolicy(`validateReleaseVersionInputs({
         version: ${JSON.stringify(version)},
+        lockfileVersion: ${JSON.stringify(version)},
+        lockfileRootVersion: ${JSON.stringify(version)},
         previousProductionVersion: ${JSON.stringify(previousProductionVersion)},
         hasMatchingHeadTag: ${hasMatchingHeadTag},
       })`).ok,
     ).toBe(false);
   });
+
+  it.each([
+    ["0.26.2", "0.27.0"],
+    ["0.27.0", "0.26.2"],
+  ])(
+    "rejects release lockfile drift %s / %s",
+    (lockfileVersion, lockfileRootVersion) => {
+      const result = evaluatePolicy(`validateReleaseVersionInputs({
+        version: "0.27.0",
+        lockfileVersion: ${JSON.stringify(lockfileVersion)},
+        lockfileRootVersion: ${JSON.stringify(lockfileRootVersion)},
+        previousProductionVersion: "0.26.2",
+        hasMatchingHeadTag: true,
+      })`);
+
+      expect(result.ok).toBe(false);
+      expect(result.ok ? "" : result.message).toContain("package-lock.json");
+    },
+  );
 });

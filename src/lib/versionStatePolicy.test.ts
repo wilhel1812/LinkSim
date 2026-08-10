@@ -12,7 +12,7 @@ const evaluatePolicy = (expression: string) => {
     [
       "--input-type=module",
       "--eval",
-      `import { validateStagingVersionState } from ${JSON.stringify(scriptPath)};
+      `import { validatePackageVersionParity, validateStagingVersionState } from ${JSON.stringify(scriptPath)};
        try {
          const result = ${expression};
          console.log(JSON.stringify({ ok: true, value: result }));
@@ -28,6 +28,24 @@ const evaluatePolicy = (expression: string) => {
 };
 
 describe("staging version-state policy", () => {
+  it.each([
+    ["0.26.2", "0.27.0"],
+    ["0.27.0", "0.26.2"],
+  ])(
+    "rejects package-lock versions %s / %s that differ from package.json",
+    (lockfileVersion, lockfileRootVersion) => {
+      const result = evaluatePolicy(`validatePackageVersionParity({
+        packageVersion: "0.27.0",
+        lockfileVersion: ${JSON.stringify(lockfileVersion)},
+        lockfileRootVersion: ${JSON.stringify(lockfileRootVersion)},
+        label: "staging",
+      })`);
+
+      expect(result.ok).toBe(false);
+      expect(result.ok ? "" : result.message).toContain("package-lock.json");
+    },
+  );
+
   it("permits the production version while the trees are identical", () => {
     expect(
       evaluatePolicy(`validateStagingVersionState({

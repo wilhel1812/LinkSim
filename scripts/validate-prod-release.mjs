@@ -3,10 +3,15 @@ import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { compareBaseVersions, parseBaseVersion } from "./version-state.mjs";
+import {
+  compareBaseVersions,
+  parsePackageVersionInputs,
+  validatePackageVersionParity,
+} from "./version-state.mjs";
 
 const root = process.cwd();
 const packageJsonPath = path.join(root, "package.json");
+const packageLockPath = path.join(root, "package-lock.json");
 
 const run = (cmd, args) =>
   new Promise((resolve, reject) => {
@@ -33,39 +38,51 @@ const run = (cmd, args) =>
   });
 
 const readVersionAtRef = async (ref) => {
-  const { stdout } = await run("git", ["show", `${ref}:package.json`]);
-  const pkg = JSON.parse(stdout);
-  return String(pkg.version ?? "").trim();
+  const [{ stdout: packageContent }, { stdout: lockfileContent }] = await Promise.all([
+    run("git", ["show", `${ref}:package.json`]),
+    run("git", ["show", `${ref}:package-lock.json`]),
+  ]);
+  return validatePackageVersionParity({
+    ...parsePackageVersionInputs(packageContent, lockfileContent),
+    label: `production ref ${ref}`,
+  });
 };
 
 export const validateReleaseVersionInputs = ({
   version,
+  lockfileVersion,
+  lockfileRootVersion,
   previousProductionVersion,
   hasMatchingHeadTag,
 }) => {
-  const current = parseBaseVersion(version, "release version");
-  const previous = parseBaseVersion(
-    previousProductionVersion,
-    "previous production version",
-  );
-  const expectedTag = `v${current.value}`;
+  const current = validatePackageVersionParity({
+    packageVersion: version,
+    lockfileVersion,
+    lockfileRootVersion,
+    label: "release",
+  });
+  const expectedTag = `v${current}`;
   if (!hasMatchingHeadTag) {
     throw new Error(`Prod release gate failed: HEAD must be tagged '${expectedTag}'.`);
   }
-  if (compareBaseVersions(current.value, previous.value) <= 0) {
+  if (compareBaseVersions(current, previousProductionVersion) <= 0) {
     throw new Error(
-      `Prod release gate failed: release version ${current.value} must be newer than ` +
-        `previous production ${previous.value}.`,
+      `Prod release gate failed: release version ${current} must be newer than ` +
+        `previous production ${previousProductionVersion}.`,
     );
   }
   return expectedTag;
 };
 
 async function main() {
-  const pkgText = await readFile(packageJsonPath, "utf8");
-  const pkg = JSON.parse(pkgText);
-  const version = String(pkg.version ?? "").trim();
-  parseBaseVersion(version, "release version");
+  const versionInputs = parsePackageVersionInputs(
+    await readFile(packageJsonPath, "utf8"),
+    await readFile(packageLockPath, "utf8"),
+  );
+  const version = validatePackageVersionParity({
+    ...versionInputs,
+    label: "release",
+  });
 
   const expectedTag = `v${version}`;
   const { stdout: tagsAtHead } = await run("git", ["tag", "--points-at", "HEAD"]);
@@ -79,6 +96,8 @@ async function main() {
   const previousProductionVersion = await readVersionAtRef(previousProductionRef);
   validateReleaseVersionInputs({
     version,
+    lockfileVersion: versionInputs.lockfileVersion,
+    lockfileRootVersion: versionInputs.lockfileRootVersion,
     previousProductionVersion,
     hasMatchingHeadTag,
   });
