@@ -2,6 +2,10 @@
 import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import {
+  parsePackageVersionInputs,
+  validatePackageVersionParity,
+} from "./version-state.mjs";
 
 const root = process.cwd();
 
@@ -29,10 +33,23 @@ const run = (cmd, args) =>
     });
   });
 
-export const validatePromotionInputs = ({ version, tagCommit, treesMatch }) => {
-  const normalizedVersion = String(version ?? "").trim();
-  if (!normalizedVersion) {
-    throw new Error("Prod promotion gate failed: package.json version is missing.");
+export const validatePromotionInputs = ({
+  version,
+  lockfileVersion,
+  lockfileRootVersion,
+  tagCommit,
+  treesMatch,
+}) => {
+  let normalizedVersion;
+  try {
+    normalizedVersion = validatePackageVersionParity({
+      packageVersion: version,
+      lockfileVersion,
+      lockfileRootVersion,
+      label: "production",
+    });
+  } catch (error) {
+    throw new Error(`Prod promotion gate failed: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!String(tagCommit ?? "").trim()) {
     throw new Error(`Prod promotion gate failed: release tag v${normalizedVersion} does not exist.`);
@@ -47,8 +64,14 @@ export const validatePromotionInputs = ({ version, tagCommit, treesMatch }) => {
 };
 
 async function main() {
-  const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-  const version = String(pkg.version ?? "").trim();
+  const versionInputs = parsePackageVersionInputs(
+    await readFile(path.join(root, "package.json"), "utf8"),
+    await readFile(path.join(root, "package-lock.json"), "utf8"),
+  );
+  const version = validatePackageVersionParity({
+    ...versionInputs,
+    label: "production",
+  });
   const tag = `v${version}`;
   const tagCommit = (await run("git", ["rev-parse", "--verify", `${tag}^{commit}`])).stdout.trim();
   let treesMatch = true;
@@ -58,7 +81,13 @@ async function main() {
     treesMatch = false;
   }
 
-  validatePromotionInputs({ version, tagCommit, treesMatch });
+  validatePromotionInputs({
+    version,
+    lockfileVersion: versionInputs.lockfileVersion,
+    lockfileRootVersion: versionInputs.lockfileRootVersion,
+    tagCommit,
+    treesMatch,
+  });
   console.log(`[validate-prod-promotion] ok tag=${tag} tagCommit=${tagCommit.slice(0, 8)}`);
 }
 

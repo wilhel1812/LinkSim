@@ -134,6 +134,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: staging
+          fetch-depth: 0
+
+      - name: Fetch production version baseline
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -212,6 +216,8 @@ jobs:
 
       - name: Validate release gate
         working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          PRODUCTION_PREVIOUS_REF: ${{ github.event.before }}
         run: node scripts/validate-prod-release.mjs
 
       - name: Deploy prod/main with guardrails

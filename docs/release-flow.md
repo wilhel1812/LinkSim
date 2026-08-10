@@ -30,7 +30,7 @@
 - Open PR `staging` -> `main` first (direct path — branch policy allows `staging` as head branch).
 - If GitHub reports conflicts because prior production releases were squash-merged, use the approved fallback: create `release/vX.Y.Z` from `main`, squash-merge `origin/staging`, resolve conflicts by keeping the verified staging release tree, tag `vX.Y.Z`, then PR `release/vX.Y.Z` -> `main`.
 - CI automatically deploys to production on every merge to `main`. Monitor the `Deploy LinkSim Pages / deploy-prod-main` GitHub Actions job and report the commit SHA when complete.
-- Note: the CI deploy job validates that the release tag exists, the `main` HEAD tree matches the tag tree, and the tagged release commit has the required SemVer bump.
+- Note: the CI deploy job validates that the release tag exists, the `main` HEAD tree matches the tag tree, and the release SemVer is newer than the previous production version.
 - After production deploy, continue all new work from updated `origin/staging`.
 - If a `hotfix/*` reconcile/snapshot PR to `main` is used, treat that as an incident exception path and immediately run main->staging sync before starting any new work.
 
@@ -62,19 +62,26 @@
 
 ## Versioning Policy
 - SemVer is mandatory (`MAJOR.MINOR.PATCH`).
-- The current version is defined by `package.json`; do not duplicate it in release documentation.
+- The current base version is defined by `package.json` on each branch; do not duplicate it in milestones, repository variables, or release documentation.
 - Bump level decision rules:
   - `PATCH` (`0.9.x`): bug fixes, polish, performance tuning, and non-breaking UX behavior fixes.
   - `MINOR` (`0.x.0`): new user-facing features or meaningful workflow additions that are backward-compatible.
   - `MAJOR` (`x.0.0`): breaking changes (data model incompatibility, removed/renamed API behavior, auth/permission model breaks), or first stable `1.0.0` declaration.
 - Environment bump rules:
   - Same commit must keep the same base SemVer (`X.Y.Z`) in all environments.
+  - Immediately after production promotion, `staging` may retain production's base version while both branch trees are identical.
+  - The first subsequent change that makes the staging tree diverge must deliberately update `package.json` and `package-lock.json` to one reviewed development line:
+    - Normal development: next minor `X.(Y+1).0`.
+    - Approved patch development: next patch `X.Y.(Z+1)`.
+    - Approved breaking or first-stable development: next major `(X+1).0.0`.
+  - CI validates the selected line before shared-staging deployment and never edits or commits versions.
   - Build label channel by environment:
     - Local: `vX.Y.Z-alpha+<commit>`
     - Staging: `vX.Y.Z-beta+<commit>`
     - Production: `vX.Y.Z`
-  - Live production: SemVer bump is required before release.
-- Version bump required for `prod:main` deploys (release candidates).
+  - Live production: the tagged base SemVer must be newer than the previous production version.
+- The development version is normally selected at the beginning of the cycle, not fabricated in the final release commit.
+- A maintainer must choose minor, patch, or major explicitly; automation cannot infer it from issue, commit, or feature contents.
 
 ## Iteration Rules
 - Default loop for every task:
@@ -100,6 +107,7 @@
   - `npm test` passes
   - `npm run build` passes
   - `CHANGELOG.md` includes a human-readable entry for the release
+  - the already-selected `package.json` version is still intentional and newer than production
   - `docs/milestone-release-checklist.md` is completed
 - PR body requirement for normal promotion (`staging` -> `main`):
   - include the checked line:
