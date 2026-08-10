@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "enabled": false,
+  "enabled": true,
   "cadence": "weekly",
   "executor": "vidda-guarded-worker",
   "discussionIssue": 1027,
@@ -17,7 +17,9 @@
     "signedAgent": "Steward"
   },
   "activation": {
-    "state": "pending-live-acceptance",
-    "remainingGate": "Validate the isolated OAuth profile, quota states, and first manual audit before enabling the weekly switch."
+    "state": "enabled-after-live-acceptance",
+    "acceptedAt": "2026-08-10",
+    "acceptedBy": "wilhel1812",
+    "acceptedRun": "043bd069-8ef0-4086-90c2-a0f01148cb67"
   }
 }
