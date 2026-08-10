@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkSim Pre-PR Review"
+  short_description: "Review LinkSim changes before publication"
+  default_prompt: "Use $linksim-pre-pr-review to independently review these LinkSim changes before opening a pull request."
