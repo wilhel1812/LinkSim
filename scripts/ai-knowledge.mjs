@@ -102,8 +102,11 @@ export function loadKnowledgeRegistry(knowledgePath = DEFAULT_KNOWLEDGE_PATH, ag
   return validateKnowledgeRegistry(JSON.parse(readFileSync(knowledgePath, "utf8")), loadAgentRegistry(agentPath));
 }
 
-export function selectKnowledgeForAgent(registry, agentName) {
-  const agentRegistry = loadAgentRegistry(DEFAULT_AGENT_PATH);
+export function selectKnowledgeForAgent(
+  registry,
+  agentName,
+  agentRegistry = loadAgentRegistry(DEFAULT_AGENT_PATH),
+) {
   const validated = validateKnowledgeRegistry(registry, agentRegistry);
   if (!agentRegistry.agents.some((agent) => agent.name === agentName)) {
     throw new Error(`unknown agent: ${agentName}`);
@@ -147,14 +150,18 @@ function parseOptions(args) {
 function runCli(args) {
   const [command, ...rest] = args;
   const options = parseOptions(rest);
-  const registry = loadKnowledgeRegistry(options.registry ?? DEFAULT_KNOWLEDGE_PATH, options.agents ?? DEFAULT_AGENT_PATH);
+  const agentRegistry = loadAgentRegistry(options.agents ?? DEFAULT_AGENT_PATH);
+  const registry = validateKnowledgeRegistry(
+    JSON.parse(readFileSync(options.registry ?? DEFAULT_KNOWLEDGE_PATH, "utf8")),
+    agentRegistry,
+  );
   if (command === "validate") {
     process.stdout.write("AI role knowledge registry valid.\n");
     return;
   }
   if (command === "for-agent") {
     const agent = requireShortString(options.agent, "agent", 40);
-    process.stdout.write(`${JSON.stringify(selectKnowledgeForAgent(registry, agent))}\n`);
+    process.stdout.write(`${JSON.stringify(selectKnowledgeForAgent(registry, agent, agentRegistry))}\n`);
     return;
   }
   throw new Error(`unknown command: ${command ?? ""}`);

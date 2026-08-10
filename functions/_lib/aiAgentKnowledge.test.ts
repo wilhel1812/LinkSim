@@ -116,6 +116,29 @@ describe("reviewed AI role knowledge", () => {
     expect(selected.truncated).toBe(true);
   });
 
+  it("uses the caller-selected agent registry during selection", () => {
+    const customAgents = { agents: [{ name: "Custom" }] };
+    const registry = validateKnowledgeRegistry(
+      {
+        schemaVersion: 1,
+        maxLoadedCharacters: 512,
+        entries: [
+          {
+            id: "custom-only",
+            lesson: "Load only for the custom registry role.",
+            affectedAgents: ["Custom"],
+            evidence: ["issue-custom"],
+            humanApproval: { by: "owner", source: "issue-custom", approvedAt: "2026-08-10" },
+            status: "approved",
+          },
+        ],
+      },
+      customAgents,
+    );
+
+    expect(selectKnowledgeForAgent(registry, "Custom", customAgents).entries).toHaveLength(1);
+  });
+
   it("keeps Steward suggestion-only and requires an approved Forge edit", () => {
     const steward = readFileSync(
       resolve(process.cwd(), ".agents/skills/linksim-policy-audit/SKILL.md"),
