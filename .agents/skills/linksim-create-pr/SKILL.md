@@ -58,7 +58,9 @@ production.
 
 3. Push the issue branch and open a PR to `staging`.
 4. Add the `ai-assisted` label. Sign the PR body visibly as Forge and include a
-   valid hidden provenance marker from `config/ai-agents.json`.
+   valid hidden provenance marker generated through
+   `node scripts/ai-provenance.mjs`. Validate the complete PR body with that
+   same script before publication; never hand-build the marker.
 5. Describe scope, authority boundary, tests, documentation impact, versioning
    decision, and linked issue. Do not claim unperformed verification.
 6. Hand the PR to `$linksim-ci-shepherd`. Do not merge it.

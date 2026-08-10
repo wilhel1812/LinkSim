@@ -47,11 +47,18 @@ Forge task is required.
 ## Publication gate
 
 For a scheduled audit, first confirm the shared quota guard permits a model
-call. Comment only when at least one evidence-backed improvement exists. Append
-through the deterministic publisher to the single configured `documentation` +
-`pending-discussion` issue; do not rewrite its body or create repeated issues.
-Publication must be idempotent, signed, and provenance-validated.
+call using the thresholds and durable issue in
+`config/steward-policy-audit.json`. If that configuration is disabled, its
+executor is unconfigured, telemetry is stale, or the guard is not `normal`, do
+not start a model call. Comment only when at least one evidence-backed
+improvement exists. Append through the deterministic publisher to the single
+configured `documentation` + `pending-discussion` issue; do not rewrite its
+body or create repeated issues. Publication must be idempotent, signed, and
+provenance-validated.
 
 End every output with `Suggestion only — no policy change applied.` and
 `— Steward · AI policy advisor`. Fail closed if attribution or provenance
-cannot be generated.
+cannot be generated. Generate the footer with
+`node scripts/ai-provenance.mjs footer`, render the complete comment to a file,
+then require `node scripts/ai-provenance.mjs validate-artifact --agent Steward`
+to pass before publication. Never hand-build the marker.

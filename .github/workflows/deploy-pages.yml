@@ -72,16 +72,18 @@ jobs:
           PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
         with:
           script: |
-            const registry = require('./config/ai-agents.json');
-            const beacon = registry.agents.find((agent) => agent.name === 'Beacon');
-            if (!beacon?.signature || !registry.markerPrefix) {
-              core.setFailed('Beacon identity or provenance marker is missing from the agent registry.');
-              return;
-            }
+            const { execFileSync } = require('node:child_process');
             const marker = '<!-- linksim-preview:v1 -->';
             const sha = context.payload.pull_request.head.sha;
             const runId = require('node:crypto').randomUUID();
-            const provenance = `<!-- ${registry.markerPrefix} agent=${beacon.name} bot=true run=${runId} source=pull-request-${context.issue.number} commit=${sha} -->`;
+            const footer = JSON.parse(execFileSync(process.execPath, [
+              'scripts/ai-provenance.mjs',
+              'footer',
+              '--agent', 'Beacon',
+              '--run', runId,
+              '--source', `pull-request-${context.issue.number}`,
+              '--commit', sha,
+            ], { encoding: 'utf8' }));
             const body = [
               marker,
               'Authenticated staging preview:',
@@ -90,9 +92,9 @@ jobs:
               '',
               `Commit: \`${sha}\``,
               '',
-              beacon.signature,
+              footer.signature,
               '',
-              provenance,
+              footer.marker,
             ].join('\n');
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
