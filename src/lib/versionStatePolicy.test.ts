@@ -72,6 +72,7 @@ describe("staging version-state policy", () => {
   it.each([
     ["0.27.0", "next-minor"],
     ["0.26.3", "next-patch"],
+    ["1.0.0", "next-major"],
   ])("accepts the explicit %s development line", (stagingVersion, progression) => {
     expect(
       evaluatePolicy(`validateStagingVersionState({
@@ -85,7 +86,7 @@ describe("staging version-state policy", () => {
     });
   });
 
-  it.each(["0.28.0", "0.26.4", "0.25.9", "1.0.0", "0.27.0-beta"])(
+  it.each(["0.28.0", "0.26.4", "0.25.9", "2.0.0", "0.27.0-beta"])(
     "rejects implicit, skipped, or malformed line %s",
     (stagingVersion) => {
       expect(

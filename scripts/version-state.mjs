@@ -91,18 +91,27 @@ export const validateStagingVersionState = ({
     staging.major === production.major &&
     staging.minor === production.minor + 1 &&
     staging.patch === 0;
+  const isNextMajor =
+    staging.major === production.major + 1 &&
+    staging.minor === 0 &&
+    staging.patch === 0;
 
-  if (!isNextPatch && !isNextMinor) {
+  if (!isNextPatch && !isNextMinor && !isNextMajor) {
     throw new Error(
       `Staging version ${staging.value} must explicitly select either next patch ` +
         `${production.major}.${production.minor}.${production.patch + 1} or next minor ` +
-        `${production.major}.${production.minor + 1}.0.`,
+        `${production.major}.${production.minor + 1}.0 or next major ` +
+        `${production.major + 1}.0.0.`,
     );
   }
 
   return {
     state: "development-line",
-    progression: isNextPatch ? "next-patch" : "next-minor",
+    progression: isNextPatch
+      ? "next-patch"
+      : isNextMinor
+        ? "next-minor"
+        : "next-major",
   };
 };
 

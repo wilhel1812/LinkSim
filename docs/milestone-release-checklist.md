@@ -16,7 +16,7 @@ Use this checklist before opening a normal production promotion PR (`staging` ->
 ## Version and notes
 - [ ] The development-line SemVer in `package.json` is intentional and newer than the previous production version.
 - [ ] `package-lock.json` declares the same base version.
-- [ ] The release does not change minor/patch lines implicitly during promotion.
+- [ ] The release does not change patch, minor, or major lines implicitly during promotion.
 - [ ] `CHANGELOG.md` has a human-readable entry for this release.
 - [ ] Release tag `vX.Y.Z` points to the verified release tree that production will deploy.
 

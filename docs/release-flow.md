@@ -73,6 +73,7 @@
   - The first subsequent change that makes the staging tree diverge must deliberately update `package.json` and `package-lock.json` to one reviewed development line:
     - Normal development: next minor `X.(Y+1).0`.
     - Approved patch development: next patch `X.Y.(Z+1)`.
+    - Approved breaking or first-stable development: next major `(X+1).0.0`.
   - CI validates the selected line before shared-staging deployment and never edits or commits versions.
   - Build label channel by environment:
     - Local: `vX.Y.Z-alpha+<commit>`
@@ -80,7 +81,7 @@
     - Production: `vX.Y.Z`
   - Live production: the tagged base SemVer must be newer than the previous production version.
 - The development version is normally selected at the beginning of the cycle, not fabricated in the final release commit.
-- A maintainer must choose minor versus patch explicitly; automation cannot infer it from issue, commit, or feature contents.
+- A maintainer must choose minor, patch, or major explicitly; automation cannot infer it from issue, commit, or feature contents.
 
 ## Iteration Rules
 - Default loop for every task:
