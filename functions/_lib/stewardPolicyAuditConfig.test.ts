@@ -17,11 +17,11 @@ const qualityWorkflow = readFileSync(
 );
 
 describe("Steward policy audit rollout", () => {
-  it("uses one durable discussion issue and remains disabled pending live acceptance", () => {
+  it("uses one durable discussion issue and is enabled after live acceptance", () => {
     expect(config.schemaVersion).toBe(1);
     expect(config.discussionIssue).toBe(1027);
     expect(config.cadence).toBe("weekly");
-    expect(config.enabled).toBe(false);
+    expect(config.enabled).toBe(true);
     expect(config.executor).toBe("vidda-guarded-worker");
     expect(config.preModelGuard.requiredState).toBe("normal");
     expect(config.preModelGuard.minimumRemainingPercentExclusive).toBe(25);
@@ -34,9 +34,10 @@ describe("Steward policy audit rollout", () => {
       signedAgent: "Steward",
     });
     expect(config.activation).toEqual({
-      state: "pending-live-acceptance",
-      remainingGate:
-        "Validate the isolated OAuth profile, quota states, and first manual audit before enabling the weekly switch.",
+      state: "enabled-after-live-acceptance",
+      acceptedAt: "2026-08-10",
+      acceptedBy: "wilhel1812",
+      acceptedRun: "043bd069-8ef0-4086-90c2-a0f01148cb67",
     });
   });
 
