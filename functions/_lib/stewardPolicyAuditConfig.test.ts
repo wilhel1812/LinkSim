@@ -49,7 +49,7 @@ describe("Steward policy audit rollout", () => {
     expect(repositoryPolicy).toContain("scripts/ai-provenance.mjs");
     expect(repositoryPolicy).toContain("fail closed");
     expect(packageJson.scripts["agents:validate"]).toBe(
-      "node scripts/ai-provenance.mjs validate-registry",
+      "node scripts/ai-provenance.mjs validate-registry && node scripts/ai-knowledge.mjs validate",
     );
     expect(qualityWorkflow).toContain("npm run agents:validate");
   });
