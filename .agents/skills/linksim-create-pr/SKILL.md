@@ -37,6 +37,9 @@ production.
 6. Update documentation only where behavior or operator guidance changed.
    Automation-only repository assets do not independently bump the application
    version unless current policy or the user requires it.
+7. Edit `config/ai-agent-knowledge.json` only when the approved Forge task
+   explicitly names the knowledge registry. Preserve human approval and
+   evidence; never promote a Steward suggestion automatically.
 
 ## Verify
 
