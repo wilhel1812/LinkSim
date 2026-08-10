@@ -17,12 +17,12 @@ const qualityWorkflow = readFileSync(
 );
 
 describe("Steward policy audit rollout", () => {
-  it("uses one durable discussion issue and remains fail-closed without a pre-model guard", () => {
+  it("uses one durable discussion issue and remains disabled pending live acceptance", () => {
     expect(config.schemaVersion).toBe(1);
     expect(config.discussionIssue).toBe(1027);
     expect(config.cadence).toBe("weekly");
     expect(config.enabled).toBe(false);
-    expect(config.executor).toBe("unconfigured");
+    expect(config.executor).toBe("vidda-guarded-worker");
     expect(config.preModelGuard.requiredState).toBe("normal");
     expect(config.preModelGuard.minimumRemainingPercentExclusive).toBe(25);
     expect(config.preModelGuard.maximumTelemetryAgeSeconds).toBe(600);
@@ -32,12 +32,19 @@ describe("Steward policy audit rollout", () => {
       idempotentByAuditWindow: true,
       publishWhenNoSuggestion: false,
       signedAgent: "Steward",
+      deliveredBy: "Linky",
+    });
+    expect(config.activation).toEqual({
+      state: "pending-live-acceptance",
+      remainingGate:
+        "Validate the isolated OAuth profile, quota states, and first manual audit before enabling the weekly switch.",
     });
   });
 
   it("routes every publication through the shared deterministic validator", () => {
     expect(policySkill).toContain("scripts/ai-provenance.mjs");
     expect(policySkill).toContain("config/steward-policy-audit.json");
+    expect(policySkill).toContain("Delivered by Linky · AI community bot");
     expect(repositoryPolicy).toContain("scripts/ai-provenance.mjs");
     expect(repositoryPolicy).toContain("fail closed");
     expect(packageJson.scripts["agents:validate"]).toBe(

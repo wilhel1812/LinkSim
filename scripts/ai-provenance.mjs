@@ -84,6 +84,25 @@ export function validateAgentRegistry(registry) {
     ) {
       throw new Error(`${agent.name} references unknown relay agent`);
     }
+    const scheduledPublisher = agent.githubIdentity.scheduledPublisher;
+    if (scheduledPublisher !== undefined) {
+      if (!scheduledPublisher || typeof scheduledPublisher !== "object") {
+        throw new Error(`${agent.name} scheduled publisher must be an identity object`);
+      }
+      if (scheduledPublisher.kind !== "relayed-by") {
+        throw new Error(`${agent.name} scheduled publisher must use relayed-by`);
+      }
+      const publisher = requireNonEmptyString(
+        scheduledPublisher.agent,
+        `${agent.name} scheduled publisher agent`,
+      );
+      if (!names.has(publisher)) {
+        throw new Error(`${agent.name} references unknown scheduled publisher agent`);
+      }
+      if (publisher === agent.name) {
+        throw new Error(`${agent.name} cannot be its own scheduled publisher`);
+      }
+    }
   }
   return registry;
 }

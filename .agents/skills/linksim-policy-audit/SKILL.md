@@ -54,7 +54,11 @@ not start a model call. Comment only when at least one evidence-backed
 improvement exists. Append through the deterministic publisher to the single
 configured `documentation` + `pending-discussion` issue; do not rewrite its
 body or create repeated issues. Publication must be idempotent, signed, and
-provenance-validated.
+provenance-validated. Scheduled GitHub comments are authored by Steward and
+delivered through Linky's least-privilege App, so they must visibly contain both
+`— Steward · AI policy advisor` and
+`Delivered by Linky · AI community bot`. This delivery mechanism does not give
+Steward Linky's issue-maintenance authority.
 
 End every output with `Suggestion only — no policy change applied.` and
 `— Steward · AI policy advisor`. Fail closed if attribution or provenance
