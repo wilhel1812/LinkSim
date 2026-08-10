@@ -28,11 +28,11 @@ as approval for another.
 Use one reuse-first architect to turn repository evidence into a compact file
 and test map. The architect is read-only and may not expand scope.
 
-Use bounded implementers only where the map contains independent file areas.
-Give each implementer one explicit objective, allowed paths, required tests,
-and prohibited actions. Keep one implementer for a small or tightly coupled
-phase; never create delegation merely to appear parallel. Implementers cannot
-publish, merge, change policy, or authorize later work.
+Use at most two bounded implementers, and only where the map contains
+independent file areas. Give each implementer one explicit objective, allowed paths, required
+tests, and prohibited actions. Keep one implementer for a small or tightly
+coupled phase; never create delegation merely to appear parallel. Implementers
+cannot publish, merge, change policy, or authorize later work.
 
 As orchestrator, reconcile all changes in the dedicated worktree and perform
 the orchestrator diff and test review. Check the complete diff against the

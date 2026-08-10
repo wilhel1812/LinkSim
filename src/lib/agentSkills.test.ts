@@ -14,6 +14,7 @@ describe("Forge workflow skills", () => {
     expect(text).toMatch(/dedicated worktree/i);
     expect(text).toMatch(/reuse-first architect/i);
     expect(text).toMatch(/bounded implementers/i);
+    expect(text).toMatch(/at most two (?:bounded )?implementers/i);
     expect(text).toMatch(/orchestrator diff and test review/i);
     expect(text).toMatch(/at most three correction rounds/i);
     expect(text).toMatch(/independently mergeable/i);
