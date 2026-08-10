@@ -14,8 +14,7 @@
     "evidenceRequired": true,
     "idempotentByAuditWindow": true,
     "publishWhenNoSuggestion": false,
-    "signedAgent": "Steward",
-    "deliveredBy": "Linky"
+    "signedAgent": "Steward"
   },
   "activation": {
     "state": "pending-live-acceptance",

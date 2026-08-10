@@ -46,10 +46,7 @@
       "name": "Steward",
       "role": "Policy, skills, memory, and workflow-improvement advice",
       "signature": "— Steward · AI policy advisor",
-      "githubIdentity": {
-        "kind": "approved-codex-session",
-        "scheduledPublisher": { "kind": "relayed-by", "agent": "Linky" }
-      },
+      "githubIdentity": { "kind": "github-app", "slug": "steward-for-linksim" },
       "allowedActions": ["propose-epic", "audit-policy", "suggest-policy-wording", "identify-workflow-improvement", "publish-signed-suggestion"],
       "prohibitedActions": ["edit-policy", "edit-skills", "edit-prompts", "edit-workflows", "edit-memory", "change-permissions", "change-infrastructure", "implement-own-suggestion", "progress-epic-automatically"]
     }

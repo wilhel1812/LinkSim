@@ -28,9 +28,8 @@ describe("AI provenance contract", () => {
       "Steward",
     ]);
     expect(
-      registry.agents.find((agent) => agent.name === "Steward")?.githubIdentity
-        .scheduledPublisher,
-    ).toEqual({ kind: "relayed-by", agent: "Linky" });
+      registry.agents.find((agent) => agent.name === "Steward")?.githubIdentity,
+    ).toEqual({ kind: "github-app", slug: "steward-for-linksim" });
     expect(validateAgentRegistry(registry)).toBe(registry);
   });
 
@@ -122,13 +121,11 @@ describe("AI provenance contract", () => {
       "Nobody";
     expect(() => validateAgentRegistry(brokenRelay)).toThrow("unknown relay agent");
 
-    const brokenScheduledPublisher = JSON.parse(readFileSync(registryPath, "utf8"));
-    brokenScheduledPublisher.agents.find(
+    const brokenStewardApp = JSON.parse(readFileSync(registryPath, "utf8"));
+    brokenStewardApp.agents.find(
       (agent: { name: string }) => agent.name === "Steward",
-    ).githubIdentity.scheduledPublisher = { kind: "relayed-by", agent: "Nobody" };
-    expect(() => validateAgentRegistry(brokenScheduledPublisher)).toThrow(
-      "unknown scheduled publisher agent",
-    );
+    ).githubIdentity = { kind: "github-app", slug: "Linky for LinkSim" };
+    expect(() => validateAgentRegistry(brokenStewardApp)).toThrow("GitHub App slug");
   });
 
   it("offers a deterministic CLI for workflows and Codex skills", () => {

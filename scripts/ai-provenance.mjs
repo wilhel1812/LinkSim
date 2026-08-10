@@ -62,7 +62,19 @@ export function validateAgentRegistry(registry) {
     if (typeof agent.githubIdentity !== "object" || !agent.githubIdentity) {
       throw new Error(`${name} GitHub identity is missing`);
     }
-    requireNonEmptyString(agent.githubIdentity.kind, `${name} GitHub identity kind`);
+    const identityKind = requireNonEmptyString(
+      agent.githubIdentity.kind,
+      `${name} GitHub identity kind`,
+    );
+    if (identityKind === "github-app") {
+      const slug = requireNonEmptyString(
+        agent.githubIdentity.slug,
+        `${name} GitHub App slug`,
+      );
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+        throw new Error(`${name} GitHub App slug is invalid`);
+      }
+    }
     const allowed = requireUniqueStrings(agent.allowedActions, `${name} allowed actions`);
     const prohibited = requireUniqueStrings(
       agent.prohibitedActions,

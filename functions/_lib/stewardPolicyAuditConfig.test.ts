@@ -32,7 +32,6 @@ describe("Steward policy audit rollout", () => {
       idempotentByAuditWindow: true,
       publishWhenNoSuggestion: false,
       signedAgent: "Steward",
-      deliveredBy: "Linky",
     });
     expect(config.activation).toEqual({
       state: "pending-live-acceptance",
@@ -44,7 +43,8 @@ describe("Steward policy audit rollout", () => {
   it("routes every publication through the shared deterministic validator", () => {
     expect(policySkill).toContain("scripts/ai-provenance.mjs");
     expect(policySkill).toContain("config/steward-policy-audit.json");
-    expect(policySkill).toContain("Delivered by Linky · AI community bot");
+    expect(policySkill).toContain("Steward's dedicated least-privilege GitHub App");
+    expect(policySkill).not.toContain("Delivered by Linky · AI community bot");
     expect(repositoryPolicy).toContain("scripts/ai-provenance.mjs");
     expect(repositoryPolicy).toContain("fail closed");
     expect(packageJson.scripts["agents:validate"]).toBe(
