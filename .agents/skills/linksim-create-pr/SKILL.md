@@ -64,9 +64,11 @@ production.
    and release changes. Give the reviewer the exact candidate commit SHA and
    its base. A mechanical documentation-only change may use the author's
    recorded self-review.
-3. If review causes any correction, create a new candidate commit, rerun the
-   affected validation, and repeat the independent review against the new
-   exact SHA. A prior verdict never covers later edits or commits.
+3. If review causes any correction, apply it and rerun every validation required
+   by `AGENTS.md`, including the full `npm test` and `npm run build`, before
+   creating the replacement candidate commit. Then rerun every required
+   validation at that exact SHA and repeat the independent review. A prior
+   verdict never covers later edits, commits, or validation results.
 4. Before publication, require a passing verdict whose reviewed head equals
    `HEAD`, a clean worktree, no unresolved blocking finding, and no missing
    required review.

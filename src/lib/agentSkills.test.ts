@@ -44,5 +44,7 @@ describe("Forge workflow skills", () => {
     expect(createPr).toMatch(/reviewed head equals\s+`HEAD`/i);
     expect(createPr).toMatch(/validated epic handoff/i);
     expect(createPr).toMatch(/do not recreate/i);
+    expect(createPr).toMatch(/rerun every validation required[\s\S]{0,180}before[\s\S]{0,120}replacement candidate commit/i);
+    expect(createPr).toMatch(/rerun every required[\s\S]{0,80}exact SHA/i);
   });
 });
