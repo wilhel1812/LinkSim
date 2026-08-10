@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "enabled": false,
   "cadence": "weekly",
-  "executor": "unconfigured",
+  "executor": "vidda-guarded-worker",
   "discussionIssue": 1027,
   "preModelGuard": {
     "requiredState": "normal",
@@ -14,7 +14,11 @@
     "evidenceRequired": true,
     "idempotentByAuditWindow": true,
     "publishWhenNoSuggestion": false,
-    "signedAgent": "Steward"
+    "signedAgent": "Steward",
+    "deliveredBy": "Linky"
   },
-  "blockedReason": "No approved executor can currently evaluate the shared usage guard before starting a model call. Native Codex scheduled tasks have no pre-run percentage threshold, and API-key-backed execution is excluded."
+  "activation": {
+    "state": "pending-live-acceptance",
+    "remainingGate": "Validate the isolated OAuth profile, quota states, and first manual audit before enabling the weekly switch."
+  }
 }
