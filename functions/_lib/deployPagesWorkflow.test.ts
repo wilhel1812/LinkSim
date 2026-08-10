@@ -9,6 +9,8 @@ const workflow = readFileSync(
 );
 
 const productionJob = workflow.split("  deploy-prod-main:")[1] ?? "";
+const stagingJob =
+  workflow.split("  deploy-staging:")[1]?.split("  deploy-prod-main:")[0] ?? "";
 const previewJob =
   workflow.split("  deploy-staging-preview:")[1]?.split("  deploy-staging:")[0] ?? "";
 
@@ -51,6 +53,19 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
     expect(productionJob.indexOf(migrationStep)).toBeLessThan(
       productionJob.indexOf(deployStep),
+    );
+    expect(productionJob).toContain(
+      "PRODUCTION_PREVIOUS_REF: ${{ github.event.before }}",
+    );
+  });
+
+  it("fetches the production baseline before validating a staging deployment", () => {
+    expect(stagingJob).toContain("fetch-depth: 0");
+    expect(stagingJob).toContain(
+      "git fetch --no-tags origin main:refs/remotes/origin/main",
+    );
+    expect(stagingJob.indexOf("Fetch production version baseline")).toBeLessThan(
+      stagingJob.indexOf("Deploy staging with guardrails"),
     );
   });
 });

@@ -46,6 +46,17 @@ describe("prod promotion policy", () => {
     expect(result).toEqual({ ok: false, message: "Prod promotion gate failed: release tag v0.19.0 does not exist." });
   });
 
+  it("rejects non-base SemVer package versions", () => {
+    const result = evaluatePolicy(`validatePromotionInputs({
+        version: "0.27.0-beta",
+        tagCommit: "15269c7682a0671824a7dfe532f67e30b3b052da",
+        treesMatch: true,
+      })`);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.message).toContain("valid base SemVer");
+  });
+
   it("rejects production-only tree changes", () => {
     const result = evaluatePolicy(`validatePromotionInputs({
         version: "0.19.0",

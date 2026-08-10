@@ -2,6 +2,8 @@
 import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { compareBaseVersions, parseBaseVersion } from "./version-state.mjs";
 
 const root = process.cwd();
 const packageJsonPath = path.join(root, "package.json");
@@ -36,13 +38,34 @@ const readVersionAtRef = async (ref) => {
   return String(pkg.version ?? "").trim();
 };
 
+export const validateReleaseVersionInputs = ({
+  version,
+  previousProductionVersion,
+  hasMatchingHeadTag,
+}) => {
+  const current = parseBaseVersion(version, "release version");
+  const previous = parseBaseVersion(
+    previousProductionVersion,
+    "previous production version",
+  );
+  const expectedTag = `v${current.value}`;
+  if (!hasMatchingHeadTag) {
+    throw new Error(`Prod release gate failed: HEAD must be tagged '${expectedTag}'.`);
+  }
+  if (compareBaseVersions(current.value, previous.value) <= 0) {
+    throw new Error(
+      `Prod release gate failed: release version ${current.value} must be newer than ` +
+        `previous production ${previous.value}.`,
+    );
+  }
+  return expectedTag;
+};
+
 async function main() {
   const pkgText = await readFile(packageJsonPath, "utf8");
   const pkg = JSON.parse(pkgText);
   const version = String(pkg.version ?? "").trim();
-  if (!version) {
-    throw new Error("Prod release gate failed: package.json version is missing.");
-  }
+  parseBaseVersion(version, "release version");
 
   const expectedTag = `v${version}`;
   const { stdout: tagsAtHead } = await run("git", ["tag", "--points-at", "HEAD"]);
@@ -51,26 +74,23 @@ async function main() {
     .map((line) => line.trim())
     .filter(Boolean)
     .includes(expectedTag);
-  if (!hasMatchingHeadTag) {
-    throw new Error(`Prod release gate failed: HEAD must be tagged '${expectedTag}'.`);
-  }
+  const previousProductionRef =
+    String(process.env.PRODUCTION_PREVIOUS_REF ?? "").trim() || "origin/main^";
+  const previousProductionVersion = await readVersionAtRef(previousProductionRef);
+  validateReleaseVersionInputs({
+    version,
+    previousProductionVersion,
+    hasMatchingHeadTag,
+  });
 
-  const parentCheck = await run("git", ["rev-list", "--count", "HEAD"]);
-  const commitCount = Number.parseInt(parentCheck.stdout.trim(), 10);
-  if (!Number.isFinite(commitCount) || commitCount < 2) {
-    throw new Error("Prod release gate failed: cannot verify version bump on first commit.");
-  }
-
-  const versionAtHead = await readVersionAtRef("HEAD");
-  const versionAtParent = await readVersionAtRef("HEAD^");
-  if (versionAtHead === versionAtParent) {
-    throw new Error(`Prod release gate failed: package version was not bumped in HEAD (still ${versionAtHead}).`);
-  }
-
-  console.log(`[validate-prod-release] ok version=${version} tag=${expectedTag}`);
+  console.log(
+    `[validate-prod-release] ok version=${version} previous=${previousProductionVersion} tag=${expectedTag}`,
+  );
 }
 
-main().catch((error) => {
-  console.error(`[validate-prod-release] ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`[validate-prod-release] ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}

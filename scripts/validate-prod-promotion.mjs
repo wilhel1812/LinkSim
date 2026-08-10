@@ -2,6 +2,7 @@
 import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { parseBaseVersion } from "./version-state.mjs";
 
 const root = process.cwd();
 
@@ -31,8 +32,10 @@ const run = (cmd, args) =>
 
 export const validatePromotionInputs = ({ version, tagCommit, treesMatch }) => {
   const normalizedVersion = String(version ?? "").trim();
-  if (!normalizedVersion) {
-    throw new Error("Prod promotion gate failed: package.json version is missing.");
+  try {
+    parseBaseVersion(normalizedVersion, "package.json version");
+  } catch (error) {
+    throw new Error(`Prod promotion gate failed: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!String(tagCommit ?? "").trim()) {
     throw new Error(`Prod promotion gate failed: release tag v${normalizedVersion} does not exist.`);

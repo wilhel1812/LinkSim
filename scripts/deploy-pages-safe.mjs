@@ -6,6 +6,7 @@ import {
   parsePagesDeploymentUrl,
   validatePreviewBranch,
 } from "./pages-preview.mjs";
+import { validateCurrentStagingVersionState } from "./version-state.mjs";
 
 const root = process.cwd();
 const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
@@ -278,6 +279,14 @@ async function preflight(targetName, target) {
   }
 
   await verifyRequiredDeployEnv(targetName);
+
+  if (targetName === "staging") {
+    const versionState = validateCurrentStagingVersionState();
+    console.log(
+      `[deploy-pages-safe] Version state: production=${versionState.productionVersion} ` +
+        `staging=${versionState.stagingVersion}`,
+    );
+  }
 
   const configText = await readFile(target.configPath, "utf8");
   assert(!configText.includes("REPLACE_WITH_"), "Preflight failed: unresolved placeholders in Wrangler config.");
