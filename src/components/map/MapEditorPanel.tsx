@@ -418,7 +418,7 @@ function SiteEditorCard({
         {form.activeSimulationSiteId ? (
           <div className="simulation-site-color-control">
             <SimulationColorControl
-              disabled={!form.canEditActiveSimulationAppearance}
+              disabled={!form.canEditActiveSimulation}
               label="Site icon color"
               onChange={form.setActiveSiteIconColor}
               value={form.activeSiteIconColor}
@@ -704,6 +704,7 @@ function SiteEditorCard({
                   <span>Point at Site</span>
                   <select
                     aria-label="Point antenna at Site"
+                    disabled={!form.canEditActiveSimulation}
                     onChange={(event) => form.pointAntennaAtSite(event.target.value)}
                     value={form.antennaTargetSiteId}
                   >
@@ -715,7 +716,13 @@ function SiteEditorCard({
                 </label>
               ) : null}
               {form.antennaTargetSiteId ? (
-                <ActionButton onClick={form.detachAntennaTarget} type="button">Detach pointing target</ActionButton>
+                <ActionButton
+                  disabled={!form.canEditActiveSimulation}
+                  onClick={form.detachAntennaTarget}
+                  type="button"
+                >
+                  Detach pointing target
+                </ActionButton>
               ) : null}
             </div>
           ) : null}

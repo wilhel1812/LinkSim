@@ -212,6 +212,23 @@ describe("MapEditorPanel", () => {
 
   it("derives orientation from another Simulation Site and supports detaching", async () => {
     useAppStore.setState({
+      selectedScenarioId: "sim-editable",
+      simulationPresets: [{
+        id: "sim-editable",
+        name: "Editable Plan",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        snapshot: {
+          sites: [], links: [], systems: [], networks: [],
+          selectedSiteId: "", selectedLinkId: "", selectedNetworkId: "",
+          selectedCoverageResolution: "24", propagationModel: "ITM",
+          selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+          environmentLossDb: 0,
+          propagationEnvironment: useAppStore.getState().propagationEnvironment,
+          autoPropagationEnvironment: false, terrainDataset: "copernicus30",
+        },
+      }],
       sites: [
         {
           id: "sim-site-a",
@@ -273,6 +290,70 @@ describe("MapEditorPanel", () => {
       antennaAzimuthDeg: 123,
       antennaTiltDeg: -7,
     });
+  });
+
+  it("keeps a read-only Simulation pointing target inspectable but not editable", async () => {
+    const trackedSite = {
+      id: "sim-site-a",
+      libraryEntryId: "site-lib-1",
+      name: "Alpha Site",
+      position: { lat: 60.1, lon: 10.2 },
+      groundElevationM: 111,
+      antennaHeightM: 10,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+      antennaMode: "directional" as const,
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 35,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+      antennaTargetSiteId: "sim-site-b",
+    };
+    const targetSite = {
+      id: "sim-site-b",
+      name: "Summit",
+      position: { lat: 60.2, lon: 10.2 },
+      groundElevationM: 900,
+      antennaHeightM: 10,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      selectedScenarioId: "sim-read-only",
+      sites: [trackedSite, targetSite],
+      simulationPresets: [{
+        id: "sim-read-only",
+        name: "Viewer Plan",
+        ownerUserId: "editor-1",
+        effectiveRole: "viewer",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        snapshot: {
+          sites: [trackedSite, targetSite], links: [], systems: [], networks: [],
+          selectedSiteId: "sim-site-a", selectedLinkId: "", selectedNetworkId: "",
+          selectedCoverageResolution: "24", propagationModel: "ITM",
+          selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+          environmentLossDb: 0,
+          propagationEnvironment: useAppStore.getState().propagationEnvironment,
+          autoPropagationEnvironment: false, terrainDataset: "copernicus30",
+        },
+      }],
+    });
+
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByRole("checkbox", { name: "Directional antenna" })).toBeEnabled();
+    const target = screen.getByRole("combobox", { name: "Point antenna at Site" });
+    expect(target).toHaveValue("sim-site-b");
+    expect(target).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Detach pointing target" })).toBeDisabled();
+    expect(screen.getByLabelText("Antenna azimuth")).toHaveValue(0);
+    expect(screen.getByLabelText("Antenna tilt")).toBeDisabled();
+    expect(Number.isFinite(Number((screen.getByLabelText("Antenna tilt") as HTMLInputElement).value))).toBe(true);
   });
 
   it("confirms deletion from editable Site details", async () => {

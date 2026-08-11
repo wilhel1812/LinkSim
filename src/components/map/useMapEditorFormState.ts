@@ -517,7 +517,7 @@ export function useMapEditorFormState() {
   const currentUserIsOwner = Boolean(currentUser?.id && ownerUserId && currentUser.id === ownerUserId);
   const activeSimulationRole = activeSimulationPreset?.effectiveRole ??
     (activeSimulationPreset?.ownerUserId === currentUser?.id ? "owner" : "viewer");
-  const canEditActiveSimulationAppearance = Boolean(
+  const canEditActiveSimulation = Boolean(
     currentUser?.id && activeSimulationPreset && ["owner", "editor", "admin"].includes(activeSimulationRole),
   );
   const canAddToActiveSimulation = Boolean(
@@ -1121,9 +1121,9 @@ export function useMapEditorFormState() {
     sites,
     activeSimulationSiteId: activeSimulationSite?.id ?? null,
     activeSiteIconColor: activeSimulationSite ? activeSiteIconColors[activeSimulationSite.id] ?? null : null,
-    canEditActiveSimulationAppearance,
+    canEditActiveSimulation,
     setActiveSiteIconColor: (value: string | null) => {
-      if (!selectedScenarioId || !activeSimulationSite || !canEditActiveSimulationAppearance) return;
+      if (!selectedScenarioId || !activeSimulationSite || !canEditActiveSimulation) return;
       const next = { ...activeSiteIconColors };
       const color = normalizeSimulationColor(value);
       if (color) next[activeSimulationSite.id] = color;
