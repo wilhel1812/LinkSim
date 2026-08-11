@@ -52,6 +52,10 @@ describe("SiteBeamVisualizerPopover", () => {
     expect(screen.getByText("Side view")).toBeInTheDocument();
     expect(screen.getByText("Top view")).toBeInTheDocument();
     expect(container.querySelectorAll(".beam-visualizer-ground")).toHaveLength(1);
+    const omnidirectionalSideView = screen.getByText("Side view").closest(".beam-visualizer-chart-group");
+    expect(omnidirectionalSideView?.querySelectorAll('path.beam-visualizer-band[data-lobe="left"]')).toHaveLength(4);
+    expect(omnidirectionalSideView?.querySelectorAll('path.beam-visualizer-band[data-lobe="right"]')).toHaveLength(4);
+    expect(omnidirectionalSideView?.querySelectorAll("ellipse.beam-visualizer-band")).toHaveLength(0);
 
     rerender(<SiteBeamVisualizer values={{
       ...initialValues,

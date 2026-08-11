@@ -130,19 +130,34 @@ export function SiteBeamVisualizer({ values }: SiteBeamVisualizerProps) {
                 metrics.bands.map((band) => {
                   const radius = maxRadius * 0.92 * (band.radiusPercent / 100);
                   return (
-                    <ellipse
-                      className={`beam-visualizer-band beam-visualizer-band-${band.state}`}
-                      cx={cx}
-                      cy={cy}
-                      key={band.state}
-                      rx={radius}
-                      ry={Math.max(6, radius * (metrics.verticalBeamWidthDeg / 150) * 0.55)}
-                    />
+                    <g key={band.state}>
+                      <path
+                        className={`beam-visualizer-band beam-visualizer-band-${band.state}`}
+                        d={sectorPath(cx, cy, radius, metrics.verticalBeamWidthDeg, 180)}
+                        data-lobe="left"
+                      />
+                      <path
+                        className={`beam-visualizer-band beam-visualizer-band-${band.state}`}
+                        d={sectorPath(cx, cy, radius, metrics.verticalBeamWidthDeg, 0)}
+                        data-lobe="right"
+                      />
+                    </g>
                   );
                 })
               )}
               {chart.kind === "top" ? (
                 <circle className="beam-visualizer-baseline" cx={cx} cy={cy} r={baselineRadius * 0.45} />
+              ) : !isDirectional ? (
+                <>
+                  <path
+                    className="beam-visualizer-baseline"
+                    d={sectorPath(cx, cy, baselineRadius * 0.75, heltecBaselineMetrics.verticalBeamWidthDeg, 180)}
+                  />
+                  <path
+                    className="beam-visualizer-baseline"
+                    d={sectorPath(cx, cy, baselineRadius * 0.75, heltecBaselineMetrics.verticalBeamWidthDeg, 0)}
+                  />
+                </>
               ) : (
                 <ellipse className="beam-visualizer-baseline" cx={cx} cy={cy} rx={baselineRadius * 0.75} ry={baselineRadius * 0.34} />
               )}
