@@ -974,6 +974,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
   pointMask?: (lat: number, lon: number) => boolean,
   context?: OverlayTaskContext,
   options?: AdaptiveOverlayOptions,
+  receiverSite?: Site,
 ): Promise<OverlayRasterPixels | null> => {
   const width = dimensions.width;
   const height = dimensions.height;
@@ -1042,6 +1043,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
           terrainSampler,
           terrainSamples,
           propagationEnvironment,
+          receiverSite,
         );
         metricCache.rxDbm[index] = metrics.rxDbm;
         metricCache.obstruction[index] = metrics.terrainObstructed ? 1 : 0;

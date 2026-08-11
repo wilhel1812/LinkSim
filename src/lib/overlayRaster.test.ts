@@ -124,6 +124,49 @@ describe("overlayRaster async builders", () => {
     expect(Array.from(south!.pixels)).not.toEqual(Array.from(north!.pixels));
   });
 
+  it("applies the selected destination receive pattern to Pass/Fail pixels", async () => {
+    const dimensions = { width: 41, height: 41 };
+    const render = (receiverSite: Site) => buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      link,
+      receiverSite.antennaHeightM,
+      receiverSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      terrainSampler,
+      dimensions,
+      24,
+      undefined,
+      undefined,
+      { adaptive: false },
+      receiverSite,
+    );
+    const toward = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 236,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+    const away = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 56,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+
+    expect(toward).not.toBeNull();
+    expect(away).not.toBeNull();
+    expect(Array.from(away!.pixels)).not.toEqual(Array.from(toward!.pixels));
+  });
+
   it("applies the destination receive pattern on the second Relay leg", async () => {
     const dimensions = { width: 25, height: 25 };
     const render = (destination: Site) => buildRelayCandidateOverlayPixelsAsync(

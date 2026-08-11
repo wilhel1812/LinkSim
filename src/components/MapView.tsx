@@ -1981,6 +1981,12 @@ export function MapView({
   );
   const selectedSiteDigest = useMemo(() => selectedSiteIds.join(","), [selectedSiteIds]);
   const selectedSiteRadioDigest = useMemo(() => meshExtensionSiteDigest(meshExtensionSites), [meshExtensionSites]);
+  const directEndpointRadioDigest = useMemo(
+    () => meshExtensionSiteDigest(
+      [selectedFromSite, selectedToSite].filter((site): site is Site => Boolean(site)),
+    ),
+    [selectedFromSite, selectedToSite],
+  );
   const coverageAnalysisInputDigest = useMemo(
     () =>
       [
@@ -2080,6 +2086,7 @@ export function MapView({
       environmentLossDb,
       selectedSiteDigest,
       selectedSiteRadioDigest,
+      directEndpointRadioDigest,
       meshExtensionFrequencyMHz,
     ].join("|");
     const directAnalysisCacheKey = [
@@ -2100,6 +2107,7 @@ export function MapView({
       activeSelectionLink?.rxGainDbi ?? "",
       activeSelectionLink?.cableLossDb ?? "",
       selectedSiteRadioDigest,
+      directEndpointRadioDigest,
       propagationEnvironmentDigest,
     ].join("|");
     const coverageAnalysisCacheKey = [
@@ -2265,6 +2273,7 @@ export function MapView({
               overlayPointMask,
               context,
               { adaptive: true, analysisCacheKey: directAnalysisCacheKey },
+              selectedToSite ?? undefined,
             );
           } else if (mode === "relay") {
             rasterPixels = await buildRelayCandidateOverlayPixelsAsync(
@@ -2395,6 +2404,7 @@ export function MapView({
     overlayRadiusKm,
     selectedSiteDigest,
     selectedSiteRadioDigest,
+    directEndpointRadioDigest,
     meshExtensionFrequencyMHz,
     meshExtensionSites,
     selectedNetwork,
