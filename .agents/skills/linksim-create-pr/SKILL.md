@@ -76,8 +76,8 @@ production.
    `HEAD`, a clean worktree, no unresolved blocking finding, and no missing
    required review.
 5. Push the issue branch and open a PR to `staging`.
-6. Add the `ai-assisted` label. Sign the PR body visibly as Forge and include a
-   valid hidden provenance marker generated through
+6. Sign the PR body visibly as Forge and include a valid hidden provenance
+   marker generated through
    `node scripts/ai-provenance.mjs`. Validate the complete PR body with that
    same script before publication; never hand-build the marker.
 7. Describe scope, authority boundary, tests, pre-PR review result and reviewed

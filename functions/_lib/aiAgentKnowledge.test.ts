@@ -75,7 +75,7 @@ describe("reviewed AI role knowledge", () => {
         entries: [
           {
             id: "link-only",
-            lesson: "A".repeat(150),
+            lesson: "A".repeat(80),
             affectedAgents: ["Linky"],
             evidence: ["issue-1"],
             humanApproval: { by: "owner", source: "issue-1", approvedAt: "2026-08-10" },
@@ -112,6 +112,8 @@ describe("reviewed AI role knowledge", () => {
 
     const selected = selectKnowledgeForAgent(registry, "Linky");
     expect(selected.entries.map((entry: { id: string }) => entry.id)).toEqual(["link-only"]);
+    expect(JSON.stringify(selected).length).toBeLessThanOrEqual(256);
+    expect(selected.characters).toBe(JSON.stringify(selected).length);
     expect(selected.characters).toBeLessThanOrEqual(256);
     expect(selected.truncated).toBe(true);
   });
@@ -153,6 +155,7 @@ describe("reviewed AI role knowledge", () => {
     expect(steward).toMatch(/suggest[\s\S]{0,80}knowledge\s+registry/i);
     expect(steward).toMatch(/never[\s\S]{0,80}edit[\s\S]{0,80}knowledge registry/i);
     expect(createPr).toMatch(/approved Forge[\s\S]{0,100}knowledge registry/i);
+    expect(createPr).not.toContain("ai-assisted");
     expect(policy).toContain("node scripts/ai-knowledge.mjs for-agent --agent <name>");
     expect(policy).toMatch(/do not store.*raw chat transcripts/i);
   });

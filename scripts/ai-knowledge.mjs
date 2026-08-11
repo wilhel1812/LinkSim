@@ -102,6 +102,20 @@ export function loadKnowledgeRegistry(knowledgePath = DEFAULT_KNOWLEDGE_PATH, ag
   return validateKnowledgeRegistry(JSON.parse(readFileSync(knowledgePath, "utf8")), loadAgentRegistry(agentPath));
 }
 
+function buildSelectedKnowledgePayload(agentName, maxCharacters, truncated, entries) {
+  const payload = {
+    agent: agentName,
+    maxCharacters,
+    characters: 0,
+    truncated,
+    entries,
+  };
+  while (payload.characters !== JSON.stringify(payload).length) {
+    payload.characters = JSON.stringify(payload).length;
+  }
+  return payload;
+}
+
 export function selectKnowledgeForAgent(
   registry,
   agentName,
@@ -119,19 +133,24 @@ export function selectKnowledgeForAgent(
     }
     const publicEntry = { id: entry.id, lesson: entry.lesson, evidence: entry.evidence };
     const candidate = [...entries, publicEntry];
-    if (JSON.stringify(candidate).length > validated.maxLoadedCharacters) {
+    const candidatePayload = buildSelectedKnowledgePayload(
+      agentName,
+      validated.maxLoadedCharacters,
+      false,
+      candidate,
+    );
+    if (candidatePayload.characters > validated.maxLoadedCharacters) {
       truncated = true;
       break;
     }
     entries.push(publicEntry);
   }
-  return {
-    agent: agentName,
-    maxCharacters: validated.maxLoadedCharacters,
-    characters: JSON.stringify(entries).length,
+  return buildSelectedKnowledgePayload(
+    agentName,
+    validated.maxLoadedCharacters,
     truncated,
     entries,
-  };
+  );
 }
 
 function parseOptions(args) {
