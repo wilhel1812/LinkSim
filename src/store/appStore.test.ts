@@ -46,6 +46,7 @@ vi.mock("../lib/cloudLibrary", async () => {
 });
 
 import { useAppStore } from "./appStore";
+import { useCoverageStore } from "./coverageStore";
 import { fetchElevations } from "../lib/elevationService";
 import { deleteCloudSimulation, restoreCloudSimulation } from "../lib/cloudLibrary";
 import { simulationDefaultsFromPreset } from "../lib/simulationDefaults";
@@ -518,6 +519,83 @@ describe("appStore auth guards", () => {
     useAppStore.getState().insertSitesFromLibrary(["lib-3"]);
     expect(useAppStore.getState().sites.length).toBe(beforeSiteCount);
     expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("copies a directional Library Site pattern when inserting it into a Simulation", () => {
+    let siteAtFirstRecompute: ReturnType<typeof useAppStore.getState>["sites"][number] | undefined;
+    useCoverageStore.setState({
+      recomputeCoverage: vi.fn(() => {
+        siteAtFirstRecompute = useAppStore.getState().sites.find(
+          (site) => site.libraryEntryId === "lib-directional",
+        );
+      }),
+    });
+    useAppStore.setState((state) => ({
+      siteLibrary: [
+        ...state.siteLibrary,
+        {
+          id: "lib-directional",
+          name: "Directional ridge",
+          visibility: "private",
+          sharedWith: [],
+          ownerUserId: "owner-1",
+          effectiveRole: "owner",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          position: { lat: 3, lon: 3 },
+          groundElevationM: 480,
+          antennaHeightM: 6,
+          txPowerDbm: 20,
+          txGainDbi: 9,
+          rxGainDbi: 9,
+          cableLossDb: 1,
+          antennaMode: "directional",
+          antennaAzimuthDeg: 215,
+          antennaTiltDeg: -12,
+          antennaHorizontalBeamwidthDeg: 45,
+          antennaVerticalBeamwidthDeg: 18,
+          antennaMaxAttenuationDb: 32,
+        },
+      ],
+      simulationPresets: state.simulationPresets.map((preset) =>
+        preset.id === "sim-1" ? { ...preset, effectiveRole: "owner" } : preset,
+      ),
+    }));
+    useAppStore.getState().setCurrentUser({
+      id: "owner-1",
+      username: "owner",
+      avatarUrl: "",
+      role: "user",
+      accountState: "approved",
+      isApproved: true,
+      isAdmin: false,
+      isModerator: false,
+      createdAt: "",
+      updatedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      email: undefined,
+      emailPublic: true,
+      bio: "",
+    });
+
+    useAppStore.getState().insertSiteFromLibrary("lib-directional");
+
+    expect(siteAtFirstRecompute).toMatchObject({
+      antennaMode: "directional",
+      antennaAzimuthDeg: 215,
+      antennaTiltDeg: -12,
+      antennaHorizontalBeamwidthDeg: 45,
+      antennaVerticalBeamwidthDeg: 18,
+      antennaMaxAttenuationDb: 32,
+    });
+    expect(useAppStore.getState().sites.find((site) => site.libraryEntryId === "lib-directional")).toMatchObject({
+      antennaMode: "directional",
+      antennaAzimuthDeg: 215,
+      antennaTiltDeg: -12,
+      antennaHorizontalBeamwidthDeg: 45,
+      antennaVerticalBeamwidthDeg: 18,
+      antennaMaxAttenuationDb: 32,
+    });
   });
 
   it("clears selectedLinkId when switching to single-site selection", () => {

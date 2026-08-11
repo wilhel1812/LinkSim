@@ -2668,6 +2668,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         txGainDbi: entry.txGainDbi,
         rxGainDbi: entry.rxGainDbi,
         cableLossDb: entry.cableLossDb,
+        antennaMode: entry.antennaMode,
+        antennaAzimuthDeg: entry.antennaAzimuthDeg,
+        antennaTiltDeg: entry.antennaTiltDeg,
+        antennaHorizontalBeamwidthDeg: entry.antennaHorizontalBeamwidthDeg,
+        antennaVerticalBeamwidthDeg: entry.antennaVerticalBeamwidthDeg,
+        antennaMaxAttenuationDb: entry.antennaMaxAttenuationDb,
         iconKey: entry.iconKey,
         libraryEntryId: entry.id,
       };
