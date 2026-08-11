@@ -30,8 +30,8 @@ import { getUiErrorMessage } from "../lib/uiError";
 import { getSiteIconOption, resolveSiteIconKey } from "../lib/siteIcons";
 import {
   antennaPatternSignature,
+  resolvePreviewSiteOrientations,
   resolveSiteAntennaPattern,
-  resolveTrackedSiteOrientation,
 } from "../lib/antennaPattern";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import {
@@ -1167,12 +1167,19 @@ export function MapView({
       };
     }
     if (!singleSelectedSite || singleSelectedSite.antennaMode !== "directional") return null;
-    const previewSites = sites.map((site) => {
-      const pendingPosition = pendingSiteMoves[site.id]?.currentPosition;
-      return pendingPosition ? { ...site, position: pendingPosition } : site;
-    });
+    const previewSites = resolvePreviewSiteOrientations(
+      sites,
+      Object.fromEntries(
+        sites.flatMap((site) => {
+          const pendingPosition = pendingSiteMoves[site.id]?.currentPosition;
+          return pendingPosition
+            ? [[site.id, { position: pendingPosition, groundElevationM: site.groundElevationM }]]
+            : [];
+        }),
+      ),
+    );
     const previewSite = previewSites.find((site) => site.id === singleSelectedSite.id) ?? singleSelectedSite;
-    const pattern = resolveSiteAntennaPattern(resolveTrackedSiteOrientation(previewSite, previewSites));
+    const pattern = resolveSiteAntennaPattern(previewSite);
     if (pattern.mode !== "directional") return null;
     return {
       position: previewSite.position,
@@ -4336,6 +4343,8 @@ export function MapView({
             anchor="center"
             latitude={directionalMapBeam.position.lat}
             longitude={directionalMapBeam.position.lon}
+            pitchAlignment="viewport"
+            rotationAlignment="map"
             style={{ pointerEvents: "none", zIndex: 0 }}
           >
             <DirectionalMapBeam

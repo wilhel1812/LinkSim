@@ -35,7 +35,7 @@ describe("LinkProfileEmptyState", () => {
     expect(screen.queryByRole("button", { name: "Full screen" })).not.toBeInTheDocument();
   });
 
-  it("keys profile segment state by both endpoint antenna patterns", () => {
+  it("keys profile segment state by both endpoint antenna patterns and effective geometry", () => {
     const endpoint = (id: string): Site => ({
       id,
       name: id,
@@ -59,5 +59,7 @@ describe("LinkProfileEmptyState", () => {
 
     expect(profileAntennaSignature({ ...from, antennaAzimuthDeg: 20 }, to)).not.toBe(signature);
     expect(profileAntennaSignature(from, { ...to, antennaTiltDeg: 5 })).not.toBe(signature);
+    expect(profileAntennaSignature({ ...from, position: { lat: 60.01, lon: 10 } }, to)).not.toBe(signature);
+    expect(profileAntennaSignature(from, { ...to, groundElevationM: 150 })).not.toBe(signature);
   });
 });

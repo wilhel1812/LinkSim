@@ -3758,8 +3758,12 @@ export const useAppStore = create<AppState>((set, get) => ({
               rxGainDbi: updatedSite.rxGainDbi,
               cableLossDb: updatedSite.cableLossDb,
               antennaMode: updatedSite.antennaMode,
-              antennaAzimuthDeg: updatedSite.antennaAzimuthDeg,
-              antennaTiltDeg: updatedSite.antennaTiltDeg,
+              ...(updatedSite.antennaTargetSiteId
+                ? {}
+                : {
+                    antennaAzimuthDeg: updatedSite.antennaAzimuthDeg,
+                    antennaTiltDeg: updatedSite.antennaTiltDeg,
+                  }),
               antennaHorizontalBeamwidthDeg: updatedSite.antennaHorizontalBeamwidthDeg,
               antennaVerticalBeamwidthDeg: updatedSite.antennaVerticalBeamwidthDeg,
               antennaMaxAttenuationDb: updatedSite.antennaMaxAttenuationDb,

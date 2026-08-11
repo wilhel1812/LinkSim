@@ -2,6 +2,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { Profiler, StrictMode, type ProfilerOnRenderCallback } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Site } from "../types/radio";
 
 const testState = vi.hoisted(() => ({
   buildPanorama: vi.fn(),
@@ -19,7 +20,7 @@ const testState = vi.hoisted(() => ({
         rxGainDbi: 2,
         cableLossDb: 1,
       },
-    ],
+    ] as Site[],
     links: [],
     selectedSiteIds: ["site-1"],
     selectedNetworkId: "network-1",
@@ -96,7 +97,7 @@ vi.mock("../lib/latestOnlyTaskScheduler", async (importOriginal) => {
   };
 });
 
-import { PanoramaChart } from "./PanoramaChart";
+import { PanoramaChart, panoramaCandidateRfSignature } from "./PanoramaChart";
 
 const panoramaResult = (detail: boolean) => ({
   rays: [
@@ -192,6 +193,7 @@ describe("PanoramaChart scheduling", () => {
         cableLossDb: 1,
       },
     ];
+    testState.store.siteDragPreview = {};
     testState.schedulers.length = 0;
     testState.buildPanorama.mockImplementation((input) =>
       panoramaResult(input.options.windowCenterDeg != null),
@@ -317,6 +319,91 @@ describe("PanoramaChart scheduling", () => {
       await Promise.resolve();
     });
     expect(testState.buildPanorama).toHaveBeenCalledTimes(6);
+  });
+
+  it("uses pending target geometry to resolve tracked source pointing", async () => {
+    testState.store.sites = [
+      {
+        ...testState.store.sites[0],
+        antennaMode: "directional",
+        antennaAzimuthDeg: 0,
+        antennaTiltDeg: 0,
+        antennaTargetSiteId: "site-2",
+      },
+      {
+        ...testState.store.sites[0],
+        id: "site-2",
+        name: "Tracked target",
+        position: { lat: 59.92, lon: 10.75 },
+      },
+    ];
+    testState.store.siteDragPreview = {
+      "site-2": {
+        position: { lat: 59.91, lon: 10.77 },
+        groundElevationM: 100,
+      },
+    };
+
+    renderChart();
+
+    expect(await screen.findByRole("img", { name: "Panorama" })).toBeInTheDocument();
+    const input = testState.buildPanorama.mock.calls[0][0];
+    expect(input.selectedSite.antennaAzimuthDeg).toBeCloseTo(90, 1);
+    expect(input.nodeCandidates.find((candidate: { id: string }) => candidate.id === "sim:site-2")).toMatchObject({
+      lat: 59.91,
+      lon: 10.77,
+    });
+  });
+
+  it("rebuilds panoramas for successive candidate drag positions", async () => {
+    testState.store.sites = [
+      testState.store.sites[0],
+      {
+        ...testState.store.sites[0],
+        id: "site-2",
+        name: "Moving candidate",
+        position: { lat: 59.92, lon: 10.75 },
+      },
+    ];
+    testState.store.siteDragPreview = {
+      "site-2": { position: { lat: 59.92, lon: 10.76 }, groundElevationM: 100 },
+    };
+    const view = renderChart();
+    expect(await screen.findByRole("img", { name: "Panorama" })).toBeInTheDocument();
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(2);
+
+    testState.store.siteDragPreview = {
+      "site-2": { position: { lat: 59.92, lon: 10.78 }, groundElevationM: 100 },
+    };
+    view.rerender(<PanoramaChart isExpanded={false} onToggleExpanded={() => undefined} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(testState.buildPanorama).toHaveBeenCalledTimes(4);
+    const latestInput = testState.buildPanorama.mock.calls.at(-1)?.[0];
+    expect(latestInput.nodeCandidates.find((candidate: { id: string }) => candidate.id === "sim:site-2")).toMatchObject({
+      lat: 59.92,
+      lon: 10.78,
+    });
+  });
+
+  it("keys candidate RF work by effective geometry and receive settings", () => {
+    const candidate = {
+      id: "sim:site-2",
+      name: "Candidate",
+      lat: 59.92,
+      lon: 10.76,
+      groundElevationM: 100,
+      antennaHeightM: 10,
+      rxGainDbi: 2,
+    };
+    const signature = panoramaCandidateRfSignature(candidate);
+
+    expect(panoramaCandidateRfSignature({ ...candidate, lon: 10.78 })).not.toBe(signature);
+    expect(panoramaCandidateRfSignature({ ...candidate, groundElevationM: 120 })).not.toBe(signature);
+    expect(panoramaCandidateRfSignature({ ...candidate, rxGainDbi: 5 })).not.toBe(signature);
   });
 
   it("recreates disposed schedulers during StrictMode replay and still renders", async () => {

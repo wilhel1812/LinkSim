@@ -4,6 +4,7 @@ import {
   antennaAttenuationDb,
   effectiveDirectionalGainDbi,
   orientationTowardSite,
+  resolvePreviewSiteOrientations,
   resolveSiteAntennaPattern,
 } from "./antennaPattern";
 import type { Site } from "../types/radio";
@@ -105,5 +106,25 @@ describe("directional antenna pattern", () => {
     expect(upward.elevationDeg).toBeGreaterThan(0);
     expect(downward.azimuthDeg).toBeCloseTo(180, 4);
     expect(downward.elevationDeg).toBeLessThan(0);
+  });
+
+  it("resolves tracked orientation from pending source and target geometry", () => {
+    const tracked = site({
+      antennaMode: "directional",
+      antennaTargetSiteId: "b",
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 0,
+    });
+    const target = site({ id: "b", position: { lat: 60.01, lon: 10 } });
+
+    const targetMovedEast = resolvePreviewSiteOrientations([tracked, target], {
+      b: { position: { lat: 60, lon: 10.02 }, groundElevationM: target.groundElevationM },
+    });
+    expect(targetMovedEast[0].antennaAzimuthDeg).toBeCloseTo(90, 1);
+
+    const sourceMovedEast = resolvePreviewSiteOrientations([tracked, target], {
+      a: { position: { lat: 60.01, lon: 10.02 }, groundElevationM: tracked.groundElevationM },
+    });
+    expect(sourceMovedEast[0].antennaAzimuthDeg).toBeCloseTo(270, 1);
   });
 });

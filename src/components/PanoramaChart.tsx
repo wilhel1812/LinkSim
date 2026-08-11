@@ -7,7 +7,7 @@ import { Info, MapPinned, Paintbrush, PanelBottomClose, PanelBottomOpen, Mountai
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
-import { antennaPatternSignature } from "../lib/antennaPattern";
+import { antennaPatternSignature, resolvePreviewSiteOrientations } from "../lib/antennaPattern";
 import {
   createLatestOnlyTaskScheduler,
   type LatestOnlyTask,
@@ -45,6 +45,17 @@ const M = { t: 22, r: 20, b: 32, l: 46 };
 const LABEL_RAIL_HEIGHT = 34;
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 type Rgb = { r: number; g: number; b: number };
+
+export const panoramaCandidateRfSignature = (candidate: PanoramaNodeCandidate): string =>
+  [
+    candidate.id,
+    candidate.lat,
+    candidate.lon,
+    candidate.groundElevationM,
+    candidate.antennaHeightM,
+    candidate.rxGainDbi,
+    antennaPatternSignature(candidate),
+  ].join(":");
 
 const parseRgb = (value: string): Rgb | null => {
   const text = value.trim();
@@ -202,6 +213,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     () => selectedSiteIds.map((id) => sites.find((site) => site.id === id)).find((site): site is (typeof sites)[number] => Boolean(site)) ?? null,
     [selectedSiteIds, sites],
   );
+  const previewSites = useMemo(
+    () => resolvePreviewSiteOrientations(sites, siteDragPreview),
+    [sites, siteDragPreview],
+  );
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId) ?? networks[0] ?? null;
 
   const previewCount = Object.keys(siteDragPreview).length;
@@ -299,20 +314,13 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     };
   }, []);
 
-  const selectedSiteEffective = useMemo(() => {
-    if (!selectedSite) return null;
-    const preview = siteDragPreview[selectedSite.id];
-    if (!preview) return selectedSite;
-    return {
-      ...selectedSite,
-      position: preview.position,
-      groundElevationM: preview.groundElevationM,
-    };
-  }, [selectedSite, siteDragPreview]);
+  const selectedSiteEffective = selectedSite
+    ? previewSites.find((site) => site.id === selectedSite.id) ?? null
+    : null;
 
   const nodeCandidates = useMemo<PanoramaNodeCandidate[]>(() => {
     const povSiteId = selectedSiteEffective?.id;
-    const simulation = sites
+    const simulation = previewSites
       .filter((site) => site.id !== povSiteId)
       .map((site) => ({
         id: `sim:${site.id}`,
@@ -367,7 +375,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       : [];
 
     return [...simulation, ...sharedLibrary, ...mqtt];
-  }, [sites, siteLibrary, mqttNodes, discoveryLibraryVisible, discoveryMqttVisible, selectedSiteEffective]);
+  }, [previewSites, siteLibrary, mqttNodes, discoveryLibraryVisible, discoveryMqttVisible, selectedSiteEffective]);
 
   useEffect(() => {
     setPinnedTarget(null);
@@ -456,7 +464,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     const detailCenterBucketDeg = Math.round(viewportCenterAzimuthDeg / detailCenterBucketSizeDeg) * detailCenterBucketSizeDeg;
     const sourceAntennaSignature = antennaPatternSignature(selectedSiteEffective);
     const candidateAntennaSignature = nodeCandidates
-      .map((candidate) => `${candidate.id}:${antennaPatternSignature(candidate)}`)
+      .map(panoramaCandidateRfSignature)
       .join(",");
 
     const baseSignature = [
@@ -469,6 +477,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       sourceAntennaSignature,
       selectedNetwork.id,
       effectiveLink.frequencyMHz,
+      effectiveLink.txPowerDbm,
+      effectiveLink.txGainDbi,
+      effectiveLink.rxGainDbi,
+      effectiveLink.cableLossDb,
       propagationEnvironment.atmosphericBendingNUnits,
       propagationEnvironment.clutterHeightM,
       baseSampling.azimuthStepDeg,
@@ -489,6 +501,10 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
       sourceAntennaSignature,
       selectedNetwork.id,
       effectiveLink.frequencyMHz,
+      effectiveLink.txPowerDbm,
+      effectiveLink.txGainDbi,
+      effectiveLink.rxGainDbi,
+      effectiveLink.cableLossDb,
       propagationEnvironment.atmosphericBendingNUnits,
       propagationEnvironment.clutterHeightM,
       quality,

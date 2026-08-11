@@ -10,6 +10,7 @@ const mapMock = vi.hoisted(() => ({
     latitude?: number;
     longitude?: number;
     onDrag?: (event: { lngLat: { lat: number; lng: number } }) => void;
+    rotationAlignment?: string;
   }>,
   layerProps: [] as Array<{ id?: string; paint?: Record<string, unknown> }>,
   sourceProps: [] as Array<{ id?: string; data?: unknown }>,
@@ -63,11 +64,13 @@ vi.mock("react-map-gl/maplibre", async () => {
       latitude,
       longitude,
       onDrag,
+      rotationAlignment,
     }: {
       children?: React.ReactNode;
       latitude?: number;
       longitude?: number;
       onDrag?: (event: { lngLat: { lat: number; lng: number } }) => void;
+      rotationAlignment?: string;
     }) => {
       const childTestId = ReactMock.isValidElement(children)
         ? (children.props as { "data-testid"?: string })["data-testid"] ?? (
@@ -76,7 +79,7 @@ vi.mock("react-map-gl/maplibre", async () => {
             : undefined
         )
         : undefined;
-      mapMock.markerProps.push({ childTestId, latitude, longitude, onDrag });
+      mapMock.markerProps.push({ childTestId, latitude, longitude, onDrag, rotationAlignment });
       return <div>{children}</div>;
     },
     Source: ({ children, ...props }: { children?: React.ReactNode; id?: string; data?: unknown }) => {
@@ -809,6 +812,7 @@ describe("MapView user location flow", () => {
     expect(sector).toHaveAttribute("data-azimuth", "30");
     expect(sector).toHaveAttribute("data-beamwidth", "60");
     expect(sector).toHaveAttribute("aria-hidden", "true");
+    expect(mapMock.markerProps.find((props) => props.childTestId === "directional-map-beam")?.rotationAlignment).toBe("map");
   });
 
   it("keeps the selected directional beam attached to a pending Site drag", async () => {

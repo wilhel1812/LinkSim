@@ -35,6 +35,8 @@ export type AntennaDirection = {
   elevationDeg: number;
 };
 
+export type SiteGeometryPreview = Pick<Site, "position" | "groundElevationM">;
+
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 const finiteOr = (value: number | undefined, fallback: number): number => Number.isFinite(value) ? value as number : fallback;
 const normalizeDegrees = (value: number): number => ((value % 360) + 360) % 360;
@@ -134,3 +136,14 @@ export const resolveTrackedSiteOrientation = (site: Site, sites: Site[]): Site =
 
 export const resolveTrackedSiteOrientations = (sites: Site[]): Site[] =>
   sites.map((site) => resolveTrackedSiteOrientation(site, sites));
+
+export const resolvePreviewSiteOrientations = (
+  sites: Site[],
+  previews: Record<string, SiteGeometryPreview>,
+): Site[] =>
+  resolveTrackedSiteOrientations(
+    sites.map((site) => {
+      const preview = previews[site.id];
+      return preview ? { ...site, position: preview.position, groundElevationM: preview.groundElevationM } : site;
+    }),
+  );

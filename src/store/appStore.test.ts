@@ -378,7 +378,13 @@ describe("appStore auth guards", () => {
       bio: "",
     });
     useAppStore.setState((state) => ({
-      siteLibrary: state.siteLibrary.map((entry) => entry.id === "lib-1" ? { ...entry, effectiveRole: "owner" as const } : entry),
+      siteLibrary: state.siteLibrary.map((entry) => entry.id === "lib-1" ? {
+        ...entry,
+        effectiveRole: "owner" as const,
+        antennaMode: "directional" as const,
+        antennaAzimuthDeg: 15,
+        antennaTiltDeg: 3,
+      } : entry),
     }));
     useAppStore.getState().updateSite("site-1", {
         antennaMode: "directional" as const,
@@ -390,6 +396,10 @@ describe("appStore auth guards", () => {
     const tracked = useAppStore.getState().sites.find((site) => site.id === "site-1");
     expect(tracked?.antennaAzimuthDeg).toBeCloseTo(270, 1);
     expect(tracked?.antennaTargetSiteId).toBe("site-2");
+    expect(useAppStore.getState().siteLibrary.find((entry) => entry.id === "lib-1")).toMatchObject({
+      antennaAzimuthDeg: 15,
+      antennaTiltDeg: 3,
+    });
 
     useAppStore.getState().deleteSite("site-2");
     const detached = useAppStore.getState().sites.find((site) => site.id === "site-1");
