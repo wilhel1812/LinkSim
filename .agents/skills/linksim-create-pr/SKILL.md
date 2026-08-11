@@ -37,6 +37,9 @@ production.
 6. Update documentation only where behavior or operator guidance changed.
    Automation-only repository assets do not independently bump the application
    version unless current policy or the user requires it.
+7. Edit `config/ai-agent-knowledge.json` only when the approved Forge task
+   explicitly names the knowledge registry. Preserve human approval and
+   evidence; never promote a Steward suggestion automatically.
 
 ## Verify
 
@@ -73,8 +76,8 @@ production.
    `HEAD`, a clean worktree, no unresolved blocking finding, and no missing
    required review.
 5. Push the issue branch and open a PR to `staging`.
-6. Add the `ai-assisted` label. Sign the PR body visibly as Forge and include a
-   valid hidden provenance marker generated through
+6. Sign the PR body visibly as Forge and include a valid hidden provenance
+   marker generated through
    `node scripts/ai-provenance.mjs`. Validate the complete PR body with that
    same script before publication; never hand-build the marker.
 7. Describe scope, authority boundary, tests, pre-PR review result and reviewed

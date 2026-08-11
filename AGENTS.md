@@ -38,6 +38,11 @@
 
 ## Implementation Rules
 
+- Before named-agent work, load only that role's approved, size-capped lessons
+  with `node scripts/ai-knowledge.mjs for-agent --agent <name>`. Do not load the
+  whole registry into agent context, and do not store raw chat transcripts or
+  personal/private memory there. Registry edits require an explicitly approved
+  Forge task and reviewed pull request; Steward may only suggest changes.
 - Prefer stabilization (consistency, hardening, tests, and UX cleanup) over net-new features unless explicitly requested.
 - Reuse or adapt existing code and UI. Never add a new UI element without approval; flag opportunities to remove or consolidate overlapping code or UI.
 - Keep terminology consistent: `Simulation`, `Site`, `Library`, `Path`, and `Channel`.

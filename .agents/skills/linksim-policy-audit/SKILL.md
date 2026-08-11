@@ -22,6 +22,9 @@ merged.
    anything new. Recommend consolidation where it reduces conflicting sources.
 5. Include quota impact, security, least privilege, provenance, maintenance,
    and failure modes where relevant.
+6. When evidence supports a durable lesson, suggest a compact knowledge
+   registry entry with affected agents, evidence, and proposed wording. Never
+   edit the knowledge registry; an explicitly approved Forge task is required.
 
 If evidence does not support a change, report `No policy suggestion` with the
 searched evidence. Do not create work merely because the audit ran.
@@ -40,7 +43,8 @@ For each supported improvement, provide:
 - files or systems that an approved Forge task would change.
 
 Keep facts, inferences, and recommendations visibly distinct. Never edit
-`AGENTS.md`, skills, prompts, permissions, workflows, infrastructure, or memory.
+`AGENTS.md`, skills, prompts, permissions, workflows, infrastructure, the
+knowledge registry, or memory.
 Never implement the recommendation. Human acceptance followed by an explicit
 Forge task is required.
 
