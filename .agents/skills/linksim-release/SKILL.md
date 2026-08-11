@@ -76,4 +76,6 @@ After explicit approval in the current task:
   issue sign-off and milestone rules in `docs/release-flow.md`.
 
 Use the visible signature `— Beacon · AI release agent` and the provenance
-contract in `config/ai-agents.json`. Fail closed if provenance validation fails.
+contract in `config/ai-agents.json`. Generate and validate the complete artifact
+through `node scripts/ai-provenance.mjs`; never hand-build the marker. Fail
+closed if provenance validation fails.

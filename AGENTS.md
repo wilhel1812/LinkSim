@@ -38,6 +38,11 @@
 
 ## Implementation Rules
 
+- Before named-agent work, load only that role's approved, size-capped lessons
+  with `node scripts/ai-knowledge.mjs for-agent --agent <name>`. Do not load the
+  whole registry into agent context, and do not store raw chat transcripts or
+  personal/private memory there. Registry edits require an explicitly approved
+  Forge task and reviewed pull request; Steward may only suggest changes.
 - Prefer stabilization (consistency, hardening, tests, and UX cleanup) over net-new features unless explicitly requested.
 - Reuse or adapt existing code and UI. Never add a new UI element without approval; flag opportunities to remove or consolidate overlapping code or UI.
 - Keep terminology consistent: `Simulation`, `Site`, `Library`, `Path`, and `Channel`.
@@ -84,3 +89,13 @@
 
 - A new agent must be able to continue using this file and its required linked documents only.
 - Keep durable repo policy here or in the linked source of truth; do not rely on chat-only knowledge.
+
+## AI Artifact Provenance
+
+- Treat `config/ai-agents.json` as the single source of truth for named-agent
+  identity, authority, and visible signatures.
+- Generate and validate bot-authored GitHub artifact footers through
+  `node scripts/ai-provenance.mjs`; do not hand-build provenance markers in
+  skills or workflows.
+- Validate the complete rendered artifact before publication and fail closed
+  when its identity, signature, run ID, source event, or commit SHA is invalid.

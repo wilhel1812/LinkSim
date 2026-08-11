@@ -9,6 +9,8 @@ const workflow = readFileSync(
 );
 
 const productionJob = workflow.split("  deploy-prod-main:")[1] ?? "";
+const stagingJob =
+  workflow.split("  deploy-staging:")[1]?.split("  deploy-prod-main:")[0] ?? "";
 const previewJob =
   workflow.split("  deploy-staging-preview:")[1]?.split("  deploy-staging:")[0] ?? "";
 
@@ -29,9 +31,11 @@ describe("Deploy LinkSim Pages workflow", () => {
 
   it("updates one signed preview comment instead of posting duplicates", () => {
     expect(previewJob).toContain("<!-- linksim-preview:v1 -->");
-    expect(previewJob).toContain("require('./config/ai-agents.json')");
-    expect(previewJob).toContain("beacon.signature");
-    expect(previewJob).toContain("registry.markerPrefix");
+    expect(previewJob).toContain("scripts/ai-provenance.mjs");
+    expect(previewJob).toContain("execFileSync");
+    expect(previewJob).toContain("footer.signature");
+    expect(previewJob).toContain("footer.marker");
+    expect(previewJob).not.toContain("`<!-- ${registry.markerPrefix}");
     expect(previewJob).toContain("github.rest.issues.updateComment");
     expect(previewJob).toContain("github.rest.issues.createComment");
   });
@@ -49,6 +53,19 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
     expect(productionJob.indexOf(migrationStep)).toBeLessThan(
       productionJob.indexOf(deployStep),
+    );
+    expect(productionJob).toContain(
+      "PRODUCTION_PREVIOUS_REF: ${{ github.event.before }}",
+    );
+  });
+
+  it("fetches the production baseline before validating a staging deployment", () => {
+    expect(stagingJob).toContain("fetch-depth: 0");
+    expect(stagingJob).toContain(
+      "git fetch --no-tags origin main:refs/remotes/origin/main",
+    );
+    expect(stagingJob.indexOf("Fetch production version baseline")).toBeLessThan(
+      stagingJob.indexOf("Deploy staging with guardrails"),
     );
   });
 });

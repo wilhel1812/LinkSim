@@ -29,6 +29,8 @@ describe("prod promotion policy", () => {
   it("accepts a release tag whose tree matches main HEAD", () => {
     const result = evaluatePolicy(`validatePromotionInputs({
         version: "0.19.0",
+        lockfileVersion: "0.19.0",
+        lockfileRootVersion: "0.19.0",
         tagCommit: "15269c7682a0671824a7dfe532f67e30b3b052da",
         treesMatch: true,
       })`);
@@ -39,6 +41,8 @@ describe("prod promotion policy", () => {
   it("rejects missing release tags", () => {
     const result = evaluatePolicy(`validatePromotionInputs({
         version: "0.19.0",
+        lockfileVersion: "0.19.0",
+        lockfileRootVersion: "0.19.0",
         tagCommit: "",
         treesMatch: true,
       })`);
@@ -46,9 +50,24 @@ describe("prod promotion policy", () => {
     expect(result).toEqual({ ok: false, message: "Prod promotion gate failed: release tag v0.19.0 does not exist." });
   });
 
+  it("rejects non-base SemVer package versions", () => {
+    const result = evaluatePolicy(`validatePromotionInputs({
+        version: "0.27.0-beta",
+        lockfileVersion: "0.27.0-beta",
+        lockfileRootVersion: "0.27.0-beta",
+        tagCommit: "15269c7682a0671824a7dfe532f67e30b3b052da",
+        treesMatch: true,
+      })`);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.message).toContain("valid base SemVer");
+  });
+
   it("rejects production-only tree changes", () => {
     const result = evaluatePolicy(`validatePromotionInputs({
         version: "0.19.0",
+        lockfileVersion: "0.19.0",
+        lockfileRootVersion: "0.19.0",
         tagCommit: "15269c7682a0671824a7dfe532f67e30b3b052da",
         treesMatch: false,
       })`);
@@ -56,4 +75,23 @@ describe("prod promotion policy", () => {
     expect(result.ok).toBe(false);
     expect(result.ok ? "" : result.message).toContain("main HEAD tree differs from release tag v0.19.0");
   });
+
+  it.each([
+    ["0.18.0", "0.19.0"],
+    ["0.19.0", "0.18.0"],
+  ])(
+    "rejects promotion lockfile drift %s / %s",
+    (lockfileVersion, lockfileRootVersion) => {
+      const result = evaluatePolicy(`validatePromotionInputs({
+        version: "0.19.0",
+        lockfileVersion: ${JSON.stringify(lockfileVersion)},
+        lockfileRootVersion: ${JSON.stringify(lockfileRootVersion)},
+        tagCommit: "15269c7682a0671824a7dfe532f67e30b3b052da",
+        treesMatch: true,
+      })`);
+
+      expect(result.ok).toBe(false);
+      expect(result.ok ? "" : result.message).toContain("package-lock.json");
+    },
+  );
 });

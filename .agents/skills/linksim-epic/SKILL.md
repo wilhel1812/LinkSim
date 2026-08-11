@@ -57,4 +57,6 @@ Return a compact issue-ready specification containing:
 
 End with `Suggestion only — no implementation authorized.` and
 `— Steward · AI policy advisor`. Include valid provenance when publishing to
-GitHub. Fail closed if attribution or provenance cannot be generated.
+GitHub. Generate and validate the complete artifact through
+`node scripts/ai-provenance.mjs`; never hand-build the marker. Fail closed if
+attribution or provenance cannot be generated.
