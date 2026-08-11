@@ -194,7 +194,14 @@ export function useMapEditorFormState() {
         setSiteSearchQuery("");
         setSiteSearchResults([]);
         setSiteSearchStatus(shouldPlacePin ? "" : "Click the map to choose this site's coordinates.");
-        setMapEditorSiteDraft(shouldPlacePin ? { lat: seededLat, lon: seededLon, groundElevationM: null } : null);
+        setMapEditorSiteDraft(shouldPlacePin ? {
+          lat: seededLat,
+          lon: seededLon,
+          groundElevationM: null,
+          antennaMode: "omnidirectional",
+          antennaAzimuthDeg: DEFAULT_DIRECTIONAL_ANTENNA.azimuthDeg,
+          antennaHorizontalBeamwidthDeg: DEFAULT_DIRECTIONAL_ANTENNA.horizontalBeamwidthDeg,
+        } : null);
       } else {
         // Edit site
         const entry = siteLibrary.find((e) => e.id === mapEditor.resourceId);
@@ -215,10 +222,13 @@ export function useMapEditorFormState() {
         setRxGainDraft(nextRxGain);
         setSeparateGain(shouldUseSeparateSiteGain(nextTxGain, nextRxGain));
         setCableLossDraft(entry?.cableLossDb ?? STANDARD_SITE_RADIO.cableLossDb);
-        setAntennaMode((activeSimulationSite?.antennaMode ?? entry?.antennaMode) === "directional" ? "directional" : "omnidirectional");
-        setAntennaAzimuthDraft(activeSimulationSite?.antennaAzimuthDeg ?? entry?.antennaAzimuthDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.azimuthDeg);
+        const nextAntennaMode = (activeSimulationSite?.antennaMode ?? entry?.antennaMode) === "directional" ? "directional" : "omnidirectional";
+        const nextAntennaAzimuth = activeSimulationSite?.antennaAzimuthDeg ?? entry?.antennaAzimuthDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.azimuthDeg;
+        const nextHorizontalBeamwidth = entry?.antennaHorizontalBeamwidthDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.horizontalBeamwidthDeg;
+        setAntennaMode(nextAntennaMode);
+        setAntennaAzimuthDraft(nextAntennaAzimuth);
         setAntennaTiltDraft(activeSimulationSite?.antennaTiltDeg ?? entry?.antennaTiltDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.tiltDeg);
-        setAntennaHorizontalBeamwidthDraft(entry?.antennaHorizontalBeamwidthDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.horizontalBeamwidthDeg);
+        setAntennaHorizontalBeamwidthDraft(nextHorizontalBeamwidth);
         setAntennaVerticalBeamwidthDraft(entry?.antennaVerticalBeamwidthDeg ?? DEFAULT_DIRECTIONAL_ANTENNA.verticalBeamwidthDeg);
         setAntennaMaxAttenuationDraft(entry?.antennaMaxAttenuationDb ?? DEFAULT_DIRECTIONAL_ANTENNA.maxAttenuationDb);
         setAntennaTargetSiteId(activeSimulationSite?.antennaTargetSiteId ?? "");
@@ -238,7 +248,14 @@ export function useMapEditorFormState() {
         setSiteSearchQuery("");
         setSiteSearchResults([]);
         setSiteSearchStatus("");
-        setMapEditorSiteDraft({ lat: entryLat, lon: entryLon, groundElevationM: entryGround });
+        setMapEditorSiteDraft({
+          lat: entryLat,
+          lon: entryLon,
+          groundElevationM: entryGround,
+          antennaMode: nextAntennaMode,
+          antennaAzimuthDeg: nextAntennaAzimuth,
+          antennaHorizontalBeamwidthDeg: nextHorizontalBeamwidth,
+        });
       }
     } else if (mapEditor.kind === "simulation") {
       if (mapEditor.isNew) {
@@ -364,6 +381,28 @@ export function useMapEditorFormState() {
     }
     if (mapEditor.isNew) setSiteSearchStatus("");
   }, [mapEditor?.kind, mapEditor?.isNew, mapEditorSiteDraft]);
+
+  useEffect(() => {
+    if (mapEditor?.kind !== "site" || !mapEditorSiteDraft) return;
+    if (
+      mapEditorSiteDraft.antennaMode === antennaMode &&
+      mapEditorSiteDraft.antennaAzimuthDeg === antennaAzimuthDraft &&
+      mapEditorSiteDraft.antennaHorizontalBeamwidthDeg === antennaHorizontalBeamwidthDraft
+    ) return;
+    setMapEditorSiteDraft({
+      ...mapEditorSiteDraft,
+      antennaMode,
+      antennaAzimuthDeg: antennaAzimuthDraft,
+      antennaHorizontalBeamwidthDeg: antennaHorizontalBeamwidthDraft,
+    });
+  }, [
+    antennaAzimuthDraft,
+    antennaHorizontalBeamwidthDraft,
+    antennaMode,
+    mapEditor?.kind,
+    mapEditorSiteDraft,
+    setMapEditorSiteDraft,
+  ]);
 
   // ─── Terrain prefetch for site coordinates ────────────────────────────────────
   useEffect(() => {

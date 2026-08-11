@@ -763,6 +763,111 @@ describe("MapView user location flow", () => {
     );
   });
 
+  it("shows a fixed educational beam sector for one selected directional Site", () => {
+    useAppStore.setState({
+      sites: [
+        {
+          id: "site-alpha",
+          name: "Alpha Site",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          antennaMode: "directional",
+          antennaAzimuthDeg: 30,
+          antennaHorizontalBeamwidthDeg: 60,
+        },
+      ],
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      mapOverlayMode: "none",
+    });
+
+    renderMapView();
+
+    const sector = screen.getByTestId("directional-map-beam");
+    expect(sector).toHaveAttribute("data-azimuth", "30");
+    expect(sector).toHaveAttribute("data-beamwidth", "60");
+    expect(sector).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("uses unsaved editor values for the map beam and hides it for multi-selection", () => {
+    const sites = [
+      {
+        id: "site-alpha",
+        name: "Alpha Site",
+        libraryEntryId: "lib-alpha",
+        position: { lat: 60.5, lon: 11.5 },
+        groundElevationM: 120,
+        antennaHeightM: 2,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+        antennaMode: "directional" as const,
+        antennaAzimuthDeg: 30,
+        antennaHorizontalBeamwidthDeg: 60,
+      },
+      {
+        id: "site-beta",
+        name: "Beta Site",
+        position: { lat: 60.6, lon: 11.6 },
+        groundElevationM: 140,
+        antennaHeightM: 2,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      },
+    ];
+    useAppStore.setState({
+      sites,
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: {
+        kind: "site",
+        resourceId: "lib-alpha",
+        isNew: false,
+        label: "Alpha Site",
+        anchorRect: { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
+      },
+      mapEditorSiteDraft: {
+        lat: 61.25,
+        lon: 12.75,
+        groundElevationM: 130,
+        antennaMode: "directional",
+        antennaAzimuthDeg: 359,
+        antennaHorizontalBeamwidthDeg: 42,
+      },
+      mapOverlayMode: "none",
+    });
+
+    const { rerender } = renderMapView();
+
+    expect(screen.getByTestId("directional-map-beam")).toHaveAttribute("data-azimuth", "359");
+    expect(screen.getByTestId("directional-map-beam")).toHaveAttribute("data-beamwidth", "42");
+
+    act(() => useAppStore.setState({
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      selectedSiteIds: ["site-alpha", "site-beta"],
+    }));
+    rerender(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+    expect(screen.queryByTestId("directional-map-beam")).not.toBeInTheDocument();
+  });
+
   it("publishes plain location failure notifications", () => {
     const onPublishNotice = vi.fn();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);

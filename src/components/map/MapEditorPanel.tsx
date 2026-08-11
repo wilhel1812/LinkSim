@@ -271,10 +271,15 @@ function SiteEditorCard({
   const title = isNew ? "New Site" : (mapEditor?.label ?? form.nameDraft);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const iconPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const suggestedIconKey = suggestSiteIconKey({ name: form.nameDraft, antennaHeightM: form.antennaDraft });
+  const suggestedIconKey = suggestSiteIconKey({
+    name: form.nameDraft,
+    antennaHeightM: form.antennaDraft,
+    antennaMode: form.antennaMode,
+  });
   const resolvedIconKey = resolveSiteIconKey({
     name: form.nameDraft,
     antennaHeightM: form.antennaDraft,
+    antennaMode: form.antennaMode,
     iconKey: form.iconDraft === "auto" ? undefined : form.iconDraft,
   });
   const resolvedIconOption = getSiteIconOption(resolvedIconKey);
@@ -340,6 +345,8 @@ function SiteEditorCard({
               rxGainDbi: form.rxGainDraft,
               cableLossDb: form.cableLossDraft,
               antennaMode: form.antennaMode,
+              antennaAzimuthDeg: form.antennaAzimuthDraft,
+              antennaTiltDeg: form.antennaTiltDraft,
               antennaHorizontalBeamwidthDeg: form.antennaHorizontalBeamwidthDraft,
               antennaVerticalBeamwidthDeg: form.antennaVerticalBeamwidthDraft,
               antennaMaxAttenuationDb: form.antennaMaxAttenuationDraft,
@@ -722,6 +729,8 @@ function SiteEditorCard({
             rxGainDbi: form.rxGainDraft,
             cableLossDb: form.cableLossDraft,
             antennaMode: form.antennaMode,
+            antennaAzimuthDeg: form.antennaAzimuthDraft,
+            antennaTiltDeg: form.antennaTiltDraft,
             antennaHorizontalBeamwidthDeg: form.antennaHorizontalBeamwidthDraft,
             antennaVerticalBeamwidthDeg: form.antennaVerticalBeamwidthDraft,
             antennaMaxAttenuationDb: form.antennaMaxAttenuationDraft,

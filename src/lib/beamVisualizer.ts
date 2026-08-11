@@ -1,4 +1,5 @@
 import type { PassFailState } from "./passFailState";
+import { antennaAttenuationDb } from "./antennaPattern";
 
 export type BeamPreviewInput = {
   antennaHeightM: number;
@@ -7,6 +8,8 @@ export type BeamPreviewInput = {
   rxGainDbi: number;
   cableLossDb: number;
   antennaMode?: "omnidirectional" | "directional";
+  antennaAzimuthDeg?: number;
+  antennaTiltDeg?: number;
   antennaHorizontalBeamwidthDeg?: number;
   antennaVerticalBeamwidthDeg?: number;
   antennaMaxAttenuationDb?: number;
@@ -22,6 +25,9 @@ export type BeamPreviewMetrics = {
   beamWidthDeg: number;
   verticalBeamWidthDeg: number;
   maxAttenuationDb: number;
+  azimuthDeg: number;
+  tiltDeg: number;
+  residualRangePercent: number;
   beamSpreadPercent: number;
   rangeScore: number;
   rangeLabel: "Short" | "Moderate" | "Long" | "Extended";
@@ -40,6 +46,8 @@ export const computeBeamPreviewMetrics = ({
   rxGainDbi,
   cableLossDb,
   antennaMode = "omnidirectional",
+  antennaAzimuthDeg = 0,
+  antennaTiltDeg = 0,
   antennaHorizontalBeamwidthDeg = 60,
   antennaVerticalBeamwidthDeg = 30,
   antennaMaxAttenuationDb = 25,
@@ -57,10 +65,30 @@ export const computeBeamPreviewMetrics = ({
   const antennaFactor = clamp((antenna - 2) / 28, 0, 1);
   const lossFactor = clamp(cableLoss / 10, 0, 1);
   const rangeScore = clamp(0.26 + powerFactor * 0.34 + gainFactor * 0.32 + antennaFactor * 0.14 - lossFactor * 0.24, 0.16, 0.96);
-  const beamWidthDeg = antennaMode === "directional" ? clamp(finiteOr(antennaHorizontalBeamwidthDeg, 60), 1, 180) : 150;
-  const verticalBeamWidthDeg = antennaMode === "directional" ? clamp(finiteOr(antennaVerticalBeamwidthDeg, 30), 1, 180) : 150;
+  const azimuthDeg = ((finiteOr(antennaAzimuthDeg, 0) % 360) + 360) % 360;
+  const tiltDeg = antennaMode === "directional" ? clamp(finiteOr(antennaTiltDeg, 0), -90, 90) : 0;
+  const beamWidthDeg = antennaMode === "directional" ? clamp(finiteOr(antennaHorizontalBeamwidthDeg, 60), 1, 180) : 360;
+  const verticalBeamWidthDeg = antennaMode === "directional"
+    ? clamp(finiteOr(antennaVerticalBeamwidthDeg, 30), 1, 180)
+    : Math.round(clamp(150 - gainSum * 4.2, 32, 150));
   const maxAttenuationDb = antennaMode === "directional" ? clamp(finiteOr(antennaMaxAttenuationDb, 25), 0, 60) : 0;
-  const beamSpreadPercent = Math.round((beamWidthDeg / 150) * 100);
+  const beamSpreadPercent = Math.round(((antennaMode === "directional" ? beamWidthDeg : verticalBeamWidthDeg) / 150) * 100);
+  const rearAttenuationDb = antennaMode === "directional"
+    ? antennaAttenuationDb(
+        {
+          antennaMode,
+          antennaAzimuthDeg: azimuthDeg,
+          antennaTiltDeg: tiltDeg,
+          antennaHorizontalBeamwidthDeg: beamWidthDeg,
+          antennaVerticalBeamwidthDeg: verticalBeamWidthDeg,
+          antennaMaxAttenuationDb: maxAttenuationDb,
+        },
+        { azimuthDeg: azimuthDeg + 180, elevationDeg: tiltDeg },
+      )
+    : 0;
+  const residualRangePercent = antennaMode === "directional"
+    ? Math.max(18, Math.round(100 * 10 ** (-rearAttenuationDb / 20)))
+    : 100;
   const rangeLabel =
     rangeScore >= 0.82 ? "Extended" : rangeScore >= 0.62 ? "Long" : rangeScore >= 0.38 ? "Moderate" : "Short";
 
@@ -68,6 +96,9 @@ export const computeBeamPreviewMetrics = ({
     beamWidthDeg,
     verticalBeamWidthDeg,
     maxAttenuationDb,
+    azimuthDeg,
+    tiltDeg,
+    residualRangePercent,
     beamSpreadPercent,
     rangeScore,
     rangeLabel,

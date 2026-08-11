@@ -17,6 +17,7 @@ import {
 import {
   recordSimulationRunCancelled,
 } from "../lib/simulationPerf";
+import { antennaPatternSignature } from "../lib/antennaPattern";
 import { sampleSrtmElevation } from "../lib/srtm";
 import type { CoverageSample, Network, RadioSystem, Site, SrtmTile } from "../types/radio";
 
@@ -187,12 +188,7 @@ const siteSignature = (site: Site): string =>
     site.txGainDbi,
     site.rxGainDbi,
     site.cableLossDb,
-    site.antennaMode,
-    site.antennaAzimuthDeg,
-    site.antennaTiltDeg,
-    site.antennaHorizontalBeamwidthDeg,
-    site.antennaVerticalBeamwidthDeg,
-    site.antennaMaxAttenuationDb,
+    antennaPatternSignature(site),
   ].join(":");
 
 const linkSignature = (link: LinkLike): string => [link.id, link.fromSiteId, link.toSiteId].join(":");

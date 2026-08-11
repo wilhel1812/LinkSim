@@ -28,6 +28,7 @@ import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { getSiteIconOption, resolveSiteIconKey } from "../lib/siteIcons";
+import { antennaPatternSignature, resolveSiteAntennaPattern } from "../lib/antennaPattern";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import {
   BASEMAP_CATEGORIES,
@@ -598,7 +599,7 @@ function SiteMarkerIcon({
   site,
   color,
 }: {
-  site: Pick<Site, "name" | "antennaHeightM" | "iconKey">;
+  site: Pick<Site, "name" | "antennaHeightM" | "antennaMode" | "iconKey">;
   color?: string;
 }) {
   const { Icon } = getSiteIconOption(resolveSiteIconKey(site));
@@ -610,6 +611,39 @@ function SiteMarkerIcon({
       strokeWidth={1.8}
       style={color ? { color } : undefined}
     />
+  );
+}
+
+const directionalMapBeamPath = (beamwidthDeg: number): string => {
+  const cx = 70;
+  const cy = 70;
+  const radius = 62;
+  const point = (angleDeg: number) => {
+    const radians = (angleDeg * Math.PI) / 180;
+    return { x: cx + Math.cos(radians) * radius, y: cy + Math.sin(radians) * radius };
+  };
+  const start = point(-90 - beamwidthDeg / 2);
+  const end = point(-90 + beamwidthDeg / 2);
+  return `M ${cx} ${cy} L ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius} ${radius} 0 0 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)} Z`;
+};
+
+function DirectionalMapBeam({ azimuthDeg, beamwidthDeg }: { azimuthDeg: number; beamwidthDeg: number }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="directional-map-beam"
+      data-azimuth={azimuthDeg}
+      data-beamwidth={beamwidthDeg}
+      data-testid="directional-map-beam"
+      focusable="false"
+      viewBox="0 0 140 140"
+    >
+      <g transform={`rotate(${azimuthDeg} 70 70)`}>
+        <path className="directional-map-beam-sector" d={directionalMapBeamPath(beamwidthDeg)} />
+        <line className="directional-map-beam-boresight" x1="70" x2="70" y1="70" y2="8" />
+      </g>
+      <circle className="directional-map-beam-origin" cx="70" cy="70" r="4" />
+    </svg>
   );
 }
 
@@ -1117,6 +1151,26 @@ export function MapView({
   const selectedSiteSet = useMemo(() => new Set(selectedSites.map((site) => site.id)), [selectedSites]);
   const selectionCount = selectedSites.length;
   const singleSelectedSite = selectionCount === 1 ? selectedSites[0] ?? null : null;
+  const directionalMapBeam = useMemo(() => {
+    if (mapEditor?.kind === "site") {
+      if (!mapEditorSiteDraft || mapEditorSiteDraft.antennaMode !== "directional") return null;
+      const pattern = resolveSiteAntennaPattern(mapEditorSiteDraft);
+      if (pattern.mode !== "directional") return null;
+      return {
+        position: { lat: mapEditorSiteDraft.lat, lon: mapEditorSiteDraft.lon },
+        azimuthDeg: pattern.azimuthDeg,
+        beamwidthDeg: pattern.horizontalBeamwidthDeg,
+      };
+    }
+    if (!singleSelectedSite || singleSelectedSite.antennaMode !== "directional") return null;
+    const pattern = resolveSiteAntennaPattern(singleSelectedSite);
+    if (pattern.mode !== "directional") return null;
+    return {
+      position: singleSelectedSite.position,
+      azimuthDeg: pattern.azimuthDeg,
+      beamwidthDeg: pattern.horizontalBeamwidthDeg,
+    };
+  }, [mapEditor?.kind, mapEditorSiteDraft, singleSelectedSite]);
   const previousSelectionCountRef = useRef(selectionCount);
   const selectedFromSite = selectedSites[0] ?? (selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null);
   const selectedToSite =
@@ -1945,12 +1999,7 @@ export function MapView({
             site.txGainDbi,
             site.rxGainDbi,
             site.cableLossDb,
-            site.antennaMode,
-            site.antennaAzimuthDeg,
-            site.antennaTiltDeg,
-            site.antennaHorizontalBeamwidthDeg,
-            site.antennaVerticalBeamwidthDeg,
-            site.antennaMaxAttenuationDb,
+            antennaPatternSignature(site),
           ].join(":"),
         ),
         ...systems.map((system) =>
@@ -4261,6 +4310,20 @@ export function MapView({
               )}
             />
           </Source>
+        ) : null}
+
+        {directionalMapBeam ? (
+          <Marker
+            anchor="center"
+            latitude={directionalMapBeam.position.lat}
+            longitude={directionalMapBeam.position.lon}
+            style={{ pointerEvents: "none", zIndex: 0 }}
+          >
+            <DirectionalMapBeam
+              azimuthDeg={directionalMapBeam.azimuthDeg}
+              beamwidthDeg={directionalMapBeam.beamwidthDeg}
+            />
+          </Marker>
         ) : null}
 
         <SimulationLoadingOverlay

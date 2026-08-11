@@ -93,4 +93,45 @@ describe("simulation colors", () => {
     expect(resolveAutoLinkStateForLink({ ...input, reversed: false })).toMatch(/^pass_/);
     expect(resolveAutoLinkStateForLink({ ...input, reversed: true })).toMatch(/^fail_/);
   });
+
+  it("changes Auto Link state when reciprocal directional endpoints point away", () => {
+    const from = {
+      id: "from", name: "From", position: { lat: 60, lon: 10 }, groundElevationM: 0,
+      antennaHeightM: 2, txPowerDbm: 30, txGainDbi: 6, rxGainDbi: 6, cableLossDb: 0,
+      antennaMode: "directional" as const, antennaAzimuthDeg: 27, antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30, antennaVerticalBeamwidthDeg: 30, antennaMaxAttenuationDb: 60,
+    };
+    const to = {
+      ...from,
+      id: "to",
+      name: "To",
+      position: { lat: 60.01, lon: 10.01 },
+      antennaAzimuthDeg: 207,
+    };
+    const input = {
+      link: { id: "link", fromSiteId: "from", toSiteId: "to", frequencyMHz: 869.618 },
+      environmentLossDb: 0,
+      rxSensitivityTargetDbm: -100,
+      propagationEnvironment: {
+        radioClimate: "Continental Temperate" as const,
+        polarization: "Vertical" as const,
+        clutterHeightM: 0,
+        groundDielectric: 15,
+        groundConductivity: 0.005,
+        atmosphericBendingNUnits: 301,
+      },
+      autoPropagationEnvironment: false,
+      terrainSampler: () => 0,
+      reversed: false,
+    };
+
+    expect(resolveAutoLinkStateForLink({ ...input, sites: [from, to] })).toMatch(/^pass_/);
+    expect(resolveAutoLinkStateForLink({
+      ...input,
+      sites: [
+        { ...from, antennaAzimuthDeg: 207 },
+        { ...to, antennaAzimuthDeg: 27 },
+      ],
+    })).toMatch(/^fail_/);
+  });
 });

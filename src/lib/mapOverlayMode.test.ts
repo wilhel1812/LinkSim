@@ -37,5 +37,9 @@ describe("map overlay modes", () => {
     expect(meshExtensionSiteDigest([{ ...site, position: { ...site.position, lat: 60.1 } }])).not.toBe(baseline);
     expect(meshExtensionSiteDigest([{ ...site, groundElevationM: 120 }])).not.toBe(baseline);
     expect(meshExtensionSiteDigest([{ ...site, txPowerDbm: 24 }])).not.toBe(baseline);
+    expect(meshExtensionSiteDigest([{ ...site, antennaMode: "directional", antennaAzimuthDeg: 0 }])).not.toBe(baseline);
+    expect(meshExtensionSiteDigest([{ ...site, antennaMode: "directional", antennaAzimuthDeg: 90 }])).not.toBe(
+      meshExtensionSiteDigest([{ ...site, antennaMode: "directional", antennaAzimuthDeg: 0 }]),
+    );
   });
 });

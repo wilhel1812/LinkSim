@@ -499,7 +499,14 @@ type AppState = {
     readOnly?: boolean;
     origin?: { kind: "library"; tab: LibraryTab };
   } | null;
-  mapEditorSiteDraft: { lat: number; lon: number; groundElevationM: number | null } | null;
+  mapEditorSiteDraft: {
+    lat: number;
+    lon: number;
+    groundElevationM: number | null;
+    antennaMode?: Site["antennaMode"];
+    antennaAzimuthDeg?: number;
+    antennaHorizontalBeamwidthDeg?: number;
+  } | null;
   openMapEditor: (payload: NonNullable<AppState["mapEditor"]>) => void;
   closeMapEditor: () => void;
   setMapEditorSiteDraft: (draft: AppState["mapEditorSiteDraft"]) => void;

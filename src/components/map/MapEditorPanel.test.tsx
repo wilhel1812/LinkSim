@@ -203,6 +203,11 @@ describe("MapEditorPanel", () => {
     expect(screen.queryByLabelText("Antenna azimuth")).not.toBeInTheDocument();
     await userEvent.click(toggle);
     expect(screen.getByLabelText("Antenna azimuth")).toHaveValue(123);
+    await waitFor(() => expect(useAppStore.getState().mapEditorSiteDraft).toMatchObject({
+      antennaMode: "directional",
+      antennaAzimuthDeg: 123,
+      antennaHorizontalBeamwidthDeg: 60,
+    }));
   });
 
   it("derives orientation from another Simulation Site and supports detaching", async () => {

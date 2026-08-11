@@ -862,6 +862,7 @@ const computeSourceCentricRxDbm = (
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
   propagationEnvironment: PropagationEnvironment,
+  receiverSite?: Site,
 ): number =>
   computeSourceCentricRxMetrics(
     lat,
@@ -873,6 +874,7 @@ const computeSourceCentricRxDbm = (
     terrainSampler,
     terrainSamples,
     propagationEnvironment,
+    receiverSite,
   ).rxDbm;
 
 export const buildCoverageOverlayPixelsAsync = async (
@@ -1190,6 +1192,7 @@ export const buildRelayCandidateOverlayPixelsAsync = async (
             terrainSampler,
             terrainSamples,
             propagationEnvironment,
+            toSite,
           );
           metricCache.baseDbm[index] = Math.min(fromToRelayRx, relayToTargetRx);
           evaluatedPaths += 1;

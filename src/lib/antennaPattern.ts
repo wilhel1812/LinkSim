@@ -79,7 +79,7 @@ export const antennaPatternSignature = (site: AntennaPatternSettings): string =>
   ].join(":");
 };
 
-export const antennaAttenuationDb = (site: Site, direction: AntennaDirection): number => {
+export const antennaAttenuationDb = (site: AntennaPatternSettings, direction: AntennaDirection): number => {
   const pattern = resolveSiteAntennaPattern(site);
   if (pattern.mode === "omnidirectional") return 0;
   const horizontalOffset = shortestAngularOffsetDeg(pattern.azimuthDeg, direction.azimuthDeg);

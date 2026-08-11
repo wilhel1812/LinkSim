@@ -1,3 +1,5 @@
+import { antennaPatternSignature } from "./antennaPattern";
+
 export type MapOverlayMode =
   | "none"
   | "heatmap"
@@ -64,12 +66,7 @@ export const meshExtensionSiteDigest = (sites: MeshExtensionSiteDigestInput[]): 
         site.txGainDbi,
         site.rxGainDbi,
         site.cableLossDb,
-        site.antennaMode,
-        site.antennaAzimuthDeg,
-        site.antennaTiltDeg,
-        site.antennaHorizontalBeamwidthDeg,
-        site.antennaVerticalBeamwidthDeg,
-        site.antennaMaxAttenuationDb,
+        antennaPatternSignature(site),
       ].join(":"),
     )
     .join("|");
