@@ -28,7 +28,11 @@ import { STANDARD_SITE_RADIO } from "../lib/linkRadio";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { getUiErrorMessage } from "../lib/uiError";
 import { getSiteIconOption, resolveSiteIconKey } from "../lib/siteIcons";
-import { antennaPatternSignature, resolveSiteAntennaPattern } from "../lib/antennaPattern";
+import {
+  antennaPatternSignature,
+  resolveSiteAntennaPattern,
+  resolveTrackedSiteOrientation,
+} from "../lib/antennaPattern";
 import { useThemeVariant } from "../hooks/useThemeVariant";
 import {
   BASEMAP_CATEGORIES,
@@ -1163,14 +1167,19 @@ export function MapView({
       };
     }
     if (!singleSelectedSite || singleSelectedSite.antennaMode !== "directional") return null;
-    const pattern = resolveSiteAntennaPattern(singleSelectedSite);
+    const previewSites = sites.map((site) => {
+      const pendingPosition = pendingSiteMoves[site.id]?.currentPosition;
+      return pendingPosition ? { ...site, position: pendingPosition } : site;
+    });
+    const previewSite = previewSites.find((site) => site.id === singleSelectedSite.id) ?? singleSelectedSite;
+    const pattern = resolveSiteAntennaPattern(resolveTrackedSiteOrientation(previewSite, previewSites));
     if (pattern.mode !== "directional") return null;
     return {
-      position: pendingSiteMoves[singleSelectedSite.id]?.currentPosition ?? singleSelectedSite.position,
+      position: previewSite.position,
       azimuthDeg: pattern.azimuthDeg,
       beamwidthDeg: pattern.horizontalBeamwidthDeg,
     };
-  }, [mapEditor?.kind, mapEditorSiteDraft, pendingSiteMoves, singleSelectedSite]);
+  }, [mapEditor?.kind, mapEditorSiteDraft, pendingSiteMoves, singleSelectedSite, sites]);
   const previousSelectionCountRef = useRef(selectionCount);
   const selectedFromSite = selectedSites[0] ?? (selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null);
   const selectedToSite =

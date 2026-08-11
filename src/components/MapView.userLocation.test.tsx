@@ -139,6 +139,7 @@ const position = (latitude: number, longitude: number, accuracy: number, timesta
 
 import { useAppStore } from "../store/appStore";
 import { useCoverageStore } from "../store/coverageStore";
+import { orientationTowardSite } from "../lib/antennaPattern";
 import { MapView } from "./MapView";
 
 const originalCancelTerrainLoad = useAppStore.getState().cancelTerrainLoad;
@@ -845,6 +846,59 @@ describe("MapView user location flow", () => {
     await waitFor(() => expect(
       mapMock.markerProps.filter((props) => props.childTestId === "directional-map-beam").at(-1),
     ).toMatchObject({ latitude: 60.7, longitude: 11.7 }));
+  });
+
+  it("recomputes a tracked directional beam azimuth during a pending Site drag", async () => {
+    const trackedSite = {
+      id: "site-alpha",
+      name: "Alpha Site",
+      position: { lat: 60.5, lon: 11.5 },
+      groundElevationM: 120,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+      antennaMode: "directional" as const,
+      antennaAzimuthDeg: 90,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaTargetSiteId: "site-beta",
+    };
+    const targetSite = {
+      id: "site-beta",
+      name: "Beta Site",
+      position: { lat: 60.5, lon: 12.5 },
+      groundElevationM: 120,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      sites: [trackedSite, targetSite],
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      mapOverlayMode: "none",
+      srtmTiles: [],
+    });
+
+    renderMapView();
+
+    const siteMarker = mapMock.markerProps.find((props) => props.onDrag && props.latitude === 60.5);
+    expect(siteMarker?.onDrag).toBeTypeOf("function");
+    const pendingPosition = { lat: 60.7, lon: 11.7 };
+    const expectedAzimuth = orientationTowardSite(
+      { ...trackedSite, position: pendingPosition },
+      targetSite,
+    ).azimuthDeg;
+    act(() => siteMarker?.onDrag?.({ lngLat: { lat: pendingPosition.lat, lng: pendingPosition.lon } }));
+
+    await waitFor(() => expect(
+      Number(screen.getByTestId("directional-map-beam").getAttribute("data-azimuth")),
+    ).toBeCloseTo(expectedAzimuth, 6));
   });
 
   it("uses unsaved editor values for the map beam and hides it for multi-selection", () => {
