@@ -1166,11 +1166,11 @@ export function MapView({
     const pattern = resolveSiteAntennaPattern(singleSelectedSite);
     if (pattern.mode !== "directional") return null;
     return {
-      position: singleSelectedSite.position,
+      position: pendingSiteMoves[singleSelectedSite.id]?.currentPosition ?? singleSelectedSite.position,
       azimuthDeg: pattern.azimuthDeg,
       beamwidthDeg: pattern.horizontalBeamwidthDeg,
     };
-  }, [mapEditor?.kind, mapEditorSiteDraft, singleSelectedSite]);
+  }, [mapEditor?.kind, mapEditorSiteDraft, pendingSiteMoves, singleSelectedSite]);
   const previousSelectionCountRef = useRef(selectionCount);
   const selectedFromSite = selectedSites[0] ?? (selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null);
   const selectedToSite =

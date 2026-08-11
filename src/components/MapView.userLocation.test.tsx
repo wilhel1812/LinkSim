@@ -5,7 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mapMock = vi.hoisted(() => ({
   easeTo: vi.fn(),
-  markerProps: [] as Array<{ latitude?: number; longitude?: number }>,
+  markerProps: [] as Array<{
+    childTestId?: string;
+    latitude?: number;
+    longitude?: number;
+    onDrag?: (event: { lngLat: { lat: number; lng: number } }) => void;
+  }>,
   layerProps: [] as Array<{ id?: string; paint?: Record<string, unknown> }>,
   sourceProps: [] as Array<{ id?: string; data?: unknown }>,
   latestProps: null as null | {
@@ -57,12 +62,21 @@ vi.mock("react-map-gl/maplibre", async () => {
       children,
       latitude,
       longitude,
+      onDrag,
     }: {
       children?: React.ReactNode;
       latitude?: number;
       longitude?: number;
+      onDrag?: (event: { lngLat: { lat: number; lng: number } }) => void;
     }) => {
-      mapMock.markerProps.push({ latitude, longitude });
+      const childTestId = ReactMock.isValidElement(children)
+        ? (children.props as { "data-testid"?: string })["data-testid"] ?? (
+          typeof children.type === "function" && children.type.name === "DirectionalMapBeam"
+            ? "directional-map-beam"
+            : undefined
+        )
+        : undefined;
+      mapMock.markerProps.push({ childTestId, latitude, longitude, onDrag });
       return <div>{children}</div>;
     },
     Source: ({ children, ...props }: { children?: React.ReactNode; id?: string; data?: unknown }) => {
@@ -794,6 +808,43 @@ describe("MapView user location flow", () => {
     expect(sector).toHaveAttribute("data-azimuth", "30");
     expect(sector).toHaveAttribute("data-beamwidth", "60");
     expect(sector).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("keeps the selected directional beam attached to a pending Site drag", async () => {
+    useAppStore.setState({
+      sites: [
+        {
+          id: "site-alpha",
+          name: "Alpha Site",
+          position: { lat: 60.5, lon: 11.5 },
+          groundElevationM: 120,
+          antennaHeightM: 2,
+          txPowerDbm: 20,
+          txGainDbi: 2,
+          rxGainDbi: 2,
+          cableLossDb: 1,
+          antennaMode: "directional",
+          antennaAzimuthDeg: 30,
+          antennaHorizontalBeamwidthDeg: 60,
+        },
+      ],
+      selectedSiteId: "site-alpha",
+      selectedSiteIds: ["site-alpha"],
+      mapEditor: null,
+      mapEditorSiteDraft: null,
+      mapOverlayMode: "none",
+      srtmTiles: [],
+    });
+
+    renderMapView();
+
+    const siteMarker = mapMock.markerProps.find((props) => props.onDrag);
+    expect(siteMarker?.onDrag).toBeTypeOf("function");
+    act(() => siteMarker?.onDrag?.({ lngLat: { lat: 60.7, lng: 11.7 } }));
+
+    await waitFor(() => expect(
+      mapMock.markerProps.filter((props) => props.childTestId === "directional-map-beam").at(-1),
+    ).toMatchObject({ latitude: 60.7, longitude: 11.7 }));
   });
 
   it("uses unsaved editor values for the map beam and hides it for multi-selection", () => {

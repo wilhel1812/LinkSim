@@ -65,6 +65,15 @@ const normalizeBool = (value: unknown, fallback: boolean): boolean =>
 
 const normalizeMode = (value: unknown): "fast" | "terrain" => (value === "terrain" ? "terrain" : "fast");
 
+const normalizeAntennaMode = (
+  value: unknown,
+  fieldName: string,
+): "omnidirectional" | "directional" => {
+  if (value === undefined || value === null || value === "omnidirectional") return "omnidirectional";
+  if (value === "directional") return "directional";
+  throw new Error(`${fieldName} must be omnidirectional or directional.`);
+};
+
 const optionalNumberInRange = (value: unknown, fieldName: string, min: number, max: number): number | undefined => {
   if (value === undefined) return undefined;
   const number = asFiniteNumber(value, fieldName);
@@ -88,7 +97,7 @@ const normalizeNode = (value: unknown, index: number): NodeInput => {
     cable_loss_db: typeof row.cable_loss_db === "number" ? row.cable_loss_db : 1,
     antenna_height_m: typeof row.antenna_height_m === "number" ? row.antenna_height_m : 2,
     ground_elevation_m: typeof row.ground_elevation_m === "number" ? row.ground_elevation_m : undefined,
-    antenna_mode: row.antenna_mode === "directional" ? "directional" : "omnidirectional",
+    antenna_mode: normalizeAntennaMode(row.antenna_mode, `nodes[${index}].antenna_mode`),
     antenna_azimuth_deg: optionalNumberInRange(row.antenna_azimuth_deg, `nodes[${index}].antenna_azimuth_deg`, 0, 359.999),
     antenna_tilt_deg: optionalNumberInRange(row.antenna_tilt_deg, `nodes[${index}].antenna_tilt_deg`, -90, 90),
     antenna_horizontal_beamwidth_deg: optionalNumberInRange(row.antenna_horizontal_beamwidth_deg, `nodes[${index}].antenna_horizontal_beamwidth_deg`, 1, 180),

@@ -189,6 +189,23 @@ describe("api/v1/calculate", () => {
     await expect(res.json()).resolves.toEqual({ error: "nodes[0].antenna_tilt_deg must be between -90 and 90." });
   });
 
+  it("rejects unknown antenna modes instead of silently using omnidirectional", async () => {
+    const payload: any = mkPayload();
+    payload.input.nodes[0] = { ...payload.input.nodes[0], antenna_mode: "directionl" };
+    const req = new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const res = await onRequestPost(mkCtx(req, { DB: {} }));
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: "nodes[0].antenna_mode must be omnidirectional or directional.",
+    });
+  });
+
   it("returns 404 when named sites are missing", async () => {
     const req = new Request("https://linksim.link/api/v1/calculate", {
       method: "POST",
