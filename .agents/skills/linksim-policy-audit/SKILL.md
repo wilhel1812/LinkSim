@@ -58,12 +58,17 @@ not start a model call. Comment only when at least one evidence-backed
 improvement exists. Append through the deterministic publisher to the single
 configured `documentation` + `pending-discussion` issue; do not rewrite its
 body or create repeated issues. Publication must be idempotent, signed, and
-provenance-validated. Scheduled publication identity, delivery identity,
-visible attribution, and permitted issue authority must be resolved from
-`config/ai-agents.json` and validated by `scripts/ai-provenance.mjs`. The
-rendered artifact must display only the registry-approved attribution for the
-configured Steward publisher. Do not hard-code, inherit, or claim another
-agent's delivery identity or authority.
+provenance-validated. Resolve scheduled publication identity, delivery
+identity, visible attribution, and permitted issue authority from
+`config/ai-agents.json`. Before publication, the deterministic publisher must
+compare its authenticated GitHub identity with Steward's configured
+`githubIdentity`, confirm the requested action is
+`publish-signed-suggestion`, confirm that action is allowed and not prohibited,
+and stop before publication on any mismatch. The publisher fails closed on any
+mismatch. Use `scripts/ai-provenance.mjs` to validate the registry and rendered
+artifact. The artifact must display only the
+registry-approved attribution for the configured Steward publisher. Do not
+hard-code, inherit, or claim another agent's delivery identity or authority.
 
 End every output with `Suggestion only — no policy change applied.` followed by
 the signature and marker returned by `node scripts/ai-provenance.mjs footer`;
