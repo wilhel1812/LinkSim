@@ -203,6 +203,8 @@ async function verifyRemoteSchema(targetName, databaseName) {
   if (process.env.GITHUB_ACTIONS === "true") return;
   let resourceChangesResult;
   let simulationsResult;
+  let identityClaimsResult;
+  let identityMetaResult;
   try {
     resourceChangesResult = await run(
       wrangler,
@@ -212,6 +214,16 @@ async function verifyRemoteSchema(targetName, databaseName) {
     simulationsResult = await run(
       wrangler,
       ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(simulations);"],
+      { capture: true },
+    );
+    identityClaimsResult = await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "PRAGMA table_info(verified_identity_claims);"],
+      { capture: true },
+    );
+    identityMetaResult = await run(
+      wrangler,
+      ["d1", "execute", databaseName, "--remote", "--command", "SELECT version FROM identity_lifecycle_meta WHERE singleton = 1;"],
       { capture: true },
     );
   } catch (err) {
@@ -246,6 +258,25 @@ async function verifyRemoteSchema(targetName, databaseName) {
   assert(
     simulationColumns.has("status"),
     "Preflight failed: D1 schema missing simulations.status. Apply migration db/migrations/2026-08-04_simulation_soft_delete.sql before deploy.",
+  );
+
+  const identityParsed = parseWranglerJsonPayload(identityClaimsResult.stdout);
+  assert(Array.isArray(identityParsed) && identityParsed.length > 0, "Preflight failed: unable to parse identity claims schema output.");
+  const identityRows = Array.isArray(identityParsed[0]?.results) ? identityParsed[0].results : [];
+  const identityColumns = new Set(identityRows.map((row) => String(row?.name ?? "")).filter(Boolean));
+  const missingIdentityColumns = ["normalized_email", "current_user_id", "status"].filter(
+    (column) => !identityColumns.has(column),
+  );
+  assert(
+    missingIdentityColumns.length === 0,
+    `Preflight failed: D1 identity lifecycle schema missing columns: ${missingIdentityColumns.join(", ")}. Apply migration db/migrations/2026-08-12_identity_lifecycle.sql before deploy.`,
+  );
+
+  const identityMetaParsed = parseWranglerJsonPayload(identityMetaResult.stdout);
+  const identityMetaRows = Array.isArray(identityMetaParsed?.[0]?.results) ? identityMetaParsed[0].results : [];
+  assert(
+    identityMetaRows.some((row) => row?.version === "2026-08-12-identity-lifecycle-v1"),
+    "Preflight failed: D1 identity lifecycle migration marker is missing or outdated.",
   );
 }
 

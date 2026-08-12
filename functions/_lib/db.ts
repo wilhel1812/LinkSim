@@ -10,7 +10,7 @@ const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write
 const ROLES: ResourceRole[] = ["viewer", "editor", "admin"];
 
 let schemaReady: Promise<void> | null = null;
-const SCHEMA_VERSION = "2026-08-04a";
+const SCHEMA_VERSION = "2026-08-12-identity-lifecycle-v1";
 type AccountState = "pending" | "approved" | "revoked";
 
 const dbVisibilityFromVisibility = (value: Visibility): DbVisibility => {
@@ -223,19 +223,8 @@ const deriveDefaultEmail = (userId: string, tokenPayload?: Record<string, unknow
 };
 
 const deriveVerifiedIdpEmail = (tokenPayload?: Record<string, unknown>): string => {
-  const fromPayload = sanitizeEmail(tokenPayload?.email);
+  const fromPayload = sanitizeEmail(tokenPayload?.__linksim_verified_idp_email);
   return fromPayload ?? "";
-};
-
-const parseTokenIssuedAtMs = (tokenPayload?: Record<string, unknown>): number | null => {
-  if (!tokenPayload) return null;
-  const raw = tokenPayload.iat;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw * 1000;
-  if (typeof raw === "string") {
-    const parsed = Number(raw);
-    if (Number.isFinite(parsed)) return parsed * 1000;
-  }
-  return null;
 };
 
 const parseAdminUserIds = (env: Env): Set<string> => {
@@ -320,6 +309,26 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     "updated_at",
   ],
   deleted_users: ["id", "deleted_at", "deleted_by_user_id"],
+  verified_identity_claims: [
+    "normalized_email",
+    "current_user_id",
+    "status",
+    "created_at",
+    "updated_at",
+    "blocked_at",
+    "blocked_by_user_id",
+  ],
+  identity_subject_states: [
+    "user_id",
+    "normalized_email",
+    "status",
+    "canonical_user_id",
+    "bootstrap_consumed",
+    "created_at",
+    "updated_at",
+    "changed_by_user_id",
+  ],
+  identity_lifecycle_meta: ["singleton", "version", "applied_at"],
   site_roles: ["site_id", "user_id", "role", "created_at"],
   simulation_roles: ["simulation_id", "user_id", "role", "created_at"],
   resource_changes: [
@@ -357,12 +366,37 @@ export const getSchemaDiagnostics = async (env: Env): Promise<{
     const missingColumns = required.filter((col) => !existing.has(col));
     if (missingColumns.length) missing.push({ table, columns: missingColumns });
   }
+  if (!missing.some((entry) => entry.table === "identity_lifecycle_meta")) {
+    const marker = await env.DB
+      .prepare("SELECT version FROM identity_lifecycle_meta WHERE singleton = 1 LIMIT 1")
+      .first<{ version: string }>();
+    if (marker?.version !== SCHEMA_VERSION) {
+      missing.push({ table: "identity_lifecycle_meta", columns: [`version=${SCHEMA_VERSION}`] });
+    }
+  }
   return { version: SCHEMA_VERSION, ok: missing.length === 0, missing };
 };
 
 const ensureSchema = async (env: Env): Promise<void> => {
   if (!schemaReady) {
     schemaReady = (async () => {
+      // Identity lifecycle state must be migrated before runtime performs any
+      // schema creation, backfill, or account mutation. In particular, never
+      // create an empty claims table that would bypass the required backfill.
+      const identityMetaInfo = await env.DB
+        .prepare("PRAGMA table_info(identity_lifecycle_meta)")
+        .all<{ name: string }>();
+      const identityMetaColumns = new Set(identityMetaInfo.results.map((column) => column.name));
+      if (!["singleton", "version", "applied_at"].every((column) => identityMetaColumns.has(column))) {
+        throw new Error("Schema out of date. Run the identity lifecycle D1 migration before serving requests.");
+      }
+      const identityMarker = await env.DB
+        .prepare("SELECT version FROM identity_lifecycle_meta WHERE singleton = 1 LIMIT 1")
+        .first<{ version: string }>();
+      if (identityMarker?.version !== SCHEMA_VERSION) {
+        throw new Error("Schema out of date. Identity lifecycle migration marker is missing or outdated.");
+      }
+
       await env.DB.batch([
         env.DB.prepare(
           `CREATE TABLE IF NOT EXISTS users (
@@ -593,32 +627,549 @@ type UserRow = {
   updated_at: string | null;
 };
 
-type IdentityMatchKind = "verified_idp_email" | "legacy_email";
-type IdentityReconcileCandidate = UserRow & { match_kind: IdentityMatchKind };
-
-const matchRank = (kind: IdentityMatchKind): number => (kind === "verified_idp_email" ? 2 : 1);
-
-const normalizeDateSafe = (value: string | null): number => {
-  if (!value) return Number.MAX_SAFE_INTEGER;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+type VerifiedIdentityEnsureInput = {
+  userId: string;
+  email: string;
+  defaultEmail: string;
+  bootstrapAdmin: boolean;
+  now: string;
 };
 
-export const chooseIdentityReconcileCandidate = (
-  candidates: IdentityReconcileCandidate[],
-): IdentityReconcileCandidate | null => {
-  if (!candidates.length) return null;
-  const sorted = [...candidates].sort((a, b) => {
-    const rankDiff = matchRank(b.match_kind) - matchRank(a.match_kind);
-    if (rankDiff !== 0) return rankDiff;
-    if (a.is_admin !== b.is_admin) return b.is_admin - a.is_admin;
-    if (a.is_moderator !== b.is_moderator) return b.is_moderator - a.is_moderator;
-    if (a.is_approved !== b.is_approved) return b.is_approved - a.is_approved;
-    const createdDiff = normalizeDateSafe(a.created_at) - normalizeDateSafe(b.created_at);
-    if (createdDiff !== 0) return createdDiff;
-    return a.id.localeCompare(b.id);
-  });
-  return sorted[0] ?? null;
+type SerializedIdentityLocation =
+  | { table: "sites" | "simulations"; column: "payload_json"; bumpTimestamp: true }
+  | { table: "resource_changes"; column: "snapshot_json"; bumpTimestamp: false };
+
+const prepareSerializedGrantIdentityMigration = (
+  env: Pick<Env, "DB">,
+  location: SerializedIdentityLocation,
+  normalizedEmail: string,
+  targetUserId: string,
+  now: string,
+): D1PreparedStatement => {
+  const timestampAssignment = location.bumpTimestamp ? ", updated_at = ?3" : "";
+  return env.DB
+    .prepare(
+      `WITH identity_source AS (
+         SELECT current_user_id AS id
+         FROM verified_identity_claims
+         WHERE normalized_email = ?1 AND status = 'active'
+       )
+       UPDATE ${location.table}
+       SET ${location.column} = json_set(
+         ${location.column},
+         '$.sharedWith',
+         json((
+           SELECT json_group_array(
+             json_object(
+               'userId', migrated_user_id,
+               'role', CASE strongest_role WHEN 2 THEN 'admin' WHEN 1 THEN 'editor' ELSE 'viewer' END
+             )
+           )
+           FROM (
+             SELECT
+               CASE WHEN user_id = (SELECT id FROM identity_source) THEN ?2 ELSE user_id END AS migrated_user_id,
+               MAX(role_strength) AS strongest_role
+             FROM (
+               SELECT
+                 CASE WHEN j.type = 'object' THEN trim(json_extract(j.value, '$.userId')) ELSE '' END AS user_id,
+                 CASE json_extract(j.value, '$.role')
+                   WHEN 'admin' THEN 2 WHEN 'editor' THEN 1 WHEN 'viewer' THEN 0 ELSE -1
+                 END AS role_strength
+               FROM json_each(${location.column}, '$.sharedWith') AS j
+             ) serialized_grants
+             WHERE user_id <> '' AND role_strength >= 0
+             GROUP BY CASE WHEN user_id = (SELECT id FROM identity_source) THEN ?2 ELSE user_id END
+           ) migrated_grants
+         )))${timestampAssignment}
+       WHERE json_valid(${location.column})
+         AND (SELECT id FROM identity_source) <> ?2
+         AND EXISTS (SELECT 1 FROM users WHERE id = ?2)
+         AND EXISTS (
+           SELECT 1
+           FROM json_each(${location.column}, '$.sharedWith') AS j
+           WHERE j.type = 'object'
+             AND trim(json_extract(j.value, '$.userId')) = (SELECT id FROM identity_source)
+         )`,
+    )
+    .bind(...(location.bumpTimestamp ? [normalizedEmail, targetUserId, now] : [normalizedEmail, targetUserId]));
+};
+
+const prepareSerializedMetadataIdentityMigration = (
+  env: Pick<Env, "DB">,
+  location: SerializedIdentityLocation,
+  normalizedEmail: string,
+  targetUserId: string,
+  now: string,
+): D1PreparedStatement => {
+  const timestampAssignment = location.bumpTimestamp ? ", updated_at = ?3" : "";
+  return env.DB
+    .prepare(
+      `WITH identity_source AS (
+         SELECT current_user_id AS id
+         FROM verified_identity_claims
+         WHERE normalized_email = ?1 AND status = 'active'
+       ),
+       candidates AS MATERIALIZED (
+         SELECT rowid AS target_rowid, ${location.column} AS migrated_json
+         FROM ${location.table}
+         WHERE json_valid(${location.column})
+           AND (SELECT id FROM identity_source) <> ?2
+           AND EXISTS (SELECT 1 FROM users WHERE id = ?2)
+           AND (
+             trim(json_extract(${location.column}, '$.ownerUserId')) = (SELECT id FROM identity_source)
+             OR trim(json_extract(${location.column}, '$.createdByUserId')) = (SELECT id FROM identity_source)
+             OR trim(json_extract(${location.column}, '$.lastEditedByUserId')) = (SELECT id FROM identity_source)
+           )
+       ),
+       owners AS (
+         SELECT target_rowid,
+                CASE WHEN trim(json_extract(migrated_json, '$.ownerUserId')) = (SELECT id FROM identity_source)
+                  THEN json_set(migrated_json, '$.ownerUserId', ?2) ELSE migrated_json END AS migrated_json
+         FROM candidates
+       ),
+       creators AS (
+         SELECT target_rowid,
+                CASE WHEN trim(json_extract(migrated_json, '$.createdByUserId')) = (SELECT id FROM identity_source)
+                  THEN json_set(migrated_json, '$.createdByUserId', ?2) ELSE migrated_json END AS migrated_json
+         FROM owners
+       ),
+       editors AS (
+         SELECT target_rowid,
+                CASE WHEN trim(json_extract(migrated_json, '$.lastEditedByUserId')) = (SELECT id FROM identity_source)
+                  THEN json_set(migrated_json, '$.lastEditedByUserId', ?2) ELSE migrated_json END AS migrated_json
+         FROM creators
+       )
+       UPDATE ${location.table}
+       SET ${location.column} = (
+         SELECT migrated_json FROM editors WHERE target_rowid = ${location.table}.rowid
+       )${timestampAssignment}
+       WHERE rowid IN (SELECT target_rowid FROM editors)`,
+    )
+    .bind(...(location.bumpTimestamp ? [normalizedEmail, targetUserId, now] : [normalizedEmail, targetUserId]));
+};
+
+const readVerifiedIdentityCommandState = async (
+  env: Pick<Env, "DB">,
+  userId: string,
+  normalizedEmail: string,
+): Promise<{ claim_status: string | null; current_user_id: string | null; subject_status: string | null; deleted_at: string | null }> =>
+  (await env.DB
+    .prepare(
+      `SELECT claim.status AS claim_status,
+              claim.current_user_id,
+              subject.status AS subject_status,
+              tombstone.deleted_at
+       FROM (SELECT 1) seed
+       LEFT JOIN verified_identity_claims claim ON claim.normalized_email = ?
+       LEFT JOIN identity_subject_states subject ON subject.user_id = ?
+       LEFT JOIN deleted_users tombstone ON tombstone.id = ?`,
+    )
+    .bind(normalizedEmail, userId, userId)
+    .first<{
+      claim_status: string | null;
+      current_user_id: string | null;
+      subject_status: string | null;
+      deleted_at: string | null;
+    }>()) ?? { claim_status: null, current_user_id: null, subject_status: null, deleted_at: null };
+
+export const executeVerifiedIdentityEnsure = async (
+  env: Pick<Env, "DB">,
+  input: VerifiedIdentityEnsureInput,
+): Promise<void> => {
+  const { userId, email: normalizedEmail, defaultEmail, bootstrapAdmin, now } = input;
+  const activeSourceSql = `SELECT current_user_id FROM verified_identity_claims
+                           WHERE normalized_email = ? AND status = 'active'`;
+  const sourceDiffersSql = `(${activeSourceSql}) <> ? AND EXISTS (SELECT 1 FROM users WHERE id = ?)`;
+  const targetAllowedSql = `NOT EXISTS (
+      SELECT 1 FROM identity_subject_states
+      WHERE user_id = ? AND status IN ('superseded', 'blocked')
+    ) AND NOT EXISTS (SELECT 1 FROM deleted_users WHERE id = ?)`;
+
+  await env.DB.batch([
+    env.DB
+      .prepare(
+        `INSERT INTO verified_identity_claims
+          (normalized_email, current_user_id, status, created_at, updated_at, blocked_at, blocked_by_user_id)
+         SELECT ?, ?, 'active', ?, ?, NULL, NULL
+         WHERE ${targetAllowedSql}
+         ON CONFLICT(normalized_email) DO NOTHING`,
+      )
+      .bind(normalizedEmail, userId, now, now, userId, userId),
+    env.DB
+      .prepare(
+        `INSERT OR IGNORE INTO users
+          (id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified,
+           avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes,
+           avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id,
+           created_at, updated_at)
+         SELECT ?, '', ?, NULL, '', '', ?, 1, '', 1, NULL, NULL, NULL, NULL, NULL,
+                CASE WHEN ? = 1
+                  AND (SELECT current_user_id FROM verified_identity_claims
+                       WHERE normalized_email = ? AND status = 'active') = ?
+                  AND NOT EXISTS (
+                  SELECT 1 FROM identity_subject_states WHERE user_id = ? AND bootstrap_consumed = 1
+                ) THEN 1 ELSE 0 END,
+                0, 1, ?, 'system:open-registration', ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM verified_identity_claims
+           WHERE normalized_email = ? AND status = 'active'
+         ) AND ${targetAllowedSql}`,
+      )
+      .bind(
+        userId,
+        defaultEmail,
+        normalizedEmail,
+        bootstrapAdmin ? 1 : 0,
+        normalizedEmail,
+        userId,
+        userId,
+        now,
+        now,
+        now,
+        normalizedEmail,
+        userId,
+        userId,
+      ),
+    env.DB
+      .prepare(
+        `INSERT INTO identity_lifecycle_meta (singleton, version, applied_at)
+         SELECT singleton, version, applied_at
+         FROM identity_lifecycle_meta
+         WHERE singleton = 1
+           AND EXISTS (
+             SELECT 1
+             FROM simulations source_simulation
+             JOIN simulations target_simulation
+               ON lower(target_simulation.name) = lower(source_simulation.name)
+             WHERE source_simulation.owner_user_id = (${activeSourceSql})
+               AND target_simulation.owner_user_id = ?
+               AND source_simulation.owner_user_id <> target_simulation.owner_user_id
+               AND source_simulation.status = 'active'
+               AND target_simulation.status = 'active'
+           )`,
+      )
+      .bind(normalizedEmail, userId),
+    env.DB
+      .prepare(
+        `UPDATE users AS target
+         SET username = source.username,
+             email = source.email,
+             username_set_at = source.username_set_at,
+             bio = source.bio,
+             access_request_note = source.access_request_note,
+             avatar_url = source.avatar_url,
+             email_public = source.email_public,
+             default_frequency_preset_id = source.default_frequency_preset_id,
+             simulation_defaults_preference_json = source.simulation_defaults_preference_json,
+             avatar_object_key = source.avatar_object_key,
+             avatar_thumb_key = source.avatar_thumb_key,
+             avatar_hash = source.avatar_hash,
+             avatar_bytes = source.avatar_bytes,
+             avatar_content_type = source.avatar_content_type,
+             created_at = source.created_at,
+             is_admin = source.is_admin,
+             is_moderator = source.is_moderator,
+             is_approved = source.is_approved,
+             approved_at = source.approved_at,
+             approved_by_user_id = source.approved_by_user_id,
+             updated_at = ?
+         FROM users source
+         WHERE target.id = ?
+           AND source.id = (${activeSourceSql})
+           AND source.id <> ?`,
+      )
+      .bind(now, userId, normalizedEmail, userId),
+    env.DB
+      .prepare(
+        `UPDATE sites
+         SET owner_user_id = ?, updated_at = ?
+         WHERE owner_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`,
+      )
+      .bind(userId, now, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE sites
+         SET created_by_user_id = CASE WHEN created_by_user_id = (${activeSourceSql}) THEN ? ELSE created_by_user_id END,
+             last_edited_by_user_id = CASE WHEN last_edited_by_user_id = (${activeSourceSql}) THEN ? ELSE last_edited_by_user_id END,
+             updated_at = ?
+         WHERE ${sourceDiffersSql}
+           AND (created_by_user_id = (${activeSourceSql}) OR last_edited_by_user_id = (${activeSourceSql}))`,
+      )
+      .bind(normalizedEmail, userId, normalizedEmail, userId, now, normalizedEmail, userId, userId, normalizedEmail, normalizedEmail),
+    env.DB
+      .prepare(
+        `UPDATE simulations
+         SET owner_user_id = ?, updated_at = ?
+         WHERE owner_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`,
+      )
+      .bind(userId, now, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE simulations
+         SET created_by_user_id = CASE WHEN created_by_user_id = (${activeSourceSql}) THEN ? ELSE created_by_user_id END,
+             last_edited_by_user_id = CASE WHEN last_edited_by_user_id = (${activeSourceSql}) THEN ? ELSE last_edited_by_user_id END,
+             updated_at = ?
+         WHERE ${sourceDiffersSql}
+           AND (created_by_user_id = (${activeSourceSql}) OR last_edited_by_user_id = (${activeSourceSql}))`,
+      )
+      .bind(normalizedEmail, userId, normalizedEmail, userId, now, normalizedEmail, userId, userId, normalizedEmail, normalizedEmail),
+    env.DB
+      .prepare(
+        `INSERT INTO site_roles (site_id, user_id, role, created_at)
+         SELECT site_id, ?, role, created_at
+         FROM site_roles
+         WHERE user_id = (${activeSourceSql}) AND ${sourceDiffersSql}
+         ON CONFLICT(site_id, user_id) DO UPDATE SET role = CASE
+           WHEN excluded.role = 'admin' OR site_roles.role = 'admin' THEN 'admin'
+           WHEN excluded.role = 'editor' OR site_roles.role = 'editor' THEN 'editor'
+           ELSE 'viewer' END`,
+      )
+      .bind(userId, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE sites SET updated_at = ?
+         WHERE id IN (SELECT site_id FROM site_roles WHERE user_id = (${activeSourceSql}))
+           AND ${sourceDiffersSql}`,
+      )
+      .bind(now, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(`DELETE FROM site_roles WHERE user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
+      .bind(normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `INSERT INTO simulation_roles (simulation_id, user_id, role, created_at)
+         SELECT simulation_id, ?, role, created_at
+         FROM simulation_roles
+         WHERE user_id = (${activeSourceSql}) AND ${sourceDiffersSql}
+         ON CONFLICT(simulation_id, user_id) DO UPDATE SET role = CASE
+           WHEN excluded.role = 'admin' OR simulation_roles.role = 'admin' THEN 'admin'
+           WHEN excluded.role = 'editor' OR simulation_roles.role = 'editor' THEN 'editor'
+           ELSE 'viewer' END`,
+      )
+      .bind(userId, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE simulations SET updated_at = ?
+         WHERE id IN (SELECT simulation_id FROM simulation_roles WHERE user_id = (${activeSourceSql}))
+           AND ${sourceDiffersSql}`,
+      )
+      .bind(now, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(`DELETE FROM simulation_roles WHERE user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
+      .bind(normalizedEmail, normalizedEmail, userId, userId),
+    prepareSerializedGrantIdentityMigration(
+      env,
+      { table: "sites", column: "payload_json", bumpTimestamp: true },
+      normalizedEmail,
+      userId,
+      now,
+    ),
+    prepareSerializedGrantIdentityMigration(
+      env,
+      { table: "simulations", column: "payload_json", bumpTimestamp: true },
+      normalizedEmail,
+      userId,
+      now,
+    ),
+    prepareSerializedGrantIdentityMigration(
+      env,
+      { table: "resource_changes", column: "snapshot_json", bumpTimestamp: false },
+      normalizedEmail,
+      userId,
+      now,
+    ),
+    prepareSerializedMetadataIdentityMigration(
+      env,
+      { table: "sites", column: "payload_json", bumpTimestamp: true },
+      normalizedEmail,
+      userId,
+      now,
+    ),
+    prepareSerializedMetadataIdentityMigration(
+      env,
+      { table: "simulations", column: "payload_json", bumpTimestamp: true },
+      normalizedEmail,
+      userId,
+      now,
+    ),
+    prepareSerializedMetadataIdentityMigration(
+      env,
+      { table: "resource_changes", column: "snapshot_json", bumpTimestamp: false },
+      normalizedEmail,
+      userId,
+      now,
+    ),
+    env.DB
+      .prepare(`UPDATE resource_changes SET actor_user_id = ? WHERE actor_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
+      .bind(userId, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(`UPDATE simulation_path_leaderboard_entries SET owner_user_id = ? WHERE owner_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
+      .bind(userId, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(`UPDATE users SET approved_by_user_id = ? WHERE approved_by_user_id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
+      .bind(userId, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `INSERT INTO user_identity_audit
+          (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+         SELECT 'reconciled_by_verified_idp_email', ?, source.id, ?, ?,
+                json_object(
+                  'mergedFromUserId', source.id,
+                  'mergedFromIsAdmin', json(CASE WHEN source.is_admin = 1 THEN 'true' ELSE 'false' END),
+                  'mergedFromIsModerator', json(CASE WHEN source.is_moderator = 1 THEN 'true' ELSE 'false' END),
+                  'mergedFromIsApproved', json(CASE WHEN source.is_approved = 1 THEN 'true' ELSE 'false' END)
+                ), ?
+         FROM users source
+         WHERE source.id = (${activeSourceSql}) AND source.id <> ?
+           AND EXISTS (SELECT 1 FROM users WHERE id = ?)`,
+      )
+      .bind(userId, userId, normalizedEmail, now, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE identity_subject_states
+         SET canonical_user_id = ?, updated_at = ?, changed_by_user_id = ?
+         WHERE status = 'superseded'
+           AND canonical_user_id = (${activeSourceSql})
+           AND ${sourceDiffersSql}`,
+      )
+      .bind(userId, now, userId, normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `INSERT INTO identity_subject_states
+          (user_id, normalized_email, status, canonical_user_id, bootstrap_consumed, created_at, updated_at, changed_by_user_id)
+         SELECT current_user_id, normalized_email, 'superseded', ?, 1, ?, ?, ?
+         FROM verified_identity_claims
+         WHERE normalized_email = ? AND status = 'active' AND current_user_id <> ?
+           AND EXISTS (SELECT 1 FROM users WHERE id = ?)
+         ON CONFLICT(user_id) DO UPDATE SET
+           normalized_email = excluded.normalized_email,
+           status = 'superseded',
+           canonical_user_id = excluded.canonical_user_id,
+           updated_at = excluded.updated_at,
+           changed_by_user_id = excluded.changed_by_user_id`,
+      )
+      .bind(userId, now, now, userId, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(`DELETE FROM users WHERE id = (${activeSourceSql}) AND ${sourceDiffersSql}`)
+      .bind(normalizedEmail, normalizedEmail, userId, userId),
+    env.DB
+      .prepare(
+        `WITH identity_source(id) AS MATERIALIZED (
+           SELECT current_user_id FROM verified_identity_claims
+           WHERE normalized_email = ? AND status = 'active'
+         )
+         UPDATE verified_identity_claims
+         SET current_user_id = ?, updated_at = ?
+         WHERE status = 'active'
+           AND current_user_id = (SELECT id FROM identity_source)
+           AND EXISTS (SELECT 1 FROM users WHERE id = ?)`,
+      )
+      .bind(normalizedEmail, userId, now, userId),
+    env.DB
+      .prepare(
+        `INSERT INTO identity_subject_states
+          (user_id, normalized_email, status, canonical_user_id, bootstrap_consumed, created_at, updated_at, changed_by_user_id)
+         SELECT ?, ?, 'current', ?, 1, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM verified_identity_claims
+           WHERE normalized_email = ? AND status = 'active' AND current_user_id = ?
+         ) AND ${targetAllowedSql}
+         ON CONFLICT(user_id) DO UPDATE SET
+           normalized_email = excluded.normalized_email,
+           canonical_user_id = excluded.canonical_user_id,
+           bootstrap_consumed = 1,
+           updated_at = excluded.updated_at,
+           changed_by_user_id = excluded.changed_by_user_id
+         WHERE identity_subject_states.status = 'current'`,
+      )
+      .bind(userId, normalizedEmail, userId, now, now, userId, normalizedEmail, userId, userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE users
+         SET email = COALESCE(NULLIF(TRIM(email), ''), ?),
+             idp_email = ?, idp_email_verified = 1, updated_at = ?
+         WHERE id = ?
+           AND EXISTS (
+             SELECT 1 FROM verified_identity_claims claim
+             JOIN identity_subject_states subject ON subject.user_id = ?
+             WHERE claim.normalized_email = ? AND claim.status = 'active'
+               AND claim.current_user_id = ? AND subject.status = 'current'
+           )`,
+      )
+      .bind(defaultEmail, normalizedEmail, now, userId, userId, normalizedEmail, userId),
+  ]);
+
+  const state = await readVerifiedIdentityCommandState(env, userId, normalizedEmail);
+  if (state.subject_status === "superseded") throw new Error("Identity subject is no longer current");
+  if (state.deleted_at || state.subject_status === "blocked" || state.claim_status === "blocked") {
+    throw new Error("Identity is blocked by an administrator");
+  }
+  if (state.claim_status !== "active" || state.current_user_id !== userId || state.subject_status !== "current") {
+    throw new Error("Verified identity lifecycle invariant failed");
+  }
+};
+
+export const executeUnverifiedIdentityEnsure = async (
+  env: Pick<Env, "DB">,
+  input: { userId: string; defaultEmail: string; bootstrapAdmin: boolean; now: string },
+): Promise<void> => {
+  const { userId, defaultEmail, bootstrapAdmin, now } = input;
+  const allowedSql = `NOT EXISTS (
+      SELECT 1 FROM identity_subject_states
+      WHERE user_id = ? AND status IN ('superseded', 'blocked')
+    ) AND NOT EXISTS (SELECT 1 FROM deleted_users WHERE id = ?)`;
+  await env.DB.batch([
+    env.DB
+      .prepare(
+        `INSERT OR IGNORE INTO users
+          (id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified,
+           avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes,
+           avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id,
+           created_at, updated_at)
+         SELECT ?, '', ?, NULL, '', '', NULL, 0, '', 1, NULL, NULL, NULL, NULL, NULL,
+                CASE WHEN ? = 1 AND NOT EXISTS (
+                  SELECT 1 FROM identity_subject_states WHERE user_id = ? AND bootstrap_consumed = 1
+                ) THEN 1 ELSE 0 END,
+                0, 1, ?, 'system:open-registration', ?, ?
+         WHERE ${allowedSql}`,
+      )
+      .bind(userId, defaultEmail, bootstrapAdmin ? 1 : 0, userId, now, now, now, userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE users
+         SET email = COALESCE(NULLIF(TRIM(email), ''), ?), updated_at = ?
+         WHERE id = ? AND ${allowedSql}`,
+      )
+      .bind(defaultEmail, now, userId, userId, userId),
+    env.DB
+      .prepare(
+        `INSERT INTO identity_subject_states
+          (user_id, normalized_email, status, canonical_user_id, bootstrap_consumed, created_at, updated_at, changed_by_user_id)
+         SELECT ?, NULL, 'current', ?, 1, ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = ?) AND ${allowedSql}
+         ON CONFLICT(user_id) DO UPDATE SET
+           canonical_user_id = excluded.canonical_user_id,
+           bootstrap_consumed = 1,
+           updated_at = excluded.updated_at,
+           changed_by_user_id = excluded.changed_by_user_id
+         WHERE identity_subject_states.status = 'current'`,
+      )
+      .bind(userId, userId, now, now, userId, userId, userId, userId),
+  ]);
+
+  const state = await env.DB
+    .prepare(
+      `SELECT subject.status AS subject_status, tombstone.deleted_at, user.id AS live_user_id
+       FROM (SELECT 1) seed
+       LEFT JOIN identity_subject_states subject ON subject.user_id = ?
+       LEFT JOIN deleted_users tombstone ON tombstone.id = ?
+       LEFT JOIN users user ON user.id = ?`,
+    )
+    .bind(userId, userId, userId)
+    .first<{ subject_status: string | null; deleted_at: string | null; live_user_id: string | null }>();
+  if (state?.subject_status === "superseded") throw new Error("Identity subject is no longer current");
+  if (state?.subject_status === "blocked" || state?.deleted_at) throw new Error("Session revoked by admin");
+  if (!state?.live_user_id) throw new Error("User lifecycle invariant failed");
 };
 
 const toUserProfile = (row: UserRow) => ({
@@ -679,194 +1230,59 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
     .first<UserRow>();
 };
 
-const reconcileUserIdentityByIdpEmail = async (
-  env: Env,
-  userId: string,
-  idpEmail: string,
-): Promise<void> => {
-  const normalized = sanitizeEmail(idpEmail);
-  if (!normalized) return;
-
-  const rows = await env.DB
-    .prepare(
-      `SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
-              CASE
-                WHEN lower(idp_email) = lower(?) AND idp_email_verified = 1 THEN 'verified_idp_email'
-                WHEN lower(email) = lower(?) THEN 'legacy_email'
-                ELSE NULL
-              END AS match_kind
-       FROM users
-       WHERE id <> ?
-         AND (
-           (lower(idp_email) = lower(?) AND idp_email_verified = 1)
-           OR lower(email) = lower(?)
-         )
-       LIMIT 25`,
-    )
-    .bind(normalized, normalized, userId, normalized, normalized)
-    .all<IdentityReconcileCandidate>();
-  const existing = chooseIdentityReconcileCandidate(
-    rows.results.filter(
-      (row): row is IdentityReconcileCandidate =>
-        row.match_kind === "verified_idp_email" || row.match_kind === "legacy_email",
-    ),
-  );
-  if (!existing) return;
-
-  const now = new Date().toISOString();
-  await env.DB
-    .prepare(
-      `UPDATE users
-       SET is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
-           is_moderator = CASE WHEN ? = 1 THEN 1 ELSE is_moderator END,
-           is_approved = CASE WHEN ? = 1 THEN 1 ELSE is_approved END,
-           approved_at = CASE WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
-           approved_by_user_id = CASE WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?) ELSE approved_by_user_id END,
-           updated_at = ?
-       WHERE id = ?`,
-    )
-    .bind(
-      existing.is_admin === 1 ? 1 : 0,
-      existing.is_moderator === 1 ? 1 : 0,
-      existing.is_approved === 1 ? 1 : 0,
-      existing.is_approved === 1 ? 1 : 0,
-      existing.approved_at ?? now,
-      existing.is_approved === 1 ? 1 : 0,
-      existing.approved_by_user_id ?? existing.id,
-      now,
-      userId,
-    )
-    .run();
-
-  await env.DB.batch([
-    env.DB.prepare("UPDATE sites SET owner_user_id = ? WHERE owner_user_id = ?").bind(userId, existing.id),
-    env.DB
-      .prepare(
-        `UPDATE sites
-         SET created_by_user_id = CASE WHEN created_by_user_id = ? THEN ? ELSE created_by_user_id END,
-             last_edited_by_user_id = CASE WHEN last_edited_by_user_id = ? THEN ? ELSE last_edited_by_user_id END`,
-      )
-      .bind(existing.id, userId, existing.id, userId),
-    env.DB.prepare("UPDATE simulations SET owner_user_id = ? WHERE owner_user_id = ?").bind(userId, existing.id),
-    env.DB
-      .prepare(
-        `UPDATE simulations
-         SET created_by_user_id = CASE WHEN created_by_user_id = ? THEN ? ELSE created_by_user_id END,
-             last_edited_by_user_id = CASE WHEN last_edited_by_user_id = ? THEN ? ELSE last_edited_by_user_id END`,
-      )
-      .bind(existing.id, userId, existing.id, userId),
-    env.DB.prepare("UPDATE site_roles SET user_id = ? WHERE user_id = ?").bind(userId, existing.id),
-    env.DB.prepare("UPDATE simulation_roles SET user_id = ? WHERE user_id = ?").bind(userId, existing.id),
-    env.DB.prepare("UPDATE resource_changes SET actor_user_id = ? WHERE actor_user_id = ?").bind(userId, existing.id),
-  ]);
-
-  await env.DB
-    .prepare(
-      `INSERT INTO user_identity_audit
-       (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      "reconciled_by_verified_idp_email",
-      userId,
-      existing.id,
-      userId,
-      normalized,
-      JSON.stringify({
-        mergedFromUserId: existing.id,
-        matchKind: existing.match_kind,
-        mergedFromIsAdmin: existing.is_admin === 1,
-        mergedFromIsModerator: existing.is_moderator === 1,
-        mergedFromIsApproved: existing.is_approved === 1,
-      }),
-      now,
-    )
-    .run();
-};
-
 export const ensureUser = async (
   env: Env,
   userId: string,
   tokenPayload?: Record<string, unknown>,
 ): Promise<void> => {
   await ensureSchema(env);
-  const deletion = await env.DB
-    .prepare("SELECT deleted_at FROM deleted_users WHERE id = ? LIMIT 1")
-    .bind(userId)
-    .first<{ deleted_at: string }>();
-  if (deletion?.deleted_at) {
-    const tokenIssuedAtMs = parseTokenIssuedAtMs(tokenPayload);
-    const deletedAtMs = Date.parse(deletion.deleted_at);
-    if (!Number.isFinite(deletedAtMs) || tokenIssuedAtMs === null || tokenIssuedAtMs <= deletedAtMs) {
-      throw new Error("Session revoked by admin");
-    }
-    await env.DB.prepare("DELETE FROM deleted_users WHERE id = ?").bind(userId).run();
-  }
   const now = new Date().toISOString();
   const email = deriveDefaultEmail(userId, tokenPayload);
   const idpEmail = deriveVerifiedIdpEmail(tokenPayload);
-  const idpEmailVerified = idpEmail ? 1 : 0;
-  const isBootstrapAdmin = parseAdminUserIds(env).has(userId.toLowerCase()) ? 1 : 0;
-  const autoApprove = 1;
-
-  await env.DB.prepare(
-    `INSERT OR IGNORE INTO users
-      (id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
-     VALUES (?, '', ?, NULL, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
+  if (idpEmail) {
+    await executeVerifiedIdentityEnsure(env, {
       userId,
-      email,
-      idpEmail || null,
-      idpEmailVerified,
-      isBootstrapAdmin,
-      0,
-      autoApprove,
+      email: idpEmail,
+      defaultEmail: email,
+      bootstrapAdmin: parseAdminUserIds(env).has(userId.toLowerCase()),
       now,
-      "system:open-registration",
-      now,
-      now,
-    )
-    .run();
-
-  await env.DB.prepare(
-    `UPDATE users
-     SET email = COALESCE(NULLIF(TRIM(email), ''), ?),
-         idp_email = CASE WHEN ? = 1 THEN COALESCE(NULLIF(TRIM(idp_email), ''), ?) ELSE idp_email END,
-         idp_email_verified = CASE WHEN ? = 1 THEN 1 ELSE idp_email_verified END,
-         is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
-         is_moderator = CASE WHEN ? = 1 THEN 1 ELSE is_moderator END,
-         is_approved = CASE WHEN ? = 1 AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%') THEN 1 ELSE is_approved END,
-         approved_at = CASE WHEN ? = 1 AND approved_at IS NULL THEN ? ELSE approved_at END,
-         approved_by_user_id = CASE WHEN ? = 1 AND approved_by_user_id IS NULL THEN ? ELSE approved_by_user_id END,
-         updated_at = ?
-     WHERE id = ?`,
-  )
-    .bind(
-      email,
-      idpEmailVerified,
-      idpEmail || null,
-      idpEmailVerified,
-      isBootstrapAdmin,
-      0,
-      autoApprove,
-      autoApprove,
-      now,
-      autoApprove,
-      "system:open-registration",
-      now,
-      userId,
-    )
-    .run();
-
-  if (idpEmailVerified) {
-    await reconcileUserIdentityByIdpEmail(env, userId, idpEmail);
+    });
+    return;
   }
+  await executeUnverifiedIdentityEnsure(env, {
+    userId,
+    defaultEmail: email,
+    bootstrapAdmin: parseAdminUserIds(env).has(userId.toLowerCase()),
+    now,
+  });
 };
 
 export const fetchUserProfile = async (env: Env, userId: string) => {
   const row = await readUserRow(env, userId);
   return row ? toUserProfile(row) : null;
+};
+
+export const fetchUserDiagnosticAccessState = async (
+  env: Pick<Env, "DB">,
+  userId: string,
+): Promise<{ isAdmin: boolean; accountState: AccountState } | null> => {
+  const row = await env.DB
+    .prepare(
+      `SELECT is_admin, is_moderator, is_approved, approved_at, approved_by_user_id
+       FROM users WHERE id = ?`,
+    )
+    .bind(userId)
+    .first<Pick<UserRow, "is_admin" | "is_moderator" | "is_approved" | "approved_at" | "approved_by_user_id">>();
+  if (!row) return null;
+  return {
+    isAdmin: row.is_admin === 1,
+    accountState:
+      row.is_admin === 1 || row.is_moderator === 1 || row.is_approved === 1
+        ? "approved"
+        : typeof row.approved_by_user_id === "string" && row.approved_by_user_id.startsWith("revoked:")
+          ? "revoked"
+          : "pending",
+  };
 };
 
 export const assertUserAccess = async (env: Env, userId: string) => {
@@ -1031,14 +1447,22 @@ export const getUserAvatarKeys = async (
   };
 };
 
-export const listUsers = async (env: Env) => {
+export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
       "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
-  return rows.results.map(toUserProfile);
+  return rows.results.map((row) => {
+    const profile = toUserProfile(row);
+    const { idpEmail, idpEmailVerified, ...ordinaryProfile } = profile;
+    return {
+      ...ordinaryProfile,
+      email: includePrivateIdentity || row.email_public === 1 ? profile.email : "",
+      ...(includePrivateIdentity ? { idpEmail, idpEmailVerified } : {}),
+    };
+  });
 };
 
 export const listCollaboratorDirectory = async (env: Env) => {
@@ -1063,81 +1487,98 @@ export const listCollaboratorDirectory = async (env: Env) => {
   }));
 };
 
+const EFFECTIVE_CANONICAL_USER_SQL = `COALESCE(
+  (SELECT canonical_user_id FROM identity_subject_states WHERE user_id = ? AND status = 'superseded'),
+  ?
+)`;
+
+export const resolveEffectiveCanonicalUserId = async (env: Pick<Env, "DB">, userId: string): Promise<string> => {
+  const row = await env.DB
+    .prepare(`SELECT ${EFFECTIVE_CANONICAL_USER_SQL} AS id`)
+    .bind(userId, userId)
+    .first<{ id: string }>();
+  return row?.id || userId;
+};
+
+export const executeIdentityRoleChange = async (
+  env: Pick<Env, "DB">,
+  userId: string,
+  role: UserRole,
+  actorUserId: string,
+  now: string,
+): Promise<string> => {
+  const revokedBy = `revoked:${actorUserId}`;
+  const roleValues =
+    role === "admin"
+      ? { admin: 1, moderator: 0, approved: 1 }
+      : role === "moderator"
+        ? { admin: 0, moderator: 1, approved: 1 }
+        : role === "user"
+          ? { admin: 0, moderator: 0, approved: 1 }
+          : { admin: 0, moderator: 0, approved: 0 };
+
+  await env.DB.batch([
+    env.DB
+      .prepare(
+        `UPDATE users
+         SET is_admin = ?, is_moderator = ?, is_approved = ?,
+             approved_at = CASE
+               WHEN ? = 1 THEN COALESCE(approved_at, ?)
+               ELSE approved_at END,
+             approved_by_user_id = CASE
+               WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?)
+               WHEN approved_at IS NULL THEN NULL
+               ELSE ? END,
+             updated_at = ?
+         WHERE id = ${EFFECTIVE_CANONICAL_USER_SQL}`,
+      )
+      .bind(
+        roleValues.admin,
+        roleValues.moderator,
+        roleValues.approved,
+        roleValues.approved,
+        now,
+        roleValues.approved,
+        actorUserId,
+        revokedBy,
+        now,
+        userId,
+        userId,
+      ),
+    env.DB
+      .prepare(
+        `INSERT INTO user_identity_audit
+          (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+         SELECT 'role_changed', effective.id, ?, ?,
+                (SELECT normalized_email FROM identity_subject_states WHERE user_id = effective.id),
+                json_object('requestedUserId', ?, 'role', ?), ?
+         FROM (SELECT ${EFFECTIVE_CANONICAL_USER_SQL} AS id) effective
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = effective.id)`,
+      )
+      .bind(userId, actorUserId, userId, role, now, userId, userId),
+  ]);
+  return resolveEffectiveCanonicalUserId(env, userId);
+};
+
 export const setUserAdminFlag = async (env: Env, userId: string, isAdminRaw: unknown) => {
-  const isAdmin = Boolean(isAdminRaw);
-  await env.DB
-    .prepare("UPDATE users SET is_admin = ?, is_moderator = CASE WHEN ? = 1 THEN 0 ELSE is_moderator END, updated_at = ? WHERE id = ?")
-    .bind(isAdmin ? 1 : 0, isAdmin ? 1 : 0, new Date().toISOString(), userId)
-    .run();
-  const profile = await fetchUserProfile(env, userId);
+  await ensureSchema(env);
+  const effectiveUserId = await executeIdentityRoleChange(
+    env,
+    userId,
+    isAdminRaw ? "admin" : "user",
+    "system:set-admin-flag",
+    new Date().toISOString(),
+  );
+  const profile = await fetchUserProfile(env, effectiveUserId);
   if (!profile) throw new Error("User not found.");
   return profile;
 };
 
 export const setUserRole = async (env: Env, userId: string, role: UserRole, actorUserId: string) => {
+  await ensureSchema(env);
   const now = new Date().toISOString();
-  const revokedBy = `revoked:${actorUserId}`;
-  if (role === "admin") {
-    await env.DB
-      .prepare(
-        `UPDATE users
-         SET is_admin = 1,
-             is_moderator = 0,
-             is_approved = 1,
-             approved_at = COALESCE(approved_at, ?),
-             approved_by_user_id = COALESCE(approved_by_user_id, ?),
-             updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(now, actorUserId, now, userId)
-      .run();
-  } else if (role === "moderator") {
-    await env.DB
-      .prepare(
-        `UPDATE users
-         SET is_admin = 0,
-             is_moderator = 1,
-             is_approved = 1,
-             approved_at = COALESCE(approved_at, ?),
-             approved_by_user_id = COALESCE(approved_by_user_id, ?),
-             updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(now, actorUserId, now, userId)
-      .run();
-  } else if (role === "user") {
-    await env.DB
-      .prepare(
-        `UPDATE users
-         SET is_admin = 0,
-             is_moderator = 0,
-             is_approved = 1,
-             approved_at = COALESCE(approved_at, ?),
-             approved_by_user_id = COALESCE(approved_by_user_id, ?),
-             updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(now, actorUserId, now, userId)
-      .run();
-  } else {
-    await env.DB
-      .prepare(
-        `UPDATE users
-         SET is_admin = 0,
-             is_moderator = 0,
-             is_approved = 0,
-             approved_at = approved_at,
-             approved_by_user_id = CASE
-               WHEN approved_at IS NULL THEN NULL
-               ELSE ?
-             END,
-             updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(revokedBy, now, userId)
-      .run();
-  }
-  const profile = await fetchUserProfile(env, userId);
+  const effectiveUserId = await executeIdentityRoleChange(env, userId, role, actorUserId, now);
+  const profile = await fetchUserProfile(env, effectiveUserId);
   if (!profile) throw new Error("User not found.");
   return profile;
 };
@@ -1152,19 +1593,72 @@ export const setUserApproval = async (
   return setUserRole(env, userId, approved ? "user" : "pending", actorUserId);
 };
 
-export const deleteUser = async (env: Env, userId: string, actorUserId?: string): Promise<void> => {
-  await ensureSchema(env);
-  const now = new Date().toISOString();
+export const executeIdentityDelete = async (
+  env: Pick<Env, "DB">,
+  userId: string,
+  actorUserId: string | undefined,
+  now: string,
+): Promise<string> => {
   await env.DB.batch([
     env.DB
       .prepare(
+        `INSERT INTO user_identity_audit
+          (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+         SELECT 'user_deleted', effective.id, NULL, ?,
+                COALESCE(
+                  (SELECT normalized_email FROM identity_subject_states WHERE user_id = effective.id),
+                  (SELECT normalized_email FROM verified_identity_claims WHERE current_user_id = effective.id ORDER BY normalized_email LIMIT 1),
+                  (SELECT lower(idp_email) FROM users WHERE id = effective.id AND idp_email_verified = 1)
+                ),
+                json_object('requestedUserId', ?, 'durableBlock', json('true')), ?
+         FROM (SELECT ${EFFECTIVE_CANONICAL_USER_SQL} AS id) effective
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = effective.id)`,
+      )
+      .bind(actorUserId ?? null, userId, now, userId, userId),
+    env.DB
+      .prepare(
         `INSERT INTO deleted_users (id, deleted_at, deleted_by_user_id)
-         VALUES (?, ?, ?)
+         VALUES (${EFFECTIVE_CANONICAL_USER_SQL}, ?, ?)
          ON CONFLICT(id) DO UPDATE SET deleted_at = excluded.deleted_at, deleted_by_user_id = excluded.deleted_by_user_id`,
       )
-      .bind(userId, now, actorUserId ?? null),
-    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
+      .bind(userId, userId, now, actorUserId ?? null),
+    env.DB
+      .prepare(
+        `UPDATE verified_identity_claims
+         SET status = 'blocked', blocked_at = ?, blocked_by_user_id = ?, updated_at = ?
+         WHERE current_user_id = ${EFFECTIVE_CANONICAL_USER_SQL}`,
+      )
+      .bind(now, actorUserId ?? null, now, userId, userId),
+    env.DB
+      .prepare(
+        `INSERT INTO identity_subject_states
+          (user_id, normalized_email, status, canonical_user_id, bootstrap_consumed, created_at, updated_at, changed_by_user_id)
+         SELECT effective.id,
+                COALESCE(
+                  (SELECT normalized_email FROM identity_subject_states WHERE user_id = effective.id),
+                  (SELECT lower(idp_email) FROM users WHERE id = effective.id AND idp_email_verified = 1)
+                ),
+                'blocked', effective.id, 1, ?, ?, ?
+         FROM (SELECT ${EFFECTIVE_CANONICAL_USER_SQL} AS id) effective
+         WHERE 1 = 1
+         ON CONFLICT(user_id) DO UPDATE SET
+           status = 'blocked',
+           canonical_user_id = excluded.canonical_user_id,
+           updated_at = excluded.updated_at,
+           changed_by_user_id = excluded.changed_by_user_id
+         WHERE identity_subject_states.status IN ('current', 'blocked')`,
+      )
+      .bind(now, now, actorUserId ?? null, userId, userId),
+    env.DB
+      .prepare(`DELETE FROM users WHERE id = ${EFFECTIVE_CANONICAL_USER_SQL}`)
+      .bind(userId, userId),
   ]);
+  return resolveEffectiveCanonicalUserId(env, userId);
+};
+
+export const deleteUser = async (env: Env, userId: string, actorUserId?: string): Promise<void> => {
+  await ensureSchema(env);
+  await executeIdentityDelete(env, userId, actorUserId, new Date().toISOString());
 };
 
 export const listDeletedUsers = async (
@@ -1191,9 +1685,47 @@ export const listDeletedUsers = async (
   }));
 };
 
-export const restoreDeletedUser = async (env: Env, userId: string): Promise<void> => {
+export const executeIdentityRestore = async (
+  env: Pick<Env, "DB">,
+  userId: string,
+  actorUserId: string | undefined,
+  now: string,
+): Promise<string> => {
+  await env.DB.batch([
+    env.DB
+      .prepare(`DELETE FROM deleted_users WHERE id = ${EFFECTIVE_CANONICAL_USER_SQL}`)
+      .bind(userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE identity_subject_states
+         SET status = 'current', canonical_user_id = user_id, updated_at = ?, changed_by_user_id = ?
+         WHERE user_id = ${EFFECTIVE_CANONICAL_USER_SQL} AND status = 'blocked'`,
+      )
+      .bind(now, actorUserId ?? null, userId, userId),
+    env.DB
+      .prepare(
+        `UPDATE verified_identity_claims
+         SET status = 'active', blocked_at = NULL, blocked_by_user_id = NULL, updated_at = ?
+         WHERE current_user_id = ${EFFECTIVE_CANONICAL_USER_SQL} AND status = 'blocked'`,
+      )
+      .bind(now, userId, userId),
+    env.DB
+      .prepare(
+        `INSERT INTO user_identity_audit
+          (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+         SELECT 'user_restored', effective.id, NULL, ?,
+                (SELECT normalized_email FROM identity_subject_states WHERE user_id = effective.id),
+                json_object('requestedUserId', ?), ?
+         FROM (SELECT ${EFFECTIVE_CANONICAL_USER_SQL} AS id) effective`,
+      )
+      .bind(actorUserId ?? null, userId, now, userId, userId),
+  ]);
+  return resolveEffectiveCanonicalUserId(env, userId);
+};
+
+export const restoreDeletedUser = async (env: Env, userId: string, actorUserId?: string): Promise<void> => {
   await ensureSchema(env);
-  await env.DB.prepare("DELETE FROM deleted_users WHERE id = ?").bind(userId).run();
+  await executeIdentityRestore(env, userId, actorUserId, new Date().toISOString());
 };
 
 export const listPendingApprovalUsers = async (

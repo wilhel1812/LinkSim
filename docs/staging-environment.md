@@ -45,7 +45,10 @@ it for routine verification.
 npm run refresh:staging:d1
 ```
 
-By default, this now anonymizes user personal fields in staging after import (`ANONYMIZE_STAGING=1`).
+By default, this anonymizes user personal fields in staging after import (`ANONYMIZE_STAGING=1`).
+For post-identity-lifecycle dumps it also anonymizes verified claims and subject
+email state while preserving canonical account and alias relationships. Dumps
+from before that migration skip the lifecycle step safely.
 To skip anonymization explicitly:
 
 ```bash

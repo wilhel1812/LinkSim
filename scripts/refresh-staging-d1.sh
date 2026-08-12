@@ -66,6 +66,14 @@ SET
 SQL
   echo "[staging-refresh:d1] Applying staging anonymization (ANONYMIZE_STAGING=1)"
   npx wrangler d1 execute "${STAGING_DB_NAME}" --remote --file "${ANON_SQL}" --yes
+  if grep -Eq 'CREATE TABLE.*verified_identity_claims' "${DUMP_FILE}" \
+    && grep -Eq 'CREATE TABLE.*identity_subject_states' "${DUMP_FILE}"; then
+    echo "[staging-refresh:d1] Anonymizing migrated identity lifecycle rows"
+    npx wrangler d1 execute "${STAGING_DB_NAME}" --remote \
+      --file "${ROOT_DIR}/db/staging-anonymize-identity.sql" --yes
+  else
+    echo "[staging-refresh:d1] Identity lifecycle tables absent; skipping lifecycle anonymization"
+  fi
 else
   echo "[staging-refresh:d1] Anonymization skipped (ANONYMIZE_STAGING=${ANONYMIZE_STAGING})"
 fi

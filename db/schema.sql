@@ -31,6 +31,37 @@ CREATE TABLE IF NOT EXISTS deleted_users (
   deleted_by_user_id TEXT
 );
 
+CREATE TABLE IF NOT EXISTS verified_identity_claims (
+  normalized_email TEXT PRIMARY KEY,
+  current_user_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'blocked')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  blocked_at TEXT,
+  blocked_by_user_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS identity_subject_states (
+  user_id TEXT PRIMARY KEY,
+  normalized_email TEXT,
+  status TEXT NOT NULL CHECK (status IN ('current', 'superseded', 'blocked')),
+  canonical_user_id TEXT,
+  bootstrap_consumed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  changed_by_user_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS identity_lifecycle_meta (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  version TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+
+INSERT INTO identity_lifecycle_meta (singleton, version, applied_at)
+VALUES (1, '2026-08-12-identity-lifecycle-v1', CURRENT_TIMESTAMP)
+ON CONFLICT(singleton) DO UPDATE SET version = excluded.version, applied_at = excluded.applied_at;
+
 CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY,
   owner_user_id TEXT NOT NULL,
@@ -92,6 +123,17 @@ CREATE TABLE IF NOT EXISTS resource_changes (
   snapshot_json TEXT
 );
 
+CREATE TABLE IF NOT EXISTS user_identity_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  target_user_id TEXT NOT NULL,
+  source_user_id TEXT,
+  actor_user_id TEXT,
+  idp_email TEXT,
+  details_json TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sites_owner ON sites(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_sites_visibility ON sites(visibility);
 CREATE INDEX IF NOT EXISTS idx_site_roles_user ON site_roles(user_id);
@@ -100,3 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_simulations_visibility ON simulations(visibility)
 CREATE INDEX IF NOT EXISTS idx_simulations_status ON simulations(status);
 CREATE INDEX IF NOT EXISTS idx_simulation_roles_user ON simulation_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_resource_changes_lookup ON resource_changes(resource_kind, resource_id, changed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_identity_claims_current_user ON verified_identity_claims(current_user_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_identity_subject_current_canonical
+  ON identity_subject_states(canonical_user_id) WHERE status = 'current';
+CREATE INDEX IF NOT EXISTS idx_identity_audit_target ON user_identity_audit(target_user_id, created_at DESC);

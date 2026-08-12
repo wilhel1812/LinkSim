@@ -72,6 +72,21 @@ describe("api/public-simulation", () => {
     expect(fetchPublicSimulationBundleMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "Identity subject is no longer current",
+    "Identity is blocked by an administrator",
+  ])("reports lifecycle rejection as revoked in auth-status mode: %s", async (message) => {
+    verifyAuthMock.mockResolvedValueOnce({ userId: "user-42", tokenPayload: {} });
+    ensureUserMock.mockRejectedValueOnce(new Error(message));
+
+    const res = await onRequestGet(
+      mkCtx(new Request("https://example.test/api/public-simulation?mode=auth")),
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ authenticated: false, authState: "revoked" });
+  });
+
   it("surfaces auth verification failures in auth-status mode", async () => {
     verifyAuthMock.mockRejectedValueOnce(new Error("Auth verification timed out"));
 

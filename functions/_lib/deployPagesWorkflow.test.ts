@@ -40,6 +40,12 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob).toContain("github.rest.issues.createComment");
   });
 
+  it("does not deploy schema-changing pull requests against the shared staging database", () => {
+    expect(previewJob).toContain("Detect identity lifecycle schema change");
+    expect(previewJob).toContain("db/migrations/2026-08-12_identity_lifecycle.sql");
+    expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
+  });
+
   it("applies and verifies the Simulation lifecycle migration before production deployment", () => {
     const migrationStep = "- name: Apply production Simulation lifecycle migration";
     const deployStep = "- name: Deploy prod/main with guardrails";
@@ -57,6 +63,15 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(productionJob).toContain(
       "PRODUCTION_PREVIOUS_REF: ${{ github.event.before }}",
     );
+  });
+
+  it("probes, applies, and verifies identity lifecycle schema before staging and production deploys", () => {
+    for (const [job, database] of [[stagingJob, "linksim_staging"], [productionJob, "linksim"]] as const) {
+      expect(job).toContain("Verify identity lifecycle migration prerequisites");
+      expect(job).toContain(`npx wrangler d1 execute ${database} --remote --file db/migrations/2026-08-12_identity_lifecycle.sql --yes`);
+      expect(job).toContain(`node scripts/verify-identity-lifecycle-d1.mjs ${database} pre`);
+      expect(job).toContain(`node scripts/verify-identity-lifecycle-d1.mjs ${database} post`);
+    }
   });
 
   it("fetches the production baseline before validating a staging deployment", () => {

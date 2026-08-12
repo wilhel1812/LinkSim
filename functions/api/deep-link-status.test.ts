@@ -78,6 +78,22 @@ describe("api/deep-link-status", () => {
     });
   });
 
+  it.each([
+    "Identity subject is no longer current",
+    "Identity is blocked by an administrator",
+  ])("reports lifecycle rejection as a revoked auth state: %s", async (message) => {
+    ensureUserMock.mockRejectedValueOnce(new Error(message));
+
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status")));
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      status: "missing",
+      authenticated: false,
+      authState: "revoked",
+    });
+  });
+
   it("returns access status for simulation id", async () => {
     resolveSimulationAccessForUserMock.mockResolvedValueOnce("forbidden");
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status?sim=sim-2")));
