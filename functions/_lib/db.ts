@@ -582,22 +582,54 @@ type UserRow = {
   updated_at: string | null;
 };
 
-type IdentityReconcileCandidate = Pick<
-  UserRow,
-  "id" | "is_admin" | "is_moderator" | "is_approved" | "approved_at" | "approved_by_user_id"
->;
+type IdentityReconcileCandidate = Pick<UserRow, "id">;
+
+const IDENTITY_RECONCILE_SOURCE_STATE_SQL = `
+  SELECT
+    ?4 AS id,
+    COALESCE(source.is_admin, 0) AS is_admin,
+    COALESCE(source.is_moderator, 0) AS is_moderator,
+    COALESCE(source.is_approved, 0) AS is_approved,
+    CASE
+      WHEN tombstone.id IS NOT NULL OR source.id IS NULL
+      THEN COALESCE(tombstone.deleted_at, source.approved_at, ?2)
+      ELSE source.approved_at
+    END AS approved_at,
+    CASE
+      WHEN tombstone.id IS NOT NULL OR source.id IS NULL
+      THEN 'revoked:' || COALESCE(tombstone.deleted_by_user_id, 'system')
+      ELSE source.approved_by_user_id
+    END AS approved_by_user_id,
+    CASE
+      WHEN tombstone.id IS NOT NULL OR source.id IS NULL THEN 1
+      WHEN source.is_admin = 0 AND source.is_moderator = 0 AND source.is_approved = 0
+        AND (source.approved_at IS NOT NULL OR source.approved_by_user_id IS NOT NULL)
+      THEN 1 ELSE 0
+    END AS is_revoked,
+    CASE
+      WHEN tombstone.id IS NULL AND source.id IS NOT NULL
+        AND source.is_admin = 0 AND source.is_moderator = 0 AND source.is_approved = 0
+        AND source.approved_at IS NULL AND source.approved_by_user_id IS NULL
+      THEN 1 ELSE 0
+    END AS is_pending
+  FROM (SELECT 1) seed
+  LEFT JOIN users source ON source.id = ?4
+  LEFT JOIN deleted_users tombstone ON tombstone.id = ?4
+`;
 
 const prepareSerializedGrantMigration = (
   env: Env,
-  table: "sites" | "simulations",
+  location:
+    | { table: "sites" | "simulations"; column: "payload_json" }
+    | { table: "resource_changes"; column: "snapshot_json" },
   sourceUserId: string,
   targetUserId: string,
 ): D1PreparedStatement =>
   env.DB
     .prepare(
-      `UPDATE ${table}
-       SET payload_json = json_set(
-         payload_json,
+      `UPDATE ${location.table}
+       SET ${location.column} = json_set(
+         ${location.column},
          '$.sharedWith',
          json((
            SELECT json_group_array(
@@ -621,17 +653,17 @@ const prepareSerializedGrantMigration = (
                      ELSE -1
                    END
                  ELSE -1 END AS role_strength
-               FROM json_each(payload_json, '$.sharedWith') grant
+               FROM json_each(${location.column}, '$.sharedWith') grant
              ) serialized_grants
              WHERE user_id <> '' AND role_strength >= 0
              GROUP BY CASE WHEN user_id = ?1 THEN ?2 ELSE user_id END
            ) migrated_grants
          ))
        )
-       WHERE json_valid(payload_json)
+       WHERE json_valid(${location.column})
          AND EXISTS (
            SELECT 1
-           FROM json_each(payload_json, '$.sharedWith') grant
+           FROM json_each(${location.column}, '$.sharedWith') grant
            WHERE grant.type = 'object'
              AND trim(json_extract(grant.value, '$.userId')) = ?1
          )`,
@@ -705,7 +737,7 @@ export const reconcileUserIdentityByIdpEmail = async (
 
   const rows = await env.DB
     .prepare(
-      `SELECT id, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id
+      `SELECT id
        FROM users
        WHERE id <> ?
          AND lower(idp_email) = lower(?)
@@ -738,44 +770,76 @@ export const reconcileUserIdentityByIdpEmail = async (
   if (!existing) return;
 
   const now = new Date().toISOString();
-  const sourceIsRevoked =
-    existing.is_admin !== 1 &&
-    existing.is_moderator !== 1 &&
-    existing.is_approved !== 1 &&
-    Boolean(existing.approved_at || existing.approved_by_user_id);
-  const sourceIsPending =
-    existing.is_admin !== 1 &&
-    existing.is_moderator !== 1 &&
-    existing.is_approved !== 1 &&
-    !sourceIsRevoked;
-  const preserveSourceLifecycle = sourceIsRevoked || (!targetWasExisting && sourceIsPending);
   await env.DB.batch([
+    env.DB
+      .prepare(
+        `INSERT INTO users (id, created_at)
+         SELECT ?2, ?4
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2)
+           AND NOT EXISTS (SELECT 1 FROM deleted_users WHERE id = ?2)
+           AND NOT EXISTS (SELECT 1 FROM deleted_users WHERE id = ?1)
+           AND NOT (
+             (
+               SELECT COUNT(*)
+               FROM users
+               WHERE id <> ?2
+                 AND lower(idp_email) = lower(?3)
+                 AND idp_email_verified = 1
+             ) = 1
+             AND EXISTS (
+               SELECT 1
+               FROM users
+               WHERE id = ?1
+                 AND lower(idp_email) = lower(?3)
+                 AND idp_email_verified = 1
+             )
+           )`,
+      )
+      .bind(existing.id, userId, normalized, now),
+    env.DB
+      .prepare(
+        `INSERT INTO deleted_users (id, deleted_at, deleted_by_user_id)
+         SELECT ?1, ?2, 'reconcile-guard'
+         FROM (SELECT 1 UNION ALL SELECT 2)
+         WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = ?1)
+            OR EXISTS (SELECT 1 FROM deleted_users WHERE id = ?1)`,
+      )
+      .bind(userId, now),
     env.DB.prepare(
-      `UPDATE users
-       SET is_admin = CASE WHEN ? = 1 THEN 0 WHEN ? = 1 THEN 1 ELSE is_admin END,
-           is_moderator = CASE WHEN ? = 1 THEN 0 WHEN ? = 1 THEN 1 ELSE is_moderator END,
-           is_approved = CASE WHEN ? = 1 THEN 0 WHEN ? = 1 THEN 1 ELSE is_approved END,
-           approved_at = CASE WHEN ? = 1 THEN ? WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
-           approved_by_user_id = CASE WHEN ? = 1 THEN ? WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?) ELSE approved_by_user_id END,
-           updated_at = ?
-       WHERE id = ?`,
+      `UPDATE users AS target
+       SET is_admin = CASE
+             WHEN source.is_revoked = 1 OR (?1 = 0 AND source.is_pending = 1) THEN 0
+             WHEN source.is_admin = 1 THEN 1
+             ELSE target.is_admin
+           END,
+           is_moderator = CASE
+             WHEN source.is_revoked = 1 OR (?1 = 0 AND source.is_pending = 1) THEN 0
+             WHEN source.is_moderator = 1 THEN 1
+             ELSE target.is_moderator
+           END,
+           is_approved = CASE
+             WHEN source.is_revoked = 1 OR (?1 = 0 AND source.is_pending = 1) THEN 0
+             WHEN source.is_approved = 1 THEN 1
+             ELSE target.is_approved
+           END,
+           approved_at = CASE
+             WHEN source.is_revoked = 1 OR (?1 = 0 AND source.is_pending = 1) THEN source.approved_at
+             WHEN source.is_approved = 1 THEN COALESCE(target.approved_at, source.approved_at, ?2)
+             ELSE target.approved_at
+           END,
+           approved_by_user_id = CASE
+             WHEN source.is_revoked = 1 OR (?1 = 0 AND source.is_pending = 1) THEN source.approved_by_user_id
+             WHEN source.is_approved = 1 THEN COALESCE(target.approved_by_user_id, source.approved_by_user_id, source.id)
+             ELSE target.approved_by_user_id
+           END,
+           updated_at = ?2
+       FROM (${IDENTITY_RECONCILE_SOURCE_STATE_SQL}) AS source
+       WHERE target.id = ?3`,
     ).bind(
-      preserveSourceLifecycle ? 1 : 0,
-      existing.is_admin === 1 ? 1 : 0,
-      preserveSourceLifecycle ? 1 : 0,
-      existing.is_moderator === 1 ? 1 : 0,
-      preserveSourceLifecycle ? 1 : 0,
-      existing.is_approved === 1 ? 1 : 0,
-      preserveSourceLifecycle ? 1 : 0,
-      existing.approved_at,
-      existing.is_approved === 1 ? 1 : 0,
-      existing.approved_at ?? now,
-      preserveSourceLifecycle ? 1 : 0,
-      existing.approved_by_user_id,
-      existing.is_approved === 1 ? 1 : 0,
-      existing.approved_by_user_id ?? existing.id,
+      targetWasExisting ? 1 : 0,
       now,
       userId,
+      existing.id,
     ),
     env.DB.prepare("UPDATE sites SET owner_user_id = ? WHERE owner_user_id = ?").bind(userId, existing.id),
     env.DB
@@ -817,33 +881,41 @@ export const reconcileUserIdentityByIdpEmail = async (
       )
       .bind(userId, existing.id),
     env.DB.prepare("DELETE FROM simulation_roles WHERE user_id = ?").bind(existing.id),
-    prepareSerializedGrantMigration(env, "sites", existing.id, userId),
-    prepareSerializedGrantMigration(env, "simulations", existing.id, userId),
+    prepareSerializedGrantMigration(env, { table: "sites", column: "payload_json" }, existing.id, userId),
+    prepareSerializedGrantMigration(env, { table: "simulations", column: "payload_json" }, existing.id, userId),
+    prepareSerializedGrantMigration(
+      env,
+      { table: "resource_changes", column: "snapshot_json" },
+      existing.id,
+      userId,
+    ),
     env.DB.prepare("UPDATE resource_changes SET actor_user_id = ? WHERE actor_user_id = ?").bind(userId, existing.id),
     env.DB
       .prepare("UPDATE simulation_path_leaderboard_entries SET owner_user_id = ? WHERE owner_user_id = ?")
       .bind(userId, existing.id),
-    env.DB.prepare("UPDATE users SET approved_by_user_id = ? WHERE approved_by_user_id = ?").bind(userId, existing.id),
     env.DB.prepare(
       `INSERT INTO user_identity_audit
        (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      "reconciled_by_verified_idp_email",
-      userId,
-      existing.id,
-      userId,
-      normalized,
-      JSON.stringify({
-        mergedFromUserId: existing.id,
-        matchKind: "verified_idp_email",
-        mergedFromIsAdmin: existing.is_admin === 1,
-        mergedFromIsModerator: existing.is_moderator === 1,
-        mergedFromIsApproved: existing.is_approved === 1,
-        mergedFromAccountState: sourceIsRevoked ? "revoked" : sourceIsPending ? "pending" : "approved",
-      }),
-      now,
-    ),
+       SELECT 'reconciled_by_verified_idp_email', ?3, source.id, ?3, ?5,
+              json_object(
+                'mergedFromUserId', source.id,
+                'matchKind', 'verified_idp_email',
+                'mergedFromIsAdmin', json(CASE WHEN source.is_admin = 1 THEN 'true' ELSE 'false' END),
+                'mergedFromIsModerator', json(CASE WHEN source.is_moderator = 1 THEN 'true' ELSE 'false' END),
+                'mergedFromIsApproved', json(CASE WHEN source.is_approved = 1 THEN 'true' ELSE 'false' END),
+                'mergedFromAccountState', CASE
+                  WHEN source.is_admin = 0 AND source.is_moderator = 0 AND source.is_approved = 0
+                    AND (source.approved_at IS NOT NULL OR source.approved_by_user_id IS NOT NULL)
+                  THEN 'revoked'
+                  WHEN source.is_admin = 0 AND source.is_moderator = 0 AND source.is_approved = 0
+                  THEN 'pending'
+                  ELSE 'approved'
+                END
+              ),
+              ?2
+       FROM (${IDENTITY_RECONCILE_SOURCE_STATE_SQL}) source`,
+    ).bind(targetWasExisting ? 1 : 0, now, userId, existing.id, normalized),
+    env.DB.prepare("UPDATE users SET approved_by_user_id = ? WHERE approved_by_user_id = ?").bind(userId, existing.id),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(existing.id),
   ]);
 };

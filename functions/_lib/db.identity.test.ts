@@ -4,6 +4,7 @@ import {
   assertDeletedUserMayRegister,
   findDeletionBlock,
   reconcileUserIdentityByIdpEmail,
+  revertResourceFromChangeCopy,
   shouldBootstrapAdmin,
   upsertLibrarySnapshot,
 } from "./db";
@@ -177,6 +178,12 @@ describe("identity reconciliation", () => {
       INSERT INTO site_roles VALUES ('shared-site', 'stable-id', 'viewer', '2026-01-02');
       INSERT INTO simulation_roles VALUES ('shared-simulation', 'legacy-id', 'viewer', '2026-01-01');
       INSERT INTO simulation_roles VALUES ('shared-simulation', 'stable-id', 'editor', '2026-01-02');
+      INSERT INTO resource_changes
+        (id, resource_kind, resource_id, action, actor_user_id, changed_at, snapshot_json)
+        VALUES (
+          1, 'site', 'shared-site', 'updated', 'owner-id', '2026-01-01',
+          '{"id":"shared-site","name":"Historical Site","visibility":"shared","sharedWith":[{"userId":"legacy-id","role":"editor"}]}'
+        );
     `);
 
     const env = { DB: db as unknown as D1Database };
@@ -217,6 +224,17 @@ describe("identity reconciliation", () => {
     expect(
       db.db.prepare("SELECT user_id, role FROM simulation_roles WHERE simulation_id = 'shared-simulation'").all(),
     ).toEqual([{ user_id: "stable-id", role: "editor" }]);
+
+    await expect(
+      revertResourceFromChangeCopy(env, "site", "shared-site", 1, {
+        id: "owner-id",
+        isAdmin: false,
+        isModerator: false,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(db.db.prepare("SELECT user_id, role FROM site_roles WHERE site_id = 'shared-site'").all()).toEqual([
+      { user_id: "stable-id", role: "editor" },
+    ]);
   });
 
   it("rolls back every transfer when the audit insert fails", async () => {
@@ -248,6 +266,143 @@ describe("identity reconciliation", () => {
       is_approved: 0,
       approved_by_user_id: "revoked:admin-id",
     });
+  });
+
+  it("uses lifecycle state changed immediately before the reconciliation batch", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+        VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 1, '2026-02-01', 'system:open-registration');
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved, approved_at, approved_by_user_id)
+        VALUES ('legacy-id', 'old@example.com', 'user@example.com', 1, 1, 1, '2026-01-01', 'legacy-id');
+    `);
+    db.beforeBatch = () => {
+      db.db
+        .prepare(
+          `UPDATE users
+           SET is_admin = 0, is_moderator = 0, is_approved = 0, approved_by_user_id = 'revoked:admin-id'
+           WHERE id = 'legacy-id'`,
+        )
+        .run();
+    };
+
+    await reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com");
+
+    expect(
+      db.db
+        .prepare("SELECT is_admin, is_moderator, is_approved, approved_by_user_id FROM users WHERE id = 'stable-id'")
+        .get(),
+    ).toEqual({ is_admin: 0, is_moderator: 0, is_approved: 0, approved_by_user_id: "revoked:admin-id" });
+    const audit = db.db
+      .prepare("SELECT details_json FROM user_identity_audit WHERE event_type = 'reconciled_by_verified_idp_email'")
+      .get() as { details_json: string };
+    expect(JSON.parse(audit.details_json)).toMatchObject({
+      mergedFromIsAdmin: false,
+      mergedFromIsApproved: false,
+      mergedFromAccountState: "revoked",
+    });
+  });
+
+  it("fails closed when the source is deleted immediately before the reconciliation batch", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+        VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 1, '2026-02-01', 'system:open-registration');
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved, approved_at, approved_by_user_id)
+        VALUES ('legacy-id', 'old@example.com', 'user@example.com', 1, 1, 1, '2026-01-01', 'legacy-id');
+    `);
+    db.beforeBatch = () => {
+      db.db.exec(`
+        INSERT INTO deleted_users VALUES ('legacy-id', '2026-03-01', 'admin-id');
+        DELETE FROM users WHERE id = 'legacy-id';
+      `);
+    };
+
+    await reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com");
+
+    expect(
+      db.db
+        .prepare("SELECT is_admin, is_moderator, is_approved, approved_by_user_id FROM users WHERE id = 'stable-id'")
+        .get(),
+    ).toEqual({ is_admin: 0, is_moderator: 0, is_approved: 0, approved_by_user_id: "revoked:admin-id" });
+    const audit = db.db
+      .prepare("SELECT details_json FROM user_identity_audit WHERE event_type = 'reconciled_by_verified_idp_email'")
+      .get() as { details_json: string };
+    expect(JSON.parse(audit.details_json)).toMatchObject({
+      mergedFromIsAdmin: false,
+      mergedFromIsApproved: false,
+      mergedFromAccountState: "revoked",
+    });
+  });
+
+  it("aborts when the source loses its verified identity match before the reconciliation batch", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved)
+        VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 0, 1);
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved)
+        VALUES ('legacy-id', 'old@example.com', 'user@example.com', 1, 1, 1);
+    `);
+    db.beforeBatch = () => {
+      db.db.prepare("UPDATE users SET idp_email = 'other@example.com' WHERE id = 'legacy-id'").run();
+    };
+
+    await expect(
+      reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com"),
+    ).rejects.toThrow("UNIQUE constraint failed");
+    expect(db.db.prepare("SELECT id, is_admin FROM users ORDER BY id").all()).toEqual([
+      { id: "legacy-id", is_admin: 1 },
+      { id: "stable-id", is_admin: 0 },
+    ]);
+  });
+
+  it("aborts when a verified identity collision appears before the reconciliation batch", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved)
+        VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 0, 1);
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved)
+        VALUES ('legacy-id', 'old@example.com', 'user@example.com', 1, 1, 1);
+    `);
+    db.beforeBatch = () => {
+      db.db.exec(`
+        INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved)
+          VALUES ('collision-id', 'collision@example.com', 'user@example.com', 1, 0, 1);
+      `);
+    };
+
+    await expect(
+      reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com"),
+    ).rejects.toThrow("UNIQUE constraint failed");
+    expect(db.db.prepare("SELECT id FROM users ORDER BY id").all()).toEqual([
+      { id: "collision-id" },
+      { id: "legacy-id" },
+      { id: "stable-id" },
+    ]);
+  });
+
+  it("aborts when the target is deleted immediately before the reconciliation batch", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved)
+        VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 0, 1);
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved)
+        VALUES ('legacy-id', 'old@example.com', 'user@example.com', 1, 1, 1);
+    `);
+    db.beforeBatch = () => {
+      db.db.exec(`
+        INSERT INTO deleted_users VALUES ('stable-id', '2026-03-01', 'admin-id');
+        DELETE FROM users WHERE id = 'stable-id';
+      `);
+    };
+
+    await expect(
+      reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com"),
+    ).rejects.toThrow("UNIQUE constraint failed");
+    expect(db.db.prepare("SELECT id, is_admin FROM users").all()).toEqual([{ id: "legacy-id", is_admin: 1 }]);
+    expect(db.db.prepare("SELECT id, deleted_by_user_id FROM deleted_users").all()).toEqual([
+      { id: "stable-id", deleted_by_user_id: "admin-id" },
+    ]);
   });
 
   it("preserves pending state when a verified identity first moves to a new subject", async () => {
