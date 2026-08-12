@@ -41,6 +41,7 @@ class SqliteStatement {
 
 class SqliteD1 {
   readonly db = new DatabaseSync(":memory:");
+  beforeBatch: (() => void) | null = null;
 
   constructor() {
     this.db.exec(`
@@ -96,6 +97,8 @@ class SqliteD1 {
   }
 
   async batch(statements: SqliteStatement[]) {
+    this.beforeBatch?.();
+    this.beforeBatch = null;
     this.db.exec("BEGIN");
     try {
       for (const statement of statements) statement.runSync();
@@ -177,6 +180,15 @@ describe("identity reconciliation", () => {
     `);
 
     const env = { DB: db as unknown as D1Database };
+    db.beforeBatch = () => {
+      const site = JSON.parse(
+        (db.db.prepare("SELECT payload_json FROM sites WHERE id = 'shared-site'").get() as { payload_json: string })
+          .payload_json,
+      );
+      db.db
+        .prepare("UPDATE sites SET payload_json = ? WHERE id = 'shared-site'")
+        .run(JSON.stringify({ ...site, concurrentEdit: "preserved" }));
+    };
     await reconcileUserIdentityByIdpEmail(env, "stable-id", "user@example.com");
 
     const site = JSON.parse(
@@ -186,6 +198,7 @@ describe("identity reconciliation", () => {
       (db.db.prepare("SELECT payload_json FROM simulations WHERE id = 'shared-simulation'").get() as { payload_json: string }).payload_json,
     );
     expect(site.sharedWith).toEqual([{ userId: "stable-id", role: "editor" }]);
+    expect(site.concurrentEdit).toBe("preserved");
     expect(simulation.sharedWith).toEqual([{ userId: "stable-id", role: "editor" }]);
 
     await expect(

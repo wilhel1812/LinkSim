@@ -587,64 +587,56 @@ type IdentityReconcileCandidate = Pick<
   "id" | "is_admin" | "is_moderator" | "is_approved" | "approved_at" | "approved_by_user_id"
 >;
 
-type SerializedGrantRow = {
-  id: string;
-  payload_json: string;
-};
-
-const rewriteSerializedGrantUserId = (
-  payloadJson: string,
-  sourceUserId: string,
-  targetUserId: string,
-): string | null => {
-  try {
-    const payload = JSON.parse(payloadJson) as CloudResourceRecord;
-    const grants = sanitizeGrants(payload.sharedWith);
-    if (!grants.some((grant) => grant.userId === sourceUserId)) return null;
-
-    const migrated = new Map<string, Grant>();
-    for (const grant of grants) {
-      const userId = grant.userId === sourceUserId ? targetUserId : grant.userId;
-      const current = migrated.get(userId);
-      if (!current || ROLES.indexOf(grant.role) > ROLES.indexOf(current.role)) {
-        migrated.set(userId, { userId, role: grant.role });
-      }
-    }
-    return JSON.stringify({ ...payload, sharedWith: Array.from(migrated.values()) });
-  } catch {
-    return null;
-  }
-};
-
-const prepareSerializedGrantMigrations = async (
+const prepareSerializedGrantMigration = (
   env: Env,
+  table: "sites" | "simulations",
   sourceUserId: string,
   targetUserId: string,
-): Promise<D1PreparedStatement[]> => {
-  const statements: D1PreparedStatement[] = [];
-  for (const table of ["sites", "simulations"] as const) {
-    const rows = await env.DB
-      .prepare(
-        `SELECT id, payload_json
-         FROM ${table}
-         WHERE json_valid(payload_json)
-           AND EXISTS (
-             SELECT 1
-             FROM json_each(payload_json, '$.sharedWith') grant
-             WHERE json_extract(grant.value, '$.userId') = ?
-           )`,
-      )
-      .bind(sourceUserId)
-      .all<SerializedGrantRow>();
-    for (const row of rows.results) {
-      const payloadJson = rewriteSerializedGrantUserId(row.payload_json, sourceUserId, targetUserId);
-      if (payloadJson) {
-        statements.push(env.DB.prepare(`UPDATE ${table} SET payload_json = ? WHERE id = ?`).bind(payloadJson, row.id));
-      }
-    }
-  }
-  return statements;
-};
+): D1PreparedStatement =>
+  env.DB
+    .prepare(
+      `UPDATE ${table}
+       SET payload_json = json_set(
+         payload_json,
+         '$.sharedWith',
+         json((
+           SELECT json_group_array(
+             json_object(
+               'userId', migrated_user_id,
+               'role', CASE strongest_role WHEN 2 THEN 'admin' WHEN 1 THEN 'editor' ELSE 'viewer' END
+             )
+           )
+           FROM (
+             SELECT
+               CASE WHEN user_id = ?1 THEN ?2 ELSE user_id END AS migrated_user_id,
+               MAX(role_strength) AS strongest_role
+             FROM (
+               SELECT
+                 CASE WHEN grant.type = 'object' THEN trim(json_extract(grant.value, '$.userId')) ELSE '' END AS user_id,
+                 CASE WHEN grant.type = 'object' THEN
+                   CASE json_extract(grant.value, '$.role')
+                     WHEN 'admin' THEN 2
+                     WHEN 'editor' THEN 1
+                     WHEN 'viewer' THEN 0
+                     ELSE -1
+                   END
+                 ELSE -1 END AS role_strength
+               FROM json_each(payload_json, '$.sharedWith') grant
+             ) serialized_grants
+             WHERE user_id <> '' AND role_strength >= 0
+             GROUP BY CASE WHEN user_id = ?1 THEN ?2 ELSE user_id END
+           ) migrated_grants
+         ))
+       )
+       WHERE json_valid(payload_json)
+         AND EXISTS (
+           SELECT 1
+           FROM json_each(payload_json, '$.sharedWith') grant
+           WHERE grant.type = 'object'
+             AND trim(json_extract(grant.value, '$.userId')) = ?1
+         )`,
+    )
+    .bind(sourceUserId, targetUserId);
 
 const toUserProfile = (row: UserRow) => ({
   id: row.id,
@@ -757,7 +749,6 @@ export const reconcileUserIdentityByIdpEmail = async (
     existing.is_approved !== 1 &&
     !sourceIsRevoked;
   const preserveSourceLifecycle = sourceIsRevoked || (!targetWasExisting && sourceIsPending);
-  const serializedGrantMigrations = await prepareSerializedGrantMigrations(env, existing.id, userId);
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE users
@@ -826,7 +817,8 @@ export const reconcileUserIdentityByIdpEmail = async (
       )
       .bind(userId, existing.id),
     env.DB.prepare("DELETE FROM simulation_roles WHERE user_id = ?").bind(existing.id),
-    ...serializedGrantMigrations,
+    prepareSerializedGrantMigration(env, "sites", existing.id, userId),
+    prepareSerializedGrantMigration(env, "simulations", existing.id, userId),
     env.DB.prepare("UPDATE resource_changes SET actor_user_id = ? WHERE actor_user_id = ?").bind(userId, existing.id),
     env.DB
       .prepare("UPDATE simulation_path_leaderboard_entries SET owner_user_id = ? WHERE owner_user_id = ?")
