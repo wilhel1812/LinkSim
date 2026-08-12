@@ -1,53 +1,231 @@
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { chooseIdentityReconcileCandidate } from "./db";
+import {
+  assertDeletedUserMayRegister,
+  findDeletionBlock,
+  reconcileUserIdentityByIdpEmail,
+  shouldBootstrapAdmin,
+} from "./db";
 
-type Candidate = Parameters<typeof chooseIdentityReconcileCandidate>[0][number];
+class SqliteStatement {
+  private values: unknown[] = [];
 
-const makeCandidate = (patch: Partial<Candidate>): Candidate => ({
-  id: patch.id ?? "u",
-  username: patch.username ?? null,
-  email: patch.email ?? null,
-  bio: patch.bio ?? null,
-  access_request_note: patch.access_request_note ?? null,
-  idp_email: patch.idp_email ?? null,
-  idp_email_verified: patch.idp_email_verified ?? 0,
-  avatar_url: patch.avatar_url ?? null,
-  email_public: patch.email_public ?? 1,
-  default_frequency_preset_id: patch.default_frequency_preset_id ?? null,
-  avatar_object_key: patch.avatar_object_key ?? null,
-  avatar_thumb_key: patch.avatar_thumb_key ?? null,
-  avatar_hash: patch.avatar_hash ?? null,
-  avatar_bytes: patch.avatar_bytes ?? null,
-  avatar_content_type: patch.avatar_content_type ?? null,
-  is_admin: patch.is_admin ?? 0,
-  is_moderator: patch.is_moderator ?? 0,
-  is_approved: patch.is_approved ?? 0,
-  approved_at: patch.approved_at ?? null,
-  approved_by_user_id: patch.approved_by_user_id ?? null,
-  created_at: patch.created_at ?? "2026-01-01T00:00:00.000Z",
-  updated_at: patch.updated_at ?? null,
-  match_kind: patch.match_kind ?? "legacy_email",
-});
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
 
-describe("chooseIdentityReconcileCandidate", () => {
-  it("prefers verified idp-email matches over legacy email matches", () => {
-    const selected = chooseIdentityReconcileCandidate([
-      makeCandidate({ id: "legacy", match_kind: "legacy_email", is_admin: 1, is_approved: 1 }),
-      makeCandidate({ id: "verified", match_kind: "verified_idp_email", is_admin: 0, is_approved: 0 }),
-    ]);
-    expect(selected?.id).toBe("verified");
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+
+  async all<T>() {
+    return { results: this.db.prepare(this.sql).all(...this.values as never[]) as T[] };
+  }
+
+  async first<T>() {
+    return (this.db.prepare(this.sql).get(...this.values as never[]) as T | undefined) ?? null;
+  }
+
+  async run() {
+    this.runSync();
+    return { success: true };
+  }
+
+  runSync() {
+    this.db.prepare(this.sql).run(...this.values as never[]);
+  }
+}
+
+class SqliteD1 {
+  readonly db = new DatabaseSync(":memory:");
+
+  constructor() {
+    this.db.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY, email TEXT, idp_email TEXT, idp_email_verified INTEGER NOT NULL DEFAULT 0,
+        is_admin INTEGER NOT NULL DEFAULT 0, is_moderator INTEGER NOT NULL DEFAULT 0,
+        is_approved INTEGER NOT NULL DEFAULT 0, approved_at TEXT, approved_by_user_id TEXT, updated_at TEXT
+      );
+      CREATE TABLE sites (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, created_by_user_id TEXT, last_edited_by_user_id TEXT);
+      CREATE TABLE simulations (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, created_by_user_id TEXT, last_edited_by_user_id TEXT);
+      CREATE TABLE site_roles (site_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (site_id, user_id));
+      CREATE TABLE simulation_roles (simulation_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (simulation_id, user_id));
+      CREATE TABLE resource_changes (id INTEGER PRIMARY KEY, actor_user_id TEXT NOT NULL);
+      CREATE TABLE simulation_path_leaderboard_entries (simulation_id TEXT, canonical_path_key TEXT, owner_user_id TEXT NOT NULL, PRIMARY KEY (simulation_id, canonical_path_key));
+      CREATE TABLE user_identity_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, target_user_id TEXT NOT NULL,
+        source_user_id TEXT, actor_user_id TEXT, idp_email TEXT, details_json TEXT, created_at TEXT NOT NULL
+      );
+      CREATE TABLE deleted_users (id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL, deleted_by_user_id TEXT);
+    `);
+  }
+
+  prepare(sql: string) {
+    return new SqliteStatement(this.db, sql);
+  }
+
+  async batch(statements: SqliteStatement[]) {
+    this.db.exec("BEGIN");
+    try {
+      for (const statement of statements) statement.runSync();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return statements.map(() => ({ success: true }));
+  }
+}
+
+const seedMigration = (db: SqliteD1) => {
+  db.db.exec(`
+    INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved, approved_at, approved_by_user_id)
+      VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 0, 1, '2026-01-02', 'stable-id');
+    INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved, approved_at, approved_by_user_id)
+      VALUES ('legacy-id', 'editable@example.com', 'user@example.com', 1, 1, 1, '2026-01-01', 'legacy-id');
+    INSERT INTO sites VALUES ('site-1', 'legacy-id', 'legacy-id', 'legacy-id');
+    INSERT INTO simulations VALUES ('sim-1', 'legacy-id', 'legacy-id', 'legacy-id');
+    INSERT INTO site_roles VALUES ('site-1', 'stable-id', 'viewer', '2026-01-02');
+    INSERT INTO site_roles VALUES ('site-1', 'legacy-id', 'editor', '2026-01-01');
+    INSERT INTO simulation_roles VALUES ('sim-1', 'stable-id', 'editor', '2026-01-02');
+    INSERT INTO simulation_roles VALUES ('sim-1', 'legacy-id', 'viewer', '2026-01-01');
+    INSERT INTO resource_changes VALUES (1, 'legacy-id');
+    INSERT INTO simulation_path_leaderboard_entries VALUES ('sim-1', 'path-1', 'legacy-id');
+  `);
+};
+
+describe("identity reconciliation", () => {
+  it("transfers verified identity, strongest grants, ownership, and audit identity atomically", async () => {
+    const db = new SqliteD1();
+    seedMigration(db);
+
+    await reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com");
+
+    expect(db.db.prepare("SELECT is_admin FROM users WHERE id = 'stable-id'").get()).toEqual({ is_admin: 1 });
+    expect(db.db.prepare("SELECT id FROM users WHERE id = 'legacy-id'").get()).toBeUndefined();
+    expect(db.db.prepare("SELECT owner_user_id FROM sites WHERE id = 'site-1'").get()).toEqual({ owner_user_id: "stable-id" });
+    expect(db.db.prepare("SELECT role FROM site_roles WHERE site_id = 'site-1'").get()).toEqual({ role: "editor" });
+    expect(db.db.prepare("SELECT role FROM simulation_roles WHERE simulation_id = 'sim-1'").get()).toEqual({ role: "editor" });
+    expect(db.db.prepare("SELECT actor_user_id FROM resource_changes WHERE id = 1").get()).toEqual({ actor_user_id: "stable-id" });
+    expect(db.db.prepare("SELECT event_type, source_user_id FROM user_identity_audit").get()).toEqual({
+      event_type: "reconciled_by_verified_idp_email",
+      source_user_id: "legacy-id",
+    });
   });
 
-  it("within same match kind prefers admin then approved then oldest", () => {
-    const selected = chooseIdentityReconcileCandidate([
-      makeCandidate({ id: "newer", match_kind: "verified_idp_email", is_admin: 0, is_approved: 1, created_at: "2026-01-03T00:00:00.000Z" }),
-      makeCandidate({ id: "older", match_kind: "verified_idp_email", is_admin: 0, is_approved: 1, created_at: "2026-01-02T00:00:00.000Z" }),
-      makeCandidate({ id: "admin", match_kind: "verified_idp_email", is_admin: 1, is_approved: 0, created_at: "2026-01-10T00:00:00.000Z" }),
-    ]);
-    expect(selected?.id).toBe("admin");
+  it("rolls back every transfer when the audit insert fails", async () => {
+    const db = new SqliteD1();
+    seedMigration(db);
+    db.db.exec("CREATE TRIGGER reject_identity_audit BEFORE INSERT ON user_identity_audit BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END");
+
+    await expect(
+      reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com"),
+    ).rejects.toThrow("audit unavailable");
+
+    expect(db.db.prepare("SELECT is_admin FROM users WHERE id = 'stable-id'").get()).toEqual({ is_admin: 0 });
+    expect(db.db.prepare("SELECT owner_user_id FROM sites WHERE id = 'site-1'").get()).toEqual({ owner_user_id: "legacy-id" });
+    expect(db.db.prepare("SELECT id FROM users WHERE id = 'legacy-id'").get()).toEqual({ id: "legacy-id" });
   });
 
-  it("returns null for empty candidate list", () => {
-    expect(chooseIdentityReconcileCandidate([])).toBeNull();
+  it("preserves a durable revocation when the verified identity moves to a new subject", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+        VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 1, '2026-02-01', 'system:open-registration');
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+        VALUES ('revoked-id', 'old@example.com', 'user@example.com', 1, 0, '2026-01-01', 'revoked:admin-id');
+    `);
+
+    await reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com");
+
+    expect(db.db.prepare("SELECT is_approved, approved_by_user_id FROM users WHERE id = 'stable-id'").get()).toEqual({
+      is_approved: 0,
+      approved_by_user_id: "revoked:admin-id",
+    });
+  });
+
+  it("preserves pending state when a verified identity first moves to a new subject", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+        VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 1, '2026-02-01', 'system:open-registration');
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+        VALUES ('pending-id', 'old@example.com', 'user@example.com', 1, 0, NULL, NULL);
+    `);
+
+    await reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com");
+
+    expect(db.db.prepare("SELECT is_approved, approved_at, approved_by_user_id FROM users WHERE id = 'stable-id'").get()).toEqual({
+      is_approved: 0,
+      approved_at: null,
+      approved_by_user_id: null,
+    });
+  });
+
+  it("does not reconcile from mutable profile email", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified) VALUES ('stable-id', 'new@example.com', 'user@example.com', 1);
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin) VALUES ('editable-id', 'user@example.com', 'other@example.com', 1, 1);
+    `);
+
+    await reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com");
+
+    expect(db.db.prepare("SELECT is_admin FROM users WHERE id = 'stable-id'").get()).toEqual({ is_admin: 0 });
+    expect(db.db.prepare("SELECT id FROM users WHERE id = 'editable-id'").get()).toEqual({ id: "editable-id" });
+  });
+
+  it("audits a verified identity collision and transfers nothing", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, idp_email, idp_email_verified) VALUES ('stable-id', 'user@example.com', 1);
+      INSERT INTO users (id, idp_email, idp_email_verified) VALUES ('one', 'user@example.com', 1);
+      INSERT INTO users (id, idp_email, idp_email_verified) VALUES ('two', 'user@example.com', 1);
+    `);
+
+    await expect(
+      reconcileUserIdentityByIdpEmail({ DB: db as unknown as D1Database }, "stable-id", "user@example.com"),
+    ).rejects.toThrow("Verified identity collision");
+    expect(db.db.prepare("SELECT COUNT(*) AS count FROM users").get()).toEqual({ count: 3 });
+    expect(db.db.prepare("SELECT event_type FROM user_identity_audit").get()).toEqual({
+      event_type: "verified_idp_email_collision",
+    });
+  });
+
+  it("keeps deletion blocks durable until explicit restore", () => {
+    expect(() => assertDeletedUserMayRegister({ deleted_at: "2026-01-01T00:00:00Z" })).toThrow("Session revoked by admin");
+    expect(() => assertDeletedUserMayRegister(null)).not.toThrow();
+  });
+
+  it("blocks a new subject that presents the deleted account's verified identity", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO deleted_users VALUES ('old-subject', '2026-01-01', 'admin-id');
+      INSERT INTO user_identity_audit
+        (event_type, target_user_id, actor_user_id, idp_email, details_json, created_at)
+        VALUES ('user_deleted', 'old-subject', 'admin-id', 'user@example.com', '{}', '2026-01-01');
+    `);
+
+    const deletion = await findDeletionBlock(
+      { DB: db as unknown as D1Database },
+      "new-subject",
+      "user@example.com",
+    );
+
+    expect(deletion).toEqual({ deleted_at: "2026-01-01" });
+    db.db.exec("DELETE FROM deleted_users WHERE id = 'old-subject'");
+    await expect(findDeletionBlock(
+      { DB: db as unknown as D1Database },
+      "new-subject",
+      "user@example.com",
+    )).resolves.toBeNull();
+  });
+
+  it("applies bootstrap admin only when creating the user", () => {
+    expect(shouldBootstrapAdmin(false, true)).toBe(true);
+    expect(shouldBootstrapAdmin(true, true)).toBe(false);
   });
 });

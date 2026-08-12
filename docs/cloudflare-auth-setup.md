@@ -61,8 +61,30 @@ In Pages project env vars (Production + Preview):
 - `ACCESS_TEAM_DOMAIN` = your team domain (without `https://`)
 - `ACCESS_AUD` = comma-separated Access app AUD tags for every hostname served
   by that Pages environment
-- `ADMIN_USER_IDS` = bootstrap admin user IDs
+- `ADMIN_USER_IDS` = one-time bootstrap admin user IDs
 - `REGISTRATION_MODE` = `open`
+
+`ADMIN_USER_IDS` is consulted only when a listed identity is first inserted.
+After that, the role and revocation state stored in D1 is authoritative, so an
+administrator can durably demote or revoke a bootstrap identity. Diagnostics
+endpoints follow that current D1 state and do not provide a configuration-only
+break-glass bypass.
+
+## Account lifecycle policy
+
+- Profile email is editable display/contact data. It never transfers approval,
+  roles, ownership, grants, or audit identity.
+- Identity reconciliation requires an email claim from a successfully verified
+  Cloudflare Access JWT. Header-only and local-development identities do not
+  supply reconciliation evidence.
+- One matching verified identity is migrated atomically and recorded in the
+  identity audit log. Multiple verified matches fail closed without a transfer.
+- Deleting an account creates a durable tombstone. Old and newly issued IdP
+  sessions remain blocked until an administrator explicitly restores the ID.
+  Verified IdP identity evidence is retained in the identity audit log so a
+  changed IdP subject cannot bypass the tombstone; the next valid login after
+  restore creates a fresh account.
+- Avatar object keys are opaque and do not include the LinkSim user ID or email.
 
 Do not enable local dev fallback vars in production or shared preview deployments.
 

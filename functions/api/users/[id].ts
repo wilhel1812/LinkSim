@@ -34,7 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     const user = await fetchUserProfile(env, targetId);
     if (!user) return withCors(request, json({ error: "User not found" }, { status: 404 }));
 
-    if (!me.isAdmin && !("isModerator" in me && Boolean((me as { isModerator?: boolean }).isModerator)) && me.id !== targetId) {
+    if (!me.isAdmin && me.id !== targetId) {
       const canSeeEmail = user.emailPublic;
       return withCors(
         request,

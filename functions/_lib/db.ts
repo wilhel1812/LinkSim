@@ -223,19 +223,8 @@ const deriveDefaultEmail = (userId: string, tokenPayload?: Record<string, unknow
 };
 
 const deriveVerifiedIdpEmail = (tokenPayload?: Record<string, unknown>): string => {
-  const fromPayload = sanitizeEmail(tokenPayload?.email);
+  const fromPayload = sanitizeEmail(tokenPayload?.__linksim_verified_idp_email);
   return fromPayload ?? "";
-};
-
-const parseTokenIssuedAtMs = (tokenPayload?: Record<string, unknown>): number | null => {
-  if (!tokenPayload) return null;
-  const raw = tokenPayload.iat;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw * 1000;
-  if (typeof raw === "string") {
-    const parsed = Number(raw);
-    if (Number.isFinite(parsed)) return parsed * 1000;
-  }
-  return null;
 };
 
 const parseAdminUserIds = (env: Env): Set<string> => {
@@ -593,33 +582,10 @@ type UserRow = {
   updated_at: string | null;
 };
 
-type IdentityMatchKind = "verified_idp_email" | "legacy_email";
-type IdentityReconcileCandidate = UserRow & { match_kind: IdentityMatchKind };
-
-const matchRank = (kind: IdentityMatchKind): number => (kind === "verified_idp_email" ? 2 : 1);
-
-const normalizeDateSafe = (value: string | null): number => {
-  if (!value) return Number.MAX_SAFE_INTEGER;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
-};
-
-export const chooseIdentityReconcileCandidate = (
-  candidates: IdentityReconcileCandidate[],
-): IdentityReconcileCandidate | null => {
-  if (!candidates.length) return null;
-  const sorted = [...candidates].sort((a, b) => {
-    const rankDiff = matchRank(b.match_kind) - matchRank(a.match_kind);
-    if (rankDiff !== 0) return rankDiff;
-    if (a.is_admin !== b.is_admin) return b.is_admin - a.is_admin;
-    if (a.is_moderator !== b.is_moderator) return b.is_moderator - a.is_moderator;
-    if (a.is_approved !== b.is_approved) return b.is_approved - a.is_approved;
-    const createdDiff = normalizeDateSafe(a.created_at) - normalizeDateSafe(b.created_at);
-    if (createdDiff !== 0) return createdDiff;
-    return a.id.localeCompare(b.id);
-  });
-  return sorted[0] ?? null;
-};
+type IdentityReconcileCandidate = Pick<
+  UserRow,
+  "id" | "is_admin" | "is_moderator" | "is_approved" | "approved_at" | "approved_by_user_id"
+>;
 
 const toUserProfile = (row: UserRow) => ({
   id: row.id,
@@ -628,8 +594,6 @@ const toUserProfile = (row: UserRow) => ({
   email: sanitizeEmail(row.email) ?? "unknown@users.linksim.local",
   bio: row.bio ?? "",
   accessRequestNote: row.access_request_note ?? "",
-  idpEmail: row.idp_email ?? "",
-  idpEmailVerified: row.idp_email_verified === 1,
   avatarUrl: row.avatar_url ?? "",
   emailPublic: row.email_public === 1,
   defaultFrequencyPresetId: row.default_frequency_preset_id,
@@ -679,66 +643,89 @@ const readUserRow = async (env: Env, userId: string): Promise<UserRow | null> =>
     .first<UserRow>();
 };
 
-const reconcileUserIdentityByIdpEmail = async (
+export const reconcileUserIdentityByIdpEmail = async (
   env: Env,
   userId: string,
   idpEmail: string,
+  targetWasExisting = false,
 ): Promise<void> => {
   const normalized = sanitizeEmail(idpEmail);
   if (!normalized) return;
 
   const rows = await env.DB
     .prepare(
-      `SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at,
-              CASE
-                WHEN lower(idp_email) = lower(?) AND idp_email_verified = 1 THEN 'verified_idp_email'
-                WHEN lower(email) = lower(?) THEN 'legacy_email'
-                ELSE NULL
-              END AS match_kind
+      `SELECT id, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id
        FROM users
        WHERE id <> ?
-         AND (
-           (lower(idp_email) = lower(?) AND idp_email_verified = 1)
-           OR lower(email) = lower(?)
-         )
-       LIMIT 25`,
+         AND lower(idp_email) = lower(?)
+         AND idp_email_verified = 1
+       ORDER BY id ASC
+       LIMIT 3`,
     )
-    .bind(normalized, normalized, userId, normalized, normalized)
+    .bind(userId, normalized)
     .all<IdentityReconcileCandidate>();
-  const existing = chooseIdentityReconcileCandidate(
-    rows.results.filter(
-      (row): row is IdentityReconcileCandidate =>
-        row.match_kind === "verified_idp_email" || row.match_kind === "legacy_email",
-    ),
-  );
+  if (rows.results.length > 1) {
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO user_identity_audit
+       (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        "verified_idp_email_collision",
+        userId,
+        null,
+        userId,
+        normalized,
+        JSON.stringify({ candidateUserIds: rows.results.map((row) => row.id) }),
+        now,
+      )
+      .run();
+    throw new Error("Verified identity collision. Contact an administrator.");
+  }
+  const existing = rows.results[0] ?? null;
   if (!existing) return;
 
   const now = new Date().toISOString();
-  await env.DB
-    .prepare(
+  const sourceIsRevoked =
+    existing.is_admin !== 1 &&
+    existing.is_moderator !== 1 &&
+    existing.is_approved !== 1 &&
+    Boolean(existing.approved_at || existing.approved_by_user_id);
+  const sourceIsPending =
+    existing.is_admin !== 1 &&
+    existing.is_moderator !== 1 &&
+    existing.is_approved !== 1 &&
+    !sourceIsRevoked;
+  const preserveSourceLifecycle = sourceIsRevoked || (!targetWasExisting && sourceIsPending);
+  await env.DB.batch([
+    env.DB.prepare(
       `UPDATE users
-       SET is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
-           is_moderator = CASE WHEN ? = 1 THEN 1 ELSE is_moderator END,
-           is_approved = CASE WHEN ? = 1 THEN 1 ELSE is_approved END,
-           approved_at = CASE WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
-           approved_by_user_id = CASE WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?) ELSE approved_by_user_id END,
+       SET is_admin = CASE WHEN ? = 1 THEN 0 WHEN ? = 1 THEN 1 ELSE is_admin END,
+           is_moderator = CASE WHEN ? = 1 THEN 0 WHEN ? = 1 THEN 1 ELSE is_moderator END,
+           is_approved = CASE WHEN ? = 1 THEN 0 WHEN ? = 1 THEN 1 ELSE is_approved END,
+           approved_at = CASE WHEN ? = 1 THEN ? WHEN ? = 1 THEN COALESCE(approved_at, ?) ELSE approved_at END,
+           approved_by_user_id = CASE WHEN ? = 1 THEN ? WHEN ? = 1 THEN COALESCE(approved_by_user_id, ?) ELSE approved_by_user_id END,
            updated_at = ?
        WHERE id = ?`,
-    )
-    .bind(
+    ).bind(
+      preserveSourceLifecycle ? 1 : 0,
       existing.is_admin === 1 ? 1 : 0,
+      preserveSourceLifecycle ? 1 : 0,
       existing.is_moderator === 1 ? 1 : 0,
+      preserveSourceLifecycle ? 1 : 0,
       existing.is_approved === 1 ? 1 : 0,
+      preserveSourceLifecycle ? 1 : 0,
+      existing.approved_at,
       existing.is_approved === 1 ? 1 : 0,
       existing.approved_at ?? now,
+      preserveSourceLifecycle ? 1 : 0,
+      existing.approved_by_user_id,
       existing.is_approved === 1 ? 1 : 0,
       existing.approved_by_user_id ?? existing.id,
       now,
       userId,
-    )
-    .run();
-
-  await env.DB.batch([
+    ),
     env.DB.prepare("UPDATE sites SET owner_user_id = ? WHERE owner_user_id = ?").bind(userId, existing.id),
     env.DB
       .prepare(
@@ -755,18 +742,40 @@ const reconcileUserIdentityByIdpEmail = async (
              last_edited_by_user_id = CASE WHEN last_edited_by_user_id = ? THEN ? ELSE last_edited_by_user_id END`,
       )
       .bind(existing.id, userId, existing.id, userId),
-    env.DB.prepare("UPDATE site_roles SET user_id = ? WHERE user_id = ?").bind(userId, existing.id),
-    env.DB.prepare("UPDATE simulation_roles SET user_id = ? WHERE user_id = ?").bind(userId, existing.id),
+    env.DB
+      .prepare(
+        `INSERT INTO site_roles (site_id, user_id, role, created_at)
+         SELECT site_id, ?, role, created_at FROM site_roles WHERE user_id = ?
+         ON CONFLICT(site_id, user_id) DO UPDATE SET role = CASE
+           WHEN excluded.role = 'admin' OR site_roles.role = 'admin' THEN 'admin'
+           WHEN excluded.role = 'editor' OR site_roles.role = 'editor' THEN 'editor'
+           ELSE 'viewer'
+         END`,
+      )
+      .bind(userId, existing.id),
+    env.DB.prepare("DELETE FROM site_roles WHERE user_id = ?").bind(existing.id),
+    env.DB
+      .prepare(
+        `INSERT INTO simulation_roles (simulation_id, user_id, role, created_at)
+         SELECT simulation_id, ?, role, created_at FROM simulation_roles WHERE user_id = ?
+         ON CONFLICT(simulation_id, user_id) DO UPDATE SET role = CASE
+           WHEN excluded.role = 'admin' OR simulation_roles.role = 'admin' THEN 'admin'
+           WHEN excluded.role = 'editor' OR simulation_roles.role = 'editor' THEN 'editor'
+           ELSE 'viewer'
+         END`,
+      )
+      .bind(userId, existing.id),
+    env.DB.prepare("DELETE FROM simulation_roles WHERE user_id = ?").bind(existing.id),
     env.DB.prepare("UPDATE resource_changes SET actor_user_id = ? WHERE actor_user_id = ?").bind(userId, existing.id),
-  ]);
-
-  await env.DB
-    .prepare(
+    env.DB
+      .prepare("UPDATE simulation_path_leaderboard_entries SET owner_user_id = ? WHERE owner_user_id = ?")
+      .bind(userId, existing.id),
+    env.DB.prepare("UPDATE users SET approved_by_user_id = ? WHERE approved_by_user_id = ?").bind(userId, existing.id),
+    env.DB.prepare(
       `INSERT INTO user_identity_audit
        (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
+    ).bind(
       "reconciled_by_verified_idp_email",
       userId,
       existing.id,
@@ -774,15 +783,46 @@ const reconcileUserIdentityByIdpEmail = async (
       normalized,
       JSON.stringify({
         mergedFromUserId: existing.id,
-        matchKind: existing.match_kind,
+        matchKind: "verified_idp_email",
         mergedFromIsAdmin: existing.is_admin === 1,
         mergedFromIsModerator: existing.is_moderator === 1,
         mergedFromIsApproved: existing.is_approved === 1,
+        mergedFromAccountState: sourceIsRevoked ? "revoked" : sourceIsPending ? "pending" : "approved",
       }),
       now,
-    )
-    .run();
+    ),
+    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(existing.id),
+  ]);
 };
+
+export const assertDeletedUserMayRegister = (deletion: { deleted_at: string } | null): void => {
+  if (deletion?.deleted_at) throw new Error("Session revoked by admin");
+};
+
+export const findDeletionBlock = async (
+  env: Pick<Env, "DB">,
+  userId: string,
+  verifiedIdpEmail: string,
+): Promise<{ deleted_at: string } | null> =>
+  env.DB
+    .prepare(
+      `SELECT d.deleted_at
+       FROM deleted_users d
+       WHERE d.id = ?
+          OR (? <> '' AND EXISTS (
+            SELECT 1 FROM user_identity_audit a
+            WHERE a.event_type = 'user_deleted'
+              AND a.target_user_id = d.id
+              AND lower(a.idp_email) = lower(?)
+          ))
+       ORDER BY d.deleted_at DESC
+       LIMIT 1`,
+    )
+    .bind(userId, verifiedIdpEmail, verifiedIdpEmail)
+    .first<{ deleted_at: string }>();
+
+export const shouldBootstrapAdmin = (userExists: boolean, listedAsAdmin: boolean): boolean =>
+  !userExists && listedAsAdmin;
 
 export const ensureUser = async (
   env: Env,
@@ -790,23 +830,20 @@ export const ensureUser = async (
   tokenPayload?: Record<string, unknown>,
 ): Promise<void> => {
   await ensureSchema(env);
-  const deletion = await env.DB
-    .prepare("SELECT deleted_at FROM deleted_users WHERE id = ? LIMIT 1")
-    .bind(userId)
-    .first<{ deleted_at: string }>();
-  if (deletion?.deleted_at) {
-    const tokenIssuedAtMs = parseTokenIssuedAtMs(tokenPayload);
-    const deletedAtMs = Date.parse(deletion.deleted_at);
-    if (!Number.isFinite(deletedAtMs) || tokenIssuedAtMs === null || tokenIssuedAtMs <= deletedAtMs) {
-      throw new Error("Session revoked by admin");
-    }
-    await env.DB.prepare("DELETE FROM deleted_users WHERE id = ?").bind(userId).run();
-  }
-  const now = new Date().toISOString();
   const email = deriveDefaultEmail(userId, tokenPayload);
   const idpEmail = deriveVerifiedIdpEmail(tokenPayload);
+  const deletion = await findDeletionBlock(env, userId, idpEmail);
+  assertDeletedUserMayRegister(deletion ?? null);
+  const existingUser = await env.DB
+    .prepare("SELECT id FROM users WHERE id = ? LIMIT 1")
+    .bind(userId)
+    .first<{ id: string }>();
+  const now = new Date().toISOString();
   const idpEmailVerified = idpEmail ? 1 : 0;
-  const isBootstrapAdmin = parseAdminUserIds(env).has(userId.toLowerCase()) ? 1 : 0;
+  const isBootstrapAdmin = shouldBootstrapAdmin(
+    Boolean(existingUser?.id),
+    parseAdminUserIds(env).has(userId.toLowerCase()),
+  ) ? 1 : 0;
   const autoApprove = 1;
 
   await env.DB.prepare(
@@ -832,10 +869,8 @@ export const ensureUser = async (
   await env.DB.prepare(
     `UPDATE users
      SET email = COALESCE(NULLIF(TRIM(email), ''), ?),
-         idp_email = CASE WHEN ? = 1 THEN COALESCE(NULLIF(TRIM(idp_email), ''), ?) ELSE idp_email END,
+         idp_email = CASE WHEN ? = 1 THEN ? ELSE idp_email END,
          idp_email_verified = CASE WHEN ? = 1 THEN 1 ELSE idp_email_verified END,
-         is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
-         is_moderator = CASE WHEN ? = 1 THEN 1 ELSE is_moderator END,
          is_approved = CASE WHEN ? = 1 AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%') THEN 1 ELSE is_approved END,
          approved_at = CASE WHEN ? = 1 AND approved_at IS NULL THEN ? ELSE approved_at END,
          approved_by_user_id = CASE WHEN ? = 1 AND approved_by_user_id IS NULL THEN ? ELSE approved_by_user_id END,
@@ -847,8 +882,6 @@ export const ensureUser = async (
       idpEmailVerified,
       idpEmail || null,
       idpEmailVerified,
-      isBootstrapAdmin,
-      0,
       autoApprove,
       autoApprove,
       now,
@@ -860,13 +893,39 @@ export const ensureUser = async (
     .run();
 
   if (idpEmailVerified) {
-    await reconcileUserIdentityByIdpEmail(env, userId, idpEmail);
+    await reconcileUserIdentityByIdpEmail(env, userId, idpEmail, Boolean(existingUser?.id));
   }
 };
 
 export const fetchUserProfile = async (env: Env, userId: string) => {
   const row = await readUserRow(env, userId);
   return row ? toUserProfile(row) : null;
+};
+
+export const fetchUserDiagnosticAccessState = async (env: Pick<Env, "DB">, userId: string) => {
+  const row = await env.DB
+    .prepare(
+      `SELECT is_admin, is_moderator, is_approved, approved_at, approved_by_user_id
+       FROM users WHERE id = ? LIMIT 1`,
+    )
+    .bind(userId)
+    .first<{
+      is_admin: number;
+      is_moderator: number;
+      is_approved: number;
+      approved_at: string | null;
+      approved_by_user_id: string | null;
+    }>();
+  if (!row) return null;
+  const approved = row.is_admin === 1 || row.is_moderator === 1 || row.is_approved === 1;
+  return {
+    isAdmin: row.is_admin === 1,
+    accountState: approved
+      ? ("approved" as const)
+      : row.approved_at || row.approved_by_user_id
+        ? ("revoked" as const)
+        : ("pending" as const),
+  };
 };
 
 export const assertUserAccess = async (env: Env, userId: string) => {
@@ -1031,14 +1090,20 @@ export const getUserAvatarKeys = async (
   };
 };
 
-export const listUsers = async (env: Env) => {
+export const listUsers = async (env: Env, includePrivateEmail = false) => {
   await ensureSchema(env);
   const rows = await env.DB
     .prepare(
       "SELECT id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, default_frequency_preset_id, simulation_defaults_preference_json, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 2000",
     )
     .all<UserRow>();
-  return rows.results.map(toUserProfile);
+  return rows.results.map((row) => {
+    const profile = toUserProfile(row);
+    if (includePrivateEmail || profile.emailPublic) return profile;
+    const redacted: Partial<typeof profile> = { ...profile };
+    delete redacted.email;
+    return redacted;
+  });
 };
 
 export const listCollaboratorDirectory = async (env: Env) => {
@@ -1155,6 +1220,11 @@ export const setUserApproval = async (
 export const deleteUser = async (env: Env, userId: string, actorUserId?: string): Promise<void> => {
   await ensureSchema(env);
   const now = new Date().toISOString();
+  const identity = await env.DB
+    .prepare("SELECT idp_email, idp_email_verified FROM users WHERE id = ? LIMIT 1")
+    .bind(userId)
+    .first<{ idp_email: string | null; idp_email_verified: number }>();
+  const verifiedIdpEmail = identity?.idp_email_verified === 1 ? sanitizeEmail(identity.idp_email) : null;
   await env.DB.batch([
     env.DB
       .prepare(
@@ -1163,6 +1233,21 @@ export const deleteUser = async (env: Env, userId: string, actorUserId?: string)
          ON CONFLICT(id) DO UPDATE SET deleted_at = excluded.deleted_at, deleted_by_user_id = excluded.deleted_by_user_id`,
       )
       .bind(userId, now, actorUserId ?? null),
+    env.DB
+      .prepare(
+        `INSERT INTO user_identity_audit
+         (event_type, target_user_id, source_user_id, actor_user_id, idp_email, details_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        "user_deleted",
+        userId,
+        null,
+        actorUserId ?? null,
+        verifiedIdpEmail,
+        JSON.stringify({ durableBlock: true, hasVerifiedIdpEmail: Boolean(verifiedIdpEmail) }),
+        now,
+      ),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
   ]);
 };

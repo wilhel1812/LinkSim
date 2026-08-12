@@ -7,8 +7,6 @@ export type CloudUser = {
   email?: string;
   bio: string;
   accessRequestNote?: string;
-  idpEmail?: string;
-  idpEmailVerified?: boolean;
   avatarUrl: string;
   emailPublic?: boolean;
   defaultFrequencyPresetId?: string | null;

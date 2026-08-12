@@ -62,11 +62,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", original.bytes));
     const hash = toHex(digest);
-    const stamp = Date.now();
+    const opaqueKey = crypto.randomUUID();
     const ext = extForType(original.contentType);
     const thumbExt = extForType(thumb.contentType);
-    const objectKey = `users/${auth.userId}/avatar-${stamp}-${hash.slice(0, 16)}.${ext}`;
-    const thumbKey = `users/${auth.userId}/avatar-${stamp}-${hash.slice(0, 16)}-thumb.${thumbExt}`;
+    const objectKey = `users/${opaqueKey}/avatar-${hash.slice(0, 16)}.${ext}`;
+    const thumbKey = `users/${opaqueKey}/avatar-${hash.slice(0, 16)}-thumb.${thumbExt}`;
 
     await env.AVATAR_BUCKET.put(objectKey, original.bytes, {
       httpMetadata: { contentType: original.contentType, cacheControl: "public, max-age=31536000, immutable" },
