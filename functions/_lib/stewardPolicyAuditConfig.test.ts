@@ -44,8 +44,11 @@ describe("Steward policy audit rollout", () => {
   it("routes every publication through the shared deterministic validator", () => {
     expect(policySkill).toContain("scripts/ai-provenance.mjs");
     expect(policySkill).toContain("config/steward-policy-audit.json");
-    expect(policySkill).toContain("Steward's dedicated least-privilege GitHub App");
-    expect(policySkill).not.toContain("Delivered by Linky · AI community bot");
+    expect(policySkill).toContain("config/ai-agents.json");
+    expect(policySkill).toContain("registry-approved attribution");
+    expect(policySkill).toContain("permitted issue authority");
+    expect(policySkill).not.toContain("Steward's dedicated least-privilege GitHub App");
+    expect(policySkill).not.toContain("Linky");
     expect(repositoryPolicy).toContain("scripts/ai-provenance.mjs");
     expect(repositoryPolicy).toContain("fail closed");
     expect(packageJson.scripts["agents:validate"]).toBe(

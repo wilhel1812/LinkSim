@@ -58,10 +58,12 @@ not start a model call. Comment only when at least one evidence-backed
 improvement exists. Append through the deterministic publisher to the single
 configured `documentation` + `pending-discussion` issue; do not rewrite its
 body or create repeated issues. Publication must be idempotent, signed, and
-provenance-validated. Scheduled GitHub comments are authored by Steward and
-published through Steward's dedicated least-privilege GitHub App. They must
-visibly contain `— Steward · AI policy advisor`; they must not claim delivery by
-Linky or inherit Linky's issue-maintenance authority.
+provenance-validated. Scheduled publication identity, delivery identity,
+visible attribution, and permitted issue authority must be resolved from
+`config/ai-agents.json` and validated by `scripts/ai-provenance.mjs`. The
+rendered artifact must display only the registry-approved attribution for the
+configured Steward publisher. Do not hard-code, inherit, or claim another
+agent's delivery identity or authority.
 
 End every output with `Suggestion only — no policy change applied.` and
 `— Steward · AI policy advisor`. Fail closed if attribution or provenance
