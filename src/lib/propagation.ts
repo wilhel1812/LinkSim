@@ -1,5 +1,6 @@
 import { haversineDistanceKm, interpolateCoordinate } from "./geo";
 import { resolveLinkRadio } from "./linkRadio";
+import { effectiveGainTowardSiteDbi } from "./antennaPattern";
 import { fsplDb, getPathLossDb } from "./rfModels";
 import {
   atmosphericBendingNUnitsToKFactor,
@@ -147,8 +148,10 @@ export const analyzeLink = (
   const pathLossDb = basePathLossDb + terrainPenaltyDb;
   const pureFsplDb = fsplDb(distanceKm, link.frequencyMHz);
   const radio = resolveLinkRadio(link, fromSite, toSite);
-  const eirpDbm = radio.txPowerDbm + radio.txGainDbi - radio.cableLossDb;
-  const rxLevelDbm = eirpDbm + radio.rxGainDbi - pathLossDb;
+  const directionalTxGainDbi = effectiveGainTowardSiteDbi(radio.txGainDbi, fromSite, toSite);
+  const directionalRxGainDbi = effectiveGainTowardSiteDbi(radio.rxGainDbi, toSite, fromSite);
+  const eirpDbm = radio.txPowerDbm + directionalTxGainDbi - radio.cableLossDb;
+  const rxLevelDbm = eirpDbm + directionalRxGainDbi - pathLossDb;
 
   const midpointLineM = (fromAntennaAbsM + toAntennaAbsM) / 2;
   const midpointTerrainM = (fromSite.groundElevationM + toSite.groundElevationM) / 2;

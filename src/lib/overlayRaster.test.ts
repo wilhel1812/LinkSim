@@ -79,6 +79,134 @@ const environment: PropagationEnvironment = {
 const terrainSampler = () => 135;
 
 describe("overlayRaster async builders", () => {
+  it("changes visible Pass/Fail pixels for directional orientation and pattern edits", async () => {
+    const dimensions = { width: 41, height: 41 };
+    const render = (site: Site) => buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      site,
+      link,
+      toSite.antennaHeightM,
+      toSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      terrainSampler,
+      dimensions,
+      24,
+      undefined,
+      undefined,
+      { adaptive: false },
+    );
+    const omni = await render(fromSite);
+    const north = await render({
+      ...fromSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+    const south = await render({
+      ...fromSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 180,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+
+    expect(omni).not.toBeNull();
+    expect(north).not.toBeNull();
+    expect(south).not.toBeNull();
+    expect(Array.from(north!.pixels)).not.toEqual(Array.from(omni!.pixels));
+    expect(Array.from(south!.pixels)).not.toEqual(Array.from(north!.pixels));
+  });
+
+  it("applies the selected destination receive pattern to Pass/Fail pixels", async () => {
+    const dimensions = { width: 41, height: 41 };
+    const render = (receiverSite: Site) => buildSourcePassFailOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      link,
+      receiverSite.antennaHeightM,
+      receiverSite.rxGainDbi,
+      environment,
+      -118,
+      0,
+      terrainSampler,
+      dimensions,
+      24,
+      undefined,
+      undefined,
+      { adaptive: false },
+      receiverSite,
+    );
+    const toward = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 236,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+    const away = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 56,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 30,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    });
+
+    expect(toward).not.toBeNull();
+    expect(away).not.toBeNull();
+    expect(Array.from(away!.pixels)).not.toEqual(Array.from(toward!.pixels));
+  });
+
+  it("applies the destination receive pattern on the second Relay leg", async () => {
+    const dimensions = { width: 25, height: 25 };
+    const render = (destination: Site) => buildRelayCandidateOverlayPixelsAsync(
+      bounds,
+      fromSite,
+      destination,
+      link,
+      environment,
+      0,
+      terrainSampler,
+      dimensions,
+      24,
+      undefined,
+      undefined,
+      { adaptive: false },
+    );
+    const north = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 25,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 40,
+    });
+    const south = await render({
+      ...toSite,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 180,
+      antennaTiltDeg: 0,
+      antennaHorizontalBeamwidthDeg: 25,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 40,
+    });
+
+    expect(north).not.toBeNull();
+    expect(south).not.toBeNull();
+    expect(Array.from(north!.signalValuesDbm!)).not.toEqual(Array.from(south!.signalValuesDbm!));
+  });
+
   it("builds Heatmap on the Pass/Fail logical grid with bounded adaptive error", async () => {
     const dimensions = { width: 312, height: 312 };
     let exactEvaluations = 0;

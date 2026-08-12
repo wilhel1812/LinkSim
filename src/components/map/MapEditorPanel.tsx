@@ -271,10 +271,15 @@ function SiteEditorCard({
   const title = isNew ? "New Site" : (mapEditor?.label ?? form.nameDraft);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const iconPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const suggestedIconKey = suggestSiteIconKey({ name: form.nameDraft, antennaHeightM: form.antennaDraft });
+  const suggestedIconKey = suggestSiteIconKey({
+    name: form.nameDraft,
+    antennaHeightM: form.antennaDraft,
+    antennaMode: form.antennaMode,
+  });
   const resolvedIconKey = resolveSiteIconKey({
     name: form.nameDraft,
     antennaHeightM: form.antennaDraft,
+    antennaMode: form.antennaMode,
     iconKey: form.iconDraft === "auto" ? undefined : form.iconDraft,
   });
   const resolvedIconOption = getSiteIconOption(resolvedIconKey);
@@ -321,6 +326,16 @@ function SiteEditorCard({
             )}
             <StaticField label="Separate RX/TX gain" value={form.separateGain ? "Yes" : "No"} />
             <StaticField label="Cable loss (dB)" value={form.cableLossDraft} />
+            <StaticField label="Antenna mode" value={form.antennaMode === "directional" ? "Directional" : "Omnidirectional"} />
+            {form.antennaMode === "directional" ? (
+              <>
+                <StaticField label="Azimuth (°)" value={form.antennaAzimuthDraft.toFixed(1)} />
+                <StaticField label="Tilt (°)" value={form.antennaTiltDraft.toFixed(1)} />
+                <StaticField label="Horizontal beamwidth (°)" value={form.antennaHorizontalBeamwidthDraft} />
+                <StaticField label="Vertical beamwidth (°)" value={form.antennaVerticalBeamwidthDraft} />
+                <StaticField label="Maximum attenuation (dB)" value={form.antennaMaxAttenuationDraft} />
+              </>
+            ) : null}
           </div>
           <SiteBeamVisualizer
             values={{
@@ -329,6 +344,12 @@ function SiteEditorCard({
               txGainDbi: form.txGainDraft,
               rxGainDbi: form.rxGainDraft,
               cableLossDb: form.cableLossDraft,
+              antennaMode: form.antennaMode,
+              antennaAzimuthDeg: form.antennaAzimuthDraft,
+              antennaTiltDeg: form.antennaTiltDraft,
+              antennaHorizontalBeamwidthDeg: form.antennaHorizontalBeamwidthDraft,
+              antennaVerticalBeamwidthDeg: form.antennaVerticalBeamwidthDraft,
+              antennaMaxAttenuationDb: form.antennaMaxAttenuationDraft,
             }}
           />
         </div>
@@ -397,7 +418,7 @@ function SiteEditorCard({
         {form.activeSimulationSiteId ? (
           <div className="simulation-site-color-control">
             <SimulationColorControl
-              disabled={!form.canEditActiveSimulationAppearance}
+              disabled={!form.canEditActiveSimulation}
               label="Site icon color"
               onChange={form.setActiveSiteIconColor}
               value={form.activeSiteIconColor}
@@ -606,6 +627,105 @@ function SiteEditorCard({
               value={form.cableLossDraft}
             />
           </label>
+
+          <div className="field-grid gain-mode-toggle">
+            <span>Directional antenna</span>
+            <input
+              aria-label="Directional antenna"
+              checked={form.antennaMode === "directional"}
+              onChange={(event) => form.setAntennaMode(event.target.checked ? "directional" : "omnidirectional")}
+              type="checkbox"
+            />
+          </div>
+
+          {form.antennaMode === "directional" ? (
+            <div className="directional-antenna-fields">
+              <label className="field-grid">
+                <span>Azimuth (°)</span>
+                <input
+                  aria-label="Antenna azimuth"
+                  disabled={Boolean(form.antennaTargetSiteId)}
+                  max="359.999"
+                  min="0"
+                  onChange={(event) => form.setAntennaAzimuthDraft(event.target.value)}
+                  step="0.1"
+                  type="number"
+                  value={form.antennaAzimuthDraft}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Tilt (°)</span>
+                <input
+                  aria-label="Antenna tilt"
+                  disabled={Boolean(form.antennaTargetSiteId)}
+                  max="90"
+                  min="-90"
+                  onChange={(event) => form.setAntennaTiltDraft(event.target.value)}
+                  step="0.1"
+                  type="number"
+                  value={form.antennaTiltDraft}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Horizontal beamwidth (°)</span>
+                <input
+                  aria-label="Horizontal beamwidth"
+                  max="180"
+                  min="1"
+                  onChange={(event) => form.setAntennaHorizontalBeamwidthDraft(event.target.value)}
+                  type="number"
+                  value={form.antennaHorizontalBeamwidthDraft}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Vertical beamwidth (°)</span>
+                <input
+                  aria-label="Vertical beamwidth"
+                  max="180"
+                  min="1"
+                  onChange={(event) => form.setAntennaVerticalBeamwidthDraft(event.target.value)}
+                  type="number"
+                  value={form.antennaVerticalBeamwidthDraft}
+                />
+              </label>
+              <label className="field-grid">
+                <span>Maximum attenuation (dB)</span>
+                <input
+                  aria-label="Maximum off-axis attenuation"
+                  max="60"
+                  min="0"
+                  onChange={(event) => form.setAntennaMaxAttenuationDraft(event.target.value)}
+                  type="number"
+                  value={form.antennaMaxAttenuationDraft}
+                />
+              </label>
+              {form.activeSimulationSiteId ? (
+                <label className="field-grid">
+                  <span>Point at Site</span>
+                  <select
+                    aria-label="Point antenna at Site"
+                    disabled={!form.canEditActiveSimulation}
+                    onChange={(event) => form.pointAntennaAtSite(event.target.value)}
+                    value={form.antennaTargetSiteId}
+                  >
+                    <option value="">Manual orientation</option>
+                    {form.sites.filter((site) => site.id !== form.activeSimulationSiteId).map((site) => (
+                      <option key={site.id} value={site.id}>{site.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {form.antennaTargetSiteId ? (
+                <ActionButton
+                  disabled={!form.canEditActiveSimulation}
+                  onClick={form.detachAntennaTarget}
+                  type="button"
+                >
+                  Detach pointing target
+                </ActionButton>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <SiteBeamVisualizer
@@ -615,6 +735,12 @@ function SiteEditorCard({
             txGainDbi: form.txGainDraft,
             rxGainDbi: form.rxGainDraft,
             cableLossDb: form.cableLossDraft,
+            antennaMode: form.antennaMode,
+            antennaAzimuthDeg: form.antennaAzimuthDraft,
+            antennaTiltDeg: form.antennaTiltDraft,
+            antennaHorizontalBeamwidthDeg: form.antennaHorizontalBeamwidthDraft,
+            antennaVerticalBeamwidthDeg: form.antennaVerticalBeamwidthDraft,
+            antennaMaxAttenuationDb: form.antennaMaxAttenuationDraft,
           }}
         />
       </fieldset>

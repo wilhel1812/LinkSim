@@ -2,7 +2,7 @@
 import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Network, RadioSystem, Site, SrtmTile } from "../types/radio";
+import type { Link, Network, RadioSystem, Site, SrtmTile } from "../types/radio";
 import { resolveRequiredOverlayTerrainTileKeys } from "../lib/simulationOverlayRadius";
 
 const overlayMock = vi.hoisted(() => {
@@ -56,7 +56,7 @@ vi.mock("../lib/overlayRaster", () => ({
   buildCoverageOverlayPixelsAsync: overlayMock.buildCoverage,
   buildMeshExtensionOverlayPixelsAsync: vi.fn(),
   buildRelayCandidateOverlayPixelsAsync: vi.fn(),
-  buildSourcePassFailOverlayPixelsAsync: vi.fn(),
+  buildSourcePassFailOverlayPixelsAsync: overlayMock.buildCoverage,
   buildTerrainShadeOverlayPixelsAsync: vi.fn(async () => null),
   overlayPixelsToDataUrl: vi.fn(() => ({
     coordinates: [
@@ -144,6 +144,27 @@ const site: Site = {
   txGainDbi: 2,
   rxGainDbi: 2,
   cableLossDb: 1,
+};
+
+const receiverSite: Site = {
+  ...site,
+  id: "site-b",
+  name: "Site B",
+  position: { lat: 60.45, lon: 10.85 },
+  antennaMode: "directional",
+  antennaAzimuthDeg: 220,
+  antennaTiltDeg: 0,
+  antennaHorizontalBeamwidthDeg: 30,
+  antennaVerticalBeamwidthDeg: 30,
+  antennaMaxAttenuationDb: 25,
+};
+
+const savedLink: Link = {
+  id: "link-a-b",
+  name: "Site A to Site B",
+  fromSiteId: site.id,
+  toSiteId: receiverSite.id,
+  frequencyMHz: 869.618,
 };
 
 const system: RadioSystem = {
@@ -338,6 +359,41 @@ describe("MapView overlay handoff", () => {
     await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(true));
     expect(loadingOverlayMock.props?.handoffKey).toBeTruthy();
     expect(overlayMock.buildCoverage).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds cached Pass/Fail when only the saved-Path receiver pattern changes", async () => {
+    useAppStore.setState({
+      sites: [site, receiverSite],
+      links: [savedLink],
+      selectedSiteId: site.id,
+      selectedSiteIds: [site.id],
+      selectedLinkId: savedLink.id,
+      mapOverlayMode: "passfail",
+    });
+
+    render(
+      <MapView
+        canPersist
+        isMapExpanded={false}
+        onToggleMapExpanded={() => undefined}
+        showInspector={false}
+      />,
+    );
+
+    await resolveNextRaster();
+    await waitFor(() => expect(loadingOverlayMock.props?.handoffKey).toBeTruthy());
+    const firstKey = loadingOverlayMock.props?.handoffKey;
+    act(() => loadingOverlayMock.props?.onCloudReady?.(firstKey!));
+    act(() => loadingOverlayMock.props?.onCloudEntered?.(firstKey!));
+    act(() => loadingOverlayMock.props?.onCloudExited?.(firstKey!));
+    await waitFor(() => expect(loadingOverlayMock.props?.loading).toBe(false));
+
+    act(() => useAppStore.setState({
+      sites: [site, { ...receiverSite, antennaAzimuthDeg: 40 }],
+    }));
+
+    await waitFor(() => expect(overlayMock.requests.length).toBeGreaterThan(0));
+    expect(loadingOverlayMock.props?.handoffKey).not.toBe(firstKey);
   });
 
   it("retries unchanged cold-start terrain geometry after startup cancels its epoch", async () => {

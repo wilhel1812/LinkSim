@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
-import { SiteBeamVisualizerPopover } from "./SiteBeamVisualizer";
+import { SiteBeamVisualizer, SiteBeamVisualizerPopover } from "./SiteBeamVisualizer";
 
 const initialValues = {
   antennaHeightM: 2,
@@ -46,6 +46,31 @@ function Harness() {
 }
 
 describe("SiteBeamVisualizerPopover", () => {
+  it("shows labeled side and top views with an educational ground reference", () => {
+    const { container, rerender } = render(<SiteBeamVisualizer values={initialValues} />);
+
+    expect(screen.getByText("Side view")).toBeInTheDocument();
+    expect(screen.getByText("Top view")).toBeInTheDocument();
+    expect(container.querySelectorAll(".beam-visualizer-ground")).toHaveLength(1);
+    const omnidirectionalSideView = screen.getByText("Side view").closest(".beam-visualizer-chart-group");
+    expect(omnidirectionalSideView?.querySelectorAll('path.beam-visualizer-band[data-lobe="left"]')).toHaveLength(4);
+    expect(omnidirectionalSideView?.querySelectorAll('path.beam-visualizer-band[data-lobe="right"]')).toHaveLength(4);
+    expect(omnidirectionalSideView?.querySelectorAll("ellipse.beam-visualizer-band")).toHaveLength(0);
+
+    rerender(<SiteBeamVisualizer values={{
+      ...initialValues,
+      antennaMode: "directional",
+      antennaAzimuthDeg: 90,
+      antennaTiltDeg: 12,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+    }} />);
+
+    expect(screen.getByText(/Off-axis gain cannot be reduced by more than 25 dB/)).toBeInTheDocument();
+    expect(container.querySelectorAll(".beam-visualizer-residual")).toHaveLength(2);
+  });
+
   it("opens from relevant field focus and ignores unrelated fields", async () => {
     render(<Harness />);
 

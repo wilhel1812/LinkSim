@@ -1,4 +1,5 @@
 import type { Link, Site } from "../../src/types/radio";
+import { effectiveGainTowardSiteDbi } from "../../src/lib/antennaPattern";
 
 export type NodeInput = {
   name: string;
@@ -10,6 +11,12 @@ export type NodeInput = {
   cable_loss_db: number;
   antenna_height_m?: number;
   ground_elevation_m?: number;
+  antenna_mode?: "omnidirectional" | "directional";
+  antenna_azimuth_deg?: number;
+  antenna_tilt_deg?: number;
+  antenna_horizontal_beamwidth_deg?: number;
+  antenna_vertical_beamwidth_deg?: number;
+  antenna_max_attenuation_db?: number;
 };
 
 export type LinkBudgetInput = {
@@ -58,6 +65,22 @@ const normalizeBool = (value: unknown, fallback: boolean): boolean =>
 
 const normalizeMode = (value: unknown): "fast" | "terrain" => (value === "terrain" ? "terrain" : "fast");
 
+const normalizeAntennaMode = (
+  value: unknown,
+  fieldName: string,
+): "omnidirectional" | "directional" => {
+  if (value === undefined || value === null || value === "omnidirectional") return "omnidirectional";
+  if (value === "directional") return "directional";
+  throw new Error(`${fieldName} must be omnidirectional or directional.`);
+};
+
+const optionalNumberInRange = (value: unknown, fieldName: string, min: number, max: number): number | undefined => {
+  if (value === undefined) return undefined;
+  const number = asFiniteNumber(value, fieldName);
+  if (number < min || number > max) throw new Error(`${fieldName} must be between ${min} and ${max}.`);
+  return number;
+};
+
 const normalizeNode = (value: unknown, index: number): NodeInput => {
   const row = asRecord(value, `nodes[${index}] must be an object.`);
   const lat = asFiniteNumber(row.lat, `nodes[${index}].lat`);
@@ -74,6 +97,12 @@ const normalizeNode = (value: unknown, index: number): NodeInput => {
     cable_loss_db: typeof row.cable_loss_db === "number" ? row.cable_loss_db : 1,
     antenna_height_m: typeof row.antenna_height_m === "number" ? row.antenna_height_m : 2,
     ground_elevation_m: typeof row.ground_elevation_m === "number" ? row.ground_elevation_m : undefined,
+    antenna_mode: normalizeAntennaMode(row.antenna_mode, `nodes[${index}].antenna_mode`),
+    antenna_azimuth_deg: optionalNumberInRange(row.antenna_azimuth_deg, `nodes[${index}].antenna_azimuth_deg`, 0, 359.999),
+    antenna_tilt_deg: optionalNumberInRange(row.antenna_tilt_deg, `nodes[${index}].antenna_tilt_deg`, -90, 90),
+    antenna_horizontal_beamwidth_deg: optionalNumberInRange(row.antenna_horizontal_beamwidth_deg, `nodes[${index}].antenna_horizontal_beamwidth_deg`, 1, 180),
+    antenna_vertical_beamwidth_deg: optionalNumberInRange(row.antenna_vertical_beamwidth_deg, `nodes[${index}].antenna_vertical_beamwidth_deg`, 1, 180),
+    antenna_max_attenuation_db: optionalNumberInRange(row.antenna_max_attenuation_db, `nodes[${index}].antenna_max_attenuation_db`, 0, 60),
   };
 };
 
@@ -146,6 +175,12 @@ export const toSitesAndLink = (
     txGainDbi: fromNode.tx_gain_dbi,
     rxGainDbi: fromNode.rx_gain_dbi,
     cableLossDb: fromNode.cable_loss_db,
+    antennaMode: fromNode.antenna_mode,
+    antennaAzimuthDeg: fromNode.antenna_azimuth_deg,
+    antennaTiltDeg: fromNode.antenna_tilt_deg,
+    antennaHorizontalBeamwidthDeg: fromNode.antenna_horizontal_beamwidth_deg,
+    antennaVerticalBeamwidthDeg: fromNode.antenna_vertical_beamwidth_deg,
+    antennaMaxAttenuationDb: fromNode.antenna_max_attenuation_db,
   };
   const toSite: Site = {
     id: "to",
@@ -157,6 +192,12 @@ export const toSitesAndLink = (
     txGainDbi: toNode.tx_gain_dbi,
     rxGainDbi: toNode.rx_gain_dbi,
     cableLossDb: toNode.cable_loss_db,
+    antennaMode: toNode.antenna_mode,
+    antennaAzimuthDeg: toNode.antenna_azimuth_deg,
+    antennaTiltDeg: toNode.antenna_tilt_deg,
+    antennaHorizontalBeamwidthDeg: toNode.antenna_horizontal_beamwidth_deg,
+    antennaVerticalBeamwidthDeg: toNode.antenna_vertical_beamwidth_deg,
+    antennaMaxAttenuationDb: toNode.antenna_max_attenuation_db,
   };
   const link: Link = {
     id: "api-link",
@@ -169,6 +210,18 @@ export const toSitesAndLink = (
     cableLossDb: fromNode.cable_loss_db,
   };
   return { fromSite, toSite, link };
+};
+
+export const effectiveApiLinkGains = (
+  payload: CalculationRequest,
+  fromGroundM: number,
+  toGroundM: number,
+): { txGainDbi: number; rxGainDbi: number } => {
+  const { fromSite, toSite, link } = toSitesAndLink(payload, fromGroundM, toGroundM);
+  return {
+    txGainDbi: effectiveGainTowardSiteDbi(link.txGainDbi ?? fromSite.txGainDbi, fromSite, toSite),
+    rxGainDbi: effectiveGainTowardSiteDbi(link.rxGainDbi ?? toSite.rxGainDbi, toSite, fromSite),
+  };
 };
 
 export const estimateSampleCount = (distanceKm: number): number => {

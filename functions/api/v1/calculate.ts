@@ -4,6 +4,7 @@ import type { Env } from "../../_lib/types";
 import { queueTerrainCalculationJob } from "./calculate.jobs";
 import {
   findEndpointNodes,
+  effectiveApiLinkGains,
   haversineKm,
   MAX_SYNC_DISTANCE_KM,
   normalizeCalculationRequest,
@@ -99,8 +100,9 @@ export const onRequestPost = async (ctx: Context) => {
       estimateSyncSamples(distanceKm),
     );
 
-    const eirpDbm = fromNode.tx_power_dbm + fromNode.tx_gain_dbi - fromNode.cable_loss_db;
-    const rxDbm = eirpDbm + toNode.rx_gain_dbi - terrain.totalPathLossDb;
+    const directionalGains = effectiveApiLinkGains(payload, terrain.fromGroundM, terrain.toGroundM);
+    const eirpDbm = fromNode.tx_power_dbm + directionalGains.txGainDbi - fromNode.cable_loss_db;
+    const rxDbm = eirpDbm + directionalGains.rxGainDbi - terrain.totalPathLossDb;
     const environmentLossDb = Math.max(0, payload.input.environment_loss_db);
     const rxAfterEnvLossDbm = rxDbm - environmentLossDb;
     const pass = rxAfterEnvLossDbm >= payload.input.rx_target_dbm;

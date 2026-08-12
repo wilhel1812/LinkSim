@@ -1,5 +1,6 @@
 import { classifyPassFailState, computeSourceCentricRxMetrics } from "./passFailState";
 import { STANDARD_SITE_RADIO } from "./linkRadio";
+import { effectiveGainTowardSiteDbi } from "./antennaPattern";
 import {
   buildCoverageGridPoints,
   computeCoverageGridDimensions,
@@ -861,6 +862,7 @@ const computeSourceCentricRxDbm = (
   terrainSampler: (lat: number, lon: number) => number | null,
   terrainSamples: number,
   propagationEnvironment: PropagationEnvironment,
+  receiverSite?: Site,
 ): number =>
   computeSourceCentricRxMetrics(
     lat,
@@ -872,6 +874,7 @@ const computeSourceCentricRxDbm = (
     terrainSampler,
     terrainSamples,
     propagationEnvironment,
+    receiverSite,
   ).rxDbm;
 
 export const buildCoverageOverlayPixelsAsync = async (
@@ -971,6 +974,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
   pointMask?: (lat: number, lon: number) => boolean,
   context?: OverlayTaskContext,
   options?: AdaptiveOverlayOptions,
+  receiverSite?: Site,
 ): Promise<OverlayRasterPixels | null> => {
   const width = dimensions.width;
   const height = dimensions.height;
@@ -1039,6 +1043,7 @@ export const buildSourcePassFailOverlayPixelsAsync = async (
           terrainSampler,
           terrainSamples,
           propagationEnvironment,
+          receiverSite,
         );
         metricCache.rxDbm[index] = metrics.rxDbm;
         metricCache.obstruction[index] = metrics.terrainObstructed ? 1 : 0;
@@ -1189,6 +1194,7 @@ export const buildRelayCandidateOverlayPixelsAsync = async (
             terrainSampler,
             terrainSamples,
             propagationEnvironment,
+            toSite,
           );
           metricCache.baseDbm[index] = Math.min(fromToRelayRx, relayToTargetRx);
           evaluatedPaths += 1;
@@ -1312,7 +1318,9 @@ const directionalBaseRxDbm = (
     toSite.antennaHeightM,
     environment,
   );
-  return fromSite.txPowerDbm + fromSite.txGainDbi - fromSite.cableLossDb + toSite.rxGainDbi - loss;
+  const txGainDbi = effectiveGainTowardSiteDbi(fromSite.txGainDbi, fromSite, toSite);
+  const rxGainDbi = effectiveGainTowardSiteDbi(toSite.rxGainDbi, toSite, fromSite);
+  return fromSite.txPowerDbm + txGainDbi - fromSite.cableLossDb + rxGainDbi - loss;
 };
 
 const directionalTerrainRxDbm = (
@@ -1338,6 +1346,7 @@ const directionalTerrainRxDbm = (
     terrainSampler,
     terrainSamples,
     environment,
+    toSite,
   ).rxDbm;
 
 const bidirectionalBaseDbm = (

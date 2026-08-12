@@ -21,13 +21,33 @@ import { buildProfile } from "../lib/propagation";
 import { StateDot } from "./StateDot";
 import { buildSelectionEffectiveLink } from "../lib/selectionEffectiveLink";
 import { atmosphericBendingNUnitsToKFactor } from "../lib/terrainLoss";
+import { antennaPatternSignature, resolvePreviewSiteOrientations } from "../lib/antennaPattern";
 import { simulationAreaBoundsForSites } from "../lib/simulationArea";
 import { sampleSrtmElevation } from "../lib/srtm";
 import { tilesForBounds } from "../lib/terrainTiles";
 import { useAppStore } from "../store/appStore";
+import type { Site } from "../types/radio";
 
 const M = { t: 14, r: 28, b: 34, l: 50 };
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+export const profileAntennaSignature = (fromSite: Site | null, toSite: Site | null): string =>
+  [fromSite, toSite].map((site) =>
+    site
+      ? [
+          site.id,
+          site.position.lat,
+          site.position.lon,
+          site.groundElevationM,
+          site.antennaHeightM,
+          site.txPowerDbm,
+          site.txGainDbi,
+          site.rxGainDbi,
+          site.cableLossDb,
+          antennaPatternSignature(site),
+        ].join(":")
+      : "missing",
+  ).join("|");
 
 const linePath = (points: { x: number; y: number }[]): string =>
   points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
@@ -137,6 +157,10 @@ export function LinkProfileChart({
     () => selectedSiteIds.map((id) => sites.find((site) => site.id === id)).filter((site): site is (typeof sites)[number] => Boolean(site)),
     [selectedSiteIds, sites],
   );
+  const previewSites = useMemo(
+    () => resolvePreviewSiteOrientations(sites, siteDragPreview),
+    [sites, siteDragPreview],
+  );
   const selectionCount = selectedSites.length;
   const hasMinimumTopology = selectionCount >= 2;
   const tooManySelectedForProfile = selectionCount > 2;
@@ -162,26 +186,12 @@ export function LinkProfileChart({
         : null;
   const selectedFromSite = selectedFromSiteId ? sites.find((site) => site.id === selectedFromSiteId) ?? null : null;
   const selectedToSite = selectedToSiteId ? sites.find((site) => site.id === selectedToSiteId) ?? null : null;
-  const selectedFromSiteEffective = useMemo(() => {
-    if (!selectedFromSite) return null;
-    const preview = siteDragPreview[selectedFromSite.id];
-    if (!preview) return selectedFromSite;
-    return {
-      ...selectedFromSite,
-      position: preview.position,
-      groundElevationM: preview.groundElevationM,
-    };
-  }, [selectedFromSite, siteDragPreview]);
-  const selectedToSiteEffective = useMemo(() => {
-    if (!selectedToSite) return null;
-    const preview = siteDragPreview[selectedToSite.id];
-    if (!preview) return selectedToSite;
-    return {
-      ...selectedToSite,
-      position: preview.position,
-      groundElevationM: preview.groundElevationM,
-    };
-  }, [selectedToSite, siteDragPreview]);
+  const selectedFromSiteEffective = selectedFromSiteId
+    ? previewSites.find((site) => site.id === selectedFromSiteId) ?? null
+    : null;
+  const selectedToSiteEffective = selectedToSiteId
+    ? previewSites.find((site) => site.id === selectedToSiteId) ?? null
+    : null;
   const selectedNetwork = networks.find((network) => network.id === selectedNetworkId) ?? networks[0] ?? null;
   const activeSimulationPreset = useMemo(
     () => simulationPresets.find((preset) => preset.id === selectedScenarioId) ?? null,
@@ -393,6 +403,12 @@ export function LinkProfileChart({
         propagationEnvironment.atmosphericBendingNUnits,
         propagationEnvironment.clutterHeightM,
         propagationEnvironment.polarization,
+        profileAntennaSignature(selectedFromSiteEffective, selectedToSiteEffective),
+        effectiveLink?.frequencyMHz,
+        effectiveLink?.txPowerDbm,
+        effectiveLink?.txGainDbi,
+        effectiveLink?.rxGainDbi,
+        effectiveLink?.cableLossDb,
       ].join("|"),
     [
       profileRevision,
@@ -402,6 +418,9 @@ export function LinkProfileChart({
       propagationEnvironment.atmosphericBendingNUnits,
       propagationEnvironment.clutterHeightM,
       propagationEnvironment.polarization,
+      selectedFromSiteEffective,
+      selectedToSiteEffective,
+      effectiveLink,
     ],
   );
 
@@ -437,6 +456,7 @@ export function LinkProfileChart({
           sampleTerrain,
           24,
           propagationEnvironment,
+          selectedToSiteEffective,
         );
         const pass = metrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
         const losBlocked = metrics.terrainObstructed;
@@ -578,6 +598,7 @@ export function LinkProfileChart({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
+      selectedToSiteEffective,
     );
     const forwardPass = forward.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
     const forwardBlocked = forward.terrainObstructed;
@@ -594,6 +615,7 @@ export function LinkProfileChart({
         (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
         24,
         propagationEnvironment,
+        selectedFromSiteEffective,
       );
       const reversePass = reverse.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
       const reverseBlocked = reverse.terrainObstructed;
@@ -668,6 +690,7 @@ export function LinkProfileChart({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
+      selectedToSiteEffective,
     );
     const forwardPass = forwardMetrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
     const forwardBlocked = forwardMetrics.terrainObstructed;
@@ -696,6 +719,7 @@ export function LinkProfileChart({
       (lat, lon) => sampleSrtmElevation(srtmTiles, lat, lon),
       24,
       propagationEnvironment,
+      selectedFromSiteEffective,
     );
     const reversePass = reverseMetrics.rxDbm - environmentLossDb >= rxSensitivityTargetDbm;
     const reverseBlocked = reverseMetrics.terrainObstructed;

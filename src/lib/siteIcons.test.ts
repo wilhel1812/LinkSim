@@ -12,6 +12,17 @@ describe("siteIcons", () => {
     expect(suggestSiteIconKey({ name: "Cabin", antennaHeightM: 9.99 })).toBe("house");
   });
 
+  it("uses the satellite dish as the Auto icon for directional antennas", () => {
+    expect(suggestSiteIconKey({ name: "Summit mast", antennaHeightM: 20, antennaMode: "directional" })).toBe("satellite-dish");
+    expect(resolveSiteIconKey({
+      name: "Summit mast",
+      antennaHeightM: 20,
+      antennaMode: "directional",
+      iconKey: "ship",
+    })).toBe("ship");
+    expect(suggestSiteIconKey({ name: "Summit mast", antennaHeightM: 20, antennaMode: "omnidirectional" })).toBe("radio-tower");
+  });
+
   it.each([
     ["Repeater mast", "radio-tower"],
     ["Family cabin", "house"],
@@ -32,6 +43,7 @@ describe("siteIcons", () => {
 
   it.each([
     ["antenna", "Antenna"],
+    ["satellite-dish", "Satellite Dish"],
     ["radio-tower", "Radio Tower"],
     ["house", "House"],
     ["building", "Building 2"],

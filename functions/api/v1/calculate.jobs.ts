@@ -3,6 +3,7 @@ import { getClientAddress, takeRateLimitToken } from "../../_lib/rateLimit";
 import { analyzeTerrainLink } from "../../_lib/terrainAnalysis";
 import {
   estimateSampleCount,
+  effectiveApiLinkGains,
   findEndpointNodes,
   haversineKm,
   MAX_TERRAIN_DISTANCE_KM,
@@ -135,8 +136,9 @@ const processTerrainJob = async (env: Env, jobId: string, requestUrl: string): P
       samples,
     );
 
-    const eirpDbm = fromNode.tx_power_dbm + fromNode.tx_gain_dbi - fromNode.cable_loss_db;
-    const rxDbm = eirpDbm + toNode.rx_gain_dbi - terrain.totalPathLossDb;
+    const directionalGains = effectiveApiLinkGains(payload, terrain.fromGroundM, terrain.toGroundM);
+    const eirpDbm = fromNode.tx_power_dbm + directionalGains.txGainDbi - fromNode.cable_loss_db;
+    const rxDbm = eirpDbm + directionalGains.rxGainDbi - terrain.totalPathLossDb;
     const verdict = rxDbm >= payload.input.rx_target_dbm ? "PASS" : "FAIL";
     const runtimeMs = Date.now() - startedAt;
 

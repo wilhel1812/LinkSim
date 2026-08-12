@@ -1,4 +1,5 @@
 import { haversineDistanceKm } from "./geo";
+import { effectiveDirectionalGainDbi, orientationBetweenPoints } from "./antennaPattern";
 import { getPathLossDb } from "./rfModels";
 import { simulationAreaBoundsForSites } from "./simulationArea";
 import { estimateTerrainExcessLossDb } from "./terrainLoss";
@@ -291,7 +292,15 @@ const evalRx = (
       : 0;
 
   const eirp = txSystem.txPowerDbm + txSystem.txGainDbi - txSystem.cableLossDb;
-  return eirp + txSystem.rxGainDbi - (loss + terrainLoss);
+  const sampleGroundM = txGround ?? rxSite.groundElevationM;
+  const receiveDirection = orientationBetweenPoints(
+    rxSite.position,
+    rxSite.groundElevationM + rxSite.antennaHeightM,
+    { lat: sampleLat, lon: sampleLon },
+    sampleGroundM + txSystem.antennaHeightM,
+  );
+  const receiveGainDbi = effectiveDirectionalGainDbi(txSystem.rxGainDbi, rxSite, receiveDirection);
+  return eirp + receiveGainDbi - (loss + terrainLoss);
 };
 
 type ResolvedCoverageMembership = { site: Site; system: RadioSystem };

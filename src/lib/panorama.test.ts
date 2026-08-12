@@ -86,6 +86,43 @@ describe("panorama", () => {
     expect(result.maxAngleDeg).toBeGreaterThan(result.minAngleDeg);
   });
 
+  it("changes projected node state when the source antenna points away", () => {
+    const candidate = {
+      id: "n1",
+      name: "N1",
+      lat: 59.95,
+      lon: 10.8,
+      groundElevationM: 120,
+      antennaHeightM: 8,
+      rxGainDbi: 2,
+    };
+    const onAxisAzimuth = azimuthFromToDeg(site.position, { lat: candidate.lat, lon: candidate.lon });
+    const build = (antennaAzimuthDeg: number) => buildPanorama({
+      selectedSite: {
+        ...site,
+        txPowerDbm: 30,
+        txGainDbi: 6,
+        antennaMode: "directional",
+        antennaAzimuthDeg,
+        antennaTiltDeg: 0,
+        antennaHorizontalBeamwidthDeg: 30,
+        antennaVerticalBeamwidthDeg: 30,
+        antennaMaxAttenuationDb: 60,
+      },
+      effectiveLink: link,
+      propagationEnvironment: env,
+      rxSensitivityTargetDbm: -120,
+      environmentLossDb: 0,
+      quality: "drag" as const,
+      terrainSampler: () => 120,
+      nodeCandidates: [candidate],
+      options: { baseRadiusKm: 50, maxRadiusKm: 80 },
+    }).nodes[0].state;
+
+    expect(build(onAxisAzimuth)).toMatch(/^pass_/);
+    expect(build(onAxisAzimuth + 180)).toMatch(/^fail_/);
+  });
+
   it("supports window-focused azimuth sweeps for zoomed recompute", () => {
     const result = buildPanorama({
       selectedSite: site,

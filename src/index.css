@@ -2784,6 +2784,33 @@ button {
   flex: 0 0 auto;
 }
 
+.directional-map-beam {
+  display: block;
+  width: 140px;
+  height: 140px;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--surface) 58%, transparent));
+}
+
+.directional-map-beam-sector {
+  fill: color-mix(in srgb, var(--selection) 18%, transparent);
+  stroke: color-mix(in srgb, var(--selection) 76%, transparent);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+}
+
+.directional-map-beam-boresight {
+  stroke: var(--selection);
+  stroke-width: 1.8;
+}
+
+.directional-map-beam-origin {
+  fill: var(--selection);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
 .map-site-surface:not(.is-muted) {
   z-index: 1;
 }
@@ -3252,6 +3279,12 @@ button {
   gap: 8px;
 }
 
+.directional-antenna-fields {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
 @media (max-width: 980px) {
   .beam-visualizer-popover {
     left: 50vw !important;
@@ -3277,6 +3310,28 @@ button {
   font-size: 0.75rem;
 }
 
+.beam-visualizer-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.beam-visualizer-charts.is-two-view {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.beam-visualizer-chart-group {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  text-align: center;
+}
+
+.beam-visualizer-chart-group > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
 .beam-visualizer-chart {
   width: 100%;
   height: 132px;
@@ -3291,6 +3346,30 @@ button {
   stroke: color-mix(in srgb, var(--muted) 42%, transparent);
   stroke-width: 1;
   stroke-dasharray: 3 4;
+}
+
+.beam-visualizer-ground {
+  stroke: color-mix(in srgb, var(--text) 58%, transparent);
+  stroke-width: 1.3;
+}
+
+.beam-visualizer-boresight {
+  stroke: color-mix(in srgb, var(--text) 72%, transparent);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+}
+
+.beam-visualizer-north {
+  fill: var(--muted);
+  font-size: 9px;
+  text-anchor: middle;
+}
+
+.beam-visualizer-residual {
+  fill: color-mix(in srgb, var(--state-fail-blocked) 16%, transparent);
+  stroke: color-mix(in srgb, var(--state-fail-blocked) 48%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
 }
 
 .beam-visualizer-band {
