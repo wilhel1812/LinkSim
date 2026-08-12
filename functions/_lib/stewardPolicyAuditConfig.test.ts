@@ -47,7 +47,8 @@ describe("Steward policy audit rollout", () => {
     expect(policySkill).toContain("config/ai-agents.json");
     expect(policySkill).toContain("registry-approved attribution");
     expect(policySkill).toContain("permitted issue authority");
-    expect(policySkill).toContain("signature returned by");
+    expect(policySkill).toContain("signature and marker returned by");
+    expect(policySkill).toContain("append both returned fields");
     expect(policySkill).not.toContain("Steward's dedicated least-privilege GitHub App");
     expect(policySkill).not.toContain("— Steward · AI policy advisor");
     expect(policySkill).not.toContain("Linky");
