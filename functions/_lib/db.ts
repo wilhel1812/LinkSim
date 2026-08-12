@@ -124,6 +124,13 @@ const isMeaningfulChangeField = (field: string): boolean => {
 
 type ResourceChangeDiffValue = { before: unknown; after: unknown };
 
+const isDisplayableResourceChangeValue = (field: string, value: unknown): boolean => {
+  if (field === "name") return typeof value === "string";
+  if (field === "visibility") return typeof value === "string" && VISIBILITIES.includes(value as Visibility);
+  if (field === "status") return value === "active" || value === "deleted";
+  return false;
+};
+
 const readDisplayableChangeDetails = (
   detailsJson: string | null,
 ): { diff: Record<string, ResourceChangeDiffValue> } | null => {
@@ -131,13 +138,13 @@ const readDisplayableChangeDetails = (
   try {
     const details = JSON.parse(detailsJson) as { diff?: unknown };
     if (!details.diff || typeof details.diff !== "object" || Array.isArray(details.diff)) return null;
-    const diff = Object.fromEntries(
-      Object.entries(details.diff as Record<string, unknown>)
-        .filter((entry): entry is [string, ResourceChangeDiffValue] => {
-          const [field, value] = entry;
-          return isMeaningfulChangeField(field) && Boolean(value) && typeof value === "object" && !Array.isArray(value);
-        }),
-    );
+    const diff: Record<string, ResourceChangeDiffValue> = {};
+    for (const [field, value] of Object.entries(details.diff as Record<string, unknown>)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const { before, after } = value as { before?: unknown; after?: unknown };
+      if (!isDisplayableResourceChangeValue(field, before) || !isDisplayableResourceChangeValue(field, after)) continue;
+      diff[field] = { before, after };
+    }
     return Object.keys(diff).length ? { diff } : null;
   } catch {
     return null;

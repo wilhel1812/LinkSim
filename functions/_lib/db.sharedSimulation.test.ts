@@ -672,8 +672,29 @@ describe("resource change authorization", () => {
         details_json: JSON.stringify({
           changedFields: ["name", "updatedAt"],
           diff: {
-            name: { before: "Old Site", after: "Private Site" },
+            name: {
+              before: "Old Site",
+              after: "Private Site",
+              payload: { sites: [{ position: { lat: 60, lon: 10 } }] },
+            },
+            visibility: { before: "private", after: "shared" },
+            status: {
+              before: { value: "active", snapshot: { sites: [{ position: { lat: 60, lon: 10 } }] } },
+              after: { value: "deleted" },
+            },
+            " name ": {
+              before: { sites: [{ position: { lat: 60, lon: 10 } }] },
+              after: { sites: [{ position: { lat: 61, lon: 11 } }] },
+            },
             updatedAt: { before: "old", after: "new" },
+            snapshot: {
+              before: { sites: [{ id: "old", position: { lat: 60, lon: 10 } }] },
+              after: { sites: [{ id: "new", position: { lat: 61, lon: 11 } }] },
+            },
+            sharedWith: {
+              before: [{ userId: "former-1", role: "viewer" }],
+              after: [{ userId: "viewer-1", role: "viewer" }],
+            },
           },
           internal: "do-not-return",
         }),
@@ -730,7 +751,12 @@ describe("resource change authorization", () => {
             actorUserId: "owner-1",
             actorName: "owner-1",
             actorAvatarUrl: "",
-            details: { diff: { name: { before: "Old Site", after: "Private Site" } } },
+            details: {
+              diff: {
+                name: { before: "Old Site", after: "Private Site" },
+                visibility: { before: "private", after: "shared" },
+              },
+            },
           },
         ],
       });
