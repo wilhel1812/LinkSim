@@ -47,10 +47,16 @@ describe("Steward policy audit rollout", () => {
     expect(policySkill).toContain("config/ai-agents.json");
     expect(policySkill).toContain("registry-approved attribution");
     expect(policySkill).toContain("permitted issue authority");
-    expect(policySkill).toContain("authenticated GitHub identity");
-    expect(policySkill).toContain("requested action");
-    expect(policySkill).toContain("publish-signed-suggestion");
-    expect(policySkill).toMatch(/fails closed on any\s+mismatch/);
+    expect(policySkill).toMatch(
+      /publisher must[\s\S]{0,120}authenticated GitHub identity[\s\S]{0,120}githubIdentity/,
+    );
+    expect(policySkill).toMatch(
+      /requested action is[\s\S]{0,80}publish-signed-suggestion[\s\S]{0,120}allowed and not prohibited/,
+    );
+    expect(policySkill).toMatch(/publisher fails closed on any\s+mismatch/);
+    expect(policySkill).toMatch(
+      /ai-provenance\.mjs[\s\S]{0,80}validate the registry and rendered\s+artifact/,
+    );
     expect(policySkill).toContain("signature and marker returned by");
     expect(policySkill).toContain("append both returned fields");
     expect(policySkill).not.toContain("Steward's dedicated least-privilege GitHub App");
