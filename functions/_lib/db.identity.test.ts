@@ -5,6 +5,7 @@ import {
   findDeletionBlock,
   reconcileUserIdentityByIdpEmail,
   shouldBootstrapAdmin,
+  upsertLibrarySnapshot,
 } from "./db";
 
 class SqliteStatement {
@@ -45,16 +46,43 @@ class SqliteD1 {
     this.db.exec(`
       PRAGMA foreign_keys = ON;
       CREATE TABLE users (
-        id TEXT PRIMARY KEY, email TEXT, idp_email TEXT, idp_email_verified INTEGER NOT NULL DEFAULT 0,
+        id TEXT PRIMARY KEY, username TEXT, email TEXT, username_set_at TEXT, bio TEXT, access_request_note TEXT,
+        idp_email TEXT, idp_email_verified INTEGER NOT NULL DEFAULT 0, avatar_url TEXT, email_public INTEGER,
+        default_frequency_preset_id TEXT, simulation_defaults_preference_json TEXT, avatar_object_key TEXT,
+        avatar_thumb_key TEXT, avatar_hash TEXT, avatar_bytes INTEGER, avatar_content_type TEXT,
         is_admin INTEGER NOT NULL DEFAULT 0, is_moderator INTEGER NOT NULL DEFAULT 0,
-        is_approved INTEGER NOT NULL DEFAULT 0, approved_at TEXT, approved_by_user_id TEXT, updated_at TEXT
+        is_approved INTEGER NOT NULL DEFAULT 0, approved_at TEXT, approved_by_user_id TEXT, created_at TEXT, updated_at TEXT
       );
-      CREATE TABLE sites (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, created_by_user_id TEXT, last_edited_by_user_id TEXT);
-      CREATE TABLE simulations (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, created_by_user_id TEXT, last_edited_by_user_id TEXT);
-      CREATE TABLE site_roles (site_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (site_id, user_id));
-      CREATE TABLE simulation_roles (simulation_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (simulation_id, user_id));
-      CREATE TABLE resource_changes (id INTEGER PRIMARY KEY, actor_user_id TEXT NOT NULL);
-      CREATE TABLE simulation_path_leaderboard_entries (simulation_id TEXT, canonical_path_key TEXT, owner_user_id TEXT NOT NULL, PRIMARY KEY (simulation_id, canonical_path_key));
+      CREATE TABLE sites (
+        id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, created_by_user_id TEXT, last_edited_by_user_id TEXT,
+        created_at TEXT, last_edited_at TEXT, name TEXT, visibility TEXT, payload_json TEXT, updated_at TEXT,
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE TABLE simulations (
+        id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, created_by_user_id TEXT, last_edited_by_user_id TEXT,
+        created_at TEXT, last_edited_at TEXT, name TEXT, visibility TEXT, status TEXT DEFAULT 'active', payload_json TEXT,
+        updated_at TEXT, FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE TABLE site_roles (
+        site_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY (site_id, user_id), FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE TABLE simulation_roles (
+        simulation_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY (simulation_id, user_id), FOREIGN KEY (simulation_id) REFERENCES simulations(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE TABLE resource_changes (
+        id INTEGER PRIMARY KEY, resource_kind TEXT, resource_id TEXT, action TEXT, actor_user_id TEXT NOT NULL,
+        changed_at TEXT, note TEXT, details_json TEXT, snapshot_json TEXT
+      );
+      CREATE TABLE simulation_path_leaderboard_entries (
+        simulation_id TEXT, canonical_path_key TEXT, owner_user_id TEXT NOT NULL, from_site_id TEXT, to_site_id TEXT,
+        link_id TEXT, path_label TEXT, simulation_name TEXT, distance_km REAL, rx_after_env_loss_dbm REAL,
+        rx_margin_db REAL, terrain_obstructed INTEGER, terrain_dataset TEXT, terrain_tile_signature TEXT,
+        simulation_updated_at TEXT, created_at TEXT, updated_at TEXT, PRIMARY KEY (simulation_id, canonical_path_key)
+      );
       CREATE TABLE user_identity_audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, target_user_id TEXT NOT NULL,
         source_user_id TEXT, actor_user_id TEXT, idp_email TEXT, details_json TEXT, created_at TEXT NOT NULL
@@ -86,14 +114,17 @@ const seedMigration = (db: SqliteD1) => {
       VALUES ('stable-id', 'new@example.com', 'user@example.com', 1, 0, 1, '2026-01-02', 'stable-id');
     INSERT INTO users (id, email, idp_email, idp_email_verified, is_admin, is_approved, approved_at, approved_by_user_id)
       VALUES ('legacy-id', 'editable@example.com', 'user@example.com', 1, 1, 1, '2026-01-01', 'legacy-id');
-    INSERT INTO sites VALUES ('site-1', 'legacy-id', 'legacy-id', 'legacy-id');
-    INSERT INTO simulations VALUES ('sim-1', 'legacy-id', 'legacy-id', 'legacy-id');
+    INSERT INTO sites (id, owner_user_id, created_by_user_id, last_edited_by_user_id)
+      VALUES ('site-1', 'legacy-id', 'legacy-id', 'legacy-id');
+    INSERT INTO simulations (id, owner_user_id, created_by_user_id, last_edited_by_user_id)
+      VALUES ('sim-1', 'legacy-id', 'legacy-id', 'legacy-id');
     INSERT INTO site_roles VALUES ('site-1', 'stable-id', 'viewer', '2026-01-02');
     INSERT INTO site_roles VALUES ('site-1', 'legacy-id', 'editor', '2026-01-01');
     INSERT INTO simulation_roles VALUES ('sim-1', 'stable-id', 'editor', '2026-01-02');
     INSERT INTO simulation_roles VALUES ('sim-1', 'legacy-id', 'viewer', '2026-01-01');
-    INSERT INTO resource_changes VALUES (1, 'legacy-id');
-    INSERT INTO simulation_path_leaderboard_entries VALUES ('sim-1', 'path-1', 'legacy-id');
+    INSERT INTO resource_changes (id, actor_user_id) VALUES (1, 'legacy-id');
+    INSERT INTO simulation_path_leaderboard_entries (simulation_id, canonical_path_key, owner_user_id)
+      VALUES ('sim-1', 'path-1', 'legacy-id');
   `);
 };
 
@@ -114,6 +145,65 @@ describe("identity reconciliation", () => {
       event_type: "reconciled_by_verified_idp_email",
       source_user_id: "legacy-id",
     });
+  });
+
+  it("keeps serialized grants valid when a resource is saved after reconciliation", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, idp_email, idp_email_verified, is_approved)
+        VALUES ('stable-id', 'user@example.com', 1, 1);
+      INSERT INTO users (id, idp_email, idp_email_verified, is_approved)
+        VALUES ('legacy-id', 'user@example.com', 1, 1);
+      INSERT INTO users (id, idp_email, idp_email_verified, is_approved)
+        VALUES ('owner-id', 'owner@example.com', 1, 1);
+      INSERT INTO sites
+        (id, owner_user_id, created_by_user_id, last_edited_by_user_id, created_at, name, visibility, payload_json, updated_at)
+        VALUES (
+          'shared-site', 'owner-id', 'owner-id', 'owner-id', '2026-01-01', 'Shared Site', 'public_write',
+          '{"id":"shared-site","name":"Shared Site","visibility":"shared","sharedWith":[{"userId":"stable-id","role":"viewer"},{"userId":"legacy-id","role":"editor"}]}',
+          '2026-01-01'
+        );
+      INSERT INTO simulations
+        (id, owner_user_id, created_by_user_id, last_edited_by_user_id, created_at, name, visibility, status, payload_json, updated_at)
+        VALUES (
+          'shared-simulation', 'owner-id', 'owner-id', 'owner-id', '2026-01-01', 'Shared Simulation', 'public_write', 'active',
+          '{"id":"shared-simulation","name":"Shared Simulation","visibility":"shared","sharedWith":[{"userId":"stable-id","role":"editor"},{"userId":"legacy-id","role":"viewer"}]}',
+          '2026-01-01'
+        );
+      INSERT INTO site_roles VALUES ('shared-site', 'legacy-id', 'editor', '2026-01-01');
+      INSERT INTO site_roles VALUES ('shared-site', 'stable-id', 'viewer', '2026-01-02');
+      INSERT INTO simulation_roles VALUES ('shared-simulation', 'legacy-id', 'viewer', '2026-01-01');
+      INSERT INTO simulation_roles VALUES ('shared-simulation', 'stable-id', 'editor', '2026-01-02');
+    `);
+
+    const env = { DB: db as unknown as D1Database };
+    await reconcileUserIdentityByIdpEmail(env, "stable-id", "user@example.com");
+
+    const site = JSON.parse(
+      (db.db.prepare("SELECT payload_json FROM sites WHERE id = 'shared-site'").get() as { payload_json: string }).payload_json,
+    );
+    const simulation = JSON.parse(
+      (db.db.prepare("SELECT payload_json FROM simulations WHERE id = 'shared-simulation'").get() as { payload_json: string }).payload_json,
+    );
+    expect(site.sharedWith).toEqual([{ userId: "stable-id", role: "editor" }]);
+    expect(simulation.sharedWith).toEqual([{ userId: "stable-id", role: "editor" }]);
+
+    await expect(
+      upsertLibrarySnapshot(
+        env,
+        { id: "owner-id", isAdmin: false, isModerator: false },
+        {
+          siteLibrary: [{ ...site, name: "Shared Site Updated" }],
+          simulationPresets: [{ ...simulation, name: "Shared Simulation Updated" }],
+        },
+      ),
+    ).resolves.toEqual({ upsertedSites: 1, upsertedSimulations: 1, conflicts: [] });
+    expect(db.db.prepare("SELECT user_id, role FROM site_roles WHERE site_id = 'shared-site'").all()).toEqual([
+      { user_id: "stable-id", role: "editor" },
+    ]);
+    expect(
+      db.db.prepare("SELECT user_id, role FROM simulation_roles WHERE simulation_id = 'shared-simulation'").all(),
+    ).toEqual([{ user_id: "stable-id", role: "editor" }]);
   });
 
   it("rolls back every transfer when the audit insert fails", async () => {
