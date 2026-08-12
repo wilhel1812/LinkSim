@@ -58,14 +58,22 @@ not start a model call. Comment only when at least one evidence-backed
 improvement exists. Append through the deterministic publisher to the single
 configured `documentation` + `pending-discussion` issue; do not rewrite its
 body or create repeated issues. Publication must be idempotent, signed, and
-provenance-validated. Scheduled GitHub comments are authored by Steward and
-published through Steward's dedicated least-privilege GitHub App. They must
-visibly contain `— Steward · AI policy advisor`; they must not claim delivery by
-Linky or inherit Linky's issue-maintenance authority.
+provenance-validated. Resolve scheduled publication identity, delivery
+identity, visible attribution, and permitted issue authority from
+`config/ai-agents.json`. Before publication, the deterministic publisher must
+compare its authenticated GitHub identity with Steward's configured
+`githubIdentity`, confirm the requested action is
+`publish-signed-suggestion`, confirm that action is allowed and not prohibited,
+and stop before publication on any mismatch. The publisher fails closed on any
+mismatch. Use `scripts/ai-provenance.mjs` to validate the registry and rendered
+artifact. The artifact must display only the
+registry-approved attribution for the configured Steward publisher. Do not
+hard-code, inherit, or claim another agent's delivery identity or authority.
 
-End every output with `Suggestion only — no policy change applied.` and
-`— Steward · AI policy advisor`. Fail closed if attribution or provenance
-cannot be generated. Generate the footer with
-`node scripts/ai-provenance.mjs footer`, render the complete comment to a file,
-then require `node scripts/ai-provenance.mjs validate-artifact --agent Steward`
-to pass before publication. Never hand-build the marker.
+End every output with `Suggestion only — no policy change applied.` followed by
+the signature and marker returned by `node scripts/ai-provenance.mjs footer`;
+append both returned fields and never prescribe or hand-build either one. Fail
+closed if attribution or provenance cannot be generated. Render the complete
+comment to a file, then require
+`node scripts/ai-provenance.mjs validate-artifact --agent Steward` to pass
+before publication.
