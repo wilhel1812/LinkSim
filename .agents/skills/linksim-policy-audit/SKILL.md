@@ -65,9 +65,9 @@ rendered artifact must display only the registry-approved attribution for the
 configured Steward publisher. Do not hard-code, inherit, or claim another
 agent's delivery identity or authority.
 
-End every output with `Suggestion only — no policy change applied.` and
-`— Steward · AI policy advisor`. Fail closed if attribution or provenance
-cannot be generated. Generate the footer with
-`node scripts/ai-provenance.mjs footer`, render the complete comment to a file,
-then require `node scripts/ai-provenance.mjs validate-artifact --agent Steward`
-to pass before publication. Never hand-build the marker.
+End every output with `Suggestion only — no policy change applied.` followed by
+the signature returned by `node scripts/ai-provenance.mjs footer`; never
+prescribe or add a literal agent signature. Fail closed if attribution or
+provenance cannot be generated. Render the complete comment to a file, then
+require `node scripts/ai-provenance.mjs validate-artifact --agent Steward` to
+pass before publication. Never hand-build the marker.
