@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
@@ -290,6 +290,194 @@ describe("MapEditorPanel", () => {
       antennaAzimuthDeg: 123,
       antennaTiltDeg: -7,
     });
+  });
+
+  it("preserves Library manual angles when saving an attached pointing target", async () => {
+    const trackedSite = {
+      id: "sim-site-a",
+      libraryEntryId: "site-lib-1",
+      name: "Alpha Site",
+      position: { lat: 60.1, lon: 10.2 },
+      groundElevationM: 111,
+      antennaHeightM: 10,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+      antennaMode: "directional" as const,
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 35,
+      antennaHorizontalBeamwidthDeg: 60,
+      antennaVerticalBeamwidthDeg: 30,
+      antennaMaxAttenuationDb: 25,
+      antennaTargetSiteId: "sim-site-b",
+    };
+    const targetSite = {
+      id: "sim-site-b",
+      name: "Summit",
+      position: { lat: 60.2, lon: 10.2 },
+      groundElevationM: 900,
+      antennaHeightM: 10,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState((state) => ({
+      selectedScenarioId: "sim-editable",
+      siteLibrary: state.siteLibrary.map((entry) => entry.id === "site-lib-1" ? {
+        ...entry,
+        antennaMode: "directional" as const,
+        antennaAzimuthDeg: 15,
+        antennaTiltDeg: 3,
+      } : entry),
+      sites: [trackedSite, targetSite],
+      simulationPresets: [{
+        id: "sim-editable",
+        name: "Editable Plan",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        snapshot: {
+          sites: [trackedSite, targetSite], links: [], systems: [], networks: [],
+          selectedSiteId: "sim-site-a", selectedLinkId: "", selectedNetworkId: "",
+          selectedCoverageResolution: "24", propagationModel: "ITM",
+          selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+          environmentLossDb: 0,
+          propagationEnvironment: state.propagationEnvironment,
+          autoPropagationEnvironment: false, terrainDataset: "copernicus30",
+        },
+      }],
+    }));
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByRole("combobox", { name: "Point antenna at Site" })).toHaveValue("sim-site-b");
+    await userEvent.click(screen.getByRole("button", { name: "Save Site" }));
+
+    expect(useAppStore.getState().siteLibrary.find((site) => site.id === "site-lib-1")).toMatchObject({
+      antennaAzimuthDeg: 15,
+      antennaTiltDeg: 3,
+    });
+    const savedTrackedSite = useAppStore.getState().sites.find((site) => site.id === "sim-site-a");
+    expect(savedTrackedSite).toMatchObject({
+      antennaTargetSiteId: "sim-site-b",
+    });
+    expect(savedTrackedSite?.antennaAzimuthDeg).toBeCloseTo(0, 6);
+    expect(savedTrackedSite?.antennaTiltDeg).not.toBe(3);
+  });
+
+  it("preserves attached pointing configuration and Library manual angles when switching to omnidirectional", async () => {
+    const trackedSite = {
+      id: "sim-site-a",
+      libraryEntryId: "site-lib-1",
+      name: "Alpha Site",
+      position: { lat: 60.1, lon: 10.2 },
+      groundElevationM: 111,
+      antennaHeightM: 10,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+      antennaMode: "directional" as const,
+      antennaAzimuthDeg: 0,
+      antennaTiltDeg: 35,
+      antennaHorizontalBeamwidthDeg: 72,
+      antennaVerticalBeamwidthDeg: 24,
+      antennaMaxAttenuationDb: 31,
+      antennaTargetSiteId: "sim-site-b",
+    };
+    const targetSite = {
+      id: "sim-site-b",
+      name: "Summit",
+      position: { lat: 60.2, lon: 10.2 },
+      groundElevationM: 900,
+      antennaHeightM: 10,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState((state) => ({
+      selectedScenarioId: "sim-editable",
+      siteLibrary: state.siteLibrary.map((entry) => entry.id === "site-lib-1" ? {
+        ...entry,
+        antennaMode: "directional" as const,
+        antennaAzimuthDeg: 15,
+        antennaTiltDeg: 3,
+      } : entry),
+      sites: [trackedSite, targetSite],
+      simulationPresets: [{
+        id: "sim-editable",
+        name: "Editable Plan",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        snapshot: {
+          sites: [trackedSite, targetSite], links: [], systems: [], networks: [],
+          selectedSiteId: "sim-site-a", selectedLinkId: "", selectedNetworkId: "",
+          selectedCoverageResolution: "24", propagationModel: "ITM",
+          selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+          environmentLossDb: 0,
+          propagationEnvironment: state.propagationEnvironment,
+          autoPropagationEnvironment: false, terrainDataset: "copernicus30",
+        },
+      }],
+    }));
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByRole("combobox", { name: "Point antenna at Site" })).toHaveValue("sim-site-b");
+    await userEvent.clear(screen.getByRole("spinbutton", { name: "Horizontal beamwidth" }));
+    await userEvent.type(screen.getByRole("spinbutton", { name: "Horizontal beamwidth" }), "72");
+    await userEvent.clear(screen.getByRole("spinbutton", { name: "Vertical beamwidth" }));
+    await userEvent.type(screen.getByRole("spinbutton", { name: "Vertical beamwidth" }), "24");
+    await userEvent.clear(screen.getByRole("spinbutton", { name: "Maximum off-axis attenuation" }));
+    await userEvent.type(screen.getByRole("spinbutton", { name: "Maximum off-axis attenuation" }), "31");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Directional antenna" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save Site" }));
+
+    expect(useAppStore.getState().siteLibrary.find((site) => site.id === "site-lib-1")).toMatchObject({
+      antennaMode: "omnidirectional",
+      antennaAzimuthDeg: 15,
+      antennaTiltDeg: 3,
+      antennaHorizontalBeamwidthDeg: 72,
+      antennaVerticalBeamwidthDeg: 24,
+      antennaMaxAttenuationDb: 31,
+    });
+    expect(useAppStore.getState().sites.find((site) => site.id === "sim-site-a")).toMatchObject({
+      antennaMode: "omnidirectional",
+      antennaTargetSiteId: "sim-site-b",
+      antennaHorizontalBeamwidthDeg: 72,
+      antennaVerticalBeamwidthDeg: 24,
+      antennaMaxAttenuationDb: 31,
+    });
+
+    act(() => {
+      useAppStore.setState((state) => ({
+        sites: state.sites.map((site) => site.id === "sim-site-b" ? {
+          ...site,
+          position: { lat: 60.1, lon: 10.4 },
+        } : site),
+        mapEditor: {
+          kind: "site",
+          resourceId: "site-lib-1",
+          isNew: false,
+          label: "Alpha Site",
+          anchorRect,
+        },
+      }));
+    });
+
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Directional antenna" }));
+    await waitFor(() => {
+      expect(Number(screen.getByRole("spinbutton", { name: "Antenna azimuth" }).getAttribute("value"))).toBeCloseTo(90, 0);
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Detach pointing target" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save Site" }));
+
+    const detachedSite = useAppStore.getState().sites.find((site) => site.id === "sim-site-a");
+    expect(detachedSite?.antennaTargetSiteId).toBeUndefined();
+    expect(detachedSite?.antennaAzimuthDeg).toBeCloseTo(90, 0);
+    expect(useAppStore.getState().siteLibrary.find((site) => site.id === "site-lib-1")?.antennaAzimuthDeg).toBeCloseTo(90, 0);
   });
 
   it("keeps a read-only Simulation pointing target inspectable but not editable", async () => {

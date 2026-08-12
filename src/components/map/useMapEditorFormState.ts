@@ -709,7 +709,7 @@ export function useMapEditorFormState() {
   useEffect(() => {
     if (!antennaTargetSiteId) return;
     pointAntennaAtSite(antennaTargetSiteId);
-  }, [antennaTargetSiteId, latDraft, lonDraft, groundDraft, antennaDraft, sites]);
+  }, [antennaTargetSiteId, antennaMode, latDraft, lonDraft, groundDraft, antennaDraft, sites]);
 
   // ─── Save handlers ─────────────────────────────────────────────────────────────
   const handleSaveSite = (options?: { insertIntoSimulation?: boolean; exitLibrary?: boolean }): boolean => {
@@ -812,8 +812,12 @@ export function useMapEditorFormState() {
           rxGainDbi: rxGainDraft,
           cableLossDb: cableLossDraft,
           antennaMode,
-          antennaAzimuthDeg: ((antennaAzimuthDraft % 360) + 360) % 360,
-          antennaTiltDeg: antennaTiltDraft,
+          ...(antennaTargetSiteId
+            ? {}
+            : {
+                antennaAzimuthDeg: ((antennaAzimuthDraft % 360) + 360) % 360,
+                antennaTiltDeg: antennaTiltDraft,
+              }),
           antennaHorizontalBeamwidthDeg: antennaHorizontalBeamwidthDraft,
           antennaVerticalBeamwidthDeg: antennaVerticalBeamwidthDraft,
           antennaMaxAttenuationDb: antennaMaxAttenuationDraft,
@@ -829,7 +833,7 @@ export function useMapEditorFormState() {
             antennaHorizontalBeamwidthDeg: antennaHorizontalBeamwidthDraft,
             antennaVerticalBeamwidthDeg: antennaVerticalBeamwidthDraft,
             antennaMaxAttenuationDb: antennaMaxAttenuationDraft,
-            antennaTargetSiteId: antennaMode === "directional" && antennaTargetSiteId ? antennaTargetSiteId : undefined,
+            antennaTargetSiteId: antennaTargetSiteId || undefined,
             antennaTargetDetachedReason: undefined,
           });
         }
