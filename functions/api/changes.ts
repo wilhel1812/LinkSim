@@ -22,8 +22,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       return withCors(request, json({ error: "Missing kind or id" }, { status: 400 }));
     }
 
-    const changes = await fetchResourceChanges(env, kind, resourceId, { isAdmin: me.isAdmin });
-    return withCors(request, json({ changes }));
+    const result = await fetchResourceChanges(env, kind, resourceId, {
+      id: me.id,
+      isAdmin: me.isAdmin,
+      isModerator: Boolean((me as { isModerator?: boolean }).isModerator),
+    });
+    if (!result.ok) {
+      const missing = result.reason === "missing";
+      return withCors(request, json(
+        { error: missing ? "Resource not found" : "Forbidden" },
+        { status: missing ? 404 : 403 },
+      ));
+    }
+    return withCors(request, json({ changes: result.changes }));
   } catch (error) {
     return errorResponse(request, error, 500);
   }
@@ -51,7 +62,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       isModerator: Boolean((me as { isModerator?: boolean }).isModerator),
     });
     if (!result.ok) {
-      return withCors(request, json({ error: result.reason ?? "Revert failed" }, { status: 403 }));
+      const missing = result.reason === "missing";
+      return withCors(request, json(
+        { error: missing ? "Resource not found" : result.reason ?? "Revert failed" },
+        { status: missing ? 404 : 403 },
+      ));
     }
     return withCors(request, json({ ok: true }));
   } catch (error) {

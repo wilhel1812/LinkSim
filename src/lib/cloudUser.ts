@@ -32,8 +32,7 @@ export type ResourceChange = {
   actorUserId: string;
   actorName: string | null;
   actorAvatarUrl: string | null;
-  details?: Record<string, unknown> | null;
-  snapshot?: Record<string, unknown> | null;
+  details?: { diff?: Record<string, { before: unknown; after: unknown }> } | null;
 };
 
 export type DeletedCloudUser = {
