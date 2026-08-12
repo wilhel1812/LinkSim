@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchLibraryForUser, fetchPublicSimulationBundle, setSimulationLifecycleStatus, upsertLibrarySnapshot } from "./db";
+import {
+  fetchLibraryForUser,
+  fetchPublicSimulationBundle,
+  fetchResourceChanges,
+  revertResourceFromChangeCopy,
+  setSimulationLifecycleStatus,
+  upsertLibrarySnapshot,
+} from "./db";
 
 type AnyRow = Record<string, unknown>;
 
@@ -130,6 +137,7 @@ class FakeStatement {
 class FakeDb {
   readonly sites = new Map<string, AnyRow>();
   readonly simulations = new Map<string, AnyRow>();
+  readonly siteRoles = new Map<string, string>();
   readonly simulationRoles = new Map<string, string>();
   readonly resourceChanges: AnyRow[] = [];
   readonly adminUserIds = new Set<string>();
@@ -181,11 +189,15 @@ class FakeDb {
     }
     if (sql.includes("FROM simulations t") && sql.includes("LEFT JOIN simulation_roles")) {
       const id = String(bound[1] ?? "");
-      return this.simulations.get(id) ?? null;
+      const row = this.simulations.get(id);
+      if (!row) return null;
+      return { ...row, actor_role: this.simulationRoles.get(`${id}:${String(bound[0] ?? "")}`) ?? null };
     }
     if (sql.includes("FROM sites t") && sql.includes("LEFT JOIN site_roles")) {
       const id = String(bound[1] ?? "");
-      return this.sites.get(id) ?? null;
+      const row = this.sites.get(id);
+      if (!row) return null;
+      return { ...row, actor_role: this.siteRoles.get(`${id}:${String(bound[0] ?? "")}`) ?? null };
     }
     if (sql.includes("SELECT id FROM simulations WHERE lower(name) = lower(?)")) {
       const name = String(bound[0] ?? "").trim().toLowerCase();
@@ -214,6 +226,12 @@ class FakeDb {
       const role = this.simulationRoles.get(`${simulationId}:${userId}`);
       return role ? { role } : null;
     }
+    if (sql.includes("SELECT snapshot_json") && sql.includes("FROM resource_changes")) {
+      const [changeId, kind, resourceId] = bound;
+      return this.resourceChanges.find(
+        (change) => change.id === changeId && change.resource_kind === kind && change.resource_id === resourceId,
+      ) ?? null;
+    }
     return null;
   }
 
@@ -225,6 +243,16 @@ class FakeDb {
     }
     if (sql.includes("SELECT id, payload_json, visibility FROM sites WHERE id IN")) {
       return bound.map((id) => this.sites.get(String(id))).filter((row): row is AnyRow => Boolean(row));
+    }
+    if (sql.includes("FROM resource_changes c")) {
+      const [kind, resourceId] = bound;
+      return this.resourceChanges
+        .filter((change) => change.resource_kind === kind && change.resource_id === resourceId)
+        .map((change) => ({
+          ...change,
+          actor_name: String(change.actor_user_id),
+          actor_avatar_url: "",
+        }));
     }
     if (sql.includes("SELECT s.id") && sql.includes("s.status = 'deleted'")) {
       const userId = String(bound[1] ?? "");
@@ -297,6 +325,7 @@ class FakeDb {
     if (sql.includes("INSERT INTO resource_changes")) {
       const [resourceKind, resourceId, action, actorUserId, changedAt, note, detailsJson, snapshotJson] = bound;
       this.resourceChanges.push({
+        id: this.resourceChanges.length + 1,
         resource_kind: resourceKind,
         resource_id: resourceId,
         action,
@@ -306,6 +335,14 @@ class FakeDb {
         details_json: detailsJson,
         snapshot_json: snapshotJson,
       });
+      return;
+    }
+    if (sql.includes("INSERT INTO site_roles")) {
+      this.siteRoles.set(`${String(bound[0] ?? "")}:${String(bound[1] ?? "")}`, String(bound[2] ?? ""));
+      return;
+    }
+    if (sql.includes("INSERT INTO simulation_roles")) {
+      this.simulationRoles.set(`${String(bound[0] ?? "")}:${String(bound[1] ?? "")}`, String(bound[2] ?? ""));
       return;
     }
     if (sql.includes("UPDATE simulations") && sql.includes("SET status = ?")) {
@@ -323,7 +360,18 @@ class FakeDb {
       }
       return;
     }
-    if (sql.includes("DELETE FROM site_roles") || sql.includes("DELETE FROM simulation_roles")) {
+    if (sql.includes("DELETE FROM site_roles")) {
+      const resourceId = String(bound[0] ?? "");
+      for (const key of this.siteRoles.keys()) {
+        if (key.startsWith(`${resourceId}:`)) this.siteRoles.delete(key);
+      }
+      return;
+    }
+    if (sql.includes("DELETE FROM simulation_roles")) {
+      const resourceId = String(bound[0] ?? "");
+      for (const key of this.simulationRoles.keys()) {
+        if (key.startsWith(`${resourceId}:`)) this.simulationRoles.delete(key);
+      }
       return;
     }
   }
@@ -566,5 +614,229 @@ describe("upsertLibrarySnapshot shared simulations", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+});
+
+describe("resource change authorization", () => {
+  const actor = (id: string, overrides: Partial<{ isAdmin: boolean; isModerator: boolean }> = {}) => ({
+    id,
+    isAdmin: false,
+    isModerator: false,
+    ...overrides,
+  });
+
+  const createResourceHistoryDb = () => {
+    const db = new FakeDb();
+    db.sites.set("site-1", {
+      id: "site-1",
+      owner_user_id: "owner-1",
+      created_at: "2026-01-01T00:00:00.000Z",
+      name: "Private Site",
+      visibility: "private",
+      payload_json: JSON.stringify({
+        id: "site-1",
+        name: "Private Site",
+        visibility: "private",
+        sharedWith: [
+          { userId: "viewer-1", role: "viewer" },
+          { userId: "editor-1", role: "editor" },
+        ],
+      }),
+    });
+    db.siteRoles.set("site-1:viewer-1", "viewer");
+    db.siteRoles.set("site-1:editor-1", "editor");
+    db.simulations.set("sim-1", {
+      id: "sim-1",
+      owner_user_id: "owner-1",
+      created_at: "2026-01-01T00:00:00.000Z",
+      name: "Private Simulation",
+      visibility: "private",
+      status: "active",
+      payload_json: JSON.stringify({
+        id: "sim-1",
+        name: "Private Simulation",
+        visibility: "private",
+        sharedWith: [{ userId: "viewer-1", role: "viewer" }],
+      }),
+    });
+    db.simulationRoles.set("sim-1:viewer-1", "viewer");
+    db.resourceChanges.push(
+      {
+        id: 1,
+        resource_kind: "site",
+        resource_id: "site-1",
+        action: "updated",
+        actor_user_id: "owner-1",
+        changed_at: "2026-01-02T00:00:00.000Z",
+        note: "Moved Site",
+        details_json: JSON.stringify({
+          changedFields: ["name", "updatedAt"],
+          diff: {
+            name: {
+              before: "Old Site",
+              after: "Private Site",
+              payload: { sites: [{ position: { lat: 60, lon: 10 } }] },
+            },
+            visibility: { before: "private", after: "shared" },
+            status: {
+              before: { value: "active", snapshot: { sites: [{ position: { lat: 60, lon: 10 } }] } },
+              after: { value: "deleted" },
+            },
+            " name ": {
+              before: { sites: [{ position: { lat: 60, lon: 10 } }] },
+              after: { sites: [{ position: { lat: 61, lon: 11 } }] },
+            },
+            updatedAt: { before: "old", after: "new" },
+            snapshot: {
+              before: { sites: [{ id: "old", position: { lat: 60, lon: 10 } }] },
+              after: { sites: [{ id: "new", position: { lat: 61, lon: 11 } }] },
+            },
+            sharedWith: {
+              before: [{ userId: "former-1", role: "viewer" }],
+              after: [{ userId: "viewer-1", role: "viewer" }],
+            },
+          },
+          internal: "do-not-return",
+        }),
+        snapshot_json: JSON.stringify({
+          id: "site-1",
+          name: "Private Site",
+          visibility: "private",
+          sharedWith: [
+            { userId: "viewer-1", role: "viewer" },
+            { userId: "editor-1", role: "editor" },
+          ],
+          position: { lat: 60, lon: 10 },
+        }),
+      },
+      {
+        id: 2,
+        resource_kind: "simulation",
+        resource_id: "sim-1",
+        action: "updated",
+        actor_user_id: "owner-1",
+        changed_at: "2026-01-02T00:00:00.000Z",
+        note: "Updated Simulation",
+        details_json: JSON.stringify({ diff: { name: { before: "Old", after: "Private Simulation" } } }),
+        snapshot_json: JSON.stringify({
+          id: "sim-1",
+          name: "Private Simulation",
+          visibility: "private",
+          sharedWith: [{ userId: "viewer-1", role: "viewer" }],
+        }),
+      },
+    );
+    return db;
+  };
+
+  it("returns minimized Site history to current owners, collaborators, and administrators", async () => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof fetchResourceChanges>[0];
+
+    for (const currentActor of [
+      actor("owner-1"),
+      actor("viewer-1"),
+      actor("editor-1"),
+      actor("admin-1", { isAdmin: true }),
+    ]) {
+      const result = await fetchResourceChanges(env, "site", "site-1", currentActor);
+      expect(result).toEqual({
+        ok: true,
+        changes: [
+          {
+            id: 1,
+            action: "updated",
+            changedAt: "2026-01-02T00:00:00.000Z",
+            note: "Moved Site",
+            actorUserId: "owner-1",
+            actorName: "owner-1",
+            actorAvatarUrl: "",
+            details: {
+              diff: {
+                name: { before: "Old Site", after: "Private Site" },
+                visibility: { before: "private", after: "shared" },
+              },
+            },
+          },
+        ],
+      });
+    }
+  });
+
+  it("uses current visibility and grants, including transitions and revocation", async () => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof fetchResourceChanges>[0];
+
+    await expect(fetchResourceChanges(env, "site", "site-1", actor("other-1")))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+    await expect(fetchResourceChanges(env, "site", "site-1", actor("moderator-1", { isModerator: true })))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+
+    db.sites.set("site-1", { ...db.sites.get("site-1"), visibility: "public_write" });
+    await expect(fetchResourceChanges(env, "site", "site-1", actor("other-1")))
+      .resolves.toMatchObject({ ok: true });
+    await expect(fetchResourceChanges(env, "site", "site-1", actor("moderator-1", { isModerator: true })))
+      .resolves.toMatchObject({ ok: true });
+
+    db.sites.set("site-1", { ...db.sites.get("site-1"), visibility: "private" });
+    await expect(fetchResourceChanges(env, "site", "site-1", actor("viewer-1")))
+      .resolves.toMatchObject({ ok: true });
+    db.siteRoles.delete("site-1:viewer-1");
+    await expect(fetchResourceChanges(env, "site", "site-1", actor("viewer-1")))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  it("authorizes active Simulation history and keeps deleted history administrator-only", async () => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof fetchResourceChanges>[0];
+
+    for (const currentActor of [actor("owner-1"), actor("viewer-1"), actor("admin-1", { isAdmin: true })]) {
+      await expect(fetchResourceChanges(env, "simulation", "sim-1", currentActor))
+        .resolves.toMatchObject({ ok: true });
+    }
+    await expect(fetchResourceChanges(env, "simulation", "sim-1", actor("moderator-1", { isModerator: true })))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+
+    db.simulations.set("sim-1", { ...db.simulations.get("sim-1"), status: "deleted" });
+    await expect(fetchResourceChanges(env, "simulation", "sim-1", actor("owner-1")))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+    await expect(fetchResourceChanges(env, "simulation", "sim-1", actor("admin-1", { isAdmin: true })))
+      .resolves.toMatchObject({ ok: true });
+    await expect(revertResourceFromChangeCopy(env, "simulation", "sim-1", 2, actor("admin-1", { isAdmin: true })))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  it("requires current edit authority before loading and applying a revert snapshot", async () => {
+    const db = createResourceHistoryDb();
+    const env = { DB: db } as unknown as Parameters<typeof revertResourceFromChangeCopy>[0];
+
+    await expect(revertResourceFromChangeCopy(env, "site", "site-1", 1, actor("viewer-1")))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+    await expect(revertResourceFromChangeCopy(env, "site", "site-1", 1, actor("moderator-1", { isModerator: true })))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+    await expect(revertResourceFromChangeCopy(env, "site", "site-1", 1, actor("editor-1")))
+      .resolves.toEqual({ ok: true });
+    expect(db.resourceChanges.at(-1)?.note).toBe("Revert copy from change #1");
+  });
+
+  it("does not disclose whether a missing resource has historical rows", async () => {
+    const db = createResourceHistoryDb();
+    db.resourceChanges.push({
+      id: 3,
+      resource_kind: "site",
+      resource_id: "missing-site",
+      action: "updated",
+      actor_user_id: "owner-1",
+      changed_at: "2026-01-02T00:00:00.000Z",
+      note: "Orphaned history",
+      details_json: null,
+      snapshot_json: JSON.stringify({ id: "missing-site" }),
+    });
+    const env = { DB: db } as unknown as Parameters<typeof fetchResourceChanges>[0];
+
+    await expect(fetchResourceChanges(env, "site", "missing-site", actor("admin-1", { isAdmin: true })))
+      .resolves.toEqual({ ok: false, reason: "missing" });
+    await expect(revertResourceFromChangeCopy(env, "site", "missing-site", 3, actor("admin-1", { isAdmin: true })))
+      .resolves.toEqual({ ok: false, reason: "missing" });
   });
 });

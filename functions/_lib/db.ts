@@ -122,6 +122,35 @@ const isMeaningfulChangeField = (field: string): boolean => {
   return !ignored.has(normalized);
 };
 
+type ResourceChangeDiffValue = { before: unknown; after: unknown };
+
+const isDisplayableResourceChangeValue = (field: string, value: unknown): boolean => {
+  if (field === "name") return typeof value === "string";
+  if (field === "visibility") return typeof value === "string" && VISIBILITIES.includes(value as Visibility);
+  if (field === "status") return value === "active" || value === "deleted";
+  return false;
+};
+
+const readDisplayableChangeDetails = (
+  detailsJson: string | null,
+): { diff: Record<string, ResourceChangeDiffValue> } | null => {
+  if (!detailsJson) return null;
+  try {
+    const details = JSON.parse(detailsJson) as { diff?: unknown };
+    if (!details.diff || typeof details.diff !== "object" || Array.isArray(details.diff)) return null;
+    const diff: Record<string, ResourceChangeDiffValue> = {};
+    for (const [field, value] of Object.entries(details.diff as Record<string, unknown>)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const { before, after } = value as { before?: unknown; after?: unknown };
+      if (!isDisplayableResourceChangeValue(field, before) || !isDisplayableResourceChangeValue(field, after)) continue;
+      diff[field] = { before, after };
+    }
+    return Object.keys(diff).length ? { diff } : null;
+  } catch {
+    return null;
+  }
+};
+
 const sanitizeEmail = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const email = value.trim().toLowerCase();
@@ -1313,6 +1342,48 @@ const canEditResource = (
   return false;
 };
 
+type ResourceChangeAccessReason = "missing" | "forbidden";
+
+const resolveResourceChangeAccess = async (
+  env: Env,
+  kind: "site" | "simulation",
+  resourceId: string,
+  actor: ActorPolicy,
+  operation: "read" | "revert",
+): Promise<{ ok: true } | { ok: false; reason: ResourceChangeAccessReason }> => {
+  const table = kind === "site" ? "sites" : "simulations";
+  const rolesTable = kind === "site" ? "site_roles" : "simulation_roles";
+  const row = await env.DB
+    .prepare(
+      `SELECT t.owner_user_id, t.visibility${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
+       FROM ${table} t
+       LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
+       WHERE t.id = ?
+       LIMIT 1`,
+    )
+    .bind(actor.id, resourceId)
+    .first<{
+      owner_user_id: string;
+      visibility: DbVisibility;
+      status?: "active" | "deleted";
+      actor_role?: string | null;
+    }>();
+
+  if (!row) return { ok: false, reason: "missing" };
+  if (kind === "simulation" && row.status === "deleted") {
+    return operation === "read" && actor.isAdmin
+      ? { ok: true }
+      : { ok: false, reason: "forbidden" };
+  }
+
+  const explicitRole = typeof row.actor_role === "string" ? row.actor_role : null;
+  const visibility = visibilityFromDbVisibility(row.visibility);
+  const allowed = operation === "read"
+    ? canReadResource(actor, row.owner_user_id, visibility, explicitRole)
+    : canEditResource(actor, row.owner_user_id, visibility, explicitRole);
+  return allowed ? { ok: true } : { ok: false, reason: "forbidden" };
+};
+
 export const setSimulationLifecycleStatus = async (
   env: Env,
   actor: ActorPolicy,
@@ -1970,31 +2041,30 @@ export const fetchResourceChanges = async (
   env: Env,
   kind: "site" | "simulation",
   resourceId: string,
-  actor?: { isAdmin: boolean },
+  actor: ActorPolicy,
 ): Promise<
-  Array<{
-    id: number;
-    action: string;
-    changedAt: string;
-    note: string | null;
-    actorUserId: string;
-    actorName: string | null;
-    actorAvatarUrl: string | null;
-    details: Record<string, unknown> | null;
-    snapshot: Record<string, unknown> | null;
-  }>
+  | {
+      ok: true;
+      changes: Array<{
+        id: number;
+        action: string;
+        changedAt: string;
+        note: string | null;
+        actorUserId: string;
+        actorName: string | null;
+        actorAvatarUrl: string | null;
+        details: { diff: Record<string, ResourceChangeDiffValue> } | null;
+      }>;
+    }
+  | { ok: false; reason: ResourceChangeAccessReason }
 > => {
   await ensureSchema(env);
-  if (kind === "simulation" && !actor?.isAdmin) {
-    const simulation = await env.DB
-      .prepare("SELECT status FROM simulations WHERE id = ? LIMIT 1")
-      .bind(resourceId)
-      .first<{ status: "active" | "deleted" }>();
-    if (simulation?.status === "deleted") return [];
-  }
+  const access = await resolveResourceChangeAccess(env, kind, resourceId, actor, "read");
+  if (!access.ok) return access;
+
   const rows = await env.DB
     .prepare(
-      `SELECT c.id, c.action, c.changed_at, c.note, c.actor_user_id, c.details_json, c.snapshot_json,
+      `SELECT c.id, c.action, c.changed_at, c.note, c.actor_user_id, c.details_json,
               u.username AS actor_name,
               u.avatar_url AS actor_avatar_url
        FROM resource_changes c
@@ -2011,22 +2081,23 @@ export const fetchResourceChanges = async (
       note: string | null;
       actor_user_id: string;
       details_json: string | null;
-      snapshot_json: string | null;
       actor_name: string | null;
       actor_avatar_url: string | null;
     }>();
 
-  return rows.results.map((row) => ({
-    id: row.id,
-    action: row.action,
-    changedAt: row.changed_at,
-    note: row.note,
-    actorUserId: row.actor_user_id,
-    actorName: row.actor_name,
-    actorAvatarUrl: row.actor_avatar_url,
-    details: row.details_json ? (JSON.parse(row.details_json) as Record<string, unknown>) : null,
-    snapshot: row.snapshot_json ? (JSON.parse(row.snapshot_json) as Record<string, unknown>) : null,
-  }));
+  return {
+    ok: true,
+    changes: rows.results.map((row) => ({
+      id: row.id,
+      action: row.action,
+      changedAt: row.changed_at,
+      note: row.note,
+      actorUserId: row.actor_user_id,
+      actorName: row.actor_name,
+      actorAvatarUrl: row.actor_avatar_url,
+      details: readDisplayableChangeDetails(row.details_json),
+    })),
+  };
 };
 
 export const revertResourceFromChangeCopy = async (
@@ -2034,9 +2105,12 @@ export const revertResourceFromChangeCopy = async (
   kind: "site" | "simulation",
   resourceId: string,
   changeId: number,
-  actor: { id: string; isAdmin: boolean; isModerator?: boolean },
+  actor: ActorPolicy,
 ): Promise<{ ok: boolean; reason?: string }> => {
   await ensureSchema(env);
+  const access = await resolveResourceChangeAccess(env, kind, resourceId, actor, "revert");
+  if (!access.ok) return access;
+
   const snapshotRow = await env.DB
     .prepare(
       `SELECT snapshot_json
@@ -2056,11 +2130,7 @@ export const revertResourceFromChangeCopy = async (
   }
   snapshot.id = resourceId;
 
-  const result = await upsertOwnedResource(env, kind, {
-    id: actor.id,
-    isAdmin: actor.isAdmin,
-    isModerator: Boolean(actor.isModerator),
-  }, snapshot);
+  const result = await upsertOwnedResource(env, kind, actor, snapshot);
   if (!result.ok) return result;
 
   await createResourceChange(
