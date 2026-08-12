@@ -731,9 +731,13 @@ export const reconcileUserIdentityByIdpEmail = async (
   userId: string,
   idpEmail: string,
   targetWasExisting = false,
+  leadingStatements: D1PreparedStatement[] = [],
 ): Promise<void> => {
   const normalized = sanitizeEmail(idpEmail);
-  if (!normalized) return;
+  if (!normalized) {
+    if (leadingStatements.length) await env.DB.batch(leadingStatements);
+    return;
+  }
 
   const rows = await env.DB
     .prepare(
@@ -767,10 +771,33 @@ export const reconcileUserIdentityByIdpEmail = async (
     throw new Error("Verified identity collision. Contact an administrator.");
   }
   const existing = rows.results[0] ?? null;
-  if (!existing) return;
+  if (!existing) {
+    if (leadingStatements.length) {
+      const now = new Date().toISOString();
+      await env.DB.batch([
+        env.DB
+          .prepare(
+            `INSERT INTO deleted_users (id, deleted_at, deleted_by_user_id)
+             SELECT ?1, ?3, 'reconcile-zero-candidate-guard'
+             FROM (SELECT 1 UNION ALL SELECT 2)
+             WHERE EXISTS (
+               SELECT 1
+               FROM users
+               WHERE id <> ?1
+                 AND lower(idp_email) = lower(?2)
+                 AND idp_email_verified = 1
+             )`,
+          )
+          .bind(userId, normalized, now),
+        ...leadingStatements,
+      ]);
+    }
+    return;
+  }
 
   const now = new Date().toISOString();
   await env.DB.batch([
+    ...leadingStatements,
     env.DB
       .prepare(
         `INSERT INTO users (id, created_at)
@@ -971,55 +998,78 @@ export const ensureUser = async (
   ) ? 1 : 0;
   const autoApprove = 1;
 
-  await env.DB.prepare(
-    `INSERT OR IGNORE INTO users
-      (id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
-     VALUES (?, '', ?, NULL, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      userId,
-      email,
-      idpEmail || null,
-      idpEmailVerified,
-      isBootstrapAdmin,
-      0,
-      autoApprove,
-      now,
-      "system:open-registration",
-      now,
-      now,
-    )
-    .run();
+  const ensureStatements = [
+    env.DB
+      .prepare(
+        `INSERT INTO deleted_users (id, deleted_at, deleted_by_user_id)
+         SELECT ?1, ?3, 'ensure-user-guard'
+         FROM (SELECT 1 UNION ALL SELECT 2)
+         WHERE EXISTS (
+           SELECT 1
+           FROM deleted_users d
+           WHERE d.id = ?1
+              OR (?2 <> '' AND EXISTS (
+                SELECT 1 FROM user_identity_audit a
+                WHERE a.event_type = 'user_deleted'
+                  AND a.target_user_id = d.id
+                  AND lower(a.idp_email) = lower(?2)
+              ))
+         )`,
+      )
+      .bind(userId, idpEmail, now),
+    env.DB
+      .prepare(
+        `INSERT OR IGNORE INTO users
+          (id, username, email, username_set_at, bio, access_request_note, idp_email, idp_email_verified, avatar_url, email_public, avatar_object_key, avatar_thumb_key, avatar_hash, avatar_bytes, avatar_content_type, is_admin, is_moderator, is_approved, approved_at, approved_by_user_id, created_at, updated_at)
+         VALUES (?, '', ?, NULL, '', '', ?, ?, '', 1, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        userId,
+        email,
+        idpEmail || null,
+        idpEmailVerified,
+        isBootstrapAdmin,
+        0,
+        autoApprove,
+        now,
+        "system:open-registration",
+        now,
+        now,
+      ),
+    env.DB
+      .prepare(
+        `UPDATE users
+         SET email = COALESCE(NULLIF(TRIM(email), ''), ?),
+             idp_email = CASE WHEN ? = 1 THEN ? ELSE idp_email END,
+             idp_email_verified = CASE WHEN ? = 1 THEN 1 ELSE idp_email_verified END,
+             is_approved = CASE WHEN ? = 1 AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%') THEN 1 ELSE is_approved END,
+             approved_at = CASE WHEN ? = 1 AND approved_at IS NULL THEN ? ELSE approved_at END,
+             approved_by_user_id = CASE WHEN ? = 1 AND approved_by_user_id IS NULL THEN ? ELSE approved_by_user_id END,
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(
+        email,
+        idpEmailVerified,
+        idpEmail || null,
+        idpEmailVerified,
+        autoApprove,
+        autoApprove,
+        now,
+        autoApprove,
+        "system:open-registration",
+        now,
+        userId,
+      ),
+  ];
 
-  await env.DB.prepare(
-    `UPDATE users
-     SET email = COALESCE(NULLIF(TRIM(email), ''), ?),
-         idp_email = CASE WHEN ? = 1 THEN ? ELSE idp_email END,
-         idp_email_verified = CASE WHEN ? = 1 THEN 1 ELSE idp_email_verified END,
-         is_approved = CASE WHEN ? = 1 AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%') THEN 1 ELSE is_approved END,
-         approved_at = CASE WHEN ? = 1 AND approved_at IS NULL THEN ? ELSE approved_at END,
-         approved_by_user_id = CASE WHEN ? = 1 AND approved_by_user_id IS NULL THEN ? ELSE approved_by_user_id END,
-         updated_at = ?
-     WHERE id = ?`,
-  )
-    .bind(
-      email,
-      idpEmailVerified,
-      idpEmail || null,
-      idpEmailVerified,
-      autoApprove,
-      autoApprove,
-      now,
-      autoApprove,
-      "system:open-registration",
-      now,
-      userId,
-    )
-    .run();
-
-  if (idpEmailVerified) {
-    await reconcileUserIdentityByIdpEmail(env, userId, idpEmail, Boolean(existingUser?.id));
-  }
+  await reconcileUserIdentityByIdpEmail(
+    env,
+    userId,
+    idpEmail,
+    Boolean(existingUser?.id),
+    ensureStatements,
+  );
 };
 
 export const fetchUserProfile = async (env: Env, userId: string) => {

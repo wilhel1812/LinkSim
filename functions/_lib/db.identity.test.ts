@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import {
   assertDeletedUserMayRegister,
+  ensureUser,
   findDeletionBlock,
   reconcileUserIdentityByIdpEmail,
   revertResourceFromChangeCopy,
@@ -403,6 +404,86 @@ describe("identity reconciliation", () => {
     expect(db.db.prepare("SELECT id, deleted_by_user_id FROM deleted_users").all()).toEqual([
       { id: "stable-id", deleted_by_user_id: "admin-id" },
     ]);
+  });
+
+  it("rolls back target creation so a pending-source reconciliation retry stays pending", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+        VALUES ('pending-id', 'old@example.com', 'user@example.com', 1, 0, NULL, NULL);
+      CREATE TRIGGER reject_reconciliation_audit
+        BEFORE INSERT ON user_identity_audit
+        WHEN NEW.event_type = 'reconciled_by_verified_idp_email'
+        BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END;
+    `);
+    const env = { DB: db as unknown as D1Database };
+    const tokenPayload = {
+      email: "user@example.com",
+      __linksim_verified_idp_email: "user@example.com",
+    };
+
+    await expect(ensureUser(env, "stable-id", tokenPayload)).rejects.toThrow("audit unavailable");
+    expect(db.db.prepare("SELECT id FROM users WHERE id = 'stable-id'").get()).toBeUndefined();
+
+    db.db.exec("DROP TRIGGER reject_reconciliation_audit");
+    await ensureUser(env, "stable-id", tokenPayload);
+
+    expect(
+      db.db
+        .prepare("SELECT is_approved, approved_at, approved_by_user_id FROM users WHERE id = 'stable-id'")
+        .get(),
+    ).toEqual({ is_approved: 0, approved_at: null, approved_by_user_id: null });
+    expect(db.db.prepare("SELECT id FROM users WHERE id = 'pending-id'").get()).toBeUndefined();
+  });
+
+  it("does not recreate a user deleted immediately before the atomic ensure batch", async () => {
+    const db = new SqliteD1();
+    db.db.exec(`
+      INSERT INTO users (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+        VALUES ('stable-id', 'user@example.com', 'user@example.com', 1, 1, '2026-01-01', 'system:open-registration');
+    `);
+    db.beforeBatch = () => {
+      db.db.exec(`
+        INSERT INTO deleted_users VALUES ('stable-id', '2026-03-01', 'admin-id');
+        DELETE FROM users WHERE id = 'stable-id';
+      `);
+    };
+
+    await expect(
+      ensureUser(
+        { DB: db as unknown as D1Database },
+        "stable-id",
+        { email: "user@example.com", __linksim_verified_idp_email: "user@example.com" },
+      ),
+    ).rejects.toThrow("UNIQUE constraint failed");
+    expect(db.db.prepare("SELECT id FROM users WHERE id = 'stable-id'").get()).toBeUndefined();
+    expect(db.db.prepare("SELECT id, deleted_by_user_id FROM deleted_users WHERE id = 'stable-id'").get()).toEqual({
+      id: "stable-id",
+      deleted_by_user_id: "admin-id",
+    });
+  });
+
+  it("aborts when a revoked matching source appears before a zero-candidate ensure batch", async () => {
+    const db = new SqliteD1();
+    db.beforeBatch = () => {
+      db.db.exec(`
+        INSERT INTO users
+          (id, email, idp_email, idp_email_verified, is_approved, approved_at, approved_by_user_id)
+          VALUES ('revoked-id', 'old@example.com', 'user@example.com', 1, 0, '2026-01-01', 'revoked:admin-id');
+      `);
+    };
+
+    await expect(
+      ensureUser(
+        { DB: db as unknown as D1Database },
+        "stable-id",
+        { email: "user@example.com", __linksim_verified_idp_email: "user@example.com" },
+      ),
+    ).rejects.toThrow("UNIQUE constraint failed");
+    expect(db.db.prepare("SELECT id FROM users WHERE id = 'stable-id'").get()).toBeUndefined();
+    expect(
+      db.db.prepare("SELECT id, is_approved, approved_by_user_id FROM users WHERE id = 'revoked-id'").get(),
+    ).toEqual({ id: "revoked-id", is_approved: 0, approved_by_user_id: "revoked:admin-id" });
   });
 
   it("preserves pending state when a verified identity first moves to a new subject", async () => {
