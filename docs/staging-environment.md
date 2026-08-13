@@ -90,3 +90,9 @@ Run the refresh scripts only when explicitly needed, then merge a staging PR and
 | Staging (test) | https://staging.linksim.link | Public shell; Access on `/api/*` |
 | Pull request preview | Signed PR comment URL | Access-protected after rollout gate |
 | Production | https://linksim.link | ✅ Works with Access |
+
+Credentialed browser API requests are same-origin only. Each pull-request
+preview uses its own `https://<preview>.linksim-staging.pages.dev` API; it does
+not call the shared-staging API cross-origin. Originless API clients remain
+supported, while production, staging, and preview browser origins cannot call
+one another.

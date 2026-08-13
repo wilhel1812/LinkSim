@@ -1,4 +1,4 @@
-import { handleOptions } from "../../_lib/http";
+import { handleOptions, withCors } from "../../_lib/http";
 import type { Env } from "../../_lib/types";
 
 type Context = {
@@ -36,44 +36,31 @@ const getJob = async (env: Env, jobId: string) => {
   return row;
 };
 
-export const onRequestOptions = async ({ request }: Context) => {
-  const origin = request.headers.get("origin") ?? "*";
-  const headers = new Headers();
-  headers.set("Access-Control-Allow-Origin", origin);
-  headers.set("Vary", "Origin");
-  headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
-  return new Response(null, { status: 204, headers });
-};
+export const onRequestOptions = async ({ request }: Context) => handleOptions(request);
 
 export const onRequestGet = async ({ request, env }: Context) => {
   const url = new URL(request.url);
   const jobId = url.pathname.split("/").pop();
 
   if (!jobId) {
-    return new Response(JSON.stringify({ error: "Job ID is required." }), {
+    return withCors(request, new Response(JSON.stringify({ error: "Job ID is required." }), {
       status: 400,
       headers: { "content-type": "application/json" },
-    });
+    }));
   }
-
-  const origin = request.headers.get("origin") ?? "*";
 
   try {
     await ensureCalculationJobsTable(env);
     const job = await getJob(env, jobId);
 
     if (!job) {
-      return new Response(
+      return withCors(request, new Response(
         JSON.stringify({ error: "Job not found." }),
         {
           status: 404,
-          headers: {
-            "content-type": "application/json",
-            "Access-Control-Allow-Origin": origin,
-            "Vary": "Origin",
-          },
+          headers: { "content-type": "application/json" },
         },
-      );
+      ));
     }
 
     const response: Record<string, unknown> = {
@@ -99,26 +86,18 @@ export const onRequestGet = async ({ request, env }: Context) => {
       response.error = "Job timed out before completion.";
     }
 
-    return new Response(JSON.stringify(response), {
+    return withCors(request, new Response(JSON.stringify(response), {
       status: 200,
-      headers: {
-        "content-type": "application/json",
-        "Access-Control-Allow-Origin": origin,
-        "Vary": "Origin",
-      },
-    });
+      headers: { "content-type": "application/json" },
+    }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
-    return new Response(
+    return withCors(request, new Response(
       JSON.stringify({ error: message }),
       {
         status: 500,
-        headers: {
-          "content-type": "application/json",
-          "Access-Control-Allow-Origin": origin,
-          "Vary": "Origin",
-        },
+        headers: { "content-type": "application/json" },
       },
-    );
+    ));
   }
 };

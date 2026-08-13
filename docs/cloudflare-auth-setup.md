@@ -103,6 +103,23 @@ restoration, so reauthentication cannot undo a durable demotion.
 
 Do not enable local dev fallback vars in production or shared preview deployments.
 
+### Browser origin policy
+
+LinkSim's Functions API permits credentialed browser requests only from the
+request's own origin. This covers `https://linksim.link`,
+`https://staging.linksim.link`, and each authenticated
+`https://<preview>.linksim-staging.pages.dev` deployment without allowing one
+environment to call another. Local development has one explicit cross-origin
+exception: the Vite app at `http://localhost:5174` may call the edge API at
+`http://127.0.0.1:8788`.
+
+Requests with another browser `Origin` (including `null`) are rejected before
+API handlers run, even when they carry a `CF_Authorization` cookie. Requests
+without `Origin`, such as curl and server-to-server API clients, remain allowed
+but receive no CORS authorization headers. This application boundary complements
+Access; it does not replace the configured issuer, audience, and signature
+verification or authorize changes to Access applications.
+
 ## 6) D1 Binding in Pages
 
 Pages project → Settings → Functions → D1 bindings:

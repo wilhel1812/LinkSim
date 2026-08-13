@@ -41,6 +41,8 @@ describe("api/deep-link-status", () => {
     verifyAuthMock.mockResolvedValueOnce(null);
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/deep-link-status?sim=sim-1")));
     expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    expect(res.headers.get("access-control-allow-credentials")).toBeNull();
     await expect(res.json()).resolves.toEqual({
       status: "ok",
       simulationId: "sim-1",
