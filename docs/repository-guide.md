@@ -48,7 +48,7 @@ Start the Vite development server for normal frontend work:
 npm run dev
 ```
 
-Vite reports the local URL, normally `http://localhost:5173`.
+Vite serves the local app at the fixed URL `http://localhost:5174`.
 
 Use the local edge stack when Pages Functions, D1, or R2 behavior is part of the change:
 

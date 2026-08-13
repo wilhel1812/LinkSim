@@ -9,15 +9,54 @@ export const json = (body: unknown, init?: ResponseInit): Response => {
   });
 };
 
+export type CorsOriginDecision = "allowed" | "originless" | "denied";
+
+const LOCAL_VITE_ORIGIN = "http://localhost:5174";
+const LOCAL_EDGE_ORIGIN = "http://127.0.0.1:8788";
+
+const normalizeBrowserOrigin = (raw: string): string | null => {
+  if (!raw || raw === "null") return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+};
+
+export const getCorsOriginDecision = (request: Request): CorsOriginDecision => {
+  const rawOrigin = request.headers.get("origin");
+  if (rawOrigin === null) return "originless";
+
+  const origin = normalizeBrowserOrigin(rawOrigin);
+  if (!origin) return "denied";
+
+  const requestOrigin = new URL(request.url).origin;
+  if (origin === requestOrigin) return "allowed";
+  if (origin === LOCAL_VITE_ORIGIN && requestOrigin === LOCAL_EDGE_ORIGIN) return "allowed";
+  return "denied";
+};
+
 export const corsHeaders = (request: Request): Headers => {
-  const origin = request.headers.get("origin") ?? "*";
   const headers = new Headers();
-  headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Vary", "Origin");
-  headers.set("Access-Control-Allow-Credentials", "true");
-  headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  if (getCorsOriginDecision(request) === "allowed") {
+    headers.set("Access-Control-Allow-Origin", normalizeBrowserOrigin(request.headers.get("origin")!)!);
+    headers.set("Access-Control-Allow-Credentials", "true");
+    headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  }
   return headers;
+};
+
+export const corsRejectionResponse = (request: Request): Response | null => {
+  if (getCorsOriginDecision(request) !== "denied") return null;
+  return json(
+    { error: "Forbidden." },
+    { status: 403, headers: corsHeaders(request) },
+  );
 };
 
 export const withCors = (request: Request, response: Response): Response => {
@@ -31,11 +70,14 @@ export const withCors = (request: Request, response: Response): Response => {
   });
 };
 
-export const handleOptions = (request: Request): Response =>
-  new Response(null, {
+export const handleOptions = (request: Request): Response => {
+  const rejected = corsRejectionResponse(request);
+  if (rejected) return rejected;
+  return new Response(null, {
     status: 204,
     headers: corsHeaders(request),
   });
+};
 
 const isRevokedAuthMessage = (message: string): boolean => {
   const lower = message.toLowerCase();

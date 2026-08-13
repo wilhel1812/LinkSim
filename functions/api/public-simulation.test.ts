@@ -111,7 +111,12 @@ describe("api/public-simulation", () => {
 
   it("passes an anonymous actor when request is unauthenticated", async () => {
     verifyAuthMock.mockResolvedValue(null);
-    await onRequestGet(mkCtx(new Request("https://example.test/api/public-simulation?sim=sim-1")));
+    const response = await onRequestGet(mkCtx(new Request(
+      "https://example.test/api/public-simulation?sim=sim-1",
+      { headers: { origin: "https://example.test" } },
+    )));
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://example.test");
+    expect(response.headers.get("access-control-allow-credentials")).toBe("true");
     expect(fetchPublicSimulationBundleMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ actor: null }),
