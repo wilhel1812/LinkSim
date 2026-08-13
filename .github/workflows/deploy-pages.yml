@@ -229,6 +229,12 @@ jobs:
         working-directory: ${{ runner.temp }}/linksim-release
         run: npm ci
 
+      - name: Validate release gate
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          PRODUCTION_PREVIOUS_REF: ${{ github.event.before }}
+        run: node scripts/validate-prod-release.mjs
+
       - name: Apply production Simulation lifecycle migration
         working-directory: ${{ runner.temp }}/linksim-release
         env:
@@ -251,12 +257,6 @@ jobs:
             npx wrangler d1 execute linksim --remote --file db/migrations/2026-08-12_identity_lifecycle.sql --yes
           fi
           node scripts/verify-identity-lifecycle-d1.mjs linksim post
-
-      - name: Validate release gate
-        working-directory: ${{ runner.temp }}/linksim-release
-        env:
-          PRODUCTION_PREVIOUS_REF: ${{ github.event.before }}
-        run: node scripts/validate-prod-release.mjs
 
       - name: Deploy prod/main with guardrails
         working-directory: ${{ runner.temp }}/linksim-release

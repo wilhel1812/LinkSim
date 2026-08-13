@@ -65,6 +65,25 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
   });
 
+  it("validates the release before any production D1 migration", () => {
+    const releaseGateStep = "- name: Validate release gate";
+    const simulationMigrationStep =
+      "- name: Apply production Simulation lifecycle migration";
+    const identityMigrationStep =
+      "- name: Verify identity lifecycle migration prerequisites and apply migration";
+
+    expect(productionJob).toContain(releaseGateStep);
+    expect(productionJob.indexOf(releaseGateStep)).toBeLessThan(
+      productionJob.indexOf(simulationMigrationStep),
+    );
+    expect(productionJob.indexOf(releaseGateStep)).toBeLessThan(
+      productionJob.indexOf(identityMigrationStep),
+    );
+    expect(productionJob.slice(0, productionJob.indexOf(releaseGateStep))).not.toContain(
+      "npx wrangler d1 execute linksim --remote",
+    );
+  });
+
   it("probes, applies, and verifies identity lifecycle schema before staging and production deploys", () => {
     for (const [job, database] of [[stagingJob, "linksim_staging"], [productionJob, "linksim"]] as const) {
       expect(job).toContain("Verify identity lifecycle migration prerequisites");
