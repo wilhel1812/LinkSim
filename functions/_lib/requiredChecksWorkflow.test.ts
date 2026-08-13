@@ -26,9 +26,9 @@ describe("required check workflows", () => {
   });
 
   it("publishes target-specific CI checks after the generic verification job", () => {
-    expect(qualityWorkflow).toContain("name: CI Quality Gates / verify");
-    expect(qualityWorkflow).toContain("name: CI Quality Gates / verify-staging");
-    expect(qualityWorkflow).toContain("name: CI Quality Gates / verify-main");
+    expect(qualityWorkflow).toMatch(/^    name: CI Quality Gates \/ verify$/m);
+    expect(qualityWorkflow).toMatch(/^    name: CI Quality Gates \/ verify-staging$/m);
+    expect(qualityWorkflow).toMatch(/^    name: CI Quality Gates \/ verify-main$/m);
     expect(qualityWorkflow.match(/needs: verify/g)).toHaveLength(2);
     expect(qualityWorkflow).toContain("if: always() && github.base_ref == 'staging'");
     expect(qualityWorkflow).toContain("if: always() && github.base_ref == 'main'");
@@ -39,9 +39,9 @@ describe("required check workflows", () => {
   });
 
   it("publishes target-specific branch-policy checks after enforcement", () => {
-    expect(branchWorkflow).toContain("name: PR Branch Policy / enforce");
-    expect(branchWorkflow).toContain("name: PR Branch Policy / enforce-staging");
-    expect(branchWorkflow).toContain("name: PR Branch Policy / enforce-main");
+    expect(branchWorkflow).toMatch(/^    name: PR Branch Policy \/ enforce$/m);
+    expect(branchWorkflow).toMatch(/^    name: PR Branch Policy \/ enforce-staging$/m);
+    expect(branchWorkflow).toMatch(/^    name: PR Branch Policy \/ enforce-main$/m);
     expect(branchWorkflow.match(/needs: enforce/g)).toHaveLength(2);
     expect(branchWorkflow).toContain("if: always() && github.base_ref == 'staging'");
     expect(branchWorkflow).toContain("if: always() && github.base_ref == 'main'");
