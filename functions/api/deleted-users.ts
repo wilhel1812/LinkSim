@@ -42,7 +42,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
     const userId = (url.searchParams.get("id") ?? "").trim();
     if (!userId) return withCors(request, json({ error: "Missing user id" }, { status: 400 }));
 
-    await restoreDeletedUser(env, userId);
+    await restoreDeletedUser(env, userId, auth.userId);
     return withCors(request, json({ ok: true }));
   } catch (error) {
     return errorResponse(request, error, 500);

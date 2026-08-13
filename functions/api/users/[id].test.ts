@@ -9,6 +9,7 @@ const {
   setUserRoleMock,
   setUserApprovalMock,
   deleteUserMock,
+  resolveEffectiveCanonicalUserIdMock,
 } = vi.hoisted(() => ({
   verifyAuthMock: vi.fn(),
   ensureUserMock: vi.fn(),
@@ -18,6 +19,7 @@ const {
   setUserRoleMock: vi.fn(),
   setUserApprovalMock: vi.fn(),
   deleteUserMock: vi.fn(),
+  resolveEffectiveCanonicalUserIdMock: vi.fn(),
 }));
 
 vi.mock("../../_lib/auth", () => ({
@@ -32,6 +34,7 @@ vi.mock("../../_lib/db", () => ({
   setUserRole: setUserRoleMock,
   setUserApproval: setUserApprovalMock,
   deleteUser: deleteUserMock,
+  resolveEffectiveCanonicalUserId: resolveEffectiveCanonicalUserIdMock,
 }));
 
 import { onRequestDelete, onRequestGet, onRequestPatch } from "./[id]";
@@ -46,6 +49,7 @@ beforeEach(() => {
   verifyAuthMock.mockResolvedValue({ userId: "admin", tokenPayload: {}, source: "headers" });
   ensureUserMock.mockResolvedValue(undefined);
   assertUserAccessMock.mockResolvedValue(undefined);
+  resolveEffectiveCanonicalUserIdMock.mockImplementation(async (_env, userId: string) => userId);
   fetchUserProfileMock.mockResolvedValue({
     id: "admin",
     username: "Admin",
@@ -103,6 +107,36 @@ describe("users/[id] auth and permission guards", () => {
     const res = await onRequestDelete(mkCtx(req, { id: "admin" }));
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: "Admin cannot delete own account." });
+    expect(deleteUserMock).not.toHaveBeenCalled();
+  });
+
+  it("resolves a superseded target before fetching or changing its role", async () => {
+    const req = new Request("https://example.test/api/users/old-subject", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: "pending" }),
+    });
+    resolveEffectiveCanonicalUserIdMock.mockResolvedValue("current-subject");
+    fetchUserProfileMock
+      .mockResolvedValueOnce({ id: "admin", isAdmin: true, isModerator: false, isApproved: true })
+      .mockResolvedValueOnce({ id: "current-subject", isAdmin: false, isModerator: false, isApproved: true });
+    setUserRoleMock.mockResolvedValue({ id: "current-subject", isApproved: false });
+
+    const response = await onRequestPatch(mkCtx(req, { id: "old-subject" }));
+
+    expect(response.status).toBe(200);
+    expect(fetchUserProfileMock).toHaveBeenCalledWith(env, "current-subject");
+    expect(ensureUserMock).not.toHaveBeenCalledWith(env, "old-subject");
+    expect(setUserRoleMock).toHaveBeenCalledWith(env, "current-subject", "pending", "admin");
+  });
+
+  it("resolves a superseded target before self-delete protection", async () => {
+    resolveEffectiveCanonicalUserIdMock.mockResolvedValue("admin");
+    const req = new Request("https://example.test/api/users/old-subject", { method: "DELETE" });
+
+    const response = await onRequestDelete(mkCtx(req, { id: "old-subject" }));
+
+    expect(response.status).toBe(400);
     expect(deleteUserMock).not.toHaveBeenCalled();
   });
 

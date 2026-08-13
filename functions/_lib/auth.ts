@@ -16,6 +16,7 @@ export class AuthVerificationTimeoutError extends Error {
 type AccessTokenVerifier = (token: string, env: Env) => Promise<JWTPayload>;
 
 const accessKeySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+const VERIFIED_IDP_EMAIL_CLAIM = "__linksim_verified_idp_email";
 
 const normalizeTeamDomain = (raw: string): string => {
   const trimmed = raw.trim();
@@ -174,6 +175,10 @@ const decodeCfAccessJwt = async (
     const userId = fallback || fromHeader;
     if (!userId) return null;
 
+    const verifiedIdpEmail =
+      typeof payload.email === "string" && payload.email.trim()
+        ? payload.email.trim().toLowerCase()
+        : undefined;
     return {
       userId,
       tokenPayload: {
@@ -186,7 +191,9 @@ const decodeCfAccessJwt = async (
           typeof payload.name === "string" && payload.name.trim()
             ? payload.name
             : readHeaderUserName(request),
+        [VERIFIED_IDP_EMAIL_CLAIM]: verifiedIdpEmail,
       },
+      verifiedIdpEmail,
       source: "jwt",
     };
   } catch {

@@ -61,8 +61,40 @@ In Pages project env vars (Production + Preview):
 - `ACCESS_TEAM_DOMAIN` = your team domain (without `https://`)
 - `ACCESS_AUD` = comma-separated Access app AUD tags for every hostname served
   by that Pages environment
-- `ADMIN_USER_IDS` = bootstrap admin user IDs
+- `ADMIN_USER_IDS` = one-time bootstrap admin user IDs
 - `REGISTRATION_MODE` = `open`
+
+`ADMIN_USER_IDS` is consulted only when a listed identity is first inserted.
+After that, the role and revocation state stored in D1 is authoritative, so an
+administrator can durably demote or revoke a bootstrap identity. Diagnostics
+endpoints follow that current D1 state and do not provide a configuration-only
+break-glass bypass. Bootstrap consumption survives account deletion and
+restoration, so reauthentication cannot undo a durable demotion.
+
+## Account lifecycle policy
+
+- Profile email is editable display/contact data. It never transfers approval,
+  roles, ownership, grants, or audit identity.
+- Identity reconciliation requires an email claim from a successfully verified
+  Cloudflare Access JWT. Header-only and local-development identities do not
+  supply reconciliation evidence.
+- Verified identities are claimed by normalized IdP email in D1. A subject
+  change migrates the complete account atomically, repoints every active email
+  alias, records the transfer, and permanently marks the prior subject as
+  superseded so an older valid session cannot move the account back.
+- The identity schema migration refuses duplicate verified emails and historical
+  deletion tombstones that lack recoverable verified-email evidence. Those rows
+  require explicit administrator remediation; the migration never selects an
+  arbitrary account or invents an identity mapping.
+- Deleting an account creates a durable tombstone. Old and newly issued IdP
+  sessions remain blocked until an administrator explicitly restores the ID.
+  Every claimed alias is blocked in the same transaction. Restore re-enables
+  only the canonical blocked subject and its claims; superseded subjects remain
+  superseded. The next valid login after restore creates a fresh account.
+- LinkSim relies on the configured IdP not reassigning verified email addresses.
+  A simultaneous subject-and-email replacement has no trustworthy automatic
+  anchor and requires administrator recovery.
+- Avatar object keys are opaque and do not include the LinkSim user ID or email.
 
 Do not enable local dev fallback vars in production or shared preview deployments.
 

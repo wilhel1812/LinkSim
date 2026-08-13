@@ -37,9 +37,19 @@ export const handleOptions = (request: Request): Response =>
     headers: corsHeaders(request),
   });
 
+const isRevokedAuthMessage = (message: string): boolean => {
+  const lower = message.toLowerCase();
+  return lower.includes("session revoked by admin")
+    || lower.includes("identity subject is no longer current")
+    || lower.includes("identity is blocked by an administrator");
+};
+
+export const isRevokedAuthError = (error: unknown): boolean =>
+  isRevokedAuthMessage(error instanceof Error ? error.message : String(error));
+
 export const normalizeApiErrorMessage = (message: string): string => {
   const lower = message.toLowerCase();
-  if (lower.includes("session revoked by admin")) return "Session revoked by admin.";
+  if (isRevokedAuthMessage(message)) return "Session revoked by admin.";
   if (lower.includes("auth verification timed out")) return "Auth verification timed out.";
   if (lower.includes("access revoked by admin")) return "Account access revoked by admin.";
   if (lower.includes("pending approval")) return "Account pending approval.";
@@ -56,7 +66,7 @@ export const statusFromErrorMessage = (message: string, fallback = 500): number 
   const lower = message.toLowerCase();
   if (lower.includes("schema out of date")) return 503;
   if (lower.includes("auth verification timed out")) return 503;
-  if (lower.includes("session revoked by admin")) return 401;
+  if (isRevokedAuthMessage(message)) return 401;
   if (lower.includes("access revoked by admin")) return 403;
   if (lower.includes("unauthorized")) return 401;
   if (lower.includes("pending approval")) return 403;

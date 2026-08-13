@@ -43,6 +43,17 @@ describe("api/me", () => {
     await expect(res.json()).resolves.toEqual({ user: { id: "u1", username: "", needsUsername: true } });
   });
 
+  it("omits internal IdP identity evidence from the ordinary profile response", async () => {
+    fetchUserProfileMock.mockResolvedValueOnce({
+      id: "u1", username: "User", email: "private@example.com",
+      idpEmail: "private@example.com", idpEmailVerified: true,
+    });
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/me")));
+    const body = await res.json();
+    expect(body.user.idpEmail).toBeUndefined();
+    expect(body.user.idpEmailVerified).toBeUndefined();
+  });
+
   it("returns a controlled service unavailable response when auth verification times out", async () => {
     verifyAuthMock.mockRejectedValue(new Error("Auth verification timed out"));
     const res = await onRequestGet(mkCtx(new Request("https://example.test/api/me")));

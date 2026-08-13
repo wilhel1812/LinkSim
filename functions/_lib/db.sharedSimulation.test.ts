@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchUserDiagnosticAccessState,
   fetchLibraryForUser,
   fetchPublicSimulationBundle,
   fetchResourceChanges,
+  listUsers,
   revertResourceFromChangeCopy,
   setSimulationLifecycleStatus,
   upsertLibrarySnapshot,
@@ -63,6 +65,13 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "updated_at",
   ],
   deleted_users: ["id", "deleted_at", "deleted_by_user_id"],
+  verified_identity_claims: [
+    "normalized_email", "current_user_id", "status", "created_at", "updated_at", "blocked_at", "blocked_by_user_id",
+  ],
+  identity_subject_states: [
+    "user_id", "normalized_email", "status", "canonical_user_id", "bootstrap_consumed", "created_at", "updated_at", "changed_by_user_id",
+  ],
+  identity_lifecycle_meta: ["singleton", "version", "applied_at"],
   site_roles: ["site_id", "user_id", "role", "created_at"],
   simulation_roles: ["simulation_id", "user_id", "role", "created_at"],
   resource_changes: [
@@ -135,6 +144,7 @@ class FakeStatement {
 }
 
 class FakeDb {
+  readonly users: AnyRow[] = [];
   readonly sites = new Map<string, AnyRow>();
   readonly simulations = new Map<string, AnyRow>();
   readonly siteRoles = new Map<string, string>();
@@ -155,6 +165,9 @@ class FakeDb {
   }
 
   first(sql: string, bound: unknown[]): AnyRow | null {
+    if (sql.includes("SELECT version FROM identity_lifecycle_meta")) {
+      return { version: "2026-08-12-identity-lifecycle-v1" };
+    }
     if (sql.includes("FROM users WHERE id = ?")) {
       const id = String(bound[0] ?? "");
       return {
@@ -241,6 +254,7 @@ class FakeDb {
       const table = pragmaMatch[1] ?? "";
       return (TABLE_COLUMNS[table] ?? []).map((name) => ({ name }));
     }
+    if (sql.includes("FROM users ORDER BY created_at DESC")) return this.users;
     if (sql.includes("SELECT id, payload_json, visibility FROM sites WHERE id IN")) {
       return bound.map((id) => this.sites.get(String(id))).filter((row): row is AnyRow => Boolean(row));
     }
@@ -376,6 +390,52 @@ class FakeDb {
     }
   }
 }
+
+const userRow = (overrides: AnyRow = {}): AnyRow => ({
+  id: "user-1", username: "User", email: "hidden@example.test", username_set_at: "2026-01-01",
+  bio: "", access_request_note: "", idp_email: "verified@example.test", idp_email_verified: 1,
+  avatar_url: "", email_public: 0, default_frequency_preset_id: null,
+  simulation_defaults_preference_json: null, avatar_object_key: null, avatar_thumb_key: null,
+  avatar_hash: null, avatar_bytes: null, avatar_content_type: null, is_admin: 0, is_moderator: 0,
+  is_approved: 1, approved_at: "2026-01-01", approved_by_user_id: "admin-1",
+  created_at: "2026-01-01", updated_at: "2026-01-01", ...overrides,
+});
+
+describe("user identity privacy and diagnostic access", () => {
+  it("redacts private profile and IdP email from moderator directory reads", async () => {
+    const db = new FakeDb();
+    db.users.push(userRow());
+
+    const [profile] = await listUsers({ DB: db } as unknown as Parameters<typeof listUsers>[0], false);
+
+    expect(profile?.email).toBe("");
+    expect(profile).not.toHaveProperty("idpEmail");
+    expect(profile).not.toHaveProperty("idpEmailVerified");
+  });
+
+  it("includes private identity only for an administrator directory read", async () => {
+    const db = new FakeDb();
+    db.users.push(userRow());
+
+    const [profile] = await listUsers({ DB: db } as unknown as Parameters<typeof listUsers>[0], true);
+
+    expect(profile).toMatchObject({
+      email: "hidden@example.test",
+      idpEmail: "verified@example.test",
+      idpEmailVerified: true,
+    });
+  });
+
+  it("reads current diagnostic authority directly from DB role and revocation state", async () => {
+    const db = new FakeDb();
+    db.adminUserIds.add("admin-1");
+
+    await expect(fetchUserDiagnosticAccessState(
+      { DB: db } as unknown as Parameters<typeof fetchUserDiagnosticAccessState>[0],
+      "admin-1",
+    )).resolves.toEqual({ isAdmin: true, accountState: "approved" });
+  });
+});
 
 describe("upsertLibrarySnapshot shared simulations", () => {
   it("allows a shared simulation to reference a private site entry", async () => {

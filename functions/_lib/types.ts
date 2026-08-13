@@ -47,5 +47,6 @@ export type Env = {
 export type AuthContext = {
   userId: string;
   tokenPayload: Record<string, unknown>;
+  verifiedIdpEmail?: string;
   source?: "jwt" | "headers" | "dev";
 };

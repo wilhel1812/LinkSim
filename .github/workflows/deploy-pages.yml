@@ -43,21 +43,35 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      - name: Detect identity lifecycle schema change
+        id: identity_schema
+        run: |
+          if git diff --quiet "${{ github.event.pull_request.base.sha }}"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Authenticated preview skipped: this PR requires the shared staging D1 migration first." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Setup Node
+        if: steps.identity_schema.outputs.changed != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install dependencies
+        if: steps.identity_schema.outputs.changed != 'true'
         run: npm ci
 
       - name: Build preview
+        if: steps.identity_schema.outputs.changed != 'true'
         env:
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
         run: npm run build:bundle && npm run build:verify
 
       - name: Deploy authenticated staging preview
+        if: steps.identity_schema.outputs.changed != 'true'
         id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -67,6 +81,7 @@ jobs:
         run: node scripts/deploy-pages-safe.mjs --target staging-preview --branch "$PREVIEW_BRANCH"
 
       - name: Update pull request preview comment
+        if: steps.identity_schema.outputs.changed != 'true'
         uses: actions/github-script@v7
         env:
           PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
@@ -158,6 +173,17 @@ jobs:
           fi
           npx wrangler d1 execute linksim_staging --remote --command "PRAGMA table_info(simulations);"
 
+      - name: Verify identity lifecycle migration prerequisites and apply migration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! npx wrangler d1 execute linksim_staging --remote --command "SELECT version FROM identity_lifecycle_meta WHERE singleton = 1;"; then
+            node scripts/verify-identity-lifecycle-d1.mjs linksim_staging pre
+            npx wrangler d1 execute linksim_staging --remote --file db/migrations/2026-08-12_identity_lifecycle.sql --yes
+          fi
+          node scripts/verify-identity-lifecycle-d1.mjs linksim_staging post
+
       - name: Deploy staging with guardrails
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -213,6 +239,18 @@ jobs:
             npx wrangler d1 execute linksim --remote --file db/migrations/2026-08-04_simulation_soft_delete.sql --yes
           fi
           npx wrangler d1 execute linksim --remote --command "SELECT status FROM simulations LIMIT 0;"
+
+      - name: Verify identity lifecycle migration prerequisites and apply migration
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! npx wrangler d1 execute linksim --remote --command "SELECT version FROM identity_lifecycle_meta WHERE singleton = 1;"; then
+            node scripts/verify-identity-lifecycle-d1.mjs linksim pre
+            npx wrangler d1 execute linksim --remote --file db/migrations/2026-08-12_identity_lifecycle.sql --yes
+          fi
+          node scripts/verify-identity-lifecycle-d1.mjs linksim post
 
       - name: Validate release gate
         working-directory: ${{ runner.temp }}/linksim-release

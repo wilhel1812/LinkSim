@@ -111,6 +111,18 @@ describe("verifyAuth", () => {
     );
 
     expect(auth?.userId).toBe("stable-user-uuid");
+    expect(auth?.verifiedIdpEmail).toBe("user@example.com");
+  });
+
+  it("does not treat header-only email as verified IdP identity evidence", async () => {
+    const request = new Request("https://example.test/api/me", {
+      headers: { "Cf-Access-Authenticated-User-Email": "user@example.com" },
+    });
+
+    const auth = await verifyAuth(request, makeEnv());
+
+    expect(auth?.userId).toBe("user@example.com");
+    expect(auth?.verifiedIdpEmail).toBeUndefined();
   });
 
   it("rejects a JWT whose audience is not configured", async () => {
