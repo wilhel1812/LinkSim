@@ -14,7 +14,7 @@ preview_bucket_name = "linksim-avatars-staging"
 
 [vars]
 ACCESS_TEAM_DOMAIN = "skarvassbu.cloudflareaccess.com"
-ACCESS_AUD = "e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131,7fb6ac1a777cd646c582eeab94271601a53222c3e8a6e3ea6cc2d687cf52f283,2a5d033ef624d21f08eeb36b75799b81a6fa00536f2341a2ef53301dc36bf19c"
+ACCESS_AUD = "e7bccbeec1de7c76d64e9d4a30cacc726cc1d6f1eda24faaff4c563113882131,7fb6ac1a777cd646c582eeab94271601a53222c3e8a6e3ea6cc2d687cf52f283"
 ADMIN_USER_IDS = "f35e2a08-3713-5671-9725-ba82b21f25d4"
 REGISTRATION_MODE = "open"
 AVATAR_FALLBACK_ORIGIN = "https://linksim.pages.dev"

@@ -29,9 +29,11 @@ For upgrades from older deployments, review [`db/migrations`](../db/migrations) 
 In Cloudflare Zero Trust:
 
 1. Go to **Access** → **Applications**
-2. Add/update applications protecting every served hostname. For staging this
-   means `staging.linksim.link`, `linksim-staging.pages.dev`, and
-   `*.linksim-staging.pages.dev`.
+2. Add/update applications for each explicit boundary:
+   - custom app shell (`staging.linksim.link` / `linksim.link`): Bypass for everyone;
+   - custom authenticated API (`staging.linksim.link/api/*` / `linksim.link/api/*`): authenticated Allow;
+   - staging raw Pages root (`linksim-staging.pages.dev`): Bypass so Pages can redirect it to the custom domain;
+   - staging branch previews (`*.linksim-staging.pages.dev`): authenticated Allow.
 3. Add login methods:
    - `GitHub` (primary)
    - `One-time PIN` (fallback)
@@ -40,6 +42,9 @@ In Cloudflare Zero Trust:
 
 Notes:
 - Native email+password user database is not provided by Cloudflare Access.
+- The LinkSim `Sign in / Sign up` action starts Access authentication. A first
+  successful GitHub or email-OTP login creates the LinkSim account; the user
+  then enters an initially empty username.
 - Passkeys are handled by your identity provider (GitHub), not by Access itself.
 
 ## 4) Registration Mode
@@ -111,8 +116,10 @@ Deploy from this repo. Pages Functions under `functions/api/*` deploy automatica
 
 ## 8) Verify
 
-- Baseline mode: Access protects app URL (unauth users blocked/challenged)
-- Guest deep-link mode (optional): app shell route can load without challenge, but authenticated APIs remain protected
+- Anonymous custom app shell returns `200`.
+- Anonymous custom `/api/me` redirects to Access with the configured API audience.
+- The raw Pages root redirects to the custom domain.
+- Staging branch previews redirect to Access with the configured preview audience.
 - Sign in via GitHub (or OTP fallback)
 - Open User Settings and confirm user status
 - For admins: check `/api/schema-diagnostics` and `/api/auth-diagnostics`

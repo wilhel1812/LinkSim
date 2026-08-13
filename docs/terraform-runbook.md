@@ -129,6 +129,19 @@ CI workflow (`.github/workflows/terraform-validate.yml`) runs only:
 
 No CI plan/apply automation is included in this issue.
 
+Access policy wiring remains under the import-first lifecycle guard. The
+deployment workflow therefore uses `scripts/access-boundary.mjs` as a
+fail-closed reconciler for the one approved staging Pages-root policy binding:
+
+- pull-request preview: `plan staging` and check-only `production` verification;
+- shared staging after Pages deploy: idempotent `apply staging`, limited to one
+  known policy-binding replacement and followed by HTTP verification;
+- production release: check-only verification before any D1 mutation.
+
+The reconciler never creates or deletes Access applications or policies and
+does not support production mutation. A token used by it requires Access: Apps
+and Policies Read for planning and Write only for the staging apply.
+
 ## 8) Rollback and emergency manual override
 
 If a Terraform-driven change causes an incident:

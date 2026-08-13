@@ -79,13 +79,14 @@ Run the refresh scripts only when explicitly needed, then merge a staging PR and
 
 - Refresh is one-way: production -> staging
 - Do not point staging bindings at production resources
-- Keep staging Access policy restricted (admin/mod only)
+- Keep staging authenticated APIs and branch previews behind Access. The custom
+  app shell is intentionally public so guest behavior and sign-up can be tested.
 - Keep `ANONYMIZE_STAGING=1` unless you have a documented operational need otherwise
 
 ## URLs
 
 | Environment | URL | Access |
 |------------|-----|--------|
-| Staging (test) | https://staging.linksim.link | ✅ Works with Access |
+| Staging (test) | https://staging.linksim.link | Public shell; Access on `/api/*` |
 | Pull request preview | Signed PR comment URL | Access-protected after rollout gate |
 | Production | https://linksim.link | ✅ Works with Access |

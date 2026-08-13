@@ -16,7 +16,7 @@ pages_env_vars_plain = {
   CALC_API_PROXY_RATE_LIMIT_PER_MINUTE            = "120"
 }
 
-pages_access_audience_keys = ["primary"]
+pages_access_audience_keys = ["authenticated_api"]
 
 # Keep secrets out of tfvars. Inject at runtime, for example:
 # TF_VAR_pages_env_vars_secret='{"VITE_MAPTILER_KEY":"..."}'
@@ -46,6 +46,17 @@ access_applications = {
     policy_bindings = [
       {
         id         = "32915afb-f399-4c5c-90ea-e5bf0f377b7c"
+        precedence = 1
+      }
+    ]
+  }
+  authenticated_api = {
+    name   = "LinkSim Authenticated API"
+    domain = "linksim.link/api/*"
+    type   = "self_hosted"
+    policy_bindings = [
+      {
+        id         = "fd96072d-843b-4320-811a-281767b011ee"
         precedence = 1
       }
     ]

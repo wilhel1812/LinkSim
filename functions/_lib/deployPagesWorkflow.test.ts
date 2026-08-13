@@ -46,6 +46,21 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
   });
 
+  it("plans Access boundary changes in the guarded same-repository preview job", () => {
+    expect(previewJob).toContain("Plan staging and production Access boundaries");
+    expect(previewJob).toContain("node scripts/access-boundary.mjs plan staging");
+    expect(previewJob).toContain("node scripts/access-boundary.mjs check production");
+    expect(previewJob).toContain("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}");
+  });
+
+  it("reconciles staging Access only after the guarded Pages deployment", () => {
+    const deployStep = "- name: Deploy staging with guardrails";
+    const accessStep = "- name: Reconcile and verify staging Access boundary";
+    expect(stagingJob).toContain(accessStep);
+    expect(stagingJob).toContain("node scripts/access-boundary.mjs apply staging");
+    expect(stagingJob.indexOf(deployStep)).toBeLessThan(stagingJob.indexOf(accessStep));
+  });
+
   it("applies and verifies the Simulation lifecycle migration before production deployment", () => {
     const migrationStep = "- name: Apply production Simulation lifecycle migration";
     const deployStep = "- name: Deploy prod/main with guardrails";
@@ -81,6 +96,23 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
     expect(productionJob.slice(0, productionJob.indexOf(releaseGateStep))).not.toContain(
       "npx wrangler d1 execute linksim --remote",
+    );
+  });
+
+  it("checks the production Access boundary before any production D1 migration", () => {
+    const accessStep = "- name: Verify production Access boundary";
+    const simulationMigrationStep =
+      "- name: Apply production Simulation lifecycle migration";
+    const identityMigrationStep =
+      "- name: Verify identity lifecycle migration prerequisites and apply migration";
+
+    expect(productionJob).toContain(accessStep);
+    expect(productionJob).toContain("node scripts/access-boundary.mjs check production");
+    expect(productionJob.indexOf(accessStep)).toBeLessThan(
+      productionJob.indexOf(simulationMigrationStep),
+    );
+    expect(productionJob.indexOf(accessStep)).toBeLessThan(
+      productionJob.indexOf(identityMigrationStep),
     );
   });
 
