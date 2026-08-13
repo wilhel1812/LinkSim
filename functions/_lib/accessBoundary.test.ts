@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ACCESS_BOUNDARIES,
   buildApplicationPolicyUpdate,
   parseAccessRedirectAudience,
   planAccessBoundary,
   validateAcceptedAudiences,
+  validatePreviewUrl,
+  verifyPreviewBoundary,
 } from "../../scripts/access-boundary.mjs";
 
 const PUBLIC_POLICY_ID = "32915afb-f399-4c5c-90ea-e5bf0f377b7c";
@@ -166,5 +168,35 @@ describe("Cloudflare Access boundary reconciliation", () => {
     expect(() => parseAccessRedirectAudience("https://staging.linksim.link/")).toThrow(
       "Access login redirect",
     );
+  });
+
+  it("accepts only an immutable staging preview with the exact Access audience", async () => {
+    const previewUrl = "https://issue-1062.linksim-staging.pages.dev/Owner/Simulation";
+    expect(validatePreviewUrl(previewUrl).href).toBe(previewUrl);
+    expect(() => validatePreviewUrl("https://linksim-staging.pages.dev/")).toThrow(
+      "Unexpected staging preview hostname",
+    );
+    expect(() => validatePreviewUrl("https://preview.attacker.example/")).toThrow(
+      "Unexpected staging preview hostname",
+    );
+
+    const fetchPreview = vi.fn(async () =>
+      new Response(null, {
+        status: 302,
+        headers: {
+          location:
+            "https://team.cloudflareaccess.com/cdn-cgi/access/login/preview?kid=7fb6ac1a777cd646c582eeab94271601a53222c3e8a6e3ea6cc2d687cf52f283",
+        },
+      }),
+    );
+    await expect(
+      verifyPreviewBoundary(previewUrl, ACCESS_BOUNDARIES.staging, fetchPreview),
+    ).resolves.toBeUndefined();
+    expect(fetchPreview).toHaveBeenCalledWith(new URL(previewUrl), { redirect: "manual" });
+
+    const fetchPublicPreview = vi.fn(async () => new Response("public", { status: 200 }));
+    await expect(
+      verifyPreviewBoundary(previewUrl, ACCESS_BOUNDARIES.staging, fetchPublicPreview),
+    ).rejects.toThrow("must redirect to Access");
   });
 });

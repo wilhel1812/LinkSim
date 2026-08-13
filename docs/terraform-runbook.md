@@ -131,16 +131,18 @@ No CI plan/apply automation is included in this issue.
 
 Access policy wiring remains under the import-first lifecycle guard. The
 deployment workflow therefore uses `scripts/access-boundary.mjs` as a
-fail-closed reconciler for the one approved staging Pages-root policy binding:
+fail-closed observable boundary gate:
 
-- pull-request preview: `plan staging` and check-only `production` verification;
-- shared staging after Pages deploy: idempotent `apply staging`, limited to one
-  known policy-binding replacement and followed by HTTP verification;
+- pull-request preview: check-only `production` HTTP verification;
+- shared staging after Pages deploy: check-only HTTP verification;
 - production release: check-only verification before any D1 mutation.
 
-The reconciler never creates or deletes Access applications or policies and
-does not support production mutation. A token used by it requires Access: Apps
-and Policies Read for planning and Write only for the staging apply.
+The optional operator-only `plan staging` / `apply staging` commands never
+create or delete Access applications or policies and do not support production
+mutation. They require a token with Access: Apps and Policies Read for planning
+and Write for the staging apply. Deployment checks use anonymous HTTP behavior
+and the exact configured API audience, so the Pages deployment token does not
+need broader Access permissions.
 
 ## 8) Rollback and emergency manual override
 

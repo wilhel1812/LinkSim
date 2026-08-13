@@ -46,18 +46,28 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
   });
 
-  it("plans Access boundary changes in the guarded same-repository preview job", () => {
-    expect(previewJob).toContain("Plan staging and production Access boundaries");
-    expect(previewJob).toContain("node scripts/access-boundary.mjs plan staging");
+  it("checks the production Access boundary without requiring an Access API token", () => {
+    expect(previewJob).toContain("Verify production Access boundary");
     expect(previewJob).toContain("node scripts/access-boundary.mjs check production");
-    expect(previewJob).toContain("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}");
+    expect(previewJob).not.toContain("node scripts/access-boundary.mjs plan staging");
   });
 
-  it("reconciles staging Access only after the guarded Pages deployment", () => {
+  it("verifies the immutable preview Access audience before publishing its URL", () => {
+    const deployStep = "- name: Deploy authenticated staging preview";
+    const accessStep = "- name: Verify immutable preview Access boundary";
+    const commentStep = "- name: Update pull request preview comment";
+    expect(previewJob).toContain("ACCESS_PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}");
+    expect(previewJob).toContain("node scripts/access-boundary.mjs check-preview staging");
+    expect(previewJob.indexOf(deployStep)).toBeLessThan(previewJob.indexOf(accessStep));
+    expect(previewJob.indexOf(accessStep)).toBeLessThan(previewJob.indexOf(commentStep));
+  });
+
+  it("verifies staging Access only after the guarded Pages deployment", () => {
     const deployStep = "- name: Deploy staging with guardrails";
-    const accessStep = "- name: Reconcile and verify staging Access boundary";
+    const accessStep = "- name: Verify staging Access boundary";
     expect(stagingJob).toContain(accessStep);
-    expect(stagingJob).toContain("node scripts/access-boundary.mjs apply staging");
+    expect(stagingJob).toContain("node scripts/access-boundary.mjs check staging");
+    expect(stagingJob).not.toContain("node scripts/access-boundary.mjs apply staging");
     expect(stagingJob.indexOf(deployStep)).toBeLessThan(stagingJob.indexOf(accessStep));
   });
 

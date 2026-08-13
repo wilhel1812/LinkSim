@@ -114,6 +114,30 @@ export const parseAccessRedirectAudience = (location) => {
   return audience;
 };
 
+export const validatePreviewUrl = (value) => {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Expected a valid staging preview URL.");
+  }
+  assert(url.protocol === "https:", "Staging preview URL must use HTTPS.");
+  assert(
+    /^[a-z0-9-]+\.linksim-staging\.pages\.dev$/i.test(url.hostname),
+    `Unexpected staging preview hostname: ${url.hostname}.`,
+  );
+  return url;
+};
+
+export const verifyPreviewBoundary = async (value, boundary, fetchImpl = fetch) => {
+  const url = validatePreviewUrl(value);
+  const response = await fetchImpl(url, { redirect: "manual" });
+  assert(response.status >= 300 && response.status < 400, `${url.href} must redirect to Access.`);
+  const audience = parseAccessRedirectAudience(response.headers.get("location") ?? "");
+  const expectedAudience = boundary.applications.find((application) => application.key === "preview")?.audience;
+  assert(expectedAudience && audience === expectedAudience, `Unexpected preview Access audience for ${url.href}.`);
+};
+
 export const buildApplicationPolicyUpdate = (application, policyId) => {
   assert(application?.type === "self_hosted", "Only self-hosted Access applications may be updated.");
   const {
@@ -246,28 +270,38 @@ const verifyHttpBoundary = async (boundary, { expectPagesRedirect = false } = {}
 
 const run = async () => {
   const [mode, environment] = process.argv.slice(2);
-  assert(["plan", "apply", "check"].includes(mode), "Usage: access-boundary.mjs <plan|apply|check> <staging|production>");
+  assert(
+    ["plan", "apply", "check", "check-preview"].includes(mode),
+    "Usage: access-boundary.mjs <plan|apply|check|check-preview> <staging|production>",
+  );
   const boundary = ACCESS_BOUNDARIES[environment];
   assert(boundary, `Unknown Access environment: ${environment ?? ""}.`);
   assert(mode !== "apply" || environment === "staging", "Production Access mutation is not supported.");
+  assert(mode !== "check-preview" || environment === "staging", "Preview verification is staging-only.");
 
-  const token = (process.env.CLOUDFLARE_API_TOKEN ?? "").trim();
-  assert(token, "CLOUDFLARE_API_TOKEN is required.");
   const configText = await readFile(path.resolve(process.cwd(), boundary.configPath), "utf8");
   validateAcceptedAudiences(parseTomlString(configText, "ACCESS_AUD"), boundary.acceptedAudiences);
+
+  if (mode === "check-preview") {
+    await verifyPreviewBoundary(process.env.ACCESS_PREVIEW_URL ?? "", boundary);
+    console.log("[access-boundary] staging preview boundary verified.");
+    return;
+  }
+
+  if (mode === "check") {
+    await verifyHttpBoundary(boundary, { expectPagesRedirect: environment === "staging" });
+    console.log(`[access-boundary] ${environment} boundary verified.`);
+    return;
+  }
+
+  const token = (process.env.CLOUDFLARE_API_TOKEN ?? "").trim();
+  assert(token, "CLOUDFLARE_API_TOKEN is required for plan and apply modes.");
 
   let applications = await fetchApplications(token, boundary);
   let plan = planAccessBoundary(applications, boundary);
   console.log(`[access-boundary] ${environment} plan: ${plan.actions.length} policy update(s).`);
   for (const action of plan.actions) {
     console.log(`[access-boundary] ${action.domain}: ${action.fromPolicyIds.join(",")} -> ${action.toPolicyId}`);
-  }
-
-  if (mode === "check") {
-    assert(plan.actions.length === 0, `${environment} Access boundary requires reconciliation.`);
-    await verifyHttpBoundary(boundary);
-    console.log(`[access-boundary] ${environment} boundary verified.`);
-    return;
   }
 
   if (mode === "plan") return;

@@ -64,13 +64,9 @@ jobs:
         if: steps.identity_schema.outputs.changed != 'true'
         run: npm ci
 
-      - name: Plan staging and production Access boundaries
+      - name: Verify production Access boundary
         if: steps.identity_schema.outputs.changed != 'true'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          node scripts/access-boundary.mjs plan staging
-          node scripts/access-boundary.mjs check production
+        run: node scripts/access-boundary.mjs check production
 
       - name: Build preview
         if: steps.identity_schema.outputs.changed != 'true'
@@ -87,6 +83,12 @@ jobs:
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
           PREVIEW_BRANCH: ${{ github.head_ref }}
         run: node scripts/deploy-pages-safe.mjs --target staging-preview --branch "$PREVIEW_BRANCH"
+
+      - name: Verify immutable preview Access boundary
+        if: steps.identity_schema.outputs.changed != 'true'
+        env:
+          ACCESS_PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+        run: node scripts/access-boundary.mjs check-preview staging
 
       - name: Update pull request preview comment
         if: steps.identity_schema.outputs.changed != 'true'
@@ -199,10 +201,8 @@ jobs:
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY }}
         run: npm run deploy:staging
 
-      - name: Reconcile and verify staging Access boundary
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: node scripts/access-boundary.mjs apply staging
+      - name: Verify staging Access boundary
+        run: node scripts/access-boundary.mjs check staging
 
   deploy-prod-main:
     if: |
