@@ -46,6 +46,7 @@
   - branch policy (`staging` required for `deploy:staging`, `main` required for `prod-main`)
   - required deploy environment variables (currently `VITE_MAPTILER_KEY`)
   - remote D1 schema gate for required columns (deploy aborts if migrations are missing)
+  - Access boundary gate (public custom shell, authenticated API, and accepted JWT audience)
 - All deploys must pass scripted post-deploy verification against Cloudflare deployment list.
 
 ## Pull request policy

@@ -46,6 +46,31 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
   });
 
+  it("checks the production Access boundary without requiring an Access API token", () => {
+    expect(previewJob).toContain("Verify production Access boundary");
+    expect(previewJob).toContain("node scripts/access-boundary.mjs check production");
+    expect(previewJob).not.toContain("node scripts/access-boundary.mjs plan staging");
+  });
+
+  it("verifies the immutable preview Access audience before publishing its URL", () => {
+    const deployStep = "- name: Deploy authenticated staging preview";
+    const accessStep = "- name: Verify immutable preview Access boundary";
+    const commentStep = "- name: Update pull request preview comment";
+    expect(previewJob).toContain("ACCESS_PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}");
+    expect(previewJob).toContain("node scripts/access-boundary.mjs check-preview staging");
+    expect(previewJob.indexOf(deployStep)).toBeLessThan(previewJob.indexOf(accessStep));
+    expect(previewJob.indexOf(accessStep)).toBeLessThan(previewJob.indexOf(commentStep));
+  });
+
+  it("verifies staging Access only after the guarded Pages deployment", () => {
+    const deployStep = "- name: Deploy staging with guardrails";
+    const accessStep = "- name: Verify staging Access boundary";
+    expect(stagingJob).toContain(accessStep);
+    expect(stagingJob).toContain("node scripts/access-boundary.mjs check staging");
+    expect(stagingJob).not.toContain("node scripts/access-boundary.mjs apply staging");
+    expect(stagingJob.indexOf(deployStep)).toBeLessThan(stagingJob.indexOf(accessStep));
+  });
+
   it("applies and verifies the Simulation lifecycle migration before production deployment", () => {
     const migrationStep = "- name: Apply production Simulation lifecycle migration";
     const deployStep = "- name: Deploy prod/main with guardrails";
@@ -81,6 +106,23 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
     expect(productionJob.slice(0, productionJob.indexOf(releaseGateStep))).not.toContain(
       "npx wrangler d1 execute linksim --remote",
+    );
+  });
+
+  it("checks the production Access boundary before any production D1 migration", () => {
+    const accessStep = "- name: Verify production Access boundary";
+    const simulationMigrationStep =
+      "- name: Apply production Simulation lifecycle migration";
+    const identityMigrationStep =
+      "- name: Verify identity lifecycle migration prerequisites and apply migration";
+
+    expect(productionJob).toContain(accessStep);
+    expect(productionJob).toContain("node scripts/access-boundary.mjs check production");
+    expect(productionJob.indexOf(accessStep)).toBeLessThan(
+      productionJob.indexOf(simulationMigrationStep),
+    );
+    expect(productionJob.indexOf(accessStep)).toBeLessThan(
+      productionJob.indexOf(identityMigrationStep),
     );
   });
 

@@ -27,14 +27,17 @@ Terraform manages these resources for both `staging` and `prod` environments:
   - `cloudflare_zero_trust_access_application`
   - `cloudflare_zero_trust_access_policy`
 
-Staging Access applications use stable map keys. `primary` protects
-`staging.linksim.link`; `pages_root` protects `linksim-staging.pages.dev`; and
-`pages_previews` protects `*.linksim-staging.pages.dev`. Discover and import any
-existing live application IDs before apply; never replace an existing Access
-application just because it is absent from local state.
+Access applications use stable map keys. `primary` keeps the custom app shell
+public through the reusable Bypass policy; `authenticated_api` protects
+`/api/*`; staging `pages_root` uses Bypass so the application can redirect the
+raw Pages hostname; and `pages_previews` protects wildcard branch previews.
+Discover and import every existing live application ID before apply; never
+replace an existing Access application just because it is absent from local
+state.
 
-`pages_access_audience_keys` derives the Pages `ACCESS_AUD` value from those
-managed applications. Do not copy AUD strings between staging and production.
+`pages_access_audience_keys` derives Pages `ACCESS_AUD` only from applications
+that issue authenticated JWTs. Bypass applications must never be accepted as
+JWT audiences. Do not copy AUD strings between staging and production.
 
 ## Explicitly out of scope
 
