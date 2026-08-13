@@ -26,8 +26,9 @@ describe("required check workflows", () => {
   });
 
   it("publishes target-specific CI checks after the generic verification job", () => {
-    expect(qualityWorkflow).toContain("name: verify-staging");
-    expect(qualityWorkflow).toContain("name: verify-main");
+    expect(qualityWorkflow).toContain("name: CI Quality Gates / verify");
+    expect(qualityWorkflow).toContain("name: CI Quality Gates / verify-staging");
+    expect(qualityWorkflow).toContain("name: CI Quality Gates / verify-main");
     expect(qualityWorkflow.match(/needs: verify/g)).toHaveLength(2);
     expect(qualityWorkflow).toContain("if: always() && github.base_ref == 'staging'");
     expect(qualityWorkflow).toContain("if: always() && github.base_ref == 'main'");
@@ -38,8 +39,9 @@ describe("required check workflows", () => {
   });
 
   it("publishes target-specific branch-policy checks after enforcement", () => {
-    expect(branchWorkflow).toContain("name: enforce-staging");
-    expect(branchWorkflow).toContain("name: enforce-main");
+    expect(branchWorkflow).toContain("name: PR Branch Policy / enforce");
+    expect(branchWorkflow).toContain("name: PR Branch Policy / enforce-staging");
+    expect(branchWorkflow).toContain("name: PR Branch Policy / enforce-main");
     expect(branchWorkflow.match(/needs: enforce/g)).toHaveLength(2);
     expect(branchWorkflow).toContain("if: always() && github.base_ref == 'staging'");
     expect(branchWorkflow).toContain("if: always() && github.base_ref == 'main'");

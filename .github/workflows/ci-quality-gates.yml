@@ -13,6 +13,7 @@ on:
 
 jobs:
   verify:
+    name: CI Quality Gates / verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,7 +47,7 @@ jobs:
           echo "::notice ::CI Quality Gates passed"
 
   verify-staging:
-    name: verify-staging
+    name: CI Quality Gates / verify-staging
     if: always() && github.base_ref == 'staging'
     needs: verify
     runs-on: ubuntu-latest
@@ -61,7 +62,7 @@ jobs:
           test "$VERIFY_RESULT" = "success"
 
   verify-main:
-    name: verify-main
+    name: CI Quality Gates / verify-main
     if: always() && github.base_ref == 'main'
     needs: verify
     runs-on: ubuntu-latest

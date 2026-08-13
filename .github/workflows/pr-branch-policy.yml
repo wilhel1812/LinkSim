@@ -9,6 +9,7 @@ on:
 
 jobs:
   enforce:
+    name: PR Branch Policy / enforce
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,7 +36,7 @@ jobs:
           fi
 
   enforce-staging:
-    name: enforce-staging
+    name: PR Branch Policy / enforce-staging
     if: always() && github.base_ref == 'staging'
     needs: enforce
     runs-on: ubuntu-latest
@@ -50,7 +51,7 @@ jobs:
           test "$ENFORCE_RESULT" = "success"
 
   enforce-main:
-    name: enforce-main
+    name: PR Branch Policy / enforce-main
     if: always() && github.base_ref == 'main'
     needs: enforce
     runs-on: ubuntu-latest
