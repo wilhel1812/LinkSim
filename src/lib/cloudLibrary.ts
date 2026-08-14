@@ -6,6 +6,7 @@ export type CloudLibraryPayload = {
   simulationPresets: unknown[];
   deletedSiteIds?: string[];
   deletedSimulationIds?: string[];
+  syncCutoff?: string;
 };
 
 type CloudPushResult = {
@@ -68,22 +69,101 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return (await response.json()) as T;
 };
 
-export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean }> => {
-  const url = opts?.since ? `/api/library?since=${encodeURIComponent(opts.since)}` : "/api/library";
-  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; deletedSiteIds?: unknown[]; deletedSimulationIds?: unknown[]; isDelta?: boolean }>(url, {
-    method: "GET",
-  });
+type CloudLibraryPage = CloudLibraryPayload & {
+  isDelta?: boolean;
+  nextCursor?: string;
+};
+
+const validIds = (value: unknown): string[] => Array.isArray(value)
+  ? value.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+  : [];
+
+const recordId = (value: unknown): string | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const id = (value as { id?: unknown }).id;
+  return typeof id === "string" && id.trim() ? id : undefined;
+};
+
+const drainLibraryPages = async (initialUrl: string): Promise<CloudLibraryPage> => {
+  const sites = new Map<string, unknown>();
+  const simulations = new Map<string, unknown>();
+  const anonymousSites: unknown[] = [];
+  const anonymousSimulations: unknown[] = [];
+  const deletedSites = new Set<string>();
+  const deletedSimulations = new Set<string>();
+  const seenCursors = new Set<string>();
+  let url: string | undefined = initialUrl;
+  let syncCutoff: string | undefined;
+  let isDelta: boolean | undefined;
+
+  while (url) {
+    const page: CloudLibraryPage = await apiCall(url, { method: "GET" });
+    if (isDelta === undefined) isDelta = page.isDelta;
+    if (typeof page.syncCutoff === "string" && page.syncCutoff) {
+      if (syncCutoff && syncCutoff !== page.syncCutoff) throw new Error("Library pagination cutoff changed between pages.");
+      syncCutoff = page.syncCutoff;
+    }
+    for (const entry of Array.isArray(page.siteLibrary) ? page.siteLibrary : []) {
+      const id = recordId(entry);
+      if (id) { sites.set(id, entry); deletedSites.delete(id); } else anonymousSites.push(entry);
+    }
+    for (const entry of Array.isArray(page.simulationPresets) ? page.simulationPresets : []) {
+      const id = recordId(entry);
+      if (id) { simulations.set(id, entry); deletedSimulations.delete(id); } else anonymousSimulations.push(entry);
+    }
+    for (const id of validIds(page.deletedSiteIds)) { deletedSites.add(id); sites.delete(id); }
+    for (const id of validIds(page.deletedSimulationIds)) { deletedSimulations.add(id); simulations.delete(id); }
+    const cursor = typeof page.nextCursor === "string" && page.nextCursor ? page.nextCursor : undefined;
+    if (cursor) {
+      if (seenCursors.has(cursor)) throw new Error("Library pagination cursor repeated.");
+      seenCursors.add(cursor);
+      url = `/api/library?cursor=${encodeURIComponent(cursor)}`;
+    } else {
+      url = undefined;
+    }
+  }
+
   return {
-    siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
-    simulationPresets: Array.isArray(data.simulationPresets) ? data.simulationPresets : [],
-    deletedSiteIds: Array.isArray(data.deletedSiteIds)
-      ? data.deletedSiteIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
-      : [],
-    deletedSimulationIds: Array.isArray(data.deletedSimulationIds)
-      ? data.deletedSimulationIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
-      : [],
-    isDelta: data.isDelta,
+    siteLibrary: [...anonymousSites, ...sites.values()],
+    simulationPresets: [...anonymousSimulations, ...simulations.values()],
+    deletedSiteIds: [...deletedSites],
+    deletedSimulationIds: [...deletedSimulations],
+    ...(syncCutoff ? { syncCutoff } : {}),
+    ...(isDelta !== undefined ? { isDelta } : {}),
   };
+};
+
+const mergeLibraryPayloads = (base: CloudLibraryPage, recovery: CloudLibraryPage): CloudLibraryPage => {
+  const sites = new Map<string, unknown>();
+  const simulations = new Map<string, unknown>();
+  const deletedSites = new Set(validIds(base.deletedSiteIds));
+  const deletedSimulations = new Set(validIds(base.deletedSimulationIds));
+  for (const item of base.siteLibrary) { const id = recordId(item); if (id) sites.set(id, item); }
+  for (const item of base.simulationPresets) { const id = recordId(item); if (id) simulations.set(id, item); }
+  for (const item of recovery.siteLibrary) {
+    const id = recordId(item); if (id) { sites.set(id, item); deletedSites.delete(id); }
+  }
+  for (const item of recovery.simulationPresets) {
+    const id = recordId(item); if (id) { simulations.set(id, item); deletedSimulations.delete(id); }
+  }
+  for (const id of validIds(recovery.deletedSiteIds)) { deletedSites.add(id); sites.delete(id); }
+  for (const id of validIds(recovery.deletedSimulationIds)) { deletedSimulations.add(id); simulations.delete(id); }
+  for (const id of deletedSites) sites.delete(id);
+  for (const id of deletedSimulations) simulations.delete(id);
+  return {
+    siteLibrary: [...sites.values()], simulationPresets: [...simulations.values()],
+    deletedSiteIds: [...deletedSites], deletedSimulationIds: [...deletedSimulations],
+    syncCutoff: recovery.syncCutoff, isDelta: base.isDelta,
+  };
+};
+
+export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean }> => {
+  const initialUrl = opts?.since ? `/api/library?since=${encodeURIComponent(opts.since)}` : "/api/library";
+  const base = await drainLibraryPages(initialUrl);
+  // Older/test servers without a cutoff remain compatible and cannot offer recovery.
+  if (!base.syncCutoff) return base as CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean };
+  const recovery = await drainLibraryPages(`/api/library?since=${encodeURIComponent(base.syncCutoff)}`);
+  return mergeLibraryPayloads(base, recovery) as CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean };
 };
 
 export const deleteCloudSimulation = async (simulationId: string): Promise<void> => {

@@ -11,6 +11,7 @@ import {
   LIBRARY_MAX_PUBLIC_SITES_PER_USER,
   LIBRARY_MAX_SIMULATIONS_PER_USER,
   LIBRARY_MAX_SITES_PER_USER,
+  LIBRARY_READ_PAGE_MAX_RECORDS,
   LIBRARY_SIMULATION_MAX_BYTES,
   LIBRARY_SITE_MAX_BYTES,
   LibraryValidationError,
@@ -2453,6 +2454,7 @@ const userDisplayFallback = (name: string | null | undefined, userId: string | n
 };
 
 type LibraryRow = {
+  id: string;
   payload_json: string;
   owner_user_id: string;
   owner_name: string | null;
@@ -2476,18 +2478,33 @@ type LibraryRow = {
   status?: "active" | "deleted";
 };
 
+export type LibraryReadPhase = "sites" | "deleted_sites" | "simulations" | "deleted_simulations";
+
+export type LibraryPageCursor = { phase: LibraryReadPhase; afterId: string };
+
 export const fetchLibraryForUser = async (
   env: Env,
   userId: string,
-  opts?: { since?: string },
-): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[]; deletedSiteIds: string[]; deletedSimulationIds: string[] }> => {
+  opts?: { since?: string; cutoff?: string; phase?: LibraryReadPhase; afterId?: string; limit?: number },
+): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[]; deletedSiteIds: string[]; deletedSimulationIds: string[]; nextCursor?: LibraryPageCursor }> => {
   await ensureSchema(env);
   const me = await fetchUserProfile(env, userId);
   const canReadAllResources = Boolean(me?.isAdmin);
   const actorIsModerator = Boolean(me?.isModerator);
-  const siteRows = await env.DB
+  const paged = Boolean(opts?.phase);
+  const limit = Math.max(
+    1,
+    Math.min(LIBRARY_READ_PAGE_MAX_RECORDS, opts?.limit ?? LIBRARY_READ_PAGE_MAX_RECORDS),
+  );
+  const pageBind = () => [
+    ...(opts?.since ? [opts.since] : []),
+    ...(opts?.cutoff ? [opts.cutoff] : []),
+    ...(paged ? [opts?.afterId ?? "", limit + 1] : []),
+  ];
+  const pageSql = (timestampColumn: string, idColumn: string) => `${opts?.since ? `\n          AND ${timestampColumn} >= ?` : ""}${opts?.cutoff ? `\n          AND ${timestampColumn} <= ?` : ""}${paged ? `\n          AND ${idColumn} > ?\n       ORDER BY ${idColumn}\n       LIMIT ?` : ""}`;
+  const siteRows = paged && opts?.phase !== "sites" ? { results: [] as LibraryRow[] } : await env.DB
     .prepare(
-      `SELECT s.payload_json, s.owner_user_id, s.visibility, r.role,
+      `SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
               s.created_by_user_id,
@@ -2510,9 +2527,9 @@ export const fetchLibraryForUser = async (
        WHERE (? = 1
           OR s.owner_user_id = ?
           OR s.visibility IN ('public_read', 'public_write')
-          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${opts?.since ? "\n          AND s.updated_at > ?" : ""}`,
+          OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${pageSql("s.updated_at", "s.id")}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId, ...(opts?.since ? [opts.since] : []))
+    .bind(userId, canReadAllResources ? 1 : 0, userId, ...pageBind())
     .all<LibraryRow>();
 
   const deletedSiteAudienceClause = canReadAllResources
@@ -2525,7 +2542,7 @@ export const fetchLibraryForUser = async (
             WHERE json_extract(grant_entry.value, '$.userId') = ?
           )
         )`;
-  const deletedSiteRows = await env.DB
+  const deletedSiteRows = paged && opts?.phase !== "deleted_sites" ? { results: [] as Array<{ id: string }> } : await env.DB
         .prepare(
           `SELECT tombstone.resource_id AS id
            FROM resource_changes tombstone
@@ -2537,12 +2554,12 @@ export const fetchLibraryForUser = async (
                WHERE latest.resource_kind = 'site' AND latest.resource_id = tombstone.resource_id
              )
              AND NOT EXISTS (SELECT 1 FROM sites live WHERE live.id = tombstone.resource_id)
-             ${deletedSiteAudienceClause}${opts?.since ? "\n             AND tombstone.changed_at > ?" : ""}`,
+             ${deletedSiteAudienceClause}${pageSql("tombstone.changed_at", "tombstone.resource_id")}`,
         )
-        .bind(...(canReadAllResources ? [] : [userId, userId]), ...(opts?.since ? [opts.since] : []))
+        .bind(...(canReadAllResources ? [] : [userId, userId]), ...pageBind())
         .all<{ id: string }>();
 
-  const deletedSimulationRows = canReadAllResources
+  const deletedSimulationRows = (canReadAllResources || (paged && opts?.phase !== "deleted_simulations"))
     ? { results: [] as Array<{ id: string }> }
     : await env.DB
         .prepare(
@@ -2552,14 +2569,14 @@ export const fetchLibraryForUser = async (
            WHERE s.status = 'deleted'
              AND (s.owner_user_id = ?
                OR s.visibility IN ('public_read', 'public_write')
-               OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${opts?.since ? "\n             AND s.updated_at > ?" : ""}`,
+               OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${pageSql("s.updated_at", "s.id")}`,
         )
-        .bind(userId, userId, ...(opts?.since ? [opts.since] : []))
+        .bind(userId, userId, ...pageBind())
         .all<{ id: string }>();
 
-  const simulationRows = await env.DB
+  const simulationRows = paged && opts?.phase !== "simulations" ? { results: [] as LibraryRow[] } : await env.DB
     .prepare(
-      `SELECT s.payload_json, s.owner_user_id, s.visibility, s.status, r.role,
+      `SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, s.status, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
               s.created_by_user_id,
@@ -2583,9 +2600,9 @@ export const fetchLibraryForUser = async (
           OR s.owner_user_id = ?
           OR s.visibility IN ('public_read', 'public_write')
           OR (r.user_id IS NOT NULL AND s.visibility != 'private'))
-         AND (? = 1 OR s.status = 'active'))${opts?.since ? "\n          AND s.updated_at > ?" : ""}`,
+         AND (? = 1 OR s.status = 'active'))${pageSql("s.updated_at", "s.id")}`,
     )
-    .bind(userId, canReadAllResources ? 1 : 0, userId, canReadAllResources ? 1 : 0, ...(opts?.since ? [opts.since] : []))
+    .bind(userId, canReadAllResources ? 1 : 0, userId, canReadAllResources ? 1 : 0, ...pageBind())
     .all<LibraryRow>();
 
   const mapRows = (rows: LibraryRow[]) =>
@@ -2637,11 +2654,31 @@ export const fetchLibraryForUser = async (
       })
       .filter((item): item is CloudResourceRecord => item !== null);
 
+  const phases: LibraryReadPhase[] = ["sites", "deleted_sites", "simulations", "deleted_simulations"];
+  const rawPage = opts?.phase === "sites"
+    ? siteRows.results
+    : opts?.phase === "deleted_sites"
+      ? deletedSiteRows.results
+      : opts?.phase === "simulations"
+        ? simulationRows.results
+        : opts?.phase === "deleted_simulations"
+          ? deletedSimulationRows.results
+          : [];
+  let nextCursor: LibraryPageCursor | undefined;
+  if (paged && opts?.phase) {
+    if (rawPage.length > limit) {
+      nextCursor = { phase: opts.phase, afterId: rawPage[limit - 1]?.id ?? opts.afterId ?? "" };
+    } else {
+      const nextPhase = phases[phases.indexOf(opts.phase) + 1];
+      if (nextPhase) nextCursor = { phase: nextPhase, afterId: "" };
+    }
+  }
   return {
-    siteLibrary: mapRows(siteRows.results),
-    simulationPresets: mapRows(simulationRows.results),
-    deletedSiteIds: deletedSiteRows.results.map((row) => row.id),
-    deletedSimulationIds: deletedSimulationRows.results.map((row) => row.id),
+    siteLibrary: mapRows(siteRows.results.slice(0, paged ? limit : undefined)),
+    simulationPresets: mapRows(simulationRows.results.slice(0, paged ? limit : undefined)),
+    deletedSiteIds: deletedSiteRows.results.slice(0, paged ? limit : undefined).map((row) => row.id),
+    deletedSimulationIds: deletedSimulationRows.results.slice(0, paged ? limit : undefined).map((row) => row.id),
+    ...(nextCursor ? { nextCursor } : {}),
   };
 };
 

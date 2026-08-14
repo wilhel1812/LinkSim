@@ -80,15 +80,92 @@ describe("api/library", () => {
       mkCtx(new Request(`https://example.test/api/library?since=${encodeURIComponent(since)}`)),
     );
     expect(res.status).toBe(200);
-    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", { since });
+    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", expect.objectContaining({ since, phase: "sites", afterId: "", limit: 20 }));
     const body = await res.json() as Record<string, unknown>;
     expect(body.isDelta).toBe(true);
   });
 
   it("passes undefined since when no query param on GET", async () => {
     await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
-    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", { since: undefined });
+    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", expect.objectContaining({ since: undefined, phase: "sites", afterId: "", limit: 20 }));
     // isDelta should be falsy
+  });
+
+  it("rejects an oversized cursor before querying the Library", async () => {
+    const res = await onRequestGet(
+      mkCtx(new Request(`https://example.test/api/library?cursor=${"x".repeat(1025)}`)),
+    );
+    expect(res.status).toBe(400);
+    expect(fetchLibraryForUserMock).not.toHaveBeenCalled();
+  });
+
+  it("returns a bounded cursor page with a server cutoff", async () => {
+    fetchLibraryForUserMock.mockResolvedValueOnce({
+      siteLibrary: [{ id: "s1" }],
+      simulationPresets: [],
+      deletedSiteIds: [],
+      deletedSimulationIds: [],
+      nextCursor: { phase: "sites", afterId: "s1" },
+    });
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.syncCutoff).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
+    expect(typeof body.nextCursor).toBe("string");
+    expect(String(body.nextCursor).length).toBeLessThanOrEqual(1024);
+    expect(new TextEncoder().encode(JSON.stringify(body)).byteLength).toBeLessThanOrEqual(LIBRARY_REQUEST_MAX_BYTES);
+  });
+
+  it("rejects malformed and differently authenticated cursors", async () => {
+    const malformed = await onRequestGet(mkCtx(new Request("https://example.test/api/library?cursor=not-json")));
+    expect(malformed.status).toBe(400);
+    fetchLibraryForUserMock.mockResolvedValueOnce({
+      siteLibrary: [{ id: "s1" }], simulationPresets: [], deletedSiteIds: [], deletedSimulationIds: [],
+      nextCursor: { phase: "sites", afterId: "s1" },
+    });
+    const first = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    const cursor = String((await first.json() as { nextCursor?: unknown }).nextCursor);
+    verifyAuthMock.mockResolvedValueOnce({ userId: "u2", tokenPayload: {}, source: "headers" });
+    const mismatched = await onRequestGet(mkCtx(new Request(`https://example.test/api/library?cursor=${encodeURIComponent(cursor)}`)));
+    expect(mismatched.status).toBe(400);
+  });
+
+  it("rejects non-canonical timestamps before querying the Library", async () => {
+    const res = await onRequestGet(
+      mkCtx(new Request("https://example.test/api/library?since=August%2014%2C%202026")),
+    );
+    expect(res.status).toBe(400);
+    expect(fetchLibraryForUserMock).not.toHaveBeenCalled();
+  });
+
+  it("packs the exact serialized envelope under 2 MiB and resumes after the last emitted ID", async () => {
+    fetchLibraryForUserMock.mockResolvedValueOnce({
+      siteLibrary: Array.from({ length: 20 }, (_, index) => ({ id: `s${String(index).padStart(2, "0")}`, padding: "x".repeat(150_000) })),
+      simulationPresets: [], deletedSiteIds: [], deletedSimulationIds: [],
+      nextCursor: { phase: "sites", afterId: "s19" },
+    });
+    const first = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    const firstText = await first.text();
+    expect(new TextEncoder().encode(firstText).byteLength).toBeLessThanOrEqual(LIBRARY_REQUEST_MAX_BYTES);
+    const body = JSON.parse(firstText) as { siteLibrary: Array<{ id: string }>; nextCursor: string };
+    expect(body.siteLibrary.length).toBeGreaterThan(0);
+    expect(body.siteLibrary.length).toBeLessThan(20);
+
+    fetchLibraryForUserMock.mockResolvedValueOnce({ siteLibrary: [], simulationPresets: [], deletedSiteIds: [], deletedSimulationIds: [] });
+    await onRequestGet(mkCtx(new Request(`https://example.test/api/library?cursor=${encodeURIComponent(body.nextCursor)}`)));
+    expect(fetchLibraryForUserMock).toHaveBeenLastCalledWith(env, "u1", expect.objectContaining({
+      phase: "sites", afterId: body.siteLibrary.at(-1)?.id,
+    }));
+  });
+
+  it("fails instead of returning a non-advancing cursor for one oversized legacy record", async () => {
+    fetchLibraryForUserMock.mockResolvedValueOnce({
+      siteLibrary: [{ id: "oversized", padding: "x".repeat(LIBRARY_REQUEST_MAX_BYTES) }],
+      simulationPresets: [], deletedSiteIds: [], deletedSimulationIds: [],
+    });
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toMatchObject({ code: "record_too_large" });
   });
 
   it("rejects non-array Library collections on PUT", async () => {
