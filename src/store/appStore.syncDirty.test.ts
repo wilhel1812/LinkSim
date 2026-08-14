@@ -178,4 +178,52 @@ describe("appStore delta sync", () => {
     expect(payload.siteLibrary[0]?.id).toBe(addedSiteId);
     expect(payload.siteLibrary[0]?.name).toBe("Gamma");
   });
+
+  it("applies a Site tombstone before a manual retry builds its push payload", async () => {
+    const pushedBodies: Array<{ siteLibrary: Array<{ id: string }> }> = [];
+    let getCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/library") && method === "GET") {
+        getCount += 1;
+        if (getCount === 2) {
+          return makeResponse({
+            ...cloneJson(baselinePayload),
+            deletedSiteIds: ["site-deleted"],
+            deletedSimulationIds: [],
+          });
+        }
+        return makeResponse({ ...cloneJson(baselinePayload), deletedSiteIds: [], deletedSimulationIds: [] });
+      }
+      if (url.includes("/api/library") && method === "PUT") {
+        pushedBodies.push(JSON.parse(String(init?.body ?? "{}")) as { siteLibrary: Array<{ id: string }> });
+        return makeResponse({ ok: true, conflicts: [] });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [], simulationPresets: cloneJson(baselinePayload.simulationPresets),
+      sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+    useAppStore.setState({
+      siteLibrary: [{
+        id: "site-deleted", name: "Stale cached Site", ownerUserId: "owner-1", effectiveRole: "owner",
+        createdAt: "2026-01-01T00:00:00.000Z", position: { lat: 60, lon: 11 }, groundElevationM: 100,
+        antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+      }],
+    });
+
+    await useAppStore.getState().performManualCloudSync();
+
+    expect(pushedBodies).toHaveLength(1);
+    expect(pushedBodies[0]?.siteLibrary).toEqual([]);
+    expect(useAppStore.getState().siteLibrary.some((site) => site.id === "site-deleted")).toBe(false);
+  });
 });

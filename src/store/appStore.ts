@@ -1960,6 +1960,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     syncInFlight = true;
     set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Syncing..." });
     try {
+      const deletionState = await fetchCloudLibrary();
+      get().applyDeletedSiteTombstones(deletionState.deletedSiteIds);
+      get().applyDeletedSimulationTombstones(deletionState.deletedSimulationIds);
       const { siteLibrary, simulationPresets, currentUser, importLibraryData } = get();
       const editableSites = siteLibrary.filter((site) => canEditLibraryItem(site, currentUser));
       const editableSims = simulationPresets.filter((sim) => sim.status !== "deleted" && canEditLibraryItem(sim, currentUser));

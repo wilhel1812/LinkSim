@@ -2158,7 +2158,7 @@ const upsertOwnedResource = async (
   const wasPublic = existing ? existing.visibility !== "private" : false;
   const maxOwnerRecords = kind === "site" ? LIBRARY_MAX_SITES_PER_USER : LIBRARY_MAX_SIMULATIONS_PER_USER;
   const maxOwnerPublicRecords = kind === "site" ? LIBRARY_MAX_PUBLIC_SITES_PER_USER : LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER;
-  const activeQuotaClause = kind === "simulation" ? " AND status = 'active'" : "";
+  const activeQuotaClause = "";
   const siteTombstoneGuard = kind === "site"
     ? ` AND (
           EXISTS (SELECT 1 FROM sites WHERE id = ?)
@@ -2168,8 +2168,7 @@ const upsertOwnedResource = async (
           )
         )`
     : "";
-  const writeResult = await env.DB
-    .prepare(
+  const writeStatement = env.DB.prepare(
       `INSERT INTO ${table}
        (id, owner_user_id, created_by_user_id, last_edited_by_user_id, created_at, last_edited_at, name, visibility, payload_json, updated_at)
        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -2184,7 +2183,13 @@ const upsertOwnedResource = async (
          last_edited_at = excluded.last_edited_at,
          last_edited_by_user_id = excluded.last_edited_by_user_id,
          created_by_user_id = COALESCE(${table}.created_by_user_id, excluded.created_by_user_id),
-         created_at = COALESCE(${table}.created_at, excluded.created_at)`,
+         created_at = COALESCE(${table}.created_at, excluded.created_at)
+       WHERE ${table}.owner_user_id = ?
+          OR ? = 1
+          OR EXISTS (
+            SELECT 1 FROM ${rolesTable}
+            WHERE ${kind}_id = excluded.id AND user_id = ? AND role IN ('admin', 'editor')
+          )`,
     )
     .bind(
       id,
@@ -2205,8 +2210,30 @@ const upsertOwnedResource = async (
       ownerId,
       maxOwnerPublicRecords,
       ...(kind === "site" ? [id, id] : []),
-    )
-    .run();
+      actor.id,
+      actor.isAdmin ? 1 : 0,
+      actor.id,
+    );
+  const wroteCurrentPayloadGuard = `EXISTS (
+    SELECT 1 FROM ${table}
+    WHERE id = ? AND updated_at = ? AND last_edited_by_user_id = ? AND payload_json = ?
+  )`;
+  const roleStatements = [
+    env.DB
+      .prepare(`DELETE FROM ${rolesTable} WHERE ${kind}_id = ? AND ${wroteCurrentPayloadGuard}`)
+      .bind(id, id, now, actor.id, payload),
+    ...sharedWith
+      .filter((grant) => grant.userId !== ownerId)
+      .map((grant) => env.DB
+        .prepare(
+          `INSERT INTO ${rolesTable} (${kind}_id, user_id, role, created_at)
+           SELECT ?, ?, ?, ?
+           WHERE ${wroteCurrentPayloadGuard}
+           ON CONFLICT(${kind}_id, user_id) DO UPDATE SET role = excluded.role`,
+        )
+        .bind(id, grant.userId, grant.role, now, id, now, actor.id, payload)),
+  ];
+  const [writeResult] = await env.DB.batch([writeStatement, ...roleStatements]) as D1Result[];
   if (writeResult.meta?.changes === 0) {
     if (kind === "site") {
       const tombstone = await env.DB
@@ -2219,25 +2246,24 @@ const upsertOwnedResource = async (
         .first<{ id: number }>();
       if (tombstone) return { ok: false, reason: "site_deleted" };
     }
-    return { ok: false, reason: `${kind}_quota_exceeded` };
-  }
-
-  await env.DB.prepare(`DELETE FROM ${rolesTable} WHERE ${kind}_id = ?`).bind(id).run();
-  if (sharedWith.length) {
-    const statements = sharedWith
-      .filter((grant) => grant.userId !== ownerId)
-      .map((grant) =>
-        env.DB
-          .prepare(
-            `INSERT INTO ${rolesTable} (${kind}_id, user_id, role, created_at)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(${kind}_id, user_id) DO UPDATE SET role = excluded.role`,
-          )
-          .bind(id, grant.userId, grant.role, now),
-      );
-    if (statements.length) {
-      await env.DB.batch(statements);
+    const current = await env.DB
+      .prepare(
+        `SELECT t.owner_user_id, t.visibility, r.role AS actor_role
+         FROM ${table} t
+         LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
+         WHERE t.id = ? LIMIT 1`,
+      )
+      .bind(actor.id, id)
+      .first<{ owner_user_id: string; visibility: DbVisibility; actor_role?: string | null }>();
+    if (current && !canEditResource(
+      actor,
+      current.owner_user_id,
+      visibilityFromDbVisibility(current.visibility),
+      typeof current.actor_role === "string" ? current.actor_role : null,
+    )) {
+      return { ok: false, reason: `forbidden_${kind}` };
     }
+    return { ok: false, reason: `${kind}_quota_exceeded` };
   }
 
   const changeDetails: string[] = [];
@@ -2318,7 +2344,7 @@ const preflightResourceQuotas = async (
   const existingById = new Map(existingRows.results.map((row) => [row.id, row]));
   const ownerIds = [...new Set(items.map((item) => existingById.get(item.id.trim())?.owner_user_id ?? actor.id))];
   const ownerPlaceholders = ownerIds.map(() => "?").join(", ");
-  const activeClause = kind === "simulation" ? " AND status = 'active'" : "";
+  const activeClause = "";
   const counts = await env.DB
     .prepare(
       `SELECT owner_user_id,
@@ -2469,9 +2495,17 @@ export const fetchLibraryForUser = async (
     .bind(userId, canReadAllResources ? 1 : 0, userId, ...(opts?.since ? [opts.since] : []))
     .all<LibraryRow>();
 
-  const deletedSiteRows = canReadAllResources
-    ? { results: [] as Array<{ id: string }> }
-    : await env.DB
+  const deletedSiteAudienceClause = canReadAllResources
+    ? ""
+    : ` AND (
+          json_extract(tombstone.snapshot_json, '$.ownerUserId') = ?
+          OR json_extract(tombstone.snapshot_json, '$.visibility') IN ('public', 'shared')
+          OR EXISTS (
+            SELECT 1 FROM json_each(COALESCE(json_extract(tombstone.snapshot_json, '$.sharedWith'), '[]')) grant_entry
+            WHERE json_extract(grant_entry.value, '$.userId') = ?
+          )
+        )`;
+  const deletedSiteRows = await env.DB
         .prepare(
           `SELECT tombstone.resource_id AS id
            FROM resource_changes tombstone
@@ -2483,16 +2517,9 @@ export const fetchLibraryForUser = async (
                WHERE latest.resource_kind = 'site' AND latest.resource_id = tombstone.resource_id
              )
              AND NOT EXISTS (SELECT 1 FROM sites live WHERE live.id = tombstone.resource_id)
-             AND (
-               json_extract(tombstone.snapshot_json, '$.ownerUserId') = ?
-               OR json_extract(tombstone.snapshot_json, '$.visibility') IN ('public', 'shared')
-               OR EXISTS (
-                 SELECT 1 FROM json_each(COALESCE(json_extract(tombstone.snapshot_json, '$.sharedWith'), '[]')) grant_entry
-                 WHERE json_extract(grant_entry.value, '$.userId') = ?
-               )
-             )${opts?.since ? "\n             AND tombstone.changed_at > ?" : ""}`,
+             ${deletedSiteAudienceClause}${opts?.since ? "\n             AND tombstone.changed_at > ?" : ""}`,
         )
-        .bind(userId, userId, ...(opts?.since ? [opts.since] : []))
+        .bind(...(canReadAllResources ? [] : [userId, userId]), ...(opts?.since ? [opts.since] : []))
         .all<{ id: string }>();
 
   const deletedSimulationRows = canReadAllResources

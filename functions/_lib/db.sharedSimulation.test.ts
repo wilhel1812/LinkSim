@@ -152,6 +152,11 @@ class FakeStatement {
       this.db.deleteSiteForConcurrentRace(this.db.deleteSiteBeforeGuardedWrite);
       this.db.deleteSiteBeforeGuardedWrite = null;
     }
+    if (this.db.mutateBeforeGuardedWrite && (this.sql.includes("INSERT INTO sites") || this.sql.includes("INSERT INTO simulations"))) {
+      const mutate = this.db.mutateBeforeGuardedWrite;
+      this.db.mutateBeforeGuardedWrite = null;
+      mutate();
+    }
     const changes = quotaGuardRejected ? 0 : this.db.run(this.sql, this.bound);
     return { success: true, meta: { changes } };
   }
@@ -167,6 +172,7 @@ class FakeDb {
   readonly adminUserIds = new Set<string>();
   rejectNextQuotaGuardedWrite = false;
   deleteSiteBeforeGuardedWrite: string | null = null;
+  mutateBeforeGuardedWrite: (() => void) | null = null;
   reassignSiteOwnerBeforeBatch: { siteId: string; ownerUserId: string } | null = null;
 
   deleteSiteForConcurrentRace(siteId: string): void {
@@ -328,7 +334,7 @@ class FakeDb {
     }
     if (sql.includes("COUNT(*) AS total_count") && sql.includes("FROM simulations")) {
       return bound.map((ownerId) => {
-        const rows = [...this.simulations.values()].filter((row) => row.owner_user_id === ownerId && row.status === "active");
+        const rows = [...this.simulations.values()].filter((row) => row.owner_user_id === ownerId);
         return {
           owner_user_id: ownerId,
           total_count: rows.length,
@@ -357,11 +363,13 @@ class FakeDb {
     }
     if (sql.includes("tombstone.resource_id AS id")) {
       const userId = String(bound[0] ?? "");
+      const restrictAudience = sql.includes("json_extract(tombstone.snapshot_json, '$.ownerUserId')");
       return this.resourceChanges
         .filter((change) => change.resource_kind === "site" && change.note === "Deleted Site")
         .filter((change, index, changes) => changes.findLastIndex((entry) => entry.resource_id === change.resource_id) === index)
         .filter((change) => !this.sites.has(String(change.resource_id)))
         .filter((change) => {
+          if (!restrictAudience) return true;
           const snapshot = JSON.parse(String(change.snapshot_json ?? "{}")) as AnyRow;
           return snapshot.ownerUserId === userId
             || snapshot.visibility === "public"
@@ -402,16 +410,22 @@ class FakeDb {
     if (sql.includes("INSERT INTO simulations")) {
       const [id, ownerUserId, createdByUserId, lastEditedByUserId, createdAt, lastEditedAt, name, visibility, payloadJson, updatedAt] =
         bound;
+      const existing = this.simulations.get(String(id));
+      const actorId = String(bound[3] ?? "");
+      const isAdmin = Number(bound[bound.length - 2] ?? 0) === 1;
+      const role = this.simulationRoles.get(`${String(id)}:${actorId}`);
+      if (existing && !(isAdmin || existing.owner_user_id === actorId || role === "admin" || role === "editor")) return 0;
       this.simulations.set(String(id), {
+        ...existing,
         id,
-        owner_user_id: ownerUserId,
-        created_by_user_id: createdByUserId,
+        owner_user_id: existing?.owner_user_id ?? ownerUserId,
+        created_by_user_id: existing?.created_by_user_id ?? createdByUserId,
         last_edited_by_user_id: lastEditedByUserId,
         created_at: createdAt,
         last_edited_at: lastEditedAt,
         name,
         visibility,
-        status: "active",
+        status: existing?.status ?? "active",
         payload_json: payloadJson,
         updated_at: updatedAt,
       });
@@ -424,10 +438,16 @@ class FakeDb {
         (change) => change.resource_kind === "site" && change.resource_id === id && change.note === "Deleted Site",
       );
       if (sql.includes("NOT EXISTS") && !this.sites.has(String(id)) && hasTombstone) return 0;
+      const existing = this.sites.get(String(id));
+      const actorId = String(bound[3] ?? "");
+      const isAdmin = Number(bound[bound.length - 2] ?? 0) === 1;
+      const role = this.siteRoles.get(`${String(id)}:${actorId}`);
+      if (existing && !(isAdmin || existing.owner_user_id === actorId || role === "admin" || role === "editor")) return 0;
       this.sites.set(String(id), {
+        ...existing,
         id,
-        owner_user_id: ownerUserId,
-        created_by_user_id: createdByUserId,
+        owner_user_id: existing?.owner_user_id ?? ownerUserId,
+        created_by_user_id: existing?.created_by_user_id ?? createdByUserId,
         last_edited_by_user_id: lastEditedByUserId,
         created_at: createdAt,
         last_edited_at: lastEditedAt,
@@ -476,10 +496,22 @@ class FakeDb {
       return 1;
     }
     if (sql.includes("INSERT INTO site_roles")) {
+      if (bound.length > 4) {
+        const [resourceId, , , , guardId, updatedAt, actorId, payloadJson] = bound;
+        const site = this.sites.get(String(guardId));
+        if (!site || site.updated_at !== updatedAt || site.last_edited_by_user_id !== actorId || site.payload_json !== payloadJson) return 0;
+        if (resourceId !== guardId) return 0;
+      }
       this.siteRoles.set(`${String(bound[0] ?? "")}:${String(bound[1] ?? "")}`, String(bound[2] ?? ""));
       return 1;
     }
     if (sql.includes("INSERT INTO simulation_roles")) {
+      if (bound.length > 4) {
+        const [resourceId, , , , guardId, updatedAt, actorId, payloadJson] = bound;
+        const simulation = this.simulations.get(String(guardId));
+        if (!simulation || simulation.updated_at !== updatedAt || simulation.last_edited_by_user_id !== actorId || simulation.payload_json !== payloadJson) return 0;
+        if (resourceId !== guardId) return 0;
+      }
       this.simulationRoles.set(`${String(bound[0] ?? "")}:${String(bound[1] ?? "")}`, String(bound[2] ?? ""));
       return 1;
     }
@@ -500,6 +532,10 @@ class FakeDb {
     }
     if (sql.includes("DELETE FROM site_roles")) {
       const resourceId = String(bound[0] ?? "");
+      if (bound.length > 1) {
+        const site = this.sites.get(String(bound[1]));
+        if (!site || site.updated_at !== bound[2] || site.last_edited_by_user_id !== bound[3] || site.payload_json !== bound[4]) return 0;
+      }
       for (const key of this.siteRoles.keys()) {
         if (key.startsWith(`${resourceId}:`)) this.siteRoles.delete(key);
       }
@@ -507,6 +543,10 @@ class FakeDb {
     }
     if (sql.includes("DELETE FROM simulation_roles")) {
       const resourceId = String(bound[0] ?? "");
+      if (bound.length > 1) {
+        const simulation = this.simulations.get(String(bound[1]));
+        if (!simulation || simulation.updated_at !== bound[2] || simulation.last_edited_by_user_id !== bound[3] || simulation.payload_json !== bound[4]) return 0;
+      }
       for (const key of this.simulationRoles.keys()) {
         if (key.startsWith(`${resourceId}:`)) this.simulationRoles.delete(key);
       }
@@ -626,14 +666,19 @@ describe("upsertLibrarySnapshot shared simulations", () => {
     db.sites.set("site-deleted", {
       id: "site-deleted",
       owner_user_id: "owner-1",
-      visibility: "public_read",
-      payload_json: JSON.stringify({ id: "site-deleted", name: "Deleted Site", visibility: "public", sharedWith: [] }),
+      visibility: "private",
+      payload_json: JSON.stringify({
+        id: "site-deleted", name: "Deleted Site", visibility: "private",
+        sharedWith: [{ userId: "reader-1", role: "viewer" }],
+      }),
     });
     const env = { DB: db } as unknown as Parameters<typeof deleteSiteResource>[0];
 
     await expect(deleteSiteResource(env, { id: "owner-1", isAdmin: false, isModerator: false }, "site-deleted"))
       .resolves.toEqual({ ok: true, siteId: "site-deleted" });
     await expect(fetchLibraryForUser(env, "reader-1")).resolves.toMatchObject({ deletedSiteIds: ["site-deleted"] });
+    db.adminUserIds.add("admin-1");
+    await expect(fetchLibraryForUser(env, "admin-1")).resolves.toMatchObject({ deletedSiteIds: ["site-deleted"] });
     await expect(upsertLibrarySnapshot(
       env,
       { id: "owner-1", isAdmin: false, isModerator: false },
@@ -660,6 +705,55 @@ describe("upsertLibrarySnapshot shared simulations", () => {
       { siteLibrary: [{ id: "site-concurrent", name: "Stale edit", visibility: "private" }], simulationPresets: [] },
     )).resolves.toMatchObject({ upsertedSites: 0, conflicts: ["site_deleted"] });
     expect(db.sites.has("site-concurrent")).toBe(false);
+  });
+
+  it("fails closed when Site ownership changes after authorization", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-owner-race", {
+      id: "site-owner-race", owner_user_id: "owner-1", created_at: "2026-08-14T00:00:00.000Z",
+      visibility: "private", name: "Original", payload_json: JSON.stringify({ id: "site-owner-race", name: "Original" }),
+    });
+    db.mutateBeforeGuardedWrite = () => {
+      db.sites.set("site-owner-race", { ...db.sites.get("site-owner-race"), owner_user_id: "owner-2" });
+    };
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(env, { id: "owner-1", isAdmin: false, isModerator: false }, {
+      siteLibrary: [{ id: "site-owner-race", name: "Stale overwrite", visibility: "private" }], simulationPresets: [],
+    })).resolves.toMatchObject({ upsertedSites: 0, conflicts: ["forbidden_site"] });
+    expect(db.sites.get("site-owner-race")?.name).toBe("Original");
+  });
+
+  it("fails closed when a collaborator role is revoked after authorization", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-role-race", {
+      id: "site-role-race", owner_user_id: "owner-1", created_at: "2026-08-14T00:00:00.000Z",
+      visibility: "public_write", name: "Original", payload_json: JSON.stringify({ id: "site-role-race", name: "Original" }),
+    });
+    db.siteRoles.set("site-role-race:editor-1", "editor");
+    db.mutateBeforeGuardedWrite = () => db.siteRoles.delete("site-role-race:editor-1");
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(env, { id: "editor-1", isAdmin: false, isModerator: false }, {
+      siteLibrary: [{ id: "site-role-race", name: "Stale editor", visibility: "shared" }], simulationPresets: [],
+    })).resolves.toMatchObject({ upsertedSites: 0, conflicts: ["forbidden_site"] });
+    expect(db.sites.get("site-role-race")?.name).toBe("Original");
+  });
+
+  it("fails closed when another owner concurrently creates the requested ID", async () => {
+    const db = new FakeDb();
+    db.mutateBeforeGuardedWrite = () => {
+      db.sites.set("site-collision", {
+        id: "site-collision", owner_user_id: "owner-2", created_at: "2026-08-14T00:00:00.000Z",
+        visibility: "private", name: "Other owner", payload_json: JSON.stringify({ id: "site-collision", name: "Other owner" }),
+      });
+    };
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(env, { id: "owner-1", isAdmin: false, isModerator: false }, {
+      siteLibrary: [{ id: "site-collision", name: "Colliding create", visibility: "private" }], simulationPresets: [],
+    })).resolves.toMatchObject({ upsertedSites: 0, conflicts: ["forbidden_site"] });
+    expect(db.sites.get("site-collision")?.owner_user_id).toBe("owner-2");
   });
 
   it("rejects oversized batches instead of silently truncating them", async () => {
@@ -768,6 +862,33 @@ describe("upsertLibrarySnapshot shared simulations", () => {
       siteLibrary: [],
       simulationPresets: [{ id: "sim-0", name: "Updated Simulation", visibility: "public" }],
     })).resolves.toMatchObject({ upsertedSimulations: 1, conflicts: [] });
+  });
+
+  it("counts retained deleted Simulations toward total and public storage quotas", async () => {
+    const db = new FakeDb();
+    for (let index = 0; index < LIBRARY_MAX_SIMULATIONS_PER_USER; index += 1) {
+      db.simulations.set(`deleted-${index}`, {
+        id: `deleted-${index}`, owner_user_id: "owner-1", visibility: "private", status: "deleted",
+        payload_json: JSON.stringify({ id: `deleted-${index}`, name: `Deleted ${index}` }),
+      });
+    }
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+    const actor = { id: "owner-1", isAdmin: false, isModerator: false };
+
+    await expect(upsertLibrarySnapshot(env, actor, {
+      siteLibrary: [], simulationPresets: [{ id: "sim-new", name: "New Simulation", visibility: "private" }],
+    })).rejects.toThrow("Simulation Library quota exceeded");
+
+    db.simulations.clear();
+    for (let index = 0; index < LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER; index += 1) {
+      db.simulations.set(`deleted-public-${index}`, {
+        id: `deleted-public-${index}`, owner_user_id: "owner-1", visibility: "public_read", status: "deleted",
+        payload_json: JSON.stringify({ id: `deleted-public-${index}`, name: `Deleted Public ${index}` }),
+      });
+    }
+    await expect(upsertLibrarySnapshot(env, actor, {
+      siteLibrary: [], simulationPresets: [{ id: "sim-public", name: "New Public", visibility: "public" }],
+    })).rejects.toThrow("Public Simulation Library quota exceeded");
   });
 
   it("allows a shared simulation to reference a private site entry", async () => {

@@ -27,6 +27,8 @@ database helpers:
 The client sends larger sync sets as sequential 20-record batches. If a batch
 fails, it stops and retains the dirty set so the normal sync recovery path can
 retry safely. The server never silently truncates a batch.
+Soft-deleted Simulations retain their payload for lifecycle recovery and
+therefore continue to count toward both Simulation storage quotas.
 
 Owners already above a storage quota can continue to update, export,
 privatize, or delete existing records. Authenticated Site deletion removes the
