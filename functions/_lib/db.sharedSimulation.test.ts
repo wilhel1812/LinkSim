@@ -9,6 +9,11 @@ import {
   setSimulationLifecycleStatus,
   upsertLibrarySnapshot,
 } from "./db";
+import {
+  LIBRARY_BATCH_MAX_RECORDS,
+  LIBRARY_MAX_PUBLIC_SITES_PER_USER,
+  LIBRARY_MAX_SITES_PER_USER,
+} from "../../src/lib/libraryLimits";
 
 type AnyRow = Record<string, unknown>;
 
@@ -137,9 +142,11 @@ class FakeStatement {
     return { results: this.db.all(this.sql, this.bound) as T[] };
   }
 
-  async run(): Promise<{ success: boolean }> {
-    this.db.run(this.sql, this.bound);
-    return { success: true };
+  async run(): Promise<{ success: boolean; meta: { changes: number } }> {
+    const quotaGuardRejected = this.db.rejectNextQuotaGuardedWrite && this.sql.includes("WHERE (? = 0 OR");
+    if (quotaGuardRejected) this.db.rejectNextQuotaGuardedWrite = false;
+    else this.db.run(this.sql, this.bound);
+    return { success: true, meta: { changes: quotaGuardRejected ? 0 : 1 } };
   }
 }
 
@@ -151,6 +158,7 @@ class FakeDb {
   readonly simulationRoles = new Map<string, string>();
   readonly resourceChanges: AnyRow[] = [];
   readonly adminUserIds = new Set<string>();
+  rejectNextQuotaGuardedWrite = false;
 
   prepare(sql: string): FakeStatement {
     return new FakeStatement(this, sql);
@@ -255,6 +263,32 @@ class FakeDb {
       return (TABLE_COLUMNS[table] ?? []).map((name) => ({ name }));
     }
     if (sql.includes("FROM users ORDER BY created_at DESC")) return this.users;
+    if (sql.includes("SELECT id, owner_user_id, visibility FROM sites WHERE id IN")) {
+      return bound.map((id) => this.sites.get(String(id))).filter((row): row is AnyRow => Boolean(row));
+    }
+    if (sql.includes("SELECT id, owner_user_id, visibility FROM simulations WHERE id IN")) {
+      return bound.map((id) => this.simulations.get(String(id))).filter((row): row is AnyRow => Boolean(row));
+    }
+    if (sql.includes("COUNT(*) AS total_count") && sql.includes("FROM sites")) {
+      return bound.map((ownerId) => {
+        const rows = [...this.sites.values()].filter((row) => row.owner_user_id === ownerId);
+        return {
+          owner_user_id: ownerId,
+          total_count: rows.length,
+          public_count: rows.filter((row) => row.visibility !== "private").length,
+        };
+      });
+    }
+    if (sql.includes("COUNT(*) AS total_count") && sql.includes("FROM simulations")) {
+      return bound.map((ownerId) => {
+        const rows = [...this.simulations.values()].filter((row) => row.owner_user_id === ownerId && row.status === "active");
+        return {
+          owner_user_id: ownerId,
+          total_count: rows.length,
+          public_count: rows.filter((row) => row.visibility !== "private").length,
+        };
+      });
+    }
     if (sql.includes("SELECT id, payload_json, visibility FROM sites WHERE id IN")) {
       return bound.map((id) => this.sites.get(String(id))).filter((row): row is AnyRow => Boolean(row));
     }
@@ -438,6 +472,84 @@ describe("user identity privacy and diagnostic access", () => {
 });
 
 describe("upsertLibrarySnapshot shared simulations", () => {
+  it("rejects oversized batches instead of silently truncating them", async () => {
+    const db = new FakeDb();
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+    await expect(upsertLibrarySnapshot(
+      env,
+      { id: "owner-1", isAdmin: false, isModerator: false },
+      {
+        siteLibrary: Array.from({ length: LIBRARY_BATCH_MAX_RECORDS + 1 }, (_, index) => ({
+          id: `site-${index}`,
+          name: `Site ${index}`,
+        })),
+        simulationPresets: [],
+      },
+    )).rejects.toThrow(`at most ${LIBRARY_BATCH_MAX_RECORDS} records`);
+    expect(db.sites.size).toBe(0);
+  });
+
+  it("preflights owner and public quotas before writing any record", async () => {
+    const db = new FakeDb();
+    for (let index = 0; index < LIBRARY_MAX_SITES_PER_USER; index += 1) {
+      db.sites.set(`site-${index}`, {
+        id: `site-${index}`,
+        owner_user_id: "owner-1",
+        name: `Site ${index}`,
+        visibility: index < LIBRARY_MAX_PUBLIC_SITES_PER_USER ? "public_read" : "private",
+        payload_json: JSON.stringify({ id: `site-${index}`, name: `Site ${index}` }),
+      });
+    }
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(
+      env,
+      { id: "owner-1", isAdmin: false, isModerator: false },
+      { siteLibrary: [{ id: "site-new", name: "New Site", visibility: "private" }], simulationPresets: [] },
+    )).rejects.toThrow("Site Library quota exceeded");
+    expect(db.sites.has("site-new")).toBe(false);
+
+    await expect(upsertLibrarySnapshot(
+      env,
+      { id: "owner-1", isAdmin: false, isModerator: false },
+      { siteLibrary: [{ id: `site-${LIBRARY_MAX_PUBLIC_SITES_PER_USER}`, name: "Existing", visibility: "public" }], simulationPresets: [] },
+    )).rejects.toThrow("Public Site Library quota exceeded");
+  });
+
+  it("grandfathers over-quota owners when an update does not increase usage", async () => {
+    const db = new FakeDb();
+    for (let index = 0; index <= LIBRARY_MAX_SITES_PER_USER; index += 1) {
+      db.sites.set(`site-${index}`, {
+        id: `site-${index}`,
+        owner_user_id: "owner-1",
+        created_at: "2026-08-14T00:00:00.000Z",
+        name: `Site ${index}`,
+        visibility: "private",
+        payload_json: JSON.stringify({ id: `site-${index}`, name: `Site ${index}`, visibility: "private" }),
+      });
+    }
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(
+      env,
+      { id: "owner-1", isAdmin: false, isModerator: false },
+      { siteLibrary: [{ id: "site-0", name: "Updated Site", visibility: "private" }], simulationPresets: [] },
+    )).resolves.toMatchObject({ upsertedSites: 1, conflicts: [] });
+  });
+
+  it("fails closed if the atomic write guard detects a concurrent quota race", async () => {
+    const db = new FakeDb();
+    db.rejectNextQuotaGuardedWrite = true;
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(
+      env,
+      { id: "owner-1", isAdmin: false, isModerator: false },
+      { siteLibrary: [{ id: "site-race", name: "Race Site", visibility: "private" }], simulationPresets: [] },
+    )).resolves.toEqual({ upsertedSites: 0, upsertedSimulations: 0, conflicts: ["site_quota_exceeded"] });
+    expect(db.sites.has("site-race")).toBe(false);
+  });
+
   it("allows a shared simulation to reference a private site entry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-17T12:00:00.000Z"));

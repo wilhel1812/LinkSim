@@ -5,9 +5,36 @@ import {
   getCorsOriginDecision,
   handleOptions,
   normalizeApiErrorMessage,
+  readBoundedJson,
   statusFromErrorMessage,
   withCors,
 } from "./http";
+
+describe("bounded JSON reader", () => {
+  it("accepts a body exactly at the byte boundary", async () => {
+    const request = new Request("https://linksim.link/api/library", { method: "PUT", body: "{\"a\":1}" });
+    await expect(readBoundedJson(request, { maxBytes: 7, maxDepth: 2 })).resolves.toEqual({ a: 1 });
+  });
+
+  it("rejects streamed bytes above the boundary without relying on Content-Length", async () => {
+    const request = new Request("https://linksim.link/api/library", { method: "PUT", body: "{\"a\":1}" });
+    await expect(readBoundedJson(request, { maxBytes: 6, maxDepth: 2 })).rejects.toMatchObject({
+      status: 413,
+      code: "request_too_large",
+    });
+  });
+
+  it("ignores braces in strings while enforcing structural depth", async () => {
+    const accepted = new Request("https://linksim.link/api/library", { method: "PUT", body: "{\"value\":\"{{{{\"}" });
+    await expect(readBoundedJson(accepted, { maxBytes: 64, maxDepth: 1 })).resolves.toEqual({ value: "{{{{" });
+
+    const rejected = new Request("https://linksim.link/api/library", { method: "PUT", body: "{\"a\":{\"b\":1}}" });
+    await expect(readBoundedJson(rejected, { maxBytes: 64, maxDepth: 1 })).rejects.toMatchObject({
+      status: 422,
+      code: "json_too_deep",
+    });
+  });
+});
 
 describe("credentialed CORS policy", () => {
   it.each([

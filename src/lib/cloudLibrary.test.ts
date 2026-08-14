@@ -5,6 +5,7 @@ import {
   pushCloudLibrary,
   restoreCloudSimulation,
 } from "./cloudLibrary";
+import { LIBRARY_BATCH_MAX_RECORDS, LIBRARY_REQUEST_MAX_BYTES } from "./libraryLimits";
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -105,6 +106,65 @@ describe("cloudLibrary client", () => {
         simulationPresets: [{ id: "sim-2", name: "Relay Plan" }],
       }),
     ).rejects.toThrow("Simulation name already exists: Relay Plan. Use unique Simulation names.");
+  });
+
+  it("pushes large payloads sequentially in bounded mixed-resource batches", async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async () =>
+      new Response(JSON.stringify({ ok: true, conflicts: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    const payload = {
+      siteLibrary: Array.from({ length: 25 }, (_, index) => ({ id: `site-${index}`, name: `Site ${index}` })),
+      simulationPresets: Array.from({ length: 18 }, (_, index) => ({ id: `sim-${index}`, name: `Simulation ${index}` })),
+    };
+
+    await pushCloudLibrary(payload);
+
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(3);
+    const batches = vi.mocked(globalThis.fetch).mock.calls.map(([, init]) =>
+      JSON.parse(String(init?.body)) as { siteLibrary: unknown[]; simulationPresets: unknown[] });
+    expect(batches.map((batch) => batch.siteLibrary.length + batch.simulationPresets.length)).toEqual([
+      LIBRARY_BATCH_MAX_RECORDS,
+      LIBRARY_BATCH_MAX_RECORDS,
+      3,
+    ]);
+    expect(batches.flatMap((batch) => batch.siteLibrary)).toHaveLength(25);
+    expect(batches.flatMap((batch) => batch.simulationPresets)).toHaveLength(18);
+  });
+
+  it("also chunks by encoded request bytes when records are individually valid but collectively large", async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async () =>
+      new Response(JSON.stringify({ ok: true, conflicts: [] }), { status: 200 }));
+    const padding = "x".repeat(250 * 1024);
+
+    await pushCloudLibrary({
+      siteLibrary: [],
+      simulationPresets: Array.from({ length: 10 }, (_, index) => ({ id: `sim-${index}`, name: `Simulation ${index}`, padding })),
+    });
+
+    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBeGreaterThan(1);
+    for (const [, init] of vi.mocked(globalThis.fetch).mock.calls) {
+      expect(new TextEncoder().encode(String(init?.body)).byteLength).toBeLessThanOrEqual(LIBRARY_REQUEST_MAX_BYTES);
+    }
+  });
+
+  it("stops at a rejected chunk so appStore can retain the full dirty set for retry", async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, conflicts: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Library quota exceeded." }), {
+        status: 422,
+        statusText: "Unprocessable Content",
+      }));
+
+    await expect(pushCloudLibrary({
+      siteLibrary: Array.from({ length: LIBRARY_BATCH_MAX_RECORDS + 1 }, (_, index) => ({
+        id: `site-${index}`,
+        name: `Site ${index}`,
+      })),
+      simulationPresets: [],
+    })).rejects.toThrow("Library quota exceeded");
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(2);
   });
 
   it("throws parsed API error for non-OK responses", async () => {

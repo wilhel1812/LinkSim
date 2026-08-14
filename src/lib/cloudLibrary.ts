@@ -1,4 +1,5 @@
 import { parseApiErrorMessage } from "./apiError";
+import { LIBRARY_BATCH_MAX_RECORDS, LIBRARY_REQUEST_MAX_BYTES } from "./libraryLimits";
 
 export type CloudLibraryPayload = {
   siteLibrary: unknown[];
@@ -9,6 +10,36 @@ export type CloudLibraryPayload = {
 type CloudPushResult = {
   ok?: boolean;
   conflicts?: string[];
+};
+
+type TaggedLibraryRecord = { kind: "site" | "simulation"; value: unknown };
+
+const pushBodyForRecords = (records: TaggedLibraryRecord[]): CloudLibraryPayload => ({
+  siteLibrary: records.filter((entry) => entry.kind === "site").map((entry) => entry.value),
+  simulationPresets: records.filter((entry) => entry.kind === "simulation").map((entry) => entry.value),
+});
+
+const buildPushBatches = (records: TaggedLibraryRecord[]): CloudLibraryPayload[] => {
+  if (records.length === 0) return [pushBodyForRecords([])];
+  const encoder = new TextEncoder();
+  const batches: CloudLibraryPayload[] = [];
+  let current: TaggedLibraryRecord[] = [];
+  for (const record of records) {
+    const candidate = [...current, record];
+    const candidateBody = pushBodyForRecords(candidate);
+    const candidateBytes = encoder.encode(JSON.stringify(candidateBody)).byteLength;
+    if (current.length === 0 && candidateBytes > LIBRARY_REQUEST_MAX_BYTES) {
+      throw new Error(`Library record cannot fit within the ${LIBRARY_REQUEST_MAX_BYTES}-byte request limit.`);
+    }
+    if (current.length > 0 && (candidate.length > LIBRARY_BATCH_MAX_RECORDS || candidateBytes > LIBRARY_REQUEST_MAX_BYTES)) {
+      batches.push(pushBodyForRecords(current));
+      current = [record];
+      continue;
+    }
+    current = candidate;
+  }
+  batches.push(pushBodyForRecords(current));
+  return batches;
 };
 
 const listSimulationNames = (payload: CloudLibraryPayload): string[] =>
@@ -84,11 +115,19 @@ export const fetchPublicSimulationLibrary = async (params: {
 };
 
 export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<void> => {
-  const result = await apiCall<CloudPushResult>("/api/library", {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
-  const allConflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
+  const records = [
+    ...payload.siteLibrary.map((value) => ({ kind: "site" as const, value })),
+    ...payload.simulationPresets.map((value) => ({ kind: "simulation" as const, value })),
+  ];
+  const batches = buildPushBatches(records);
+  const allConflicts: string[] = [];
+  for (const batch of batches) {
+    const result = await apiCall<CloudPushResult>("/api/library", {
+      method: "PUT",
+      body: JSON.stringify(batch),
+    });
+    if (Array.isArray(result.conflicts)) allConflicts.push(...result.conflicts);
+  }
   if (!allConflicts.length) return;
   if (allConflicts.includes("simulation_name_taken")) {
     const simulationNames = listSimulationNames(payload);

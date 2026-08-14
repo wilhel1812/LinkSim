@@ -23,9 +23,25 @@ vi.mock("../_lib/db", () => ({
 }));
 
 import { onRequestGet, onRequestPut } from "./library";
+import { LIBRARY_BATCH_MAX_RECORDS, LIBRARY_REQUEST_MAX_BYTES } from "../../src/lib/libraryLimits";
 
 const env = { DB: {} } as unknown as { DB: D1Database };
 const mkCtx = (request: Request) => ({ request, env } as unknown as Parameters<typeof onRequestGet>[0]);
+
+const validSite = (id = "site-1") => ({
+  id,
+  name: "Hilltop",
+  visibility: "private",
+  sharedWith: [],
+  position: { lat: 59.9, lon: 10.7 },
+  groundElevationM: 120,
+  antennaHeightM: 12,
+  txPowerDbm: 22,
+  txGainDbi: 5,
+  rxGainDbi: 5,
+  cableLossDb: 1,
+  createdAt: "2026-08-14T00:00:00.000Z",
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -66,7 +82,7 @@ describe("api/library", () => {
     // isDelta should be falsy
   });
 
-  it("normalizes non-array payloads on PUT", async () => {
+  it("rejects non-array Library collections on PUT", async () => {
     const req = new Request("https://example.test/api/library", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -74,11 +90,68 @@ describe("api/library", () => {
     });
 
     const res = await onRequestPut(mkCtx(req));
+    expect(res.status).toBe(422);
+    expect(upsertLibrarySnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a declared body larger than the approved limit before parsing", async () => {
+    const req = new Request("https://example.test/api/library", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(LIBRARY_REQUEST_MAX_BYTES + 1),
+      },
+      body: "{}",
+    });
+
+    const res = await onRequestPut(mkCtx(req));
+    expect(res.status).toBe(413);
+    expect(upsertLibrarySnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects JSON nested beyond the approved depth", async () => {
+    let nested: unknown = "leaf";
+    for (let index = 0; index < 21; index += 1) nested = { nested };
+    const req = new Request("https://example.test/api/library", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(nested),
+    });
+
+    const res = await onRequestPut(mkCtx(req));
+    expect(res.status).toBe(422);
+    expect(upsertLibrarySnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects more than the approved number of records instead of truncating", async () => {
+    const req = new Request("https://example.test/api/library", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        siteLibrary: Array.from({ length: LIBRARY_BATCH_MAX_RECORDS + 1 }, (_, index) => validSite(`site-${index}`)),
+        simulationPresets: [],
+      }),
+    });
+
+    const res = await onRequestPut(mkCtx(req));
+    expect(res.status).toBe(422);
+    expect(upsertLibrarySnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("passes a validated Library batch to the existing database helper", async () => {
+    const site = validSite();
+    const req = new Request("https://example.test/api/library", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ siteLibrary: [site], simulationPresets: [] }),
+    });
+
+    const res = await onRequestPut(mkCtx(req));
     expect(res.status).toBe(200);
     expect(upsertLibrarySnapshotMock).toHaveBeenCalledWith(
       env,
       expect.objectContaining({ id: "u1" }),
-      { siteLibrary: [], simulationPresets: [] },
+      { siteLibrary: [site], simulationPresets: [] },
     );
   });
 });

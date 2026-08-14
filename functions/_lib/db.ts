@@ -4,6 +4,17 @@ import {
   normalizeUserSimulationDefaultsPreference,
   type UserSimulationDefaultsPreference,
 } from "../../src/lib/simulationDefaults";
+import {
+  LIBRARY_BATCH_MAX_RECORDS,
+  LIBRARY_MAX_GRANTS,
+  LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER,
+  LIBRARY_MAX_PUBLIC_SITES_PER_USER,
+  LIBRARY_MAX_SIMULATIONS_PER_USER,
+  LIBRARY_MAX_SITES_PER_USER,
+  LIBRARY_SIMULATION_MAX_BYTES,
+  LIBRARY_SITE_MAX_BYTES,
+  LibraryValidationError,
+} from "../../src/lib/libraryLimits";
 
 const VISIBILITIES: Visibility[] = ["private", "public", "shared"];
 const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write"];
@@ -1983,6 +1994,9 @@ const upsertOwnedResource = async (
 
   const visibility = sanitizeVisibility(item.visibility);
   const visibilityDb = dbVisibilityFromVisibility(visibility);
+  if (Array.isArray(item.sharedWith) && item.sharedWith.length > LIBRARY_MAX_GRANTS) {
+    return { ok: false, reason: `too_many_grants_${kind}` };
+  }
   const requestedSharedWith = sanitizeGrants(item.sharedWith);
   const now = new Date().toISOString();
 
@@ -2045,6 +2059,9 @@ const upsertOwnedResource = async (
     ...(kind === "simulation" ? { slug: simulationSlug, slugAliases } : {}),
   };
   const payload = JSON.stringify(nextRecord);
+  const payloadBytes = new TextEncoder().encode(payload).byteLength;
+  const maxPayloadBytes = kind === "site" ? LIBRARY_SITE_MAX_BYTES : LIBRARY_SIMULATION_MAX_BYTES;
+  if (payloadBytes > maxPayloadBytes) return { ok: false, reason: `${kind}_too_large` };
 
   const isCreate = !existing;
   const changed =
@@ -2075,11 +2092,17 @@ const upsertOwnedResource = async (
     return { ok: false, reason: `would_lose_access_${kind}` };
   }
 
-  await env.DB
+  const wasPublic = existing ? existing.visibility !== "private" : false;
+  const maxOwnerRecords = kind === "site" ? LIBRARY_MAX_SITES_PER_USER : LIBRARY_MAX_SIMULATIONS_PER_USER;
+  const maxOwnerPublicRecords = kind === "site" ? LIBRARY_MAX_PUBLIC_SITES_PER_USER : LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER;
+  const activeQuotaClause = kind === "simulation" ? " AND status = 'active'" : "";
+  const writeResult = await env.DB
     .prepare(
       `INSERT INTO ${table}
        (id, owner_user_id, created_by_user_id, last_edited_by_user_id, created_at, last_edited_at, name, visibility, payload_json, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE (? = 0 OR (SELECT COUNT(*) FROM ${table} WHERE owner_user_id = ?${activeQuotaClause}) < ?)
+         AND (? = 'private' OR ? = 1 OR (SELECT COUNT(*) FROM ${table} WHERE owner_user_id = ? AND visibility != 'private'${activeQuotaClause}) < ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name,
          visibility = excluded.visibility,
@@ -2090,8 +2113,27 @@ const upsertOwnedResource = async (
          created_by_user_id = COALESCE(${table}.created_by_user_id, excluded.created_by_user_id),
          created_at = COALESCE(${table}.created_at, excluded.created_at)`,
     )
-    .bind(id, ownerId, ownerId, actor.id, existing?.created_at ?? now, now, name, visibilityDb, payload, now)
+    .bind(
+      id,
+      ownerId,
+      ownerId,
+      actor.id,
+      existing?.created_at ?? now,
+      now,
+      name,
+      visibilityDb,
+      payload,
+      now,
+      isCreate ? 1 : 0,
+      ownerId,
+      maxOwnerRecords,
+      visibilityDb,
+      wasPublic ? 1 : 0,
+      ownerId,
+      maxOwnerPublicRecords,
+    )
     .run();
+  if (writeResult.meta?.changes === 0) return { ok: false, reason: `${kind}_quota_exceeded` };
 
   await env.DB.prepare(`DELETE FROM ${rolesTable} WHERE ${kind}_id = ?`).bind(id).run();
   if (sharedWith.length) {
@@ -2157,23 +2199,103 @@ const upsertOwnedResource = async (
   return { ok: true };
 };
 
+type QuotaResourceRow = {
+  id: string;
+  owner_user_id: string;
+  visibility: DbVisibility;
+};
+
+type OwnerQuotaRow = {
+  owner_user_id: string;
+  total_count: number;
+  public_count: number;
+};
+
+const preflightResourceQuotas = async (
+  env: Env,
+  kind: "site" | "simulation",
+  actor: ActorPolicy,
+  items: CloudResourceRecord[],
+): Promise<void> => {
+  if (items.length === 0) return;
+  const table = kind === "site" ? "sites" : "simulations";
+  const ids = items.map((item) => typeof item.id === "string" ? item.id.trim() : "");
+  if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
+    throw new LibraryValidationError(`Library request contains invalid or duplicate ${kind === "site" ? "Site" : "Simulation"} IDs.`);
+  }
+  const placeholders = ids.map(() => "?").join(", ");
+  const existingRows = await env.DB
+    .prepare(`SELECT id, owner_user_id, visibility FROM ${table} WHERE id IN (${placeholders})`)
+    .bind(...ids)
+    .all<QuotaResourceRow>();
+  const existingById = new Map(existingRows.results.map((row) => [row.id, row]));
+  const ownerIds = [...new Set(items.map((item) => existingById.get(item.id.trim())?.owner_user_id ?? actor.id))];
+  const ownerPlaceholders = ownerIds.map(() => "?").join(", ");
+  const activeClause = kind === "simulation" ? " AND status = 'active'" : "";
+  const counts = await env.DB
+    .prepare(
+      `SELECT owner_user_id,
+              COUNT(*) AS total_count,
+              SUM(CASE WHEN visibility != 'private' THEN 1 ELSE 0 END) AS public_count
+       FROM ${table}
+       WHERE owner_user_id IN (${ownerPlaceholders})${activeClause}
+       GROUP BY owner_user_id`,
+    )
+    .bind(...ownerIds)
+    .all<OwnerQuotaRow>();
+  const state = new Map(ownerIds.map((ownerId) => {
+    const row = counts.results.find((entry) => entry.owner_user_id === ownerId);
+    const total = Number(row?.total_count ?? 0);
+    const publicCount = Number(row?.public_count ?? 0);
+    return [ownerId, { initialTotal: total, initialPublic: publicCount, total, publicCount }];
+  }));
+
+  for (const item of items) {
+    const id = item.id.trim();
+    const existing = existingById.get(id);
+    const ownerId = existing?.owner_user_id ?? actor.id;
+    const ownerState = state.get(ownerId)!;
+    const nextVisibility = dbVisibilityFromVisibility(sanitizeVisibility(item.visibility));
+    if (!existing) ownerState.total += 1;
+    const wasPublic = existing ? existing.visibility !== "private" : false;
+    const willBePublic = nextVisibility !== "private";
+    if (wasPublic !== willBePublic) ownerState.publicCount += willBePublic ? 1 : -1;
+  }
+
+  const maxTotal = kind === "site" ? LIBRARY_MAX_SITES_PER_USER : LIBRARY_MAX_SIMULATIONS_PER_USER;
+  const maxPublic = kind === "site" ? LIBRARY_MAX_PUBLIC_SITES_PER_USER : LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER;
+  for (const quota of state.values()) {
+    if (quota.total > maxTotal && quota.total > quota.initialTotal) {
+      throw new LibraryValidationError(`${kind === "site" ? "Site" : "Simulation"} Library quota exceeded.`);
+    }
+    if (quota.publicCount > maxPublic && quota.publicCount > quota.initialPublic) {
+      throw new LibraryValidationError(`Public ${kind === "site" ? "Site" : "Simulation"} Library quota exceeded.`);
+    }
+  }
+};
+
 export const upsertLibrarySnapshot = async (
   env: Env,
   actor: ActorPolicy,
   payload: { siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] },
 ): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[] }> => {
   await ensureSchema(env);
+  if (payload.siteLibrary.length + payload.simulationPresets.length > LIBRARY_BATCH_MAX_RECORDS) {
+    throw new LibraryValidationError(`Library request may contain at most ${LIBRARY_BATCH_MAX_RECORDS} records.`);
+  }
+  await preflightResourceQuotas(env, "site", actor, payload.siteLibrary);
+  await preflightResourceQuotas(env, "simulation", actor, payload.simulationPresets);
   const conflicts: string[] = [];
   let upsertedSites = 0;
   let upsertedSimulations = 0;
 
-  for (const site of payload.siteLibrary.slice(0, 4000)) {
+  for (const site of payload.siteLibrary) {
     const result = await upsertOwnedResource(env, "site", actor, site);
     if (result.ok) upsertedSites += 1;
     else if (result.reason) conflicts.push(result.reason);
   }
 
-  for (const simulation of payload.simulationPresets.slice(0, 4000)) {
+  for (const simulation of payload.simulationPresets) {
     const result = await upsertOwnedResource(env, "simulation", actor, simulation);
     if (result.ok) upsertedSimulations += 1;
     else if (result.reason) conflicts.push(result.reason);
