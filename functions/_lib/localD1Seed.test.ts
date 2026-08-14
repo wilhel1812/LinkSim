@@ -57,6 +57,48 @@ describe("local D1 seed isolation", () => {
     );
   });
 
+  it("clears stale identity lifecycle state when replacing local users", () => {
+    const database = new DatabaseSync(":memory:");
+    const schema = readFileSync(resolve(root, "db/schema.sql"), "utf8");
+    const seed = readFileSync(localSeedFile, "utf8");
+    database.exec(schema);
+    database.exec(seed);
+    database.exec(`
+      INSERT INTO verified_identity_claims
+        (normalized_email, current_user_id, status, created_at, updated_at)
+      VALUES
+        ('admin.primary@linksim.local', 'admin_01', 'active', '2026-03-13', '2026-03-13');
+      INSERT INTO identity_subject_states
+        (user_id, normalized_email, status, canonical_user_id, bootstrap_consumed, created_at, updated_at)
+      VALUES
+        ('admin_01', 'admin.primary@linksim.local', 'current', 'admin_01', 1, '2026-03-13', '2026-03-13');
+      INSERT INTO deleted_users (id, deleted_at, deleted_by_user_id)
+      VALUES ('admin_01', '2026-03-14', 'local-dev-user');
+      INSERT INTO user_identity_audit
+        (event_type, target_user_id, actor_user_id, details_json, created_at)
+      VALUES
+        ('delete', 'admin_01', 'local-dev-user', '{}', '2026-03-14');
+    `);
+
+    database.exec(seed);
+
+    for (const table of [
+      "verified_identity_claims",
+      "identity_subject_states",
+      "deleted_users",
+      "user_identity_audit",
+    ]) {
+      expect(database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({
+        count: 0,
+      });
+    }
+    expect(
+      database
+        .prepare("SELECT version FROM identity_lifecycle_meta WHERE singleton = 1")
+        .get(),
+    ).toEqual({ version: "2026-08-12-identity-lifecycle-v1" });
+  });
+
   it("builds one fixed local Wrangler invocation", () => {
     expect(LOCAL_D1_DATABASE).toBe("linksim");
     expect(LOCAL_WRANGLER_COMMAND).toBe(resolve(root, "node_modules/.bin/wrangler"));

@@ -1,5 +1,9 @@
 PRAGMA foreign_keys = ON;
 
+DELETE FROM user_identity_audit;
+DELETE FROM verified_identity_claims;
+DELETE FROM identity_subject_states;
+DELETE FROM deleted_users;
 DELETE FROM users;
 
 INSERT INTO users (
