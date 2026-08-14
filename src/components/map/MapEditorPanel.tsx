@@ -9,6 +9,7 @@ import {
 } from "../../lib/cloudUser";
 import { formatDate } from "../../lib/locale";
 import { getUiErrorMessage } from "../../lib/uiError";
+import { canDeleteLibraryItem } from "../../lib/libraryFilters";
 import { useAppStore } from "../../store/appStore";
 import { useMapEditorFormState } from "./useMapEditorFormState";
 import { AccessSettingsEditor } from "../AccessSettingsEditor";
@@ -258,6 +259,7 @@ function SiteEditorCard({
   onRequestDelete,
   onOpenChangeLog,
   onOpenUserProfile,
+  canDelete,
 }: {
   isNew: boolean;
   form: ReturnType<typeof useMapEditorFormState>;
@@ -265,6 +267,7 @@ function SiteEditorCard({
   onRequestDelete: () => void;
   onOpenChangeLog: (kind: ResourceKindWithChanges, resourceId: string, label: string) => void;
   onOpenUserProfile: (userId: string, anchor: HTMLElement) => void;
+  canDelete: boolean;
 }) {
   const mapEditor = useAppStore((state) => state.mapEditor);
   const isReadOnly = Boolean(mapEditor?.readOnly && !isNew) || (!form.canWrite && !isNew);
@@ -768,7 +771,7 @@ function SiteEditorCard({
             {isNew ? "Create Site" : "Save Site"}
           </ActionButton>
         ) : null}
-        {!isNew && !isReadOnly ? (
+        {!isNew && !isReadOnly && canDelete ? (
           <ActionButton onClick={onRequestDelete} type="button" variant="danger">
             Delete Site
           </ActionButton>
@@ -1213,6 +1216,7 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
   const deleteSimulationPreset = useAppStore((state) => state.deleteSimulationPreset);
   const restoreSimulationPreset = useAppStore((state) => state.restoreSimulationPreset);
   const simulationPresets = useAppStore((state) => state.simulationPresets);
+  const siteLibrary = useAppStore((state) => state.siteLibrary);
   const currentUser = useAppStore((state) => state.currentUser);
   const form = useMapEditorFormState();
 
@@ -1320,8 +1324,12 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
 
   const editorContent = (() => {
     if (mapEditor.kind === "site") {
+      const site = mapEditor.resourceId
+        ? siteLibrary.find((entry) => entry.id === mapEditor.resourceId)
+        : undefined;
       return (
         <SiteEditorCard
+          canDelete={Boolean(site && canDeleteLibraryItem(site, currentUser))}
           form={form}
           isNew={mapEditor.isNew}
           onClose={closeMapEditor}

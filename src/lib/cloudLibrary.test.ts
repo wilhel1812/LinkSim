@@ -59,18 +59,31 @@ describe("cloudLibrary client", () => {
     );
 
     const result = await fetchCloudLibrary();
-    expect(result).toEqual({ siteLibrary: [{ id: "s1" }], simulationPresets: [], deletedSimulationIds: [] });
+    expect(result).toEqual({
+      siteLibrary: [{ id: "s1" }],
+      simulationPresets: [],
+      deletedSiteIds: [],
+      deletedSimulationIds: [],
+    });
   });
 
   it("normalizes deletion tombstones from Library responses", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ siteLibrary: [], simulationPresets: [], deletedSimulationIds: ["sim-1", 42] }), {
+      new Response(JSON.stringify({
+        siteLibrary: [],
+        simulationPresets: [],
+        deletedSiteIds: ["site-1", null],
+        deletedSimulationIds: ["sim-1", 42],
+      }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
     );
 
-    await expect(fetchCloudLibrary()).resolves.toMatchObject({ deletedSimulationIds: ["sim-1"] });
+    await expect(fetchCloudLibrary()).resolves.toMatchObject({
+      deletedSiteIds: ["site-1"],
+      deletedSimulationIds: ["sim-1"],
+    });
   });
 
   it("uses dedicated lifecycle requests for Site delete and Simulation delete/restore", async () => {

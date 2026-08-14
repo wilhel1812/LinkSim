@@ -43,6 +43,15 @@ const validSite = (id = "site-1") => ({
   createdAt: "2026-08-14T00:00:00.000Z",
 });
 
+const validSimulation = (updatedAt: unknown) => ({
+  id: "sim-1",
+  name: "Relay plan",
+  visibility: "private",
+  sharedWith: [],
+  updatedAt,
+  snapshot: { sites: [], links: [], systems: [], networks: [] },
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   verifyAuthMock.mockResolvedValue({ userId: "u1", tokenPayload: {}, source: "headers" });
@@ -137,6 +146,23 @@ describe("api/library", () => {
     expect(res.status).toBe(422);
     expect(upsertLibrarySnapshotMock).not.toHaveBeenCalled();
   });
+
+  it.each([undefined, { unsafe: true }])(
+    "rejects a missing or malformed render-critical Simulation updatedAt (%j)",
+    async (updatedAt) => {
+      const simulation = validSimulation(updatedAt);
+      if (updatedAt === undefined) delete (simulation as { updatedAt?: unknown }).updatedAt;
+      const req = new Request("https://example.test/api/library", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ siteLibrary: [], simulationPresets: [simulation] }),
+      });
+
+      const res = await onRequestPut(mkCtx(req));
+      expect(res.status).toBe(422);
+      expect(upsertLibrarySnapshotMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("passes a validated Library batch to the existing database helper", async () => {
     const site = validSite();

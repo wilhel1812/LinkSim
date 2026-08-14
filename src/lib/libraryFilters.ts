@@ -20,6 +20,15 @@ export interface FilterableLibraryItem {
   visibility?: "private" | "public" | "shared" | "public_read" | "public_write";
 }
 
+export const canDeleteLibraryItem = (
+  item: Pick<FilterableLibraryItem, "ownerUserId" | "effectiveRole">,
+  currentUser: { id: string; isAdmin?: boolean } | null,
+): boolean => Boolean(currentUser && (
+  currentUser.isAdmin
+  || item.ownerUserId === currentUser.id
+  || item.effectiveRole === "owner"
+));
+
 type PersistedLibraryFilterState = {
   version: 1 | 2;
   searchQuery: string;

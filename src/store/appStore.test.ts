@@ -947,6 +947,59 @@ describe("appStore unified Library state", () => {
     expect(useAppStore.getState().selectedScenarioId).toBe("");
     expect(useAppStore.getState().sites).toEqual([]);
   });
+
+  it("applies remote Site deletion tombstones before a stale client can sync them", () => {
+    const linkedSite = {
+      id: "workspace-site",
+      name: "Linked",
+      libraryEntryId: "site-deleted",
+      position: { lat: 60, lon: 11 },
+      groundElevationM: 100,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      sites: [linkedSite],
+      siteLibrary: [{
+        id: "site-deleted",
+        name: "Deleted remotely",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        position: { lat: 60, lon: 11 },
+        groundElevationM: 100,
+        antennaHeightM: 2,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      }],
+      simulationPresets: [{
+        id: "sim-with-stale-ref",
+        name: "Stale reference",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        snapshot: {
+          sites: [linkedSite], links: [], systems: [], networks: [],
+          selectedSiteId: "workspace-site", selectedLinkId: "", selectedNetworkId: "",
+          selectedCoverageResolution: "24", propagationModel: "ITM",
+          selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+          environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+          autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+        },
+      }],
+    });
+
+    useAppStore.getState().applyDeletedSiteTombstones(["site-deleted"]);
+
+    expect(useAppStore.getState().siteLibrary).toEqual([]);
+    expect(useAppStore.getState().sites[0]).not.toHaveProperty("libraryEntryId");
+    expect(useAppStore.getState().simulationPresets[0]?.snapshot.sites[0]).not.toHaveProperty("libraryEntryId");
+  });
 });
 
 describe("appStore new simulation default frequency preset", () => {

@@ -13,6 +13,7 @@ import {
 import { haversineDistanceKm } from "../lib/geo";
 import { resolveTrackedSiteOrientation, resolveTrackedSiteOrientations } from "../lib/antennaPattern";
 import { getUiErrorMessage } from "../lib/uiError";
+import { canDeleteLibraryItem } from "../lib/libraryFilters";
 import {
   deleteCloudSite,
   deleteCloudSimulation,
@@ -364,6 +365,27 @@ type SyncPayload = {
   simulationPresets: SimulationPreset[];
 };
 
+const detachDeletedSiteLibraryReferences = <T extends { libraryEntryId?: string }>(
+  sites: T[],
+  deletedIds: ReadonlySet<string>,
+): T[] => sites.map((site) => {
+  if (!site.libraryEntryId || !deletedIds.has(site.libraryEntryId)) return site;
+  const detached = { ...site };
+  delete detached.libraryEntryId;
+  return detached;
+});
+
+const detachDeletedSiteReferencesFromPresets = (
+  presets: SimulationPreset[],
+  deletedIds: ReadonlySet<string>,
+): SimulationPreset[] => presets.map((preset) => ({
+  ...preset,
+  snapshot: {
+    ...preset.snapshot,
+    sites: detachDeletedSiteLibraryReferences(preset.snapshot.sites, deletedIds),
+  },
+}));
+
 type EditableSyncPayloadInfo = {
   payload: SyncPayload;
   skippedCount: number;
@@ -677,6 +699,7 @@ type AppState = {
   deleteSimulationPreset: (presetId: string) => Promise<void>;
   restoreSimulationPreset: (presetId: string) => Promise<void>;
   applyDeletedSimulationTombstones: (presetIds: string[]) => void;
+  applyDeletedSiteTombstones: (siteIds: string[]) => void;
   importLibraryData: (
     bundle: { siteLibrary?: SiteLibraryEntry[]; simulationPresets?: SimulationPreset[] },
     mode: "merge" | "replace",
@@ -1508,9 +1531,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Delta fetch: merge server items by ID (server wins), keep local items not returned
       if (cloud.isDelta) {
+        const deletedSiteIds = new Set(cloud.deletedSiteIds);
+        get().applyDeletedSiteTombstones(cloud.deletedSiteIds);
         get().applyDeletedSimulationTombstones(cloud.deletedSimulationIds);
         const deltaSites = cloud.siteLibrary as SiteLibraryEntry[];
-        const deltaSims = cloud.simulationPresets as SimulationPreset[];
+        const deltaSims = detachDeletedSiteReferencesFromPresets(
+          cloud.simulationPresets as SimulationPreset[],
+          deletedSiteIds,
+        );
         set((state) => {
           const siteById = new Map(deltaSites.map((s) => [s.id, s]));
           const simById = new Map(deltaSims.map((s) => [s.id, s]));
@@ -1546,7 +1574,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       let remotePayloadSignature: string | null = null;
 
       const cloudSites = Array.isArray(cloud.siteLibrary) ? cloud.siteLibrary as SiteLibraryEntry[] : [];
-      const cloudSims = Array.isArray(cloud.simulationPresets) ? cloud.simulationPresets as SimulationPreset[] : [];
+      const deletedSiteIds = new Set(cloud.deletedSiteIds);
+      const cloudSims = detachDeletedSiteReferencesFromPresets(
+        Array.isArray(cloud.simulationPresets) ? cloud.simulationPresets as SimulationPreset[] : [],
+        deletedSiteIds,
+      );
+      get().applyDeletedSiteTombstones(cloud.deletedSiteIds);
       get().applyDeletedSimulationTombstones(cloud.deletedSimulationIds);
 
       if (currentUser?.id) {
@@ -1947,8 +1980,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         sites: cloud.siteLibrary.length,
         simulations: cloud.simulationPresets.length,
       });
-      const cloudPresets =
-        (cloud.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"] | undefined) ?? [];
+      const cloudPresets = detachDeletedSiteReferencesFromPresets(
+        (cloud.simulationPresets as SimulationPreset[] | undefined) ?? [],
+        new Set(cloud.deletedSiteIds),
+      ) as Parameters<typeof importLibraryData>[0]["simulationPresets"];
+      get().applyDeletedSiteTombstones(cloud.deletedSiteIds);
       get().applyDeletedSimulationTombstones(cloud.deletedSimulationIds);
       console.log("[appStore] Merging cloud data with local...");
       const result = importLibraryData(
@@ -2805,8 +2841,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const entryId of requested) {
       const entry = state.siteLibrary.find((e) => e.id === entryId);
       if (!entry) continue;
-      const ownsSite = entry.ownerUserId === user.id || entry.effectiveRole === "owner";
-      if (!user.isAdmin && !ownsSite) {
+      if (!canDeleteLibraryItem(entry, user)) {
         throw new Error("Only the Site owner or a platform admin can delete it.");
       }
       requestedEntries.push(entry);
@@ -3514,6 +3549,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { simulationPresets: next };
     });
     if (deletingActiveSimulation) get().clearSimulationWorkspace();
+  },
+  applyDeletedSiteTombstones: (siteIds) => {
+    const deletedIds = new Set((siteIds ?? []).filter(Boolean));
+    if (!deletedIds.size) return;
+    set((state) => {
+      const next = state.siteLibrary.filter((site) => !deletedIds.has(site.id));
+      const nextSites = detachDeletedSiteLibraryReferences(state.sites, deletedIds);
+      const nextPresets = detachDeletedSiteReferencesFromPresets(state.simulationPresets, deletedIds);
+      writeStorage(SITE_LIBRARY_KEY, next);
+      writeStorage(SIM_PRESETS_KEY, nextPresets);
+      return { siteLibrary: next, sites: nextSites, simulationPresets: nextPresets };
+    });
+    deletedIds.forEach((id) => dirtySiteIds.delete(id));
   },
   deleteSimulationPreset: async (presetId) => {
     const { currentUser } = get();

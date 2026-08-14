@@ -30,8 +30,9 @@ retry safely. The server never silently truncates a batch.
 
 Owners already above a storage quota can continue to update, export,
 privatize, or delete existing records. Authenticated Site deletion removes the
-owned cloud record before detaching its local references; deletion is
-idempotent so an interrupted retry can recover. Platform admins may
+owned cloud record before detaching its local references; the existing change
+history carries deletion tombstones to stale clients and prevents recreation.
+Deletion is idempotent so an interrupted retry can recover. Platform admins may
 also delete a Site. Collaborators cannot delete someone else's Site. Owners
 cannot create a record or make a record public when that would increase an
 exceeded quota.

@@ -4,6 +4,7 @@ import { LIBRARY_BATCH_MAX_RECORDS, LIBRARY_REQUEST_MAX_BYTES } from "./libraryL
 export type CloudLibraryPayload = {
   siteLibrary: unknown[];
   simulationPresets: unknown[];
+  deletedSiteIds?: string[];
   deletedSimulationIds?: string[];
 };
 
@@ -67,14 +68,17 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return (await response.json()) as T;
 };
 
-export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSimulationIds: string[]; isDelta?: boolean }> => {
+export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean }> => {
   const url = opts?.since ? `/api/library?since=${encodeURIComponent(opts.since)}` : "/api/library";
-  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; deletedSimulationIds?: unknown[]; isDelta?: boolean }>(url, {
+  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; deletedSiteIds?: unknown[]; deletedSimulationIds?: unknown[]; isDelta?: boolean }>(url, {
     method: "GET",
   });
   return {
     siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
     simulationPresets: Array.isArray(data.simulationPresets) ? data.simulationPresets : [],
+    deletedSiteIds: Array.isArray(data.deletedSiteIds)
+      ? data.deletedSiteIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+      : [],
     deletedSimulationIds: Array.isArray(data.deletedSimulationIds)
       ? data.deletedSimulationIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
       : [],

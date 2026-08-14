@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, Filter, Info, MapPlus, Menu, Pencil, X } from "lucide-react";
 import {
   DEFAULT_LIBRARY_FILTER_STATE,
+  canDeleteLibraryItem,
   filterAndSortLibraryItems,
   type LibraryFilterRole,
   type LibraryFilterSource,
@@ -71,15 +72,6 @@ const canEditResource = (
         resource.effectiveRole === "admin" ||
         resource.effectiveRole === "editor"),
   );
-
-const canDeleteResource = (
-  resource: { ownerUserId?: string; effectiveRole?: string },
-  currentUser: { id: string; isAdmin?: boolean } | null,
-) => Boolean(currentUser && (
-  currentUser.isAdmin
-  || resource.ownerUserId === currentUser.id
-  || resource.effectiveRole === "owner"
-));
 
 export function LibraryPanel({
   initialTab,
@@ -558,7 +550,7 @@ export function LibraryPanel({
                 <ActionButton
                   disabled={Array.from(selectedSiteIds).some((id) => {
                     const entry = siteLibrary.find((candidate) => candidate.id === id);
-                    return !entry || !canDeleteResource(entry, currentUser);
+                    return !entry || !canDeleteLibraryItem(entry, currentUser);
                   })}
                   onClick={() => setDeleteSelection(Array.from(selectedSiteIds))}
                   type="button"

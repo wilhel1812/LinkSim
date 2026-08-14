@@ -104,6 +104,12 @@ const assertNestedNamedRecord = (value: unknown, label: string): Record<string, 
 
 const encodedBytes = (value: unknown): number => textEncoder.encode(JSON.stringify(value)).byteLength;
 
+const assertRequiredDateString = (value: unknown, label: string): void => {
+  if (typeof value !== "string" || value.trim().length === 0 || !Number.isFinite(Date.parse(value))) {
+    throw new LibraryValidationError(`${label} must be a valid date string.`);
+  }
+};
+
 const assertSite = (value: unknown, nested = false): void => {
   const site = nested
     ? (() => {
@@ -170,6 +176,7 @@ const assertNetwork = (value: unknown): void => {
 
 const assertSimulation = (value: unknown): void => {
   const simulation = assertCommonRecord(value, "Simulation");
+  assertRequiredDateString(simulation.updatedAt, "Simulation updatedAt");
   if (!isRecord(simulation.snapshot)) throw new LibraryValidationError("Simulation snapshot must be an object.");
   const { snapshot } = simulation;
   if (!Array.isArray(snapshot.sites)) throw new LibraryValidationError("Simulation snapshot Sites must be an array.");

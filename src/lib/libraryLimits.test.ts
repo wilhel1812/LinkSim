@@ -79,6 +79,19 @@ describe("Library ingestion limits", () => {
     );
   });
 
+  it("rejects missing or malformed render-critical Simulation timestamps", () => {
+    const missingUpdatedAt = validSimulation() as Record<string, unknown>;
+    delete missingUpdatedAt.updatedAt;
+    expect(() => validateLibraryPayload({ siteLibrary: [], simulationPresets: [missingUpdatedAt] })).toThrow(
+      "Simulation updatedAt must be a valid date string",
+    );
+
+    expect(() => validateLibraryPayload({
+      siteLibrary: [],
+      simulationPresets: [{ ...validSimulation(), updatedAt: { unsafe: true } }],
+    })).toThrow("Simulation updatedAt must be a valid date string");
+  });
+
   it("rejects Simulation collection counts above their approved boundaries", () => {
     const simulation = validSimulation();
     simulation.snapshot.sites = Array.from({ length: SIMULATION_MAX_SITES + 1 }, (_, index) => validSite(`site-${index}`));
