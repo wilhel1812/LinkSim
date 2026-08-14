@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   hasMatchingPagesDeployment,
   parsePagesDeploymentUrl,
+  resolveDeploymentCommit,
   validatePreviewBranch,
+  verifyMatchingPagesDeployment,
 } from "../../scripts/pages-preview.mjs";
 
 describe("Pages preview deployment helpers", () => {
@@ -67,5 +69,95 @@ describe("Pages preview deployment helpers", () => {
         deploymentUrl: "https://6b1cae65.linksim-staging.pages.dev",
       }),
     ).toBe(false);
+  });
+
+  it("uses the full workflow commit for production after its tree matches the release", async () => {
+    const workflowCommit = "a".repeat(40);
+    const resolveTree = vi.fn(async () => "release-tree");
+
+    await expect(
+      resolveDeploymentCommit({
+        targetName: "prod-main",
+        currentCommit: "12345678",
+        workflowCommit,
+        resolveTree,
+      }),
+    ).resolves.toBe(workflowCommit);
+    expect(resolveTree).toHaveBeenNthCalledWith(1, workflowCommit);
+    expect(resolveTree).toHaveBeenNthCalledWith(2, "HEAD");
+  });
+
+  it.each(["", "abc1234", "g".repeat(40), "a".repeat(39), "a".repeat(41)])(
+    "rejects malformed production workflow commit %j",
+    async (workflowCommit) => {
+      const resolveTree = vi.fn();
+      await expect(
+        resolveDeploymentCommit({
+          targetName: "prod-main",
+          currentCommit: "12345678",
+          workflowCommit,
+          resolveTree,
+        }),
+      ).rejects.toThrow("DEPLOY_VERIFY_COMMIT must be a full 40-character hexadecimal SHA");
+      expect(resolveTree).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a production workflow commit whose tree differs from the release", async () => {
+    const workflowCommit = "b".repeat(40);
+    const resolveTree = vi.fn(async (ref: string) =>
+      ref === "HEAD" ? "release-tree" : "workflow-tree",
+    );
+
+    await expect(
+      resolveDeploymentCommit({
+        targetName: "prod-main",
+        currentCommit: "12345678",
+        workflowCommit,
+        resolveTree,
+      }),
+    ).rejects.toThrow("workflow commit tree does not match the tagged release worktree");
+  });
+
+  it("accepts only the exact deployment commit and branch returned by Wrangler", async () => {
+    const commit = "c".repeat(40);
+    const listDeployments = vi.fn(async () =>
+      `│ deployment-id │ Production │ main │ ${commit} │ https://linksim.pages.dev │`,
+    );
+    const wait = vi.fn();
+
+    await expect(
+      verifyMatchingPagesDeployment({
+        projectName: "linksim",
+        commit,
+        branch: "main",
+        listDeployments,
+        wait,
+      }),
+    ).resolves.toBeUndefined();
+    expect(listDeployments).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+  });
+
+  it("fails closed after retries return only the wrong deployment record", async () => {
+    const listDeployments = vi.fn(async () =>
+      `│ deployment-id │ Production │ staging │ ${"d".repeat(40)} │ https://linksim.pages.dev │`,
+    );
+    const wait = vi.fn();
+
+    await expect(
+      verifyMatchingPagesDeployment({
+        projectName: "linksim",
+        commit: "e".repeat(40),
+        branch: "main",
+        attempts: 3,
+        listDeployments,
+        wait,
+      }),
+    ).rejects.toThrow(
+      `Post-deploy verification failed: no linksim deployment matched branch main and commit ${"e".repeat(40)}.`,
+    );
+    expect(listDeployments).toHaveBeenCalledTimes(3);
+    expect(wait).toHaveBeenCalledTimes(2);
   });
 });

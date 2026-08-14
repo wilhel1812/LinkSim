@@ -7,6 +7,10 @@ const workflow = readFileSync(
   resolve(process.cwd(), ".github/workflows/deploy-pages.yml"),
   "utf8",
 );
+const deployScript = readFileSync(
+  resolve(process.cwd(), "scripts/deploy-pages-safe.mjs"),
+  "utf8",
+);
 
 const productionJob = workflow.split("  deploy-prod-main:")[1] ?? "";
 const stagingJob =
@@ -44,6 +48,28 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(previewJob).toContain("Detect identity lifecycle schema change");
     expect(previewJob).toContain("db/migrations/2026-08-12_identity_lifecycle.sql");
     expect(previewJob).toContain("steps.identity_schema.outputs.changed != 'true'");
+  });
+
+  it("validates workflow-derived preview and release values before quoted shell use", () => {
+    expect(previewJob).toContain(
+      "PREVIEW_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+    );
+    expect(previewJob).toContain('[[ ! "$PREVIEW_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]');
+    expect(previewJob).toContain('git diff --quiet "$PREVIEW_BASE_SHA"...HEAD');
+    expect(previewJob).not.toContain(
+      'git diff --quiet "${{ github.event.pull_request.base.sha }}"...HEAD',
+    );
+
+    expect(productionJob).toContain("RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}");
+    expect(productionJob).toContain(
+      '[[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$ ]]',
+    );
+    expect(productionJob).toContain(
+      'git worktree add --detach "$RUNNER_TEMP/linksim-release" "$RELEASE_TAG"',
+    );
+    expect(productionJob).not.toContain(
+      'git worktree add --detach "$RUNNER_TEMP/linksim-release" "${{ steps.release_tag.outputs.tag }}"',
+    );
   });
 
   it("checks the production Access boundary without requiring an Access API token", () => {
@@ -106,6 +132,17 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
     expect(productionJob.slice(0, productionJob.indexOf(releaseGateStep))).not.toContain(
       "npx wrangler d1 execute linksim --remote",
+    );
+  });
+
+  it("uses the validated workflow SHA and fails closed on production deployment lookup", () => {
+    expect(productionJob).toContain("DEPLOY_VERIFY_COMMIT: ${{ github.sha }}");
+    expect(deployScript).toContain("process.env.DEPLOY_VERIFY_COMMIT");
+    expect(deployScript).toContain("resolveDeploymentCommit");
+    expect(deployScript).toContain("await verifyMatchingPagesDeployment");
+    expect(deployScript).not.toContain("Proceeding because the Pages deploy itself completed successfully");
+    expect(deployScript.indexOf("await verifyMatchingPagesDeployment")).toBeLessThan(
+      deployScript.indexOf("[deploy-pages-safe] Success:"),
     );
   });
 

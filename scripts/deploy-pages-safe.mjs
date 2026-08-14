@@ -2,9 +2,10 @@ import { appendFile, copyFile, readFile, rename, writeFile } from "node:fs/promi
 import path from "node:path";
 import { spawn } from "node:child_process";
 import {
-  hasMatchingPagesDeployment,
   parsePagesDeploymentUrl,
+  resolveDeploymentCommit,
   validatePreviewBranch,
+  verifyMatchingPagesDeployment,
 } from "./pages-preview.mjs";
 import { validateCurrentStagingVersionState } from "./version-state.mjs";
 
@@ -369,26 +370,6 @@ async function withWranglerConfig(configPath, fn) {
   }
 }
 
-async function verifyDeployment(targetName, projectName, commit, branch, deploymentUrl = "") {
-  for (let attempt = 1; attempt <= 6; attempt += 1) {
-    const { stdout } = await run(
-      wrangler,
-      ["pages", "deployment", "list", "--project-name", projectName],
-      { capture: true },
-    );
-    if (hasMatchingPagesDeployment(stdout, { commit, branch, deploymentUrl })) {
-      return;
-    }
-    await sleep(5000);
-  }
-  const message = `Post-deploy verification failed: no ${projectName} deployment matched branch ${branch} and commit ${commit}.`;
-  if (targetName === "prod-main") {
-    console.warn(`[deploy-pages-safe] ${message} Proceeding because the Pages deploy itself completed successfully.`);
-    return;
-  }
-  throw new Error(message);
-}
-
 async function main() {
   const targetName = parseArg("target");
   const target = TARGETS[targetName];
@@ -400,7 +381,13 @@ async function main() {
     );
   }
 
-  const { branch: currentBranch, commit } = await preflight(targetName, target);
+  const { branch: currentBranch, commit: currentCommit } = await preflight(targetName, target);
+  const commit = await resolveDeploymentCommit({
+    targetName,
+    currentCommit,
+    workflowCommit: process.env.DEPLOY_VERIFY_COMMIT,
+    resolveTree: async (ref) => getGitRef(["rev-parse", `${ref}^{tree}`]),
+  });
   const requestedPreviewBranch = parseArg("branch");
   if (requestedPreviewBranch && targetName !== "staging-preview") {
     throw new Error("--branch is only valid for the staging-preview target.");
@@ -451,13 +438,21 @@ async function main() {
       }
     });
 
-    await verifyDeployment(
-      targetName,
-      target.projectName,
+    await verifyMatchingPagesDeployment({
+      projectName: target.projectName,
       commit,
-      deployBranch,
-      deployedPreviewUrl,
-    );
+      branch: deployBranch,
+      deploymentUrl: deployedPreviewUrl,
+      listDeployments: async () => {
+        const { stdout } = await run(
+          wrangler,
+          ["pages", "deployment", "list", "--project-name", target.projectName],
+          { capture: true },
+        );
+        return stdout;
+      },
+      wait: sleep,
+    });
     console.log(
       `[deploy-pages-safe] Success: target=${targetName} project=${target.projectName} branch=${deployBranch} commit=${commit}`,
     );

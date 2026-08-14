@@ -52,3 +52,49 @@ export function hasMatchingPagesDeployment(output, { commit, branch, deploymentU
     );
   });
 }
+
+export async function resolveDeploymentCommit({
+  targetName,
+  currentCommit,
+  workflowCommit,
+  resolveTree,
+}) {
+  if (targetName !== "prod-main") return currentCommit;
+
+  const commit = String(workflowCommit ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(commit)) {
+    throw new Error(
+      "DEPLOY_VERIFY_COMMIT must be a full 40-character hexadecimal SHA for production.",
+    );
+  }
+
+  const [workflowTree, releaseTree] = await Promise.all([
+    resolveTree(commit),
+    resolveTree("HEAD"),
+  ]);
+  if (String(workflowTree).trim().toLowerCase() !== String(releaseTree).trim().toLowerCase()) {
+    throw new Error(
+      "DEPLOY_VERIFY_COMMIT workflow commit tree does not match the tagged release worktree.",
+    );
+  }
+  return commit;
+}
+
+export async function verifyMatchingPagesDeployment({
+  projectName,
+  commit,
+  branch,
+  deploymentUrl = "",
+  attempts = 6,
+  listDeployments,
+  wait,
+}) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const output = await listDeployments();
+    if (hasMatchingPagesDeployment(output, { commit, branch, deploymentUrl })) return;
+    if (attempt < attempts) await wait(5000);
+  }
+  throw new Error(
+    `Post-deploy verification failed: no ${projectName} deployment matched branch ${branch} and commit ${commit}.`,
+  );
+}
