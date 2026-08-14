@@ -205,4 +205,33 @@ describe("api/library", () => {
       { siteLibrary: sites, simulationPresets: simulations },
     );
   });
+
+  it("accepts legacy Simulation snapshots without Radio Systems or Networks", async () => {
+    const withoutSystems = validSimulation("2026-08-14T00:00:00.000Z") as {
+      id: string;
+      snapshot: Record<string, unknown>;
+    };
+    withoutSystems.id = "sim-without-systems";
+    delete withoutSystems.snapshot.systems;
+    const withoutNetworks = validSimulation("2026-08-14T00:00:00.000Z") as {
+      id: string;
+      snapshot: Record<string, unknown>;
+    };
+    withoutNetworks.id = "sim-without-networks";
+    delete withoutNetworks.snapshot.networks;
+    const simulations = [withoutSystems, withoutNetworks];
+    const req = new Request("https://example.test/api/library", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ siteLibrary: [], simulationPresets: simulations }),
+    });
+
+    const res = await onRequestPut(mkCtx(req));
+    expect(res.status).toBe(200);
+    expect(upsertLibrarySnapshotMock).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({ id: "u1" }),
+      { siteLibrary: [], simulationPresets: simulations },
+    );
+  });
 });

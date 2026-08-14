@@ -59,6 +59,20 @@ describe("Library ingestion limits", () => {
     })).not.toThrow();
   });
 
+  it("accepts legacy Simulation snapshots without Radio Systems or Networks", () => {
+    const withoutSystems = validSimulation() as { id: string; snapshot: Record<string, unknown> };
+    withoutSystems.id = "sim-without-systems";
+    delete withoutSystems.snapshot.systems;
+    const withoutNetworks = validSimulation() as { id: string; snapshot: Record<string, unknown> };
+    withoutNetworks.id = "sim-without-networks";
+    delete withoutNetworks.snapshot.networks;
+
+    expect(() => validateLibraryPayload({
+      siteLibrary: [],
+      simulationPresets: [withoutSystems, withoutNetworks],
+    })).not.toThrow();
+  });
+
   it("rejects malformed known fields without rejecting compatible extension fields", () => {
     expect(() => validateLibraryPayload({
       siteLibrary: [{ ...validSite(), position: { lat: 91, lon: 10 }, futureField: { supported: true } }],

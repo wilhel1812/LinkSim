@@ -183,10 +183,12 @@ const assertSimulation = (value: unknown): void => {
   }
   snapshot.sites.forEach((site) => assertSite(site, true));
   snapshot.links.forEach(assertPath);
-  if (!Array.isArray(snapshot.systems)) throw new LibraryValidationError("Simulation snapshot systems must be an array.");
-  if (!Array.isArray(snapshot.networks)) throw new LibraryValidationError("Simulation snapshot networks must be an array.");
-  snapshot.systems.forEach(assertRadioSystem);
-  snapshot.networks.forEach(assertNetwork);
+  const systems = snapshot.systems === undefined ? [] : snapshot.systems;
+  const networks = snapshot.networks === undefined ? [] : snapshot.networks;
+  if (!Array.isArray(systems)) throw new LibraryValidationError("Simulation snapshot systems must be an array.");
+  if (!Array.isArray(networks)) throw new LibraryValidationError("Simulation snapshot networks must be an array.");
+  systems.forEach(assertRadioSystem);
+  networks.forEach(assertNetwork);
   if (encodedBytes(simulation) > LIBRARY_SIMULATION_MAX_BYTES) {
     throw new LibraryValidationError(`Simulation record exceeds ${LIBRARY_SIMULATION_MAX_BYTES} bytes.`);
   }
