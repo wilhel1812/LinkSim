@@ -627,6 +627,31 @@ describe("user identity privacy and diagnostic access", () => {
 });
 
 describe("upsertLibrarySnapshot shared simulations", () => {
+  it("persists one-character and longer resource names under the existing non-empty contract", async () => {
+    const db = new FakeDb();
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+    const longName = "L".repeat(160);
+
+    await expect(upsertLibrarySnapshot(
+      env,
+      { id: "owner-1", isAdmin: false, isModerator: false },
+      {
+        siteLibrary: [
+          { id: "site-short", name: "X", visibility: "private" },
+          { id: "site-long", name: longName, visibility: "private" },
+        ],
+        simulationPresets: [
+          { id: "sim-short", name: "X", visibility: "private" },
+          { id: "sim-long", name: longName, visibility: "private" },
+        ],
+      },
+    )).resolves.toMatchObject({ upsertedSites: 2, upsertedSimulations: 2, conflicts: [] });
+    expect(db.sites.get("site-short")?.name).toBe("X");
+    expect(db.sites.get("site-long")?.name).toBe(longName);
+    expect(db.simulations.get("sim-short")?.name).toBe("X");
+    expect(db.simulations.get("sim-long")?.name).toBe(longName);
+  });
+
   it("deletes Sites only for their owner or a platform admin", async () => {
     const db = new FakeDb();
     db.sites.set("site-owner", {

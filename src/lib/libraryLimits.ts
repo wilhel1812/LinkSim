@@ -12,8 +12,6 @@ export const SIMULATION_MAX_SITES = 250;
 export const SIMULATION_MAX_PATHS = 1000;
 
 const MAX_ID_LENGTH = 128;
-const MIN_NAME_LENGTH = 2;
-const MAX_NAME_LENGTH = 80;
 const textEncoder = new TextEncoder();
 
 export class LibraryValidationError extends Error {
@@ -32,8 +30,8 @@ const assertId: (value: unknown, label: string) => asserts value is string = (va
 
 const assertName: (value: unknown, label: string) => asserts value is string = (value, label) => {
   const name = typeof value === "string" ? value.trim() : "";
-  if (name.length < MIN_NAME_LENGTH || name.length > MAX_NAME_LENGTH) {
-    throw new LibraryValidationError(`${label} must be between ${MIN_NAME_LENGTH} and ${MAX_NAME_LENGTH} characters.`);
+  if (!name) {
+    throw new LibraryValidationError(`${label} must be a non-empty string.`);
   }
 };
 
@@ -96,9 +94,7 @@ const assertCommonRecord = (value: unknown, label: string): Record<string, unkno
 const assertNestedNamedRecord = (value: unknown, label: string): Record<string, unknown> => {
   if (!isRecord(value)) throw new LibraryValidationError(`${label} must be an object.`);
   assertId(value.id, `${label} ID`);
-  if (typeof value.name !== "string" || value.name.trim().length === 0 || value.name.trim().length > MAX_NAME_LENGTH) {
-    throw new LibraryValidationError(`${label} name must be between 1 and ${MAX_NAME_LENGTH} characters.`);
-  }
+  assertName(value.name, `${label} name`);
   return value;
 };
 
@@ -115,9 +111,7 @@ const assertSite = (value: unknown, nested = false): void => {
     ? (() => {
         if (!isRecord(value)) throw new LibraryValidationError("Site must be an object.");
         assertId(value.id, "Site ID");
-        if (typeof value.name !== "string" || value.name.trim().length === 0 || value.name.trim().length > MAX_NAME_LENGTH) {
-          throw new LibraryValidationError(`Site name must be between 1 and ${MAX_NAME_LENGTH} characters.`);
-        }
+        assertName(value.name, "Site name");
         return value;
       })()
     : assertCommonRecord(value, "Site");

@@ -180,4 +180,29 @@ describe("api/library", () => {
       { siteLibrary: [site], simulationPresets: [] },
     );
   });
+
+  it("accepts previously supported non-empty Site and Simulation name lengths", async () => {
+    const longName = "L".repeat(160);
+    const sites = [
+      { ...validSite("site-short"), name: "X" },
+      { ...validSite("site-long"), name: longName },
+    ];
+    const simulations = [
+      { ...validSimulation("2026-08-14T00:00:00.000Z"), id: "sim-short", name: "X" },
+      { ...validSimulation("2026-08-14T00:00:00.000Z"), id: "sim-long", name: longName },
+    ];
+    const req = new Request("https://example.test/api/library", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ siteLibrary: sites, simulationPresets: simulations }),
+    });
+
+    const res = await onRequestPut(mkCtx(req));
+    expect(res.status).toBe(200);
+    expect(upsertLibrarySnapshotMock).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({ id: "u1" }),
+      { siteLibrary: sites, simulationPresets: simulations },
+    );
+  });
 });

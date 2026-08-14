@@ -69,6 +69,12 @@ const sanitizeName = (value: unknown): string | null => {
   return name;
 };
 
+const sanitizeResourceName = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const name = value.trim().replace(/\s+/g, " ");
+  return name || null;
+};
+
 const slugifyName = (value: string): string =>
   value
     .trim()
@@ -2038,7 +2044,7 @@ const upsertOwnedResource = async (
   const rolesTable = kind === "site" ? "site_roles" : "simulation_roles";
 
   const id = typeof item.id === "string" ? item.id.trim() : "";
-  const name = sanitizeName(item.name);
+  const name = sanitizeResourceName(item.name);
   if (!id || !name) return { ok: false, reason: `invalid_${kind}` };
 
   const visibility = sanitizeVisibility(item.visibility);

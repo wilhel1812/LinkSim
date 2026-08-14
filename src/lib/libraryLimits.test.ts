@@ -45,6 +45,20 @@ describe("Library ingestion limits", () => {
     });
   });
 
+  it("preserves the existing non-empty Library name contract", () => {
+    const longName = "L".repeat(160);
+    expect(() => validateLibraryPayload({
+      siteLibrary: [
+        { ...validSite("site-short"), name: "X" },
+        { ...validSite("site-long"), name: longName },
+      ],
+      simulationPresets: [
+        { ...validSimulation(), id: "sim-short", name: "X" },
+        { ...validSimulation(), id: "sim-long", name: longName },
+      ],
+    })).not.toThrow();
+  });
+
   it("rejects malformed known fields without rejecting compatible extension fields", () => {
     expect(() => validateLibraryPayload({
       siteLibrary: [{ ...validSite(), position: { lat: 91, lon: 10 }, futureField: { supported: true } }],
