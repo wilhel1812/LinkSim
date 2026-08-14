@@ -135,6 +135,26 @@ describe("Deploy LinkSim Pages workflow", () => {
     );
   });
 
+  it("validates the production workflow commit tree before any D1 migration", () => {
+    const commitGateStep = "- name: Validate production workflow commit";
+    const simulationMigrationStep =
+      "- name: Apply production Simulation lifecycle migration";
+    const identityMigrationStep =
+      "- name: Verify identity lifecycle migration prerequisites and apply migration";
+
+    expect(productionJob).toContain(commitGateStep);
+    expect(productionJob).toContain("DEPLOY_VERIFY_COMMIT: ${{ github.sha }}");
+    expect(productionJob).toContain(
+      'node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main --verify-commit-only',
+    );
+    expect(productionJob.indexOf(commitGateStep)).toBeLessThan(
+      productionJob.indexOf(simulationMigrationStep),
+    );
+    expect(productionJob.indexOf(commitGateStep)).toBeLessThan(
+      productionJob.indexOf(identityMigrationStep),
+    );
+  });
+
   it("uses the validated workflow SHA and fails closed on production deployment lookup", () => {
     expect(productionJob).toContain("DEPLOY_VERIFY_COMMIT: ${{ github.sha }}");
     expect(deployScript).toContain("process.env.DEPLOY_VERIFY_COMMIT");

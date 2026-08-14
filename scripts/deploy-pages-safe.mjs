@@ -286,6 +286,15 @@ async function getGitRef(args = ["rev-parse", "--abbrev-ref", "HEAD"]) {
   return stdout.trim();
 }
 
+async function resolveVerifiedDeploymentCommit(targetName, currentCommit) {
+  return resolveDeploymentCommit({
+    targetName,
+    currentCommit,
+    workflowCommit: process.env.DEPLOY_VERIFY_COMMIT,
+    resolveTree: async (ref) => getGitRef(["rev-parse", `${ref}^{tree}`]),
+  });
+}
+
 async function preflight(targetName, target) {
   const branch = await getGitRef();
   const commit = await getGitRef(["rev-parse", "--short", "HEAD"]);
@@ -381,13 +390,19 @@ async function main() {
     );
   }
 
+  if (process.argv.includes("--verify-commit-only")) {
+    assert(
+      targetName === "prod-main",
+      "--verify-commit-only is only valid for the prod-main target.",
+    );
+    const currentCommit = await getGitRef(["rev-parse", "--short", "HEAD"]);
+    const commit = await resolveVerifiedDeploymentCommit(targetName, currentCommit);
+    console.log(`[deploy-pages-safe] Production workflow commit validated: ${commit}`);
+    return;
+  }
+
   const { branch: currentBranch, commit: currentCommit } = await preflight(targetName, target);
-  const commit = await resolveDeploymentCommit({
-    targetName,
-    currentCommit,
-    workflowCommit: process.env.DEPLOY_VERIFY_COMMIT,
-    resolveTree: async (ref) => getGitRef(["rev-parse", `${ref}^{tree}`]),
-  });
+  const commit = await resolveVerifiedDeploymentCommit(targetName, currentCommit);
   const requestedPreviewBranch = parseArg("branch");
   if (requestedPreviewBranch && targetName !== "staging-preview") {
     throw new Error("--branch is only valid for the staging-preview target.");

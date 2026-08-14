@@ -267,6 +267,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/access-boundary.mjs check production
 
+      - name: Validate production workflow commit
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          DEPLOY_VERIFY_COMMIT: ${{ github.sha }}
+        run: node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main --verify-commit-only
+
       - name: Apply production Simulation lifecycle migration
         working-directory: ${{ runner.temp }}/linksim-release
         env:
