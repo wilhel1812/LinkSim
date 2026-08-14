@@ -12,7 +12,7 @@ const patterns = [
   "xox[baprs]-[A-Za-z0-9-]{10,}",
   "AKIA[0-9A-Z]{16}",
   "AIza[0-9A-Za-z_-]{20,}",
-  "CF_API_TOKEN[=:][^\\n]{12,}",
+  "CF_API_TOKEN[=:].{12,}",
 ];
 
 const run = (cmd, args) =>

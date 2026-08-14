@@ -34,6 +34,7 @@ const runScanner = (root: string) =>
   });
 
 const fakeToken = () => `ghp_${"A".repeat(30)}`;
+const fakeCloudflareToken = () => ["CF_API", "_TOKEN=", "n123456789012345"].join("");
 
 afterEach(() => {
   for (const root of temporaryRepos.splice(0)) {
@@ -72,6 +73,16 @@ describe("security scan", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("notes with spaces.txt");
+  });
+
+  it("finds Cloudflare tokens containing a lowercase n", () => {
+    const root = createRepo();
+    writeTracked(root, "cloudflare.env", `${fakeCloudflareToken()}\n`);
+
+    const result = runScanner(root);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("cloudflare.env");
   });
 
   it("excludes only the scanner source and ignores tracked binary content", () => {
