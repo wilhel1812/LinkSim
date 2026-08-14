@@ -47,7 +47,9 @@ describe("Pages preview deployment helpers", () => {
       "Preview",
       "issue/1010-authenticated-pr-previews",
       "39d6b82",
-      "https://6b1cae65.linksim-staging.pages.dev │",
+      "https://6b1cae65.linksim-staging.pages.dev",
+      "just now",
+      "https://dash.cloudflare.com/example │",
     ].join(" │ ");
 
     expect(
@@ -58,6 +60,28 @@ describe("Pages preview deployment helpers", () => {
       }),
     ).toBe(true);
   });
+
+  it.each(["Queued", "Failure"])(
+    "rejects a matching deployment whose status is %s",
+    (status) => {
+      const row = [
+        "│ deployment-id",
+        "Production",
+        "main",
+        "39d6b82",
+        "https://linksim.pages.dev",
+        status,
+        "https://dash.cloudflare.com/example │",
+      ].join(" │ ");
+
+      expect(
+        hasMatchingPagesDeployment(row, {
+          commit: "39d6b825",
+          branch: "main",
+        }),
+      ).toBe(false);
+    },
+  );
 
   it("rejects a matching commit on the wrong branch or deployment URL", () => {
     const row =
@@ -122,7 +146,7 @@ describe("Pages preview deployment helpers", () => {
   it("accepts only the exact deployment commit and branch returned by Wrangler", async () => {
     const commit = "c".repeat(40);
     const listDeployments = vi.fn(async () =>
-      `│ deployment-id │ Production │ main │ ${commit} │ https://linksim.pages.dev │`,
+      `│ deployment-id │ Production │ main │ ${commit} │ https://linksim.pages.dev │ 2 minutes ago │ https://dash.cloudflare.com/example │`,
     );
     const wait = vi.fn();
 

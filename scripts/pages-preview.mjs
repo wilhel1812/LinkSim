@@ -29,6 +29,18 @@ export function parsePagesDeploymentUrl(output, projectName) {
   return match[0].replace(/[),.;]+$/, "");
 }
 
+const SUCCESSFUL_PAGES_STATUS = /^(?:just now|right now|(?:\d+ (?:seconds?|minutes?|hours?|days?|weeks?|months?|years?) ago)|(?:in \d+ (?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)))$/;
+
+function hasSuccessfulPagesStatus(columns, expectedUrl) {
+  const deploymentIndex = columns.findIndex((column) =>
+    expectedUrl
+      ? column === expectedUrl
+      : /^https:\/\/[^\s]+\.pages\.dev(?:\/[^\s]*)?$/i.test(column),
+  );
+  if (deploymentIndex < 0) return false;
+  return SUCCESSFUL_PAGES_STATUS.test(columns[deploymentIndex + 1] ?? "");
+}
+
 export function hasMatchingPagesDeployment(output, { commit, branch, deploymentUrl = "" }) {
   const expectedCommit = String(commit ?? "").trim().toLowerCase();
   const expectedBranch = String(branch ?? "").trim();
@@ -48,7 +60,8 @@ export function hasMatchingPagesDeployment(output, { commit, branch, deploymentU
     return (
       Boolean(source) &&
       columns.includes(expectedBranch) &&
-      (!expectedUrl || columns.includes(expectedUrl))
+      (!expectedUrl || columns.includes(expectedUrl)) &&
+      hasSuccessfulPagesStatus(columns, expectedUrl)
     );
   });
 }
