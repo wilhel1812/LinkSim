@@ -226,4 +226,43 @@ describe("appStore delta sync", () => {
     expect(pushedBodies[0]?.siteLibrary).toEqual([]);
     expect(useAppStore.getState().siteLibrary.some((site) => site.id === "site-deleted")).toBe(false);
   });
+
+  it("stores only the completed server recovery cutoff", async () => {
+    let getCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/library") && (init?.method ?? "GET") === "GET") {
+        getCount += 1;
+        return makeResponse({
+          ...cloneJson(baselinePayload), deletedSiteIds: [], deletedSimulationIds: [],
+          syncCutoff: getCount === 1 ? "2026-08-14T10:00:00.000Z" : "2026-08-14T10:00:01.000Z",
+          isDelta: getCount > 1,
+        });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true, isInitializing: false });
+
+    await useAppStore.getState().initializeCloudSync();
+
+    expect(localStorage.getItem("linksim-last-fetched-at-v1")).toBe("2026-08-14T10:00:01.000Z");
+  });
+
+  it("leaves the prior checkpoint unchanged when a later page fails", async () => {
+    localStorage.setItem("linksim-last-fetched-at-v1", "2026-08-14T09:00:00.000Z");
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        siteLibrary: [], simulationPresets: [], deletedSiteIds: [], deletedSimulationIds: [],
+        syncCutoff: "2026-08-14T10:00:00.000Z", nextCursor: "page-two", isDelta: true,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Unavailable" }), { status: 503, statusText: "Unavailable" })));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({ currentUser: mkUser(), authState: "signed_in", isOnline: true, isInitializing: false });
+
+    await useAppStore.getState().initializeCloudSync();
+
+    expect(localStorage.getItem("linksim-last-fetched-at-v1")).toBe("2026-08-14T09:00:00.000Z");
+    expect(useAppStore.getState().syncStatus).toBe("error");
+  });
 });

@@ -121,6 +121,10 @@ const markSyncedThrough = (revision: number = localMutationRevision): number => 
 };
 
 const LAST_FETCHED_AT_KEY = "linksim-last-fetched-at-v1";
+const storeLibraryCheckpoint = (syncCutoff: string | undefined): void => {
+  if (!syncCutoff) return;
+  try { localStorage.setItem(LAST_FETCHED_AT_KEY, syncCutoff); } catch { /* ignore */ }
+};
 
 let dirtySiteIds = new Set<string>();
 let dirtySimIds = new Set<string>();
@@ -1554,7 +1558,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           writeStorage(SIM_PRESETS_KEY, mergedSims);
           return { siteLibrary: mergedSites, simulationPresets: mergedSims };
         });
-        try { localStorage.setItem(LAST_FETCHED_AT_KEY, new Date().toISOString()); } catch { /* ignore */ }
+        storeLibraryCheckpoint(cloud.syncCutoff);
         hydrated = true;
         requiresFullPush = false;
         set({
@@ -1607,7 +1611,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         );
         console.log("[appStore] Merge result:", result);
         hydrated = true;
-        try { localStorage.setItem(LAST_FETCHED_AT_KEY, new Date().toISOString()); } catch { /* ignore */ }
+        storeLibraryCheckpoint(cloud.syncCutoff);
         if (applyStartupSelection && typeof window !== "undefined") {
           const lastRefRaw = window.localStorage.getItem(LAST_SIMULATION_REF_KEY);
           const lastRef = (lastRefRaw ?? "").trim();
@@ -1645,7 +1649,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         );
         console.log("[appStore] Merge result:", result);
         hydrated = true;
-        try { localStorage.setItem(LAST_FETCHED_AT_KEY, new Date().toISOString()); } catch { /* ignore */ }
+        storeLibraryCheckpoint(cloud.syncCutoff);
         resetSyncRevisions();
         remotePayloadSignature = buildEditableSyncPayloadInfo(cloudSites, cloudPresets as SimulationPreset[], currentUser).signature;
         set({
@@ -1998,6 +2002,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         "merge",
       );
       console.log("[appStore] Merge result:", result);
+      storeLibraryCheckpoint(cloud.syncCutoff);
       hydrated = true;
       const remaining = markSyncedThrough();
       set({
