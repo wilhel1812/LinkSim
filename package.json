@@ -20,6 +20,7 @@
     "build": "npm run build:bundle",
     "lint": "npm run build:meta && eslint .",
     "security:scan": "node scripts/security-scan.mjs",
+    "db:seed:local": "node scripts/seed-local-d1.mjs",
     "preview": "vite preview --config config/vite.config.ts",
     "test": "npm run build:meta && vitest run --config config/vitest.config.ts",
     "test:ci": "npm run build:meta && vitest run --coverage --config config/vitest.config.ts",

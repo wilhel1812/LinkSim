@@ -22,7 +22,15 @@ Copy the returned `database_id` into `wrangler.toml`.
 npx wrangler d1 execute linksim --file ./db/schema.sql
 ```
 
-For upgrades from older deployments, review [`db/migrations`](../db/migrations) and apply each migration that the target database has not received, in filename order. Runtime auto-migrations are disabled, and deployment preflight stops when a required column is missing.
+For upgrades from older deployments, review [`db/migrations`](../db/migrations) and apply each immutable migration that the target database has not received, in filename order. Runtime auto-migrations are disabled, and deployment preflight stops when a required column is missing.
+
+Destructive test fixtures are not migrations. They live under [`db/local-seeds`](../db/local-seeds) and must never be applied to staging or production. To replace the users in Wrangler's local D1 database with the test fixture, run:
+
+```bash
+npm run db:seed:local
+```
+
+The command accepts no database, environment, or remote-mode arguments, always invokes Wrangler with `--local`, and refuses to run in CI.
 
 ## 3) Configure Cloudflare Access (GitHub + OTP)
 
