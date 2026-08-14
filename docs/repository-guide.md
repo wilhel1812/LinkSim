@@ -58,6 +58,14 @@ npm run dev:edge
 
 It serves the built app and local Cloudflare bindings at `http://localhost:8788`. Docker Compose provides equivalent `dev`, `edge`, and production-style `web` services when a container workflow is preferred.
 
+Docker Compose publishes the `dev` and `edge` services on loopback by default. To make those development services reachable from another trusted machine, opt in explicitly for that invocation:
+
+```bash
+LINKSIM_DOCKER_BIND_ADDRESS=0.0.0.0 docker compose up dev edge
+```
+
+Do not use a public bind address on an untrusted network. The standalone calculation API ignores caller-supplied forwarding headers and uses its direct peer address for rate limiting. When it is intentionally placed behind a reverse proxy, set Uvicorn's `FORWARDED_ALLOW_IPS` only to the known proxy IP address or CIDR; do not use a wildcard trust value.
+
 ## Build, Test, Smoke
 
 Core commands:

@@ -19,8 +19,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/health":
             return await call_next(request)
 
-        client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
-        client_key = client_ip.split(",", 1)[0].strip() or "unknown"
+        client_key = request.client.host if request.client else "unknown"
         allowed, retry_after = self._limiter.allow(client_key)
         if not allowed:
             return JSONResponse(

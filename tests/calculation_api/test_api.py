@@ -148,3 +148,33 @@ def test_rate_limit_returns_429_after_limit_is_exceeded() -> None:
     assert third.status_code == 429
     assert third.json()["detail"] == "Rate limit exceeded"
     assert int(third.headers["Retry-After"]) > 0
+
+
+def test_rate_limit_does_not_trust_spoofed_forwarded_addresses() -> None:
+    rate_limited_client = TestClient(create_app(rate_limit_per_min=2, rate_limit_window_sec=60))
+    payload = {
+        "calculation": "link_budget",
+        "input": {
+            "from_site": "Site A",
+            "to_site": "Site B",
+            "frequency_mhz": 868,
+            "nodes": [
+                _node("Site A", 59.9139, 10.7522),
+                _node("Site B", 59.9170, 10.7600),
+            ],
+        },
+    }
+
+    first = rate_limited_client.post(
+        "/api/v1/calculate", json=payload, headers={"X-Forwarded-For": "198.51.100.1"}
+    )
+    second = rate_limited_client.post(
+        "/api/v1/calculate", json=payload, headers={"X-Forwarded-For": "198.51.100.2"}
+    )
+    third = rate_limited_client.post(
+        "/api/v1/calculate", json=payload, headers={"X-Forwarded-For": "198.51.100.3"}
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
