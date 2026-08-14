@@ -412,7 +412,7 @@ class FakeDb {
         bound;
       const existing = this.simulations.get(String(id));
       const actorId = String(bound[3] ?? "");
-      const isAdmin = Number(bound[bound.length - 2] ?? 0) === 1;
+      const isAdmin = Number(bound[bound.length - 3] ?? 0) === 1;
       const role = this.simulationRoles.get(`${String(id)}:${actorId}`);
       if (existing && !(isAdmin || existing.owner_user_id === actorId || role === "admin" || role === "editor")) return 0;
       if (existing?.status === "deleted" && sql.includes("simulations.status = 'active'")) return 0;
@@ -447,7 +447,7 @@ class FakeDb {
       if (sql.includes("NOT EXISTS") && !this.sites.has(String(id)) && hasTombstone) return 0;
       const existing = this.sites.get(String(id));
       const actorId = String(bound[3] ?? "");
-      const isAdmin = Number(bound[bound.length - 2] ?? 0) === 1;
+      const isAdmin = Number(bound[bound.length - 3] ?? 0) === 1;
       const role = this.siteRoles.get(`${String(id)}:${actorId}`);
       if (existing && !(isAdmin || existing.owner_user_id === actorId || role === "admin" || role === "editor")) return 0;
       if (existing && visibility !== "private" && existing.visibility === "private") {
@@ -792,6 +792,31 @@ describe("upsertLibrarySnapshot shared simulations", () => {
       siteLibrary: [{ id: "site-republish", name: "Republish", visibility: "public" }], simulationPresets: [],
     })).resolves.toMatchObject({ upsertedSites: 0, conflicts: ["site_quota_exceeded"] });
     expect(db.sites.get("site-republish")).toMatchObject({ owner_user_id: "owner-2", visibility: "private", name: "Original" });
+  });
+
+  it("allows an admin public Site update when the live owner remains below quota", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-republish", {
+      id: "site-republish", owner_user_id: "owner-1", created_at: "2026-08-14T00:00:00.000Z",
+      visibility: "public_read", name: "Original", payload_json: JSON.stringify({ id: "site-republish", name: "Original" }),
+    });
+    db.mutateBeforeGuardedWrite = () => {
+      db.sites.set("site-republish", {
+        ...db.sites.get("site-republish"), owner_user_id: "owner-2", visibility: "private",
+      });
+      for (let index = 0; index < LIBRARY_MAX_PUBLIC_SITES_PER_USER - 1; index += 1) {
+        db.sites.set(`owner-2-public-${index}`, {
+          id: `owner-2-public-${index}`, owner_user_id: "owner-2", visibility: "public_read",
+          name: `Public ${index}`, payload_json: "{}",
+        });
+      }
+    };
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(env, { id: "admin-1", isAdmin: true, isModerator: false }, {
+      siteLibrary: [{ id: "site-republish", name: "Republish", visibility: "public" }], simulationPresets: [],
+    })).resolves.toMatchObject({ upsertedSites: 1, conflicts: [] });
+    expect(db.sites.get("site-republish")).toMatchObject({ owner_user_id: "owner-2", visibility: "public_read", name: "Republish" });
   });
 
   it("rejects a stale Simulation update when soft-deletion wins after the precheck", async () => {
