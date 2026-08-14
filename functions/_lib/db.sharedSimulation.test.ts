@@ -415,6 +415,13 @@ class FakeDb {
       const isAdmin = Number(bound[bound.length - 2] ?? 0) === 1;
       const role = this.simulationRoles.get(`${String(id)}:${actorId}`);
       if (existing && !(isAdmin || existing.owner_user_id === actorId || role === "admin" || role === "editor")) return 0;
+      if (existing?.status === "deleted" && sql.includes("simulations.status = 'active'")) return 0;
+      if (existing && visibility !== "private" && existing.visibility === "private") {
+        const publicCount = [...this.simulations.values()].filter(
+          (row) => row.owner_user_id === existing.owner_user_id && row.visibility !== "private",
+        ).length;
+        if (publicCount >= LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER) return 0;
+      }
       this.simulations.set(String(id), {
         ...existing,
         id,
@@ -443,6 +450,12 @@ class FakeDb {
       const isAdmin = Number(bound[bound.length - 2] ?? 0) === 1;
       const role = this.siteRoles.get(`${String(id)}:${actorId}`);
       if (existing && !(isAdmin || existing.owner_user_id === actorId || role === "admin" || role === "editor")) return 0;
+      if (existing && visibility !== "private" && existing.visibility === "private") {
+        const publicCount = [...this.sites.values()].filter(
+          (row) => row.owner_user_id === existing.owner_user_id && row.visibility !== "private",
+        ).length;
+        if (publicCount >= LIBRARY_MAX_PUBLIC_SITES_PER_USER) return 0;
+      }
       this.sites.set(String(id), {
         ...existing,
         id,
@@ -509,7 +522,7 @@ class FakeDb {
       if (bound.length > 4) {
         const [resourceId, , , , guardId, updatedAt, actorId, payloadJson] = bound;
         const simulation = this.simulations.get(String(guardId));
-        if (!simulation || simulation.updated_at !== updatedAt || simulation.last_edited_by_user_id !== actorId || simulation.payload_json !== payloadJson) return 0;
+        if (!simulation || simulation.status === "deleted" || simulation.updated_at !== updatedAt || simulation.last_edited_by_user_id !== actorId || simulation.payload_json !== payloadJson) return 0;
         if (resourceId !== guardId) return 0;
       }
       this.simulationRoles.set(`${String(bound[0] ?? "")}:${String(bound[1] ?? "")}`, String(bound[2] ?? ""));
@@ -545,7 +558,7 @@ class FakeDb {
       const resourceId = String(bound[0] ?? "");
       if (bound.length > 1) {
         const simulation = this.simulations.get(String(bound[1]));
-        if (!simulation || simulation.updated_at !== bound[2] || simulation.last_edited_by_user_id !== bound[3] || simulation.payload_json !== bound[4]) return 0;
+        if (!simulation || simulation.status === "deleted" || simulation.updated_at !== bound[2] || simulation.last_edited_by_user_id !== bound[3] || simulation.payload_json !== bound[4]) return 0;
       }
       for (const key of this.simulationRoles.keys()) {
         if (key.startsWith(`${resourceId}:`)) this.simulationRoles.delete(key);
@@ -754,6 +767,51 @@ describe("upsertLibrarySnapshot shared simulations", () => {
       siteLibrary: [{ id: "site-collision", name: "Colliding create", visibility: "private" }], simulationPresets: [],
     })).resolves.toMatchObject({ upsertedSites: 0, conflicts: ["forbidden_site"] });
     expect(db.sites.get("site-collision")?.owner_user_id).toBe("owner-2");
+  });
+
+  it("uses live visibility and owner state for the atomic public Site quota", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-republish", {
+      id: "site-republish", owner_user_id: "owner-1", created_at: "2026-08-14T00:00:00.000Z",
+      visibility: "public_read", name: "Original", payload_json: JSON.stringify({ id: "site-republish", name: "Original" }),
+    });
+    db.mutateBeforeGuardedWrite = () => {
+      db.sites.set("site-republish", {
+        ...db.sites.get("site-republish"), owner_user_id: "owner-2", visibility: "private",
+      });
+      for (let index = 0; index < LIBRARY_MAX_PUBLIC_SITES_PER_USER; index += 1) {
+        db.sites.set(`owner-2-public-${index}`, {
+          id: `owner-2-public-${index}`, owner_user_id: "owner-2", visibility: "public_read",
+          name: `Public ${index}`, payload_json: "{}",
+        });
+      }
+    };
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(env, { id: "admin-1", isAdmin: true, isModerator: false }, {
+      siteLibrary: [{ id: "site-republish", name: "Republish", visibility: "public" }], simulationPresets: [],
+    })).resolves.toMatchObject({ upsertedSites: 0, conflicts: ["site_quota_exceeded"] });
+    expect(db.sites.get("site-republish")).toMatchObject({ owner_user_id: "owner-2", visibility: "private", name: "Original" });
+  });
+
+  it("rejects a stale Simulation update when soft-deletion wins after the precheck", async () => {
+    const db = new FakeDb();
+    db.simulations.set("sim-delete-race", {
+      id: "sim-delete-race", owner_user_id: "owner-1", created_at: "2026-08-14T00:00:00.000Z",
+      visibility: "private", status: "active", name: "Original",
+      payload_json: JSON.stringify({ id: "sim-delete-race", name: "Original" }),
+    });
+    db.simulationRoles.set("sim-delete-race:viewer-1", "viewer");
+    db.mutateBeforeGuardedWrite = () => {
+      db.simulations.set("sim-delete-race", { ...db.simulations.get("sim-delete-race"), status: "deleted" });
+    };
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+
+    await expect(upsertLibrarySnapshot(env, { id: "owner-1", isAdmin: false, isModerator: false }, {
+      siteLibrary: [], simulationPresets: [{ id: "sim-delete-race", name: "Stale overwrite", visibility: "private" }],
+    })).resolves.toMatchObject({ upsertedSimulations: 0, conflicts: ["simulation_deleted"] });
+    expect(db.simulations.get("sim-delete-race")).toMatchObject({ status: "deleted", name: "Original" });
+    expect(db.simulationRoles.get("sim-delete-race:viewer-1")).toBe("viewer");
   });
 
   it("rejects oversized batches instead of silently truncating them", async () => {

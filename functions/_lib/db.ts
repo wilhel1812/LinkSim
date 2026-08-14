@@ -2155,7 +2155,6 @@ const upsertOwnedResource = async (
     return { ok: false, reason: `would_lose_access_${kind}` };
   }
 
-  const wasPublic = existing ? existing.visibility !== "private" : false;
   const maxOwnerRecords = kind === "site" ? LIBRARY_MAX_SITES_PER_USER : LIBRARY_MAX_SIMULATIONS_PER_USER;
   const maxOwnerPublicRecords = kind === "site" ? LIBRARY_MAX_PUBLIC_SITES_PER_USER : LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER;
   const activeQuotaClause = "";
@@ -2173,7 +2172,7 @@ const upsertOwnedResource = async (
        (id, owner_user_id, created_by_user_id, last_edited_by_user_id, created_at, last_edited_at, name, visibility, payload_json, updated_at)
        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        WHERE (? = 0 OR (SELECT COUNT(*) FROM ${table} WHERE owner_user_id = ?${activeQuotaClause}) < ?)
-         AND (? = 'private' OR ? = 1 OR (SELECT COUNT(*) FROM ${table} WHERE owner_user_id = ? AND visibility != 'private'${activeQuotaClause}) < ?)
+         AND (? = 0 OR ? = 'private' OR (SELECT COUNT(*) FROM ${table} WHERE owner_user_id = ? AND visibility != 'private'${activeQuotaClause}) < ?)
          ${siteTombstoneGuard}
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name,
@@ -2184,12 +2183,22 @@ const upsertOwnedResource = async (
          last_edited_by_user_id = excluded.last_edited_by_user_id,
          created_by_user_id = COALESCE(${table}.created_by_user_id, excluded.created_by_user_id),
          created_at = COALESCE(${table}.created_at, excluded.created_at)
-       WHERE ${table}.owner_user_id = ?
-          OR ? = 1
-          OR EXISTS (
+       WHERE (
+         ${table}.owner_user_id = ?
+         OR ? = 1
+         OR EXISTS (
             SELECT 1 FROM ${rolesTable}
             WHERE ${kind}_id = excluded.id AND user_id = ? AND role IN ('admin', 'editor')
-          )`,
+          )
+       )
+       ${kind === "simulation" ? "AND simulations.status = 'active'" : ""}
+       AND (
+         excluded.visibility = 'private'
+         OR ${table}.visibility != 'private'
+         OR (SELECT COUNT(*) FROM ${table} quota_rows
+             WHERE quota_rows.owner_user_id = ${table}.owner_user_id
+               AND quota_rows.visibility != 'private') < ?
+       )`,
     )
     .bind(
       id,
@@ -2205,18 +2214,20 @@ const upsertOwnedResource = async (
       isCreate ? 1 : 0,
       ownerId,
       maxOwnerRecords,
+      isCreate ? 1 : 0,
       visibilityDb,
-      wasPublic ? 1 : 0,
       ownerId,
       maxOwnerPublicRecords,
       ...(kind === "site" ? [id, id] : []),
       actor.id,
       actor.isAdmin ? 1 : 0,
       actor.id,
+      maxOwnerPublicRecords,
     );
   const wroteCurrentPayloadGuard = `EXISTS (
     SELECT 1 FROM ${table}
     WHERE id = ? AND updated_at = ? AND last_edited_by_user_id = ? AND payload_json = ?
+      ${kind === "simulation" ? "AND status = 'active'" : ""}
   )`;
   const roleStatements = [
     env.DB
@@ -2248,13 +2259,16 @@ const upsertOwnedResource = async (
     }
     const current = await env.DB
       .prepare(
-        `SELECT t.owner_user_id, t.visibility, r.role AS actor_role
+        `SELECT t.owner_user_id, t.visibility${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
          FROM ${table} t
          LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
          WHERE t.id = ? LIMIT 1`,
       )
       .bind(actor.id, id)
-      .first<{ owner_user_id: string; visibility: DbVisibility; actor_role?: string | null }>();
+      .first<{ owner_user_id: string; visibility: DbVisibility; status?: "active" | "deleted"; actor_role?: string | null }>();
+    if (kind === "simulation" && current?.status === "deleted") {
+      return { ok: false, reason: "simulation_deleted" };
+    }
     if (current && !canEditResource(
       actor,
       current.owner_user_id,
