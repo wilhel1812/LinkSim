@@ -159,6 +159,8 @@ describe("Deploy LinkSim Pages workflow", () => {
     expect(productionJob).toContain("DEPLOY_VERIFY_COMMIT: ${{ github.sha }}");
     expect(deployScript).toContain("process.env.DEPLOY_VERIFY_COMMIT");
     expect(deployScript).toContain("resolveDeploymentCommit");
+    expect(deployScript).toContain("deploymentUrl = parsePagesDeploymentUrl");
+    expect(deployScript).toContain("deploymentUrl,");
     expect(deployScript).toContain("await verifyMatchingPagesDeployment");
     expect(deployScript).not.toContain("Proceeding because the Pages deploy itself completed successfully");
     expect(deployScript.indexOf("await verifyMatchingPagesDeployment")).toBeLessThan(

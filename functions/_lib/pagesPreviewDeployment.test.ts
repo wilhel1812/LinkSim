@@ -83,6 +83,21 @@ describe("Pages preview deployment helpers", () => {
     },
   );
 
+  it("does not accept an older successful deployment for the same branch and commit", () => {
+    const rows = [
+      "│ newest-id │ Production │ main │ 39d6b82 │ https://newest.linksim.pages.dev │ Failure │ https://dash.cloudflare.com/newest │",
+      "│ older-id │ Production │ main │ 39d6b82 │ https://older.linksim.pages.dev │ 2 minutes ago │ https://dash.cloudflare.com/older │",
+    ].join("\n");
+
+    expect(
+      hasMatchingPagesDeployment(rows, {
+        commit: "39d6b825",
+        branch: "main",
+        deploymentUrl: "https://newest.linksim.pages.dev",
+      }),
+    ).toBe(false);
+  });
+
   it("rejects a matching commit on the wrong branch or deployment URL", () => {
     const row =
       "│ id │ Preview │ another-branch │ 39d6b82 │ https://other.linksim-staging.pages.dev │";

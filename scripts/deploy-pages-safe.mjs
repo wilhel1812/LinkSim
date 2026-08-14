@@ -413,7 +413,7 @@ async function main() {
       : target.branch;
 
   await writeReleaseManifest(targetName, target.projectName, deployBranch, commit);
-  let deployedPreviewUrl = "";
+  let deploymentUrl = "";
 
   const rawCommitMsg = await getGitRef(["log", "-1", "--format=%s"]);
   // Cloudflare Pages API requires a pure ASCII commit message string.
@@ -441,15 +441,15 @@ async function main() {
       process.stdout.write(result.stdout);
       process.stderr.write(result.stderr);
 
+      deploymentUrl = parsePagesDeploymentUrl(
+        `${result.stdout}\n${result.stderr}`,
+        target.projectName,
+      );
+
       if (targetName === "staging-preview") {
-        const previewUrl = parsePagesDeploymentUrl(
-          `${result.stdout}\n${result.stderr}`,
-          target.projectName,
-        );
-        deployedPreviewUrl = previewUrl;
         const githubOutput = (process.env.GITHUB_OUTPUT ?? "").trim();
-        if (githubOutput) await appendFile(githubOutput, `preview_url=${previewUrl}\n`, "utf8");
-        console.log(`[deploy-pages-safe] Preview URL: ${previewUrl}`);
+        if (githubOutput) await appendFile(githubOutput, `preview_url=${deploymentUrl}\n`, "utf8");
+        console.log(`[deploy-pages-safe] Preview URL: ${deploymentUrl}`);
       }
     });
 
@@ -457,7 +457,7 @@ async function main() {
       projectName: target.projectName,
       commit,
       branch: deployBranch,
-      deploymentUrl: deployedPreviewUrl,
+      deploymentUrl,
       listDeployments: async () => {
         const { stdout } = await run(
           wrangler,
