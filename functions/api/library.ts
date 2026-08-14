@@ -1,9 +1,12 @@
 import { verifyAuth } from "../_lib/auth";
 import { assertUserAccess, ensureUser, fetchLibraryForUser, upsertLibrarySnapshot } from "../_lib/db";
-import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
+import { errorResponse, handleOptions, json, readBoundedJson, withCors } from "../_lib/http";
 import type { CloudResourceRecord, Env, LibrarySnapshotPayload } from "../_lib/types";
-
-const normalizeArray = (value: unknown): CloudResourceRecord[] => (Array.isArray(value) ? (value as CloudResourceRecord[]) : []);
+import {
+  LIBRARY_JSON_MAX_DEPTH,
+  LIBRARY_REQUEST_MAX_BYTES,
+  validateLibraryPayload,
+} from "../../src/lib/libraryLimits";
 
 export const onRequestOptions: PagesFunction<Env> = async ({ request }) => handleOptions(request);
 
@@ -35,9 +38,13 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await ensureUser(env, auth.userId, auth.tokenPayload);
     const me = await assertUserAccess(env, auth.userId);
 
-    const body = (await request.json()) as LibrarySnapshotPayload;
-    const siteLibrary = normalizeArray(body.siteLibrary);
-    const simulationPresets = normalizeArray(body.simulationPresets);
+    const body = await readBoundedJson<LibrarySnapshotPayload>(request, {
+      maxBytes: LIBRARY_REQUEST_MAX_BYTES,
+      maxDepth: LIBRARY_JSON_MAX_DEPTH,
+    });
+    const validated = validateLibraryPayload(body);
+    const siteLibrary = validated.siteLibrary as CloudResourceRecord[];
+    const simulationPresets = validated.simulationPresets as CloudResourceRecord[];
 
     const result = await upsertLibrarySnapshot(
       env,

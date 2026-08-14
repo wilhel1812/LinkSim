@@ -4,6 +4,17 @@ import {
   normalizeUserSimulationDefaultsPreference,
   type UserSimulationDefaultsPreference,
 } from "../../src/lib/simulationDefaults";
+import {
+  LIBRARY_BATCH_MAX_RECORDS,
+  LIBRARY_MAX_GRANTS,
+  LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER,
+  LIBRARY_MAX_PUBLIC_SITES_PER_USER,
+  LIBRARY_MAX_SIMULATIONS_PER_USER,
+  LIBRARY_MAX_SITES_PER_USER,
+  LIBRARY_SIMULATION_MAX_BYTES,
+  LIBRARY_SITE_MAX_BYTES,
+  LibraryValidationError,
+} from "../../src/lib/libraryLimits";
 
 const VISIBILITIES: Visibility[] = ["private", "public", "shared"];
 const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write"];
@@ -56,6 +67,12 @@ const sanitizeName = (value: unknown): string | null => {
   const name = value.trim().replace(/\s+/g, " ");
   if (name.length < 2 || name.length > 80) return null;
   return name;
+};
+
+const sanitizeResourceName = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const name = value.trim().replace(/\s+/g, " ");
+  return name || null;
 };
 
 const slugifyName = (value: string): string =>
@@ -1876,6 +1893,55 @@ const canEditResource = (
 
 type ResourceChangeAccessReason = "missing" | "forbidden";
 
+export const deleteSiteResource = async (
+  env: Env,
+  actor: ActorPolicy,
+  siteId: string,
+): Promise<{ ok: true; siteId: string } | { ok: false; reason: "missing" | "forbidden" }> => {
+  await ensureSchema(env);
+  const id = siteId.trim();
+  if (!id) return { ok: false, reason: "missing" };
+  const existing = await env.DB
+    .prepare("SELECT id, owner_user_id FROM sites WHERE id = ? LIMIT 1")
+    .bind(id)
+    .first<{ id: string; owner_user_id: string }>();
+  if (!existing) return { ok: false, reason: "missing" };
+  if (!(actor.isAdmin || existing.owner_user_id === actor.id)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const now = new Date().toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO resource_changes
+         (resource_kind, resource_id, action, actor_user_id, changed_at, note, details_json, snapshot_json)
+       SELECT 'site', id, 'updated', ?, ?, 'Deleted Site', NULL,
+              json_set(
+                payload_json,
+                '$.ownerUserId', owner_user_id,
+                '$.visibility', CASE visibility
+                  WHEN 'public_read' THEN 'public'
+                  WHEN 'public_write' THEN 'shared'
+                  ELSE 'private'
+                END
+              )
+       FROM sites
+       WHERE id = ? AND (? = 1 OR owner_user_id = ?)`,
+    ).bind(actor.id, now, id, actor.isAdmin ? 1 : 0, actor.id),
+    env.DB
+      .prepare("DELETE FROM sites WHERE id = ? AND (? = 1 OR owner_user_id = ?)")
+      .bind(id, actor.isAdmin ? 1 : 0, actor.id),
+  ]) as D1Result[];
+  const deleted = Number(results[1]?.meta?.changes ?? 0) > 0;
+  if (!deleted) {
+    const current = await env.DB
+      .prepare("SELECT owner_user_id FROM sites WHERE id = ? LIMIT 1")
+      .bind(id)
+      .first<{ owner_user_id: string }>();
+    return { ok: false, reason: current ? "forbidden" : "missing" };
+  }
+  return { ok: true, siteId: id };
+};
+
 const resolveResourceChangeAccess = async (
   env: Env,
   kind: "site" | "simulation",
@@ -1978,11 +2044,14 @@ const upsertOwnedResource = async (
   const rolesTable = kind === "site" ? "site_roles" : "simulation_roles";
 
   const id = typeof item.id === "string" ? item.id.trim() : "";
-  const name = sanitizeName(item.name);
+  const name = sanitizeResourceName(item.name);
   if (!id || !name) return { ok: false, reason: `invalid_${kind}` };
 
   const visibility = sanitizeVisibility(item.visibility);
   const visibilityDb = dbVisibilityFromVisibility(visibility);
+  if (Array.isArray(item.sharedWith) && item.sharedWith.length > LIBRARY_MAX_GRANTS) {
+    return { ok: false, reason: `too_many_grants_${kind}` };
+  }
   const requestedSharedWith = sanitizeGrants(item.sharedWith);
   const now = new Date().toISOString();
 
@@ -2005,6 +2074,20 @@ const upsertOwnedResource = async (
     if (!canEditResource(actor, existing.owner_user_id, existingVisibility, actorRole)) {
       return { ok: false, reason: `forbidden_${kind}` };
     }
+  }
+
+  if (kind === "site" && !existing) {
+    const tombstone = await env.DB
+      .prepare(
+        `SELECT id
+         FROM resource_changes
+         WHERE resource_kind = 'site' AND resource_id = ? AND note = 'Deleted Site'
+         ORDER BY id DESC
+         LIMIT 1`,
+      )
+      .bind(id)
+      .first<{ id: number }>();
+    if (tombstone) return { ok: false, reason: "site_deleted" };
   }
 
   const ownerId = existing?.owner_user_id ?? actor.id;
@@ -2045,6 +2128,9 @@ const upsertOwnedResource = async (
     ...(kind === "simulation" ? { slug: simulationSlug, slugAliases } : {}),
   };
   const payload = JSON.stringify(nextRecord);
+  const payloadBytes = new TextEncoder().encode(payload).byteLength;
+  const maxPayloadBytes = kind === "site" ? LIBRARY_SITE_MAX_BYTES : LIBRARY_SIMULATION_MAX_BYTES;
+  if (payloadBytes > maxPayloadBytes) return { ok: false, reason: `${kind}_too_large` };
 
   const isCreate = !existing;
   const changed =
@@ -2075,11 +2161,25 @@ const upsertOwnedResource = async (
     return { ok: false, reason: `would_lose_access_${kind}` };
   }
 
-  await env.DB
-    .prepare(
+  const maxOwnerRecords = kind === "site" ? LIBRARY_MAX_SITES_PER_USER : LIBRARY_MAX_SIMULATIONS_PER_USER;
+  const maxOwnerPublicRecords = kind === "site" ? LIBRARY_MAX_PUBLIC_SITES_PER_USER : LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER;
+  const activeQuotaClause = "";
+  const siteTombstoneGuard = kind === "site"
+    ? ` AND (
+          EXISTS (SELECT 1 FROM sites WHERE id = ?)
+          OR NOT EXISTS (
+            SELECT 1 FROM resource_changes
+            WHERE resource_kind = 'site' AND resource_id = ? AND note = 'Deleted Site'
+          )
+        )`
+    : "";
+  const writeStatement = env.DB.prepare(
       `INSERT INTO ${table}
        (id, owner_user_id, created_by_user_id, last_edited_by_user_id, created_at, last_edited_at, name, visibility, payload_json, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE (? = 0 OR (SELECT COUNT(*) FROM ${table} WHERE owner_user_id = ?${activeQuotaClause}) < ?)
+         AND (? = 0 OR ? = 'private' OR (SELECT COUNT(*) FROM ${table} WHERE owner_user_id = ? AND visibility != 'private'${activeQuotaClause}) < ?)
+         ${siteTombstoneGuard}
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name,
          visibility = excluded.visibility,
@@ -2088,27 +2188,102 @@ const upsertOwnedResource = async (
          last_edited_at = excluded.last_edited_at,
          last_edited_by_user_id = excluded.last_edited_by_user_id,
          created_by_user_id = COALESCE(${table}.created_by_user_id, excluded.created_by_user_id),
-         created_at = COALESCE(${table}.created_at, excluded.created_at)`,
-    )
-    .bind(id, ownerId, ownerId, actor.id, existing?.created_at ?? now, now, name, visibilityDb, payload, now)
-    .run();
-
-  await env.DB.prepare(`DELETE FROM ${rolesTable} WHERE ${kind}_id = ?`).bind(id).run();
-  if (sharedWith.length) {
-    const statements = sharedWith
-      .filter((grant) => grant.userId !== ownerId)
-      .map((grant) =>
-        env.DB
-          .prepare(
-            `INSERT INTO ${rolesTable} (${kind}_id, user_id, role, created_at)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(${kind}_id, user_id) DO UPDATE SET role = excluded.role`,
+         created_at = COALESCE(${table}.created_at, excluded.created_at)
+       WHERE (
+         ${table}.owner_user_id = ?
+         OR ? = 1
+         OR EXISTS (
+            SELECT 1 FROM ${rolesTable}
+            WHERE ${kind}_id = excluded.id AND user_id = ? AND role IN ('admin', 'editor')
           )
-          .bind(id, grant.userId, grant.role, now),
-      );
-    if (statements.length) {
-      await env.DB.batch(statements);
+       )
+       ${kind === "simulation" ? "AND simulations.status = 'active'" : ""}
+       AND (
+         excluded.visibility = 'private'
+         OR ${table}.visibility != 'private'
+         OR (SELECT COUNT(*) FROM ${table} quota_rows
+             WHERE quota_rows.owner_user_id = ${table}.owner_user_id
+               AND quota_rows.visibility != 'private') < ?
+       )`,
+    )
+    .bind(
+      id,
+      ownerId,
+      ownerId,
+      actor.id,
+      existing?.created_at ?? now,
+      now,
+      name,
+      visibilityDb,
+      payload,
+      now,
+      isCreate ? 1 : 0,
+      ownerId,
+      maxOwnerRecords,
+      isCreate ? 1 : 0,
+      visibilityDb,
+      ownerId,
+      maxOwnerPublicRecords,
+      ...(kind === "site" ? [id, id] : []),
+      actor.id,
+      actor.isAdmin ? 1 : 0,
+      actor.id,
+      maxOwnerPublicRecords,
+    );
+  const wroteCurrentPayloadGuard = `EXISTS (
+    SELECT 1 FROM ${table}
+    WHERE id = ? AND updated_at = ? AND last_edited_by_user_id = ? AND payload_json = ?
+      ${kind === "simulation" ? "AND status = 'active'" : ""}
+  )`;
+  const roleStatements = [
+    env.DB
+      .prepare(`DELETE FROM ${rolesTable} WHERE ${kind}_id = ? AND ${wroteCurrentPayloadGuard}`)
+      .bind(id, id, now, actor.id, payload),
+    ...sharedWith
+      .filter((grant) => grant.userId !== ownerId)
+      .map((grant) => env.DB
+        .prepare(
+          `INSERT INTO ${rolesTable} (${kind}_id, user_id, role, created_at)
+           SELECT ?, ?, ?, ?
+           WHERE ${wroteCurrentPayloadGuard}
+           ON CONFLICT(${kind}_id, user_id) DO UPDATE SET role = excluded.role`,
+        )
+        .bind(id, grant.userId, grant.role, now, id, now, actor.id, payload)),
+  ];
+  const [writeResult] = await env.DB.batch([writeStatement, ...roleStatements]) as D1Result[];
+  if (writeResult.meta?.changes === 0) {
+    if (kind === "site") {
+      const tombstone = await env.DB
+        .prepare(
+          `SELECT id FROM resource_changes
+           WHERE resource_kind = 'site' AND resource_id = ? AND note = 'Deleted Site'
+           ORDER BY id DESC LIMIT 1`,
+        )
+        .bind(id)
+        .first<{ id: number }>();
+      if (tombstone) return { ok: false, reason: "site_deleted" };
     }
+    const current = await env.DB
+      .prepare(
+        `SELECT t.owner_user_id, t.visibility${kind === "simulation" ? ", t.status" : ""}, r.role AS actor_role
+         FROM ${table} t
+         LEFT JOIN ${rolesTable} r ON r.${kind}_id = t.id AND r.user_id = ?
+         WHERE t.id = ? LIMIT 1`,
+      )
+      .bind(actor.id, id)
+      .first<{ owner_user_id: string; visibility: DbVisibility; status?: "active" | "deleted"; actor_role?: string | null }>();
+    if (kind === "simulation" && current?.status === "deleted") {
+      return { ok: false, reason: "simulation_deleted" };
+    }
+    if (current && !canEditResource(
+      actor,
+      current.owner_user_id,
+      visibilityFromDbVisibility(current.visibility),
+      typeof current.actor_role === "string" ? current.actor_role : null,
+    )) {
+      return { ok: false, reason: `forbidden_${kind}` };
+    }
+    return { ok: false, reason: `${kind}_quota_exceeded` };
   }
 
   const changeDetails: string[] = [];
@@ -2157,23 +2332,103 @@ const upsertOwnedResource = async (
   return { ok: true };
 };
 
+type QuotaResourceRow = {
+  id: string;
+  owner_user_id: string;
+  visibility: DbVisibility;
+};
+
+type OwnerQuotaRow = {
+  owner_user_id: string;
+  total_count: number;
+  public_count: number;
+};
+
+const preflightResourceQuotas = async (
+  env: Env,
+  kind: "site" | "simulation",
+  actor: ActorPolicy,
+  items: CloudResourceRecord[],
+): Promise<void> => {
+  if (items.length === 0) return;
+  const table = kind === "site" ? "sites" : "simulations";
+  const ids = items.map((item) => typeof item.id === "string" ? item.id.trim() : "");
+  if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
+    throw new LibraryValidationError(`Library request contains invalid or duplicate ${kind === "site" ? "Site" : "Simulation"} IDs.`);
+  }
+  const placeholders = ids.map(() => "?").join(", ");
+  const existingRows = await env.DB
+    .prepare(`SELECT id, owner_user_id, visibility FROM ${table} WHERE id IN (${placeholders})`)
+    .bind(...ids)
+    .all<QuotaResourceRow>();
+  const existingById = new Map(existingRows.results.map((row) => [row.id, row]));
+  const ownerIds = [...new Set(items.map((item) => existingById.get(item.id.trim())?.owner_user_id ?? actor.id))];
+  const ownerPlaceholders = ownerIds.map(() => "?").join(", ");
+  const activeClause = "";
+  const counts = await env.DB
+    .prepare(
+      `SELECT owner_user_id,
+              COUNT(*) AS total_count,
+              SUM(CASE WHEN visibility != 'private' THEN 1 ELSE 0 END) AS public_count
+       FROM ${table}
+       WHERE owner_user_id IN (${ownerPlaceholders})${activeClause}
+       GROUP BY owner_user_id`,
+    )
+    .bind(...ownerIds)
+    .all<OwnerQuotaRow>();
+  const state = new Map(ownerIds.map((ownerId) => {
+    const row = counts.results.find((entry) => entry.owner_user_id === ownerId);
+    const total = Number(row?.total_count ?? 0);
+    const publicCount = Number(row?.public_count ?? 0);
+    return [ownerId, { initialTotal: total, initialPublic: publicCount, total, publicCount }];
+  }));
+
+  for (const item of items) {
+    const id = item.id.trim();
+    const existing = existingById.get(id);
+    const ownerId = existing?.owner_user_id ?? actor.id;
+    const ownerState = state.get(ownerId)!;
+    const nextVisibility = dbVisibilityFromVisibility(sanitizeVisibility(item.visibility));
+    if (!existing) ownerState.total += 1;
+    const wasPublic = existing ? existing.visibility !== "private" : false;
+    const willBePublic = nextVisibility !== "private";
+    if (wasPublic !== willBePublic) ownerState.publicCount += willBePublic ? 1 : -1;
+  }
+
+  const maxTotal = kind === "site" ? LIBRARY_MAX_SITES_PER_USER : LIBRARY_MAX_SIMULATIONS_PER_USER;
+  const maxPublic = kind === "site" ? LIBRARY_MAX_PUBLIC_SITES_PER_USER : LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER;
+  for (const quota of state.values()) {
+    if (quota.total > maxTotal && quota.total > quota.initialTotal) {
+      throw new LibraryValidationError(`${kind === "site" ? "Site" : "Simulation"} Library quota exceeded.`);
+    }
+    if (quota.publicCount > maxPublic && quota.publicCount > quota.initialPublic) {
+      throw new LibraryValidationError(`Public ${kind === "site" ? "Site" : "Simulation"} Library quota exceeded.`);
+    }
+  }
+};
+
 export const upsertLibrarySnapshot = async (
   env: Env,
   actor: ActorPolicy,
   payload: { siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[] },
 ): Promise<{ upsertedSites: number; upsertedSimulations: number; conflicts: string[] }> => {
   await ensureSchema(env);
+  if (payload.siteLibrary.length + payload.simulationPresets.length > LIBRARY_BATCH_MAX_RECORDS) {
+    throw new LibraryValidationError(`Library request may contain at most ${LIBRARY_BATCH_MAX_RECORDS} records.`);
+  }
+  await preflightResourceQuotas(env, "site", actor, payload.siteLibrary);
+  await preflightResourceQuotas(env, "simulation", actor, payload.simulationPresets);
   const conflicts: string[] = [];
   let upsertedSites = 0;
   let upsertedSimulations = 0;
 
-  for (const site of payload.siteLibrary.slice(0, 4000)) {
+  for (const site of payload.siteLibrary) {
     const result = await upsertOwnedResource(env, "site", actor, site);
     if (result.ok) upsertedSites += 1;
     else if (result.reason) conflicts.push(result.reason);
   }
 
-  for (const simulation of payload.simulationPresets.slice(0, 4000)) {
+  for (const simulation of payload.simulationPresets) {
     const result = await upsertOwnedResource(env, "simulation", actor, simulation);
     if (result.ok) upsertedSimulations += 1;
     else if (result.reason) conflicts.push(result.reason);
@@ -2225,7 +2480,7 @@ export const fetchLibraryForUser = async (
   env: Env,
   userId: string,
   opts?: { since?: string },
-): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[]; deletedSimulationIds: string[] }> => {
+): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[]; deletedSiteIds: string[]; deletedSimulationIds: string[] }> => {
   await ensureSchema(env);
   const me = await fetchUserProfile(env, userId);
   const canReadAllResources = Boolean(me?.isAdmin);
@@ -2259,6 +2514,33 @@ export const fetchLibraryForUser = async (
     )
     .bind(userId, canReadAllResources ? 1 : 0, userId, ...(opts?.since ? [opts.since] : []))
     .all<LibraryRow>();
+
+  const deletedSiteAudienceClause = canReadAllResources
+    ? ""
+    : ` AND (
+          json_extract(tombstone.snapshot_json, '$.ownerUserId') = ?
+          OR json_extract(tombstone.snapshot_json, '$.visibility') IN ('public', 'shared')
+          OR EXISTS (
+            SELECT 1 FROM json_each(COALESCE(json_extract(tombstone.snapshot_json, '$.sharedWith'), '[]')) grant_entry
+            WHERE json_extract(grant_entry.value, '$.userId') = ?
+          )
+        )`;
+  const deletedSiteRows = await env.DB
+        .prepare(
+          `SELECT tombstone.resource_id AS id
+           FROM resource_changes tombstone
+           WHERE tombstone.resource_kind = 'site'
+             AND tombstone.note = 'Deleted Site'
+             AND tombstone.id = (
+               SELECT MAX(latest.id)
+               FROM resource_changes latest
+               WHERE latest.resource_kind = 'site' AND latest.resource_id = tombstone.resource_id
+             )
+             AND NOT EXISTS (SELECT 1 FROM sites live WHERE live.id = tombstone.resource_id)
+             ${deletedSiteAudienceClause}${opts?.since ? "\n             AND tombstone.changed_at > ?" : ""}`,
+        )
+        .bind(...(canReadAllResources ? [] : [userId, userId]), ...(opts?.since ? [opts.since] : []))
+        .all<{ id: string }>();
 
   const deletedSimulationRows = canReadAllResources
     ? { results: [] as Array<{ id: string }> }
@@ -2358,6 +2640,7 @@ export const fetchLibraryForUser = async (
   return {
     siteLibrary: mapRows(siteRows.results),
     simulationPresets: mapRows(simulationRows.results),
+    deletedSiteIds: deletedSiteRows.results.map((row) => row.id),
     deletedSimulationIds: deletedSimulationRows.results.map((row) => row.id),
   };
 };

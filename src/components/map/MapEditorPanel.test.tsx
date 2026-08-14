@@ -545,7 +545,7 @@ describe("MapEditorPanel", () => {
   });
 
   it("confirms deletion from editable Site details", async () => {
-    const deleteSiteLibraryEntry = vi.fn();
+    const deleteSiteLibraryEntry = vi.fn(async () => undefined);
     useAppStore.setState({ deleteSiteLibraryEntry });
     render(<MapEditorPanel isMobile={false} />);
 
@@ -554,7 +554,22 @@ describe("MapEditorPanel", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     expect(deleteSiteLibraryEntry).toHaveBeenCalledWith("site-lib-1");
-    expect(useAppStore.getState().mapEditor).toBeNull();
+    await waitFor(() => expect(useAppStore.getState().mapEditor).toBeNull());
+  });
+
+  it("does not offer Site deletion to a collaborator who can edit", async () => {
+    useAppStore.setState((state) => ({
+      currentUser: { ...state.currentUser!, id: "editor-1", isAdmin: false },
+      siteLibrary: state.siteLibrary.map((site) => ({
+        ...site,
+        ownerUserId: "owner-1",
+        effectiveRole: "editor" as const,
+      })),
+    }));
+    render(<MapEditorPanel isMobile={false} />);
+
+    expect(await screen.findByRole("button", { name: "Save Site" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Delete Site" })).not.toBeInTheDocument();
   });
 
   it("opens the shared profile popover from metadata and change-log identities", async () => {

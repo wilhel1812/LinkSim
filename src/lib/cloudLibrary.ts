@@ -1,14 +1,47 @@
 import { parseApiErrorMessage } from "./apiError";
+import { LIBRARY_BATCH_MAX_RECORDS, LIBRARY_REQUEST_MAX_BYTES } from "./libraryLimits";
 
 export type CloudLibraryPayload = {
   siteLibrary: unknown[];
   simulationPresets: unknown[];
+  deletedSiteIds?: string[];
   deletedSimulationIds?: string[];
 };
 
 type CloudPushResult = {
   ok?: boolean;
   conflicts?: string[];
+};
+
+type TaggedLibraryRecord = { kind: "site" | "simulation"; value: unknown };
+
+const pushBodyForRecords = (records: TaggedLibraryRecord[]): CloudLibraryPayload => ({
+  siteLibrary: records.filter((entry) => entry.kind === "site").map((entry) => entry.value),
+  simulationPresets: records.filter((entry) => entry.kind === "simulation").map((entry) => entry.value),
+});
+
+const buildPushBatches = (records: TaggedLibraryRecord[]): CloudLibraryPayload[] => {
+  if (records.length === 0) return [pushBodyForRecords([])];
+  const encoder = new TextEncoder();
+  const batches: CloudLibraryPayload[] = [];
+  let current: TaggedLibraryRecord[] = [];
+  for (const record of records) {
+    const singleRecordBytes = encoder.encode(JSON.stringify(pushBodyForRecords([record]))).byteLength;
+    if (singleRecordBytes > LIBRARY_REQUEST_MAX_BYTES) {
+      throw new Error(`Library record cannot fit within the ${LIBRARY_REQUEST_MAX_BYTES}-byte request limit.`);
+    }
+    const candidate = [...current, record];
+    const candidateBody = pushBodyForRecords(candidate);
+    const candidateBytes = encoder.encode(JSON.stringify(candidateBody)).byteLength;
+    if (current.length > 0 && (candidate.length > LIBRARY_BATCH_MAX_RECORDS || candidateBytes > LIBRARY_REQUEST_MAX_BYTES)) {
+      batches.push(pushBodyForRecords(current));
+      current = [record];
+      continue;
+    }
+    current = candidate;
+  }
+  batches.push(pushBodyForRecords(current));
+  return batches;
 };
 
 const listSimulationNames = (payload: CloudLibraryPayload): string[] =>
@@ -35,14 +68,17 @@ const apiCall = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return (await response.json()) as T;
 };
 
-export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSimulationIds: string[]; isDelta?: boolean }> => {
+export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean }> => {
   const url = opts?.since ? `/api/library?since=${encodeURIComponent(opts.since)}` : "/api/library";
-  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; deletedSimulationIds?: unknown[]; isDelta?: boolean }>(url, {
+  const data = await apiCall<{ siteLibrary?: unknown[]; simulationPresets?: unknown[]; deletedSiteIds?: unknown[]; deletedSimulationIds?: unknown[]; isDelta?: boolean }>(url, {
     method: "GET",
   });
   return {
     siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
     simulationPresets: Array.isArray(data.simulationPresets) ? data.simulationPresets : [],
+    deletedSiteIds: Array.isArray(data.deletedSiteIds)
+      ? data.deletedSiteIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+      : [],
     deletedSimulationIds: Array.isArray(data.deletedSimulationIds)
       ? data.deletedSimulationIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
       : [],
@@ -52,6 +88,10 @@ export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<Clou
 
 export const deleteCloudSimulation = async (simulationId: string): Promise<void> => {
   await apiCall(`/api/library/simulations/${encodeURIComponent(simulationId)}`, { method: "DELETE" });
+};
+
+export const deleteCloudSite = async (siteId: string): Promise<void> => {
+  await apiCall(`/api/library/sites/${encodeURIComponent(siteId)}`, { method: "DELETE" });
 };
 
 export const restoreCloudSimulation = async (simulationId: string): Promise<void> => {
@@ -84,16 +124,23 @@ export const fetchPublicSimulationLibrary = async (params: {
 };
 
 export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<void> => {
-  const result = await apiCall<CloudPushResult>("/api/library", {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
-  const allConflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
-  if (!allConflicts.length) return;
-  if (allConflicts.includes("simulation_name_taken")) {
-    const simulationNames = listSimulationNames(payload);
-    const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
-    throw new Error(`Simulation name already exists${suffix}. Use unique Simulation names.`);
+  const records = [
+    ...payload.siteLibrary.map((value) => ({ kind: "site" as const, value })),
+    ...payload.simulationPresets.map((value) => ({ kind: "simulation" as const, value })),
+  ];
+  const batches = buildPushBatches(records);
+  for (const batch of batches) {
+    const result = await apiCall<CloudPushResult>("/api/library", {
+      method: "PUT",
+      body: JSON.stringify(batch),
+    });
+    const conflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
+    if (!conflicts.length) continue;
+    if (conflicts.includes("simulation_name_taken")) {
+      const simulationNames = listSimulationNames(payload);
+      const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
+      throw new Error(`Simulation name already exists${suffix}. Use unique Simulation names.`);
+    }
+    throw new Error(`Cloud rejected ${conflicts.length} item(s): ${conflicts.join(", ")}`);
   }
-  throw new Error(`Cloud rejected ${allConflicts.length} item(s): ${allConflicts.join(", ")}`);
 };

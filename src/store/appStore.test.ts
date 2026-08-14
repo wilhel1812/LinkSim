@@ -40,6 +40,7 @@ vi.mock("../lib/cloudLibrary", async () => {
   const actual = await vi.importActual<typeof import("../lib/cloudLibrary")>("../lib/cloudLibrary");
   return {
     ...actual,
+    deleteCloudSite: vi.fn(async () => undefined),
     deleteCloudSimulation: vi.fn(async () => undefined),
     restoreCloudSimulation: vi.fn(async () => undefined),
   };
@@ -48,7 +49,7 @@ vi.mock("../lib/cloudLibrary", async () => {
 import { useAppStore } from "./appStore";
 import { useCoverageStore } from "./coverageStore";
 import { fetchElevations } from "../lib/elevationService";
-import { deleteCloudSimulation, restoreCloudSimulation } from "../lib/cloudLibrary";
+import { deleteCloudSite, deleteCloudSimulation, restoreCloudSimulation } from "../lib/cloudLibrary";
 import { simulationDefaultsFromPreset } from "../lib/simulationDefaults";
 
 describe("appStore auth session state", () => {
@@ -269,14 +270,16 @@ describe("appStore auth guards", () => {
       bio: "",
     });
 
-    useAppStore.getState().deleteSiteLibraryEntry("lib-1");
+    await expect(useAppStore.getState().deleteSiteLibraryEntry("lib-1")).rejects.toThrow(
+      "Only the Site owner or a platform admin",
+    );
     await expect(useAppStore.getState().deleteSimulationPreset("sim-1")).rejects.toThrow(
       "Only the Simulation owner or a platform admin",
     );
 
     expect(useAppStore.getState().siteLibrary.some((entry) => entry.id === "lib-1")).toBe(true);
     expect(useAppStore.getState().simulationPresets.some((preset) => preset.id === "sim-1")).toBe(true);
-    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it("does not auto-sync online elevations when adding a site", async () => {
@@ -768,7 +771,7 @@ describe("appStore unified Library state", () => {
     expect(useAppStore.getState().libraryRequest).toBeNull();
   });
 
-  it("detaches a deleted Library Site from the live workspace and saved snapshots", () => {
+  it("deletes a cloud Site before detaching it from the live workspace and saved snapshots", async () => {
     const linkedSite = {
       id: "site-1",
       name: "Ridge",
@@ -820,12 +823,69 @@ describe("appStore unified Library state", () => {
       ],
     });
 
-    useAppStore.getState().deleteSiteLibraryEntry("library-site-1");
+    await useAppStore.getState().deleteSiteLibraryEntry("library-site-1");
 
+    expect(vi.mocked(deleteCloudSite)).toHaveBeenCalledWith("library-site-1");
     expect(useAppStore.getState().sites[0]).not.toHaveProperty("libraryEntryId");
     expect(useAppStore.getState().simulationPresets[0]?.snapshot.sites[0]).not.toHaveProperty(
       "libraryEntryId",
     );
+  });
+
+  it("keeps the local Site when cloud deletion fails", async () => {
+    vi.mocked(deleteCloudSite).mockRejectedValueOnce(new Error("Delete unavailable"));
+    useAppStore.setState({
+      currentUser: { ...useAppStore.getState().currentUser!, id: "owner-1", isAdmin: false },
+      siteLibrary: [{
+        id: "library-site-1",
+        name: "Ridge",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        position: { lat: 60, lon: 11 },
+        groundElevationM: 100,
+        antennaHeightM: 2,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      }],
+    });
+
+    await expect(useAppStore.getState().deleteSiteLibraryEntry("library-site-1")).rejects.toThrow("Delete unavailable");
+    expect(useAppStore.getState().siteLibrary).toHaveLength(1);
+  });
+
+  it("recovers a partially completed bulk Site deletion on retry", async () => {
+    const deleteSiteMock = vi.mocked(deleteCloudSite);
+    deleteSiteMock.mockClear();
+    deleteSiteMock
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("Delete unavailable"))
+      .mockResolvedValueOnce(undefined);
+    const makeSite = (id: string) => ({
+      id,
+      name: id,
+      ownerUserId: "owner-1",
+      effectiveRole: "owner" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      position: { lat: 60, lon: 11 },
+      groundElevationM: 100,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    });
+    useAppStore.setState({ siteLibrary: [makeSite("site-a"), makeSite("site-b")] });
+
+    await expect(useAppStore.getState().deleteSiteLibraryEntries(["site-a", "site-b"]))
+      .rejects.toThrow("Delete unavailable");
+    expect(useAppStore.getState().siteLibrary.map((site) => site.id)).toEqual(["site-b"]);
+
+    await useAppStore.getState().deleteSiteLibraryEntries(["site-a", "site-b"]);
+    expect(useAppStore.getState().siteLibrary).toEqual([]);
+    expect(deleteSiteMock.mock.calls).toEqual([["site-a"], ["site-b"], ["site-b"]]);
   });
 
   it("clears the workspace and persisted active references when deleting the active Simulation", async () => {
@@ -886,6 +946,59 @@ describe("appStore unified Library state", () => {
     expect(useAppStore.getState().simulationPresets.some((preset) => preset.id === createdId)).toBe(false);
     expect(useAppStore.getState().selectedScenarioId).toBe("");
     expect(useAppStore.getState().sites).toEqual([]);
+  });
+
+  it("applies remote Site deletion tombstones before a stale client can sync them", () => {
+    const linkedSite = {
+      id: "workspace-site",
+      name: "Linked",
+      libraryEntryId: "site-deleted",
+      position: { lat: 60, lon: 11 },
+      groundElevationM: 100,
+      antennaHeightM: 2,
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    };
+    useAppStore.setState({
+      sites: [linkedSite],
+      siteLibrary: [{
+        id: "site-deleted",
+        name: "Deleted remotely",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        position: { lat: 60, lon: 11 },
+        groundElevationM: 100,
+        antennaHeightM: 2,
+        txPowerDbm: 20,
+        txGainDbi: 2,
+        rxGainDbi: 2,
+        cableLossDb: 1,
+      }],
+      simulationPresets: [{
+        id: "sim-with-stale-ref",
+        name: "Stale reference",
+        ownerUserId: "owner-1",
+        effectiveRole: "owner",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        snapshot: {
+          sites: [linkedSite], links: [], systems: [], networks: [],
+          selectedSiteId: "workspace-site", selectedLinkId: "", selectedNetworkId: "",
+          selectedCoverageResolution: "24", propagationModel: "ITM",
+          selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120,
+          environmentLossDb: 0, propagationEnvironment: useAppStore.getState().propagationEnvironment,
+          autoPropagationEnvironment: true, terrainDataset: "copernicus30",
+        },
+      }],
+    });
+
+    useAppStore.getState().applyDeletedSiteTombstones(["site-deleted"]);
+
+    expect(useAppStore.getState().siteLibrary).toEqual([]);
+    expect(useAppStore.getState().sites[0]).not.toHaveProperty("libraryEntryId");
+    expect(useAppStore.getState().simulationPresets[0]?.snapshot.sites[0]).not.toHaveProperty("libraryEntryId");
   });
 });
 
