@@ -45,8 +45,14 @@ jobs:
 
       - name: Detect identity lifecycle schema change
         id: identity_schema
+        env:
+          PREVIEW_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if git diff --quiet "${{ github.event.pull_request.base.sha }}"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql; then
+          if [[ ! "$PREVIEW_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "Invalid preview base SHA." >&2
+            exit 1
+          fi
+          if git diff --quiet "$PREVIEW_BASE_SHA"...HEAD -- db/migrations/2026-08-12_identity_lifecycle.sql; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -236,7 +242,14 @@ jobs:
         run: node scripts/validate-prod-promotion.mjs
 
       - name: Prepare release worktree
-        run: git worktree add --detach "$RUNNER_TEMP/linksim-release" "${{ steps.release_tag.outputs.tag }}"
+        env:
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Invalid resolved release tag." >&2
+            exit 1
+          fi
+          git worktree add --detach "$RUNNER_TEMP/linksim-release" "$RELEASE_TAG"
 
       - name: Install dependencies
         working-directory: ${{ runner.temp }}/linksim-release
@@ -253,6 +266,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/access-boundary.mjs check production
+
+      - name: Validate production workflow commit
+        working-directory: ${{ runner.temp }}/linksim-release
+        env:
+          DEPLOY_VERIFY_COMMIT: ${{ github.sha }}
+        run: node "$GITHUB_WORKSPACE/scripts/deploy-pages-safe.mjs" --target prod-main --verify-commit-only
 
       - name: Apply production Simulation lifecycle migration
         working-directory: ${{ runner.temp }}/linksim-release
