@@ -16,7 +16,7 @@
     "dev": "npm run build:meta && vite --config config/vite.config.ts",
     "build:client": "npm run build:meta && vite build --config config/vite.config.ts",
     "build:bundle": "npm run build:meta && tsc -b config/tsconfig.json && vite build --config config/vite.config.ts",
-    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=linksim --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --binding ADMIN_USER_IDS=local-dev-user --local --persist-to .wrangler/state",
+    "dev:edge": "npm run build:client && npx wrangler pages dev dist --d1 DB=d669aac0-37ea-4c68-9b27-ece888e1966a --r2 AVATAR_BUCKET=linksim-avatars --binding ALLOW_INSECURE_DEV_AUTH=true --binding DEV_AUTH_USER_ID=local-dev-user --binding ADMIN_USER_IDS=local-dev-user --local --persist-to .wrangler/state",
     "build": "npm run build:bundle",
     "lint": "npm run build:meta && eslint .",
     "security:scan": "node scripts/security-scan.mjs",

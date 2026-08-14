@@ -13,6 +13,13 @@ import {
 const root = process.cwd();
 const migrationDirectory = resolve(root, "db/migrations");
 const localSeedFile = resolve(root, LOCAL_D1_SEED_FILE);
+const wranglerConfig = readFileSync(resolve(root, "wrangler.toml"), "utf8");
+
+const readWranglerValue = (name: string) => {
+  const match = wranglerConfig.match(new RegExp(`^${name}\\s*=\\s*"([^"]+)"`, "m"));
+  if (!match) throw new Error(`Missing ${name} in wrangler.toml`);
+  return match[1];
+};
 
 describe("local D1 seed isolation", () => {
   it("keeps destructive local fixtures outside the ordered migration directory", () => {
@@ -37,6 +44,17 @@ describe("local D1 seed isolation", () => {
     expect(database.prepare("SELECT COUNT(*) AS count FROM users").get()).toEqual({
       count: 14,
     });
+    const profiles = database
+      .prepare("SELECT username, username_set_at FROM users ORDER BY id")
+      .all()
+      .map((row) => ({
+        username: String(row.username),
+        needsUsername: !row.username_set_at,
+      }));
+    expect(profiles).toHaveLength(14);
+    expect(profiles.every((profile) => profile.username && !profile.needsUsername)).toBe(
+      true,
+    );
   });
 
   it("builds one fixed local Wrangler invocation", () => {
@@ -84,5 +102,18 @@ describe("local D1 seed isolation", () => {
   it("exposes only the fixed local command through npm", () => {
     const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
     expect(packageJson.scripts["db:seed:local"]).toBe("node scripts/seed-local-d1.mjs");
+  });
+
+  it("shares the configured D1 identifier with both edge development commands", () => {
+    const databaseName = readWranglerValue("database_name");
+    const databaseId = readWranglerValue("database_id");
+    const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+    const dockerCompose = readFileSync(resolve(root, "docker-compose.yml"), "utf8");
+
+    expect(LOCAL_D1_DATABASE).toBe(databaseName);
+    expect(packageJson.scripts["dev:edge"]).toContain(`--d1 DB=${databaseId}`);
+    expect(dockerCompose).toContain(`--d1 DB=${databaseId}`);
+    expect(packageJson.scripts["dev:edge"]).not.toContain("--d1 DB=linksim ");
+    expect(dockerCompose).not.toContain("--d1 DB=linksim ");
   });
 });
