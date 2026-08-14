@@ -83,7 +83,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (requestedSince && !validTimestamp(requestedSince)) {
       throw new ApiRequestError("Library since timestamp is invalid.", 400, "invalid_since");
     }
-    const state: ReadCursor = encodedCursor
+    const paginationRequested = encodedCursor !== null || params.get("pagination") === "v1";
+    if (!paginationRequested) {
+      const library = await fetchLibraryForUser(env, auth.userId, { since: requestedSince });
+      return withCors(
+        request,
+        json({
+          userId: auth.userId,
+          ...library,
+          isDelta: Boolean(requestedSince),
+        }),
+      );
+    }
+    const state: ReadCursor = encodedCursor !== null
       ? decodeCursor(encodedCursor, auth.userId)
       : { v: 1, userId: auth.userId, ...(requestedSince ? { since: requestedSince } : {}), cutoff: new Date().toISOString(), phase: "sites", afterId: "" };
     const library = await fetchLibraryForUser(env, auth.userId, {

@@ -158,11 +158,14 @@ const mergeLibraryPayloads = (base: CloudLibraryPage, recovery: CloudLibraryPage
 };
 
 export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean }> => {
-  const initialUrl = opts?.since ? `/api/library?since=${encodeURIComponent(opts.since)}` : "/api/library";
+  const initialParams = new URLSearchParams({ pagination: "v1" });
+  if (opts?.since) initialParams.set("since", opts.since);
+  const initialUrl = `/api/library?${initialParams.toString()}`;
   const base = await drainLibraryPages(initialUrl);
   // Older/test servers without a cutoff remain compatible and cannot offer recovery.
   if (!base.syncCutoff) return base as CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean };
-  const recovery = await drainLibraryPages(`/api/library?since=${encodeURIComponent(base.syncCutoff)}`);
+  const recoveryParams = new URLSearchParams({ pagination: "v1", since: base.syncCutoff });
+  const recovery = await drainLibraryPages(`/api/library?${recoveryParams.toString()}`);
   return mergeLibraryPayloads(base, recovery) as CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean };
 };
 

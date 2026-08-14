@@ -74,21 +74,53 @@ describe("api/library", () => {
     await expect(res.json()).resolves.toMatchObject({ userId: "u1", siteLibrary: [{ id: "s1" }] });
   });
 
+  it("preserves the complete legacy one-shot response unless pagination is explicitly requested", async () => {
+    fetchLibraryForUserMock.mockResolvedValueOnce({
+      siteLibrary: [{ id: "site-1" }],
+      simulationPresets: [{ id: "sim-1" }],
+      deletedSiteIds: ["site-deleted"],
+      deletedSimulationIds: ["sim-deleted"],
+    });
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    expect(res.status).toBe(200);
+    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", { since: undefined });
+    await expect(res.json()).resolves.toEqual({
+      userId: "u1",
+      siteLibrary: [{ id: "site-1" }],
+      simulationPresets: [{ id: "sim-1" }],
+      deletedSiteIds: ["site-deleted"],
+      deletedSimulationIds: ["sim-deleted"],
+      isDelta: false,
+    });
+  });
+
   it("passes since param to fetchLibraryForUser on GET", async () => {
     const since = "2026-01-01T00:00:00.000Z";
     const res = await onRequestGet(
       mkCtx(new Request(`https://example.test/api/library?since=${encodeURIComponent(since)}`)),
     );
     expect(res.status).toBe(200);
-    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", expect.objectContaining({ since, phase: "sites", afterId: "", limit: 20 }));
+    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", { since });
     const body = await res.json() as Record<string, unknown>;
     expect(body.isDelta).toBe(true);
   });
 
   it("passes undefined since when no query param on GET", async () => {
     await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
-    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", expect.objectContaining({ since: undefined, phase: "sites", afterId: "", limit: 20 }));
+    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", { since: undefined });
     // isDelta should be falsy
+  });
+
+  it("uses bounded pagination when the new client opts in with a delta checkpoint", async () => {
+    const since = "2026-01-01T00:00:00.000Z";
+    const res = await onRequestGet(
+      mkCtx(new Request(`https://example.test/api/library?pagination=v1&since=${encodeURIComponent(since)}`)),
+    );
+    expect(res.status).toBe(200);
+    expect(fetchLibraryForUserMock).toHaveBeenCalledWith(env, "u1", expect.objectContaining({
+      since, phase: "sites", afterId: "", limit: 20,
+    }));
+    await expect(res.json()).resolves.toMatchObject({ isDelta: true, syncCutoff: expect.any(String) });
   });
 
   it("rejects an oversized cursor before querying the Library", async () => {
@@ -107,7 +139,7 @@ describe("api/library", () => {
       deletedSimulationIds: [],
       nextCursor: { phase: "sites", afterId: "s1" },
     });
-    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/library?pagination=v1")));
     expect(res.status).toBe(200);
     const body = await res.json() as Record<string, unknown>;
     expect(body.syncCutoff).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
@@ -123,7 +155,7 @@ describe("api/library", () => {
       siteLibrary: [{ id: "s1" }], simulationPresets: [], deletedSiteIds: [], deletedSimulationIds: [],
       nextCursor: { phase: "sites", afterId: "s1" },
     });
-    const first = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    const first = await onRequestGet(mkCtx(new Request("https://example.test/api/library?pagination=v1")));
     const cursor = String((await first.json() as { nextCursor?: unknown }).nextCursor);
     verifyAuthMock.mockResolvedValueOnce({ userId: "u2", tokenPayload: {}, source: "headers" });
     const mismatched = await onRequestGet(mkCtx(new Request(`https://example.test/api/library?cursor=${encodeURIComponent(cursor)}`)));
@@ -144,7 +176,7 @@ describe("api/library", () => {
       simulationPresets: [], deletedSiteIds: [], deletedSimulationIds: [],
       nextCursor: { phase: "sites", afterId: "s19" },
     });
-    const first = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    const first = await onRequestGet(mkCtx(new Request("https://example.test/api/library?pagination=v1")));
     const firstText = await first.text();
     expect(new TextEncoder().encode(firstText).byteLength).toBeLessThanOrEqual(LIBRARY_REQUEST_MAX_BYTES);
     const body = JSON.parse(firstText) as { siteLibrary: Array<{ id: string }>; nextCursor: string };
@@ -163,7 +195,7 @@ describe("api/library", () => {
       siteLibrary: [{ id: "oversized", padding: "x".repeat(LIBRARY_REQUEST_MAX_BYTES) }],
       simulationPresets: [], deletedSiteIds: [], deletedSimulationIds: [],
     });
-    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/library")));
+    const res = await onRequestGet(mkCtx(new Request("https://example.test/api/library?pagination=v1")));
     expect(res.status).toBe(500);
     await expect(res.json()).resolves.toMatchObject({ code: "record_too_large" });
   });
