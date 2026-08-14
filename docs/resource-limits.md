@@ -29,8 +29,12 @@ fails, it stops and retains the dirty set so the normal sync recovery path can
 retry safely. The server never silently truncates a batch.
 
 Owners already above a storage quota can continue to update, export,
-privatize, or delete existing records. They cannot create a record or make a
-record public when that would increase an exceeded quota.
+privatize, or delete existing records. Authenticated Site deletion removes the
+owned cloud record before detaching its local references; deletion is
+idempotent so an interrupted retry can recover. Platform admins may
+also delete a Site. Collaborators cannot delete someone else's Site. Owners
+cannot create a record or make a record public when that would increase an
+exceeded quota.
 
 Known Site and Simulation fields are validated for object shape, identifiers,
 names, finite numeric values, coordinates, visibility, grants, and collection

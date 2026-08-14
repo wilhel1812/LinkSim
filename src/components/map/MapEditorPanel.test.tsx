@@ -545,7 +545,7 @@ describe("MapEditorPanel", () => {
   });
 
   it("confirms deletion from editable Site details", async () => {
-    const deleteSiteLibraryEntry = vi.fn();
+    const deleteSiteLibraryEntry = vi.fn(async () => undefined);
     useAppStore.setState({ deleteSiteLibraryEntry });
     render(<MapEditorPanel isMobile={false} />);
 
@@ -554,7 +554,7 @@ describe("MapEditorPanel", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     expect(deleteSiteLibraryEntry).toHaveBeenCalledWith("site-lib-1");
-    expect(useAppStore.getState().mapEditor).toBeNull();
+    await waitFor(() => expect(useAppStore.getState().mapEditor).toBeNull());
   });
 
   it("opens the shared profile popover from metadata and change-log identities", async () => {

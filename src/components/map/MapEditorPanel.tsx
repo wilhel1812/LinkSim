@@ -1397,9 +1397,16 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
       }}
       onConfirm={() => {
         if (deleteTarget.kind === "site") {
-          deleteSiteLibraryEntry(deleteTarget.resourceId);
-          setDeleteTarget(null);
-          closeMapEditor();
+          if (lifecycleBusy) return;
+          setLifecycleBusy(true);
+          setLifecycleError("");
+          void deleteSiteLibraryEntry(deleteTarget.resourceId)
+            .then(() => {
+              setDeleteTarget(null);
+              closeMapEditor();
+            })
+            .catch((error) => setLifecycleError(`Delete failed: ${getUiErrorMessage(error)}`))
+            .finally(() => setLifecycleBusy(false));
           return;
         }
         if (lifecycleBusy) return;

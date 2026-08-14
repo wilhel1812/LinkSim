@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  deleteSiteResource,
   fetchUserDiagnosticAccessState,
   fetchLibraryForUser,
   fetchPublicSimulationBundle,
@@ -12,6 +13,8 @@ import {
 import {
   LIBRARY_BATCH_MAX_RECORDS,
   LIBRARY_MAX_PUBLIC_SITES_PER_USER,
+  LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER,
+  LIBRARY_MAX_SIMULATIONS_PER_USER,
   LIBRARY_MAX_SITES_PER_USER,
 } from "../../src/lib/libraryLimits";
 
@@ -207,6 +210,10 @@ class FakeDb {
     }
     if (sql.includes("SELECT id, owner_user_id, status, payload_json FROM simulations")) {
       return this.simulations.get(String(bound[0] ?? "")) ?? null;
+    }
+    if (sql.includes("SELECT id, owner_user_id FROM sites WHERE id = ?")) {
+      const row = this.sites.get(String(bound[0] ?? ""));
+      return row ? { id: row.id, owner_user_id: row.owner_user_id } : null;
     }
     if (sql.includes("FROM simulations t") && sql.includes("LEFT JOIN simulation_roles")) {
       const id = String(bound[1] ?? "");
@@ -422,6 +429,10 @@ class FakeDb {
       }
       return;
     }
+    if (sql.includes("DELETE FROM sites WHERE id = ?")) {
+      this.sites.delete(String(bound[0] ?? ""));
+      return;
+    }
   }
 }
 
@@ -472,6 +483,24 @@ describe("user identity privacy and diagnostic access", () => {
 });
 
 describe("upsertLibrarySnapshot shared simulations", () => {
+  it("deletes Sites only for their owner or a platform admin", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-owner", { id: "site-owner", owner_user_id: "owner-1", visibility: "private" });
+    const env = { DB: db } as unknown as Parameters<typeof deleteSiteResource>[0];
+
+    await expect(deleteSiteResource(env, { id: "other-1", isAdmin: false, isModerator: false }, "site-owner"))
+      .resolves.toEqual({ ok: false, reason: "forbidden" });
+    expect(db.sites.has("site-owner")).toBe(true);
+
+    await expect(deleteSiteResource(env, { id: "owner-1", isAdmin: false, isModerator: false }, "site-owner"))
+      .resolves.toEqual({ ok: true, siteId: "site-owner" });
+    expect(db.sites.has("site-owner")).toBe(false);
+
+    db.sites.set("site-admin", { id: "site-admin", owner_user_id: "owner-2", visibility: "private" });
+    await expect(deleteSiteResource(env, { id: "admin-1", isAdmin: true, isModerator: false }, "site-admin"))
+      .resolves.toEqual({ ok: true, siteId: "site-admin" });
+  });
+
   it("rejects oversized batches instead of silently truncating them", async () => {
     const db = new FakeDb();
     const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
@@ -548,6 +577,36 @@ describe("upsertLibrarySnapshot shared simulations", () => {
       { siteLibrary: [{ id: "site-race", name: "Race Site", visibility: "private" }], simulationPresets: [] },
     )).resolves.toEqual({ upsertedSites: 0, upsertedSimulations: 0, conflicts: ["site_quota_exceeded"] });
     expect(db.sites.has("site-race")).toBe(false);
+  });
+
+  it("enforces Simulation owner/public boundaries and grandfathers non-increasing updates", async () => {
+    const db = new FakeDb();
+    for (let index = 0; index < LIBRARY_MAX_SIMULATIONS_PER_USER; index += 1) {
+      db.simulations.set(`sim-${index}`, {
+        id: `sim-${index}`,
+        owner_user_id: "owner-1",
+        created_at: "2026-08-14T00:00:00.000Z",
+        name: `Simulation ${index}`,
+        visibility: index < LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER ? "public_read" : "private",
+        status: "active",
+        payload_json: JSON.stringify({ id: `sim-${index}`, name: `Simulation ${index}`, visibility: "private" }),
+      });
+    }
+    const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
+    const actor = { id: "owner-1", isAdmin: false, isModerator: false };
+
+    await expect(upsertLibrarySnapshot(env, actor, {
+      siteLibrary: [],
+      simulationPresets: [{ id: "sim-new", name: "New Simulation", visibility: "private" }],
+    })).rejects.toThrow("Simulation Library quota exceeded");
+    await expect(upsertLibrarySnapshot(env, actor, {
+      siteLibrary: [],
+      simulationPresets: [{ id: `sim-${LIBRARY_MAX_PUBLIC_SIMULATIONS_PER_USER}`, name: "Existing Simulation", visibility: "public" }],
+    })).rejects.toThrow("Public Simulation Library quota exceeded");
+    await expect(upsertLibrarySnapshot(env, actor, {
+      siteLibrary: [],
+      simulationPresets: [{ id: "sim-0", name: "Updated Simulation", visibility: "public" }],
+    })).resolves.toMatchObject({ upsertedSimulations: 1, conflicts: [] });
   });
 
   it("allows a shared simulation to reference a private site entry", async () => {

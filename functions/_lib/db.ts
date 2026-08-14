@@ -1887,6 +1887,29 @@ const canEditResource = (
 
 type ResourceChangeAccessReason = "missing" | "forbidden";
 
+export const deleteSiteResource = async (
+  env: Env,
+  actor: ActorPolicy,
+  siteId: string,
+): Promise<{ ok: true; siteId: string } | { ok: false; reason: "missing" | "forbidden" }> => {
+  await ensureSchema(env);
+  const id = siteId.trim();
+  if (!id) return { ok: false, reason: "missing" };
+  const existing = await env.DB
+    .prepare("SELECT id, owner_user_id FROM sites WHERE id = ? LIMIT 1")
+    .bind(id)
+    .first<{ id: string; owner_user_id: string }>();
+  if (!existing) return { ok: false, reason: "missing" };
+  if (!(actor.isAdmin || existing.owner_user_id === actor.id)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM site_roles WHERE site_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM sites WHERE id = ? AND owner_user_id = ?").bind(id, existing.owner_user_id),
+  ]);
+  return { ok: true, siteId: id };
+};
+
 const resolveResourceChangeAccess = async (
   env: Env,
   kind: "site" | "simulation",

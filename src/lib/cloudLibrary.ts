@@ -25,12 +25,13 @@ const buildPushBatches = (records: TaggedLibraryRecord[]): CloudLibraryPayload[]
   const batches: CloudLibraryPayload[] = [];
   let current: TaggedLibraryRecord[] = [];
   for (const record of records) {
+    const singleRecordBytes = encoder.encode(JSON.stringify(pushBodyForRecords([record]))).byteLength;
+    if (singleRecordBytes > LIBRARY_REQUEST_MAX_BYTES) {
+      throw new Error(`Library record cannot fit within the ${LIBRARY_REQUEST_MAX_BYTES}-byte request limit.`);
+    }
     const candidate = [...current, record];
     const candidateBody = pushBodyForRecords(candidate);
     const candidateBytes = encoder.encode(JSON.stringify(candidateBody)).byteLength;
-    if (current.length === 0 && candidateBytes > LIBRARY_REQUEST_MAX_BYTES) {
-      throw new Error(`Library record cannot fit within the ${LIBRARY_REQUEST_MAX_BYTES}-byte request limit.`);
-    }
     if (current.length > 0 && (candidate.length > LIBRARY_BATCH_MAX_RECORDS || candidateBytes > LIBRARY_REQUEST_MAX_BYTES)) {
       batches.push(pushBodyForRecords(current));
       current = [record];
@@ -85,6 +86,10 @@ export const deleteCloudSimulation = async (simulationId: string): Promise<void>
   await apiCall(`/api/library/simulations/${encodeURIComponent(simulationId)}`, { method: "DELETE" });
 };
 
+export const deleteCloudSite = async (siteId: string): Promise<void> => {
+  await apiCall(`/api/library/sites/${encodeURIComponent(siteId)}`, { method: "DELETE" });
+};
+
 export const restoreCloudSimulation = async (simulationId: string): Promise<void> => {
   await apiCall(`/api/library/simulations/${encodeURIComponent(simulationId)}`, {
     method: "PATCH",
@@ -120,19 +125,18 @@ export const pushCloudLibrary = async (payload: CloudLibraryPayload): Promise<vo
     ...payload.simulationPresets.map((value) => ({ kind: "simulation" as const, value })),
   ];
   const batches = buildPushBatches(records);
-  const allConflicts: string[] = [];
   for (const batch of batches) {
     const result = await apiCall<CloudPushResult>("/api/library", {
       method: "PUT",
       body: JSON.stringify(batch),
     });
-    if (Array.isArray(result.conflicts)) allConflicts.push(...result.conflicts);
+    const conflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
+    if (!conflicts.length) continue;
+    if (conflicts.includes("simulation_name_taken")) {
+      const simulationNames = listSimulationNames(payload);
+      const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
+      throw new Error(`Simulation name already exists${suffix}. Use unique Simulation names.`);
+    }
+    throw new Error(`Cloud rejected ${conflicts.length} item(s): ${conflicts.join(", ")}`);
   }
-  if (!allConflicts.length) return;
-  if (allConflicts.includes("simulation_name_taken")) {
-    const simulationNames = listSimulationNames(payload);
-    const suffix = simulationNames.length ? `: ${simulationNames.join(", ")}` : "";
-    throw new Error(`Simulation name already exists${suffix}. Use unique Simulation names.`);
-  }
-  throw new Error(`Cloud rejected ${allConflicts.length} item(s): ${allConflicts.join(", ")}`);
 };

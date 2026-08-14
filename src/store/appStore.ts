@@ -14,6 +14,7 @@ import { haversineDistanceKm } from "../lib/geo";
 import { resolveTrackedSiteOrientation, resolveTrackedSiteOrientations } from "../lib/antennaPattern";
 import { getUiErrorMessage } from "../lib/uiError";
 import {
+  deleteCloudSite,
   deleteCloudSimulation,
   fetchCloudLibrary,
   pushCloudLibrary,
@@ -626,8 +627,8 @@ type AppState = {
       >
     >,
   ) => void;
-  deleteSiteLibraryEntry: (entryId: string) => void;
-  deleteSiteLibraryEntries: (entryIds: string[]) => void;
+  deleteSiteLibraryEntry: (entryId: string) => Promise<void>;
+  deleteSiteLibraryEntries: (entryIds: string[]) => Promise<void>;
   saveCurrentSimulationPreset: (name: string) => string | null;
   createSimulationCopyFromCurrent: (
     name: string,
@@ -2790,46 +2791,69 @@ export const useAppStore = create<AppState>((set, get) => ({
     useCoverageStore.getState().recomputeCoverage();
     get().updateCurrentSimulationSnapshot();
   },
-  deleteSiteLibraryEntry: (entryId) => {
-    get().deleteSiteLibraryEntries([entryId]);
+  deleteSiteLibraryEntry: async (entryId) => {
+    await get().deleteSiteLibraryEntries([entryId]);
   },
-  deleteSiteLibraryEntries: (entryIds) => {
+  deleteSiteLibraryEntries: async (entryIds) => {
     const { currentUser } = get();
     const user = requireAuth(currentUser, "deleteSiteLibraryEntries");
-    if (!user) return;
-    const requested = new Set(entryIds);
-    if (!requested.size) return;
+    if (!user) throw new Error("Sign in to delete a Site.");
+    const requested = [...new Set(entryIds.filter(Boolean))];
+    if (!requested.length) return;
     const state = get();
-    for (const entryId of entryIds) {
+    const requestedEntries: SiteLibraryEntry[] = [];
+    for (const entryId of requested) {
       const entry = state.siteLibrary.find((e) => e.id === entryId);
-      if (entry && !canEditItem(entry, user)) {
-        console.warn(`[appStore] deleteSiteLibraryEntries: User ${user.id} cannot delete entry ${entryId}`);
-        return;
+      if (!entry) continue;
+      const ownsSite = entry.ownerUserId === user.id || entry.effectiveRole === "owner";
+      if (!user.isAdmin && !ownsSite) {
+        throw new Error("Only the Site owner or a platform admin can delete it.");
       }
+      requestedEntries.push(entry);
     }
-    set((state) => {
-      const next = state.siteLibrary.filter((entry) => !requested.has(entry.id));
-      writeStorage(SITE_LIBRARY_KEY, next);
-      const detachLibraryReference = <T extends { libraryEntryId?: string }>(site: T): T => {
-        if (!site.libraryEntryId || !requested.has(site.libraryEntryId)) return site;
-        const { libraryEntryId: _removedLibraryEntryId, ...detached } = site;
-        return detached as T;
-      };
-      const nextSites = state.sites.map(detachLibraryReference);
-      const updatedPresets = state.simulationPresets.map((preset) => {
-        const hasRef = preset.snapshot.sites.some((site) => site.libraryEntryId && requested.has(site.libraryEntryId));
-        if (!hasRef) return preset;
-        return {
-          ...preset,
-          snapshot: {
-            ...preset.snapshot,
-            sites: preset.snapshot.sites.map(detachLibraryReference),
-          },
+
+    for (const { id: entryId } of requestedEntries) {
+      await deleteCloudSite(entryId);
+      const deleted = new Set([entryId]);
+      const affectedSimulationIds: string[] = [];
+      set((current) => {
+        const next = current.siteLibrary.filter((entry) => entry.id !== entryId);
+        writeStorage(SITE_LIBRARY_KEY, next);
+        const detachLibraryReference = <T extends { libraryEntryId?: string }>(site: T): T => {
+          if (!site.libraryEntryId || !deleted.has(site.libraryEntryId)) return site;
+          const detached = { ...site };
+          delete detached.libraryEntryId;
+          return detached;
         };
+        const nextSites = current.sites.map(detachLibraryReference);
+        const updatedPresets = current.simulationPresets.map((preset) => {
+          const hasRef = preset.snapshot.sites.some((site) => site.libraryEntryId === entryId);
+          if (!hasRef) return preset;
+          affectedSimulationIds.push(preset.id);
+          return {
+            ...preset,
+            snapshot: {
+              ...preset.snapshot,
+              sites: preset.snapshot.sites.map(detachLibraryReference),
+            },
+          };
+        });
+        writeStorage(SIM_PRESETS_KEY, updatedPresets);
+        return { siteLibrary: next, sites: nextSites, simulationPresets: updatedPresets };
       });
-      writeStorage(SIM_PRESETS_KEY, updatedPresets);
-      return { siteLibrary: next, sites: nextSites, simulationPresets: updatedPresets };
-    });
+      dirtySiteIds.delete(entryId);
+      affectedSimulationIds.forEach(markDirtySim);
+    }
+
+    if (dirtySimIds.size === 0) {
+      const current = get();
+      lastSyncedPayloadSignature = buildEditableSyncPayloadInfo(
+        current.siteLibrary,
+        current.simulationPresets,
+        current.currentUser,
+      ).signature;
+      writeStorage(SYNC_SIGNATURE_KEY, lastSyncedPayloadSignature);
+    }
   },
   saveCurrentSimulationPreset: (name) => {
     const { currentUser } = get();

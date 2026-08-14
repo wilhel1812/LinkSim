@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  deleteCloudSite,
   deleteCloudSimulation,
   fetchCloudLibrary,
   pushCloudLibrary,
@@ -72,21 +73,28 @@ describe("cloudLibrary client", () => {
     await expect(fetchCloudLibrary()).resolves.toMatchObject({ deletedSimulationIds: ["sim-1"] });
   });
 
-  it("uses dedicated lifecycle requests for delete and restore", async () => {
+  it("uses dedicated lifecycle requests for Site delete and Simulation delete/restore", async () => {
     vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, siteId: "site-1" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, simulationId: "sim-1", status: "deleted" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, simulationId: "sim-1", status: "active" }), { status: 200 }));
 
+    await deleteCloudSite("site-1");
     await deleteCloudSimulation("sim-1");
     await restoreCloudSimulation("sim-1");
 
     expect(vi.mocked(globalThis.fetch)).toHaveBeenNthCalledWith(
       1,
-      "/api/library/simulations/sim-1",
+      "/api/library/sites/site-1",
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(vi.mocked(globalThis.fetch)).toHaveBeenNthCalledWith(
       2,
+      "/api/library/simulations/sim-1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenNthCalledWith(
+      3,
       "/api/library/simulations/sim-1",
       expect.objectContaining({ method: "PATCH", body: JSON.stringify({ status: "active" }) }),
     );
@@ -165,6 +173,29 @@ describe("cloudLibrary client", () => {
       simulationPresets: [],
     })).rejects.toThrow("Library quota exceeded");
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops before later chunks when a batch returns HTTP-200 conflicts", async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, conflicts: ["site_quota_exceeded"] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, conflicts: [] }), { status: 200 }));
+
+    await expect(pushCloudLibrary({
+      siteLibrary: Array.from({ length: LIBRARY_BATCH_MAX_RECORDS + 1 }, (_, index) => ({
+        id: `site-${index}`,
+        name: `Site ${index}`,
+      })),
+      simulationPresets: [],
+    })).rejects.toThrow("site_quota_exceeded");
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an oversized non-first record before emitting any batch", async () => {
+    await expect(pushCloudLibrary({
+      siteLibrary: [{ id: "site-small", name: "Small" }, { id: "site-large", name: "Large", padding: "x".repeat(LIBRARY_REQUEST_MAX_BYTES) }],
+      simulationPresets: [],
+    })).rejects.toThrow("cannot fit");
+    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
   });
 
   it("throws parsed API error for non-OK responses", async () => {

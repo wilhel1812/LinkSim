@@ -45,6 +45,14 @@ const assertFiniteIfPresent = (record: Record<string, unknown>, keys: string[], 
   }
 };
 
+const assertFiniteRequired = (record: Record<string, unknown>, keys: string[], label: string): void => {
+  for (const key of keys) {
+    if (typeof record[key] !== "number" || !Number.isFinite(record[key])) {
+      throw new LibraryValidationError(`${label} ${key} must be a finite number.`);
+    }
+  }
+};
+
 const assertPosition = (value: unknown, label: string): void => {
   if (!isRecord(value)
     || typeof value.lat !== "number"
@@ -85,6 +93,15 @@ const assertCommonRecord = (value: unknown, label: string): Record<string, unkno
   return value;
 };
 
+const assertNestedNamedRecord = (value: unknown, label: string): Record<string, unknown> => {
+  if (!isRecord(value)) throw new LibraryValidationError(`${label} must be an object.`);
+  assertId(value.id, `${label} ID`);
+  if (typeof value.name !== "string" || value.name.trim().length === 0 || value.name.trim().length > MAX_NAME_LENGTH) {
+    throw new LibraryValidationError(`${label} name must be between 1 and ${MAX_NAME_LENGTH} characters.`);
+  }
+  return value;
+};
+
 const encodedBytes = (value: unknown): number => textEncoder.encode(JSON.stringify(value)).byteLength;
 
 const assertSite = (value: unknown, nested = false): void => {
@@ -99,13 +116,15 @@ const assertSite = (value: unknown, nested = false): void => {
       })()
     : assertCommonRecord(value, "Site");
   assertPosition(site.position, "Site");
-  assertFiniteIfPresent(site, [
+  assertFiniteRequired(site, [
     "groundElevationM",
     "antennaHeightM",
     "txPowerDbm",
     "txGainDbi",
     "rxGainDbi",
     "cableLossDb",
+  ], "Site");
+  assertFiniteIfPresent(site, [
     "antennaAzimuthDeg",
     "antennaTiltDeg",
     "antennaHorizontalBeamwidthDeg",
@@ -122,7 +141,31 @@ const assertPath = (value: unknown): void => {
   assertId(value.id, "Path ID");
   assertId(value.fromSiteId, "Path fromSiteId");
   assertId(value.toSiteId, "Path toSiteId");
-  assertFiniteIfPresent(value, ["frequencyMHz", "txPowerDbm", "txGainDbi", "rxGainDbi", "cableLossDb"], "Path");
+  assertFiniteRequired(value, ["frequencyMHz"], "Path");
+  assertFiniteIfPresent(value, ["txPowerDbm", "txGainDbi", "rxGainDbi", "cableLossDb"], "Path");
+};
+
+const assertRadioSystem = (value: unknown): void => {
+  const system = assertNestedNamedRecord(value, "Radio System");
+  assertFiniteRequired(system, [
+    "txPowerDbm",
+    "txGainDbi",
+    "rxGainDbi",
+    "cableLossDb",
+    "antennaHeightM",
+  ], "Radio System");
+};
+
+const assertNetwork = (value: unknown): void => {
+  const network = assertNestedNamedRecord(value, "Network");
+  assertFiniteRequired(network, ["frequencyMHz", "bandwidthKhz", "spreadFactor", "codingRate"], "Network");
+  assertFiniteIfPresent(network, ["frequencyOverrideMHz"], "Network");
+  if (!Array.isArray(network.memberships)) throw new LibraryValidationError("Network memberships must be an array.");
+  for (const membership of network.memberships) {
+    if (!isRecord(membership)) throw new LibraryValidationError("Network membership must be an object.");
+    assertId(membership.siteId, "Network membership Site ID");
+    assertId(membership.systemId, "Network membership Radio System ID");
+  }
 };
 
 const assertSimulation = (value: unknown): void => {
@@ -139,9 +182,10 @@ const assertSimulation = (value: unknown): void => {
   }
   snapshot.sites.forEach((site) => assertSite(site, true));
   snapshot.links.forEach(assertPath);
-  for (const key of ["systems", "networks"]) {
-    if (!Array.isArray(snapshot[key])) throw new LibraryValidationError(`Simulation snapshot ${key} must be an array.`);
-  }
+  if (!Array.isArray(snapshot.systems)) throw new LibraryValidationError("Simulation snapshot systems must be an array.");
+  if (!Array.isArray(snapshot.networks)) throw new LibraryValidationError("Simulation snapshot networks must be an array.");
+  snapshot.systems.forEach(assertRadioSystem);
+  snapshot.networks.forEach(assertNetwork);
   if (encodedBytes(simulation) > LIBRARY_SIMULATION_MAX_BYTES) {
     throw new LibraryValidationError(`Simulation record exceeds ${LIBRARY_SIMULATION_MAX_BYTES} bytes.`);
   }

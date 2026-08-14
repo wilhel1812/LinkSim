@@ -32,8 +32,8 @@ const validSimulation = () => ({
   snapshot: {
     sites: [] as unknown[],
     links: [] as unknown[],
-    systems: [],
-    networks: [],
+    systems: [] as unknown[],
+    networks: [] as unknown[],
   },
 });
 
@@ -50,6 +50,33 @@ describe("Library ingestion limits", () => {
       siteLibrary: [{ ...validSite(), position: { lat: 91, lon: 10 }, futureField: { supported: true } }],
       simulationPresets: [],
     })).toThrow("Site position must contain valid latitude and longitude");
+  });
+
+  it("rejects missing required Site and malformed Radio System or Network fields", () => {
+    const missingSiteNumber = validSite() as Record<string, unknown>;
+    delete missingSiteNumber.txPowerDbm;
+    expect(() => validateLibraryPayload({ siteLibrary: [missingSiteNumber], simulationPresets: [] })).toThrow(
+      "Site txPowerDbm must be a finite number",
+    );
+
+    const malformedSystem = validSimulation();
+    malformedSystem.snapshot.systems = [null];
+    expect(() => validateLibraryPayload({ siteLibrary: [], simulationPresets: [malformedSystem] })).toThrow(
+      "Radio System must be an object",
+    );
+
+    const malformedNetwork = validSimulation();
+    malformedNetwork.snapshot.networks = [{
+      id: "network-1",
+      name: "Network",
+      frequencyMHz: 868,
+      bandwidthKhz: 125,
+      spreadFactor: 8,
+      codingRate: 5,
+    }];
+    expect(() => validateLibraryPayload({ siteLibrary: [], simulationPresets: [malformedNetwork] })).toThrow(
+      "Network memberships must be an array",
+    );
   });
 
   it("rejects Simulation collection counts above their approved boundaries", () => {
