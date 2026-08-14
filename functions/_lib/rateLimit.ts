@@ -32,11 +32,11 @@ const toSafeLimit = (value: number): number => {
   return Math.max(1, Math.floor(value));
 };
 
+// Pages callers may trust CF-Connecting-IP because Cloudflare establishes it.
+// Generic forwarding headers remain caller-controlled and are never identities.
 export const getClientAddress = (request: Request): string => {
   const cfIp = (request.headers.get("cf-connecting-ip") ?? "").trim();
   if (cfIp) return cfIp;
-  const forwarded = (request.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim();
-  if (forwarded) return forwarded;
   return "unknown";
 };
 

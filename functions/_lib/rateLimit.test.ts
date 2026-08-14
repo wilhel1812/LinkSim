@@ -2,16 +2,23 @@ import { describe, expect, it } from "vitest";
 import { getClientAddress, takeRateLimitToken } from "./rateLimit";
 
 describe("rate limit helpers", () => {
-  it("extracts client address from Cloudflare and forwarded headers", () => {
+  it("uses only Cloudflare-established client identity", () => {
     const cfReq = new Request("https://example.test", {
-      headers: { "cf-connecting-ip": " 203.0.113.9 " },
+      headers: {
+        "cf-connecting-ip": " 203.0.113.9 ",
+        "x-forwarded-for": "198.51.100.10, 10.0.0.2",
+      },
     });
     expect(getClientAddress(cfReq)).toBe("203.0.113.9");
 
-    const fwdReq = new Request("https://example.test", {
-      headers: { "x-forwarded-for": "198.51.100.10, 10.0.0.2" },
+    const spoofedReq = new Request("https://example.test", {
+      headers: {
+        "x-forwarded-for": "198.51.100.10, 10.0.0.2",
+        "cf-access-authenticated-user-email": "attacker@example.test",
+        "user-agent": "attacker-selected",
+      },
     });
-    expect(getClientAddress(fwdReq)).toBe("198.51.100.10");
+    expect(getClientAddress(spoofedReq)).toBe("unknown");
 
     const unknownReq = new Request("https://example.test");
     expect(getClientAddress(unknownReq)).toBe("unknown");
