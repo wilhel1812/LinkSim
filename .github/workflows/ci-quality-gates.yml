@@ -2,6 +2,7 @@ name: CI Quality Gates
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, edited]
     branches:
       - main
       - staging
@@ -12,10 +13,10 @@ on:
 
 jobs:
   verify:
+    name: CI Quality Gates / verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      statuses: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,16 +45,33 @@ jobs:
       - name: Report status
         run: |
           echo "::notice ::CI Quality Gates passed"
-      - name: Set commit status
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const statusSha = context.payload.pull_request?.head?.sha ?? context.sha;
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: statusSha,
-              state: 'success',
-              context: 'CI Quality Gates / verify',
-              description: 'All quality gates passed',
-            });
+
+  verify-staging:
+    name: CI Quality Gates / verify-staging
+    if: always() && github.base_ref == 'staging'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      VERIFY_RESULT: ${{ needs.verify.result }}
+    steps:
+      - name: Confirm staging verification result
+        run: |
+          test "$BASE_REF" = "staging"
+          test "$VERIFY_RESULT" = "success"
+
+  verify-main:
+    name: CI Quality Gates / verify-main
+    if: always() && github.base_ref == 'main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      VERIFY_RESULT: ${{ needs.verify.result }}
+    steps:
+      - name: Confirm main verification result
+        run: |
+          test "$BASE_REF" = "main"
+          test "$VERIFY_RESULT" = "success"
