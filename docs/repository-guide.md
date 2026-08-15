@@ -129,6 +129,31 @@ API nodes may optionally set `antenna_mode` to `directional` and provide
 behavior. Site-target tracking is an editor convenience; API requests use fixed
 angles.
 
+## Terrain and Node-Feed Workload Limits
+
+LinkSim bounds terrain and live-node processing before expensive parsing,
+decompression, fetching, or rendering begins:
+
+- MeshMap JSON responses are limited to `5 MiB` and `20,000` top-level node
+  records. Direct/custom node feeds use the same bounds.
+- The 868.no snapshot reader retains its `5 MiB`, `8 second` maximum, and
+  `1 second` post-burst idle limits, with at most `5,000` SSE records.
+- Normalized node caches retain at most `20,000` nodes per source and `25,000`
+  nodes after sources are combined. Map markers retain the existing `1,000`
+  in-view ceiling.
+- Panorama considers at most `1,000` deterministic candidates within its
+  existing `200 km` range before building signatures or running RF projection.
+- Manual SRTM files must contain exactly `1201 x 1201` or `3601 x 3601`
+  signed 16-bit samples. ZIP inputs are limited to `32 MiB`, `16` entries, and
+  exactly one supported HGT entry. A single ingestion processes at most `8`
+  files sequentially and commits only after every file parses successfully.
+- Terrain enumeration and loading stop above `256` unique GLO-30 tile keys.
+  Antimeridian-crossing bounds use their wrapped short interval.
+
+Node-feed rate-limit values and keys, Copernicus fetch concurrency and retries,
+catalog-confirmed ocean handling, and calculation-job cancellation/deadlines
+remain governed by their existing endpoint contracts.
+
 ## Deploy and Release
 
 Use [docs/release-flow.md](./release-flow.md) as the source of truth for

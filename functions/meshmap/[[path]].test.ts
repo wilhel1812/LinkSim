@@ -7,6 +7,8 @@ const { getClientAddressMock, takeRateLimitTokenMock } = vi.hoisted(() => ({
 
 vi.mock("../_lib/rateLimit", () => ({
   getClientAddress: getClientAddressMock,
+  parsePerMinuteLimit: (raw: string | undefined, fallback: number, blankFallback = fallback) =>
+    raw === undefined || raw.trim() === "" ? blankFallback : Number(raw),
   takeRateLimitToken: takeRateLimitTokenMock,
 }));
 
@@ -17,7 +19,7 @@ const env = { DB: {}, PROXY_RATE_LIMIT_PER_MINUTE: "120" } as unknown as {
   PROXY_RATE_LIMIT_PER_MINUTE?: string;
 };
 
-const mkCtx = (request: Request) => ({ request, env } as unknown as Parameters<typeof onRequest>[0]);
+const mkCtx = (request: Request, routeEnv = env) => ({ request, env: routeEnv } as unknown as Parameters<typeof onRequest>[0]);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -27,6 +29,26 @@ beforeEach(() => {
 });
 
 describe("meshmap proxy", () => {
+  it.each([
+    [undefined, 1],
+    ["", 1],
+    ["   ", 1],
+    ["17", 17],
+  ])("preserves the deployed proxy limit for configured value %s", async (configured, expected) => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response("{}", {
+      headers: { "content-type": "application/json" },
+    }));
+    await onRequest(mkCtx(
+      new Request("https://example.test/meshmap/nodes.json"),
+      { DB: {}, PROXY_RATE_LIMIT_PER_MINUTE: configured } as unknown as typeof env,
+    ));
+
+    expect(takeRateLimitTokenMock).toHaveBeenCalledWith({
+      key: "proxy:meshmap:198.51.100.10",
+      limit: expected,
+    });
+  });
+
   it("rejects methods other than GET/HEAD", async () => {
     const req = new Request("https://example.test/meshmap/nodes.json", { method: "POST", body: "{}" });
     const res = await onRequest(mkCtx(req));
@@ -182,5 +204,31 @@ describe("meshmap proxy", () => {
       method: "HEAD",
       headers: { accept: "application/json" },
     });
+  });
+
+  it("accepts exact node and byte boundaries and rejects overflow", async () => {
+    const exactNodes = Object.fromEntries(Array.from({ length: 20_000 }, (_, index) => [`!${index}`, { lat: 60, lon: 10 }]));
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(JSON.stringify(exactNodes), { headers: { "content-type": "application/json" } }));
+    expect((await onRequest(mkCtx(new Request("https://example.test/meshmap/nodes.json")))).status).toBe(200);
+
+    const tooMany = { ...exactNodes, "!overflow": { lat: 60, lon: 10 } };
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(JSON.stringify(tooMany), { headers: { "content-type": "application/json" } }));
+    expect((await onRequest(mkCtx(new Request("https://example.test/meshmap/nodes.json")))).status).toBe(502);
+
+    const exactBytes = `[]${" ".repeat(5 * 1024 * 1024 - 2)}`;
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(exactBytes, { headers: { "content-type": "application/json" } }));
+    expect((await onRequest(mkCtx(new Request("https://example.test/meshmap/nodes.json")))).status).toBe(200);
+
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(new Uint8Array(5 * 1024 * 1024 + 1), { headers: { "content-type": "application/json" } }));
+    expect((await onRequest(mkCtx(new Request("https://example.test/meshmap/nodes.json")))).status).toBe(502);
+  });
+
+  it.each(["null", "42", '"nodes"'])("rejects primitive JSON root %s", async (body) => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(body, { headers: { "content-type": "application/json" } }));
+
+    const response = await onRequest(mkCtx(new Request("https://example.test/meshmap/nodes.json")));
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toContain("invalid or oversized node feed");
   });
 });

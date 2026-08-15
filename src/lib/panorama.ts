@@ -1,6 +1,7 @@
 import { computeSourceCentricRxMetrics, classifyPassFailState, type PassFailState } from "./passFailState";
 import { haversineDistanceKm, initialBearingDeg } from "./geo";
 import { normalizeFovScale, FOV_SCALE_DEFAULT } from "./panoramaView";
+import { PANORAMA_MAX_NODE_CANDIDATES, PANORAMA_MAX_NODE_DISTANCE_KM } from "./nodeFeedLimits";
 import type { Link, PropagationEnvironment, Site } from "../types/radio";
 import type { SiteIconKey } from "./siteIcons";
 
@@ -24,6 +25,33 @@ export type PanoramaNodeCandidate = {
   antennaMaxAttenuationDb?: number;
   iconKey?: SiteIconKey;
 };
+
+const panoramaCandidateSourceRank = (id: string): number => {
+  if (id.startsWith("sim:")) return 0;
+  if (id.startsWith("lib:")) return 1;
+  if (id.startsWith("mqtt:")) return 2;
+  return 3;
+};
+
+export const selectPanoramaNodeCandidates = (
+  origin: { lat: number; lon: number },
+  candidates: PanoramaNodeCandidate[],
+): PanoramaNodeCandidate[] =>
+  candidates
+    .map((candidate) => ({
+      candidate,
+      distanceKm: haversineDistanceKm(origin, { lat: candidate.lat, lon: candidate.lon }),
+    }))
+    .filter(({ distanceKm }) => Number.isFinite(distanceKm) && distanceKm <= PANORAMA_MAX_NODE_DISTANCE_KM)
+    .sort((a, b) => {
+      const sourceRank = panoramaCandidateSourceRank(a.candidate.id) - panoramaCandidateSourceRank(b.candidate.id);
+      if (sourceRank !== 0) return sourceRank;
+      const distance = a.distanceKm - b.distanceKm;
+      if (distance !== 0) return distance;
+      return a.candidate.id.localeCompare(b.candidate.id);
+    })
+    .slice(0, PANORAMA_MAX_NODE_CANDIDATES)
+    .map(({ candidate }) => candidate);
 
 export type PanoramaNodeProjection = {
   id: string;

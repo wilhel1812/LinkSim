@@ -22,7 +22,13 @@ const terrainClient = vi.hoisted(() => ({
   clearCopernicusCache: vi.fn(async () => undefined),
 }));
 
+const srtmParser = vi.hoisted(() => ({ parseSrtmTile: vi.fn() }));
+
 vi.mock("../lib/copernicusTerrainClient", () => terrainClient);
+vi.mock("../lib/srtm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/srtm")>();
+  return { ...actual, parseSrtmTile: srtmParser.parseSrtmTile };
+});
 vi.mock("../lib/coverage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/coverage")>();
   return { ...actual, buildCoverage: vi.fn(() => []), clearTerrainLossCache: vi.fn() };
@@ -188,5 +194,90 @@ describe("appStore GLO-30 terrain lifecycle", () => {
     expect(useAppStore.getState().terrainFetchStatus).toContain("1 sea-level");
     expect(useAppStore.getState().terrainFetchStatus).not.toContain("unavailable");
     expect(useAppStore.getState().isHighResTerrainLoaded).toBe(true);
+  });
+
+  it("requests only adjacent terrain keys for sites across the antimeridian", async () => {
+    useAppStore.setState({
+      sites: [
+        { ...useAppStore.getState().sites[0], id: "east", position: { lat: 10.1, lon: 179.9 } },
+        { ...useAppStore.getState().sites[0], id: "west", position: { lat: 10.2, lon: -179.9 } },
+      ],
+      srtmTiles: [],
+    });
+    terrainClient.loadCopernicus30TilesByKeys.mockResolvedValue({
+      tiles: [],
+      failedTiles: [],
+      fetchedTiles: [],
+      cacheHits: [],
+      seaLevelTiles: [],
+    });
+
+    await useAppStore.getState().recommendAndFetchTerrainForCurrentArea(20);
+
+    const requested = terrainClient.loadCopernicus30TilesByKeys.mock.calls[0]?.[0] as string[];
+    expect(requested.length).toBeGreaterThan(0);
+    expect(requested.every((key) => key.endsWith("E179") || key.endsWith("W180"))).toBe(true);
+  });
+
+  it("reports an over-cap terrain area without starting a request", async () => {
+    useAppStore.setState({
+      sites: [-100, 0, 100].map((lon, index) => ({
+        ...useAppStore.getState().sites[0],
+        id: `wide-${index}`,
+        position: { lat: 10.1, lon },
+      })),
+      srtmTiles: [],
+    });
+
+    await expect(useAppStore.getState().recommendAndFetchTerrainForCurrentArea(20)).resolves.toBeUndefined();
+
+    expect(terrainClient.loadCopernicus30TilesByKeys).not.toHaveBeenCalled();
+    expect(useAppStore.getState().terrainFetchStatus).toContain("256 tiles");
+    expect(useAppStore.getState().isTerrainFetching).toBe(false);
+  });
+
+  it("rejects more than eight manual files before parsing any file", async () => {
+    const files = Array.from({ length: 9 }, (_, index) => ({ name: `${index}.hgt` }) as File);
+
+    await expect(useAppStore.getState().ingestSrtmFiles(files)).rejects.toThrow("8 files");
+    expect(srtmParser.parseSrtmTile).not.toHaveBeenCalled();
+  });
+
+  it("parses manual files sequentially and commits only after all succeed", async () => {
+    let releaseFirst: ((value: SrtmTile) => void) | undefined;
+    srtmParser.parseSrtmTile
+      .mockReturnValueOnce(new Promise<SrtmTile>((resolve) => { releaseFirst = resolve; }))
+      .mockResolvedValueOnce(tile("N60E010"));
+    const initialTiles = useAppStore.getState().srtmTiles;
+    const loading = useAppStore.getState().ingestSrtmFiles([
+      { name: "N60E009.hgt" } as File,
+      { name: "N60E010.hgt" } as File,
+    ]);
+
+    await Promise.resolve();
+    expect(srtmParser.parseSrtmTile).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().srtmTiles).toBe(initialTiles);
+    releaseFirst?.(tile("N60E009"));
+    await loading;
+
+    expect(srtmParser.parseSrtmTile).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().srtmTiles.map((entry) => entry.key)).toEqual(
+      expect.arrayContaining(["N60E009", "N60E010"]),
+    );
+  });
+
+  it("does not commit earlier manual files when a later parse fails", async () => {
+    srtmParser.parseSrtmTile
+      .mockResolvedValueOnce(tile("N60E009"))
+      .mockRejectedValueOnce(new Error("bad tile"));
+    const initialTiles = useAppStore.getState().srtmTiles;
+
+    await expect(
+      useAppStore.getState().ingestSrtmFiles([
+        { name: "N60E009.hgt" } as File,
+        { name: "bad.hgt" } as File,
+      ]),
+    ).rejects.toThrow("bad tile");
+    expect(useAppStore.getState().srtmTiles).toBe(initialTiles);
   });
 });

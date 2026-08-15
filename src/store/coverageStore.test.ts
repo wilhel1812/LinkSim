@@ -191,6 +191,47 @@ describe("coverageStore simulation progress phases", () => {
     expect(useCoverageStore.getState().simulationErrorMessage).toContain("terrain");
   });
 
+  it("settles a queued run when the requested terrain area exceeds the tile cap", async () => {
+    const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
+    const bridgeSetState = vi.fn();
+    const wideSites = [-100, 0, 100].map((lon, index) => ({
+      ...site,
+      id: `wide-${index}`,
+      position: { lat: site.position.lat, lon },
+    }));
+    bridgeState.sites = wideSites;
+    bridgeState.selectedSiteIds = wideSites.map(({ id }) => id);
+    bridgeState.srtmTiles = [];
+    setAppStoreBridge({
+      getState: () => bridgeState as unknown as Record<string, unknown>,
+      setState: bridgeSetState,
+    });
+    useCoverageStore.setState({
+      coverageSamples: [{ lat: site.position.lat, lon: site.position.lon, valueDbm: -80 }],
+    });
+
+    useCoverageStore.getState().startManualCalculation();
+    vi.advanceTimersByTime(220);
+    await flushAsyncTicks();
+
+    expect(buildSpy).not.toHaveBeenCalled();
+    expect(useCoverageStore.getState()).toMatchObject({
+      coverageSamples: [],
+      isSimulationRecomputing: false,
+      simulationProgress: 0,
+      simulationStepLabel: "",
+      simulationSamplesDone: 0,
+      simulationSamplesTotal: 0,
+      simulationRunToken: "",
+      completedCoverageRunToken: "",
+      calculationCycleSource: null,
+    });
+    expect(useCoverageStore.getState().simulationErrorMessage).toContain("maximum of 256 tiles");
+    expect(bridgeSetState).toHaveBeenCalledWith({
+      terrainFetchStatus: expect.stringContaining("maximum of 256 tiles"),
+    });
+  });
+
   it("accepts zero-elevation Copernicus ocean cells as complete 100 km terrain", async () => {
     const buildSpy = vi.spyOn(coverageLib, "buildCoverageAsync").mockResolvedValue([]);
     const terrainTiles = completeTerrainTiles(100);

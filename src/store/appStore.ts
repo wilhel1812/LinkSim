@@ -35,7 +35,7 @@ import {
 import { analyzeLink, buildProfile } from "../lib/propagation";
 import { BUILTIN_SCENARIOS, defaultScenario, DEMO_SCENARIO, getScenarioById } from "../lib/scenarios";
 import { boundsToViewport, simulationAreaBoundsForSites } from "../lib/simulationArea";
-import { tilesForBounds } from "../lib/terrainTiles";
+import { longitudeBoundsForCoordinates, tilesForBounds } from "../lib/terrainTiles";
 import { mergeSrtmTiles } from "../lib/terrainMerge";
 import { parseSrtmTile, sampleSrtmElevation } from "../lib/srtm";
 import { DEFAULT_BASEMAP_STYLE_ID, BASEMAP_STYLE_REGISTRY } from "../lib/basemaps";
@@ -1388,16 +1388,16 @@ const bufferedBoundsForSites = (sites: Site[], radiusKm: number): TerrainFetchBo
   if (!sites.length) return null;
   const minLat = Math.min(...sites.map((site) => site.position.lat));
   const maxLat = Math.max(...sites.map((site) => site.position.lat));
-  const minLon = Math.min(...sites.map((site) => site.position.lon));
-  const maxLon = Math.max(...sites.map((site) => site.position.lon));
+  const longitudes = sites.map((site) => site.position.lon);
   const centerLat = (minLat + maxLat) / 2;
   const latDelta = Math.max(0.01, radiusKm / 111.32);
   const lonDelta = Math.max(0.01, radiusKm / (111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180))));
+  const longitudeBounds = longitudeBoundsForCoordinates(longitudes, lonDelta);
   return {
     minLat: minLat - latDelta,
     maxLat: maxLat + latDelta,
-    minLon: minLon - lonDelta,
-    maxLon: maxLon + lonDelta,
+    minLon: longitudeBounds.minLon,
+    maxLon: longitudeBounds.maxLon,
   };
 };
 
@@ -3927,19 +3927,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       terrainProgressBytesEstimated: 0,
     });
     try {
+      if (files.length > 8) {
+        throw new Error("Manual terrain ingestion is limited to 8 files at a time.");
+      }
       const list = Array.from(files);
-      const parsed = await Promise.all(
-        list.map(async (file) => {
-          const tile = await parseSrtmTile(file);
-          return {
-            ...tile,
-            sourceKind: "manual-upload" as const,
-            sourceId: "manual-upload",
-            sourceLabel: "Manual upload",
-            sourceDetail: file.name,
-          };
-        }),
-      );
+      const parsed: SrtmTile[] = [];
+      for (const file of list) {
+        const tile = await parseSrtmTile(file);
+        parsed.push({
+          ...tile,
+          sourceKind: "manual-upload" as const,
+          sourceId: "manual-upload",
+          sourceLabel: "Manual upload",
+          sourceDetail: file.name,
+        });
+      }
 
       set((state) => {
         const nextTiles = mergeSrtmTiles(state.srtmTiles, parsed);
@@ -3965,7 +3967,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bounds = bufferedBoundsForSites(sites, radiusKm);
     if (!bounds) return;
 
-    const requiredTileKeys = tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon);
+    let requiredTileKeys: string[];
+    try {
+      requiredTileKeys = tilesForBounds(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon);
+    } catch (error) {
+      set({
+        terrainFetchStatus: `Terrain fetch failed: ${getUiErrorMessage(error)}`,
+        isTerrainFetching: false,
+        isTerrainRecommending: false,
+        isHighResTerrainLoaded: false,
+      });
+      return;
+    }
     const existingTileKeys = new Set(
       srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key),
     );

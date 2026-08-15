@@ -8,6 +8,9 @@ describe("rate limit helpers", () => {
     expect(parsePerMinuteLimit("invalid", 120)).toBe(120);
     expect(parsePerMinuteLimit("2.9", 120)).toBe(2);
     expect(parsePerMinuteLimit("0", 120)).toBe(1);
+    expect(parsePerMinuteLimit(undefined, 120, 1)).toBe(1);
+    expect(parsePerMinuteLimit("   ", 30, 1)).toBe(1);
+    expect(parsePerMinuteLimit("7.9", 120, 1)).toBe(7);
   });
   it("uses only Cloudflare-established client identity", () => {
     const cfReq = new Request("https://example.test", {

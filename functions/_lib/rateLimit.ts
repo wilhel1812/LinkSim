@@ -21,8 +21,12 @@ let callsSinceSweep = 0;
 
 const DEFAULT_WINDOW_MS = 60_000;
 
-export const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number => {
-  if (raw === undefined || raw.trim() === "") return fallback;
+export const parsePerMinuteLimit = (
+  raw: string | undefined,
+  fallback: number,
+  blankFallback = fallback,
+): number => {
+  if (raw === undefined || raw.trim() === "") return Math.max(1, Math.floor(blankFallback));
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(1, Math.floor(parsed));

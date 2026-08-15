@@ -1,4 +1,5 @@
 import type { MapViewport, Site } from "../types/radio";
+import { longitudeBoundsForCoordinates, normalizeLongitude } from "./terrainTiles";
 
 export type SimulationAreaBounds = {
   minLat: number;
@@ -43,22 +44,19 @@ export const simulationAreaBoundsForSites = (
     const lons = sites.map((site) => site.position.lon);
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
     const centerLat = (minLat + maxLat) / 2;
     const latDelta = Math.max(0.01, radiusKm / 111.32);
     const lonDelta = Math.max(0.01, radiusKm / (111.32 * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180))));
     const outMinLat = minLat - latDelta;
     const outMaxLat = maxLat + latDelta;
-    const outMinLon = minLon - lonDelta;
-    const outMaxLon = maxLon + lonDelta;
+    const longitudeBounds = longitudeBoundsForCoordinates(lons, lonDelta);
     return {
       minLat: outMinLat,
       maxLat: outMaxLat,
-      minLon: outMinLon,
-      maxLon: outMaxLon,
+      minLon: longitudeBounds.unwrappedMinLon,
+      maxLon: longitudeBounds.unwrappedMaxLon,
       latSpanDeg: outMaxLat - outMinLat,
-      lonSpanDeg: outMaxLon - outMinLon,
+      lonSpanDeg: longitudeBounds.spanDeg,
       isCapped: false,
     };
   }
@@ -66,17 +64,16 @@ export const simulationAreaBoundsForSites = (
   const lons = sites.map((site) => site.position.lon);
   const minLatRaw = Math.min(...lats);
   const maxLatRaw = Math.max(...lats);
-  const minLonRaw = Math.min(...lons);
-  const maxLonRaw = Math.max(...lons);
+  const longitudeBounds = longitudeBoundsForCoordinates(lons, LON_PAD_DEG);
 
   const rawLatSpan = maxLatRaw - minLatRaw + LAT_PAD_DEG * 2;
-  const rawLonSpan = maxLonRaw - minLonRaw + LON_PAD_DEG * 2;
+  const rawLonSpan = longitudeBounds.spanDeg;
   const latSpanDeg = Math.min(MAX_SPAN_DEG, rawLatSpan);
   const lonSpanDeg = Math.min(MAX_SPAN_DEG, rawLonSpan);
   const isCapped = rawLatSpan > MAX_SPAN_DEG || rawLonSpan > MAX_SPAN_DEG;
 
   const latCenter = (minLatRaw + maxLatRaw) / 2;
-  const lonCenter = (minLonRaw + maxLonRaw) / 2;
+  const lonCenter = (longitudeBounds.unwrappedMinLon + longitudeBounds.unwrappedMaxLon) / 2;
 
   return {
     minLat: latCenter - latSpanDeg / 2,
@@ -104,7 +101,7 @@ export const boundsToViewport = (
   return {
     center: {
       lat: latCenter,
-      lon: (bounds.minLon + bounds.maxLon) / 2,
+      lon: normalizeLongitude((bounds.minLon + bounds.maxLon) / 2),
     },
     zoom,
   };

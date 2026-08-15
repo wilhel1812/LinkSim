@@ -1,16 +1,12 @@
 import { stripSensitiveProxyResponseHeaders } from "../_lib/proxy";
-import { getClientAddress, takeRateLimitToken } from "../_lib/rateLimit";
+import { getClientAddress, parsePerMinuteLimit, takeRateLimitToken } from "../_lib/rateLimit";
+import { readBoundedJsonResponse } from "../_lib/boundedUpstream";
 import type { Env } from "../_lib/types";
+import { MESHMAP_MAX_RECORDS, MESHMAP_MAX_RESPONSE_BYTES } from "../../src/lib/nodeFeedLimits";
 
 const MESHMAP_PATH = "/meshmap/nodes.json";
 const MESHMAP_UPSTREAM = "https://meshmap.net/nodes.json";
 const SUCCESS_CACHE_CONTROL = "public, max-age=1800";
-
-const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number => {
-  const parsed = Number(raw ?? "");
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(1, Math.floor(parsed));
-};
 
 const passiveHeaders = (
   contentType: string,
@@ -45,7 +41,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 
   const limiter = takeRateLimitToken({
     key: `proxy:meshmap:${getClientAddress(request)}`,
-    limit: parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 120),
+    limit: parsePerMinuteLimit(env.PROXY_RATE_LIMIT_PER_MINUTE, 120, 1),
   });
   if (!limiter.allowed) {
     return localError("Rate limit reached", 429, {
@@ -76,7 +72,19 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     return localError("MeshMap upstream returned an unsupported content type", 502);
   }
 
-  return new Response(request.method === "HEAD" ? null : response.body, {
+  let body: BodyInit | null = null;
+  if (request.method !== "HEAD") {
+    try {
+      body = (await readBoundedJsonResponse(response, {
+        maxBytes: MESHMAP_MAX_RESPONSE_BYTES,
+        maxRecords: MESHMAP_MAX_RECORDS,
+      })).bytes;
+    } catch {
+      return localError("MeshMap upstream returned an invalid or oversized node feed", 502);
+    }
+  }
+
+  return new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: passiveHeaders("application/json; charset=utf-8", "nodes.json", SUCCESS_CACHE_CONTROL),

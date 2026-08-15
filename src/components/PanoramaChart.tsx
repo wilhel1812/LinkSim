@@ -18,6 +18,7 @@ import {
   buildPanorama,
   qualityToSampling,
   resolvePanoramaSampling,
+  selectPanoramaNodeCandidates,
   type PanoramaNodeCandidate,
   type PanoramaNodeProjection,
   type PanoramaQuality,
@@ -319,7 +320,8 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
     : null;
 
   const nodeCandidates = useMemo<PanoramaNodeCandidate[]>(() => {
-    const povSiteId = selectedSiteEffective?.id;
+    if (!selectedSiteEffective) return [];
+    const povSiteId = selectedSiteEffective.id;
     const simulation = previewSites
       .filter((site) => site.id !== povSiteId)
       .map((site) => ({
@@ -374,7 +376,7 @@ export function PanoramaChart({ isExpanded, onToggleExpanded, showExpandToggle =
         }))
       : [];
 
-    return [...simulation, ...sharedLibrary, ...mqtt];
+    return selectPanoramaNodeCandidates(selectedSiteEffective.position, [...simulation, ...sharedLibrary, ...mqtt]);
   }, [previewSites, siteLibrary, mqttNodes, discoveryLibraryVisible, discoveryMqttVisible, selectedSiteEffective]);
 
   useEffect(() => {
