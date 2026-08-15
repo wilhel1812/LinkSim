@@ -101,7 +101,7 @@ export type SrtmTile = {
   height?: number;
   arcSecondSpacing: 1 | 3;
   elevations: Int16Array;
-  sourceKind?: "bundled" | "auto-fetch" | "manual-upload";
+  sourceKind?: "bundled" | "auto-fetch";
   sourceId?: string;
   sourceLabel?: string;
   sourceDetail?: string;

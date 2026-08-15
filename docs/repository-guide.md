@@ -143,10 +143,6 @@ decompression, fetching, or rendering begins:
   in-view ceiling.
 - Panorama considers at most `1,000` deterministic candidates within its
   existing `200 km` range before building signatures or running RF projection.
-- Manual SRTM files must contain exactly `1201 x 1201` or `3601 x 3601`
-  signed 16-bit samples. ZIP inputs are limited to `32 MiB`, `16` entries, and
-  exactly one supported HGT entry. A single ingestion processes at most `8`
-  files sequentially and commits only after every file parses successfully.
 - Terrain enumeration and loading stop above `256` unique GLO-30 tile keys.
   Antimeridian-crossing bounds use their wrapped short interval.
 
