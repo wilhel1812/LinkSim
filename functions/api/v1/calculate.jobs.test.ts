@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { analyzeTerrainLinkMock } = vi.hoisted(() => ({ analyzeTerrainLinkMock: vi.fn() }));
 vi.mock("../../_lib/terrainAnalysis", () => ({ analyzeTerrainLink: analyzeTerrainLinkMock }));
@@ -9,15 +9,23 @@ import { JOB_STATUS } from "../../_lib/calculationJobs";
 
 class Statement {
   private values: unknown[] = [];
-  constructor(private db: DatabaseSync, private sql: string, private beforeRun?: (sql: string, values: unknown[]) => void | Promise<void>) {}
+  constructor(
+    private db: DatabaseSync,
+    private sql: string,
+    private beforeRun?: (sql: string, values: unknown[]) => void | Promise<void>,
+    private beforeFirst?: (sql: string, values: unknown[]) => void | Promise<void>,
+  ) {}
   bind(...values: unknown[]) { this.values = values; return this; }
-  async first<T>() { return (this.db.prepare(this.sql).get(...this.values as never[]) as T | undefined) ?? null; }
+  async first<T>() { await this.beforeFirst?.(this.sql, this.values); return (this.db.prepare(this.sql).get(...this.values as never[]) as T | undefined) ?? null; }
   async run() { await this.beforeRun?.(this.sql, this.values); const result = this.db.prepare(this.sql).run(...this.values as never[]); return { success: true, meta: { changes: Number(result.changes) } }; }
 }
 class TestD1 {
   db = new DatabaseSync(":memory:");
-  constructor(private beforeRun?: (sql: string, values: unknown[]) => void | Promise<void>) {}
-  prepare(sql: string) { return new Statement(this.db, sql, this.beforeRun); }
+  constructor(
+    private beforeRun?: (sql: string, values: unknown[]) => void | Promise<void>,
+    private beforeFirst?: (sql: string, values: unknown[]) => void | Promise<void>,
+  ) {}
+  prepare(sql: string) { return new Statement(this.db, sql, this.beforeRun, this.beforeFirst); }
 }
 const envFor = (db: TestD1) => ({ DB: db as unknown as D1Database });
 const input = JSON.stringify({ calculation: "link_budget", input: { from_site: "A", to_site: "B", frequency_mhz: 868, mode: "terrain", nodes: [
@@ -36,6 +44,7 @@ const bodyAtDepth = (depth: number): string => {
   return JSON.stringify({ ...JSON.parse(input) as Record<string, unknown>, padding });
 };
 
+beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.useRealTimers());
 describe("terrain calculation jobs", () => {
   it("accepts exactly 2000 km with the 500-sample cap and rejects above it", () => {
@@ -114,6 +123,25 @@ describe("terrain calculation jobs", () => {
     const row = db.db.prepare("SELECT status, error_message FROM calculation_jobs WHERE id = 'job'").get() as { status: string; error_message: string };
     expect(row.status).toBe("failed");
     expect(new TextEncoder().encode(row.error_message).byteLength).toBeLessThanOrEqual(1024);
+  });
+
+  it("records a transient initial job lookup failure instead of leaving the job queued", async () => {
+    let failFirstRead = true;
+    const db = new TestD1(undefined, (sql) => {
+      if (failFirstRead && sql.startsWith("SELECT")) {
+        failFirstRead = false;
+        throw new Error("Transient D1 read failure");
+      }
+    });
+    db.db.exec("CREATE TABLE calculation_jobs (id TEXT PRIMARY KEY, status TEXT NOT NULL, input_json TEXT NOT NULL, result_json TEXT, error_message TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+    db.db.prepare("INSERT INTO calculation_jobs VALUES ('job', 'queued', ?, NULL, NULL, datetime('now'), datetime('now'))").run(input);
+
+    await expect(processTerrainJob(envFor(db), "job", "https://linksim.link/api/v1/calculate/jobs")).resolves.toBeUndefined();
+    expect(db.db.prepare("SELECT status, error_message FROM calculation_jobs WHERE id = 'job'").get()).toEqual({
+      status: JOB_STATUS.FAILED,
+      error_message: "Transient D1 read failure",
+    });
+    expect(analyzeTerrainLinkMock).not.toHaveBeenCalled();
   });
 
   it("times out when terrain resolves before the deadline but the completion write crosses it", async () => {

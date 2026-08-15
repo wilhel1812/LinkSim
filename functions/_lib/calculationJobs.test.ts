@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { boundedJobError, cleanupCalculationJobs, createCalculationJob, ensureCalculationJobsTable, finishCalculationJobBeforeDeadline, getCalculationJob, JOB_STATUS, transitionCalculationJob } from "./calculationJobs";
+import { boundedJobError, cleanupCalculationJobs, createCalculationJob, ensureCalculationJobsTable, failCalculationJobBeforeDeadline, finishCalculationJobBeforeDeadline, getCalculationJob, JOB_STATUS, transitionCalculationJob } from "./calculationJobs";
 
 class Statement {
   private values: unknown[] = [];
@@ -29,6 +29,16 @@ describe("calculation job lifecycle", () => {
     db.db.prepare("INSERT INTO calculation_jobs VALUES ('job', 'running', '{}', NULL, NULL, datetime('now', '-5 minutes'), datetime('now'))").run();
     expect(await finishCalculationJobBeforeDeadline(env, "job", status, status === JOB_STATUS.COMPLETED ? "{}" : null, status === JOB_STATUS.FAILED ? "failed" : null)).toBe(false);
     expect((await getCalculationJob(env, "job"))?.status).toBe(JOB_STATUS.RUNNING);
+  });
+
+  it("can record a pre-start failure only while a queued job is inside its deadline", async () => {
+    const db = new TestD1(); const env = envFor(db); await ensureCalculationJobsTable(env);
+    db.db.prepare("INSERT INTO calculation_jobs VALUES ('fresh', 'queued', '{}', NULL, NULL, datetime('now'), datetime('now'))").run();
+    db.db.prepare("INSERT INTO calculation_jobs VALUES ('stale', 'queued', '{}', NULL, NULL, datetime('now', '-5 minutes'), datetime('now'))").run();
+    expect(await failCalculationJobBeforeDeadline(env, "fresh", "read failed")).toBe(true);
+    expect(await failCalculationJobBeforeDeadline(env, "stale", "read failed")).toBe(false);
+    expect((await getCalculationJob(env, "fresh"))?.status).toBe(JOB_STATUS.FAILED);
+    expect((await getCalculationJob(env, "stale"))?.status).toBe(JOB_STATUS.QUEUED);
   });
 
   it("removes terminal rows older than 24 hours and deterministically caps newer rows at 1000", async () => {

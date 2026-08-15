@@ -9,7 +9,7 @@ import {
 } from "../../_lib/calculateShared";
 import {
   cleanupCalculationJobs, createCalculationJob, ensureCalculationJobsTable,
-  finishCalculationJobBeforeDeadline, getCalculationJob, JOB_STATUS, transitionCalculationJob,
+  failCalculationJobBeforeDeadline, finishCalculationJobBeforeDeadline, getCalculationJob, JOB_STATUS, transitionCalculationJob,
   timeoutCalculationJob,
 } from "../../_lib/calculationJobs";
 import type { Env } from "../../_lib/types";
@@ -31,21 +31,22 @@ export const validateTerrainRequest = (payload: CalculationRequest): { distanceK
 };
 
 export const processTerrainJob = async (env: Env, jobId: string, requestUrl: string): Promise<void> => {
-  const row = await getCalculationJob(env, jobId);
-  if (!row) return;
-  const createdAt = row.created_at.includes("T") ? row.created_at : `${row.created_at.replace(" ", "T")}Z`;
-  const createdAtMs = Date.parse(createdAt);
-  const deadlineMs = (Number.isFinite(createdAtMs) ? createdAtMs : Date.now()) + MAX_JOB_RUNTIME_MS;
-  if (!await transitionCalculationJob(env, jobId, [JOB_STATUS.QUEUED], JOB_STATUS.RUNNING, null, null)) return;
-  const controller = new AbortController();
+  let controller: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new DOMException("Terrain job timed out.", "TimeoutError"));
-    }, Math.max(0, deadlineMs - Date.now()));
-  });
   try {
+    const row = await getCalculationJob(env, jobId);
+    if (!row) return;
+    const createdAt = row.created_at.includes("T") ? row.created_at : `${row.created_at.replace(" ", "T")}Z`;
+    const createdAtMs = Date.parse(createdAt);
+    const deadlineMs = (Number.isFinite(createdAtMs) ? createdAtMs : Date.now()) + MAX_JOB_RUNTIME_MS;
+    if (!await transitionCalculationJob(env, jobId, [JOB_STATUS.QUEUED], JOB_STATUS.RUNNING, null, null)) return;
+    controller = new AbortController();
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller?.abort();
+        reject(new DOMException("Terrain job timed out.", "TimeoutError"));
+      }, Math.max(0, deadlineMs - Date.now()));
+    });
     const payload = normalizeCalculationRequest(JSON.parse(row.input_json));
     const { fromNode, toNode } = findEndpointNodes(payload);
     const { samples } = validateTerrainRequest(payload);
@@ -85,13 +86,11 @@ export const processTerrainJob = async (env: Env, jobId: string, requestUrl: str
       await timeoutCalculationJob(env, jobId);
     }
   } catch (error) {
-    const timedOut = controller.signal.aborted || (error instanceof DOMException && error.name === "TimeoutError");
+    const timedOut = controller?.signal.aborted || (error instanceof DOMException && error.name === "TimeoutError");
     if (timedOut) await timeoutCalculationJob(env, jobId);
-    else if (!await finishCalculationJobBeforeDeadline(
+    else if (!await failCalculationJobBeforeDeadline(
       env,
       jobId,
-      JOB_STATUS.FAILED,
-      null,
       error instanceof Error ? error.message : String(error),
     )) await timeoutCalculationJob(env, jobId);
   } finally {

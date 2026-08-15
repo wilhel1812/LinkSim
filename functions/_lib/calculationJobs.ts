@@ -78,21 +78,38 @@ export const finishCalculationJobBeforeDeadline = async (
   status: typeof JOB_STATUS.COMPLETED | typeof JOB_STATUS.FAILED,
   resultJson: string | null,
   errorMessage: string | null,
+  fromStatuses: readonly JobStatus[] = [JOB_STATUS.RUNNING],
 ): Promise<boolean> => {
+  const placeholders = fromStatuses.map(() => "?").join(", ");
   const result = await env.DB.prepare(
-    `UPDATE calculation_jobs SET status = ?, result_json = ?, error_message = ?, updated_at = datetime('now') WHERE id = ? AND status = ? AND created_at > datetime('now', '-${jobRuntimeMinutes} minutes')`,
+    `UPDATE calculation_jobs SET status = ?, result_json = ?, error_message = ?, updated_at = datetime('now') WHERE id = ? AND status IN (${placeholders}) AND created_at > datetime('now', '-${jobRuntimeMinutes} minutes')`,
   ).bind(
     status,
     resultJson,
     errorMessage === null ? null : boundedJobError(errorMessage),
     jobId,
-    JOB_STATUS.RUNNING,
+    ...fromStatuses,
   ).run();
   return Number(result.meta?.changes ?? 0) > 0;
 };
 
+export const failCalculationJobBeforeDeadline = async (
+  env: Env,
+  jobId: string,
+  errorMessage: string,
+): Promise<boolean> => {
+  return finishCalculationJobBeforeDeadline(
+    env,
+    jobId,
+    JOB_STATUS.FAILED,
+    null,
+    errorMessage,
+    [JOB_STATUS.QUEUED, JOB_STATUS.RUNNING],
+  );
+};
+
 export const timeoutCalculationJob = async (env: Env, jobId: string): Promise<boolean> =>
-  transitionCalculationJob(env, jobId, [JOB_STATUS.RUNNING], JOB_STATUS.TIMED_OUT, null, "Terrain job timed out.");
+  transitionCalculationJob(env, jobId, [JOB_STATUS.QUEUED, JOB_STATUS.RUNNING], JOB_STATUS.TIMED_OUT, null, "Terrain job timed out.");
 
 export const getAddressedCalculationJob = async (env: Env, jobId: string): Promise<JobRow | null> => {
   await env.DB.prepare(
