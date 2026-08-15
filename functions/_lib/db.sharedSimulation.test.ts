@@ -5,6 +5,7 @@ import {
   fetchLibraryForUser,
   fetchPublicSimulationBundle,
   fetchResourceChanges,
+  listCollaboratorDirectory,
   listUsers,
   revertResourceFromChangeCopy,
   setSimulationLifecycleStatus,
@@ -316,6 +317,15 @@ class FakeDb {
       return (TABLE_COLUMNS[table] ?? []).map((name) => ({ name }));
     }
     if (sql.includes("FROM users ORDER BY created_at DESC")) return this.users;
+    if (sql.includes("CASE WHEN email_public = 1") && sql.includes("FROM users")) {
+      return this.users.map((row) => ({
+        id: row.id,
+        username: row.username,
+        visible_email: row.email_public === 1 ? row.email ?? row.idp_email ?? "" : "",
+        avatar_url: row.avatar_url ?? "",
+        avatar_thumb_key: row.avatar_thumb_key ?? null,
+      }));
+    }
     if (sql.includes("SELECT id, owner_user_id, visibility FROM sites WHERE id IN")) {
       return bound.map((id) => this.sites.get(String(id))).filter((row): row is AnyRow => Boolean(row));
     }
@@ -349,11 +359,15 @@ class FakeDb {
       const [kind, resourceId] = bound;
       return this.resourceChanges
         .filter((change) => change.resource_kind === kind && change.resource_id === resourceId)
-        .map((change) => ({
-          ...change,
-          actor_name: String(change.actor_user_id),
-          actor_avatar_url: "",
-        }));
+        .map((change) => {
+          const user = this.users.find((candidate) => candidate.id === change.actor_user_id);
+          return {
+            ...change,
+            actor_name: String(change.actor_user_id),
+            actor_avatar_url: user?.avatar_url ?? "",
+            actor_avatar_thumb_key: user?.avatar_thumb_key ?? null,
+          };
+        });
     }
     if (sql.includes("SELECT s.id") && sql.includes("s.status = 'deleted'")) {
       const userId = String(bound[1] ?? "");
@@ -389,17 +403,22 @@ class FakeDb {
           ...row,
           role: null,
           owner_name: String(row.owner_user_id),
-          owner_avatar_url: "",
+          owner_avatar_url: row.owner_avatar_url ?? "",
+          owner_avatar_thumb_key: row.owner_avatar_thumb_key ?? null,
           created_by_name: null,
-          created_by_avatar_url: null,
+          created_by_avatar_url: row.created_by_avatar_url ?? null,
+          created_by_avatar_thumb_key: row.created_by_avatar_thumb_key ?? null,
           first_actor_user_id: null,
           first_actor_name: null,
-          first_actor_avatar_url: null,
+          first_actor_avatar_url: row.first_actor_avatar_url ?? null,
+          first_actor_avatar_thumb_key: row.first_actor_avatar_thumb_key ?? null,
           last_edited_by_name: null,
-          last_edited_by_avatar_url: null,
+          last_edited_by_avatar_url: row.last_edited_by_avatar_url ?? null,
+          last_edited_by_avatar_thumb_key: row.last_edited_by_avatar_thumb_key ?? null,
           last_actor_user_id: null,
           last_actor_name: null,
-          last_actor_avatar_url: null,
+          last_actor_avatar_url: row.last_actor_avatar_url ?? null,
+          last_actor_avatar_thumb_key: row.last_actor_avatar_thumb_key ?? null,
         }));
     }
     if (sql.includes("SELECT s.payload_json") && sql.includes("FROM sites s")) return [];
@@ -590,6 +609,11 @@ const userRow = (overrides: AnyRow = {}): AnyRow => ({
   created_at: "2026-01-01", updated_at: "2026-01-01", ...overrides,
 });
 
+const avatarObjectKey = "users/123e4567-e89b-42d3-a456-426614174000/avatar-0123456789abcdef.webp";
+const avatarThumbKey = "users/123e4567-e89b-42d3-a456-426614174000/avatar-0123456789abcdef-thumb.webp";
+const avatarUrl = `/api/avatar/${avatarObjectKey}`;
+const avatarThumbUrl = `/api/avatar/${avatarThumbKey}`;
+
 describe("user identity privacy and diagnostic access", () => {
   it("redacts private profile and IdP email from moderator directory reads", async () => {
     const db = new FakeDb();
@@ -613,6 +637,26 @@ describe("user identity privacy and diagnostic access", () => {
       idpEmail: "verified@example.test",
       idpEmailVerified: true,
     });
+  });
+
+  it("uses the stored thumbnail for user list DTOs while preserving the avatarUrl field", async () => {
+    const db = new FakeDb();
+    db.users.push(userRow({ avatar_url: avatarUrl, avatar_thumb_key: avatarThumbKey }));
+
+    const [profile] = await listUsers({ DB: db } as unknown as Parameters<typeof listUsers>[0], false);
+
+    expect(profile?.avatarUrl).toBe(avatarThumbUrl);
+  });
+
+  it("uses the stored thumbnail for collaborator directory DTOs", async () => {
+    const db = new FakeDb();
+    db.users.push(userRow({ avatar_url: avatarUrl, avatar_thumb_key: avatarThumbKey }));
+
+    const [profile] = await listCollaboratorDirectory(
+      { DB: db } as unknown as Parameters<typeof listCollaboratorDirectory>[0],
+    );
+
+    expect(profile?.avatarUrl).toBe(avatarThumbUrl);
   });
 
   it("reads current diagnostic authority directly from DB role and revocation state", async () => {
@@ -1233,6 +1277,23 @@ describe("upsertLibrarySnapshot shared simulations", () => {
     );
   });
 
+  it("uses stored thumbnails for compact Library attribution DTOs", async () => {
+    const db = createPrivateBundleDb();
+    db.simulations.set("sim-private", {
+      ...db.simulations.get("sim-private"),
+      owner_avatar_url: avatarUrl,
+      owner_avatar_thumb_key: avatarThumbKey,
+    });
+    const env = { DB: db } as unknown as Parameters<typeof fetchLibraryForUser>[0];
+
+    const library = await fetchLibraryForUser(env, "owner-1");
+
+    expect(library.simulationPresets[0]).toMatchObject({
+      createdByAvatarUrl: avatarThumbUrl,
+      lastEditedByAvatarUrl: avatarThumbUrl,
+    });
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -1405,6 +1466,19 @@ describe("resource change authorization", () => {
     db.siteRoles.delete("site-1:viewer-1");
     await expect(fetchResourceChanges(env, "site", "site-1", actor("viewer-1")))
       .resolves.toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  it("uses stored thumbnails for resource-change actor DTOs", async () => {
+    const db = createResourceHistoryDb();
+    db.users.push(userRow({ id: "owner-1", avatar_url: avatarUrl, avatar_thumb_key: avatarThumbKey }));
+    const env = { DB: db } as unknown as Parameters<typeof fetchResourceChanges>[0];
+
+    const result = await fetchResourceChanges(env, "site", "site-1", actor("owner-1"));
+
+    expect(result).toMatchObject({
+      ok: true,
+      changes: [{ actorAvatarUrl: avatarThumbUrl }],
+    });
   });
 
   it("authorizes active Simulation history and keeps deleted history administrator-only", async () => {

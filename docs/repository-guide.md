@@ -204,7 +204,7 @@ npm run refresh:staging:r2
 ## Data/Service Notes
 
 - Terrain data is fetched on demand and cached client-side.
-- API proxies and geocode endpoints include method/rate-limit safeguards.
+- Browser geocoding uses the same-origin API, with bounded provider responses, a five-minute cache, configured per-caller limiting, and a per-isolate cache-miss gate.
 - In local runtimes without edge functions, some cloud behaviors are emulated/fallback.
 - Basemap provider failures auto-fallback to CARTO with a non-blocking warning.
 

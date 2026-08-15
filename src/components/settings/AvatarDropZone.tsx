@@ -29,6 +29,9 @@ const stepProgress: Record<Step, number | "indeterminate" | null> = {
   error: null,
 };
 
+const isAvatarFileSelection = (file: File): boolean =>
+  file.type.startsWith("image/") || /\.(?:heic|heif)$/iu.test(file.name);
+
 const loadImageFromFile = async (file: File): Promise<HTMLImageElement> => {
   const objectUrl = URL.createObjectURL(file);
   try {
@@ -146,7 +149,7 @@ export function AvatarDropZone({ name, avatarUrl, onUpdated }: AvatarDropZonePro
     if (busy) return;
     const file = event.dataTransfer?.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
+    if (!isAvatarFileSelection(file)) {
       setStep("error");
       setErrorMessage("Please drop an image file.");
       return;
@@ -208,12 +211,12 @@ export function AvatarDropZone({ name, avatarUrl, onUpdated }: AvatarDropZonePro
             <ImagePlus size={16} strokeWidth={2} aria-hidden="true" />
             <span>Drop an image or click to upload</span>
           </div>
-          <div className="avatar-dropzone-hint">PNG, JPG, or WebP · resized automatically</div>
+          <div className="avatar-dropzone-hint">PNG, JPG, WebP, HEIC, or HEIF where supported · resized automatically</div>
         </div>
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           className="avatar-dropzone-input"
           onChange={(event) => {
             const file = event.target.files?.[0];

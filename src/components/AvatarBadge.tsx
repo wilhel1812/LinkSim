@@ -18,7 +18,7 @@ export function AvatarBadge({
   fallbackRawText = false,
 }: AvatarBadgeProps) {
   if (avatarUrl && avatarUrl.trim()) {
-    return <img alt={name} className={imageClassName} src={avatarUrl} />;
+    return <img alt={name} className={imageClassName} src={avatarUrl} loading="lazy" decoding="async" referrerPolicy="no-referrer" />;
   }
   if (fallbackRawText) {
     return <>{toInitials(name)}</>;

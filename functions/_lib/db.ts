@@ -16,6 +16,7 @@ import {
   LIBRARY_SITE_MAX_BYTES,
   LibraryValidationError,
 } from "../../src/lib/libraryLimits";
+import { thumbnailAvatarUrl } from "../../src/lib/avatarLimits";
 
 const VISIBILITIES: Visibility[] = ["private", "public", "shared"];
 const DB_VISIBILITIES: DbVisibility[] = ["private", "public_read", "public_write"];
@@ -1477,6 +1478,7 @@ export const listUsers = async (env: Env, includePrivateIdentity: boolean) => {
     const { idpEmail, idpEmailVerified, ...ordinaryProfile } = profile;
     return {
       ...ordinaryProfile,
+      avatarUrl: thumbnailAvatarUrl(profile.avatarUrl, profile.avatarThumbKey),
       email: includePrivateIdentity || row.email_public === 1 ? profile.email : "",
       ...(includePrivateIdentity ? { idpEmail, idpEmailVerified } : {}),
     };
@@ -1489,19 +1491,20 @@ export const listCollaboratorDirectory = async (env: Env) => {
     .prepare(
       `SELECT id, username,
               CASE WHEN email_public = 1 THEN COALESCE(email, idp_email, '') ELSE '' END AS visible_email,
-              COALESCE(avatar_url, '') AS avatar_url
+              COALESCE(avatar_url, '') AS avatar_url,
+              avatar_thumb_key
        FROM users
        WHERE (is_admin = 1 OR is_moderator = 1 OR is_approved = 1)
          AND (approved_by_user_id IS NULL OR approved_by_user_id NOT LIKE 'revoked:%')
        ORDER BY username COLLATE NOCASE ASC
        LIMIT 4000`,
     )
-    .all<{ id: string; username: string; visible_email: string; avatar_url: string }>();
+    .all<{ id: string; username: string; visible_email: string; avatar_url: string; avatar_thumb_key: string | null }>();
   return rows.results.map((row) => ({
     id: row.id,
     username: row.username,
     email: row.visible_email,
-    avatarUrl: row.avatar_url,
+    avatarUrl: thumbnailAvatarUrl(row.avatar_url, row.avatar_thumb_key),
   }));
 };
 
@@ -2459,20 +2462,25 @@ type LibraryRow = {
   owner_user_id: string;
   owner_name: string | null;
   owner_avatar_url: string | null;
+  owner_avatar_thumb_key: string | null;
   visibility: DbVisibility;
   role: string | null;
   created_by_user_id: string | null;
   created_by_name: string | null;
   created_by_avatar_url: string | null;
+  created_by_avatar_thumb_key: string | null;
   first_actor_user_id: string | null;
   first_actor_name: string | null;
   first_actor_avatar_url: string | null;
+  first_actor_avatar_thumb_key: string | null;
   last_edited_by_user_id: string | null;
   last_edited_by_name: string | null;
   last_edited_by_avatar_url: string | null;
+  last_edited_by_avatar_thumb_key: string | null;
   last_actor_user_id: string | null;
   last_actor_name: string | null;
   last_actor_avatar_url: string | null;
+  last_actor_avatar_thumb_key: string | null;
   created_at: string | null;
   last_edited_at: string | null;
   status?: "active" | "deleted";
@@ -2507,18 +2515,23 @@ export const fetchLibraryForUser = async (
       `SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
+              owner_u.avatar_thumb_key AS owner_avatar_thumb_key,
               s.created_by_user_id,
               (SELECT u.username FROM users u WHERE u.id = s.created_by_user_id) AS created_by_name,
               (SELECT u.avatar_url FROM users u WHERE u.id = s.created_by_user_id) AS created_by_avatar_url,
+              (SELECT u.avatar_thumb_key FROM users u WHERE u.id = s.created_by_user_id) AS created_by_avatar_thumb_key,
               (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1) AS first_actor_user_id,
               (SELECT u.username FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_name,
               (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_avatar_url,
+              (SELECT u.avatar_thumb_key FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_avatar_thumb_key,
               s.last_edited_by_user_id,
               (SELECT u.username FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_name,
               (SELECT u.avatar_url FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_avatar_url,
+              (SELECT u.avatar_thumb_key FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_avatar_thumb_key,
               (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1) AS last_actor_user_id,
               (SELECT u.username FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_name,
               (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_url,
+              (SELECT u.avatar_thumb_key FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_thumb_key,
               s.created_at,
               s.last_edited_at
        FROM sites s
@@ -2579,18 +2592,23 @@ export const fetchLibraryForUser = async (
       `SELECT s.payload_json, s.id, s.owner_user_id, s.visibility, s.status, r.role,
               owner_u.username AS owner_name,
               owner_u.avatar_url AS owner_avatar_url,
+              owner_u.avatar_thumb_key AS owner_avatar_thumb_key,
               s.created_by_user_id,
               (SELECT u.username FROM users u WHERE u.id = s.created_by_user_id) AS created_by_name,
               (SELECT u.avatar_url FROM users u WHERE u.id = s.created_by_user_id) AS created_by_avatar_url,
+              (SELECT u.avatar_thumb_key FROM users u WHERE u.id = s.created_by_user_id) AS created_by_avatar_thumb_key,
               (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1) AS first_actor_user_id,
               (SELECT u.username FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_name,
               (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_avatar_url,
+              (SELECT u.avatar_thumb_key FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at ASC LIMIT 1)) AS first_actor_avatar_thumb_key,
               s.last_edited_by_user_id,
               (SELECT u.username FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_name,
               (SELECT u.avatar_url FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_avatar_url,
+              (SELECT u.avatar_thumb_key FROM users u WHERE u.id = s.last_edited_by_user_id) AS last_edited_by_avatar_thumb_key,
               (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1) AS last_actor_user_id,
               (SELECT u.username FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_name,
               (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_url,
+              (SELECT u.avatar_thumb_key FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_thumb_key,
               s.created_at,
               s.last_edited_at
        FROM simulations s
@@ -2615,8 +2633,11 @@ export const fetchLibraryForUser = async (
             row.created_by_name ?? row.first_actor_name ?? row.owner_name,
             createdByUserId ?? row.owner_user_id,
           );
+          const ownerAvatarUrl = thumbnailAvatarUrl(row.owner_avatar_url, row.owner_avatar_thumb_key);
           const createdByAvatarUrl =
-            row.created_by_avatar_url ?? row.first_actor_avatar_url ?? row.owner_avatar_url ?? "";
+            thumbnailAvatarUrl(row.created_by_avatar_url, row.created_by_avatar_thumb_key)
+            || thumbnailAvatarUrl(row.first_actor_avatar_url, row.first_actor_avatar_thumb_key)
+            || ownerAvatarUrl;
           const lastEditedByUserId =
             row.last_edited_by_user_id ?? row.last_actor_user_id ?? createdByUserId ?? row.owner_user_id;
           const lastEditedByName = userDisplayFallback(
@@ -2624,7 +2645,10 @@ export const fetchLibraryForUser = async (
             lastEditedByUserId ?? createdByUserId ?? row.owner_user_id,
           );
           const lastEditedByAvatarUrl =
-            row.last_edited_by_avatar_url ?? row.last_actor_avatar_url ?? createdByAvatarUrl ?? row.owner_avatar_url ?? "";
+            thumbnailAvatarUrl(row.last_edited_by_avatar_url, row.last_edited_by_avatar_thumb_key)
+            || thumbnailAvatarUrl(row.last_actor_avatar_url, row.last_actor_avatar_thumb_key)
+            || createdByAvatarUrl
+            || ownerAvatarUrl;
           return {
             ...parsed,
             ownerUserId: row.owner_user_id,
@@ -2918,7 +2942,8 @@ export const fetchResourceChanges = async (
     .prepare(
       `SELECT c.id, c.action, c.changed_at, c.note, c.actor_user_id, c.details_json,
               u.username AS actor_name,
-              u.avatar_url AS actor_avatar_url
+              u.avatar_url AS actor_avatar_url,
+              u.avatar_thumb_key AS actor_avatar_thumb_key
        FROM resource_changes c
        LEFT JOIN users u ON u.id = c.actor_user_id
        WHERE c.resource_kind = ? AND c.resource_id = ?
@@ -2935,6 +2960,7 @@ export const fetchResourceChanges = async (
       details_json: string | null;
       actor_name: string | null;
       actor_avatar_url: string | null;
+      actor_avatar_thumb_key: string | null;
     }>();
 
   return {
@@ -2946,7 +2972,7 @@ export const fetchResourceChanges = async (
       note: row.note,
       actorUserId: row.actor_user_id,
       actorName: row.actor_name,
-      actorAvatarUrl: row.actor_avatar_url,
+      actorAvatarUrl: thumbnailAvatarUrl(row.actor_avatar_url, row.actor_avatar_thumb_key),
       details: readDisplayableChangeDetails(row.details_json),
     })),
   };

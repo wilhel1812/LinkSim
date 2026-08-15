@@ -1,28 +1,15 @@
 import { verifyAuth } from "../_lib/auth";
 import { ensureUser, fetchUserProfile, getUserAvatarKeys, setUserAvatarAssets } from "../_lib/db";
-import { errorResponse, handleOptions, json, withCors } from "../_lib/http";
+import { ApiRequestError, errorResponse, handleOptions, json, readBoundedJson, withCors } from "../_lib/http";
 import type { Env } from "../_lib/types";
-
-const SUPPORTED_CONTENT_TYPES = new Set(["image/webp", "image/png", "image/jpeg"]);
-
-type ParsedDataUrl = {
-  contentType: string;
-  bytes: Uint8Array;
-};
-
-const parseDataUrl = (value: unknown): ParsedDataUrl => {
-  if (typeof value !== "string") throw new Error("Image payload must be a data URL.");
-  const trimmed = value.trim();
-  const match = /^data:(image\/(?:webp|png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(trimmed);
-  if (!match) throw new Error("Unsupported image format. Use webp, png, or jpeg.");
-  const contentType = match[1].toLowerCase();
-  if (!SUPPORTED_CONTENT_TYPES.has(contentType)) throw new Error("Unsupported image type.");
-  const base64 = match[2];
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return { contentType, bytes };
-};
+import {
+  AVATAR_FULL_MAX_BYTES,
+  AVATAR_REQUEST_JSON_DEPTH,
+  AVATAR_REQUEST_MAX_BYTES,
+  AVATAR_THUMB_MAX_BYTES,
+  avatarUrlForObjectKey,
+  parseAvatarDataUrl,
+} from "../../src/lib/avatarLimits";
 
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes)
@@ -49,16 +36,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const me = await fetchUserProfile(env, auth.userId);
     if (!me) return withCors(request, json({ error: "Unauthorized" }, { status: 401 }));
 
-    const body = (await request.json()) as {
+    const body = await readBoundedJson<{
       originalDataUrl?: unknown;
       thumbDataUrl?: unknown;
-    };
+    }>(request, { maxBytes: AVATAR_REQUEST_MAX_BYTES, maxDepth: AVATAR_REQUEST_JSON_DEPTH });
 
-    const original = parseDataUrl(body.originalDataUrl);
-    const thumb = parseDataUrl(body.thumbDataUrl);
-
-    if (original.bytes.byteLength > 5_000_000) throw new Error("Avatar image too large.");
-    if (thumb.bytes.byteLength > 1_000_000) throw new Error("Avatar thumbnail too large.");
+    let original: ReturnType<typeof parseAvatarDataUrl>;
+    let thumb: ReturnType<typeof parseAvatarDataUrl>;
+    try {
+      original = parseAvatarDataUrl(body.originalDataUrl, AVATAR_FULL_MAX_BYTES);
+      thumb = parseAvatarDataUrl(body.thumbDataUrl, AVATAR_THUMB_MAX_BYTES);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Avatar payload is invalid.";
+      throw new ApiRequestError(message, message.includes("too large") ? 413 : 400, "invalid_avatar");
+    }
 
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", original.bytes));
     const hash = toHex(digest);
@@ -68,37 +59,37 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const objectKey = `users/${opaqueKey}/avatar-${hash.slice(0, 16)}.${ext}`;
     const thumbKey = `users/${opaqueKey}/avatar-${hash.slice(0, 16)}-thumb.${thumbExt}`;
 
-    await env.AVATAR_BUCKET.put(objectKey, original.bytes, {
-      httpMetadata: { contentType: original.contentType, cacheControl: "public, max-age=31536000, immutable" },
-      customMetadata: { userId: auth.userId, variant: "full", hash },
-    });
-    await env.AVATAR_BUCKET.put(thumbKey, thumb.bytes, {
-      httpMetadata: { contentType: thumb.contentType, cacheControl: "public, max-age=31536000, immutable" },
-      customMetadata: { userId: auth.userId, variant: "thumb", hash },
-    });
-
-    const base = (env.AVATAR_PUBLIC_BASE_URL ?? "").trim().replace(/\/$/, "");
-    const avatarUrl = base
-      ? `${base}/${encodeURIComponent(objectKey)}`
-      : `/api/avatar/${objectKey.split("/").map((part) => encodeURIComponent(part)).join("/")}`;
-
     const prev = await getUserAvatarKeys(env, auth.userId);
-
-    const user = await setUserAvatarAssets(env, auth.userId, {
-      avatarUrl,
-      avatarObjectKey: objectKey,
-      avatarThumbKey: thumbKey,
-      avatarHash: hash,
-      avatarBytes: original.bytes.byteLength,
-      avatarContentType: original.contentType,
-    });
-
-    if (prev.avatarObjectKey && prev.avatarObjectKey !== objectKey) {
-      await env.AVATAR_BUCKET.delete(prev.avatarObjectKey);
+    const avatarUrl = avatarUrlForObjectKey(objectKey, env.AVATAR_PUBLIC_BASE_URL);
+    const writtenKeys: string[] = [];
+    let user: Awaited<ReturnType<typeof setUserAvatarAssets>>;
+    try {
+      await env.AVATAR_BUCKET.put(objectKey, original.bytes, {
+        httpMetadata: { contentType: original.contentType, cacheControl: "public, max-age=31536000, immutable" },
+        customMetadata: { userId: auth.userId, variant: "full", hash },
+      });
+      writtenKeys.push(objectKey);
+      await env.AVATAR_BUCKET.put(thumbKey, thumb.bytes, {
+        httpMetadata: { contentType: thumb.contentType, cacheControl: "public, max-age=31536000, immutable" },
+        customMetadata: { userId: auth.userId, variant: "thumb", hash },
+      });
+      writtenKeys.push(thumbKey);
+      user = await setUserAvatarAssets(env, auth.userId, {
+        avatarUrl,
+        avatarObjectKey: objectKey,
+        avatarThumbKey: thumbKey,
+        avatarHash: hash,
+        avatarBytes: original.bytes.byteLength,
+        avatarContentType: original.contentType,
+      });
+    } catch (error) {
+      await Promise.allSettled(writtenKeys.map((key) => env.AVATAR_BUCKET!.delete(key)));
+      throw error;
     }
-    if (prev.avatarThumbKey && prev.avatarThumbKey !== thumbKey) {
-      await env.AVATAR_BUCKET.delete(prev.avatarThumbKey);
-    }
+    await Promise.allSettled([
+      ...(prev.avatarObjectKey && prev.avatarObjectKey !== objectKey ? [env.AVATAR_BUCKET.delete(prev.avatarObjectKey)] : []),
+      ...(prev.avatarThumbKey && prev.avatarThumbKey !== thumbKey ? [env.AVATAR_BUCKET.delete(prev.avatarThumbKey)] : []),
+    ]);
 
     return withCors(
       request,

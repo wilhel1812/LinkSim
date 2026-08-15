@@ -18,9 +18,10 @@ This document defines operating rules when LinkSim consumes external data/servic
 
 ## Geocoding and elevation APIs
 
-- Route requests through guarded server endpoints when available.
-- Apply request caps and short-lived cache where practical.
-- Handle upstream failures with explicit user messaging and fallback behavior.
+- Route browser geocoding through the guarded same-origin endpoint; production clients do not fall back directly to Nominatim.
+- Cache normalized geocoding queries for five minutes and cap provider responses at six results and 64 KiB.
+- Apply the configured per-caller limit (60 requests per minute by default) plus a one-request-per-second cache-miss gate per running isolate. These controls are per environment/isolate, not an application-global guarantee.
+- Preserve explicit provider throttling and failure messages without silently retrying.
 
 ## Mesh feeds and external node directories
 
