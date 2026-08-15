@@ -58,44 +58,46 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), GEOCODE_PROVIDER_TIMEOUT_MS);
-    let response: Response;
+    let results: ReturnType<typeof validateNominatimResults>;
     try {
-      response = await fetch(upstream.toString(), {
+      const response = await fetch(upstream.toString(), {
         headers: {
           accept: "application/json",
           "user-agent": "LinkSim/1.0 (https://linksim.link; geocode lookup)",
         },
         signal: controller.signal,
       });
+      if (response.status === 429) {
+        const rawRetry = response.headers.get("retry-after") ?? "";
+        const retryAfter = /^\d{1,4}$/u.test(rawRetry) && Number(rawRetry) >= 1 && Number(rawRetry) <= 3_600 ? rawRetry : "1";
+        await response.body?.cancel().catch(() => undefined);
+        return withCors(request, json({ error: "Search rate limit reached. Please wait a moment." }, {
+          status: 429,
+          headers: { "cache-control": "no-store", "retry-after": retryAfter },
+        }));
+      }
+      if (!response.ok) throw new ApiRequestError(`Geocode lookup failed (${response.status}).`, 502, "geocode_upstream");
+      if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+        throw new ApiRequestError("Geocode provider returned an invalid response.", 502, "geocode_upstream");
+      }
+      try {
+        const { value } = await readBoundedJsonResponse<unknown>(response, {
+          maxBytes: GEOCODE_RESPONSE_MAX_BYTES,
+          maxRecords: GEOCODE_RESULT_MAX_RECORDS,
+          maxDepth: GEOCODE_RESPONSE_MAX_DEPTH,
+        });
+        results = validateNominatimResults(value);
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+        throw new ApiRequestError("Geocode provider returned an invalid response.", 502, "geocode_upstream");
+      }
     } catch (error) {
-      if (controller.signal.aborted) throw new ApiRequestError("Geocode lookup timed out.", 504, "geocode_timeout");
+      if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+        throw new ApiRequestError("Geocode lookup timed out.", 504, "geocode_timeout");
+      }
       throw error;
     } finally {
       clearTimeout(timer);
-    }
-    if (response.status === 429) {
-      const rawRetry = response.headers.get("retry-after") ?? "";
-      const retryAfter = /^\d{1,4}$/u.test(rawRetry) && Number(rawRetry) >= 1 && Number(rawRetry) <= 3_600 ? rawRetry : "1";
-      await response.body?.cancel().catch(() => undefined);
-      return withCors(request, json({ error: "Search rate limit reached. Please wait a moment." }, {
-        status: 429,
-        headers: { "cache-control": "no-store", "retry-after": retryAfter },
-      }));
-    }
-    if (!response.ok) throw new ApiRequestError(`Geocode lookup failed (${response.status}).`, 502, "geocode_upstream");
-    if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
-      throw new ApiRequestError("Geocode provider returned an invalid response.", 502, "geocode_upstream");
-    }
-    let results;
-    try {
-      const { value } = await readBoundedJsonResponse<unknown>(response, {
-        maxBytes: GEOCODE_RESPONSE_MAX_BYTES,
-        maxRecords: GEOCODE_RESULT_MAX_RECORDS,
-        maxDepth: GEOCODE_RESPONSE_MAX_DEPTH,
-      });
-      results = validateNominatimResults(value);
-    } catch {
-      throw new ApiRequestError("Geocode provider returned an invalid response.", 502, "geocode_upstream");
     }
 
     const apiResponse = json(

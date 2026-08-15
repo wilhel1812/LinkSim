@@ -18,7 +18,7 @@ This document defines operating rules when LinkSim consumes external data/servic
 
 ## Geocoding and elevation APIs
 
-- Route browser geocoding through the guarded same-origin endpoint; production clients do not fall back directly to Nominatim.
+- Route browser forward location search through the guarded same-origin endpoint; production clients do not fall back directly to Nominatim for forward search.
 - Cache normalized geocoding queries for five minutes and cap provider responses at six results and 64 KiB.
 - Apply the configured per-caller limit (60 requests per minute by default) plus a one-request-per-second cache-miss gate per running isolate. These controls are per environment/isolate, not an application-global guarantee.
 - Preserve explicit provider throttling and failure messages without silently retrying.

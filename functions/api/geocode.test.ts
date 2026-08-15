@@ -128,4 +128,27 @@ describe("api/geocode bounds", () => {
     await vi.advanceTimersByTimeAsync(10_001);
     expect((await pending).status).toBe(504);
   });
+
+  it("keeps the ten-second deadline active while the response body is streaming", async () => {
+    vi.useFakeTimers();
+    let bodyAborted = false;
+    vi.mocked(globalThis.fetch).mockImplementation((_url, init) => {
+      const signal = init?.signal;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          signal?.addEventListener("abort", () => {
+            bodyAborted = true;
+            controller.error(new DOMException("Aborted", "AbortError"));
+          });
+        },
+      });
+      return Promise.resolve(new Response(body, { headers: { "content-type": "application/json" } }));
+    });
+
+    const pending = call("stream timeout");
+    await vi.advanceTimersByTimeAsync(10_001);
+
+    expect((await pending).status).toBe(504);
+    expect(bodyAborted).toBe(true);
+  });
 });
