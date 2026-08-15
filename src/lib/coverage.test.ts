@@ -14,6 +14,8 @@ import {
 import { haversineDistanceKm } from "./geo";
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import { resolveSimulationSitesForSelection } from "./simulationArea";
+import { resolveRequiredOverlayTerrainTileKeys } from "./simulationOverlayRadius";
+import { normalizeLongitude } from "./terrainTiles";
 import type { Network, RadioSystem, Site } from "../types/radio";
 
 const sites: Site[] = [
@@ -231,6 +233,43 @@ describe("buildCoverage", () => {
         { overlayRadiusKm: 50, requireCompleteTerrain: true },
       ),
     ).rejects.toThrow("Terrain data is unavailable");
+  });
+
+  it("keeps complete-terrain contributor paths on the short antimeridian interval", () => {
+    const datelineSite: Site = {
+      ...sites[0],
+      id: "dateline-east",
+      position: { lat: 10.1, lon: 179.9 },
+      groundElevationM: 100,
+    };
+    const datelineNetwork: Network = {
+      ...network,
+      memberships: [{ siteId: datelineSite.id, systemId: systems[0].id }],
+    };
+    const sampledLongitudes: number[] = [];
+    const terrainSampler = ({ lon }: { lat: number; lon: number }) => {
+      const normalized = normalizeLongitude(lon);
+      sampledLongitudes.push(normalized);
+      return Math.abs(normalized) >= 179 ? 100 : null;
+    };
+    const [evaluator] = createCoverageContributorEvaluators(
+      datelineNetwork,
+      [datelineSite],
+      systems,
+      defaultPropagationEnvironment(),
+      terrainSampler,
+      { requireCompleteTerrain: true, terrainCacheKey: "dateline-complete" },
+    );
+
+    expect(() => evaluator.evaluatePoint(10.1, -179.9)).not.toThrow();
+    expect(sampledLongitudes.length).toBeGreaterThan(3);
+    expect(sampledLongitudes.every((lon) => Math.abs(lon) >= 179)).toBe(true);
+    expect(
+      resolveRequiredOverlayTerrainTileKeys(
+        [datelineSite, { ...datelineSite, id: "dateline-west", position: { lat: 10.1, lon: -179.9 } }],
+        20,
+      ).every((key) => key.endsWith("E179") || key.endsWith("W180")),
+    ).toBe(true);
   });
 
   it("uses single-site radius override for sampling bounds", () => {

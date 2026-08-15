@@ -504,6 +504,34 @@ describe("MapView overlay handoff", () => {
     expect(useCoverageStore.getState().autoCalculateEnabled).toBe(false);
   });
 
+  it("stays mounted and skips terrain fetch for an over-cap site set", async () => {
+    const recommendAndFetchTerrainForCurrentArea = vi.fn(async () => undefined);
+    const wideSites = [-100, 0, 100].map((lon, index) => ({
+      ...site,
+      id: `wide-${index}`,
+      position: { lat: 10.1, lon },
+    }));
+    useAppStore.setState({
+      sites: wideSites,
+      selectedSiteId: wideSites[0].id,
+      selectedSiteIds: wideSites.map((entry) => entry.id),
+      recommendAndFetchTerrainForCurrentArea,
+    });
+
+    expect(() =>
+      render(
+        <MapView
+          canPersist
+          isMapExpanded={false}
+          onToggleMapExpanded={() => undefined}
+          showInspector={false}
+        />,
+      ),
+    ).not.toThrow();
+    await act(async () => undefined);
+    expect(recommendAndFetchTerrainForCurrentArea).not.toHaveBeenCalled();
+  });
+
   it("does not replay clouds when a completed signature is observed again", async () => {
     render(
       <MapView

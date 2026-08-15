@@ -2,6 +2,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { Profiler, StrictMode, type ProfilerOnRenderCallback } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MeshmapNode } from "../lib/meshtasticMqtt";
 import type { Site } from "../types/radio";
 
 const testState = vi.hoisted(() => ({
@@ -39,10 +40,10 @@ const testState = vi.hoisted(() => ({
     rxSensitivityTargetDbm: -120,
     environmentLossDb: 0,
     siteDragPreview: {},
-    siteLibrary: [],
+    siteLibrary: [] as Array<Site & { visibility?: "private" | "public" | "shared" }>,
     discoveryLibraryVisible: false,
     discoveryMqttVisible: false,
-    mapDiscoveryMqttNodes: [],
+    mapDiscoveryMqttNodes: [] as MeshmapNode[],
     terrainLoadEpoch: 1,
   },
 }));
@@ -194,6 +195,10 @@ describe("PanoramaChart scheduling", () => {
       },
     ];
     testState.store.siteDragPreview = {};
+    testState.store.siteLibrary = [];
+    testState.store.discoveryLibraryVisible = false;
+    testState.store.discoveryMqttVisible = false;
+    testState.store.mapDiscoveryMqttNodes = [];
     testState.schedulers.length = 0;
     testState.buildPanorama.mockImplementation((input) =>
       panoramaResult(input.options.windowCenterDeg != null),
@@ -353,6 +358,49 @@ describe("PanoramaChart scheduling", () => {
       lat: 59.91,
       lon: 10.77,
     });
+  });
+
+  it("caps candidates before panorama calculation with simulation and library priority", async () => {
+    const candidatePosition = (distanceKm: number) => ({
+      lat: 59.91 + distanceKm / 111.195,
+      lon: 10.75,
+    });
+    testState.store.sites = [
+      testState.store.sites[0],
+      {
+        ...testState.store.sites[0],
+        id: "site-2",
+        name: "Simulation candidate",
+        position: candidatePosition(199),
+      },
+    ];
+    testState.store.siteLibrary = [
+      {
+        ...testState.store.sites[0],
+        id: "library-1",
+        name: "Library candidate",
+        visibility: "shared",
+        position: candidatePosition(199),
+      },
+    ];
+    testState.store.discoveryLibraryVisible = true;
+    testState.store.discoveryMqttVisible = true;
+    testState.store.mapDiscoveryMqttNodes = [
+      ...Array.from({ length: 1_100 }, (_, index) => ({
+        nodeId: String(index).padStart(4, "0"),
+        lat: candidatePosition(index % 2 ? 10 : 20).lat,
+        lon: 10.75,
+      })),
+      { nodeId: "outside", lat: candidatePosition(201).lat, lon: 10.75 },
+    ];
+
+    renderChart();
+
+    expect(await screen.findByRole("img", { name: "Panorama" })).toBeInTheDocument();
+    const candidates = testState.buildPanorama.mock.calls[0][0].nodeCandidates as Array<{ id: string }>;
+    expect(candidates).toHaveLength(1_000);
+    expect(candidates.slice(0, 2).map((candidate) => candidate.id)).toEqual(["sim:site-2", "lib:library-1"]);
+    expect(candidates.some((candidate) => candidate.id === "mqtt:outside")).toBe(false);
   });
 
   it("rebuilds panoramas for successive candidate drag positions", async () => {

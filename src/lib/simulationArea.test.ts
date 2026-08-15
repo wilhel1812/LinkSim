@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { simulationAreaBoundsForSites } from "./simulationArea";
+import { boundsToViewport, simulationAreaBoundsForSites } from "./simulationArea";
 
 describe("simulationAreaBoundsForSites", () => {
   it("uses explicit single-site radius override when provided", () => {
@@ -32,5 +32,15 @@ describe("simulationAreaBoundsForSites", () => {
     );
     expect(bounds).not.toBeNull();
     expect((bounds?.latSpanDeg ?? 0) * 111.32).toBeGreaterThan(200);
+  });
+
+  it("centers antimeridian sites at the dateline instead of Greenwich", () => {
+    const bounds = simulationAreaBoundsForSites([
+      { position: { lat: 10.1, lon: 179.9 } },
+      { position: { lat: 10.2, lon: -179.9 } },
+    ]);
+    expect(bounds).not.toBeNull();
+    expect(Math.abs(boundsToViewport(bounds!).center.lon)).toBeCloseTo(180);
+    expect(bounds?.lonSpanDeg).toBeLessThan(1);
   });
 });

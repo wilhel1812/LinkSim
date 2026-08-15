@@ -19,6 +19,7 @@ import {
 } from "../lib/simulationPerf";
 import { antennaPatternSignature } from "../lib/antennaPattern";
 import { sampleSrtmElevation } from "../lib/srtm";
+import { getUiErrorMessage } from "../lib/uiError";
 import type { CoverageSample, Network, RadioSystem, Site, SrtmTile } from "../types/radio";
 
 const COVERAGE_RECOMPUTE_DEBOUNCE_MS = 140;
@@ -268,6 +269,25 @@ const initializeRunState = (set: (patch: Partial<CoverageState>) => void, runId:
   });
 };
 
+const failQueuedCoverageRun = (message: string): void => {
+  coverageRerunQueued = false;
+  coverageRunInFlight = false;
+  useCoverageStore.setState({
+    coverageSamples: [],
+    isSimulationRecomputing: false,
+    simulationProgress: 0,
+    simulationProgressMode: "indeterminate",
+    simulationStepLabel: "",
+    simulationSamplesDone: 0,
+    simulationSamplesTotal: 0,
+    simulationRunToken: "",
+    completedCoverageRunToken: "",
+    calculationCycleSource: null,
+    simulationErrorMessage: message,
+  });
+  appStoreBridge?.setState({ terrainFetchStatus: message });
+};
+
 const queueCoverageRunFlush = (delay = COVERAGE_RECOMPUTE_DEBOUNCE_MS): void => {
   if (coverageRecomputeTimer !== null) {
     window.clearTimeout(coverageRecomputeTimer);
@@ -275,7 +295,9 @@ const queueCoverageRunFlush = (delay = COVERAGE_RECOMPUTE_DEBOUNCE_MS): void => 
   }
   coverageRecomputeTimer = window.setTimeout(() => {
     coverageRecomputeTimer = null;
-    void flushCoverageRunQueue();
+    void flushCoverageRunQueue().catch((error) => {
+      failQueuedCoverageRun(getUiErrorMessage(error));
+    });
   }, Math.max(0, delay));
 };
 
@@ -466,22 +488,8 @@ const flushCoverageRunQueue = async (): Promise<void> => {
     inputs.srtmTiles,
   );
   if (missingTerrainTileKeys.length > 0) {
-    coverageRerunQueued = false;
     const message = `The ${targetRadiusKm} km Simulation could not be completed because ${missingTerrainTileKeys.length} required GLO-30 terrain tile${missingTerrainTileKeys.length === 1 ? " is" : "s are"} unavailable.`;
-    useCoverageStore.setState({
-      coverageSamples: [],
-      isSimulationRecomputing: false,
-      simulationProgress: 0,
-      simulationProgressMode: "indeterminate",
-      simulationStepLabel: "",
-      simulationSamplesDone: 0,
-      simulationSamplesTotal: 0,
-      simulationRunToken: "",
-      completedCoverageRunToken: "",
-      calculationCycleSource: null,
-      simulationErrorMessage: message,
-    });
-    appStoreBridge.setState({ terrainFetchStatus: message });
+    failQueuedCoverageRun(message);
     return;
   }
   const runSignature = coverageInputSignature(inputs);

@@ -1,3 +1,11 @@
+import {
+  MESHMAP_MAX_RECORDS,
+  MESHMAP_MAX_RESPONSE_BYTES,
+  NODE_FEED_MAX_COMBINED_RECORDS,
+  NODE_FEED_MAX_RECORDS_PER_SOURCE,
+  readBoundedJsonResponse,
+} from "./nodeFeedLimits";
+
 export type MeshmapNode = {
   nodeId: string;
   longName?: string;
@@ -70,6 +78,9 @@ const MESHMAP_CACHE_KEY = "rmw-meshmap-cache-v1";
 const NODE_SOURCE_CACHE_KEY_PREFIX = "rmw-node-source-cache-v1";
 const MESHMAP_SOURCE_URL_KEY = "rmw-meshmap-source-url-v1";
 
+const boundedSourceNodes = (nodes: MeshmapNode[]): MeshmapNode[] =>
+  nodes.slice().sort((a, b) => a.nodeId.localeCompare(b.nodeId)).slice(0, NODE_FEED_MAX_RECORDS_PER_SOURCE);
+
 const toNumber = (value: unknown): number | null => {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
@@ -126,7 +137,7 @@ const readCache = (sourceUrl: string): MeshmapCache | null => {
     if (!Number.isFinite(parsed.savedAt)) return null;
     if (typeof parsed.sourceUrl !== "string" || !parsed.sourceUrl.trim()) return null;
     if (!Array.isArray(parsed.nodes)) return null;
-    return parsed;
+    return { ...parsed, nodes: boundedSourceNodes(parsed.nodes) };
   } catch {
     return null;
   }
@@ -137,7 +148,7 @@ const writeCache = (sourceUrl: string, nodes: MeshmapNode[]): void => {
     const payload: MeshmapCache = {
       savedAt: Date.now(),
       sourceUrl,
-      nodes,
+      nodes: boundedSourceNodes(nodes),
     };
     localStorage.setItem(cacheKeyFor(sourceUrl), JSON.stringify(payload));
   } catch {
@@ -208,13 +219,13 @@ export const parseMeshmapLikeFeed = (payload: unknown): MeshmapNode[] => {
       if (parsed) out.push(parsed);
     }
   }
-  return out.sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+  return out.sort((a, b) => a.nodeId.localeCompare(b.nodeId)).slice(0, NODE_FEED_MAX_RECORDS_PER_SOURCE);
 };
 
 export const mergeMeshmapNodes = (sources: MeshmapNode[][]): MeshmapNode[] => {
   const merged = new Map<string, MeshmapNode>();
   for (const nodes of sources) {
-    for (const node of nodes) {
+    for (const node of boundedSourceNodes(nodes)) {
       const nodeId = canonicalNodeId(node.nodeId);
       const candidate = { ...node, nodeId };
       const current = merged.get(nodeId);
@@ -223,7 +234,9 @@ export const mergeMeshmapNodes = (sources: MeshmapNode[][]): MeshmapNode[] => {
       }
     }
   }
-  return Array.from(merged.values()).sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+  return Array.from(merged.values())
+    .sort((a, b) => a.nodeId.localeCompare(b.nodeId))
+    .slice(0, NODE_FEED_MAX_COMBINED_RECORDS);
 };
 
 export const getDefaultMeshmapFeedUrl = (): string => DEFAULT_MESHMAP_FEED_URL;
@@ -266,7 +279,10 @@ export const fetchMeshmapNodes = async (options: MeshmapFetchOptions = {}): Prom
     if (!response.ok) {
       throw new Error(`Feed error: ${response.status}`);
     }
-    const payload = (await response.json()) as unknown;
+    const { value: payload } = await readBoundedJsonResponse<unknown>(response, {
+      maxBytes: MESHMAP_MAX_RESPONSE_BYTES,
+      maxRecords: MESHMAP_MAX_RECORDS,
+    });
     const nodes = parseMeshmapLikeFeed(payload).map((node) => ({
       ...node,
       sourceId: options.sourceId,

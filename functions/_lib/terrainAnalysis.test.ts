@@ -1,24 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { readRastersMock } = vi.hoisted(() => ({ readRastersMock: vi.fn() }));
+const { analyzeLinkMock, boundingBoxMock, readRastersMock } = vi.hoisted(() => ({
+  analyzeLinkMock: vi.fn(),
+  boundingBoxMock: vi.fn(() => [9, 60, 10, 61]),
+  readRastersMock: vi.fn(),
+}));
+
+vi.mock("../../src/lib/propagation", () => ({ analyzeLink: analyzeLinkMock }));
 
 vi.mock("geotiff", () => ({
   fromArrayBuffer: vi.fn(async () => ({
     getImage: async () => ({
       getWidth: () => 3601,
       getHeight: () => 3601,
-      getBoundingBox: () => [9, 60, 10, 61],
+      getBoundingBox: boundingBoxMock,
       getGDALNoData: () => null,
       readRasters: readRastersMock,
     }),
   })),
 }));
 
-import { loadCopernicusTilesForPath } from "./terrainAnalysis";
+import { analyzeTerrainLink, loadCopernicusTilesForPath } from "./terrainAnalysis";
+import type { Env } from "./types";
 
 describe("calculation API GLO-30 terrain loading", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    analyzeLinkMock.mockReset();
+    boundingBoxMock.mockReset();
+    boundingBoxMock.mockReturnValue([9, 60, 10, 61]);
     readRastersMock.mockReset();
     readRastersMock.mockResolvedValue(new Int16Array([100, 101, 102, 103]));
   });
@@ -50,6 +60,77 @@ describe("calculation API GLO-30 terrain loading", () => {
         "https://linksim.link/api/v1/calculate",
       ),
     ).resolves.toEqual({ tiles: [], tileKeys: [] });
+  });
+
+  it("requests only adjacent longitude tiles across the antimeridian", async () => {
+    const fetchMock = vi.fn(async () => new Response("", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await loadCopernicusTilesForPath(
+      { lat: 10.1, lon: 179.9 },
+      { lat: 10.2, lon: -179.9 },
+      "https://linksim.link/api/v1/calculate",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(
+      expect.arrayContaining([expect.stringContaining("N10_00_E179"), expect.stringContaining("N10_00_W180")]),
+    );
+  });
+
+  it("rejects overlarge terrain enumeration before fetching", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      loadCopernicusTilesForPath(
+        { lat: -80, lon: 0.1 },
+        { lat: 80, lon: 2.1 },
+        "https://linksim.link/api/v1/calculate",
+      ),
+    ).rejects.toThrow("256 tiles");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps terrain sampling on the short antimeridian path", async () => {
+    boundingBoxMock
+      .mockReturnValueOnce([179, 10, 180, 11])
+      .mockReturnValueOnce([-180, 10, -179, 11]);
+    readRastersMock.mockImplementation(async (options: { width: number; height: number }) =>
+      new Int16Array(options.width * options.height).fill(100),
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]), { status: 200 })));
+    analyzeLinkMock.mockImplementation((_link, _from, to, _model, terrainSampler) => {
+      expect(to.position.lon).toBeCloseTo(180.1);
+      expect(terrainSampler({ lat: 10.15, lon: 180.05 })).toBe(100);
+      return {
+        distanceKm: 22,
+        fsplDb: 100,
+        pathLossDb: 101,
+        terrainObstructed: false,
+        worstFresnelClearanceM: 1,
+        worstFresnelClearancePercent: 100,
+      };
+    });
+    const site = {
+      name: "Site",
+      txPowerDbm: 20,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+      antennaHeightM: 2,
+    };
+
+    await analyzeTerrainLink(
+      {} as Env,
+      "https://linksim.link/api/v1/calculate",
+      { ...site, lat: 10.1, lon: 179.9 },
+      { ...site, lat: 10.2, lon: -179.9 },
+      868,
+      100,
+    );
+
+    expect(analyzeLinkMock).toHaveBeenCalledTimes(1);
   });
 
   it("observes cancellation while GeoTIFF raster decoding is in progress", async () => {

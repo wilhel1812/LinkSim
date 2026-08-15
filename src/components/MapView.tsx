@@ -64,6 +64,7 @@ import {
 } from "../lib/meshtasticMqtt";
 import { canShowSaveSelectedLinkAction } from "../lib/selectedPairActions";
 import {
+  buildBufferedSelectionArea,
   optionsForSelectionCount,
   resolveRequiredOverlayTerrainTileKeys,
   resolveOverlayRadiusOptionForSelectionTransition,
@@ -329,11 +330,6 @@ type OverlayRaster = {
   maxAreaKm2?: number;
 };
 
-type OverlayMaskArea = {
-  bounds: TerrainBounds;
-  contains: (lat: number, lon: number) => boolean;
-};
-
 const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[]): TerrainBounds => {
   const lats = sites.map((site) => site.position.lat);
   const lons = sites.map((site) => site.position.lon);
@@ -351,117 +347,6 @@ const computeTerrainBounds = (sites: { position: { lat: number; lon: number } }[
     minLon: minLon - lonPadding,
     maxLon: maxLon + lonPadding,
   };
-};
-
-const distanceKmBetween = (latA: number, lonA: number, latB: number, lonB: number): number => {
-  const dLat = (latB - latA) * 111.32;
-  const midLat = (latA + latB) / 2;
-  const dLon = (lonB - lonA) * 111.32 * Math.max(0.1, Math.cos((midLat * Math.PI) / 180));
-  return Math.sqrt(dLat * dLat + dLon * dLon);
-};
-
-const distancePointToSegmentKm = (
-  px: number,
-  py: number,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-): number => {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq <= 1e-9) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
-  const t = clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
-  const cx = ax + t * dx;
-  const cy = ay + t * dy;
-  return Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
-};
-
-const convexHull = (points: { x: number; y: number }[]): { x: number; y: number }[] => {
-  if (points.length <= 2) return [...points];
-  const sorted = [...points].sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
-  const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
-    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lower: { x: number; y: number }[] = [];
-  for (const point of sorted) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
-      lower.pop();
-    }
-    lower.push(point);
-  }
-  const upper: { x: number; y: number }[] = [];
-  for (let index = sorted.length - 1; index >= 0; index -= 1) {
-    const point = sorted[index];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
-      upper.pop();
-    }
-    upper.push(point);
-  }
-  lower.pop();
-  upper.pop();
-  return [...lower, ...upper];
-};
-
-const pointInPolygon = (x: number, y: number, polygon: { x: number; y: number }[]): boolean => {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].x;
-    const yi = polygon[i].y;
-    const xj = polygon[j].x;
-    const yj = polygon[j].y;
-    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi;
-    if (intersects) inside = !inside;
-  }
-  return inside;
-};
-
-const buildBufferedSelectionArea = (sites: Site[], radiusKm: number): OverlayMaskArea | null => {
-  if (!sites.length) return null;
-  const centerLat = sites.reduce((sum, site) => sum + site.position.lat, 0) / sites.length;
-  const kmPerLat = 111.32;
-  const kmPerLon = Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)) * 111.32;
-  const projected = sites.map((site) => ({
-    x: site.position.lon * kmPerLon,
-    y: site.position.lat * kmPerLat,
-    lat: site.position.lat,
-    lon: site.position.lon,
-  }));
-  const hull = convexHull(projected.map((point) => ({ x: point.x, y: point.y })));
-  const minLat = Math.min(...projected.map((point) => point.lat));
-  const maxLat = Math.max(...projected.map((point) => point.lat));
-  const minLon = Math.min(...projected.map((point) => point.lon));
-  const maxLon = Math.max(...projected.map((point) => point.lon));
-  const latDelta = Math.max(0.01, radiusKm / kmPerLat);
-  const lonDelta = Math.max(0.01, radiusKm / kmPerLon);
-  const bounds: TerrainBounds = {
-    minLat: minLat - latDelta,
-    maxLat: maxLat + latDelta,
-    minLon: minLon - lonDelta,
-    maxLon: maxLon + lonDelta,
-  };
-
-  const contains = (lat: number, lon: number): boolean => {
-    const x = lon * kmPerLon;
-    const y = lat * kmPerLat;
-    if (projected.length === 1) {
-      return distanceKmBetween(lat, lon, projected[0].lat, projected[0].lon) <= radiusKm;
-    }
-    if (hull.length <= 2) {
-      const a = hull[0];
-      const b = hull[1] ?? hull[0];
-      return distancePointToSegmentKm(x, y, a.x, a.y, b.x, b.y) <= radiusKm;
-    }
-    if (pointInPolygon(x, y, hull)) return true;
-    for (let index = 0; index < hull.length; index += 1) {
-      const a = hull[index];
-      const b = hull[(index + 1) % hull.length];
-      if (distancePointToSegmentKm(x, y, a.x, a.y, b.x, b.y) <= radiusKm) return true;
-    }
-    return false;
-  };
-
-  return { bounds, contains };
 };
 
 const computeCoverageBounds = (samples: CoverageSampleLite[]): TerrainBounds | null => {
@@ -1438,10 +1323,26 @@ export function MapView({
     () => new Set(srtmTiles.filter((tile) => tile.sourceId === "copernicus30").map((tile) => tile.key)),
     [srtmTiles],
   );
-  const requiredTargetRadiusTileKeys = useMemo(
-    () => resolveRequiredOverlayTerrainTileKeys(analysisTargetSites, targetRadiusKm),
-    [analysisTargetSites, targetRadiusKm],
-  );
+  const requiredTargetRadiusTileResolution = useMemo(() => {
+    try {
+      return {
+        keys: resolveRequiredOverlayTerrainTileKeys(analysisTargetSites, targetRadiusKm),
+        error: "",
+      };
+    } catch (error) {
+      return { keys: [] as string[], error: getUiErrorMessage(error) };
+    }
+  }, [analysisTargetSites, targetRadiusKm]);
+  const requiredTargetRadiusTileKeys = requiredTargetRadiusTileResolution.keys;
+  useEffect(() => {
+    if (!requiredTargetRadiusTileResolution.error) return;
+    onPublishNotice?.({
+      id: "terrain-area-too-large",
+      message: requiredTargetRadiusTileResolution.error,
+      tone: "error",
+      persistent: false,
+    });
+  }, [onPublishNotice, requiredTargetRadiusTileResolution.error]);
   const missingTargetRadiusTileKeys = useMemo(
     () => requiredTargetRadiusTileKeys.filter((key) => !loaded30mTileKeys.has(key)).sort(),
     [requiredTargetRadiusTileKeys, loaded30mTileKeys],
