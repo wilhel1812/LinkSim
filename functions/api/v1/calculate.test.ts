@@ -9,6 +9,7 @@ const { getClientAddressMock, takeRateLimitTokenMock, analyzeTerrainLinkMock, te
 
 vi.mock("../../_lib/rateLimit", () => ({
   getClientAddress: getClientAddressMock,
+  parsePerMinuteLimit: (raw: string | undefined, fallback: number) => raw ? Number(raw) : fallback,
   takeRateLimitToken: takeRateLimitTokenMock,
 }));
 
@@ -71,6 +72,53 @@ describe("api/v1/calculate", () => {
     },
   });
 
+  const bodyAtSize = (size: number): string => {
+    const base = JSON.stringify({ ...mkPayload(), padding: "" });
+    return `${base.slice(0, -2)}${"x".repeat(size - new TextEncoder().encode(base).byteLength)}"}`;
+  };
+
+  const bodyAtDepth = (depth: number): string => {
+    let padding: unknown = 0;
+    for (let level = 1; level < depth; level += 1) padding = [padding];
+    return JSON.stringify({ ...mkPayload(), padding });
+  };
+
+  it("accepts exactly 64 KiB and rejects 64 KiB plus one with stable 413", async () => {
+    const accepted = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST", headers: { "content-type": "application/json" }, body: bodyAtSize(65_536),
+    }), { DB: {} }));
+    expect(accepted.status).toBe(200);
+    const callsAfterAccepted = analyzeTerrainLinkMock.mock.calls.length;
+    const rejected = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST", headers: { "content-type": "application/json" }, body: bodyAtSize(65_537),
+    }), { DB: {} }));
+    expect(rejected.status).toBe(413);
+    expect(analyzeTerrainLinkMock).toHaveBeenCalledTimes(callsAfterAccepted);
+  });
+
+  it("accepts depth 10, rejects depth 11 with stable 422, and ignores braces in strings", async () => {
+    const acceptedDepth = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST", headers: { "content-type": "application/json" }, body: bodyAtDepth(10),
+    }), { DB: {} }));
+    expect(acceptedDepth.status).toBe(200);
+    const rejectedDepth = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST", headers: { "content-type": "application/json" }, body: bodyAtDepth(11),
+    }), { DB: {} }));
+    expect(rejectedDepth.status).toBe(422);
+    const braces = mkPayload(); braces.input.nodes[0].name = "A {{{{{{{{{{{"; braces.input.from_site = braces.input.nodes[0].name;
+    const accepted = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(braces),
+    }), { DB: {} }));
+    expect(accepted.status).toBe(200);
+  });
+
+  it("preserves bounded JSON 422 status for malformed JSON and invalid UTF-8", async () => {
+    for (const body of ["{", new Uint8Array([0xff])]) {
+      const response = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", { method: "POST", body }), { DB: {} }));
+      expect(response.status).toBe(422);
+    }
+  });
+
   it("returns 429 when edge proxy limiter denies request", async () => {
     takeRateLimitTokenMock.mockReturnValueOnce({ allowed: false, remaining: 0, retryAfterSec: 9 });
     const req = new Request("https://linksim.link/api/v1/calculate", {
@@ -122,6 +170,22 @@ describe("api/v1/calculate", () => {
     expect(body.result.terrain_tiles_loaded).toEqual(["N59E010:copernicus30"]);
   });
 
+  it("accepts exactly 500 km and rejects above the synchronous distance ceiling", async () => {
+    const payloadFor = (distanceKm: number) => {
+      const value = mkPayload();
+      value.input.nodes = [{ name: "Site A", lat: 0, lon: 0 }, { name: "Site B", lat: 0, lon: distanceKm / 6371 * 180 / Math.PI }];
+      return value;
+    };
+    const exact = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST", body: JSON.stringify(payloadFor(500)),
+    }), { DB: {} }));
+    expect(exact.status).toBe(200);
+    const above = await onRequestPost(mkCtx(new Request("https://linksim.link/api/v1/calculate", {
+      method: "POST", body: JSON.stringify(payloadFor(500.001)),
+    }), { DB: {} }));
+    expect(above.status).toBe(400);
+  });
+
   it("supports from_node/to_node aliases", async () => {
     const req = new Request("https://linksim.link/api/v1/calculate", {
       method: "POST",
@@ -155,7 +219,7 @@ describe("api/v1/calculate", () => {
     const baselineResponse = await onRequestPost(mkCtx(baselineRequest, { DB: {} }));
     const baseline = (await baselineResponse.json()) as { result: { rx_dbm: number } };
 
-    const directional: any = mkPayload();
+    const directional = mkPayload();
     directional.input.nodes = directional.input.nodes.map((node, index) => ({
       ...node,
       antenna_mode: "directional",
@@ -177,8 +241,8 @@ describe("api/v1/calculate", () => {
   });
 
   it("validates directional API field ranges", async () => {
-    const payload: any = mkPayload();
-    payload.input.nodes[0] = { ...payload.input.nodes[0], antenna_mode: "directional", antenna_tilt_deg: 91 };
+    const payload = mkPayload();
+    Object.assign(payload.input.nodes[0], { antenna_mode: "directional", antenna_tilt_deg: 91 });
     const req = new Request("https://linksim.link/api/v1/calculate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -190,8 +254,8 @@ describe("api/v1/calculate", () => {
   });
 
   it("rejects unknown antenna modes instead of silently using omnidirectional", async () => {
-    const payload: any = mkPayload();
-    payload.input.nodes[0] = { ...payload.input.nodes[0], antenna_mode: "directionl" };
+    const payload = mkPayload();
+    Object.assign(payload.input.nodes[0], { antenna_mode: "directionl" });
     const req = new Request("https://linksim.link/api/v1/calculate", {
       method: "POST",
       headers: { "content-type": "application/json" },

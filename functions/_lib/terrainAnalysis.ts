@@ -70,9 +70,13 @@ const parseCopernicusTile = async (
   key: string,
   buffer: ArrayBuffer,
   bounds: TerrainBounds,
+  signal?: AbortSignal,
 ): Promise<CompactTerrainTile | null> => {
+  signal?.throwIfAborted();
   const tiff = await fromArrayBuffer(buffer);
+  signal?.throwIfAborted();
   const image = await tiff.getImage();
+  signal?.throwIfAborted();
   const width = image.getWidth();
   const height = image.getHeight();
   const [minLon, minLat, maxLon, maxLat] = image.getBoundingBox();
@@ -121,10 +125,12 @@ const parseCopernicusTile = async (
     width: targetW,
     height: targetH,
   });
+  signal?.throwIfAborted();
   const nodataNumeric = nodata === null ? NaN : Number(nodata);
   const result = new Int16Array(targetW * targetH);
 
   for (let i = 0; i < result.length; i += 1) {
+    if (i % 1024 === 0) signal?.throwIfAborted();
     const value = Number((raster as ArrayLike<number>)[i]);
     if (!Number.isFinite(value) || (Number.isFinite(nodataNumeric) && Math.abs(value - nodataNumeric) <= 0.01)) {
       result[i] = -32768;
@@ -146,11 +152,12 @@ const parseCopernicusTile = async (
   };
 };
 
-const fetchTile = async (origin: string, key: string, bounds: TerrainBounds): Promise<CompactTerrainTile | null> => {
-  const response = await fetch(`${origin}${copernicus30PathForTileKey(key)}`);
+const fetchTile = async (origin: string, key: string, bounds: TerrainBounds, signal?: AbortSignal): Promise<CompactTerrainTile | null> => {
+  const response = await fetch(`${origin}${copernicus30PathForTileKey(key)}`, { signal });
   if (!response.ok) return null;
   const buffer = await response.arrayBuffer();
-  return parseCopernicusTile(key, buffer, bounds);
+  signal?.throwIfAborted();
+  return parseCopernicusTile(key, buffer, bounds, signal);
 };
 
 const sampleTerrainElevation = (
@@ -180,6 +187,7 @@ export const loadCopernicusTilesForPath = async (
   from: { lat: number; lon: number },
   to: { lat: number; lon: number },
   requestUrl: string,
+  signal?: AbortSignal,
 ): Promise<{ tiles: CompactTerrainTile[]; tileKeys: string[] }> => {
   const origin = new URL(requestUrl).origin;
   const bounds = toTerrainBounds(from, to);
@@ -189,7 +197,8 @@ export const loadCopernicusTilesForPath = async (
   const tiles: CompactTerrainTile[] = [];
   const fetchedKeys: string[] = [];
   for (const key of neededKeys) {
-    const tile = await fetchTile(origin, key, bounds);
+    signal?.throwIfAborted();
+    const tile = await fetchTile(origin, key, bounds, signal);
     if (!tile) continue;
     tiles.push(tile);
     fetchedKeys.push(`${key}:copernicus30`);
@@ -205,13 +214,16 @@ export const analyzeTerrainLink = async (
   toSite: { lat: number; lon: number; name: string; txPowerDbm: number; txGainDbi: number; rxGainDbi: number; cableLossDb: number; antennaHeightM: number; groundElevationM?: number },
   frequencyMhz: number,
   samples: number,
+  signal?: AbortSignal,
 ): Promise<TerrainAnalysisResult> => {
   void env;
   const { tiles, tileKeys } = await loadCopernicusTilesForPath(
     { lat: fromSite.lat, lon: fromSite.lon },
     { lat: toSite.lat, lon: toSite.lon },
     requestUrl,
+    signal,
   );
+  signal?.throwIfAborted();
   if (!tiles.length) {
     throw new Error("No terrain tiles available for this region");
   }
@@ -253,10 +265,12 @@ export const analyzeTerrainLink = async (
     cableLossDb: from.cableLossDb,
   };
 
+  signal?.throwIfAborted();
   const analysis = analyzeLink(link, from, to, "ITM", terrainSampler, {
     terrainSamples: Math.max(24, Math.round(samples)),
     environment: defaultPropagationEnvironment(),
   });
+  signal?.throwIfAborted();
 
   const maxIntrusionM = Math.max(0, -analysis.worstFresnelClearanceM);
   return {

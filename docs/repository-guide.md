@@ -97,6 +97,10 @@ Behavior notes:
 - If node ground elevation is omitted, the API samples terrain and uses that elevation with `2m` default antenna height
 - Result includes app-style pass/fail text, for example `LOS clear + fail at 83.39 km (-133.6 dBm after env loss)`
 - Edge rate limit: `CALC_API_PROXY_RATE_LIMIT_PER_MINUTE` (default `120`)
+- Request limits: `64 KiB` JSON body, at most `10` JSON nesting levels, `20` nodes, and `80` characters per site name
+- Distance limits: `500 km` for synchronous calculations and `2,000 km` for asynchronous terrain jobs
+- Terrain sampling limits: `72` synchronous samples and `500` asynchronous samples
+- Asynchronous terrain jobs have an absolute `5 minute` deadline; terminal job records are retained for up to `24 hours` with at most `1,000` retained
 
 Example request:
 

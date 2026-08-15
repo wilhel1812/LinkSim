@@ -21,6 +21,13 @@ let callsSinceSweep = 0;
 
 const DEFAULT_WINDOW_MS = 60_000;
 
+export const parsePerMinuteLimit = (raw: string | undefined, fallback: number): number => {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.floor(parsed));
+};
+
 const sweepExpiredBuckets = (nowMs: number) => {
   for (const [key, bucket] of buckets.entries()) {
     if (bucket.windowStartMs + DEFAULT_WINDOW_MS * 4 < nowMs) buckets.delete(key);

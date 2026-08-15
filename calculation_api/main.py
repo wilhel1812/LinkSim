@@ -6,9 +6,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from calculation_api.calculators import calculate_link_budget
 from calculation_api.engine import CalculationEngine
+from calculation_api.limits import BoundedCalculationBodyMiddleware
 from calculation_api.models import CalculationRequest, CalculationResponse
 from calculation_api.rate_limit import InMemoryRateLimiter
-
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: FastAPI, limiter: InMemoryRateLimiter) -> None:
@@ -43,6 +43,7 @@ def _env_int(name: str, default: int) -> int:
 
 def create_app(*, rate_limit_per_min: int | None = None, rate_limit_window_sec: int | None = None) -> FastAPI:
     app = FastAPI(title="LinkSim Calculation API", version="0.1.0")
+    app.add_middleware(BoundedCalculationBodyMiddleware)
 
     engine = CalculationEngine()
     engine.register("link_budget", calculate_link_budget)
@@ -66,6 +67,8 @@ def create_app(*, rate_limit_per_min: int | None = None, rate_limit_window_sec: 
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         return CalculationResponse(calculation=request.calculation, result=result)
