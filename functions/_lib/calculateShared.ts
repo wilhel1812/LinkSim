@@ -37,9 +37,17 @@ export type CalculationRequest = {
 };
 
 export const MAX_NODES = 20;
+export const MAX_CALCULATION_BODY_BYTES = 64 * 1024;
+export const MAX_CALCULATION_JSON_DEPTH = 10;
+export const MAX_NODE_NAME_LENGTH = 80;
 export const MAX_SYNC_DISTANCE_KM = 500;
 export const MAX_TERRAIN_DISTANCE_KM = 2000;
 export const MAX_SAMPLES = 500;
+export const MAX_SYNC_TERRAIN_SAMPLES = 72;
+export const MAX_JOB_RUNTIME_MS = 5 * 60 * 1000;
+export const MAX_JOB_ERROR_LENGTH = 1024;
+export const TERMINAL_JOB_RETENTION_HOURS = 24;
+export const MAX_TERMINAL_JOBS = 1000;
 
 const asRecord = (value: unknown, errorMessage: string): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(errorMessage);
@@ -57,7 +65,11 @@ const asString = (value: unknown, fieldName: string): string => {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`${fieldName} is required.`);
   }
-  return value.trim();
+  const normalized = value.trim();
+  if (Array.from(normalized).length > MAX_NODE_NAME_LENGTH) {
+    throw new Error(`${fieldName} may not exceed ${MAX_NODE_NAME_LENGTH} characters.`);
+  }
+  return normalized;
 };
 
 const normalizeBool = (value: unknown, fallback: boolean): boolean =>
@@ -91,12 +103,12 @@ const normalizeNode = (value: unknown, index: number): NodeInput => {
     name: asString(row.name, `nodes[${index}].name`),
     lat,
     lon,
-    tx_power_dbm: typeof row.tx_power_dbm === "number" ? row.tx_power_dbm : 14,
-    tx_gain_dbi: typeof row.tx_gain_dbi === "number" ? row.tx_gain_dbi : 2,
-    rx_gain_dbi: typeof row.rx_gain_dbi === "number" ? row.rx_gain_dbi : 2,
-    cable_loss_db: typeof row.cable_loss_db === "number" ? row.cable_loss_db : 1,
-    antenna_height_m: typeof row.antenna_height_m === "number" ? row.antenna_height_m : 2,
-    ground_elevation_m: typeof row.ground_elevation_m === "number" ? row.ground_elevation_m : undefined,
+    tx_power_dbm: row.tx_power_dbm === undefined ? 14 : asFiniteNumber(row.tx_power_dbm, `nodes[${index}].tx_power_dbm`),
+    tx_gain_dbi: row.tx_gain_dbi === undefined ? 2 : asFiniteNumber(row.tx_gain_dbi, `nodes[${index}].tx_gain_dbi`),
+    rx_gain_dbi: row.rx_gain_dbi === undefined ? 2 : asFiniteNumber(row.rx_gain_dbi, `nodes[${index}].rx_gain_dbi`),
+    cable_loss_db: row.cable_loss_db === undefined ? 1 : asFiniteNumber(row.cable_loss_db, `nodes[${index}].cable_loss_db`),
+    antenna_height_m: row.antenna_height_m === undefined ? 2 : asFiniteNumber(row.antenna_height_m, `nodes[${index}].antenna_height_m`),
+    ground_elevation_m: row.ground_elevation_m === undefined ? undefined : asFiniteNumber(row.ground_elevation_m, `nodes[${index}].ground_elevation_m`),
     antenna_mode: normalizeAntennaMode(row.antenna_mode, `nodes[${index}].antenna_mode`),
     antenna_azimuth_deg: optionalNumberInRange(row.antenna_azimuth_deg, `nodes[${index}].antenna_azimuth_deg`, 0, 359.999),
     antenna_tilt_deg: optionalNumberInRange(row.antenna_tilt_deg, `nodes[${index}].antenna_tilt_deg`, -90, 90),
@@ -124,8 +136,8 @@ export const normalizeCalculationRequest = (value: unknown): CalculationRequest 
     from_site: asString(fromSite, "input.from_site"),
     to_site: asString(toSite, "input.to_site"),
     frequency_mhz: asFiniteNumber(input.frequency_mhz, "input.frequency_mhz"),
-    rx_target_dbm: typeof input.rx_target_dbm === "number" ? input.rx_target_dbm : -100,
-    environment_loss_db: typeof input.environment_loss_db === "number" ? input.environment_loss_db : 0,
+    rx_target_dbm: input.rx_target_dbm === undefined ? -100 : asFiniteNumber(input.rx_target_dbm, "input.rx_target_dbm"),
+    environment_loss_db: input.environment_loss_db === undefined ? 0 : asFiniteNumber(input.environment_loss_db, "input.environment_loss_db"),
     mode: normalizeMode(input.mode),
     include_verdict: normalizeBool(input.include_verdict, true),
     include_rx_dbm: normalizeBool(input.include_rx_dbm, true),
@@ -227,4 +239,9 @@ export const effectiveApiLinkGains = (
 export const estimateSampleCount = (distanceKm: number): number => {
   const byDistance = Math.ceil(distanceKm / 0.5);
   return Math.max(24, Math.min(MAX_SAMPLES, byDistance));
+};
+
+export const estimateSyncSampleCount = (distanceKm: number): number => {
+  const byDistance = Math.ceil(distanceKm / 0.75);
+  return Math.max(24, Math.min(MAX_SYNC_TERRAIN_SAMPLES, byDistance));
 };

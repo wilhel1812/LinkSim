@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { getClientAddress, takeRateLimitToken } from "./rateLimit";
+import { getClientAddress, parsePerMinuteLimit, takeRateLimitToken } from "./rateLimit";
 
 describe("rate limit helpers", () => {
+  it("parses configured per-minute limits without losing route fallbacks", () => {
+    expect(parsePerMinuteLimit(undefined, 120)).toBe(120);
+    expect(parsePerMinuteLimit("", 60)).toBe(60);
+    expect(parsePerMinuteLimit("invalid", 120)).toBe(120);
+    expect(parsePerMinuteLimit("2.9", 120)).toBe(2);
+    expect(parsePerMinuteLimit("0", 120)).toBe(1);
+  });
   it("uses only Cloudflare-established client identity", () => {
     const cfReq = new Request("https://example.test", {
       headers: {
