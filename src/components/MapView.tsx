@@ -1943,10 +1943,18 @@ export function MapView({
 
   useEffect(() => {
     const scheduler = coverageOverlaySchedulerRef.current!;
-    const cancelCoveragePipeline = () => {
+    const cancelCoveragePipeline = (endPendingHandoff = false) => {
       scheduler.clearQueue();
       scheduler.cancelActive();
       setOverlayPipelineProgress("coverage", null);
+      if (!endPendingHandoff) return;
+      const currentHandoff = overlayHandoffRef.current;
+      if (
+        currentHandoff.requestKey &&
+        (currentHandoff.phase === "entering" || currentHandoff.phase === "entered")
+      ) {
+        failCoverageHandoff(currentHandoff.requestKey);
+      }
     };
 
     if (coverageVizMode === "none") {
@@ -1967,19 +1975,19 @@ export function MapView({
       (mode === "heatmap" || mode === "contours" || mode === "weakest") &&
       (!selectedNetwork || !sites.length || !systems.length)
     ) {
-      cancelCoveragePipeline();
+      cancelCoveragePipeline(true);
       return;
     }
     if (mode === "passfail" && (!activeSelectionLink || !selectedFromSite || !hasPassFailTopology)) {
-      cancelCoveragePipeline();
+      cancelCoveragePipeline(true);
       return;
     }
     if (mode === "relay" && (!activeSelectionLink || !selectedFromSite || !selectedToSite || !hasRelayTopology)) {
-      cancelCoveragePipeline();
+      cancelCoveragePipeline(true);
       return;
     }
     if (mode === "mesh-extension" && !meshExtensionSites.length) {
-      cancelCoveragePipeline();
+      cancelCoveragePipeline(true);
       return;
     }
 

@@ -670,16 +670,32 @@ export function Sidebar({
             MapLibre
           </a>
         </div>
-        <div className="sidebar-footer-links">
-          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md" rel="noreferrer" target="_blank">
+        <div className="sidebar-footer-links sidebar-footer-icon-links">
+          <a
+            aria-label="Terms"
+            href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/TERMS.md"
+            rel="noreferrer"
+            target="_blank"
+            title="Terms"
+          >
             <Handshake aria-hidden="true" size={13} strokeWidth={1.8} />
-            Terms
           </a>
-          <a href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md" rel="noreferrer" target="_blank">
+          <a
+            aria-label="Privacy"
+            href="https://github.com/wilhel1812/LinkSim/blob/main/docs/legal/PRIVACY.md"
+            rel="noreferrer"
+            target="_blank"
+            title="Privacy"
+          >
             <HatGlasses aria-hidden="true" size={13} strokeWidth={1.8} />
-            Privacy
           </a>
-          <a href="https://github.com/wilhel1812/LinkSim" rel="noreferrer" target="_blank">
+          <a
+            aria-label="GitHub"
+            href="https://github.com/wilhel1812/LinkSim"
+            rel="noreferrer"
+            target="_blank"
+            title="GitHub"
+          >
             <svg
               aria-hidden="true"
               height="13"
@@ -690,9 +706,14 @@ export function Sidebar({
             >
               <path d={siGithub.path} fill="currentColor" />
             </svg>
-            GitHub
           </a>
-          <a href="https://matrix.to/#/#linksim:matrix.org" rel="noreferrer" target="_blank">
+          <a
+            aria-label="Matrix"
+            href="https://matrix.to/#/#linksim:matrix.org"
+            rel="noreferrer"
+            target="_blank"
+            title="Matrix"
+          >
             <svg
               aria-hidden="true"
               height="13"
@@ -703,9 +724,14 @@ export function Sidebar({
             >
               <path d={siMatrix.path} fill="currentColor" />
             </svg>
-            Matrix
           </a>
-          <a href="https://discord.gg/Sg2FN7EJW" rel="noreferrer" target="_blank">
+          <a
+            aria-label="Discord"
+            href="https://discord.gg/Sg2FN7EJW"
+            rel="noreferrer"
+            target="_blank"
+            title="Discord"
+          >
             <svg
               aria-hidden="true"
               height="13"
@@ -716,7 +742,6 @@ export function Sidebar({
             >
               <path d={siDiscord.path} fill="currentColor" />
             </svg>
-            Discord
           </a>
         </div>
         <div className="sidebar-footer-version">

@@ -228,13 +228,20 @@ describe("Sidebar read-only simulation site actions", () => {
     expect(useAppStore.getState().libraryRequest).toEqual({ tab: "simulations" });
   });
 
-  it("links to the LinkSim Discord community from the existing footer", () => {
+  it("renders accessible icon-only legal and community footer links", () => {
     render(<Sidebar readOnly />);
 
-    expect(screen.getByRole("link", { name: "Discord" })).toHaveAttribute(
+    const discordLink = screen.getByRole("link", { name: "Discord" });
+    expect(discordLink.parentElement).toHaveClass("sidebar-footer-icon-links");
+    expect(discordLink).toHaveAttribute(
       "href",
       "https://discord.gg/Sg2FN7EJW",
     );
+    for (const label of ["Terms", "Privacy", "GitHub", "Matrix", "Discord"]) {
+      const link = screen.getByRole("link", { name: label });
+      expect(link).toHaveAttribute("title", label);
+      expect(link).toHaveTextContent("");
+    }
   });
 
   it("does not expose selected-site editing when the simulation is read-only", () => {
