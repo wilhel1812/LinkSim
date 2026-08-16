@@ -2636,19 +2636,26 @@ export const fetchLibraryForUser = async (
            AND EXISTS (
              SELECT 1 FROM resource_changes changed
              WHERE changed.resource_kind = ? AND changed.resource_id = live.id${changeWindow}
-               AND EXISTS (
-                 SELECT 1 FROM resource_changes history
-                 WHERE history.resource_kind = changed.resource_kind
-                   AND history.resource_id = changed.resource_id
-                   AND history.id < changed.id
-                   AND (
-                     json_extract(history.snapshot_json, '$.ownerUserId') = ?
-                     OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
-                     OR EXISTS (
-                       SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) grant_entry
-                       WHERE json_extract(grant_entry.value, '$.userId') = ?
+               AND (
+                 EXISTS (
+                   SELECT 1 FROM resource_changes history
+                   WHERE history.resource_kind = changed.resource_kind
+                     AND history.resource_id = changed.resource_id
+                     AND history.id < changed.id
+                     AND (
+                       json_extract(history.snapshot_json, '$.ownerUserId') = ?
+                       OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
+                       OR EXISTS (
+                         SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) grant_entry
+                         WHERE json_extract(grant_entry.value, '$.userId') = ?
+                       )
                      )
-                   )
+                 )
+                 OR json_extract(changed.details_json, '$.diff.visibility.before') IN ('public', 'shared')
+                 OR EXISTS (
+                   SELECT 1 FROM json_each(COALESCE(json_extract(changed.details_json, '$.diff.sharedWith.before'), '[]')) previous_grant
+                   WHERE json_extract(previous_grant.value, '$.userId') = ?
+                 )
                )
            )${pagination}`,
       )
@@ -2658,6 +2665,7 @@ export const fetchLibraryForUser = async (
         kind,
         ...(opts?.since ? [opts.since] : []),
         ...(opts?.cutoff ? [opts.cutoff] : []),
+        userId,
         userId,
         userId,
         ...(paged ? [opts?.afterId ?? "", limit + 1] : []),

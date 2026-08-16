@@ -85,6 +85,43 @@ describe("fetchLibraryForUser pagination", () => {
     expect(page.deletedSiteIds).toEqual(["visible-delete"]);
   });
 
+  it("uses the first audit entry's before-state to signal legacy visibility revocations", async () => {
+    const db = new TestD1();
+    insertSite(db, "site-legacy-revoked", "other", "private", "2026-08-14T10:00:01.000Z");
+    insertSite(db, "site-legacy-grant-revoked", "other", "private", "2026-08-14T10:00:01.000Z");
+    db.db.prepare("INSERT INTO simulations (id, owner_user_id, name, visibility, status, payload_json, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?)")
+      .run(
+        "sim-legacy-revoked",
+        "other",
+        "sim-legacy-revoked",
+        "private",
+        JSON.stringify({ id: "sim-legacy-revoked", name: "sim-legacy-revoked", visibility: "private" }),
+        "2026-08-14T10:00:01.000Z",
+      );
+    const beforeState = JSON.stringify({ diff: { visibility: { before: "public", after: "private" } } });
+    for (const [id, kind, resourceId] of [
+      [1, "site", "site-legacy-revoked"],
+      [2, "simulation", "sim-legacy-revoked"],
+    ] as const) {
+      db.db.prepare("INSERT INTO resource_changes (id, resource_kind, resource_id, actor_user_id, changed_at, details_json, snapshot_json) VALUES (?, ?, ?, 'other', ?, ?, ?)")
+        .run(id, kind, resourceId, "2026-08-14T10:00:01.000Z", beforeState, JSON.stringify({ visibility: "private", sharedWith: [] }));
+    }
+    db.db.prepare("INSERT INTO resource_changes (id, resource_kind, resource_id, actor_user_id, changed_at, details_json, snapshot_json) VALUES (3, 'site', 'site-legacy-grant-revoked', 'other', ?, ?, ?)")
+      .run(
+        "2026-08-14T10:00:01.000Z",
+        JSON.stringify({ diff: { sharedWith: { before: [{ userId: "reader", role: "viewer" }], after: [] } } }),
+        JSON.stringify({ visibility: "private", sharedWith: [] }),
+      );
+
+    const delta = await fetchLibraryForUser(envFor(db), "reader", {
+      since: "2026-08-14T10:00:00.000Z",
+      cutoff: "2026-08-14T10:00:02.000Z",
+    });
+    expect(delta.removedSiteIds).toEqual(expect.arrayContaining(["site-legacy-revoked", "site-legacy-grant-revoked"]));
+    expect(delta.removedSiteIds).toHaveLength(2);
+    expect(delta.removedSimulationIds).toEqual(["sim-legacy-revoked"]);
+  });
+
   it("recovers a row changed after an earlier page even when its ID is behind that page's keyset", async () => {
     const db = new TestD1();
     insertSite(db, "site-a", "reader", "private", "2026-08-14T10:00:00.000Z");

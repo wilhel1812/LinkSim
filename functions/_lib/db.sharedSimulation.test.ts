@@ -324,15 +324,24 @@ class FakeDb {
           const history = this.resourceChanges
             .filter((change) => change.resource_kind === kind && change.resource_id === row.id)
             .sort((left, right) => left.id - right.id);
-          return history.some((_change, index) => index > 0 && history.slice(0, index).some((prior) => {
-            const snapshot = JSON.parse(String(prior.snapshot_json ?? "{}")) as AnyRow;
-            return snapshot.ownerUserId === userId
-              || snapshot.visibility === "public"
-              || snapshot.visibility === "shared"
-              || (Array.isArray(snapshot.sharedWith) && snapshot.sharedWith.some((grant) => (
-                grant && typeof grant === "object" && (grant as AnyRow).userId === userId
-              )));
-          }));
+          return history.some((change, index) => {
+            const details = JSON.parse(String(change.details_json ?? "{}")) as AnyRow;
+            const beforeVisibility = details.diff?.visibility?.before;
+            const beforeGrants = details.diff?.sharedWith?.before;
+            if (beforeVisibility === "public" || beforeVisibility === "shared") return true;
+            if (Array.isArray(beforeGrants) && beforeGrants.some((grant) => (
+              grant && typeof grant === "object" && (grant as AnyRow).userId === userId
+            ))) return true;
+            return history.slice(0, index).some((prior) => {
+              const snapshot = JSON.parse(String(prior.snapshot_json ?? "{}")) as AnyRow;
+              return snapshot.ownerUserId === userId
+                || snapshot.visibility === "public"
+                || snapshot.visibility === "shared"
+                || (Array.isArray(snapshot.sharedWith) && snapshot.sharedWith.some((grant) => (
+                  grant && typeof grant === "object" && (grant as AnyRow).userId === userId
+                )));
+            });
+          });
         })
         .map((row) => ({ id: row.id }));
     }
@@ -887,6 +896,37 @@ describe("upsertLibrarySnapshot shared simulations", () => {
     await expect(fetchLibraryForUser(env, "reader-1")).resolves.toMatchObject({
       removedSiteIds: ["site-revoked"],
       removedSimulationIds: ["sim-revoked"],
+    });
+  });
+
+  it("returns removal markers for a first audited revocation of a legacy public resource", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-legacy-revoked", {
+      id: "site-legacy-revoked", owner_user_id: "owner-1", visibility: "private",
+      payload_json: JSON.stringify({ id: "site-legacy-revoked", name: "Private now", visibility: "private", sharedWith: [] }),
+    });
+    db.simulations.set("sim-legacy-revoked", {
+      id: "sim-legacy-revoked", owner_user_id: "owner-1", visibility: "private", status: "active",
+      payload_json: JSON.stringify({ id: "sim-legacy-revoked", name: "Private now", visibility: "private", sharedWith: [] }),
+    });
+    for (const kind of ["site", "simulation"] as const) {
+      db.resourceChanges.push({
+        id: db.resourceChanges.length + 1,
+        resource_kind: kind,
+        resource_id: kind === "site" ? "site-legacy-revoked" : "sim-legacy-revoked",
+        changed_at: "2026-08-16T10:01:00.000Z",
+        details_json: JSON.stringify({ diff: { visibility: { before: "public", after: "private" } } }),
+        snapshot_json: JSON.stringify({ visibility: "private", sharedWith: [] }),
+      });
+    }
+    const env = { DB: db } as unknown as Parameters<typeof fetchLibraryForUser>[0];
+
+    await expect(fetchLibraryForUser(env, "reader-1", {
+      since: "2026-08-16T10:00:00.000Z",
+      cutoff: "2026-08-16T10:02:00.000Z",
+    })).resolves.toMatchObject({
+      removedSiteIds: ["site-legacy-revoked"],
+      removedSimulationIds: ["sim-legacy-revoked"],
     });
   });
 
