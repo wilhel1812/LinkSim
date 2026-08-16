@@ -81,10 +81,9 @@ describe("Library ingestion limits", () => {
     })).toThrow("Site position must contain valid latitude and longitude");
   });
 
-  it("rejects missing required Site and malformed Radio System or Network fields", () => {
-    const missingSiteNumber = validSite() as Record<string, unknown>;
-    delete missingSiteNumber.txPowerDbm;
-    expect(() => validateLibraryPayload({ siteLibrary: [missingSiteNumber], simulationPresets: [] })).toThrow(
+  it("rejects malformed Site, Radio System, or Network fields", () => {
+    const malformedSiteNumber = { ...validSite(), txPowerDbm: "22" };
+    expect(() => validateLibraryPayload({ siteLibrary: [malformedSiteNumber], simulationPresets: [] })).toThrow(
       "Site txPowerDbm must be a finite number",
     );
 
@@ -171,6 +170,24 @@ describe("Library ingestion limits", () => {
       selectedCoverageResolution: expected,
     }));
     expect(simulation.snapshot.selectedCoverageResolution).toBe(selectedCoverageResolution);
+  });
+
+  it("migrates missing radio fields on legacy top-level Sites before strict validation", () => {
+    const site = validSite("legacy-site") as Record<string, unknown>;
+    delete site.txPowerDbm;
+    delete site.txGainDbi;
+    delete site.rxGainDbi;
+    delete site.cableLossDb;
+
+    const validated = validateLibraryPayload({ siteLibrary: [site], simulationPresets: [] });
+
+    expect(validated.siteLibrary[0]).toEqual(expect.objectContaining({
+      txPowerDbm: 22,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    }));
+    expect(site).not.toHaveProperty("txPowerDbm");
   });
 
   it("migrates legacy nested Site radio fields before strict validation", () => {

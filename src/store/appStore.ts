@@ -855,22 +855,7 @@ const normalizeSiteLibrary = (entries: SiteLibraryEntry[]): SiteLibraryEntry[] =
       .filter((entry) => !isLegacyDemoSiteLibraryEntry(entry))
       .map((entry) => ({
         ...entry,
-        txPowerDbm:
-          typeof entry.txPowerDbm === "number" && Number.isFinite(entry.txPowerDbm)
-            ? entry.txPowerDbm
-            : STANDARD_SITE_RADIO.txPowerDbm,
-        txGainDbi:
-          typeof entry.txGainDbi === "number" && Number.isFinite(entry.txGainDbi)
-            ? entry.txGainDbi
-            : STANDARD_SITE_RADIO.txGainDbi,
-        rxGainDbi:
-          typeof entry.rxGainDbi === "number" && Number.isFinite(entry.rxGainDbi)
-            ? entry.rxGainDbi
-            : STANDARD_SITE_RADIO.rxGainDbi,
-        cableLossDb:
-          typeof entry.cableLossDb === "number" && Number.isFinite(entry.cableLossDb)
-            ? entry.cableLossDb
-            : STANDARD_SITE_RADIO.cableLossDb,
+        ...withSiteRadioDefaults(entry),
         iconKey: isSiteIconKey(entry.iconKey) ? entry.iconKey : undefined,
       })),
   );
