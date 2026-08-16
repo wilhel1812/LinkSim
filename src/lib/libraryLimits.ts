@@ -1,4 +1,5 @@
 import type { Link, Site } from "../types/radio";
+import { isCompatiblePersistedCoverageResolution, normalizeCoverageResolution } from "./coverageResolution";
 import { migrateSitesAndLinksToSiteRadioDefaults } from "./linkRadio";
 import { validatePropagationEnvironment } from "./propagationEnvironmentValidation";
 import { isCompatiblePersistedTerrainDataset, normalizeTerrainDataset } from "./terrainDataset";
@@ -126,6 +127,12 @@ const normalizeSimulationCompatibility = (value: unknown): unknown => {
   if (terrainDataset !== undefined && isCompatiblePersistedTerrainDataset(terrainDataset)) {
     snapshot.terrainDataset = normalizeTerrainDataset(terrainDataset);
     changed = snapshot.terrainDataset !== terrainDataset;
+  }
+
+  const coverageResolution = snapshot.selectedCoverageResolution;
+  if (coverageResolution !== undefined && isCompatiblePersistedCoverageResolution(coverageResolution)) {
+    snapshot.selectedCoverageResolution = normalizeCoverageResolution(coverageResolution);
+    changed = changed || snapshot.selectedCoverageResolution !== coverageResolution;
   }
 
   if (Array.isArray(snapshot.sites)

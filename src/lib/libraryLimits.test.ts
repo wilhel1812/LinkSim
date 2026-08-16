@@ -157,6 +157,22 @@ describe("Library ingestion limits", () => {
     },
   );
 
+  it.each([
+    ["normal", "24"],
+    ["high", "42"],
+  ])("accepts and normalizes the legacy coverage resolution %s", (selectedCoverageResolution, expected) => {
+    const simulation = {
+      ...validSimulation(),
+      snapshot: { ...validSimulation().snapshot, selectedCoverageResolution },
+    };
+    const validated = validateLibraryPayload({ siteLibrary: [], simulationPresets: [simulation] });
+
+    expect(validated.simulationPresets[0]?.snapshot).toEqual(expect.objectContaining({
+      selectedCoverageResolution: expected,
+    }));
+    expect(simulation.snapshot.selectedCoverageResolution).toBe(selectedCoverageResolution);
+  });
+
   it("migrates legacy nested Site radio fields before strict validation", () => {
     const fromSite = validSite("site-from") as Record<string, unknown>;
     const toSite = validSite("site-to") as Record<string, unknown>;

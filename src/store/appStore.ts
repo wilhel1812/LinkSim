@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { clearTerrainLossCache } from "../lib/coverage";
+import { normalizeCoverageResolution } from "../lib/coverageResolution";
 import { setAppStoreBridge, useCoverageStore } from "./coverageStore";
 import { findPresetById } from "../lib/frequencyPlans";
 import {
@@ -1336,13 +1337,6 @@ const bufferedBoundsForSites = (sites: Site[], radiusKm: number): TerrainFetchBo
 const initialBasemapStyleId = normalizeBasemapStyleId(
   readStorage<string>(BASEMAP_STYLE_ID_KEY, DEFAULT_BASEMAP_STYLE_ID),
 );
-
-const normalizeCoverageResolution = (value: unknown): CoverageResolution => {
-  if (value === "24" || value === "42" || value === "84" || value === "168") return value;
-  if (value === "high") return "42";
-  if (value === "normal") return "24";
-  return "24";
-};
 
 const initialScenarioDefaults = simulationDefaultsFromPreset(defaultScenario.defaultFrequencyPresetId);
 
