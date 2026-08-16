@@ -159,6 +159,7 @@ const canEditLibraryItem = (
   currentUser: CloudUser | null,
 ): boolean => {
   if (!currentUser) return false;
+  if (item.effectiveRole === "viewer") return false;
   if (item.ownerUserId === currentUser.id) return true;
   return (
     item.effectiveRole === "owner" || item.effectiveRole === "admin" || item.effectiveRole === "editor"
@@ -207,6 +208,7 @@ const canEditItem = (
   currentUser: CloudUser | null,
 ): boolean => {
   if (!currentUser) return false;
+  if (item.effectiveRole === "viewer") return false;
   if (item.ownerUserId === currentUser.id) return true;
   return (
     item.effectiveRole === "owner" ||
@@ -1714,6 +1716,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const revisionAtStart = localMutationRevision;
         syncInFlight = true;
         set({ syncBusy: true, syncStatus: "syncing", syncStatusMessage: "Saving changes..." });
+        let completed = false;
         let remaining = Math.max(0, localMutationRevision - syncedMutationRevision);
         try {
           const { siteLibrary, simulationPresets, currentUser } = get();
@@ -1728,6 +1731,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               dirtySiteIds = new Set();
               dirtySimIds = new Set();
               requiresFullPush = false;
+              completed = true;
               set({ syncPending: remaining > 0, pendingChangesCount: remaining, syncStatus: "synced",
                 syncErrorMessage: null, syncStatusMessage: "No changes to sync" });
               return;
@@ -1752,6 +1756,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           lastSyncedPayloadDigest = fullDigestAtStart;
           writeStorage(SYNC_DIGEST_KEY, fullDigestAtStart);
           remaining = markSyncedThrough(revisionAtStart);
+          completed = true;
           set({ syncPending: remaining > 0, pendingChangesCount: remaining, syncStatus: "synced",
             lastSyncedAt: new Date().toISOString(), syncErrorMessage: null, syncStatusMessage: "Changes saved" });
         } catch (error) {
@@ -1764,7 +1769,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         } finally {
           syncInFlight = false;
           set({ syncBusy: false });
-          if (remaining > 0 && get().currentUser?.id && get().isOnline) schedulePush(false);
+          if (completed && remaining > 0 && get().currentUser?.id && get().isOnline) schedulePush(false);
         }
       }, SYNC_DEBOUNCE_MS);
     };
@@ -3441,7 +3446,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!user) throw new Error("Sign in to delete a Simulation.");
     const existing = get().simulationPresets.find((preset) => preset.id === presetId);
     if (!existing) throw new Error("Simulation not found.");
-    const ownsSimulation = existing.ownerUserId === user.id || existing.effectiveRole === "owner";
+    const ownsSimulation = existing.effectiveRole !== "viewer"
+      && (existing.ownerUserId === user.id || existing.effectiveRole === "owner");
     if (!user.isAdmin && !ownsSimulation) {
       throw new Error("Only the Simulation owner or a platform admin can delete it.");
     }

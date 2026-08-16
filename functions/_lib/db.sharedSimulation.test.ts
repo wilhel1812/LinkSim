@@ -470,7 +470,35 @@ class FakeDb {
           last_actor_avatar_thumb_key: row.last_actor_avatar_thumb_key ?? null,
         }));
     }
-    if (sql.includes("SELECT s.payload_json") && sql.includes("FROM sites s")) return [];
+    if (sql.includes("SELECT s.payload_json") && sql.includes("FROM sites s")) {
+      const userId = String(bound[2] ?? "");
+      const isAdmin = Number(bound[1] ?? 0) === 1;
+      return [...this.sites.values()]
+        .filter((row) => isAdmin || row.owner_user_id === userId || row.visibility !== "private")
+        .map((row) => ({
+          ...row,
+          role: null,
+          owner_name: String(row.owner_user_id),
+          owner_avatar_url: "",
+          owner_avatar_thumb_key: null,
+          created_by_user_id: row.created_by_user_id ?? row.owner_user_id,
+          created_by_name: String(row.created_by_user_id ?? row.owner_user_id),
+          created_by_avatar_url: null,
+          created_by_avatar_thumb_key: null,
+          first_actor_user_id: null,
+          first_actor_name: null,
+          first_actor_avatar_url: null,
+          first_actor_avatar_thumb_key: null,
+          last_edited_by_user_id: row.last_edited_by_user_id ?? row.owner_user_id,
+          last_edited_by_name: String(row.last_edited_by_user_id ?? row.owner_user_id),
+          last_edited_by_avatar_url: null,
+          last_edited_by_avatar_thumb_key: null,
+          last_actor_user_id: null,
+          last_actor_name: null,
+          last_actor_avatar_url: null,
+          last_actor_avatar_thumb_key: null,
+        }));
+    }
     return [];
   }
 
@@ -720,6 +748,26 @@ describe("user identity privacy and diagnostic access", () => {
 });
 
 describe("upsertLibrarySnapshot shared simulations", () => {
+  it("falls back to updated_at for legacy Sites without created_at metadata", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-legacy-date", {
+      id: "site-legacy-date", owner_user_id: "owner-1", visibility: "private",
+      created_at: null, updated_at: "2026-08-16T10:00:00.000Z", last_edited_at: null,
+      payload_json: JSON.stringify({
+        id: "site-legacy-date", name: "Legacy Site", visibility: "private", sharedWith: [],
+        position: { lat: 60, lon: 11 }, groundElevationM: 100, antennaHeightM: 2,
+        txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+      }),
+    });
+    const env = { DB: db } as unknown as Parameters<typeof fetchLibraryForUser>[0];
+
+    const library = await fetchLibraryForUser(env, "owner-1");
+
+    expect(library.siteLibrary).toEqual([
+      expect.objectContaining({ id: "site-legacy-date", createdAt: "2026-08-16T10:00:00.000Z" }),
+    ]);
+  });
+
   it("persists one-character and longer resource names under the existing non-empty contract", async () => {
     const db = new FakeDb();
     const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];

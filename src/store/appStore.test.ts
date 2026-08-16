@@ -353,6 +353,10 @@ describe("appStore auth guards", () => {
       emailPublic: true,
       bio: "",
     });
+    useAppStore.setState((state) => ({
+      siteLibrary: state.siteLibrary.map((entry) => ({ ...entry, effectiveRole: "owner" as const })),
+      simulationPresets: state.simulationPresets.map((preset) => ({ ...preset, effectiveRole: "owner" as const })),
+    }));
 
     useAppStore.getState().updateSimulationPresetEntry("sim-1", { name: "Simulation One" });
     useAppStore.getState().deleteSite("site-1");
@@ -380,6 +384,10 @@ describe("appStore auth guards", () => {
       emailPublic: true,
       bio: "",
     });
+    useAppStore.setState((state) => ({
+      siteLibrary: state.siteLibrary.map((entry) => ({ ...entry, effectiveRole: "owner" as const })),
+      simulationPresets: state.simulationPresets.map((preset) => ({ ...preset, effectiveRole: "owner" as const })),
+    }));
     useAppStore.setState((state) => ({
       siteLibrary: state.siteLibrary.map((entry) => entry.id === "lib-1" ? {
         ...entry,
@@ -429,6 +437,9 @@ describe("appStore auth guards", () => {
       emailPublic: true,
       bio: "",
     });
+    useAppStore.setState((state) => ({
+      simulationPresets: state.simulationPresets.map((preset) => ({ ...preset, effectiveRole: "owner" as const })),
+    }));
 
     useAppStore.getState().setSelectedOverlayRadiusOption("100");
 
@@ -1273,6 +1284,28 @@ describe("appStore untrusted Library imports", () => {
       { simulationPresets: [publicSimulation("collision")] }, "merge", "public-view-only",
     )).toThrow("conflicts with an existing local record");
     expect(useAppStore.getState().simulationPresets[0]?.ownerUserId).toBe("owner-1");
+  });
+
+  it("keeps a public viewer record read-only when its payload claims the current user as owner", () => {
+    const victim = {
+      id: "victim-1", username: "victim", avatarUrl: "", role: "user" as const,
+      accountState: "approved" as const, isApproved: true, isAdmin: false, isModerator: false,
+      createdAt: "", updatedAt: null, approvedAt: null, approvedByUserId: null,
+      email: undefined, emailPublic: true, bio: "",
+    };
+    useAppStore.setState({ currentUser: victim });
+    const malicious = { ...publicSimulation("spoofed-owner"), ownerUserId: "victim-1" };
+    useAppStore.getState().importLibraryData({ simulationPresets: [malicious] }, "merge", "public-view-only");
+    useAppStore.getState().loadSimulationPreset("spoofed-owner");
+    const before = useAppStore.getState().simulationPresets[0]?.updatedAt;
+
+    useAppStore.getState().updateCurrentSimulationSnapshot();
+
+    expect(useAppStore.getState().simulationPresets[0]).toMatchObject({
+      ownerUserId: "victim-1",
+      effectiveRole: "viewer",
+      updatedAt: before,
+    });
   });
 
   it("relinks Sites by stable ID before comparing legacy name and coordinates", () => {

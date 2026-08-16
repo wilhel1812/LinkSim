@@ -2482,6 +2482,7 @@ type LibraryRow = {
   last_actor_avatar_url: string | null;
   last_actor_avatar_thumb_key: string | null;
   created_at: string | null;
+  updated_at: string;
   last_edited_at: string | null;
   status?: "active" | "deleted";
 };
@@ -2533,6 +2534,7 @@ export const fetchLibraryForUser = async (
               (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_url,
               (SELECT u.avatar_thumb_key FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_thumb_key,
               s.created_at,
+              s.updated_at,
               s.last_edited_at
        FROM sites s
        LEFT JOIN site_roles r ON r.site_id = s.id AND r.user_id = ?
@@ -2688,6 +2690,7 @@ export const fetchLibraryForUser = async (
               (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_url,
               (SELECT u.avatar_thumb_key FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_thumb_key,
               s.created_at,
+              s.updated_at,
               s.last_edited_at
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
@@ -2734,7 +2737,7 @@ export const fetchLibraryForUser = async (
             createdByUserId,
             createdByName,
             createdByAvatarUrl,
-            createdAt: row.created_at,
+            createdAt: row.created_at ?? row.updated_at,
             lastEditedByUserId,
             lastEditedByName,
             lastEditedByAvatarUrl,

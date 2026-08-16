@@ -25,8 +25,10 @@ export const canDeleteLibraryItem = (
   currentUser: { id: string; isAdmin?: boolean } | null,
 ): boolean => Boolean(currentUser && (
   currentUser.isAdmin
-  || item.ownerUserId === currentUser.id
-  || item.effectiveRole === "owner"
+  || (item.effectiveRole !== "viewer" && (
+    item.ownerUserId === currentUser.id
+    || item.effectiveRole === "owner"
+  ))
 ));
 
 type PersistedLibraryFilterState = {
@@ -124,6 +126,7 @@ export const serializeLibraryFilterState = (state: LibraryFilterState): string =
 
 const isEditable = (item: FilterableLibraryItem, currentUserId: string | null): boolean => {
   if (!currentUserId) return false;
+  if (item.effectiveRole === "viewer") return false;
   if (item.ownerUserId === currentUserId) return true;
   return item.effectiveRole === "owner" || item.effectiveRole === "admin" || item.effectiveRole === "editor";
 };
@@ -146,7 +149,9 @@ const roleFilterMatch = (
 ): boolean => {
   if (!roleFilters.length) return true;
   return roleFilters.some((role) => {
-    if (role === "owned") return Boolean(currentUserId && item.ownerUserId === currentUserId);
+    if (role === "owned") return Boolean(
+      currentUserId && item.effectiveRole !== "viewer" && item.ownerUserId === currentUserId,
+    );
     if (role === "collaborator") return isCollaborator(item, currentUserId);
     if (role === "editable") return isEditable(item, currentUserId);
     return isViewOnly(item, currentUserId);

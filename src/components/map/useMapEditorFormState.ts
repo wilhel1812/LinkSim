@@ -514,7 +514,14 @@ export function useMapEditorFormState() {
       role: collaboratorRoles[userId] ?? "viewer" as AccessRole,
     };
   });
-  const currentUserIsOwner = Boolean(currentUser?.id && ownerUserId && currentUser.id === ownerUserId);
+  const activeResourceRole = mapEditor?.kind === "site"
+    ? siteLibrary.find((entry) => entry.id === mapEditor.resourceId)?.effectiveRole
+    : mapEditor?.kind === "simulation"
+      ? activeSimulationPreset?.effectiveRole
+      : undefined;
+  const currentUserIsOwner = Boolean(
+    currentUser?.id && ownerUserId && currentUser.id === ownerUserId && activeResourceRole !== "viewer",
+  );
   const activeSimulationRole = activeSimulationPreset?.effectiveRole ??
     (activeSimulationPreset?.ownerUserId === currentUser?.id ? "owner" : "viewer");
   const canEditActiveSimulation = Boolean(

@@ -373,6 +373,42 @@ describe("appStore delta sync", () => {
     expect(pushedBodies[1]?.siteLibrary.map((site) => site.name)).toEqual(["Second"]);
   });
 
+  it("keeps a failed push pending without automatically retrying a permanent error", async () => {
+    let putCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/library") && method === "GET") {
+        return makeResponse({ ...cloneJson(baselinePayload), deletedSiteIds: [], deletedSimulationIds: [] });
+      }
+      if (url.includes("/api/library") && method === "PUT") {
+        putCount += 1;
+        return new Response(JSON.stringify({ error: "Simulation name already exists." }), {
+          status: 422,
+          statusText: "Unprocessable Content",
+        });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`);
+    }));
+    const { useAppStore } = await import("./appStore");
+    useAppStore.setState({
+      currentUser: mkUser(), authState: "signed_in", isOnline: true,
+      siteLibrary: [], simulationPresets: cloneJson(baselinePayload.simulationPresets),
+      sites: [], links: [], systems: [], networks: [],
+      syncStatus: "synced", syncPending: false, syncBusy: false, isInitializing: false,
+    });
+    await useAppStore.getState().initializeCloudSync();
+    useAppStore.getState().addSiteByCoordinates("Rejected", 62, 12);
+    useAppStore.getState().performCloudSyncPush();
+
+    await vi.advanceTimersByTimeAsync(2500);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(putCount).toBe(1);
+    expect(useAppStore.getState().syncPending).toBe(true);
+    expect(useAppStore.getState().syncStatus).toBe("error");
+  });
+
   it("stores only the completed server recovery cutoff", async () => {
     let getCount = 0;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

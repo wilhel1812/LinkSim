@@ -67,6 +67,7 @@ const canEditResource = (
 ) =>
   Boolean(
     currentUserId &&
+      resource.effectiveRole !== "viewer" &&
       (resource.ownerUserId === currentUserId ||
         resource.effectiveRole === "owner" ||
         resource.effectiveRole === "admin" ||

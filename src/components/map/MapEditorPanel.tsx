@@ -1355,7 +1355,8 @@ export function MapEditorPanel({ isMobile }: MapEditorPanelProps) {
         simulation &&
           !isDeleted &&
           currentUser?.id &&
-          (currentUser.isAdmin || simulation.ownerUserId === currentUser.id || simulation.effectiveRole === "owner"),
+          (currentUser.isAdmin || (simulation.effectiveRole !== "viewer"
+            && (simulation.ownerUserId === currentUser.id || simulation.effectiveRole === "owner"))),
       );
       return (
         <SimulationEditorCard
