@@ -1278,8 +1278,41 @@ describe("appStore untrusted Library imports", () => {
     expect(useAppStore.getState().simulationPresets[0]).toMatchObject({ ownerUserId: "other-user", effectiveRole: "viewer" });
   });
 
-  it("rejects a public ID collision with an editable local record", () => {
-    useAppStore.setState({ simulationPresets: [{ ...publicSimulation("collision"), ownerUserId: "owner-1", effectiveRole: "owner" }] });
+  it("temporarily shadows a signed-out cached owned record with a same-ID public view", () => {
+    const owned = { ...publicSimulation("collision"), name: "Owned copy", ownerUserId: "owner-1", effectiveRole: "owner" as const };
+    storage.mock.setItem("rmw-sim-presets-v1", JSON.stringify([owned]));
+    useAppStore.setState({ currentUser: null, simulationPresets: [owned] });
+
+    useAppStore.getState().importLibraryData(
+      { simulationPresets: [publicSimulation("collision")] }, "merge", "public-view-only",
+    );
+
+    expect(useAppStore.getState().simulationPresets[0]).toMatchObject({
+      id: "collision",
+      name: "Public plan",
+      ownerUserId: "other-user",
+      effectiveRole: "viewer",
+    });
+    expect(JSON.parse(storage.mock.getItem("rmw-sim-presets-v1") ?? "[]")[0]).toMatchObject({
+      id: "collision",
+      name: "Owned copy",
+      ownerUserId: "owner-1",
+      effectiveRole: "owner",
+    });
+  });
+
+  it("rejects a public ID collision with an authenticated editable local record", () => {
+    const owner = {
+      id: "owner-1", username: "owner", avatarUrl: "", role: "user" as const,
+      accountState: "approved" as const, isApproved: true, isAdmin: false, isModerator: false,
+      createdAt: "", updatedAt: null, approvedAt: null, approvedByUserId: null,
+      email: undefined, emailPublic: true, bio: "",
+    };
+    useAppStore.setState({
+      currentUser: owner,
+      simulationPresets: [{ ...publicSimulation("collision"), ownerUserId: "owner-1", effectiveRole: "owner" }],
+    });
+
     expect(() => useAppStore.getState().importLibraryData(
       { simulationPresets: [publicSimulation("collision")] }, "merge", "public-view-only",
     )).toThrow("conflicts with an existing local record");

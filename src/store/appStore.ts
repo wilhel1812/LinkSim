@@ -3488,7 +3488,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const existing = currentSimulationsById.get(entry.id);
         return Boolean(existing && protectedRole(existing));
       });
-      if (collided) throw new Error("Public Library data conflicts with an existing local record.");
+      if (collided && current.currentUser) {
+        throw new Error("Public Library data conflicts with an existing local record.");
+      }
       incomingSites = incomingSites.map((entry) => ({ ...entry, effectiveRole: "viewer" as const }));
       incomingPresets = incomingPresets.map((entry) => ({ ...entry, effectiveRole: "viewer" as const }));
     }

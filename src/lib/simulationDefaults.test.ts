@@ -94,4 +94,49 @@ describe("custom radio presets", () => {
     expect(normalized.mode).toBe("preset");
     expect(normalized.customPresets).toBeUndefined();
   });
+
+  it("drops invalid legacy custom defaults without throwing", () => {
+    const defaults = simulationDefaultsFromPreset("mt-us");
+    const normalized = normalizeUserSimulationDefaultsPreference({
+      mode: "custom",
+      presetId: "mt-us",
+      overridePresetDefaults: false,
+      custom: {
+        ...defaults,
+        propagationEnvironment: {
+          ...defaults.propagationEnvironment,
+          radioClimate: "Martian" as never,
+        },
+      },
+    });
+
+    expect(normalized).toMatchObject({
+      mode: "preset",
+      presetId: "mt-us",
+      overridePresetDefaults: false,
+    });
+    expect(normalized.customPresets).toBeUndefined();
+  });
+
+  it("drops invalid legacy preset overrides without throwing", () => {
+    const defaults = simulationDefaultsFromPreset("mt-us");
+    const normalized = normalizeUserSimulationDefaultsPreference({
+      mode: "preset",
+      presetId: "mt-us",
+      overridePresetDefaults: true,
+      overrides: {
+        propagationEnvironment: {
+          ...defaults.propagationEnvironment,
+          radioClimate: "Martian" as never,
+        },
+      },
+    });
+
+    expect(normalized).toMatchObject({
+      mode: "preset",
+      presetId: "mt-us",
+      overridePresetDefaults: false,
+    });
+    expect(normalized.overrides).toBeUndefined();
+  });
 });
