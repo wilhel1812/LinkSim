@@ -2056,10 +2056,12 @@ export function MapView({
       return;
     }
     const currentHandoff = overlayHandoffRef.current;
+    const pendingHandoffRequestKey =
+      currentHandoff.phase === "entering" || currentHandoff.phase === "entered"
+        ? currentHandoff.requestKey
+        : null;
     const handoffWaitingForSignature =
-      currentHandoff.requestKey === signature &&
-      (currentHandoff.phase === "entering" ||
-        currentHandoff.phase === "entered");
+      pendingHandoffRequestKey === signature;
     if (
       displayedCoverageSignatureRef.current === signature &&
       !handoffWaitingForSignature
@@ -2079,6 +2081,12 @@ export function MapView({
       if (snapshot.activeSignature && snapshot.activeSignature !== signature) {
         scheduler.cancelActive();
         setOverlayPipelineProgress("coverage", null);
+      }
+      if (
+        pendingHandoffRequestKey &&
+        snapshot.activeSignature !== pendingHandoffRequestKey
+      ) {
+        failCoverageHandoff(pendingHandoffRequestKey);
       }
       return;
     }

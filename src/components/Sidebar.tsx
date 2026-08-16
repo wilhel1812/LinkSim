@@ -10,7 +10,7 @@ import { parseDeepLinkFromLocation } from "../lib/deepLink";
 import { toAccessVisibility } from "../lib/uiFormatting";
 import { useAppStore } from "../store/appStore";
 import type { Site } from "../types/radio";
-import { siGithub, siMatrix } from "simple-icons";
+import { siDiscord, siGithub, siMatrix } from "simple-icons";
 import { InfoTip } from "./InfoTip";
 import { ActionButton } from "./ActionButton";
 import { ConfirmActionModal } from "./ConfirmActionModal";
@@ -704,6 +704,19 @@ export function Sidebar({
               <path d={siMatrix.path} fill="currentColor" />
             </svg>
             Matrix
+          </a>
+          <a href="https://discord.gg/Sg2FN7EJW" rel="noreferrer" target="_blank">
+            <svg
+              aria-hidden="true"
+              height="13"
+              role="img"
+              viewBox="0 0 24 24"
+              width="13"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d={siDiscord.path} fill="currentColor" />
+            </svg>
+            Discord
           </a>
         </div>
         <div className="sidebar-footer-version">

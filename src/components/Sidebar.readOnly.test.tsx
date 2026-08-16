@@ -228,6 +228,15 @@ describe("Sidebar read-only simulation site actions", () => {
     expect(useAppStore.getState().libraryRequest).toEqual({ tab: "simulations" });
   });
 
+  it("links to the LinkSim Discord community from the existing footer", () => {
+    render(<Sidebar readOnly />);
+
+    expect(screen.getByRole("link", { name: "Discord" })).toHaveAttribute(
+      "href",
+      "https://discord.gg/Sg2FN7EJW",
+    );
+  });
+
   it("does not expose selected-site editing when the simulation is read-only", () => {
     render(<Sidebar readOnly />);
 
