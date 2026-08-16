@@ -64,13 +64,13 @@ Visibility/access settings are collaboration controls, not a secure secret vault
 
 - Calculation inputs and results may contain exact Site coordinates and other radio-planning data.
 - Asynchronous calculation job identifiers are unauthenticated bearer capabilities. Anyone who obtains a job identifier can poll that job and read its status and result until it expires.
-- Active jobs have a five-minute runtime limit. Completed, failed, and timed-out job inputs and results are retained for up to 24 hours and are also subject to a maximum of 1,000 retained terminal jobs.
+- Active jobs have a five-minute runtime limit. Completed, failed, and timed-out API calculation jobs are deleted during later calculation-job activity or when an expired job is polled. Records may remain stored longer during idle periods, and request-triggered cleanup retains no more than 1,000 terminal jobs.
 
 ## Retention
 
 - Data is retained while accounts/resources are active, and audit logs may be retained longer for security and abuse handling.
 - Deleted-user lock records can be removed by admins for account recreation flows.
-- Asynchronous calculation-job retention follows the shorter limits described above.
+- Asynchronous calculation-job retention follows the request-triggered cleanup behavior described above.
 
 ## Staging/test handling
 
