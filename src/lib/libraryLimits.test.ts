@@ -141,6 +141,22 @@ describe("Library ingestion limits", () => {
     })).toThrow("Simulation terrain dataset is not supported");
   });
 
+  it.each(["copernicus90", "srtm1", "srtm3", "srtmthird", "legacySrtmThird"])(
+    "accepts and normalizes the legacy terrain dataset %s",
+    (terrainDataset) => {
+      const simulation = {
+        ...validSimulation(),
+        snapshot: { ...validSimulation().snapshot, terrainDataset },
+      };
+      const validated = validateLibraryPayload({ siteLibrary: [], simulationPresets: [simulation] });
+
+      expect(validated.simulationPresets[0]?.snapshot).toEqual(expect.objectContaining({
+        terrainDataset: "copernicus30",
+      }));
+      expect(simulation.snapshot.terrainDataset).toBe(terrainDataset);
+    },
+  );
+
   it("partitions valid and malformed records without discarding the valid records", () => {
     const invalidSite = { ...validSite("bad-site"), position: { lat: 91, lon: 10 } };
     const invalidSimulation = validSimulation();

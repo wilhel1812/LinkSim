@@ -1,4 +1,5 @@
 import { validatePropagationEnvironment } from "./propagationEnvironmentValidation";
+import { isCompatiblePersistedTerrainDataset, normalizeTerrainDataset } from "./terrainDataset";
 
 export const LIBRARY_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 export const LIBRARY_JSON_MAX_DEPTH = 20;
@@ -104,6 +105,19 @@ const assertNestedNamedRecord = (value: unknown, label: string): Record<string, 
 };
 
 const encodedBytes = (value: unknown): number => textEncoder.encode(JSON.stringify(value)).byteLength;
+
+const normalizeSimulationCompatibility = (value: unknown): unknown => {
+  if (!isRecord(value) || !isRecord(value.snapshot)) return value;
+  const terrainDataset = value.snapshot.terrainDataset;
+  if (terrainDataset === undefined || !isCompatiblePersistedTerrainDataset(terrainDataset)) return value;
+  return {
+    ...value,
+    snapshot: {
+      ...value.snapshot,
+      terrainDataset: normalizeTerrainDataset(terrainDataset),
+    },
+  };
+};
 
 const assertRequiredDateString = (value: unknown, label: string): void => {
   if (typeof value !== "string" || value.trim().length === 0 || !Number.isFinite(Date.parse(value))) {
@@ -261,12 +275,13 @@ export const validateLibraryPayload = (value: unknown): ValidatedLibraryPayload 
   if (new Set(siteLibrary.map((site) => isRecord(site) ? site.id : undefined)).size !== siteLibrary.length) {
     throw new LibraryValidationError("Library request contains duplicate Site IDs.");
   }
-  if (new Set(simulationPresets.map((simulation) => isRecord(simulation) ? simulation.id : undefined)).size !== simulationPresets.length) {
+  const normalizedSimulationPresets = simulationPresets.map(normalizeSimulationCompatibility);
+  if (new Set(normalizedSimulationPresets.map((simulation) => isRecord(simulation) ? simulation.id : undefined)).size !== normalizedSimulationPresets.length) {
     throw new LibraryValidationError("Library request contains duplicate Simulation IDs.");
   }
   siteLibrary.forEach((site) => assertSite(site));
-  simulationPresets.forEach(assertSimulation);
-  return { siteLibrary, simulationPresets };
+  normalizedSimulationPresets.forEach(assertSimulation);
+  return { siteLibrary, simulationPresets: normalizedSimulationPresets as Record<string, unknown>[] };
 };
 
 export type RejectedLibraryRecord = {

@@ -13,7 +13,8 @@ import {
 } from "../../src/lib/libraryLimits";
 
 const phases = new Set<LibraryReadPhase>(["sites", "deleted_sites", "removed_sites", "simulations", "deleted_simulations", "removed_simulations"]);
-type ReadCursor = { v: 1; userId: string; since?: string; cutoff: string; phase: LibraryReadPhase; afterId: string };
+const LIBRARY_READ_CURSOR_VERSION = 2;
+type ReadCursor = { v: typeof LIBRARY_READ_CURSOR_VERSION; userId: string; since?: string; cutoff: string; phase: LibraryReadPhase; afterId: string };
 
 const base64UrlEncode = (value: unknown): string => {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -44,7 +45,7 @@ const decodeCursor = (encoded: string, userId: string): ReadCursor => {
   }
   try {
     const value = base64UrlDecode(encoded) as Partial<ReadCursor>;
-    if (value.v !== 1 || value.userId !== userId || !validTimestamp(value.cutoff)
+    if (value.v !== LIBRARY_READ_CURSOR_VERSION || value.userId !== userId || !validTimestamp(value.cutoff)
       || (value.since !== undefined && !validTimestamp(value.since))
       || !phases.has(value.phase as LibraryReadPhase)
       || typeof value.afterId !== "string" || value.afterId.length > 128) {
@@ -97,7 +98,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
     const state: ReadCursor = encodedCursor !== null
       ? decodeCursor(encodedCursor, auth.userId)
-      : { v: 1, userId: auth.userId, ...(requestedSince ? { since: requestedSince } : {}), cutoff: new Date().toISOString(), phase: "sites", afterId: "" };
+      : { v: LIBRARY_READ_CURSOR_VERSION, userId: auth.userId, ...(requestedSince ? { since: requestedSince } : {}), cutoff: new Date().toISOString(), phase: "sites", afterId: "" };
     const library = await fetchLibraryForUser(env, auth.userId, {
       since: state.since,
       cutoff: state.cutoff,

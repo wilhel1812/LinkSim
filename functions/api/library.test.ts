@@ -27,6 +27,16 @@ import { LIBRARY_BATCH_MAX_RECORDS, LIBRARY_REQUEST_MAX_BYTES } from "../../src/
 
 const env = { DB: {} } as unknown as { DB: D1Database };
 const mkCtx = (request: Request) => ({ request, env } as unknown as Parameters<typeof onRequestGet>[0]);
+const encodeCursorFixture = (value: unknown): string => {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
+};
+const decodeCursorFixture = (value: string): Record<string, unknown> => {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return JSON.parse(atob(padded)) as Record<string, unknown>;
+};
 
 const validSite = (id = "site-1") => ({
   id,
@@ -148,8 +158,27 @@ describe("api/library", () => {
     const body = await res.json() as Record<string, unknown>;
     expect(body.syncCutoff).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
     expect(typeof body.nextCursor).toBe("string");
+    expect(decodeCursorFixture(String(body.nextCursor))).toMatchObject({ v: 2, phase: "sites", afterId: "s1" });
     expect(String(body.nextCursor).length).toBeLessThanOrEqual(1024);
     expect(new TextEncoder().encode(JSON.stringify(body)).byteLength).toBeLessThanOrEqual(LIBRARY_REQUEST_MAX_BYTES);
+  });
+
+  it("rejects cursors issued before the removal phases were added", async () => {
+    const legacyCursor = encodeCursorFixture({
+      v: 1,
+      userId: "u1",
+      cutoff: "2026-08-16T10:00:00.000Z",
+      phase: "simulations",
+      afterId: "sim-1",
+    });
+
+    const res = await onRequestGet(mkCtx(new Request(
+      `https://example.test/api/library?cursor=${encodeURIComponent(legacyCursor)}`,
+    )));
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ code: "invalid_cursor" });
+    expect(fetchLibraryForUserMock).not.toHaveBeenCalled();
   });
 
   it("rejects malformed and differently authenticated cursors", async () => {
