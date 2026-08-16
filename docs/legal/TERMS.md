@@ -1,6 +1,6 @@
 # Terms and Acceptable Use
 
-Last updated: 2026-03-13
+Last updated: 2026-08-16
 
 By using LinkSim, you agree to use it responsibly and lawfully.
 
@@ -23,7 +23,11 @@ You must not:
 - You remain responsible for content you create or upload.
 - You must respect third-party data and map/source licenses.
 - You must not store sensitive secrets in app content (passwords, private keys, access tokens, or similar credentials).
-- Resource visibility/access levels are intended for collaboration and clutter control, not confidential secret storage.
+- Resource visibility/access levels are collaboration controls, not confidentiality guarantees or confidential secret storage.
+- Sharing a Simulation shares its saved Site coordinates and the exact coordinates of referenced Sites with everyone who can open that Simulation, even when a referenced Site is separately private in the Library.
+- Saving a Site created from a map position sends its exact coordinates to OpenStreetMap Nominatim for automatic naming.
+- If you use an avatar hosted outside LinkSim, viewing the avatar contacts that host directly and may disclose each viewer's IP address and User-Agent. LinkSim suppresses the HTTP referrer for the request.
+- Do not submit sensitive locations or calculation data unless the applicable Simulation access and bearer job-link behavior are acceptable for that data.
 
 ## Service operation
 
