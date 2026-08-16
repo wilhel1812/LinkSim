@@ -17,6 +17,7 @@ export class BoundedUpstreamError extends Error {}
 type BoundedJsonOptions = {
   maxBytes: number;
   maxRecords: number;
+  maxDepth?: number;
 };
 
 const recordCount = (value: unknown): number | null => {
@@ -74,6 +75,19 @@ export const readBoundedJsonResponse = async <T>(
   }
   if (records > options.maxRecords) {
     throw new BoundedUpstreamError("Upstream response exceeded the record limit");
+  }
+  if (options.maxDepth !== undefined) {
+    const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 1 }];
+    while (pending.length) {
+      const current = pending.pop()!;
+      if (current.depth > options.maxDepth) throw new BoundedUpstreamError("Upstream response exceeded the JSON depth limit");
+      const children = Array.isArray(current.value)
+        ? current.value
+        : current.value !== null && typeof current.value === "object" ? Object.values(current.value) : [];
+      for (const item of children) {
+        if (item !== null && typeof item === "object") pending.push({ value: item, depth: current.depth + 1 });
+      }
+    }
   }
   return { bytes, value };
 };
