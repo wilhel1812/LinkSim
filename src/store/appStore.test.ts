@@ -353,6 +353,10 @@ describe("appStore auth guards", () => {
       emailPublic: true,
       bio: "",
     });
+    useAppStore.setState((state) => ({
+      siteLibrary: state.siteLibrary.map((entry) => ({ ...entry, effectiveRole: "owner" as const })),
+      simulationPresets: state.simulationPresets.map((preset) => ({ ...preset, effectiveRole: "owner" as const })),
+    }));
 
     useAppStore.getState().updateSimulationPresetEntry("sim-1", { name: "Simulation One" });
     useAppStore.getState().deleteSite("site-1");
@@ -380,6 +384,10 @@ describe("appStore auth guards", () => {
       emailPublic: true,
       bio: "",
     });
+    useAppStore.setState((state) => ({
+      siteLibrary: state.siteLibrary.map((entry) => ({ ...entry, effectiveRole: "owner" as const })),
+      simulationPresets: state.simulationPresets.map((preset) => ({ ...preset, effectiveRole: "owner" as const })),
+    }));
     useAppStore.setState((state) => ({
       siteLibrary: state.siteLibrary.map((entry) => entry.id === "lib-1" ? {
         ...entry,
@@ -429,6 +437,9 @@ describe("appStore auth guards", () => {
       emailPublic: true,
       bio: "",
     });
+    useAppStore.setState((state) => ({
+      simulationPresets: state.simulationPresets.map((preset) => ({ ...preset, effectiveRole: "owner" as const })),
+    }));
 
     useAppStore.getState().setSelectedOverlayRadiusOption("100");
 
@@ -1232,6 +1243,129 @@ describe("appStore built-in scenario defaults", () => {
   it("uses the preset RX target for the starter workspace", () => {
     useAppStore.getState().selectScenario("workspace-starter");
     expect(useAppStore.getState().rxSensitivityTargetDbm).toBe(-130);
+  });
+});
+
+describe("appStore untrusted Library imports", () => {
+  const site = (id: string, lat: number) => ({
+    id, name: "Ambiguous", position: { lat, lon: 10 }, groundElevationM: 100,
+    antennaHeightM: 2, txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+    createdAt: "2026-08-16T00:00:00.000Z", ownerUserId: "other-user", effectiveRole: "viewer" as const,
+  });
+  const publicSimulation = (id: string) => ({
+    id, name: "Public plan", visibility: "public" as const, ownerUserId: "other-user",
+    effectiveRole: "viewer" as const, sharedWith: [], updatedAt: "2026-08-16T00:00:00.000Z",
+    snapshot: {
+      sites: [site("embedded-site", 61)], links: [], systems: [], networks: [],
+      selectedSiteId: "embedded-site", selectedLinkId: "", selectedNetworkId: "",
+      selectedCoverageResolution: "24" as const, propagationModel: "ITM" as const,
+      selectedFrequencyPresetId: "custom", rxSensitivityTargetDbm: -120, environmentLossDb: 0,
+      propagationEnvironment: useAppStore.getState().propagationEnvironment,
+      autoPropagationEnvironment: true, terrainDataset: "copernicus30" as const,
+    },
+  });
+
+  beforeEach(() => {
+    storage.mock.clear();
+    useAppStore.setState({ currentUser: null, siteLibrary: [site("existing-a", 60), site("existing-b", 62)], simulationPresets: [] });
+  });
+
+  it("loads a public Simulation without creating or relinking an orphaned owned Site", () => {
+    useAppStore.getState().importLibraryData({ simulationPresets: [publicSimulation("public-sim")] }, "merge", "public-view-only");
+    useAppStore.getState().loadSimulationPreset("public-sim");
+    expect(useAppStore.getState().sites[0]).not.toHaveProperty("libraryEntryId");
+    expect(useAppStore.getState().siteLibrary.map((entry) => entry.id)).toEqual(["existing-a", "existing-b"]);
+    expect(useAppStore.getState().simulationPresets[0]).toMatchObject({ ownerUserId: "other-user", effectiveRole: "viewer" });
+  });
+
+  it("temporarily shadows a signed-out cached owned record with a same-ID public view", () => {
+    const owned = { ...publicSimulation("collision"), name: "Owned copy", ownerUserId: "owner-1", effectiveRole: "owner" as const };
+    storage.mock.setItem("rmw-sim-presets-v1", JSON.stringify([owned]));
+    useAppStore.setState({ currentUser: null, simulationPresets: [owned] });
+
+    useAppStore.getState().importLibraryData(
+      { simulationPresets: [publicSimulation("collision")] }, "merge", "public-view-only",
+    );
+
+    expect(useAppStore.getState().simulationPresets[0]).toMatchObject({
+      id: "collision",
+      name: "Public plan",
+      ownerUserId: "other-user",
+      effectiveRole: "viewer",
+    });
+    expect(JSON.parse(storage.mock.getItem("rmw-sim-presets-v1") ?? "[]")[0]).toMatchObject({
+      id: "collision",
+      name: "Owned copy",
+      ownerUserId: "owner-1",
+      effectiveRole: "owner",
+    });
+  });
+
+  it("rejects a public ID collision with an authenticated editable local record", () => {
+    const owner = {
+      id: "owner-1", username: "owner", avatarUrl: "", role: "user" as const,
+      accountState: "approved" as const, isApproved: true, isAdmin: false, isModerator: false,
+      createdAt: "", updatedAt: null, approvedAt: null, approvedByUserId: null,
+      email: undefined, emailPublic: true, bio: "",
+    };
+    useAppStore.setState({
+      currentUser: owner,
+      simulationPresets: [{ ...publicSimulation("collision"), ownerUserId: "owner-1", effectiveRole: "owner" }],
+    });
+
+    expect(() => useAppStore.getState().importLibraryData(
+      { simulationPresets: [publicSimulation("collision")] }, "merge", "public-view-only",
+    )).toThrow("conflicts with an existing local record");
+    expect(useAppStore.getState().simulationPresets[0]?.ownerUserId).toBe("owner-1");
+  });
+
+  it("keeps a public viewer record read-only when its payload claims the current user as owner", () => {
+    const victim = {
+      id: "victim-1", username: "victim", avatarUrl: "", role: "user" as const,
+      accountState: "approved" as const, isApproved: true, isAdmin: false, isModerator: false,
+      createdAt: "", updatedAt: null, approvedAt: null, approvedByUserId: null,
+      email: undefined, emailPublic: true, bio: "",
+    };
+    useAppStore.setState({ currentUser: victim });
+    const malicious = { ...publicSimulation("spoofed-owner"), ownerUserId: "victim-1" };
+    useAppStore.getState().importLibraryData({ simulationPresets: [malicious] }, "merge", "public-view-only");
+    useAppStore.getState().loadSimulationPreset("spoofed-owner");
+    const before = useAppStore.getState().simulationPresets[0]?.updatedAt;
+
+    useAppStore.getState().updateCurrentSimulationSnapshot();
+
+    expect(useAppStore.getState().simulationPresets[0]).toMatchObject({
+      ownerUserId: "victim-1",
+      effectiveRole: "viewer",
+      updatedAt: before,
+    });
+  });
+
+  it("relinks Sites by stable ID before comparing legacy name and coordinates", () => {
+    useAppStore.setState({
+      sites: [{ ...site("workspace-site", 63), libraryEntryId: "stable-site", name: "Stale name" }],
+      siteLibrary: [],
+    });
+    useAppStore.getState().importLibraryData({ siteLibrary: [{ ...site("stable-site", 64), name: "Current name" }] }, "merge");
+    expect(useAppStore.getState().sites[0]).toMatchObject({
+      libraryEntryId: "stable-site", name: "Current name", position: { lat: 64, lon: 10 },
+    });
+  });
+
+  it("relinks a legacy Site only through one unique exact name-and-coordinate match", () => {
+    useAppStore.setState({ sites: [{ ...site("workspace-site", 60), id: "workspace-site" }], siteLibrary: [] });
+    useAppStore.getState().importLibraryData({ siteLibrary: [{ ...site("legacy-match", 60), name: "Ambiguous" }] }, "merge");
+    expect(useAppStore.getState().sites[0]?.libraryEntryId).toBe("legacy-match");
+  });
+
+  it("does not attach ambiguous or name-only legacy matches to an existing Library Site", () => {
+    useAppStore.setState({ sites: [{ ...site("workspace-site", 60), id: "workspace-site" }], siteLibrary: [] });
+    useAppStore.getState().importLibraryData({
+      siteLibrary: [site("candidate-a", 60), site("candidate-b", 60), site("name-only", 61)],
+    }, "merge");
+    const linkedId = useAppStore.getState().sites[0]?.libraryEntryId;
+    expect(linkedId).toMatch(/^libsite-/);
+    expect(["candidate-a", "candidate-b", "name-only"]).not.toContain(linkedId);
   });
 });
 

@@ -2482,11 +2482,12 @@ type LibraryRow = {
   last_actor_avatar_url: string | null;
   last_actor_avatar_thumb_key: string | null;
   created_at: string | null;
+  updated_at: string;
   last_edited_at: string | null;
   status?: "active" | "deleted";
 };
 
-export type LibraryReadPhase = "sites" | "deleted_sites" | "simulations" | "deleted_simulations";
+export type LibraryReadPhase = "sites" | "deleted_sites" | "removed_sites" | "simulations" | "deleted_simulations" | "removed_simulations";
 
 export type LibraryPageCursor = { phase: LibraryReadPhase; afterId: string };
 
@@ -2494,7 +2495,7 @@ export const fetchLibraryForUser = async (
   env: Env,
   userId: string,
   opts?: { since?: string; cutoff?: string; phase?: LibraryReadPhase; afterId?: string; limit?: number },
-): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[]; deletedSiteIds: string[]; deletedSimulationIds: string[]; nextCursor?: LibraryPageCursor }> => {
+): Promise<{ siteLibrary: CloudResourceRecord[]; simulationPresets: CloudResourceRecord[]; deletedSiteIds: string[]; deletedSimulationIds: string[]; removedSiteIds: string[]; removedSimulationIds: string[]; nextCursor?: LibraryPageCursor }> => {
   await ensureSchema(env);
   const me = await fetchUserProfile(env, userId);
   const canReadAllResources = Boolean(me?.isAdmin);
@@ -2533,6 +2534,7 @@ export const fetchLibraryForUser = async (
               (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_url,
               (SELECT u.avatar_thumb_key FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'site' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_thumb_key,
               s.created_at,
+              s.updated_at,
               s.last_edited_at
        FROM sites s
        LEFT JOIN site_roles r ON r.site_id = s.id AND r.user_id = ?
@@ -2554,6 +2556,20 @@ export const fetchLibraryForUser = async (
             SELECT 1 FROM json_each(COALESCE(json_extract(tombstone.snapshot_json, '$.sharedWith'), '[]')) grant_entry
             WHERE json_extract(grant_entry.value, '$.userId') = ?
           )
+          OR EXISTS (
+            SELECT 1 FROM resource_changes history
+            WHERE history.resource_kind = 'site'
+              AND history.resource_id = tombstone.resource_id
+              AND history.id < tombstone.id
+              AND (
+                json_extract(history.snapshot_json, '$.ownerUserId') = ?
+                OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
+                OR EXISTS (
+                  SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) history_grant
+                  WHERE json_extract(history_grant.value, '$.userId') = ?
+                )
+              )
+          )
         )`;
   const deletedSiteRows = paged && opts?.phase !== "deleted_sites" ? { results: [] as Array<{ id: string }> } : await env.DB
         .prepare(
@@ -2569,7 +2585,7 @@ export const fetchLibraryForUser = async (
              AND NOT EXISTS (SELECT 1 FROM sites live WHERE live.id = tombstone.resource_id)
              ${deletedSiteAudienceClause}${pageSql("tombstone.changed_at", "tombstone.resource_id")}`,
         )
-        .bind(...(canReadAllResources ? [] : [userId, userId]), ...pageBind())
+        .bind(...(canReadAllResources ? [] : [userId, userId, userId, userId]), ...pageBind())
         .all<{ id: string }>();
 
   const deletedSimulationRows = (canReadAllResources || (paged && opts?.phase !== "deleted_simulations"))
@@ -2582,10 +2598,82 @@ export const fetchLibraryForUser = async (
            WHERE s.status = 'deleted'
              AND (s.owner_user_id = ?
                OR s.visibility IN ('public_read', 'public_write')
-               OR (r.user_id IS NOT NULL AND s.visibility != 'private'))${pageSql("s.updated_at", "s.id")}`,
+               OR (r.user_id IS NOT NULL AND s.visibility != 'private')
+               OR EXISTS (
+                 SELECT 1 FROM resource_changes history
+                 WHERE history.resource_kind = 'simulation'
+                   AND history.resource_id = s.id
+                   AND (
+                     json_extract(history.snapshot_json, '$.ownerUserId') = ?
+                     OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
+                     OR EXISTS (
+                       SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) history_grant
+                       WHERE json_extract(history_grant.value, '$.userId') = ?
+                     )
+                   )
+               ))${pageSql("s.updated_at", "s.id")}`,
         )
-        .bind(userId, userId, ...pageBind())
+        .bind(userId, userId, userId, userId, ...pageBind())
         .all<{ id: string }>();
+
+  const removedRowsFor = async (kind: "site" | "simulation"): Promise<{ results: Array<{ id: string }> }> => {
+    const phase = kind === "site" ? "removed_sites" : "removed_simulations";
+    if (canReadAllResources || (paged && opts?.phase !== phase)) return { results: [] };
+    const table = kind === "site" ? "sites" : "simulations";
+    const rolesTable = kind === "site" ? "site_roles" : "simulation_roles";
+    const roleId = kind === "site" ? "site_id" : "simulation_id";
+    const statusClause = kind === "simulation" ? " AND live.status = 'active'" : "";
+    const changeWindow = `${opts?.since ? " AND changed.changed_at >= ?" : ""}${opts?.cutoff ? " AND changed.changed_at <= ?" : ""}`;
+    const pagination = paged ? " AND live.id > ? ORDER BY live.id LIMIT ?" : "";
+    return env.DB
+      .prepare(
+        `SELECT live.id
+         FROM ${table} live
+         LEFT JOIN ${rolesTable} current_role ON current_role.${roleId} = live.id AND current_role.user_id = ?
+         WHERE live.owner_user_id != ?
+           AND live.visibility = 'private'
+           AND current_role.user_id IS NULL${statusClause}
+           AND EXISTS (
+             SELECT 1 FROM resource_changes changed
+             WHERE changed.resource_kind = ? AND changed.resource_id = live.id${changeWindow}
+               AND (
+                 EXISTS (
+                   SELECT 1 FROM resource_changes history
+                   WHERE history.resource_kind = changed.resource_kind
+                     AND history.resource_id = changed.resource_id
+                     AND history.id < changed.id
+                     AND (
+                       json_extract(history.snapshot_json, '$.ownerUserId') = ?
+                       OR json_extract(history.snapshot_json, '$.visibility') IN ('public', 'shared')
+                       OR EXISTS (
+                         SELECT 1 FROM json_each(COALESCE(json_extract(history.snapshot_json, '$.sharedWith'), '[]')) grant_entry
+                         WHERE json_extract(grant_entry.value, '$.userId') = ?
+                       )
+                     )
+                 )
+                 OR json_extract(changed.details_json, '$.diff.visibility.before') IN ('public', 'shared')
+                 OR EXISTS (
+                   SELECT 1 FROM json_each(COALESCE(json_extract(changed.details_json, '$.diff.sharedWith.before'), '[]')) previous_grant
+                   WHERE json_extract(previous_grant.value, '$.userId') = ?
+                 )
+               )
+           )${pagination}`,
+      )
+      .bind(
+        userId,
+        userId,
+        kind,
+        ...(opts?.since ? [opts.since] : []),
+        ...(opts?.cutoff ? [opts.cutoff] : []),
+        userId,
+        userId,
+        userId,
+        ...(paged ? [opts?.afterId ?? "", limit + 1] : []),
+      )
+      .all<{ id: string }>();
+  };
+  const removedSiteRows = await removedRowsFor("site");
+  const removedSimulationRows = await removedRowsFor("simulation");
 
   const simulationRows = paged && opts?.phase !== "simulations" ? { results: [] as LibraryRow[] } : await env.DB
     .prepare(
@@ -2610,6 +2698,7 @@ export const fetchLibraryForUser = async (
               (SELECT u.avatar_url FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_url,
               (SELECT u.avatar_thumb_key FROM users u WHERE u.id = (SELECT rc.actor_user_id FROM resource_changes rc WHERE rc.resource_kind = 'simulation' AND rc.resource_id = s.id ORDER BY rc.changed_at DESC LIMIT 1)) AS last_actor_avatar_thumb_key,
               s.created_at,
+              s.updated_at,
               s.last_edited_at
        FROM simulations s
        LEFT JOIN simulation_roles r ON r.simulation_id = s.id AND r.user_id = ?
@@ -2656,7 +2745,7 @@ export const fetchLibraryForUser = async (
             createdByUserId,
             createdByName,
             createdByAvatarUrl,
-            createdAt: row.created_at,
+            createdAt: row.created_at ?? row.updated_at,
             lastEditedByUserId,
             lastEditedByName,
             lastEditedByAvatarUrl,
@@ -2678,15 +2767,19 @@ export const fetchLibraryForUser = async (
       })
       .filter((item): item is CloudResourceRecord => item !== null);
 
-  const phases: LibraryReadPhase[] = ["sites", "deleted_sites", "simulations", "deleted_simulations"];
+  const phases: LibraryReadPhase[] = ["sites", "deleted_sites", "removed_sites", "simulations", "deleted_simulations", "removed_simulations"];
   const rawPage = opts?.phase === "sites"
     ? siteRows.results
     : opts?.phase === "deleted_sites"
       ? deletedSiteRows.results
+      : opts?.phase === "removed_sites"
+        ? removedSiteRows.results
       : opts?.phase === "simulations"
         ? simulationRows.results
         : opts?.phase === "deleted_simulations"
           ? deletedSimulationRows.results
+          : opts?.phase === "removed_simulations"
+            ? removedSimulationRows.results
           : [];
   let nextCursor: LibraryPageCursor | undefined;
   if (paged && opts?.phase) {
@@ -2702,6 +2795,8 @@ export const fetchLibraryForUser = async (
     simulationPresets: mapRows(simulationRows.results.slice(0, paged ? limit : undefined)),
     deletedSiteIds: deletedSiteRows.results.slice(0, paged ? limit : undefined).map((row) => row.id),
     deletedSimulationIds: deletedSimulationRows.results.slice(0, paged ? limit : undefined).map((row) => row.id),
+    removedSiteIds: removedSiteRows.results.slice(0, paged ? limit : undefined).map((row) => row.id),
+    removedSimulationIds: removedSimulationRows.results.slice(0, paged ? limit : undefined).map((row) => row.id),
     ...(nextCursor ? { nextCursor } : {}),
   };
 };

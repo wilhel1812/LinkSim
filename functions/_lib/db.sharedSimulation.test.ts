@@ -311,6 +311,40 @@ class FakeDb {
   }
 
   all(sql: string, bound: unknown[] = []): AnyRow[] {
+    if (sql.includes("SELECT live.id") && sql.includes("current_role")) {
+      const userId = String(bound[0] ?? "");
+      const kind = String(bound[2] ?? "") as "site" | "simulation";
+      const rows = kind === "site" ? this.sites : this.simulations;
+      const roles = kind === "site" ? this.siteRoles : this.simulationRoles;
+      return [...rows.values()]
+        .filter((row) => row.owner_user_id !== userId && row.visibility === "private")
+        .filter((row) => kind !== "simulation" || row.status === "active")
+        .filter((row) => !roles.has(`${row.id}:${userId}`))
+        .filter((row) => {
+          const history = this.resourceChanges
+            .filter((change) => change.resource_kind === kind && change.resource_id === row.id)
+            .sort((left, right) => left.id - right.id);
+          return history.some((change, index) => {
+            const details = JSON.parse(String(change.details_json ?? "{}")) as AnyRow;
+            const beforeVisibility = details.diff?.visibility?.before;
+            const beforeGrants = details.diff?.sharedWith?.before;
+            if (beforeVisibility === "public" || beforeVisibility === "shared") return true;
+            if (Array.isArray(beforeGrants) && beforeGrants.some((grant) => (
+              grant && typeof grant === "object" && (grant as AnyRow).userId === userId
+            ))) return true;
+            return history.slice(0, index).some((prior) => {
+              const snapshot = JSON.parse(String(prior.snapshot_json ?? "{}")) as AnyRow;
+              return snapshot.ownerUserId === userId
+                || snapshot.visibility === "public"
+                || snapshot.visibility === "shared"
+                || (Array.isArray(snapshot.sharedWith) && snapshot.sharedWith.some((grant) => (
+                  grant && typeof grant === "object" && (grant as AnyRow).userId === userId
+                )));
+            });
+          });
+        })
+        .map((row) => ({ id: row.id }));
+    }
     const pragmaMatch = sql.match(/^PRAGMA table_info\(([^)]+)\)$/i);
     if (pragmaMatch) {
       const table = pragmaMatch[1] ?? "";
@@ -372,7 +406,20 @@ class FakeDb {
     if (sql.includes("SELECT s.id") && sql.includes("s.status = 'deleted'")) {
       const userId = String(bound[1] ?? "");
       return [...this.simulations.values()]
-        .filter((row) => row.status === "deleted" && (row.owner_user_id === userId || row.visibility !== "private"))
+        .filter((row) => row.status === "deleted" && (
+          row.owner_user_id === userId
+          || row.visibility !== "private"
+          || this.resourceChanges.some((change) => {
+            if (change.resource_kind !== "simulation" || change.resource_id !== row.id) return false;
+            const snapshot = JSON.parse(String(change.snapshot_json ?? "{}")) as AnyRow;
+            return snapshot.ownerUserId === userId
+              || snapshot.visibility === "public"
+              || snapshot.visibility === "shared"
+              || (Array.isArray(snapshot.sharedWith) && snapshot.sharedWith.some((grant) => (
+                grant && typeof grant === "object" && (grant as AnyRow).userId === userId
+              )));
+          })
+        ))
         .map((row) => ({ id: row.id }));
     }
     if (sql.includes("tombstone.resource_id AS id")) {
@@ -385,12 +432,23 @@ class FakeDb {
         .filter((change) => {
           if (!restrictAudience) return true;
           const snapshot = JSON.parse(String(change.snapshot_json ?? "{}")) as AnyRow;
-          return snapshot.ownerUserId === userId
+          const currentAudience = snapshot.ownerUserId === userId
             || snapshot.visibility === "public"
             || snapshot.visibility === "shared"
             || (Array.isArray(snapshot.sharedWith) && snapshot.sharedWith.some((grant) => (
               grant && typeof grant === "object" && (grant as AnyRow).userId === userId
             )));
+          if (currentAudience) return true;
+          return this.resourceChanges.some((history) => {
+            if (history.resource_kind !== "site" || history.resource_id !== change.resource_id || history.id >= change.id) return false;
+            const prior = JSON.parse(String(history.snapshot_json ?? "{}")) as AnyRow;
+            return prior.ownerUserId === userId
+              || prior.visibility === "public"
+              || prior.visibility === "shared"
+              || (Array.isArray(prior.sharedWith) && prior.sharedWith.some((grant) => (
+                grant && typeof grant === "object" && (grant as AnyRow).userId === userId
+              )));
+          });
         })
         .map((change) => ({ id: change.resource_id }));
     }
@@ -421,7 +479,35 @@ class FakeDb {
           last_actor_avatar_thumb_key: row.last_actor_avatar_thumb_key ?? null,
         }));
     }
-    if (sql.includes("SELECT s.payload_json") && sql.includes("FROM sites s")) return [];
+    if (sql.includes("SELECT s.payload_json") && sql.includes("FROM sites s")) {
+      const userId = String(bound[2] ?? "");
+      const isAdmin = Number(bound[1] ?? 0) === 1;
+      return [...this.sites.values()]
+        .filter((row) => isAdmin || row.owner_user_id === userId || row.visibility !== "private")
+        .map((row) => ({
+          ...row,
+          role: null,
+          owner_name: String(row.owner_user_id),
+          owner_avatar_url: "",
+          owner_avatar_thumb_key: null,
+          created_by_user_id: row.created_by_user_id ?? row.owner_user_id,
+          created_by_name: String(row.created_by_user_id ?? row.owner_user_id),
+          created_by_avatar_url: null,
+          created_by_avatar_thumb_key: null,
+          first_actor_user_id: null,
+          first_actor_name: null,
+          first_actor_avatar_url: null,
+          first_actor_avatar_thumb_key: null,
+          last_edited_by_user_id: row.last_edited_by_user_id ?? row.owner_user_id,
+          last_edited_by_name: String(row.last_edited_by_user_id ?? row.owner_user_id),
+          last_edited_by_avatar_url: null,
+          last_edited_by_avatar_thumb_key: null,
+          last_actor_user_id: null,
+          last_actor_name: null,
+          last_actor_avatar_url: null,
+          last_actor_avatar_thumb_key: null,
+        }));
+    }
     return [];
   }
 
@@ -671,6 +757,26 @@ describe("user identity privacy and diagnostic access", () => {
 });
 
 describe("upsertLibrarySnapshot shared simulations", () => {
+  it("falls back to updated_at for legacy Sites without created_at metadata", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-legacy-date", {
+      id: "site-legacy-date", owner_user_id: "owner-1", visibility: "private",
+      created_at: null, updated_at: "2026-08-16T10:00:00.000Z", last_edited_at: null,
+      payload_json: JSON.stringify({
+        id: "site-legacy-date", name: "Legacy Site", visibility: "private", sharedWith: [],
+        position: { lat: 60, lon: 11 }, groundElevationM: 100, antennaHeightM: 2,
+        txPowerDbm: 20, txGainDbi: 2, rxGainDbi: 2, cableLossDb: 1,
+      }),
+    });
+    const env = { DB: db } as unknown as Parameters<typeof fetchLibraryForUser>[0];
+
+    const library = await fetchLibraryForUser(env, "owner-1");
+
+    expect(library.siteLibrary).toEqual([
+      expect.objectContaining({ id: "site-legacy-date", createdAt: "2026-08-16T10:00:00.000Z" }),
+    ]);
+  });
+
   it("persists one-character and longer resource names under the existing non-empty contract", async () => {
     const db = new FakeDb();
     const env = { DB: db } as unknown as Parameters<typeof upsertLibrarySnapshot>[0];
@@ -767,6 +873,87 @@ describe("upsertLibrarySnapshot shared simulations", () => {
       { siteLibrary: [{ id: "site-deleted", name: "Stale copy", visibility: "private" }], simulationPresets: [] },
     )).resolves.toMatchObject({ upsertedSites: 0, conflicts: ["site_deleted"] });
     expect(db.sites.has("site-deleted")).toBe(false);
+  });
+
+  it("returns removal markers when a live private resource revokes a former reader", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-revoked", {
+      id: "site-revoked", owner_user_id: "owner-1", visibility: "private",
+      payload_json: JSON.stringify({ id: "site-revoked", name: "Private now", visibility: "private", sharedWith: [] }),
+    });
+    db.simulations.set("sim-revoked", {
+      id: "sim-revoked", owner_user_id: "owner-1", visibility: "private", status: "active",
+      payload_json: JSON.stringify({ id: "sim-revoked", name: "Private now", visibility: "private", sharedWith: [] }),
+    });
+    for (const kind of ["site", "simulation"] as const) {
+      const resourceId = kind === "site" ? "site-revoked" : "sim-revoked";
+      db.resourceChanges.push(
+        { id: db.resourceChanges.length + 1, resource_kind: kind, resource_id: resourceId, changed_at: "2026-08-16T10:00:00.000Z", snapshot_json: JSON.stringify({ visibility: "shared", sharedWith: [{ userId: "reader-1", role: "viewer" }] }) },
+        { id: db.resourceChanges.length + 2, resource_kind: kind, resource_id: resourceId, changed_at: "2026-08-16T10:01:00.000Z", snapshot_json: JSON.stringify({ visibility: "private", sharedWith: [] }) },
+      );
+    }
+    const env = { DB: db } as unknown as Parameters<typeof fetchLibraryForUser>[0];
+    await expect(fetchLibraryForUser(env, "reader-1")).resolves.toMatchObject({
+      removedSiteIds: ["site-revoked"],
+      removedSimulationIds: ["sim-revoked"],
+    });
+  });
+
+  it("returns removal markers for a first audited revocation of a legacy public resource", async () => {
+    const db = new FakeDb();
+    db.sites.set("site-legacy-revoked", {
+      id: "site-legacy-revoked", owner_user_id: "owner-1", visibility: "private",
+      payload_json: JSON.stringify({ id: "site-legacy-revoked", name: "Private now", visibility: "private", sharedWith: [] }),
+    });
+    db.simulations.set("sim-legacy-revoked", {
+      id: "sim-legacy-revoked", owner_user_id: "owner-1", visibility: "private", status: "active",
+      payload_json: JSON.stringify({ id: "sim-legacy-revoked", name: "Private now", visibility: "private", sharedWith: [] }),
+    });
+    for (const kind of ["site", "simulation"] as const) {
+      db.resourceChanges.push({
+        id: db.resourceChanges.length + 1,
+        resource_kind: kind,
+        resource_id: kind === "site" ? "site-legacy-revoked" : "sim-legacy-revoked",
+        changed_at: "2026-08-16T10:01:00.000Z",
+        details_json: JSON.stringify({ diff: { visibility: { before: "public", after: "private" } } }),
+        snapshot_json: JSON.stringify({ visibility: "private", sharedWith: [] }),
+      });
+    }
+    const env = { DB: db } as unknown as Parameters<typeof fetchLibraryForUser>[0];
+
+    await expect(fetchLibraryForUser(env, "reader-1", {
+      since: "2026-08-16T10:00:00.000Z",
+      cutoff: "2026-08-16T10:02:00.000Z",
+    })).resolves.toMatchObject({
+      removedSiteIds: ["site-legacy-revoked"],
+      removedSimulationIds: ["sim-legacy-revoked"],
+    });
+  });
+
+  it("returns deletion markers when revocation is followed by deletion before the reader syncs", async () => {
+    const db = new FakeDb();
+    db.simulations.set("sim-revoked-deleted", {
+      id: "sim-revoked-deleted", owner_user_id: "owner-1", visibility: "private", status: "deleted",
+      updated_at: "2026-08-16T10:02:00.000Z",
+      payload_json: JSON.stringify({ id: "sim-revoked-deleted", visibility: "private", sharedWith: [] }),
+    });
+    db.resourceChanges.push(
+      { id: 1, resource_kind: "site", resource_id: "site-revoked-deleted", changed_at: "2026-08-16T10:00:00.000Z", snapshot_json: JSON.stringify({ visibility: "shared", sharedWith: [{ userId: "reader-1", role: "viewer" }] }) },
+      { id: 2, resource_kind: "site", resource_id: "site-revoked-deleted", changed_at: "2026-08-16T10:01:00.000Z", snapshot_json: JSON.stringify({ visibility: "private", sharedWith: [] }) },
+      { id: 3, resource_kind: "site", resource_id: "site-revoked-deleted", changed_at: "2026-08-16T10:02:00.000Z", note: "Deleted Site", snapshot_json: JSON.stringify({ visibility: "private", sharedWith: [] }) },
+      { id: 4, resource_kind: "simulation", resource_id: "sim-revoked-deleted", changed_at: "2026-08-16T10:00:00.000Z", snapshot_json: JSON.stringify({ visibility: "shared", sharedWith: [{ userId: "reader-1", role: "viewer" }] }) },
+      { id: 5, resource_kind: "simulation", resource_id: "sim-revoked-deleted", changed_at: "2026-08-16T10:01:00.000Z", snapshot_json: JSON.stringify({ visibility: "private", sharedWith: [] }) },
+    );
+    const env = { DB: db } as unknown as Parameters<typeof fetchLibraryForUser>[0];
+
+    await expect(fetchLibraryForUser(env, "reader-1", {
+      since: "2026-08-16T09:59:00.000Z", cutoff: "2026-08-16T10:03:00.000Z",
+      phase: "deleted_sites", limit: 20,
+    })).resolves.toMatchObject({ deletedSiteIds: ["site-revoked-deleted"] });
+    await expect(fetchLibraryForUser(env, "reader-1", {
+      since: "2026-08-16T09:59:00.000Z", cutoff: "2026-08-16T10:03:00.000Z",
+      phase: "deleted_simulations", limit: 20,
+    })).resolves.toMatchObject({ deletedSimulationIds: ["sim-revoked-deleted"] });
   });
 
   it("atomically rejects recreation when deletion wins after the stale-client read", async () => {

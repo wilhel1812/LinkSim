@@ -6,6 +6,8 @@ export type CloudLibraryPayload = {
   simulationPresets: unknown[];
   deletedSiteIds?: string[];
   deletedSimulationIds?: string[];
+  removedSiteIds?: string[];
+  removedSimulationIds?: string[];
   syncCutoff?: string;
 };
 
@@ -91,6 +93,8 @@ const drainLibraryPages = async (initialUrl: string): Promise<CloudLibraryPage> 
   const anonymousSimulations: unknown[] = [];
   const deletedSites = new Set<string>();
   const deletedSimulations = new Set<string>();
+  const removedSites = new Set<string>();
+  const removedSimulations = new Set<string>();
   const seenCursors = new Set<string>();
   let url: string | undefined = initialUrl;
   let syncCutoff: string | undefined;
@@ -98,21 +102,26 @@ const drainLibraryPages = async (initialUrl: string): Promise<CloudLibraryPage> 
 
   while (url) {
     const page: CloudLibraryPage = await apiCall(url, { method: "GET" });
+    if (!Array.isArray(page.siteLibrary) || !Array.isArray(page.simulationPresets)) {
+      throw new Error("Library response contained malformed record collections.");
+    }
     if (isDelta === undefined) isDelta = page.isDelta;
     if (typeof page.syncCutoff === "string" && page.syncCutoff) {
       if (syncCutoff && syncCutoff !== page.syncCutoff) throw new Error("Library pagination cutoff changed between pages.");
       syncCutoff = page.syncCutoff;
     }
-    for (const entry of Array.isArray(page.siteLibrary) ? page.siteLibrary : []) {
+    for (const entry of page.siteLibrary) {
       const id = recordId(entry);
-      if (id) { sites.set(id, entry); deletedSites.delete(id); } else anonymousSites.push(entry);
+      if (id) { sites.set(id, entry); deletedSites.delete(id); removedSites.delete(id); } else anonymousSites.push(entry);
     }
-    for (const entry of Array.isArray(page.simulationPresets) ? page.simulationPresets : []) {
+    for (const entry of page.simulationPresets) {
       const id = recordId(entry);
-      if (id) { simulations.set(id, entry); deletedSimulations.delete(id); } else anonymousSimulations.push(entry);
+      if (id) { simulations.set(id, entry); deletedSimulations.delete(id); removedSimulations.delete(id); } else anonymousSimulations.push(entry);
     }
     for (const id of validIds(page.deletedSiteIds)) { deletedSites.add(id); sites.delete(id); }
     for (const id of validIds(page.deletedSimulationIds)) { deletedSimulations.add(id); simulations.delete(id); }
+    for (const id of validIds(page.removedSiteIds)) { removedSites.add(id); sites.delete(id); }
+    for (const id of validIds(page.removedSimulationIds)) { removedSimulations.add(id); simulations.delete(id); }
     const cursor = typeof page.nextCursor === "string" && page.nextCursor ? page.nextCursor : undefined;
     if (cursor) {
       if (seenCursors.has(cursor)) throw new Error("Library pagination cursor repeated.");
@@ -128,6 +137,8 @@ const drainLibraryPages = async (initialUrl: string): Promise<CloudLibraryPage> 
     simulationPresets: [...anonymousSimulations, ...simulations.values()],
     deletedSiteIds: [...deletedSites],
     deletedSimulationIds: [...deletedSimulations],
+    removedSiteIds: [...removedSites],
+    removedSimulationIds: [...removedSimulations],
     ...(syncCutoff ? { syncCutoff } : {}),
     ...(isDelta !== undefined ? { isDelta } : {}),
   };
@@ -138,35 +149,40 @@ const mergeLibraryPayloads = (base: CloudLibraryPage, recovery: CloudLibraryPage
   const simulations = new Map<string, unknown>();
   const deletedSites = new Set(validIds(base.deletedSiteIds));
   const deletedSimulations = new Set(validIds(base.deletedSimulationIds));
+  const removedSites = new Set(validIds(base.removedSiteIds));
+  const removedSimulations = new Set(validIds(base.removedSimulationIds));
   for (const item of base.siteLibrary) { const id = recordId(item); if (id) sites.set(id, item); }
   for (const item of base.simulationPresets) { const id = recordId(item); if (id) simulations.set(id, item); }
   for (const item of recovery.siteLibrary) {
-    const id = recordId(item); if (id) { sites.set(id, item); deletedSites.delete(id); }
+    const id = recordId(item); if (id) { sites.set(id, item); deletedSites.delete(id); removedSites.delete(id); }
   }
   for (const item of recovery.simulationPresets) {
-    const id = recordId(item); if (id) { simulations.set(id, item); deletedSimulations.delete(id); }
+    const id = recordId(item); if (id) { simulations.set(id, item); deletedSimulations.delete(id); removedSimulations.delete(id); }
   }
   for (const id of validIds(recovery.deletedSiteIds)) { deletedSites.add(id); sites.delete(id); }
   for (const id of validIds(recovery.deletedSimulationIds)) { deletedSimulations.add(id); simulations.delete(id); }
+  for (const id of validIds(recovery.removedSiteIds)) { removedSites.add(id); sites.delete(id); }
+  for (const id of validIds(recovery.removedSimulationIds)) { removedSimulations.add(id); simulations.delete(id); }
   for (const id of deletedSites) sites.delete(id);
   for (const id of deletedSimulations) simulations.delete(id);
   return {
     siteLibrary: [...sites.values()], simulationPresets: [...simulations.values()],
     deletedSiteIds: [...deletedSites], deletedSimulationIds: [...deletedSimulations],
+    removedSiteIds: [...removedSites], removedSimulationIds: [...removedSimulations],
     syncCutoff: recovery.syncCutoff, isDelta: base.isDelta,
   };
 };
 
-export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean }> => {
+export const fetchCloudLibrary = async (opts?: { since?: string }): Promise<CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; removedSiteIds: string[]; removedSimulationIds: string[]; isDelta?: boolean }> => {
   const initialParams = new URLSearchParams({ pagination: "v1" });
   if (opts?.since) initialParams.set("since", opts.since);
   const initialUrl = `/api/library?${initialParams.toString()}`;
   const base = await drainLibraryPages(initialUrl);
   // Older/test servers without a cutoff remain compatible and cannot offer recovery.
-  if (!base.syncCutoff) return base as CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean };
+  if (!base.syncCutoff) return base as CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; removedSiteIds: string[]; removedSimulationIds: string[]; isDelta?: boolean };
   const recoveryParams = new URLSearchParams({ pagination: "v1", since: base.syncCutoff });
   const recovery = await drainLibraryPages(`/api/library?${recoveryParams.toString()}`);
-  return mergeLibraryPayloads(base, recovery) as CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; isDelta?: boolean };
+  return mergeLibraryPayloads(base, recovery) as CloudLibraryPayload & { deletedSiteIds: string[]; deletedSimulationIds: string[]; removedSiteIds: string[]; removedSimulationIds: string[]; isDelta?: boolean };
 };
 
 export const deleteCloudSimulation = async (simulationId: string): Promise<void> => {
@@ -199,9 +215,12 @@ export const fetchPublicSimulationLibrary = async (params: {
       method: "GET",
     },
   );
+  if (!Array.isArray(data.siteLibrary) || !Array.isArray(data.simulationPresets)) {
+    throw new Error("Public Library response contained malformed record collections.");
+  }
   return {
-    siteLibrary: Array.isArray(data.siteLibrary) ? data.siteLibrary : [],
-    simulationPresets: Array.isArray(data.simulationPresets) ? data.simulationPresets : [],
+    siteLibrary: data.siteLibrary,
+    simulationPresets: data.simulationPresets,
     simulationId: typeof data.simulationId === "string" ? data.simulationId : undefined,
   };
 };

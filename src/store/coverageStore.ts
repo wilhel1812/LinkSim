@@ -5,6 +5,7 @@ import {
   resolveCanonicalOverlayResolutionScale,
   type CalibratedOverlayGridMode,
 } from "../lib/coverage";
+import { normalizeCoverageResolution } from "../lib/coverageResolution";
 import { resolveSimulationSitesForSelection, simulationAreaBoundsForSites } from "../lib/simulationArea";
 import {
   deriveDynamicPropagationEnvironment,
@@ -134,12 +135,6 @@ type CoverageInputs = {
   isTerrainFetching: boolean;
   selectedOverlayRadiusOptionRaw: unknown;
   mapOverlayMode: string;
-};
-
-const normalizeCoverageResolution = (raw: unknown): "24" | "42" | "84" | "168" => {
-  if (raw === "24" || raw === "42" || raw === "84" || raw === "168") return raw;
-  if (raw === "high") return "42";
-  return "24";
 };
 
 const normalizeCalibratedOverlayGridMode = (raw: string): CalibratedOverlayGridMode =>

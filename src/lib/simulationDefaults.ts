@@ -1,6 +1,7 @@
 import { defaultPropagationEnvironment } from "./propagationEnvironment";
 import { findPresetById } from "./frequencyPlans";
 import type { PropagationEnvironment } from "../types/radio";
+import { validatePropagationEnvironment } from "./propagationEnvironmentValidation";
 
 export type SimulationDefaults = {
   frequencyPresetId: string;
@@ -80,15 +81,25 @@ const mergeDefaults = (base: SimulationDefaults, patch?: Partial<SimulationDefau
   codingRate: cleanNumber(patch?.codingRate, base.codingRate),
   rxSensitivityTargetDbm: cleanNumber(patch?.rxSensitivityTargetDbm, base.rxSensitivityTargetDbm),
   environmentLossDb: Math.max(0, cleanNumber(patch?.environmentLossDb, base.environmentLossDb)),
-  propagationEnvironment: {
-    ...base.propagationEnvironment,
-    ...(patch?.propagationEnvironment ?? {}),
-  },
+  propagationEnvironment: patch?.propagationEnvironment
+    ? validatePropagationEnvironment({ ...base.propagationEnvironment, ...patch.propagationEnvironment })
+    : base.propagationEnvironment,
   autoPropagationEnvironment:
     typeof patch?.autoPropagationEnvironment === "boolean"
       ? patch.autoPropagationEnvironment
       : base.autoPropagationEnvironment,
 });
+
+const tryNormalizeSimulationDefaults = (
+  value: Partial<SimulationDefaults> | undefined | null,
+  base = simulationDefaultsFromPreset(FALLBACK_SIMULATION_PRESET_ID),
+): SimulationDefaults | null => {
+  try {
+    return mergeDefaults(base, value ?? undefined);
+  } catch {
+    return null;
+  }
+};
 
 const normalizeCustomRadioPresetId = (value: unknown): string =>
   typeof value === "string" ? value.trim().slice(0, 120) : "";
@@ -128,7 +139,12 @@ export const normalizeUserSimulationDefaultsPreference = (
     const name = normalizeCustomRadioPresetName(rawCandidate.name);
     const nameKey = name.toLocaleLowerCase();
     if (!id || !name || ids.has(id) || names.has(nameKey) || !rawCandidate.defaults) return;
-    const normalizedDefaults = normalizeSimulationDefaults(rawCandidate.defaults);
+    let normalizedDefaults: SimulationDefaults;
+    try {
+      normalizedDefaults = normalizeSimulationDefaults(rawCandidate.defaults);
+    } catch {
+      return;
+    }
     ids.add(id);
     names.add(nameKey);
     customPresets.push({
@@ -147,24 +163,30 @@ export const normalizeUserSimulationDefaultsPreference = (
     for (const candidate of raw.customPresets) addPreset(candidate);
   }
   if (raw.mode === "custom" && raw.custom && !customPresets.length) {
-    addPreset({
-      id: LEGACY_CUSTOM_RADIO_PRESET_ID,
-      name: "My custom preset",
-      defaults: normalizeSimulationDefaults(raw.custom, simulationDefaultsFromPreset(presetId)),
-    }, true);
+    const legacyCustomDefaults = tryNormalizeSimulationDefaults(raw.custom, simulationDefaultsFromPreset(presetId));
+    if (legacyCustomDefaults) {
+      addPreset({
+        id: LEGACY_CUSTOM_RADIO_PRESET_ID,
+        name: "My custom preset",
+        defaults: legacyCustomDefaults,
+      }, true);
+    }
   }
 
   const requestedCustomId = normalizeCustomRadioPresetId(raw.customPresetId);
   const selectedCustom = customPresets.find((preset) => preset.id === requestedCustomId)
     ?? (raw.mode === "custom" ? customPresets[0] : undefined);
+  const normalizedOverrides = raw.overrides
+    ? tryNormalizeSimulationDefaults(raw.overrides, simulationDefaultsFromPreset(presetId))
+    : null;
 
   return {
     mode: raw.mode === "custom" && selectedCustom ? "custom" : "preset",
     presetId,
     ...(selectedCustom ? { customPresetId: selectedCustom.id } : {}),
     ...(customPresets.length ? { customPresets } : {}),
-    overridePresetDefaults: Boolean(raw.overridePresetDefaults),
-    ...(raw.overrides ? { overrides: normalizeSimulationDefaults(raw.overrides, simulationDefaultsFromPreset(presetId)) } : {}),
+    overridePresetDefaults: Boolean(raw.overridePresetDefaults && normalizedOverrides),
+    ...(normalizedOverrides ? { overrides: normalizedOverrides } : {}),
   };
 };
 

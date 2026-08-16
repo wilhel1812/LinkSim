@@ -1341,7 +1341,7 @@ export function AppShell() {
         }
       }
 
-      if (!exists && accessState === "readonly") {
+      if (accessState === "readonly") {
         try {
             const publicBundle = await fetchPublicSimulationLibrary({
               simulationId: resolvedSimulationId || undefined,
@@ -1354,6 +1354,7 @@ export function AppShell() {
               simulationPresets: publicBundle.simulationPresets as Parameters<typeof importLibraryData>[0]["simulationPresets"],
             },
             "merge",
+            "public-view-only",
           );
           resolvedSimulationId = publicBundle.simulationId ?? resolvedSimulationId;
           exists = Boolean(resolvedSimulationId);

@@ -3,6 +3,7 @@ import {
   LIBRARY_JSON_MAX_DEPTH,
   LIBRARY_SIMULATION_MAX_BYTES,
   LIBRARY_SITE_MAX_BYTES,
+  partitionLibraryPayload,
   SIMULATION_MAX_PATHS,
   SIMULATION_MAX_SITES,
   validateLibraryPayload,
@@ -80,10 +81,9 @@ describe("Library ingestion limits", () => {
     })).toThrow("Site position must contain valid latitude and longitude");
   });
 
-  it("rejects missing required Site and malformed Radio System or Network fields", () => {
-    const missingSiteNumber = validSite() as Record<string, unknown>;
-    delete missingSiteNumber.txPowerDbm;
-    expect(() => validateLibraryPayload({ siteLibrary: [missingSiteNumber], simulationPresets: [] })).toThrow(
+  it("rejects malformed Site, Radio System, or Network fields", () => {
+    const malformedSiteNumber = { ...validSite(), txPowerDbm: "22" };
+    expect(() => validateLibraryPayload({ siteLibrary: [malformedSiteNumber], simulationPresets: [] })).toThrow(
       "Site txPowerDbm must be a finite number",
     );
 
@@ -118,6 +118,174 @@ describe("Library ingestion limits", () => {
       siteLibrary: [],
       simulationPresets: [{ ...validSimulation(), updatedAt: { unsafe: true } }],
     })).toThrow("Simulation updatedAt must be a valid date string");
+
+    expect(() => validateLibraryPayload({
+      siteLibrary: [{ ...validSite(), createdAt: "not-a-date" }],
+      simulationPresets: [],
+    })).toThrow("Site createdAt must be a valid date string");
+  });
+
+  it("rejects unsupported persisted enums before normalization", () => {
+    expect(() => validateLibraryPayload({
+      siteLibrary: [{ ...validSite(), antennaMode: "phased-array" }],
+      simulationPresets: [],
+    })).toThrow("Site antenna mode is not supported");
+
+    expect(() => validateLibraryPayload({
+      siteLibrary: [],
+      simulationPresets: [{
+        ...validSimulation(),
+        snapshot: { ...validSimulation().snapshot, terrainDataset: "legacy-dem" },
+      }],
+    })).toThrow("Simulation terrain dataset is not supported");
+  });
+
+  it.each(["copernicus90", "srtm1", "srtm3", "srtmthird", "legacySrtmThird"])(
+    "accepts and normalizes the legacy terrain dataset %s",
+    (terrainDataset) => {
+      const simulation = {
+        ...validSimulation(),
+        snapshot: { ...validSimulation().snapshot, terrainDataset },
+      };
+      const validated = validateLibraryPayload({ siteLibrary: [], simulationPresets: [simulation] });
+
+      expect(validated.simulationPresets[0]?.snapshot).toEqual(expect.objectContaining({
+        terrainDataset: "copernicus30",
+      }));
+      expect(simulation.snapshot.terrainDataset).toBe(terrainDataset);
+    },
+  );
+
+  it.each([
+    ["normal", "24"],
+    ["high", "42"],
+  ])("accepts and normalizes the legacy coverage resolution %s", (selectedCoverageResolution, expected) => {
+    const simulation = {
+      ...validSimulation(),
+      snapshot: { ...validSimulation().snapshot, selectedCoverageResolution },
+    };
+    const validated = validateLibraryPayload({ siteLibrary: [], simulationPresets: [simulation] });
+
+    expect(validated.simulationPresets[0]?.snapshot).toEqual(expect.objectContaining({
+      selectedCoverageResolution: expected,
+    }));
+    expect(simulation.snapshot.selectedCoverageResolution).toBe(selectedCoverageResolution);
+  });
+
+  it("migrates missing radio fields on legacy top-level Sites before strict validation", () => {
+    const site = validSite("legacy-site") as Record<string, unknown>;
+    delete site.txPowerDbm;
+    delete site.txGainDbi;
+    delete site.rxGainDbi;
+    delete site.cableLossDb;
+
+    const validated = validateLibraryPayload({ siteLibrary: [site], simulationPresets: [] });
+
+    expect(validated.siteLibrary[0]).toEqual(expect.objectContaining({
+      txPowerDbm: 22,
+      txGainDbi: 2,
+      rxGainDbi: 2,
+      cableLossDb: 1,
+    }));
+    expect(site).not.toHaveProperty("txPowerDbm");
+  });
+
+  it("migrates legacy nested Site radio fields before strict validation", () => {
+    const fromSite = validSite("site-from") as Record<string, unknown>;
+    const toSite = validSite("site-to") as Record<string, unknown>;
+    for (const site of [fromSite, toSite]) {
+      delete site.txPowerDbm;
+      delete site.txGainDbi;
+      delete site.rxGainDbi;
+      delete site.cableLossDb;
+      delete site.createdAt;
+    }
+    const simulation = {
+      ...validSimulation(),
+      snapshot: {
+        ...validSimulation().snapshot,
+        sites: [fromSite, toSite],
+        links: [{
+          id: "path-legacy-radio",
+          fromSiteId: "site-from",
+          toSiteId: "site-to",
+          frequencyMHz: 868,
+          txPowerDbm: 31,
+          txGainDbi: 7,
+          rxGainDbi: 9,
+          cableLossDb: 0.5,
+        }],
+      },
+    };
+
+    const validated = validateLibraryPayload({ siteLibrary: [], simulationPresets: [simulation] });
+    const sites = (validated.simulationPresets[0]?.snapshot as { sites: Array<Record<string, unknown>> }).sites;
+    expect(sites).toEqual([
+      expect.objectContaining({ id: "site-from", txPowerDbm: 31, txGainDbi: 7, rxGainDbi: 2, cableLossDb: 0.5 }),
+      expect.objectContaining({ id: "site-to", txPowerDbm: 22, txGainDbi: 2, rxGainDbi: 9, cableLossDb: 1 }),
+    ]);
+    expect(fromSite).not.toHaveProperty("txPowerDbm");
+    expect(toSite).not.toHaveProperty("rxGainDbi");
+  });
+
+  it("does not use legacy radio migration to mask malformed nested values", () => {
+    const malformedSite = { ...validSite("site-malformed"), txPowerDbm: "22" };
+    delete (malformedSite as Record<string, unknown>).createdAt;
+    const simulation = {
+      ...validSimulation(),
+      snapshot: {
+        ...validSimulation().snapshot,
+        sites: [malformedSite],
+      },
+    };
+
+    expect(() => validateLibraryPayload({ siteLibrary: [], simulationPresets: [simulation] })).toThrow(
+      "Site txPowerDbm must be a finite number",
+    );
+  });
+
+  it("partitions valid and malformed records without discarding the valid records", () => {
+    const invalidSite = { ...validSite("bad-site"), position: { lat: 91, lon: 10 } };
+    const invalidSimulation = validSimulation();
+    invalidSimulation.id = "bad-sim";
+    (invalidSimulation.snapshot as Record<string, unknown>).propagationEnvironment = {
+      radioClimate: "Moon",
+      polarization: "Vertical",
+      clutterHeightM: 1,
+      groundDielectric: 15,
+      groundConductivity: 0.005,
+      atmosphericBendingNUnits: 301,
+    };
+    const result = partitionLibraryPayload({
+      siteLibrary: [validSite(), invalidSite, null],
+      simulationPresets: [validSimulation(), invalidSimulation],
+    });
+    expect(result.siteLibrary).toHaveLength(1);
+    expect(result.simulationPresets).toHaveLength(1);
+    expect(result.rejected).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "site", id: "bad-site" }),
+      expect.objectContaining({ kind: "site", id: null }),
+      expect.objectContaining({ kind: "simulation", id: "bad-sim" }),
+    ]));
+  });
+
+  it("rejects every record involved in a duplicate ID", () => {
+    const result = partitionLibraryPayload({
+      siteLibrary: [validSite(), { ...validSite(), name: "Other" }],
+      simulationPresets: [],
+    });
+    expect(result.siteLibrary).toEqual([]);
+    expect(result.rejected).toHaveLength(2);
+  });
+
+  it("quarantines malformed collection shapes", () => {
+    const result = partitionLibraryPayload({ siteLibrary: { unsafe: true }, simulationPresets: null });
+    expect(result.siteLibrary).toEqual([]);
+    expect(result.simulationPresets).toEqual([]);
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ kind: "site", reason: "Site Library collection must be an array." }),
+      expect.objectContaining({ kind: "simulation", reason: "Simulation Library collection must be an array." }),
+    ]);
   });
 
   it("rejects Simulation collection counts above their approved boundaries", () => {
